@@ -697,6 +697,21 @@ describe(StudioExportService.name, () => {
   });
 
   describe('render contract', () => {
+    it('binds transport bytes to the recorded revision and source checksums', async () => {
+      repository.getByRenderOperation.mockResolvedValue(versionRow());
+      await expect(sut.verifyRenderSources(operation({ revisionId: 'digest-3' }), [entry()])).resolves.toBeUndefined();
+      await expect(
+        sut.verifyRenderSources(operation({ revisionId: 'digest-3' }), [entry({ checksum: 'changed' })]),
+      ).rejects.toThrow('changed');
+      await expect(sut.verifyRenderSources(operation({ revisionId: 'other' }), [entry()])).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      repository.getByRenderOperation.mockResolvedValue(undefined);
+      await expect(sut.verifyRenderSources(operation({ revisionId: 'digest-3' }), [entry()])).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
     it('records provenance and a remote stop obligation when a remote worker claims', async () => {
       repository.getByRenderOperation.mockResolvedValue(versionRow({ state: StudioExportVersionState.Rendering }));
 

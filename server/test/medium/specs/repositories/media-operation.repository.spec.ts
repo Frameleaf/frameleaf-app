@@ -713,6 +713,79 @@ describe(MediaOperationRepository.name, () => {
       expect(checkpoints[0].state).toBe('complete');
     });
 
+    it.each(['expired', 'paused', 'cancelled'] as const)(
+      'guards verified artifact transitions atomically for a %s lease while retaining legacy defaults',
+      async (condition) => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const operation = await newOperation(sut, user.id);
+        const claim = await sut.claimNext({
+          kinds: [MediaOperationKind.StudioExport],
+          workerId: 'worker-a',
+          leaseMs: LEASE_MS,
+        });
+        await sut.upsertCheckpoint(operation.id, claim!.claimToken, chunk(0) as never);
+        await defaultDatabase
+          .updateTable('media_operation')
+          .set(
+            condition === 'expired'
+              ? { claimExpiresAt: new Date(0) }
+              : condition === 'paused'
+                ? { pauseRequestedAt: new Date() }
+                : { cancelRequestedAt: new Date() },
+          )
+          .where('id', '=', operation.id)
+          .execute();
+        const artifact = {
+          sequence: 0,
+          chunkKey: 'chunk-0',
+          outputPath: '/server/staging/artifact',
+          outputChecksum: Buffer.alloc(32),
+          sizeInBytes: 2048,
+        };
+        await expect(sut.completeCheckpoint(operation.id, claim!.claimToken, artifact, true)).resolves.toBe(false);
+        expect((await sut.getCheckpoints(operation.id))[0].outputPath).toBeNull();
+        await expect(sut.beginValidation(operation.id, claim!.claimToken, true)).resolves.toBe(false);
+        await expect(sut.completeCheckpoint(operation.id, claim!.claimToken, artifact)).resolves.toBe(true);
+        await expect(sut.beginValidation(operation.id, claim!.claimToken)).resolves.toBe(true);
+        await expect(
+          sut.complete(operation.id, claim!.claimToken, { resultAssetId: null }, undefined, true),
+        ).resolves.toBe(false);
+        await expect(sut.complete(operation.id, claim!.claimToken, { resultAssetId: null })).resolves.toBe(true);
+      },
+    );
+
+    it('allows one durable verified artifact winner and refuses overwriting complete bytes', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await sut.claimNext({
+        kinds: [MediaOperationKind.StudioExport],
+        workerId: 'worker-a',
+        leaseMs: LEASE_MS,
+      });
+      await sut.upsertCheckpoint(operation.id, claim!.claimToken, chunk(0) as never);
+      const artifact = {
+        sequence: 0,
+        chunkKey: 'chunk-0',
+        outputPath: '/server/staging/first',
+        outputChecksum: Buffer.alloc(32),
+        sizeInBytes: 2048,
+      };
+      const results = await Promise.all([
+        sut.completeCheckpoint(operation.id, claim!.claimToken, artifact, true),
+        sut.completeCheckpoint(
+          operation.id,
+          claim!.claimToken,
+          { ...artifact, outputPath: '/server/staging/second' },
+          true,
+        ),
+      ]);
+      expect(results.filter(Boolean)).toHaveLength(1);
+      const winner = (await sut.getCheckpoints(operation.id))[0];
+      expect(winner.outputPath).toBe(results[0] ? artifact.outputPath : '/server/staging/second');
+    });
+
     it('re-planning a chunk clears its stored output', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

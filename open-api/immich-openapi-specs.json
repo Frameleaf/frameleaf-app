@@ -27754,6 +27754,196 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/render-workers/operations/{id}/artifacts/{sequence}": {
+      "get": {
+        "operationId": "readRenderArtifact",
+        "parameters": [
+          {
+            "name": "chunkKey",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sequence",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-render-claim-token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Read a verified whole-export artifact under the current claim",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "operationId": "uploadRenderArtifact",
+        "parameters": [
+          {
+            "name": "checksum",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "pattern": "^[\\da-f]{64}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "chunkKey",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sequence",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "sizeInBytes",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "pattern": "^\\d+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-worker-session",
+            "in": "header",
+            "description": "The session credential issued by admission",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-render-claim-token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderWorkerWriteResultDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Upload a whole-export artifact",
+        "tags": [
+          "Render workers"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/render-workers/operations/{id}/cancel-ack": {
       "post": {
         "description": "The worker confirms it stopped. Only then does the operation become `cancelled`.",
@@ -74460,6 +74650,11 @@
       },
       "RenderWorkerClaimDto": {
         "properties": {
+          "artifactInputDigest": {
+            "description": "Server source/revision binding required by whole-export checkpoint plans",
+            "pattern": "^[a-f\\d]{64}$",
+            "type": "string"
+          },
           "attempt": {
             "maximum": 9007199254740991,
             "minimum": -9007199254740991,
@@ -74587,6 +74782,12 @@
       },
       "RenderWorkerCompleteDto": {
         "properties": {
+          "artifactSequence": {
+            "description": "Server-verified whole-export checkpoint; required for Studio exports",
+            "maximum": 0,
+            "minimum": 0,
+            "type": "integer"
+          },
           "claimToken": {
             "description": "The claim token this operation was handed out with",
             "format": "uuid",
@@ -74595,7 +74796,7 @@
           },
           "output": {
             "$ref": "#/components/schemas/RenderWorkerOutputDto",
-            "description": "Required for a Studio export"
+            "description": "Legacy non-export render output"
           },
           "resultAssetId": {
             "description": "Must be null for a Studio export: its result is adopted by publication, never named by a worker",
