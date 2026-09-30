@@ -8960,6 +8960,7 @@
   "frameleaf_studio_library_unarchived": "\"{name}\" brought back",
   "frameleaf_studio_library_unsaved": "Not saved yet",
   "frameleaf_studio_loading_title": "Opening Studio…",
+  "frameleaf_studio_local_preview_without_webgpu": "This browser has no WebGPU, so the editor's own picture leaves out GPU effects. The server preview shows the full picture.",
   "frameleaf_studio_missing_capabilities": "Missing capabilities",
   "frameleaf_studio_mode_advanced": "Advanced",
   "frameleaf_studio_mode_basic": "Basic",

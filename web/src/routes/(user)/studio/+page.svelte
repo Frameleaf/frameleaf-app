@@ -287,6 +287,7 @@
    */
   let stream = $state<StudioStreamView>(offStudioStreamView());
   let serverPreviewOpen = $state(false);
+  let localPreviewWithoutWebGpu = $state(false);
   const streamClient = createStudioPreviewStream({
     transport: createStudioPreviewStreamTransport(),
     onChange: (next) => {
@@ -651,10 +652,13 @@
       });
     },
     reportLocalPreviewSupport: (support) => {
-      // Without WebCodecs the editor cannot show its own picture, so the server preview opens.
-      if (!support.webCodecs) {
+      // Without WebCodecs the editor cannot show its own picture, and without WebGPU its picture
+      // leaves out GPU effects (FL-96, FL-112): either way the server preview opens, and a missing
+      // WebGPU stays named on the stage.
+      if (!support.webCodecs || !support.webGpu) {
         serverPreviewOpen = true;
       }
+      localPreviewWithoutWebGpu = !support.webGpu;
     },
     saveWorkspace: (layout) => saveStudioWorkspaceLayout(layout, pinnedFreecutRevision),
     // FL-103 / FL-105: a recording or a file imported in the editor is kept with the stored project.
@@ -965,6 +969,7 @@
   {preview}
   {stream}
   bind:serverPreviewOpen
+  {localPreviewWithoutWebGpu}
   onStreamVideoSize={(width, height) => streamClient.reportVideoSize(width, height)}
   droppedAssetCount={data.unavailableAssetCount}
   {unavailableRestorations}
