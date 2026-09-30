@@ -22405,6 +22405,7 @@ export enum MlAdmissionRefusal {
     WorkloadNotAllowed = "workload-not-allowed",
     WorkloadNotServed = "workload-not-served",
     ConsentMissing = "consent-missing",
+    DisclosurePending = "disclosure-pending",
     BudgetExceeded = "budget-exceeded",
     EndpointUnresolved = "endpoint-unresolved",
     DestinationUnhealthy = "destination-unhealthy",

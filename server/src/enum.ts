@@ -1082,6 +1082,8 @@ export enum MlAdmissionRefusal {
   WorkloadNotAllowed = 'workload-not-allowed',
   WorkloadNotServed = 'workload-not-served',
   ConsentMissing = 'consent-missing',
+  /** No owner-approved disclosure exists for this Cloud processing workload (FL-201). */
+  DisclosurePending = 'disclosure-pending',
   BudgetExceeded = 'budget-exceeded',
   EndpointUnresolved = 'endpoint-unresolved',
   DestinationUnhealthy = 'destination-unhealthy',

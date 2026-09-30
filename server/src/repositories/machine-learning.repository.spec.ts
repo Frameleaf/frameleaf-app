@@ -27,6 +27,7 @@ import {
   ModelType,
   RestorationWorkerError,
 } from 'src/repositories/machine-learning.repository.js';
+import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
 import {
   RestorationInferenceInput,
   RestorationInferenceOptions,
@@ -117,6 +118,7 @@ describe(MachineLearningRepository.name, () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     await rm(imagePath, { force: true });
   });
 
@@ -770,7 +772,8 @@ describe(MachineLearningRepository.name, () => {
       expect(existsSync(outputPath)).toBe(false);
     });
 
-    it('fails a Frameleaf Cloud restoration in place: cloud jobs never use the worker protocol (FL-159)', async () => {
+    it('fails a Frameleaf Cloud restoration in place: worker protocol mechanics (disclosure policy mocked)', async () => {
+      vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false);
       const fetch = vi.fn();
       vi.stubGlobal('fetch', fetch);
 
