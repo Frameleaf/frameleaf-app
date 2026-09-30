@@ -1,0 +1,2350 @@
+Subject: Scopes measure what they show, and say what it is
+
+Freecut MIT adaptation (FL-98). The colour scopes always read the SDR
+preview canvas and labelled it "sRGB / Rec.709", whatever the project.
+
+- An HDR project (FL-97: it holds a PQ or HLG source) is measured, while
+  paused, from its float composite converted explicitly to BT.2100 PQ in
+  BT.2020, with BT.2020 coefficients, a cd/m² graticule (along the axis
+  for the histogram) and BT.2111 PQ bar targets. The preview registers
+  its colour management, resolved from the renderer's own inputs, and a
+  capture (`captureFrameSignal`) on the live scope renderer, which draws
+  titles the preview overlays in the DOM and never touches the preview's
+  canvas, frame cache or render lock. A paused sample is reused until
+  its frame, graph or colour inputs change. While playing, or when the
+  float composite cannot be read, the scopes read the display and say
+  so (tone-mapped or clipped by the project's SDR monitoring).
+- The render engine's signal capture no longer answers from the frame
+  cache (it failed on every cached paused frame), no longer draws or
+  caches the display canvas (it stored a background-only frame), and
+  reuses its conversion target and readback buffer.
+- The header names the colour space measured and the paused frame
+  evaluated; a sample captured before playback jumps (a seek or loop
+  while playing) is dropped.
+- The graticule overlay, the CPU fallback and the GPU vectorscope share
+  one geometry: 100% ring at 0.46 of the size, bar targets computed from
+  the matrix and bar level in use (they were drawn up to 11 units off),
+  skin line at 123°. The GPU waveform's IRE grid is left to the overlay
+  on PQ.
+- The GPU waveform filled only every n-th column for a source narrower
+  than its 1024 columns (preview samples, float frames), so the render
+  could miss the trace; each source pixel now fills exactly its columns.
+- The CPU scope math moves to `preview/utils/scope-math.ts`, where
+  reference ramps and bars test it exactly.
+
+diff --git a/src/features/preview/utils/scope-math.ts b/src/features/preview/utils/scope-math.ts
+new file mode 100644
+index 0000000000..54c4540d6a
+--- /dev/null
++++ b/src/features/preview/utils/scope-math.ts
+@@ -0,0 +1,268 @@
++/**
++ * What the colour scopes measure, as numbers (FL-98).
++ *
++ * The scope views draw these; the GPU scopes compute the same mapping in WGSL
++ * (`infrastructure/gpu-scopes`). Keeping the CPU math here, free of any canvas,
++ * lets reference ramps and bars check the placement exactly.
++ */
++import { pqEncode } from '@/shared/graphics/color/managed-color'
++
++/** The pixels a scope sample holds: 8-bit RGBA, as `ImageData` carries them. */
++export interface ScopePixels {
++  readonly data: ArrayLike<number>
++  readonly width: number
++  readonly height: number
++}
++
++export interface LumaCoefficients {
++  kr: number
++  kb: number
++}
++
++export const BT709_COEFFICIENTS: LumaCoefficients = { kr: 0.2126, kb: 0.0722 }
++export const BT2020_COEFFICIENTS: LumaCoefficients = { kr: 0.2627, kb: 0.0593 }
++
++/**
++ * The signal a scope measured, which fixes its colour space and graticule:
++ *
++ * - `rec709-display`: an SDR project's preview pixels, sRGB/BT.709 display values, full range.
++ * - `pq-bt2020`: an HDR project's float composite, converted explicitly to BT.2100 PQ in
++ *   BT.2020 (FL-97), so 1.0 is 10,000 cd/m² and reference white (203 cd/m²) sits near 58%.
++ * - `rec709-tonemapped`: an HDR project's SDR preview, tone mapped with BT.2390 for the display.
++ * - `rec709-clipped`: an HDR project's SDR preview when its monitoring clips instead.
++ *
++ * Scopes read an HDR project's display while playing, or when its float composite cannot be
++ * read, and say so.
++ */
++export type ScopeSignal = 'rec709-display' | 'pq-bt2020' | 'rec709-tonemapped' | 'rec709-clipped'
++
++export const SCOPE_SIGNAL_LABELS: Record<ScopeSignal, string> = {
++  'rec709-display': 'sRGB / Rec.709 display, full range',
++  'pq-bt2020': 'BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m²',
++  'rec709-tonemapped': 'Tone-mapped SDR preview (BT.2390) · HDR project',
++  'rec709-clipped': 'Clipped SDR preview · HDR project',
++}
++
++/** What an HDR project's display canvas holds, by its SDR monitoring policy. */
++export const hdrDisplaySignal = (sdrMonitoring: 'bt2390' | 'none'): ScopeSignal =>
++  sdrMonitoring === 'none' ? 'rec709-clipped' : 'rec709-tonemapped'
++
++export const scopeCoefficients = (signal: ScopeSignal): LumaCoefficients =>
++  signal === 'pq-bt2020' ? BT2020_COEFFICIENTS : BT709_COEFFICIENTS
++
++export interface ScopeGuide {
++  /** Height in the scope, 0–100 from the bottom. */
++  position: number
++  label: string
++}
++
++/** IRE for display-referred scopes; cd/m² at their PQ code values for HDR. */
++export function scopeGuides(signal: ScopeSignal): ScopeGuide[] {
++  if (signal !== 'pq-bt2020') {
++    return [0, 25, 50, 75, 100].map((level) => ({ position: level, label: String(level) }))
++  }
++  return [
++    [0, '0'],
++    [100, '100'],
++    [203, '203'],
++    [1000, '1k'],
++    [4000, '4k'],
++    [10000, '10k nits'],
++  ].map(([nits, label]) => ({ position: pqEncode(nits as number) * 100, label: label as string }))
++}
++
++/** The vectorscope's 100% ring as a fraction of its size; the GPU scope uses 0.92 × 0.5. */
++export const VECTORSCOPE_SCALE = 0.46
++
++/** Where a colour lands on a vectorscope of `size`: x right for +Cb, y down for −Cr. */
++export function vectorscopePoint(
++  r: number,
++  g: number,
++  b: number,
++  { kr, kb }: LumaCoefficients,
++  size: number,
++): { x: number; y: number } {
++  const y = kr * r + (1 - kr - kb) * g + kb * b
++  const cb = (b - y) / (2 * (1 - kb))
++  const cr = (r - y) / (2 * (1 - kr))
++  const center = size / 2
++  const scale = size * VECTORSCOPE_SCALE
++  return { x: center + cb * 2 * scale, y: center - cr * 2 * scale }
++}
++
++/**
++ * The level of the colour bars the vectorscope targets mark: 75% for SDR, and for PQ the
++ * BT.2111 HDR bars, whose colours sit at reference white (203 cd/m², about 58% PQ).
++ */
++export const scopeBarLevel = (signal: ScopeSignal): number => (signal === 'pq-bt2020' ? pqEncode(203) : 0.75)
++
++const BARS_75 = [
++  ['R', 0.75, 0, 0],
++  ['Mg', 0.75, 0, 0.75],
++  ['B', 0, 0, 0.75],
++  ['Cy', 0, 0.75, 0.75],
++  ['G', 0, 0.75, 0],
++  ['Yl', 0.75, 0.75, 0],
++] as const
++
++/** Colour bars at `level` on a 100-unit vectorscope with these coefficients: the target boxes. */
++export function vectorscopeTargets(coefficients: LumaCoefficients, level = 0.75) {
++  return BARS_75.map(([label, r, g, b]) => {
++    const scale = level / 0.75
++    const { x, y } = vectorscopePoint(r * scale, g * scale, b * scale, coefficients, 100)
++    return { label, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }
++  })
++}
++
++export const VECTORSCOPE_75_TARGETS = vectorscopeTargets(BT709_COEFFICIENTS)
++
++/** The skin-tone line, 123° from +Cb, on a 100-unit vectorscope (as the GPU graticule draws it). */
++export const VECTORSCOPE_SKIN_LINE = {
++  x: 50 + 100 * VECTORSCOPE_SCALE * Math.cos((123 * Math.PI) / 180),
++  y: 50 - 100 * VECTORSCOPE_SCALE * Math.sin((123 * Math.PI) / 180),
++}
++
++function forEachPixel(
++  pixels: ScopePixels,
++  callback: (x: number, r: number, g: number, b: number) => void,
++): void {
++  const { data, width, height } = pixels
++  for (let y = 0; y < height; y++) {
++    for (let x = 0; x < width; x++) {
++      const i = (y * width + x) * 4
++      callback(x, (data[i] ?? 0) / 255, (data[i + 1] ?? 0) / 255, (data[i + 2] ?? 0) / 255)
++    }
++  }
++}
++
++const clamp01 = (value: number) => Math.max(0, Math.min(1, value))
++
++export interface Density {
++  counts: Uint32Array
++  max: number
++}
++
++function bump(density: Density, index: number): void {
++  const next = (density.counts[index] ?? 0) + 1
++  density.counts[index] = next
++  if (next > density.max) density.max = next
++}
++
++/** Waveform: a luma column per sample column, rows from 0 (bottom) to full scale (top). */
++export function waveformDensity(
++  pixels: ScopePixels,
++  { kr, kb }: LumaCoefficients,
++  w: number,
++  h: number,
++): Density {
++  const density = { counts: new Uint32Array(w * h), max: 0 }
++  const kg = 1 - kr - kb
++  forEachPixel(pixels, (x, r, g, b) => {
++    const luma = clamp01(kr * r + kg * g + kb * b)
++    const px = Math.floor((x / Math.max(1, pixels.width - 1)) * (w - 1))
++    const py = h - 1 - Math.floor(luma * (h - 1))
++    bump(density, py * w + px)
++  })
++  return density
++}
++
++/** RGB parade: three lanes side by side, R then G then B. */
++export function paradeDensity(pixels: ScopePixels, w: number, h: number): Density {
++  const density = { counts: new Uint32Array(w * h), max: 0 }
++  const lane = Math.floor(w / 3)
++  forEachPixel(pixels, (x, r, g, b) => {
++    const lx = Math.floor((x / Math.max(1, pixels.width - 1)) * (lane - 1))
++    for (const [channel, value] of [r, g, b].entries()) {
++      const py = h - 1 - Math.floor(clamp01(value) * (h - 1))
++      bump(density, py * w + channel * lane + lx)
++    }
++  })
++  return density
++}
++
++/** Luma histogram in 256 bins. */
++export function histogramBins(pixels: ScopePixels, { kr, kb }: LumaCoefficients): Density {
++  const density = { counts: new Uint32Array(256), max: 0 }
++  const kg = 1 - kr - kb
++  forEachPixel(pixels, (_x, r, g, b) => {
++    bump(density, Math.round(clamp01(kr * r + kg * g + kb * b) * 255))
++  })
++  return density
++}
++
++/** Vectorscope density on a `size` square. */
++export function vectorscopeDensity(
++  pixels: ScopePixels,
++  coefficients: LumaCoefficients,
++  size: number,
++): Density {
++  const density = { counts: new Uint32Array(size * size), max: 0 }
++  forEachPixel(pixels, (_x, r, g, b) => {
++    const point = vectorscopePoint(r, g, b, coefficients, size)
++    const px = Math.round(point.x)
++    const py = Math.round(point.y)
++    if (px < 0 || px >= size || py < 0 || py >= size) return
++    bump(density, py * size + px)
++  })
++  return density
++}
++
++/**
++ * A float signal frame (straight-alpha RGBA in [0, 1], from the render engine's explicit
++ * output conversion) sampled down to `width` × `height` 8-bit pixels for the scopes. Each
++ * output pixel averages its source box. 8 bits resolve a PQ step of about 0.4%: about two rows
++ * of the 512-row GPU waveform, which its vertical spread smooths over; enough for monitoring.
++ */
++export function signalToScopePixels(
++  signal: { width: number; height: number; rgba: Float32Array },
++  width: number,
++  height: number,
++): ScopePixels & { data: Uint8ClampedArray<ArrayBuffer> } {
++  const w = Math.max(1, Math.min(width, signal.width))
++  const h = Math.max(1, Math.min(height, signal.height))
++  const data = new Uint8ClampedArray(w * h * 4)
++  for (let y = 0; y < h; y++) {
++    const y0 = Math.floor((y * signal.height) / h)
++    const y1 = Math.max(y0 + 1, Math.floor(((y + 1) * signal.height) / h))
++    for (let x = 0; x < w; x++) {
++      const x0 = Math.floor((x * signal.width) / w)
++      const x1 = Math.max(x0 + 1, Math.floor(((x + 1) * signal.width) / w))
++      let r = 0
++      let g = 0
++      let b = 0
++      let n = 0
++      for (let sy = y0; sy < y1; sy++) {
++        for (let sx = x0; sx < x1; sx++) {
++          const i = (sy * signal.width + sx) * 4
++          r += signal.rgba[i] ?? 0
++          g += signal.rgba[i + 1] ?? 0
++          b += signal.rgba[i + 2] ?? 0
++          n += 1
++        }
++      }
++      const o = (y * w + x) * 4
++      data[o] = Math.round(clamp01(r / n) * 255)
++      data[o + 1] = Math.round(clamp01(g / n) * 255)
++      data[o + 2] = Math.round(clamp01(b / n) * 255)
++      data[o + 3] = 255
++    }
++  }
++  return { data, width: w, height: h }
++}
++
++/**
++ * Whether playback jumped rather than advanced between two playhead updates: backwards (a
++ * loop or a seek) or further than playback moves in the time between them, with room for a
++ * few dropped frames. A scope sample captured before a jump shows a frame no longer playing.
++ */
++export function isPlaybackJump(
++  previous: { frame: number; atMs: number },
++  next: { frame: number; atMs: number },
++  fps: number,
++  rate = 1,
++): boolean {
++  const step = (next.frame - previous.frame) * Math.sign(rate || 1)
++  if (step < 0) return true
++  const expected = (Math.max(0, next.atMs - previous.atMs) / 1000) * fps * Math.abs(rate || 1)
++  return step > expected + 4
++}
+diff --git a/src/features/preview/utils/scope-math.test.ts b/src/features/preview/utils/scope-math.test.ts
+new file mode 100644
+index 0000000000..2fbf506da4
+--- /dev/null
++++ b/src/features/preview/utils/scope-math.test.ts
+@@ -0,0 +1,140 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { pqEncode } from '@/shared/graphics/color/managed-color'
++import {
++  BT2020_COEFFICIENTS,
++  hdrDisplaySignal,
++  scopeBarLevel,
++  vectorscopeTargets,
++  BT709_COEFFICIENTS,
++  VECTORSCOPE_75_TARGETS,
++  histogramBins,
++  isPlaybackJump,
++  paradeDensity,
++  scopeGuides,
++  signalToScopePixels,
++  vectorscopeDensity,
++  vectorscopePoint,
++  waveformDensity,
++  type ScopePixels,
++} from './scope-math'
++
++/** A frame whose column x has the grey (or colour) `pixel(x)`, `height` rows tall. */
++function frame(width: number, height: number, pixel: (x: number) => [number, number, number]): ScopePixels {
++  const data = new Uint8ClampedArray(width * height * 4)
++  for (let y = 0; y < height; y++) {
++    for (let x = 0; x < width; x++) {
++      const [r, g, b] = pixel(x)
++      data.set([r, g, b, 255], (y * width + x) * 4)
++    }
++  }
++  return { data, width, height }
++}
++
++/** Rows (from the top) that hold any count in column `x`. */
++const rowsIn = (counts: Uint32Array, w: number, h: number, x: number) =>
++  Array.from({ length: h }, (_, y) => y).filter((y) => (counts[y * w + x] ?? 0) > 0)
++
++describe('scope reference ramps and bars (FL-98)', () => {
++  it('a 0–255 grey ramp draws the waveform diagonal and flattens the histogram', () => {
++    const ramp = frame(256, 4, (x) => [x, x, x])
++    const w = 256
++    const h = 256
++    const waveform = waveformDensity(ramp, BT709_COEFFICIENTS, w, h)
++    for (const x of [0, 64, 128, 191, 255]) {
++      // Grey luma is the grey itself, at every matrix: column x, row 255 − x.
++      expect(rowsIn(waveform.counts, w, h, x)).toEqual([255 - x])
++    }
++    const histogram = histogramBins(ramp, BT709_COEFFICIENTS)
++    expect([...histogram.counts].every((count) => count === 4)).toBe(true)
++  })
++
++  it('the parade separates channels into their lanes at their own levels', () => {
++    // Left half pure 75% red, right half pure 75% blue.
++    const bars = frame(64, 2, (x) => (x < 32 ? [191, 0, 0] : [0, 0, 191]))
++    const w = 300
++    const h = 101
++    const lane = 100
++    const parade = paradeDensity(bars, w, h)
++    const level = (value: number) => h - 1 - Math.floor((value / 255) * (h - 1))
++    // Red lane: 75% on the left of the lane, 0 on the right.
++    expect(rowsIn(parade.counts, w, h, 0)).toEqual([level(191)])
++    expect(rowsIn(parade.counts, w, h, lane - 1)).toEqual([level(0)])
++    // Blue lane: the reverse.
++    expect(rowsIn(parade.counts, w, h, 2 * lane)).toEqual([level(0)])
++    expect(rowsIn(parade.counts, w, h, 3 * lane - 1)).toEqual([level(191)])
++  })
++
++  it('75% colour bars land on the graticule targets, grey on the centre', () => {
++    const bars = [
++      ['R', 191, 0, 0],
++      ['Mg', 191, 0, 191],
++      ['B', 0, 0, 191],
++      ['Cy', 0, 191, 191],
++      ['G', 0, 191, 0],
++      ['Yl', 191, 191, 0],
++    ] as const
++    const size = 101
++    for (const [label, r, g, b] of bars) {
++      const density = vectorscopeDensity(frame(1, 1, () => [r, g, b]), BT709_COEFFICIENTS, size)
++      const index = density.counts.findIndex((count) => count > 0)
++      const target = VECTORSCOPE_75_TARGETS.find((entry) => entry.label === label)!
++      // Within a pixel of the target box drawn at the same scale (100 units → 101 px).
++      expect(Math.abs((index % size) - (target.x * (size / 100)))).toBeLessThanOrEqual(1.5)
++      expect(Math.abs(Math.floor(index / size) - (target.y * (size / 100)))).toBeLessThanOrEqual(1.5)
++    }
++    const grey = vectorscopePoint(0.5, 0.5, 0.5, BT709_COEFFICIENTS, 100)
++    expect(grey).toEqual({ x: 50, y: 50 })
++    // 100% red sits on the 100% ring's red vector, at its BT.709 angle.
++    const red = vectorscopePoint(1, 0, 0, BT709_COEFFICIENTS, 100)
++    expect((Math.atan2(50 - red.y, red.x - 50) * 180) / Math.PI).toBeCloseTo(102.9, 0)
++  })
++
++  it('an HDR ramp above reference white reads on the PQ graticule in cd/m²', () => {
++    // Linear light 0 → 10,000 cd/m², encoded as the render engine's PQ output (FL-97).
++    const nits = [0, 100, 203, 1000, 4000, 10_000]
++    const rgba = new Float32Array(nits.length * 4)
++    for (const [i, value] of nits.entries()) rgba.set([pqEncode(value), pqEncode(value), pqEncode(value), 1], i * 4)
++    const pixels = signalToScopePixels({ width: nits.length, height: 1, rgba }, nits.length, 1)
++    const h = 1001
++    const waveform = waveformDensity(pixels, BT2020_COEFFICIENTS, nits.length, h)
++    const guides = scopeGuides('pq-bt2020')
++    for (const [x, value] of nits.entries()) {
++      const [row] = rowsIn(waveform.counts, nits.length, h, x)
++      const heightPercent = ((h - 1 - row!) / (h - 1)) * 100
++      const guide = guides[x]!
++      // Each nit level lands on its guide line, to the 8-bit sample step (0.4%).
++      expect(Math.abs(heightPercent - guide.position)).toBeLessThan(0.5)
++      expect(guide.label.startsWith(String(value >= 1000 ? value / 1000 : value))).toBe(true)
++    }
++    // Reference white is near 58% of the PQ scale, not at the top as on an SDR scope.
++    expect(guides.find((guide) => guide.label === '203')!.position).toBeCloseTo(58, 0)
++  })
++
++  it('samples a float frame down by averaging, clamped to the signal range', () => {
++    const rgba = new Float32Array([0, 0, 0, 1, 1, 1, 1, 1, 0.5, 0.5, 0.5, 1, 2, -1, 0.5, 1])
++    const pixels = signalToScopePixels({ width: 4, height: 1, rgba }, 2, 1)
++    expect([...pixels.data]).toEqual([128, 128, 128, 255, 255, 0, 128, 255])
++  })
++
++  it('tells a jump in playback from its advance', () => {
++    const at = (frame: number, atMs: number) => ({ frame, atMs })
++    expect(isPlaybackJump(at(10, 0), at(11, 33), 30)).toBe(false)
++    // Dropped frames are still an advance.
++    expect(isPlaybackJump(at(10, 0), at(15, 100), 30)).toBe(false)
++    expect(isPlaybackJump(at(10, 0), at(9, 33), 30)).toBe(true)
++    expect(isPlaybackJump(at(10, 0), at(300, 33), 30)).toBe(true)
++    // Playing backwards advances downwards.
++    expect(isPlaybackJump(at(10, 0), at(9, 33), 30, -1)).toBe(false)
++  })
++
++  it('marks BT.2111 PQ bars on an HDR vectorscope, and names clipped monitoring', () => {
++    // BT.2111 HDR bars put their colours at reference white, about 58% PQ.
++    expect(scopeBarLevel('pq-bt2020')).toBeCloseTo(pqEncode(203), 6)
++    expect(scopeBarLevel('rec709-display')).toBe(0.75)
++    const red = vectorscopeTargets(BT2020_COEFFICIENTS, pqEncode(203)).find((t) => t.label === 'R')!
++    const point = vectorscopePoint(pqEncode(203), 0, 0, BT2020_COEFFICIENTS, 100)
++    expect(Math.abs(red.x - point.x) + Math.abs(red.y - point.y)).toBeLessThan(0.2)
++    expect(hdrDisplaySignal('bt2390')).toBe('rec709-tonemapped')
++    expect(hdrDisplaySignal('none')).toBe('rec709-clipped')
++  })
++})
+diff --git a/src/features/preview/components/color-scope-overlay-data.ts b/src/features/preview/components/color-scope-overlay-data.ts
+deleted file mode 100644
+index 2c81b448fe..0000000000
+--- a/src/features/preview/components/color-scope-overlay-data.ts
++++ /dev/null
+@@ -1,10 +0,0 @@
+-export const SCOPE_LUMA_GUIDES = [0, 25, 50, 75, 100] as const
+-
+-export const VECTOR_SCOPE_TARGETS = [
+-  { label: 'R', x: 39, y: 16 },
+-  { label: 'Mg', x: 66, y: 18 },
+-  { label: 'B', x: 78, y: 55 },
+-  { label: 'Cy', x: 61, y: 84 },
+-  { label: 'G', x: 35, y: 78 },
+-  { label: 'Yl', x: 22, y: 45 },
+-] as const
+diff --git a/src/features/preview/components/color-scope-overlays.tsx b/src/features/preview/components/color-scope-overlays.tsx
+index 828905e1f4..5809700527 100644
+--- a/src/features/preview/components/color-scope-overlays.tsx
++++ b/src/features/preview/components/color-scope-overlays.tsx
+@@ -1,6 +1,14 @@
+ import type { ReactNode, RefObject } from 'react'
+ import { cn } from '@/shared/ui/cn'
+-import { SCOPE_LUMA_GUIDES, VECTOR_SCOPE_TARGETS } from './color-scope-overlay-data'
++import {
++  VECTORSCOPE_SCALE,
++  VECTORSCOPE_SKIN_LINE,
++  scopeBarLevel,
++  scopeCoefficients,
++  scopeGuides,
++  vectorscopeTargets,
++  type ScopeSignal,
++} from '../utils/scope-math'
+ 
+ type ScopeOverlayKind = 'waveform' | 'parade' | 'histogram' | 'vectorscope'
+ 
+@@ -9,6 +17,8 @@ interface ScopeCanvasFrameProps {
+   className?: string
+   containerRef: RefObject<HTMLDivElement | null>
+   kind: ScopeOverlayKind
++  /** What the scope measured: its graticule (IRE or cd/m²) and vectorscope targets follow it. */
++  signal?: ScopeSignal
+ }
+ 
+ export function ScopeCanvasFrame({
+@@ -16,6 +26,7 @@ export function ScopeCanvasFrame({
+   className,
+   containerRef,
+   kind,
++  signal = 'rec709-display',
+ }: ScopeCanvasFrameProps) {
+   return (
+     <div
+@@ -26,38 +37,65 @@ export function ScopeCanvasFrame({
+       )}
+     >
+       {children}
+-      <ScopeOverlay kind={kind} />
++      <ScopeOverlay kind={kind} signal={signal} />
+     </div>
+   )
+ }
+ 
+-function ScopeOverlay({ kind }: { kind: ScopeOverlayKind }) {
+-  if (kind === 'vectorscope') return <VectorScopeOverlay />
+-  return <LumaScopeOverlay parade={kind === 'parade'} histogram={kind === 'histogram'} />
++function ScopeOverlay({ kind, signal }: { kind: ScopeOverlayKind; signal: ScopeSignal }) {
++  if (kind === 'vectorscope') return <VectorScopeOverlay signal={signal} />
++  return (
++    <LumaScopeOverlay
++      parade={kind === 'parade'}
++      histogram={kind === 'histogram'}
++      signal={signal}
++    />
++  )
+ }
+ 
+-function LumaScopeOverlay({ parade, histogram }: { parade: boolean; histogram: boolean }) {
++function LumaScopeOverlay({
++  parade,
++  histogram,
++  signal,
++}: {
++  parade: boolean
++  histogram: boolean
++  signal: ScopeSignal
++}) {
++  const hdr = signal === 'pq-bt2020'
+   return (
+     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+-      {SCOPE_LUMA_GUIDES.map((level) => {
+-        const top = `${100 - level}%`
+-        return (
++      {/* An HDR histogram runs its PQ levels left to right, so its cd/m² marks go along it. */}
++      {scopeGuides(signal).map((guide) =>
++        histogram && hdr ? (
+           <div
+-            key={level}
++            key={guide.label}
++            data-scope-guide={guide.label}
++            className="absolute top-0 bottom-0 border-l border-slate-400/18"
++            style={{ left: `${guide.position}%` }}
++          >
++            <span className="absolute top-1 left-1 rounded-sm bg-black/45 px-1 font-mono text-[9px] leading-4 text-slate-300/80">
++              {guide.label}
++            </span>
++          </div>
++        ) : (
++          <div
++            key={guide.label}
++            data-scope-guide={guide.label}
+             className="absolute left-0 right-0 border-t border-slate-400/18"
+-            style={{ top }}
++            style={{ top: `${100 - guide.position}%` }}
+           >
+             <span className="absolute left-1 -translate-y-1/2 rounded-sm bg-black/45 px-1 font-mono text-[9px] leading-4 text-slate-300/80">
+-              {level}
++              {guide.label}
+             </span>
+           </div>
+-        )
+-      })}
++        ),
++      )}
+       {histogram ? (
+         <>
+           <div className="absolute bottom-1 left-1 font-mono text-[9px] text-slate-400/80">0</div>
+           <div className="absolute bottom-1 right-1 font-mono text-[9px] text-slate-400/80">
+-            255
++            {hdr ? '10k nits' : '255'}
+           </div>
+         </>
+       ) : null}
+@@ -96,7 +134,8 @@ function ParadeOverlay() {
+   )
+ }
+ 
+-function VectorScopeOverlay() {
++function VectorScopeOverlay({ signal }: { signal: ScopeSignal }) {
++  const full = 100 * VECTORSCOPE_SCALE
+   return (
+     <svg
+       aria-hidden="true"
+@@ -104,14 +143,23 @@ function VectorScopeOverlay() {
+       preserveAspectRatio="xMidYMid meet"
+       viewBox="0 0 100 100"
+     >
+-      <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(148,163,184,0.24)" />
+-      <circle cx="50" cy="50" r="30" fill="none" stroke="rgba(148,163,184,0.18)" />
+-      <circle cx="50" cy="50" r="15" fill="none" stroke="rgba(148,163,184,0.12)" />
+-      <path d="M50 5 V95 M5 50 H95" stroke="rgba(148,163,184,0.2)" strokeWidth="0.8" />
+-      <path d="M50 50 L36 15" stroke="rgba(251,191,36,0.72)" strokeWidth="1.2" />
++      {/* The same 100%, 75% and 25% rings the scope's own graticule draws. */}
++      <circle cx="50" cy="50" r={full} fill="none" stroke="rgba(148,163,184,0.24)" />
++      <circle cx="50" cy="50" r={full * 0.75} fill="none" stroke="rgba(148,163,184,0.18)" />
++      <circle cx="50" cy="50" r={full * 0.25} fill="none" stroke="rgba(148,163,184,0.12)" />
++      <path
++        d={`M50 ${50 - full} V${50 + full} M${50 - full} 50 H${50 + full}`}
++        stroke="rgba(148,163,184,0.2)"
++        strokeWidth="0.8"
++      />
++      <path
++        d={`M50 50 L${VECTORSCOPE_SKIN_LINE.x} ${VECTORSCOPE_SKIN_LINE.y}`}
++        stroke="rgba(251,191,36,0.72)"
++        strokeWidth="1.2"
++      />
+       <text
+-        x="33"
+-        y="13"
++        x={VECTORSCOPE_SKIN_LINE.x - 1}
++        y={VECTORSCOPE_SKIN_LINE.y - 1.5}
+         fill="rgba(251,191,36,0.9)"
+         fontSize="4"
+         fontFamily="monospace"
+@@ -119,7 +167,7 @@ function VectorScopeOverlay() {
+       >
+         skin
+       </text>
+-      {VECTOR_SCOPE_TARGETS.map((target) => (
++      {vectorscopeTargets(scopeCoefficients(signal), scopeBarLevel(signal)).map((target) => (
+         <g key={target.label}>
+           <rect
+             x={target.x - 3}
+diff --git a/src/features/preview/components/color-scopes-view.tsx b/src/features/preview/components/color-scopes-view.tsx
+index 730b510871..cc58a85d1b 100644
+--- a/src/features/preview/components/color-scopes-view.tsx
++++ b/src/features/preview/components/color-scopes-view.tsx
+@@ -16,7 +16,25 @@ import {
+   SelectValue,
+ } from '@/components/ui/select'
+ import { ScopeRenderer } from '@/infrastructure/gpu-scopes'
++import { useMediaLibraryStore } from '@/features/preview/deps/media-library'
+ import { ScopeCanvasFrame } from './color-scope-overlays'
++import {
++  SCOPE_SIGNAL_LABELS,
++  VECTORSCOPE_SCALE,
++  hdrDisplaySignal,
++  scopeBarLevel,
++  histogramBins,
++  isPlaybackJump,
++  paradeDensity,
++  scopeCoefficients,
++  scopeGuides,
++  signalToScopePixels,
++  vectorscopeDensity,
++  waveformDensity,
++  type Density,
++  type ScopePixels,
++  type ScopeSignal,
++} from '../utils/scope-math'
+ import { canRetainSnapshotForTransformChanges } from '../hooks/use-transform-stable-items-snapshot'
+ 
+ const SAMPLE_WIDTH_PAUSED = 384
+@@ -39,14 +57,9 @@ interface GpuCanvasContextCacheEntry {
+   height: number
+ }
+ 
+-type ScopeColorMatrix = 'bt709' | 'bt601'
+-type ScopeRangeMode = 'full' | 'legal'
+-
+-// Browser compositing is effectively sRGB/Rec.709 full-range, so the scopes
+-// use fixed coefficients — like DaVinci, no matrix/range toggles in the
+-// toolbar (Resolve keeps such options behind its scope settings menu).
+-const SCOPE_COLOR_MATRIX: ScopeColorMatrix = 'bt709'
+-const SCOPE_RANGE_MODE: ScopeRangeMode = 'full'
++// Scopes read full-range values with the coefficients of what they measured (FL-98): BT.709 for
++// the display preview, BT.2020 for an HDR project's PQ signal. Like DaVinci, no matrix/range
++// toggles in the toolbar.
+ type ScopeViewMode = 'rgb' | 'r' | 'g' | 'b' | 'luma'
+ // DaVinci-style scope picker: one scope at a time. Only the visible scope
+ // mounts and renders.
+@@ -61,13 +74,97 @@ const STACK_SCOPE_VIEWS: ReadonlyArray<{ value: StackScopeView; label: string }>
+ 
+ const VIEW_MODE_NUM: Record<ScopeViewMode, number> = { rgb: 0, r: 1, g: 2, b: 3, luma: 4 }
+ 
+-interface MatrixCoefficients {
+-  kr: number
+-  kb: number
++/**
++ * Frameleaf (FL-98): the preview's colour management, as its renderer resolves it (FL-97). The
++ * preview registers it; a preview that has not is SDR.
++ */
++function previewScopeColor() {
++  return (
++    usePreviewBridgeStore.getState().scopeColor?.() ?? {
++      workingRange: 'sdr' as const,
++      sdrMonitoring: 'bt2390' as const,
++    }
++  )
++}
++
++/** What decides a paused HDR scope sample: the frame, the graph and the colour inputs. */
++function hdrSampleKey(frame: number): readonly unknown[] {
++  const inputs = getScopeInputs()
++  const bridge = usePreviewBridgeStore.getState()
++  return [
++    frame,
++    usePlaybackStore.getState().frameUpdateEpoch,
++    ...inputs.source,
++    inputs.items,
++    ...inputs.graph,
++    inputs.compositions,
++    bridge.captureFrameSignal,
++    bridge.scopeColor,
++    useMediaLibraryStore.getState().mediaById,
++  ]
+ }
+ 
+-function getMatrixCoefficients(matrix: ScopeColorMatrix): MatrixCoefficients {
+-  return matrix === 'bt601' ? { kr: 0.299, kb: 0.114 } : { kr: 0.2126, kb: 0.0722 }
++const sameKey = (left: readonly unknown[] | null, right: readonly unknown[]) =>
++  left !== null && left.length === right.length && left.every((value, index) => value === right[index])
++
++/** The frame a scope sample is for: the one the preview shows. */
++function requestedScopeFrame(): number {
++  const playback = usePlaybackStore.getState()
++  return getResolvedPlaybackFrame({
++    currentFrame: playback.currentFrame,
++    currentFrameEpoch: playback.currentFrameEpoch,
++    previewFrame: playback.previewFrame,
++    previewFrameEpoch: playback.previewFrameEpoch,
++    isPlaying: playback.isPlaying,
++    displayedFrame: usePreviewBridgeStore.getState().displayedFrame,
++  })
++}
++
++type HdrSample = { pixels: ScopePixels & { data: Uint8ClampedArray<ArrayBuffer> }; frame: number }
++
++/**
++ * An HDR project's paused frame as PQ scope pixels, or null when it cannot be read in float. A
++ * float render is costly, so an unchanged frame reuses its last sample.
++ */
++type HdrSampleCache = {
++  key: readonly unknown[]
++  sample: Promise<HdrSample | null>
++  /** When a failed capture may be tried again. */
++  retryAt: number
++}
++
++/** A failed capture is tried again after this long, so a one-off failure does not stick. */
++const HDR_SAMPLE_RETRY_MS = 2000
++
++async function captureHdrSample(
++  cache: { current: HdrSampleCache | null },
++  width: number,
++  height: number,
++): Promise<HdrSample | null> {
++  const capture = usePreviewBridgeStore.getState().captureFrameSignal
++  if (!capture) return null
++  const key = hdrSampleKey(requestedScopeFrame())
++  const cached = cache.current
++  // A capture in flight, or done, for the same inputs is shared: a slow first capture is not
++  // started again by the next tick.
++  if (cached && sameKey(cached.key, key) && performance.now() < cached.retryAt) return cached.sample
++  const entry: HdrSampleCache = { key, sample: Promise.resolve(null), retryAt: Number.POSITIVE_INFINITY }
++  entry.sample = capture('pq', { preferRenderedFrame: true }).then((signal) => {
++    if (!signal) {
++      entry.retryAt = performance.now() + HDR_SAMPLE_RETRY_MS
++      return null
++    }
++    return { pixels: signalToScopePixels(signal, width, height), frame: signal.frame }
++  })
++  cache.current = entry
++  return entry.sample
++}
++
++/** Scope pixels as the GPU upload takes them. */
++function toImageData(pixels: ScopePixels & { data: Uint8ClampedArray<ArrayBuffer> }): ImageData {
++  return typeof ImageData === 'function'
++    ? new ImageData(pixels.data, pixels.width, pixels.height)
++    : (pixels as unknown as ImageData)
+ }
+ 
+ function loadStackView(): StackScopeView {
+@@ -103,141 +200,107 @@ function isScopeSourceCurrent(inputs: ReturnType<typeof getScopeInputs>): boolea
+ 
+ // ── CPU fallback drawing functions ──────────────────────────────────────────
+ 
+-function normalizeRange(value: number, rangeMode: ScopeRangeMode): number {
+-  if (rangeMode === 'legal') {
+-    const legalMin = 16 / 255
+-    const legalMax = 235 / 255
+-    return Math.max(0, Math.min(1, (value - legalMin) / (legalMax - legalMin)))
+-  }
+-  return Math.max(0, Math.min(1, value))
+-}
+-
+-function drawIreGrid(ctx: CanvasRenderingContext2D, width: number, height: number): void {
++/**
++ * The graticule for `signal`: across the height for the waveform and parade, and along the
++ * width for a histogram of an HDR signal, whose levels run left to right (`across`).
++ */
++function drawGuides(
++  ctx: CanvasRenderingContext2D,
++  width: number,
++  height: number,
++  signal: ScopeSignal,
++  across = false,
++): void {
+   ctx.save()
+   ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)'
+   ctx.lineWidth = 1
+   ctx.fillStyle = 'rgba(148, 163, 184, 0.8)'
+   ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
+-  for (const level of [0, 25, 50, 75, 100]) {
+-    const y = Math.round(height - 1 - (level / 100) * (height - 1))
++  for (const guide of scopeGuides(signal)) {
+     ctx.beginPath()
+-    ctx.moveTo(0, y + 0.5)
+-    ctx.lineTo(width, y + 0.5)
+-    ctx.stroke()
+-    ctx.fillText(String(level), 4, Math.max(10, y - 2))
+-  }
+-  ctx.restore()
+-}
+-
+-function forEachScopePixel(
+-  imageData: ImageData,
+-  callback: (x: number, y: number, r: number, g: number, b: number) => void,
+-): void {
+-  const { data, width, height } = imageData
+-  for (let y = 0; y < height; y++) {
+-    for (let x = 0; x < width; x++) {
+-      const idx = (y * width + x) * 4
+-      callback(x, y, (data[idx] ?? 0) / 255, (data[idx + 1] ?? 0) / 255, (data[idx + 2] ?? 0) / 255)
++    if (across) {
++      const x = Math.round((guide.position / 100) * (width - 1))
++      ctx.moveTo(x + 0.5, 0)
++      ctx.lineTo(x + 0.5, height)
++      ctx.stroke()
++      ctx.fillText(guide.label, Math.min(width - 30, x + 2), 10)
++    } else {
++      const y = Math.round(height - 1 - (guide.position / 100) * (height - 1))
++      ctx.moveTo(0, y + 0.5)
++      ctx.lineTo(width, y + 0.5)
++      ctx.stroke()
++      ctx.fillText(guide.label, 4, Math.max(10, y - 2))
+     }
+   }
++  ctx.restore()
+ }
+ 
+-function cpuDrawWaveform(
+-  imageData: ImageData,
++/** Paints a density map, log-scaled, in `color(d)` for its non-empty cells. */
++function paintDensity(
+   ctx: CanvasRenderingContext2D,
+-  matrix: ScopeColorMatrix,
+-  rangeMode: ScopeRangeMode,
++  density: Density,
+   w: number,
+   h: number,
++  color: (d: number, index: number) => [number, number, number, number],
+ ): void {
+-  const { kr, kb } = getMatrixCoefficients(matrix)
+-  const kg = 1 - kr - kb
+-  const { width } = imageData
+-  const density = new Uint16Array(w * h)
+-  let maxD = 0
+-  forEachScopePixel(imageData, (x, _y, r, g, b) => {
+-    const luma = normalizeRange(kr * r + kg * g + kb * b, rangeMode)
+-    const px = Math.floor((x / Math.max(1, width - 1)) * (w - 1))
+-    const py = h - 1 - Math.floor(luma * (h - 1))
+-    const di = py * w + px
+-    const next = (density[di] ?? 0) + 1
+-    density[di] = next
+-    if (next > maxD) maxD = next
+-  })
+   const image = ctx.createImageData(w, h)
+   const out = image.data
+-  const logDiv = Math.log1p(Math.max(1, maxD))
+-  for (let i = 0; i < density.length; i++) {
+-    const bucket = density[i] ?? 0
++  const logDiv = Math.log1p(Math.max(1, density.max))
++  for (let i = 0; i < density.counts.length; i++) {
++    const bucket = density.counts[i] ?? 0
+     if (bucket <= 0) continue
+     const d = Math.log1p(bucket) / logDiv
+     if (d <= 0) continue
+-    const oi = i * 4
+-    out[oi] = 40
+-    out[oi + 1] = Math.min(255, Math.round(65 + d * 190))
+-    out[oi + 2] = 120
+-    out[oi + 3] = Math.min(255, Math.round(95 + d * 160))
++    out.set(color(d, i), i * 4)
+   }
++  ctx.putImageData(image, 0, 0)
++}
++
++function cpuDrawWaveform(
++  pixels: ScopePixels,
++  ctx: CanvasRenderingContext2D,
++  signal: ScopeSignal,
++  w: number,
++  h: number,
++): void {
++  const density = waveformDensity(pixels, scopeCoefficients(signal), w, h)
+   ctx.fillStyle = '#030712'
+   ctx.fillRect(0, 0, w, h)
+-  ctx.putImageData(image, 0, 0)
+-  drawIreGrid(ctx, w, h)
++  paintDensity(ctx, density, w, h, (d) => [
++    40,
++    Math.min(255, Math.round(65 + d * 190)),
++    120,
++    Math.min(255, Math.round(95 + d * 160)),
++  ])
++  drawGuides(ctx, w, h, signal)
+ }
+ 
+ function cpuDrawParade(
+-  imageData: ImageData,
++  pixels: ScopePixels,
+   ctx: CanvasRenderingContext2D,
+-  rangeMode: ScopeRangeMode,
++  signal: ScopeSignal,
+   w: number,
+   h: number,
+ ): void {
+-  const { data, width, height } = imageData
+-  const density = new Uint16Array(w * h)
+-  let maxD = 0
++  const density = paradeDensity(pixels, w, h)
+   const sW = Math.floor(w / 3)
+   const colors: Array<[number, number, number]> = [
+     [255, 80, 80],
+     [60, 255, 120],
+     [90, 130, 255],
+   ]
+-  for (let y = 0; y < height; y++) {
+-    for (let x = 0; x < width; x++) {
+-      const idx = (y * width + x) * 4
+-      const ch = [(data[idx] ?? 0) / 255, (data[idx + 1] ?? 0) / 255, (data[idx + 2] ?? 0) / 255]
+-      const lx = Math.floor((x / Math.max(1, width - 1)) * (sW - 1))
+-      for (let c = 0; c < 3; c++) {
+-        const v = normalizeRange(ch[c] ?? 0, rangeMode)
+-        const px = c * sW + lx
+-        const py = h - 1 - Math.floor(v * (h - 1))
+-        const di = py * w + px
+-        const next = (density[di] ?? 0) + 1
+-        density[di] = next
+-        if (next > maxD) maxD = next
+-      }
+-    }
+-  }
+-  const image = ctx.createImageData(w, h)
+-  const out = image.data
+-  const logDiv = Math.log1p(Math.max(1, maxD))
+-  for (let y = 0; y < h; y++) {
+-    for (let x = 0; x < w; x++) {
+-      const i = y * w + x
+-      const bucket = density[i] ?? 0
+-      if (bucket <= 0) continue
+-      const d = Math.log1p(bucket) / logDiv
+-      const channel = Math.min(2, Math.floor(x / Math.max(1, sW)))
+-      const color = colors[channel] ?? [180, 180, 180]
+-      const oi = i * 4
+-      out[oi] = Math.min(255, Math.round((color[0] ?? 180) * (0.25 + 0.75 * d)))
+-      out[oi + 1] = Math.min(255, Math.round((color[1] ?? 180) * (0.25 + 0.75 * d)))
+-      out[oi + 2] = Math.min(255, Math.round((color[2] ?? 180) * (0.25 + 0.75 * d)))
+-      out[oi + 3] = Math.min(255, Math.round(85 + d * 160))
+-    }
+-  }
+   ctx.fillStyle = '#030712'
+   ctx.fillRect(0, 0, w, h)
+-  ctx.putImageData(image, 0, 0)
+-  drawIreGrid(ctx, w, h)
++  paintDensity(ctx, density, w, h, (d, i) => {
++    const color = colors[Math.min(2, Math.floor((i % w) / Math.max(1, sW)))] ?? [180, 180, 180]
++    return [
++      Math.min(255, Math.round(color[0] * (0.25 + 0.75 * d))),
++      Math.min(255, Math.round(color[1] * (0.25 + 0.75 * d))),
++      Math.min(255, Math.round(color[2] * (0.25 + 0.75 * d))),
++      Math.min(255, Math.round(85 + d * 160)),
++    ]
++  })
++  drawGuides(ctx, w, h, signal)
+   ctx.save()
+   ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)'
+   ctx.lineWidth = 1
+@@ -257,30 +320,19 @@ function cpuDrawParade(
+ }
+ 
+ function cpuDrawHistogram(
+-  imageData: ImageData,
++  pixels: ScopePixels,
+   ctx: CanvasRenderingContext2D,
+-  matrix: ScopeColorMatrix,
+-  rangeMode: ScopeRangeMode,
++  signal: ScopeSignal,
+   w: number,
+   h: number,
+ ): void {
+-  const { kr, kb } = getMatrixCoefficients(matrix)
+-  const kg = 1 - kr - kb
+-  const bins = new Uint32Array(256)
+-  let maxBin = 0
+-  forEachScopePixel(imageData, (_x, _y, r, g, b) => {
+-    const luma = normalizeRange(kr * r + kg * g + kb * b, rangeMode)
+-    const bin = Math.max(0, Math.min(255, Math.round(luma * 255)))
+-    const next = (bins[bin] ?? 0) + 1
+-    bins[bin] = next
+-    if (next > maxBin) maxBin = next
+-  })
++  const bins = histogramBins(pixels, scopeCoefficients(signal))
+   ctx.fillStyle = '#030712'
+   ctx.fillRect(0, 0, w, h)
+-  drawIreGrid(ctx, w, h)
+-  const logDiv = Math.log1p(Math.max(1, maxBin))
++  drawGuides(ctx, w, h, signal, signal === 'pq-bt2020')
++  const logDiv = Math.log1p(Math.max(1, bins.max))
+   for (let i = 0; i < 256; i++) {
+-    const bucket = bins[i] ?? 0
++    const bucket = bins.counts[i] ?? 0
+     if (bucket <= 0) continue
+     const strength = Math.log1p(bucket) / logDiv
+     const x = Math.round((i / 255) * (w - 1))
+@@ -291,59 +343,36 @@ function cpuDrawHistogram(
+ }
+ 
+ function cpuDrawVectorscope(
+-  imageData: ImageData,
++  pixels: ScopePixels,
+   ctx: CanvasRenderingContext2D,
+-  matrix: ScopeColorMatrix,
++  signal: ScopeSignal,
+   size: number,
+ ): void {
+-  const { kr, kb } = getMatrixCoefficients(matrix)
+-  const kg = 1 - kr - kb
+-  const density = new Uint32Array(size * size)
+-  let maxD = 0
+-  const center = Math.floor(size / 2)
+-  const radius = center - 2
+-  forEachScopePixel(imageData, (_x, _y, r, g, b) => {
+-    const yP = kr * r + kg * g + kb * b
+-    const cb = (b - yP) / (2 * (1 - kb))
+-    const cr = (r - yP) / (2 * (1 - kr))
+-    const px = Math.round(center + cb * radius * 2)
+-    const py = Math.round(center - cr * radius * 2)
+-    if (px < 0 || px >= size || py < 0 || py >= size) return
+-    const di = py * size + px
+-    const next = (density[di] ?? 0) + 1
+-    density[di] = next
+-    if (next > maxD) maxD = next
+-  })
++  const density = vectorscopeDensity(pixels, scopeCoefficients(signal), size)
++  const center = size / 2
++  // The same rings the overlay and the GPU graticule draw (VECTORSCOPE_SCALE).
++  const radius = size * VECTORSCOPE_SCALE
+   ctx.fillStyle = '#030712'
+   ctx.fillRect(0, 0, size, size)
+-  const image = ctx.createImageData(size, size)
+-  const out = image.data
+-  const logDiv = Math.log1p(Math.max(1, maxD))
+-  for (let i = 0; i < density.length; i++) {
+-    const bucket = density[i] ?? 0
+-    if (bucket <= 0) continue
+-    const d = Math.log1p(bucket) / logDiv
+-    if (d <= 0) continue
+-    const oi = i * 4
+-    out[oi] = 70
+-    out[oi + 1] = Math.min(255, Math.round(70 + d * 185))
+-    out[oi + 2] = 255
+-    out[oi + 3] = Math.min(255, Math.round(90 + d * 165))
+-  }
+-  ctx.putImageData(image, 0, 0)
++  paintDensity(ctx, density, size, size, (d) => [
++    70,
++    Math.min(255, Math.round(70 + d * 185)),
++    255,
++    Math.min(255, Math.round(90 + d * 165)),
++  ])
+   ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)'
+   ctx.lineWidth = 1
+   ctx.beginPath()
+   ctx.arc(center, center, radius, 0, Math.PI * 2)
+   ctx.stroke()
+   ctx.beginPath()
+-  ctx.arc(center, center, Math.floor(radius * 0.66), 0, Math.PI * 2)
++  ctx.arc(center, center, radius * 0.75, 0, Math.PI * 2)
+   ctx.stroke()
+   ctx.beginPath()
+-  ctx.moveTo(center, 0)
+-  ctx.lineTo(center, size)
+-  ctx.moveTo(0, center)
+-  ctx.lineTo(size, center)
++  ctx.moveTo(center, center - radius)
++  ctx.lineTo(center, center + radius)
++  ctx.moveTo(center - radius, center)
++  ctx.lineTo(center + radius, center)
+   ctx.stroke()
+ }
+ 
+@@ -482,6 +511,30 @@ export const ColorScopesView = memo(function ColorScopesView({
+   const [waveformMode, setWaveformMode] = useState<ScopeViewMode>('luma')
+   const [histogramMode, setHistogramMode] = useState<ScopeViewMode>('rgb')
+   const [stackView, setStackView] = useState<StackScopeView>(() => loadStackView())
++  // What the scopes last measured, and at which paused frame (FL-98): the header names it.
++  // While playing the frame is not named, so the header does not re-render every sample.
++  // `fallback`: an HDR project's float composite could not be read, so the display was.
++  const [measured, setMeasured] = useState<{
++    signal: ScopeSignal
++    frame: number | null
++    fallback: boolean
++  }>({ signal: 'rec709-display', frame: null, fallback: false })
++  const measuredRef = useRef(measured)
++  const reportMeasured = useCallback(
++    (signal: ScopeSignal, frame: number | null, fallback = false) => {
++      const current = measuredRef.current
++      if (current.signal === signal && current.frame === frame && current.fallback === fallback) {
++        return
++      }
++      measuredRef.current = { signal, frame, fallback }
++      setMeasured(measuredRef.current)
++    },
++    [],
++  )
++  const hdrSampleRef = useRef<HdrSampleCache | null>(null)
++  // Counts jumps in playback (seeks, loops) while playing, so a sample captured before one is
++  // dropped: the paused frame epoch alone cannot tell a seek from playback advancing.
++  const jumpEpochRef = useRef(0)
+ 
+   const isPlaying = usePlaybackStore((s) => s.isPlaying)
+   const captureFrameImageData = usePreviewBridgeStore((s) => s.captureFrameImageData)
+@@ -533,6 +586,23 @@ export const ColorScopesView = memo(function ColorScopesView({
+     return () => { stopTimeline(); stopNavigation(); stopBridge() }
+   }, [])
+ 
++  useEffect(() => {
++    let last: { frame: number; atMs: number } | null = null
++    return usePlaybackStore.subscribe((state) => {
++      if (!state.isPlaying) {
++        last = null
++        return
++      }
++      if (last?.frame === state.currentFrame) return
++      // Timed from the last frame change, so a stall followed by a catch-up reads as an advance.
++      const next = { frame: state.currentFrame, atMs: performance.now() }
++      if (last && isPlaybackJump(last, next, useTimelineStore.getState().fps || 30, state.playbackRate)) {
++        jumpEpochRef.current += 1
++      }
++      last = next
++    })
++  }, [])
++
+   // Refs for values read inside RAF loop (avoid restarting loop on every change)
+   const isPlayingRef = useRef(isPlaying)
+   isPlayingRef.current = isPlaying
+@@ -657,6 +727,8 @@ export const ColorScopesView = memo(function ColorScopesView({
+       const generation = ++renderGeneration
+       const captureInputs = getScopeInputs()
+       const capturePlayback = usePlaybackStore.getState()
++      const captureJumpEpoch = jumpEpochRef.current
++      const captureAtFrame = requestedScopeFrame()
+       gpuRenderInFlightRef.current = true
+       // Stamp the in-flight start only once the flag is actually set, so the
+       // watchdog measures from when this render truly began (not from a tick
+@@ -665,20 +737,39 @@ export const ColorScopesView = memo(function ColorScopesView({
+       // A render is stale once cancelled or superseded by a newer one (e.g. the
+       // watchdog force-cleared this slow render and started another). Stale
+       // renders must not touch the GPU — that's the overlapping-upload hazard.
+-      // ponytail: frame epochs guard paused seeks; live seeks need a separate seek epoch.
++      // Paused seeks move the frame epoch; seeks and loops while playing move the jump epoch.
+       const isStale = () =>
+         cancelled || renderGeneration !== generation || !isScopeSourceCurrent(captureInputs) ||
+         usePlaybackStore.getState().isPlaying !== capturePlayback.isPlaying ||
++        jumpEpochRef.current !== captureJumpEpoch ||
+         (!capturePlayback.isPlaying &&
+           usePlaybackStore.getState().frameUpdateEpoch !== capturePlayback.frameUpdateEpoch)
+-      const { kr, kb } = getMatrixCoefficients(SCOPE_COLOR_MATRIX)
+-      renderer.setMatrix(kr, kb)
+       renderer.setRange(0, 1)
+ 
+       try {
++        const color = previewScopeColor()
++        const hdr = color.workingRange === 'hdr'
++        let signal: ScopeSignal = hdr ? hdrDisplaySignal(color.sdrMonitoring) : 'rec709-display'
++        let measuredFrame = captureAtFrame
++        const measureFloat = hdr && !capturePlayback.isPlaying
++        const hdrSample = measureFloat
++          ? await captureHdrSample(hdrSampleRef, SAMPLE_WIDTH_PAUSED, SAMPLE_HEIGHT_PAUSED)
++          : null
++        if (isStale()) return
++        const measuredSignal: ScopeSignal = hdrSample ? 'pq-bt2020' : signal
++        const coefficients = scopeCoefficients(measuredSignal)
++        renderer.setMatrix(coefficients.kr, coefficients.kb)
++        renderer.setGraticule(
++          measuredSignal === 'pq-bt2020' ? 'overlay' : 'ire',
++          scopeBarLevel(measuredSignal),
++        )
+         // Try near-zero-copy canvas path first
+         const canvasSourceFn = usePreviewBridgeStore.getState().captureCanvasSource
+-        if (canvasSourceFn) {
++        if (hdrSample) {
++          renderer.uploadFrame(toImageData(hdrSample.pixels))
++          signal = 'pq-bt2020'
++          measuredFrame = hdrSample.frame
++        } else if (canvasSourceFn) {
+           const source = await canvasSourceFn({
+             fresh: isPlayingRef.current,
+             preferRenderedFrame: true,
+@@ -718,6 +809,11 @@ export const ColorScopesView = memo(function ColorScopesView({
+         const vsCtx = getGpuCtx(vectorscopeCanvasRef.current)
+         if (vsCtx) renderer.renderVectorscope(vsCtx)
+ 
++        reportMeasured(
++          signal,
++          capturePlayback.isPlaying ? null : measuredFrame,
++          measureFloat && !hdrSample,
++        )
+         setStatus('live')
+       } catch {
+         if (!isStale()) setStatus('error')
+@@ -748,7 +844,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+     return () => {
+       cancelled = true
+     }
+-  }, [gpuReady, open, getGpuCtx])
++  }, [gpuReady, open, getGpuCtx, reportMeasured])
+ 
+   // ── CPU fallback render ─────────────────────────────────────────────────
+ 
+@@ -773,6 +869,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+       }
+       const requestedFrame = getRequestedFrame()
+       const capturePlayback = usePlaybackStore.getState()
++      const captureJumpEpoch = jumpEpochRef.current
+ 
+       // Hidden scopes have no mounted canvas — draw whichever are present.
+       const wfCanvas = waveformCanvasRef.current
+@@ -806,9 +903,21 @@ export const ColorScopesView = memo(function ColorScopesView({
+       try {
+         const sampleW = isPlaying ? SAMPLE_WIDTH_PLAYING : SAMPLE_WIDTH_PAUSED
+         const sampleH = isPlaying ? SAMPLE_HEIGHT_PLAYING : SAMPLE_HEIGHT_PAUSED
+-        let imageData: ImageData | null = null
++        let imageData: ScopePixels | null = null
++        const color = previewScopeColor()
++        const hdr = color.workingRange === 'hdr'
++        let signal: ScopeSignal = hdr ? hdrDisplaySignal(color.sdrMonitoring) : 'rec709-display'
++        let measuredFrame: number | null = requestedFrame
++
++        const measureFloat = hdr && !isPlaying
++        const hdrSample = measureFloat ? await captureHdrSample(hdrSampleRef, sampleW, sampleH) : null
++        if (hdrSample) {
++          imageData = hdrSample.pixels
++          signal = 'pq-bt2020'
++          measuredFrame = hdrSample.frame
++        }
+ 
+-        if (captureFrameImageData) {
++        if (!imageData && captureFrameImageData) {
+           imageData = await captureFrameImageData({
+             width: sampleW,
+             height: sampleH,
+@@ -854,6 +963,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+         if (!isScopeSourceCurrent(captureInputs)) return
+         if (
+           usePlaybackStore.getState().isPlaying !== capturePlayback.isPlaying ||
++          jumpEpochRef.current !== captureJumpEpoch ||
+           (!capturePlayback.isPlaying &&
+             usePlaybackStore.getState().frameUpdateEpoch !== capturePlayback.frameUpdateEpoch) ||
+           getRequestedFrame() !== requestedFrame
+@@ -863,33 +973,20 @@ export const ColorScopesView = memo(function ColorScopesView({
+         }
+ 
+         if (wfCtx && wfSize) {
+-          cpuDrawWaveform(
+-            imageData,
+-            wfCtx,
+-            SCOPE_COLOR_MATRIX,
+-            SCOPE_RANGE_MODE,
+-            wfSize.width,
+-            wfSize.height,
+-          )
++          cpuDrawWaveform(imageData, wfCtx, signal, wfSize.width, wfSize.height)
+         }
+         const drawHeavy = !isPlaying || liveTickRef.current % 2 === 0
+         liveTickRef.current += 1
+         if (parCtx && parSize && drawHeavy) {
+-          cpuDrawParade(imageData, parCtx, SCOPE_RANGE_MODE, parSize.width, parSize.height)
++          cpuDrawParade(imageData, parCtx, signal, parSize.width, parSize.height)
+         }
+         if (vsCtx && vsSize > 0) {
+-          cpuDrawVectorscope(imageData, vsCtx, SCOPE_COLOR_MATRIX, vsSize)
++          cpuDrawVectorscope(imageData, vsCtx, signal, vsSize)
+         }
+         if (histCtx && histSize && drawHeavy) {
+-          cpuDrawHistogram(
+-            imageData,
+-            histCtx,
+-            SCOPE_COLOR_MATRIX,
+-            SCOPE_RANGE_MODE,
+-            histSize.width,
+-            histSize.height,
+-          )
++          cpuDrawHistogram(imageData, histCtx, signal, histSize.width, histSize.height)
+         }
++        reportMeasured(signal, isPlaying ? null : measuredFrame, measureFloat && !hdrSample)
+         setStatus('live')
+       } catch {
+         const playback = usePlaybackStore.getState()
+@@ -899,7 +996,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+         }
+       }
+     },
+-    [captureFrameImageData, captureFrame, open, gpuReady, isPlaying],
++    [captureFrameImageData, captureFrame, open, gpuReady, isPlaying, reportMeasured],
+   )
+ 
+   const runSerializedCpuDraw = useCallback(async () => {
+@@ -996,6 +1093,10 @@ export const ColorScopesView = memo(function ColorScopesView({
+     const unsubscribeGraph = useTimelineStore.subscribe(scheduleIfGraphChanged)
+     const unsubscribeCompositions = useCompositionsStore.subscribe(scheduleIfGraphChanged)
+     const unsubscribeNavigation = useCompositionNavigationStore.subscribe(scheduleIfGraphChanged)
++    // A probe that finds a source's transfer can make the project HDR (FL-97).
++    const unsubscribeMedia = useMediaLibraryStore.subscribe((state, previous) => {
++      if (state.mediaById !== previous.mediaById) scheduleDraw()
++    })
+ 
+     const unsubscribePreviewBridge = usePreviewBridgeStore.subscribe(
+       (bridgeState, previousBridgeState) => {
+@@ -1032,6 +1133,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+       unsubscribeGraph()
+       unsubscribeCompositions()
+       unsubscribeNavigation()
++      unsubscribeMedia()
+       if (rafId !== null) {
+         cancelAnimationFrame(rafId)
+       }
+@@ -1066,7 +1168,14 @@ export const ColorScopesView = memo(function ColorScopesView({
+     >
+       <div className="flex items-center justify-between mb-2">
+         <div className="flex items-center gap-2">
+-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Scopes · sRGB / Rec.709 full-range preview</div>
++          <div
++            className="text-[10px] uppercase tracking-wide text-muted-foreground"
++            data-testid="scope-color-space"
++          >
++            Scopes · {SCOPE_SIGNAL_LABELS[measured.signal]}
++            {measured.fallback ? ' · float capture unavailable' : ''}
++            {measured.frame !== null ? ` · frame ${measured.frame}` : ''}
++          </div>
+           {isEmbeddedStackLayout && (
+             <Select
+               value={stackView}
+@@ -1107,6 +1216,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+                 <ScopeCanvasFrame
+                   containerRef={waveformContainerRef}
+                   kind="waveform"
++                  signal={measured.signal}
+                   className="min-h-0 flex-1"
+                 >
+                   <canvas ref={waveformCanvasRef} className="w-full h-full" />
+@@ -1120,6 +1230,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+                 <ScopeCanvasFrame
+                   containerRef={paradeContainerRef}
+                   kind="parade"
++                  signal={measured.signal}
+                   className="min-h-0 w-full aspect-[10/3]"
+                 >
+                   <canvas ref={paradeCanvasRef} className="w-full h-full" />
+@@ -1133,6 +1244,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+                 <ScopeCanvasFrame
+                   containerRef={vectorscopeContainerRef}
+                   kind="vectorscope"
++                  signal={measured.signal}
+                   className="mx-auto flex min-h-0 min-w-0 w-full max-w-[420px] flex-1 items-center justify-center"
+                 >
+                   <canvas
+@@ -1152,6 +1264,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+                 <ScopeCanvasFrame
+                   containerRef={histogramContainerRef}
+                   kind="histogram"
++                  signal={measured.signal}
+                   className="min-h-0 flex-1"
+                 >
+                   <canvas ref={histogramCanvasRef} className="w-full h-full" />
+@@ -1170,6 +1283,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+                 <ScopeCanvasFrame
+                   containerRef={waveformContainerRef}
+                   kind="waveform"
++                  signal={measured.signal}
+                   className="flex-1 min-h-[160px]"
+                 >
+                   <canvas ref={waveformCanvasRef} className="w-full h-full" />
+@@ -1180,6 +1294,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+                 <ScopeCanvasFrame
+                   containerRef={paradeContainerRef}
+                   kind="parade"
++                  signal={measured.signal}
+                   className="w-full aspect-[10/3]"
+                 >
+                   <canvas ref={paradeCanvasRef} className="w-full h-full" />
+@@ -1193,6 +1308,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+                 <ScopeCanvasFrame
+                   containerRef={histogramContainerRef}
+                   kind="histogram"
++                  signal={measured.signal}
+                   className="flex-1 min-h-[160px]"
+                 >
+                   <canvas ref={histogramCanvasRef} className="w-full h-full" />
+@@ -1204,6 +1320,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+               <ScopeCanvasFrame
+                 containerRef={vectorscopeContainerRef}
+                 kind="vectorscope"
++                signal={measured.signal}
+                 className="flex flex-1 min-h-0 items-center justify-center"
+               >
+                 <canvas
+@@ -1224,6 +1341,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+             <ScopeCanvasFrame
+               containerRef={waveformContainerRef}
+               kind="waveform"
++              signal={measured.signal}
+               className="w-[220px] h-[110px]"
+             >
+               <canvas ref={waveformCanvasRef} className="w-full h-full" />
+@@ -1234,6 +1352,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+             <ScopeCanvasFrame
+               containerRef={vectorscopeContainerRef}
+               kind="vectorscope"
++              signal={measured.signal}
+               className="w-[160px] h-[160px]"
+             >
+               <canvas ref={vectorscopeCanvasRef} className="w-full h-full" />
+diff --git a/src/features/preview/components/color-scopes-view.test.tsx b/src/features/preview/components/color-scopes-view.test.tsx
+index 36b9accedf..fce4e0a91b 100644
+--- a/src/features/preview/components/color-scopes-view.test.tsx
++++ b/src/features/preview/components/color-scopes-view.test.tsx
+@@ -4,6 +4,9 @@ import { usePlaybackStore } from '@/shared/state/playback'
+ import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
+ import { ColorScopesView } from './color-scopes-view'
+ import { useItemsStore, useCompositionsStore } from '@/features/preview/deps/timeline-store'
++import { useMediaLibraryStore } from '@/features/preview/deps/media-library'
++import { pqEncode } from '@/shared/graphics/color/managed-color'
++import { BT2020_COEFFICIENTS, BT709_COEFFICIENTS } from '../utils/scope-math'
+ 
+ const { createRenderer } = vi.hoisted(() => ({ createRenderer: vi.fn() }))
+ vi.mock('@/infrastructure/gpu-scopes', () => ({ ScopeRenderer: { create: createRenderer } }))
+@@ -76,6 +79,7 @@ describe('scope capture seek correspondence', () => {
+         useItemsStore.getState().setItems([{
+           id: 'scope-wrapper', type: 'composition', compositionId: 'scope-nested',
+           trackId: 'video', from: 0, durationInFrames: 60, label: 'Nested image',
++          compositionWidth: 1920, compositionHeight: 1080,
+         }])
+       }
+       const oldCapture = deferred<HTMLCanvasElement | ImageData>()
+@@ -84,7 +88,7 @@ describe('scope capture seek correspondence', () => {
+       const newFrame = path === 'gpu-canvas' ? document.createElement('canvas') : new ImageData(2, 2)
+       const capture = vi.fn().mockReturnValueOnce(oldCapture.promise).mockReturnValue(newCapture.promise)
+       const renderer = {
+-        setMatrix: vi.fn(), setRange: vi.fn(), configureCanvas: vi.fn().mockReturnValue({}),
++        setMatrix: vi.fn(), setRange: vi.fn(), setGraticule: vi.fn(), configureCanvas: vi.fn().mockReturnValue({}),
+         uploadFromCanvas: vi.fn(), uploadFrame: vi.fn(), renderWaveforms: vi.fn(),
+         renderVectorscope: vi.fn(), renderHistogram: vi.fn(), destroy: vi.fn(),
+       }
+@@ -94,14 +98,14 @@ describe('scope capture seek correspondence', () => {
+         beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(),
+         fillText: vi.fn(), arc: vi.fn(),
+       }
+-      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context as unknown as CanvasRenderingContext2D)
++      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context as never)
+       createRenderer.mockResolvedValue(path === 'cpu' ? null : renderer)
+       usePreviewBridgeStore.setState(path === 'gpu-canvas'
+         ? { captureCanvasSource: capture }
+         : { captureFrameImageData: capture })
+ 
+       await act(async () => { render(<ColorScopesView open />) })
+-      expect(screen.getByText('Scopes · sRGB / Rec.709 full-range preview')).toBeInTheDocument()
++      expect(screen.getByTestId('scope-color-space')).toHaveTextContent('Scopes · sRGB / Rec.709 display, full range')
+       await tick(100)
+       expect(capture).toHaveBeenCalledTimes(1)
+       expect(capture).toHaveBeenLastCalledWith(expect.objectContaining({ preferRenderedFrame: true }))
+@@ -187,3 +191,166 @@ describe('scope capture seek correspondence', () => {
+     },
+   )
+ })
++
++describe('scopes name what they measure (FL-98)', () => {
++  let callbacks: Map<number, FrameRequestCallback>
++  let callbackId: number
++  let renderer: Record<string, ReturnType<typeof vi.fn>>
++
++  /** A project the preview resolves as HDR (a PQ clip) or SDR, as its renderer would. */
++  const placeClip = (colorTransfer: 'pq' | undefined, sdrMonitoring: 'bt2390' | 'none' = 'bt2390') => {
++    useItemsStore.getState().setItems([{
++      id: 'clip', type: 'video', trackId: 'video', from: 0, durationInFrames: 60,
++      label: 'Clip', src: 'blob:clip', mediaId: 'media-hdr',
++    }] as never)
++    useMediaLibraryStore.setState({
++      mediaById: { 'media-hdr': { id: 'media-hdr', colorTransfer } } as never,
++    })
++    usePreviewBridgeStore.setState({
++      scopeColor: () => ({ workingRange: colorTransfer ? 'hdr' : 'sdr', sdrMonitoring }),
++    })
++  }
++
++  /** A 2×1 PQ frame: 100 cd/m² on the left, 1,000 cd/m² on the right. */
++  const pqFrame = (frame: number) => ({
++    frame,
++    width: 2,
++    height: 1,
++    rgba: new Float32Array([
++      pqEncode(100), pqEncode(100), pqEncode(100), 1,
++      pqEncode(1000), pqEncode(1000), pqEncode(1000), 1,
++    ]),
++  })
++
++  async function tick(time: number) {
++    await act(async () => {
++      const pending = [...callbacks.values()]
++      callbacks.clear()
++      for (const callback of pending) callback(time)
++    })
++  }
++
++  beforeEach(() => {
++    callbacks = new Map()
++    callbackId = 0
++    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
++      callbacks.set(++callbackId, callback)
++      return callbackId
++    })
++    vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id))
++    usePlaybackStore.setState({
++      currentFrame: 12, currentFrameEpoch: 0, previewFrame: null,
++      previewFrameEpoch: 0, frameUpdateEpoch: 0, isPlaying: false, playbackRate: 1,
++    })
++    usePreviewBridgeStore.setState({
++      displayedFrame: null, captureFrame: null, captureFrameImageData: null,
++      captureCanvasSource: vi.fn().mockResolvedValue(document.createElement('canvas')),
++      captureFrameSignal: vi.fn().mockImplementation(async () => pqFrame(12)),
++    })
++    renderer = {
++      setMatrix: vi.fn(), setRange: vi.fn(), setGraticule: vi.fn(), configureCanvas: vi.fn().mockReturnValue({}),
++      uploadFromCanvas: vi.fn(), uploadFrame: vi.fn(), renderWaveforms: vi.fn(),
++      renderVectorscope: vi.fn(), renderHistogram: vi.fn(), destroy: vi.fn(),
++    }
++    createRenderer.mockResolvedValue(renderer)
++  })
++
++  afterEach(() => {
++    cleanup()
++    vi.restoreAllMocks()
++    vi.unstubAllGlobals()
++    useMediaLibraryStore.setState({ mediaById: {} })
++    usePreviewBridgeStore.setState({ scopeColor: null, captureFrameSignal: null })
++  })
++
++  const label = () => screen.getByTestId('scope-color-space').textContent
++
++  it('reads an HDR project paused from its float composite, as BT.2100 PQ, at its frame', async () => {
++    placeClip('pq')
++    await act(async () => { render(<ColorScopesView open />) })
++    await tick(100)
++    const signalCapture = usePreviewBridgeStore.getState().captureFrameSignal!
++    expect(signalCapture).toHaveBeenCalledWith('pq', expect.objectContaining({ preferRenderedFrame: true }))
++    expect(renderer.uploadFromCanvas).not.toHaveBeenCalled()
++    const [uploaded] = renderer.uploadFrame!.mock.calls.at(-1)!
++    // 100 and 1,000 cd/m² as PQ code values, not their tone-mapped display pixels.
++    expect([uploaded.data[0], uploaded.data[4]]).toEqual([
++      Math.round(pqEncode(100) * 255),
++      Math.round(pqEncode(1000) * 255),
++    ])
++    expect(renderer.setMatrix).toHaveBeenLastCalledWith(BT2020_COEFFICIENTS.kr, BT2020_COEFFICIENTS.kb)
++    expect(label()).toBe('Scopes · BT.2100 PQ · BT.2020 · 1.0 = 10,000 cd/m² · frame 12')
++    // The graticule is in cd/m², with reference white where PQ puts it.
++    expect(document.querySelector('[data-scope-guide="203"]')).not.toBeNull()
++  })
++
++  it('reads an HDR project while playing from the display, and says it is tone mapped', async () => {
++    placeClip('pq')
++    usePlaybackStore.setState({ isPlaying: true })
++    await act(async () => { render(<ColorScopesView open />) })
++    await tick(100)
++    expect(usePreviewBridgeStore.getState().captureFrameSignal).not.toHaveBeenCalled()
++    expect(renderer.uploadFromCanvas).toHaveBeenCalledOnce()
++    // Playing: the frame is not named, so the header does not re-render every sample.
++    expect(label()).toBe('Scopes · Tone-mapped SDR preview (BT.2390) · HDR project')
++  })
++
++  it('reads an SDR project from its display pixels with BT.709 coefficients', async () => {
++    placeClip(undefined)
++    await act(async () => { render(<ColorScopesView open />) })
++    await tick(100)
++    expect(usePreviewBridgeStore.getState().captureFrameSignal).not.toHaveBeenCalled()
++    expect(renderer.setMatrix).toHaveBeenLastCalledWith(BT709_COEFFICIENTS.kr, BT709_COEFFICIENTS.kb)
++    expect(label()).toBe('Scopes · sRGB / Rec.709 display, full range · frame 12')
++    expect(document.querySelector('[data-scope-guide="203"]')).toBeNull()
++  })
++
++  it('says when an HDR frame could not be read in float, and what it measured instead', async () => {
++    placeClip('pq', 'none')
++    usePreviewBridgeStore.setState({ captureFrameSignal: vi.fn().mockResolvedValue(null) })
++    await act(async () => { render(<ColorScopesView open />) })
++    await tick(100)
++    expect(renderer.uploadFromCanvas).toHaveBeenCalledOnce()
++    expect(label()).toBe('Scopes · Clipped SDR preview · HDR project · float capture unavailable · frame 12')
++    // A failure is remembered for the same frame: the next tick does not render it again.
++    await tick(200)
++    expect(usePreviewBridgeStore.getState().captureFrameSignal).toHaveBeenCalledOnce()
++  })
++
++  it('reuses a paused HDR sample until the frame, graph or colour inputs change', async () => {
++    placeClip('pq')
++    await act(async () => { render(<ColorScopesView open />) })
++    await tick(100)
++    await tick(200)
++    const capture = usePreviewBridgeStore.getState().captureFrameSignal!
++    expect(capture).toHaveBeenCalledOnce()
++    expect(renderer.uploadFrame).toHaveBeenCalledTimes(2)
++    // A probe that changes a source's media record measures again.
++    await act(async () => {
++      useMediaLibraryStore.setState({ mediaById: { ...useMediaLibraryStore.getState().mediaById } })
++    })
++    await tick(300)
++    expect(capture).toHaveBeenCalledTimes(2)
++  })
++
++  it('drops a playing sample when playback jumps before it arrives', async () => {
++    placeClip(undefined)
++    usePlaybackStore.setState({ isPlaying: true })
++    let resolveCapture!: (canvas: HTMLCanvasElement) => void
++    usePreviewBridgeStore.setState({
++      captureCanvasSource: vi.fn().mockImplementation(
++        () => new Promise<HTMLCanvasElement>((resolve) => (resolveCapture = resolve)),
++      ),
++    })
++    await act(async () => { render(<ColorScopesView open />) })
++    await tick(100)
++    await act(async () => {
++      // A seek while playing: far further than playback advances between two updates.
++      usePlaybackStore.getState().setCurrentFrame(13)
++      usePlaybackStore.getState().setCurrentFrame(900)
++      resolveCapture(document.createElement('canvas'))
++    })
++    expect(renderer.uploadFromCanvas).not.toHaveBeenCalled()
++    expect(renderer.renderWaveforms).not.toHaveBeenCalled()
++  })
++})
+diff --git a/src/features/preview/hooks/use-preview-renderer-controller.ts b/src/features/preview/hooks/use-preview-renderer-controller.ts
+index 5556cc81f9..aede10f745 100644
+--- a/src/features/preview/hooks/use-preview-renderer-controller.ts
++++ b/src/features/preview/hooks/use-preview-renderer-controller.ts
+@@ -57,6 +57,7 @@ import {
+   type FrameRange,
+ } from '@/shared/utils/frame-invalidation'
+ import { usePreviewCaptureBridge } from './use-preview-capture-bridge'
++import { captureScopeSignal, resolveScopeColor } from '../utils/scope-signal'
+ 
+ const logger = createLogger('VideoPreview')
+ 
+@@ -273,6 +274,8 @@ export function usePreviewRendererController({
+   const pendingPostEditWarmRequestRef = useRef<PostEditWarmRequest | null>(null)
+   const postEditWarmInFlightRef = useRef(false)
+   const liveScopeCaptureRendererRef = useRef<PreviewCompositionRenderer | null>(null)
++  // Frameleaf (FL-98): renders on the live scope renderer run one at a time.
++  const liveScopeRenderQueueRef = useRef<Promise<unknown>>(Promise.resolve())
+   const liveScopeCaptureInitPromiseRef = useRef<Promise<PreviewCompositionRenderer | null> | null>(
+     null,
+   )
+@@ -282,6 +285,18 @@ export function usePreviewRendererController({
+   const liveScopeCaptureCanvasRef = useRef<OffscreenCanvas | null>(null)
+   const liveScopeCaptureCtxRef = useRef<OffscreenCanvasRenderingContext2D | null>(null)
+   const liveScopeCaptureStructureKeyRef = useRef<string | null>(null)
++  // Frameleaf (FL-98): edits invalidate the live scope renderer's frames as they do the scrub
++  // renderer's, since paused HDR scopes render on it. Kept in a ref so the invalidation paths
++  // need no new dependencies.
++  const invalidateLiveScopeRendererRef = useRef(
++    (_request: Parameters<PreviewCompositionRenderer['invalidateFrameCache']>[0]) => {},
++  )
++  invalidateLiveScopeRendererRef.current = (request) => {
++    const renderer = liveScopeCaptureRendererRef.current
++    if (renderer && liveScopeCaptureStructureKeyRef.current === fastScrubRendererStructureKey) {
++      renderer.invalidateFrameCache(request)
++    }
++  }
+   const invalidateCommittedPreviewSnapshot = useCallback(() => {
+     const snapshot = committedPreviewSnapshotRef.current
+     snapshot.frame = null
+@@ -818,14 +833,19 @@ export function usePreviewRendererController({
+         const offscreen = liveScopeCaptureCanvasRef.current
+         if (!renderer || !offscreen) return null
+         const useLiveDomProvider = options.useLiveDomProvider ?? true
+-        if ('setDomVideoElementProvider' in renderer) {
+-          renderer.setDomVideoElementProvider?.(
+-            useLiveDomProvider && usePlaybackStore.getState().isPlaying
+-              ? getBestDomVideoElementForItem
+-              : undefined,
+-          )
+-        }
+-        await renderer.renderFrame(targetFrame)
++        // One render at a time on the live scope renderer (FL-98), which HDR scopes also use.
++        const render = liveScopeRenderQueueRef.current.then(async () => {
++          if ('setDomVideoElementProvider' in renderer) {
++            renderer.setDomVideoElementProvider?.(
++              useLiveDomProvider && usePlaybackStore.getState().isPlaying
++                ? getBestDomVideoElementForItem
++                : undefined,
++            )
++          }
++          await renderer.renderFrame(targetFrame)
++        })
++        liveScopeRenderQueueRef.current = render.catch(() => undefined)
++        await render
+         if (wasRendererFrameAborted(renderer)) return null
+         return offscreen
+       }
+@@ -948,10 +968,12 @@ export function usePreviewRendererController({
+       bgTransitionRendererStructureKeyRef.current === fastScrubRendererStructureKey
+ 
+     if (!scrubRendererMatchesStructure && !bgRendererMatchesStructure) {
++      invalidateLiveScopeRendererRef.current({ ranges: visualInvalidationRanges })
+       return
+     }
+ 
+     const invalidationRequest = { ranges: visualInvalidationRanges }
++    invalidateLiveScopeRendererRef.current(invalidationRequest)
+     if (scrubRenderer && scrubRendererMatchesStructure) {
+       scrubRenderer.invalidateFrameCache(invalidationRequest)
+     }
+@@ -1148,6 +1170,7 @@ export function usePreviewRendererController({
+       ) {
+         invalidateCommittedPreviewSnapshot()
+       }
++      invalidateLiveScopeRendererRef.current(request)
+       if (!scrubRenderer && !bgRenderer) return
+ 
+       if (scrubRenderer && scrubRendererMatchesStructure) {
+@@ -1226,6 +1249,7 @@ export function usePreviewRendererController({
+         ) {
+           bgRenderer.invalidateFrameCache({ frames: [targetFrame] })
+         }
++        invalidateLiveScopeRendererRef.current({ frames: [targetFrame] })
+         if (scrubOffscreenRenderedFrameRef.current === targetFrame) {
+           scrubOffscreenRenderedFrameRef.current = null
+         }
+@@ -1446,10 +1470,14 @@ export function usePreviewRendererController({
+       const offscreen = liveScopeCaptureCanvasRef.current
+       if (!renderer || !offscreen) return null
+ 
+-      if ('setDomVideoElementProvider' in renderer) {
+-        renderer.setDomVideoElementProvider?.(getBestDomVideoElementForItem)
+-      }
+-      await renderer.renderFrame(targetFrame)
++      const render = liveScopeRenderQueueRef.current.then(async () => {
++        if ('setDomVideoElementProvider' in renderer) {
++          renderer.setDomVideoElementProvider?.(getBestDomVideoElementForItem)
++        }
++        await renderer.renderFrame(targetFrame)
++      })
++      liveScopeRenderQueueRef.current = render.catch(() => undefined)
++      await render
+       if (wasRendererFrameAborted(renderer)) return null
+ 
+       let snapshot = captureLiveScopeSnapshotCanvasRef.current
+@@ -1765,6 +1793,52 @@ export function usePreviewRendererController({
+     ],
+   )
+ 
++  // Frameleaf (FL-98): the scopes of an HDR project measure its float composite, converted
++  // explicitly to PQ, rather than the tone-mapped display canvas. The live scope renderer draws
++  // it: it renders titles the preview overlays in the DOM, and it never touches the preview's
++  // canvas, frame cache or render lock. Paused frames only: playing scopes read the display.
++  const scopeColor = useCallback(
++    () =>
++      resolveScopeColor({
++        colorManagement: fastScrubInputProps.colorManagement,
++        tracks: fastScrubInputProps.tracks,
++      }),
++    [fastScrubInputProps],
++  )
++  const captureFrameSignal = useCallback(
++    async (target: 'pq', options?: CaptureOptions) => {
++      const stillPaused = () => !usePlaybackStore.getState().isPlaying
++      if (!stillPaused() || scopeColor().workingRange !== 'hdr') return null
++      const frame = resolveCaptureTargetFrame(options)
++      // One render at a time on the live scope renderer, which playing scopes also use.
++      const run = liveScopeRenderQueueRef.current.then(async () => {
++        const renderer = await ensureLiveScopeCaptureRenderer()
++        if (!renderer || !stillPaused()) return null
++        return captureScopeSignal(renderer, frame, target)
++      })
++      liveScopeRenderQueueRef.current = run.catch(() => undefined)
++      try {
++        const signal = await run
++        return signal && stillPaused() ? signal : null
++      } catch (error) {
++        logger.warn('HDR scopes could not read the float composite:', error)
++        return null
++      }
++    },
++    [ensureLiveScopeCaptureRenderer, resolveCaptureTargetFrame, scopeColor],
++  )
++
++  useEffect(() => {
++    const bridge = usePreviewBridgeStore.getState()
++    bridge.setCaptureFrameSignal(captureFrameSignal)
++    bridge.setScopeColor(scopeColor)
++    return () => {
++      const current = usePreviewBridgeStore.getState()
++      if (current.captureFrameSignal === captureFrameSignal) current.setCaptureFrameSignal(null)
++      if (current.scopeColor === scopeColor) current.setScopeColor(null)
++    }
++  }, [captureFrameSignal, scopeColor])
++
+   usePreviewCaptureBridge({
+     captureCurrentFrame,
+     captureCurrentFrameImageData,
+diff --git a/src/shared/state/preview-bridge/types.ts b/src/shared/state/preview-bridge/types.ts
+index c5190c09c6..440c874cc4 100644
+--- a/src/shared/state/preview-bridge/types.ts
++++ b/src/shared/state/preview-bridge/types.ts
+@@ -7,6 +7,19 @@ export interface PostEditWarmRequest {
+   token: number
+ }
+ 
++export interface PreviewScopeColor {
++  workingRange: 'sdr' | 'hdr'
++  /** How an HDR project is shown on an SDR display: BT.2390 tone mapping, or clipped. */
++  sdrMonitoring: 'bt2390' | 'none'
++}
++
++export interface PreviewSignalFrame {
++  frame: number
++  width: number
++  height: number
++  rgba: Float32Array
++}
++
+ export interface PreviewBridgeState {
+   /** Frame currently presented to the user in preview output (null when Player path is active) */
+   displayedFrame: number | null
+@@ -18,6 +31,21 @@ export interface PreviewBridgeState {
+   captureCanvasSource:
+     | ((options?: CaptureOptions) => Promise<OffscreenCanvas | HTMLCanvasElement | null>)
+     | null
++  /**
++   * Frameleaf (FL-98): the preview's colour management, resolved exactly as its renderer
++   * resolves it (FL-97: HDR when a PQ or HLG source is placed). The scopes read it to know what
++   * the display canvas holds.
++   */
++  scopeColor: (() => PreviewScopeColor) | null
++  /**
++   * Frameleaf (FL-98): the frame on the float route, with titles and every other item the
++   * preview shows, converted explicitly to `target` (straight-alpha RGBA in [0, 1]). The scopes
++   * read an HDR project's paused frame here rather than its tone-mapped display canvas. Null
++   * when it cannot be composited in float; the preview itself is left untouched either way.
++   */
++  captureFrameSignal:
++    | ((target: 'pq', options?: CaptureOptions) => Promise<PreviewSignalFrame | null>)
++    | null
+   /** Latest request to prewarm the preview renderer after an edit commit. */
+   postEditWarmRequest: PostEditWarmRequest | null
+ }
+@@ -34,5 +62,7 @@ export interface PreviewBridgeActions {
+   setCaptureCanvasSource: (
+     fn: ((options?: CaptureOptions) => Promise<OffscreenCanvas | HTMLCanvasElement | null>) | null,
+   ) => void
++  setCaptureFrameSignal: (fn: PreviewBridgeState['captureFrameSignal']) => void
++  setScopeColor: (fn: PreviewBridgeState['scopeColor']) => void
+   requestPostEditWarm: (frame: number, itemIds: string[], frames?: number[]) => void
+ }
+diff --git a/src/shared/state/preview-bridge/store.ts b/src/shared/state/preview-bridge/store.ts
+index 286e3579da..1c4cc50263 100644
+--- a/src/shared/state/preview-bridge/store.ts
++++ b/src/shared/state/preview-bridge/store.ts
+@@ -34,6 +34,8 @@ export const usePreviewBridgeStore = create<PreviewBridgeState & PreviewBridgeAc
+   captureFrame: null,
+   captureFrameImageData: null,
+   captureCanvasSource: null,
++  captureFrameSignal: null,
++  scopeColor: null,
+   postEditWarmRequest: null,
+ 
+   setDisplayedFrame: (frame) =>
+@@ -45,6 +47,8 @@ export const usePreviewBridgeStore = create<PreviewBridgeState & PreviewBridgeAc
+   setCaptureFrame: (fn) => set({ captureFrame: fn }),
+   setCaptureFrameImageData: (fn) => set({ captureFrameImageData: fn }),
+   setCaptureCanvasSource: (fn) => set({ captureCanvasSource: fn }),
++  setCaptureFrameSignal: (fn) => set({ captureFrameSignal: fn }),
++  setScopeColor: (fn) => set({ scopeColor: fn }),
+   requestPostEditWarm: (frame, itemIds, frames = []) =>
+     set((state) => {
+       const normalizedFrame = normalizeFrame(frame) ?? 0
+diff --git a/src/features/preview/deps/project-color.ts b/src/features/preview/deps/project-color.ts
+new file mode 100644
+index 0000000000..d6b867681c
+--- /dev/null
++++ b/src/features/preview/deps/project-color.ts
+@@ -0,0 +1,5 @@
++/**
++ * Compatibility adapter that re-exports through project-color-contract.
++ */
++
++export * from './project-color-contract'
+diff --git a/src/features/preview/deps/project-color-contract.ts b/src/features/preview/deps/project-color-contract.ts
+new file mode 100644
+index 0000000000..8ec53d22b3
+--- /dev/null
++++ b/src/features/preview/deps/project-color-contract.ts
+@@ -0,0 +1,6 @@
++/**
++ * Adapter exports for the project's colour management.
++ * Preview modules (the scopes) resolve the working range as the renderer does from here.
++ */
++
++export { deriveSourceWorkingRange } from '@/features/export/utils/project-color'
+diff --git a/src/infrastructure/gpu-scopes/vectorscope-scope.ts b/src/infrastructure/gpu-scopes/vectorscope-scope.ts
+index 8b6b2c49c0..40409c7ec7 100644
+--- a/src/infrastructure/gpu-scopes/vectorscope-scope.ts
++++ b/src/infrastructure/gpu-scopes/vectorscope-scope.ts
+@@ -70,7 +70,7 @@ fn vs(@builtin(vertex_index) vid: u32) -> VertexOutput {
+   return out;
+ }
+ 
+-struct Params { outSize: f32, refValue: f32, _p0: f32, _p1: f32 }
++struct Params { outSize: f32, refValue: f32, kr: f32, kb: f32, barLevel: f32, _p0: f32, _p1: f32, _p2: f32 }
+ 
+ @group(0) @binding(0) var<storage, read> accumR: array<u32>;
+ @group(0) @binding(1) var<storage, read> accumG: array<u32>;
+@@ -136,10 +136,13 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
+     color = mix(vec3f(0.28, 0.20, 0.08), color, skinAA);
+   }
+ 
+-  // Color targets on 75% ring (R, MG, B, CY, G, YL)
+-  let targetAngles = array<f32, 6>(
+-    radians(103.0), radians(61.0), radians(-13.0),
+-    radians(-77.0), radians(-119.0), radians(167.0)
++  // Color targets: where 75% bars (R, MG, B, CY, G, YL) land with the matrix the scope
++  // measures in (Frameleaf FL-98: BT.709 for display pixels, BT.2020 for an HDR PQ signal).
++  // At barLevel: 75% for SDR, the BT.2111 reference-white level for PQ.
++  let l = params.barLevel;
++  let bars = array<vec3f, 6>(
++    vec3f(l, 0.0, 0.0), vec3f(l, 0.0, l), vec3f(0.0, 0.0, l),
++    vec3f(0.0, l, l), vec3f(0.0, l, 0.0), vec3f(l, l, 0.0)
+   );
+   let targetColors = array<vec3f, 6>(
+     vec3f(0.6, 0.15, 0.15), vec3f(0.5, 0.15, 0.5), vec3f(0.15, 0.15, 0.6),
+@@ -148,9 +151,12 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
+   let dotR = 8.0 / size;
+   let ringW = 2.0 / size;
+   for (var i = 0u; i < 6u; i += 1u) {
+-    let ta = targetAngles[i];
+-    let tx = center + cos(ta) * radius75;
+-    let ty = center - sin(ta) * radius75;
++    let bar = bars[i];
++    let barY = params.kr * bar.r + (1.0 - params.kr - params.kb) * bar.g + params.kb * bar.b;
++    let barCb = (bar.b - barY) / (2.0 * (1.0 - params.kb));
++    let barCr = (bar.r - barY) / (2.0 * (1.0 - params.kr));
++    let tx = center + barCb * 2.0 * radiusFull;
++    let ty = center - barCr * 2.0 * radiusFull;
+     let td = distance(uv, vec2f(tx, ty));
+     let dotAA = smoothstep(dotR, dotR - ringW, td);
+     let ringAA = smoothstep(ringW * 0.5, 0.0, abs(td - dotR));
+@@ -237,7 +243,7 @@ export class VectorscopeScope {
+       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+     })
+     this.renderParams = device.createBuffer({
+-      size: 16,
++      size: 32,
+       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+     })
+ 
+@@ -273,7 +279,7 @@ export class VectorscopeScope {
+     })
+   }
+ 
+-  render(sourceTexture: GPUTexture, ctx: GPUCanvasContext, kr: number, kb: number) {
++  render(sourceTexture: GPUTexture, ctx: GPUCanvasContext, kr: number, kb: number, barLevel = 0.75) {
+     const d = this.device
+     const srcW = sourceTexture.width
+     const srcH = sourceTexture.height
+@@ -284,7 +290,7 @@ export class VectorscopeScope {
+     d.queue.writeBuffer(this.computeParams, 0, cpData)
+ 
+     const refValue = Math.sqrt((srcW * srcH) / (VS_SIZE * VS_SIZE)) * 18.0
+-    d.queue.writeBuffer(this.renderParams, 0, new Float32Array([VS_SIZE, refValue, 0, 0]))
++    d.queue.writeBuffer(this.renderParams, 0, new Float32Array([VS_SIZE, refValue, kr, kb, barLevel, 0, 0, 0]))
+ 
+     const encoder = d.createCommandEncoder()
+     encoder.clearBuffer(this.accumR)
+diff --git a/src/infrastructure/gpu-scopes/waveform-scope.ts b/src/infrastructure/gpu-scopes/waveform-scope.ts
+index 93d5b0a213..af250f69fd 100644
+--- a/src/infrastructure/gpu-scopes/waveform-scope.ts
++++ b/src/infrastructure/gpu-scopes/waveform-scope.ts
+@@ -47,6 +47,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
+   let frac = fxPos - f32(x0);
+   let w0 = u32((1.0 - frac) * 256.0);
+   let w1 = 256u - w0;
++  // Frameleaf (FL-98): a source narrower than the scope (a scaled preview sample, an HDR float
++  // frame) covers several scope columns per pixel. Fill exactly its own columns, or the trace is
++  // dashed and the render, which samples between them, can miss it entirely.
++  let spanStart = gid.x * params.outW / params.srcW;
++  let spanEnd = max(spanStart + 1u, (gid.x + 1u) * params.outW / params.srcW);
++  let span = select(1u, spanEnd - spanStart, params.srcW < params.outW);
+ 
+   let hm1 = f32(params.outH - 1u);
+   let maxY = i32(params.outH - 1u);
+@@ -69,8 +75,15 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
+     let idx = y * params.outW;
+     let wA = u32(f32(w0) * yw);
+     let wB = u32(f32(w1) * yw);
+-    if (wA > 0u) { atomicAdd(&accumR[idx + x0], wA); }
+-    if (wB > 0u) { atomicAdd(&accumR[idx + x1], wB); }
++    if (span > 1u) {
++      let full = u32(256.0 * yw);
++      for (var k = 0u; k < span; k += 1u) {
++        if (spanStart + k < params.outW) { atomicAdd(&accumR[idx + spanStart + k], full); }
++      }
++    } else {
++      if (wA > 0u) { atomicAdd(&accumR[idx + x0], wA); }
++      if (wB > 0u) { atomicAdd(&accumR[idx + x1], wB); }
++    }
+   }
+ 
+   // Green
+@@ -81,8 +94,15 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
+     let idx = y * params.outW;
+     let wA = u32(f32(w0) * yw);
+     let wB = u32(f32(w1) * yw);
+-    if (wA > 0u) { atomicAdd(&accumG[idx + x0], wA); }
+-    if (wB > 0u) { atomicAdd(&accumG[idx + x1], wB); }
++    if (span > 1u) {
++      let full = u32(256.0 * yw);
++      for (var k = 0u; k < span; k += 1u) {
++        if (spanStart + k < params.outW) { atomicAdd(&accumG[idx + spanStart + k], full); }
++      }
++    } else {
++      if (wA > 0u) { atomicAdd(&accumG[idx + x0], wA); }
++      if (wB > 0u) { atomicAdd(&accumG[idx + x1], wB); }
++    }
+   }
+ 
+   // Blue
+@@ -93,8 +113,15 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
+     let idx = y * params.outW;
+     let wA = u32(f32(w0) * yw);
+     let wB = u32(f32(w1) * yw);
+-    if (wA > 0u) { atomicAdd(&accumB[idx + x0], wA); }
+-    if (wB > 0u) { atomicAdd(&accumB[idx + x1], wB); }
++    if (span > 1u) {
++      let full = u32(256.0 * yw);
++      for (var k = 0u; k < span; k += 1u) {
++        if (spanStart + k < params.outW) { atomicAdd(&accumB[idx + spanStart + k], full); }
++      }
++    } else {
++      if (wA > 0u) { atomicAdd(&accumB[idx + x0], wA); }
++      if (wB > 0u) { atomicAdd(&accumB[idx + x1], wB); }
++    }
+   }
+ 
+   // Luma
+@@ -105,8 +132,15 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
+     let idx = y * params.outW;
+     let wA = u32(f32(w0) * yw);
+     let wB = u32(f32(w1) * yw);
+-    if (wA > 0u) { atomicAdd(&accumL[idx + x0], wA); }
+-    if (wB > 0u) { atomicAdd(&accumL[idx + x1], wB); }
++    if (span > 1u) {
++      let full = u32(256.0 * yw);
++      for (var k = 0u; k < span; k += 1u) {
++        if (spanStart + k < params.outW) { atomicAdd(&accumL[idx + spanStart + k], full); }
++      }
++    } else {
++      if (wA > 0u) { atomicAdd(&accumL[idx + x0], wA); }
++      if (wB > 0u) { atomicAdd(&accumL[idx + x1], wB); }
++    }
+   }
+ }
+ `
+@@ -132,7 +166,8 @@ struct RenderParams {
+   refValue: f32,
+   intensity: f32,
+   mode: u32,
+-  _pad0: u32,
++  // Frameleaf (FL-98): 1 draws the 10% IRE grid; 0 leaves the graticule to the overlay (PQ).
++  grid: u32,
+   _pad1: u32,
+   _pad2: u32,
+ }
+@@ -276,7 +311,7 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
+   // Grid: every 10 IRE (10% of height)
+   let gridY = fract(uv.y * 10.0);
+   let dGrid = min(gridY, 1.0 - gridY) * params.outH * 0.5;
+-  if (dGrid < 0.8) {
++  if (params.grid == 1u && dGrid < 0.8) {
+     let a = 0.15 * (1.0 - dGrid / 0.8);
+     color = max(color, vec3f(0.55, 0.45, 0.12) * a);
+   }
+@@ -410,12 +445,15 @@ export class WaveformScope {
+     return srcH
+   }
+ 
++  /** Frameleaf (FL-98): whether the 10% IRE grid is drawn; off where the overlay marks PQ. */
++  grid = true
++
+   private renderAccumulated(ctx: GPUCanvasContext, mode: number, srcH: number) {
+     const d = this.device
+     const refValue = Math.sqrt(srcH / OUT_H) * 40.0
+     const rpData = new ArrayBuffer(32)
+     new Float32Array(rpData, 0, 4).set([OUT_W, OUT_H, refValue, 0.9])
+-    new Uint32Array(rpData, 16, 4).set([mode, 0, 0, 0])
++    new Uint32Array(rpData, 16, 4).set([mode, this.grid ? 1 : 0, 0, 0])
+     d.queue.writeBuffer(this.renderParams, 0, rpData)
+ 
+     const renderBG = d.createBindGroup({
+diff --git a/src/infrastructure/gpu-scopes/scope-renderer.ts b/src/infrastructure/gpu-scopes/scope-renderer.ts
+index 1f4d23414b..86bd7b6ef0 100644
+--- a/src/infrastructure/gpu-scopes/scope-renderer.ts
++++ b/src/infrastructure/gpu-scopes/scope-renderer.ts
+@@ -57,6 +57,18 @@ export class ScopeRenderer {
+     this.kb = kb
+   }
+ 
++  /**
++   * Frameleaf (FL-98): the graticule for what the scopes measure. `ire` draws the waveform's 10%
++   * grid (display-referred signals); `overlay` leaves marks to the overlay (cd/m² on PQ).
++   * `barLevel` places the vectorscope targets: 0.75 for SDR bars, BT.2111's level for PQ.
++   */
++  setGraticule(kind: 'ire' | 'overlay', barLevel: number) {
++    this.waveform.grid = kind === 'ire'
++    this.barLevel = barLevel
++  }
++
++  private barLevel = 0.75
++
+   setRange(min: number, max: number) {
+     this.rangeMin = min
+     this.rangeMax = max
+@@ -94,6 +106,7 @@ export class ScopeRenderer {
+   uploadFrame(imageData: ImageData) {
+     const w = imageData.width
+     const h = imageData.height
++    if (w < 2 || h < 2) return
+     this.ensureTexture(w, h)
+     this.device.queue.writeTexture(
+       { texture: this.srcTexture! },
+@@ -130,7 +143,7 @@ export class ScopeRenderer {
+ 
+   renderVectorscope(ctx: GPUCanvasContext) {
+     if (!this.srcTexture) return
+-    this.vectorscope.render(this.srcTexture, ctx, this.kr, this.kb)
++    this.vectorscope.render(this.srcTexture, ctx, this.kr, this.kb, this.barLevel)
+   }
+ 
+   destroy() {
+diff --git a/src/features/preview/utils/scope-signal.ts b/src/features/preview/utils/scope-signal.ts
+new file mode 100644
+index 0000000000..b4bf7a6e5b
+--- /dev/null
++++ b/src/features/preview/utils/scope-signal.ts
+@@ -0,0 +1,52 @@
++/**
++ * What an HDR project's scopes measure, and how they get it (FL-98).
++ *
++ * The preview decides a project's working range as its renderer does (FL-97): HDR once a PQ or
++ * HLG source is placed, directly or in a nested composition, or when the project's colour
++ * management asks for it. The scopes of an HDR project measure the float composite converted
++ * explicitly to PQ, rendered by a renderer that draws everything the preview shows, titles
++ * included, and that never writes to the preview's own canvas or frame cache.
++ */
++import {
++  resolveColorManagement,
++  type ProjectColorManagement,
++} from '@/shared/graphics/color/managed-color'
++import type { PreviewScopeColor, PreviewSignalFrame } from '@/shared/state/preview-bridge'
++import { deriveSourceWorkingRange } from '@/features/preview/deps/project-color'
++import { useMediaLibraryStore } from '@/features/preview/deps/media-library'
++import { useCompositionsStore } from '@/features/preview/deps/timeline-store'
++
++/** The preview's colour management, from the same inputs its renderer resolves it from. */
++export function resolveScopeColor(input: {
++  colorManagement: ProjectColorManagement | undefined
++  tracks: readonly { items?: readonly unknown[] }[]
++}): PreviewScopeColor {
++  const { mediaById } = useMediaLibraryStore.getState()
++  const range = deriveSourceWorkingRange(
++    input.tracks as never,
++    (mediaId) => mediaById[mediaId],
++    useCompositionsStore.getState().compositionById,
++  )
++  const resolved = resolveColorManagement(input.colorManagement, range)
++  return { workingRange: resolved.workingRange, sdrMonitoring: resolved.sdrMonitoring }
++}
++
++interface SignalRenderer {
++  renderFrameSignal(
++    frame: number,
++    target: 'pq',
++  ): Promise<{ width: number; height: number; rgba: Float32Array }>
++  setDomVideoElementProvider?: (provider: undefined) => void
++}
++
++/** `frame` of an HDR project as a PQ signal frame, decoded rather than read from playing video. */
++export async function captureScopeSignal(
++  renderer: SignalRenderer,
++  frame: number,
++  target: 'pq',
++): Promise<PreviewSignalFrame> {
++  // Paused frames decode their sources; the live <video> elements belong to playback.
++  renderer.setDomVideoElementProvider?.(undefined)
++  const signal = await renderer.renderFrameSignal(frame, target)
++  return { frame, ...signal }
++}
+diff --git a/src/shared/state/preview-bridge/index.ts b/src/shared/state/preview-bridge/index.ts
+index 72cb61f06f..99cf24ecc3 100644
+--- a/src/shared/state/preview-bridge/index.ts
++++ b/src/shared/state/preview-bridge/index.ts
+@@ -1,2 +1,7 @@
+ export { usePreviewBridgeStore } from './store'
+-export type { PostEditWarmRequest, PreviewBridgeState } from './types'
++export type {
++  PostEditWarmRequest,
++  PreviewBridgeState,
++  PreviewScopeColor,
++  PreviewSignalFrame,
++} from './types'
+diff --git a/src/features/export/utils/client-render-engine.ts b/src/features/export/utils/client-render-engine.ts
+index c0a5a093e6..7b2a7edb83 100644
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -850,22 +850,39 @@ export async function createCompositionRenderer(
+     await device.queue.onSubmittedWorkDone()
+     return output.canvas
+   }
++  // Frameleaf (FL-98): a preview renderer captures signal frames for the scopes repeatedly, so
++  // the conversion target and its readback buffer are kept while the frame size stays the same.
++  let signalTargets: { width: number; height: number; output: GPUTexture; buffer: GPUBuffer } | null =
++    null
++  const signalTargetsFor = (device: GPUDevice, width: number, height: number) => {
++    if (signalTargets && signalTargets.width === width && signalTargets.height === height) {
++      return signalTargets
++    }
++    signalTargets?.output.destroy()
++    signalTargets?.buffer.destroy()
++    signalTargets = {
++      width,
++      height,
++      output: device.createTexture({
++        size: [width, height],
++        format: 'rgba32float',
++        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
++      }),
++      buffer: device.createBuffer({
++        size: Math.ceil((width * 16) / 256) * 256 * height,
++        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
++      }),
++    }
++    return signalTargets
++  }
+   const captureSignal = async (composite: GPUTexture): Promise<OffscreenCanvas | null> => {
+     const request = floatCapture
+     const device = gpu.effects?.getDevice()
+     if (!request || !device) return null
+     colorOutput ??= new ColorOutputPipeline(device)
+     const { width, height } = composite
+-    const output = device.createTexture({
+-      size: [width, height],
+-      format: 'rgba32float',
+-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+-    })
++    const { output, buffer } = signalTargetsFor(device, width, height)
+     const bytesPerRow = Math.ceil((width * 16) / 256) * 256
+-    const buffer = device.createBuffer({
+-      size: bytesPerRow * height,
+-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+-    })
+     try {
+       colorOutput.convert(composite, output, request.target, colorManagement)
+       const encoder = device.createCommandEncoder()
+@@ -878,11 +895,9 @@ export async function createCompositionRenderer(
+       for (let y = 0; y < height; y++) {
+         rgba.set(mapped.subarray(y * rowFloats, y * rowFloats + width * 4), y * width * 4)
+       }
+-      buffer.unmap()
+       request.result = { width, height, rgba }
+     } finally {
+-      output.destroy()
+-      buffer.destroy()
++      if (buffer.mapState === 'mapped') buffer.unmap()
+     }
+     return null
+   }
+@@ -2096,7 +2111,8 @@ export async function createCompositionRenderer(
+       }
+       // 3-tier cache lookup (preview only)
+       // Tier 1 (GPU texture) → Tier 3 (RAM ImageBitmap) → miss → full render
+-      if (scrubbingCache && scrubbingFrameCacheActive) {
++      // A signal capture (FL-98) needs the float composite, never a cached display frame.
++      if (scrubbingCache && scrubbingFrameCacheActive && !floatCapture) {
+         const cached = scrubbingCache.getFrame(frame)
+         if (cached) {
+           ctx.clearRect(0, 0, canvas.width, canvas.height)
+@@ -2141,9 +2157,11 @@ export async function createCompositionRenderer(
+         }
+       }
+ 
+-      // Clear canvas
+-      ctx.fillStyle = backgroundColor
+-      ctx.fillRect(0, 0, canvas.width, canvas.height)
++      // Clear canvas (not for a signal capture, which leaves the display as it was: FL-98)
++      if (!floatCapture) {
++        ctx.fillStyle = backgroundColor
++        ctx.fillRect(0, 0, canvas.width, canvas.height)
++      }
+ 
+       // Prepare masks for this frame
+       const activeMasks = getActiveMasksForFrame(
+@@ -2687,11 +2705,13 @@ export async function createCompositionRenderer(
+         getLog().debug(`Occlusion culling: skipped ${skippedTracks} tracks at frame ${frame}`)
+       }
+ 
+-      ctx.drawImage(finalCompositeSource, 0, 0)
++      // A signal capture (FL-98) only reads the float composite: it leaves the display canvas and
++      // the frame cache as the last display render left them.
++      if (!floatCapture) ctx.drawImage(finalCompositeSource, 0, 0)
+ 
+       // Release content canvas back to pool
+       canvasPool.release(contentCanvas)
+-      cacheRenderedFrame(frame)
++      if (!floatCapture) cacheRenderedFrame(frame)
+       if (scrubPerfStartMs >= 0) {
+         const scrubPerfEndMs = performance.now()
+         recordScrubPerf(frame, 'full', scrubPerfStartMs, {
+@@ -2991,6 +3011,9 @@ export async function createCompositionRenderer(
+     dispose() {
+       isDisposed = true
+       inFlightInitByItem.clear()
++      signalTargets?.output.destroy()
++      signalTargets?.buffer.destroy()
++      signalTargets = null
+ 
+       // Clean up mediabunny video extractors
+       for (const [itemId, src] of videoSourceByItemId) {

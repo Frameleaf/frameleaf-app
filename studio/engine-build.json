@@ -189,7 +189,12 @@
       "path": "patches/0037-renderable-opacity.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "7574ec6fd1c175f9974d6c760b7d20fcdf4aeb4508cf63b8ad839d43b3fcfc4a"
+    },
+    {
+      "path": "patches/0038-scopes-measure-what-they-show.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "43923b02c3a55b95b561d805343dc782d7cbab4f15617cebc5dfdd4bbff53951"
     }
   ],
-  "sourceSha256": "0e4d217f27254d9085bbf81e416b47f6c17891ed7ff5a12053309032e5539e7a"
+  "sourceSha256": "ce389d6b3ba30ef11c68ef4731969b12f1d5678c5b639abc9b1acc0818fcd01a"
 }
