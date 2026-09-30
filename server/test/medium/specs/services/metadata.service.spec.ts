@@ -6,13 +6,14 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { JobStatus } from 'src/enum.js';
+import { AssetFileType, JobStatus } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MapRepository } from 'src/repositories/map.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -47,9 +48,12 @@ const setup = (db?: Kysely<DB>) => {
       SystemMetadataRepository,
       TagRepository,
     ],
-    mock: [EventRepository, StorageRepository, LoggingRepository],
+    mock: [EventRepository, StorageRepository, LoggingRepository, MapRepository],
   });
 
+  ctx
+    .getMock(MapRepository)
+    .reverseGeocode.mockResolvedValue({ country: 'File country', state: 'File state', city: 'File city' });
   ctx.getMock(StorageRepository).stat.mockResolvedValue({
     size: 123_456,
     mtime: new Date(654_321),
@@ -84,6 +88,138 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    it.each([true, false, null])(
+      'keeps newer sidecar values after an unlock (initially locked: %s)',
+      async (initiallyLocked) => {
+        const { sut, ctx } = setup();
+        ctx.getMock(EventRepository).emit.mockResolvedValue();
+        const { filePath } = await createTestFile({ Rating: 1 });
+        const dir = await mkdtemp(join(tmpdir(), 'fl202-sidecar-'));
+        const sidecarPath = join(dir, 'metadata.xmp');
+        const metadata = ctx.get(MetadataRepository);
+        await metadata.writeTags(sidecarPath, { Rating: 1, GPSLatitude: 1, GPSLongitude: 2 });
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ originalPath: filePath, ownerId: user.id });
+        const repository = ctx.get(AssetRepository);
+        await repository.upsertFile({ assetId: asset.id, type: AssetFileType.Sidecar, path: sidecarPath });
+        const properties = ['rating', 'latitude', 'longitude'] as const;
+        // null starts without an EXIF row, to cover an edit inserting it during the file read.
+        if (initiallyLocked !== null) {
+          await ctx.newExif({
+            assetId: asset.id,
+            rating: initiallyLocked ? 5 : 1,
+            latitude: 50,
+            longitude: -110,
+            city: 'Stored city',
+            state: 'Stored state',
+            country: 'Stored country',
+            lockedProperties: initiallyLocked ? [...properties] : null,
+          });
+        }
+        const readTags = metadata.readTags.bind(metadata);
+        const read = vi.spyOn(metadata, 'readTags').mockImplementation(async (path) => {
+          const staleTags = await readTags(path);
+          if (path === sidecarPath) {
+            // Finish a sidecar write after extraction has read the old file but before it applies it.
+            // Starting unlocked also proves a locked-property snapshot alone cannot close this race.
+            if (!initiallyLocked) {
+              await repository.upsertExif({
+                exif: {
+                  assetId: asset.id,
+                  rating: 5,
+                  latitude: 50,
+                  longitude: -110,
+                  city: 'Stored city',
+                  state: 'Stored state',
+                  country: 'Stored country',
+                  lockedProperties: [...properties],
+                },
+                lockedPropertiesBehavior: 'append',
+              });
+            }
+            await metadata.writeTags(sidecarPath, { Rating: 5, GPSLatitude: 50, GPSLongitude: -110 });
+            await repository.unlockProperties(asset.id, [...properties]);
+          }
+          return staleTags;
+        });
+        try {
+          await sut.handleMetadataExtraction({ id: asset.id });
+        } finally {
+          read.mockRestore();
+        }
+        await expect(
+          ctx.database
+            .selectFrom('asset_exif')
+            .select(['rating', 'latitude', 'longitude', 'city', 'state', 'country', 'lockedProperties'])
+            .where('assetId', '=', asset.id)
+            .executeTakeFirstOrThrow(),
+        ).resolves.toEqual({
+          rating: 5,
+          latitude: 50,
+          longitude: -110,
+          city: 'Stored city',
+          state: 'Stored state',
+          country: 'Stored country',
+          lockedProperties: null,
+        });
+      },
+    );
+
+    it.each([true, false, null])(
+      'applies an unchanged EXIF revision while respecting locks (locked: %s)',
+      async (locked) => {
+        const { sut, ctx } = setup();
+        ctx.getMock(EventRepository).emit.mockResolvedValue();
+        const { filePath } = await createTestFile({ Rating: 1 });
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ originalPath: filePath, ownerId: user.id });
+        if (locked !== null) {
+          await ctx.newExif({ assetId: asset.id, rating: 5, lockedProperties: locked ? ['rating'] : null });
+        }
+        await sut.handleMetadataExtraction({ id: asset.id });
+        await expect(
+          ctx.database
+            .selectFrom('asset_exif')
+            .select('rating')
+            .where('assetId', '=', asset.id)
+            .executeTakeFirstOrThrow(),
+        ).resolves.toEqual({ rating: locked ? 5 : 1 });
+      },
+    );
+
+    it('keeps newer values when a sidecar is created after the asset file list is fetched', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(EventRepository).emit.mockResolvedValue();
+      const { filePath } = await createTestFile({ Rating: 1 });
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ originalPath: filePath, ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, rating: 5, lockedProperties: ['rating'] });
+      const repository = ctx.get(AssetRepository);
+      const jobs = ctx.get(AssetJobRepository);
+      const getAsset = jobs.getForMetadataExtraction.bind(jobs);
+      const fetch = vi.spyOn(jobs, 'getForMetadataExtraction').mockImplementation(async (id) => {
+        const staleAsset = await getAsset(id);
+        const dir = await mkdtemp(join(tmpdir(), 'fl202-new-sidecar-'));
+        const path = join(dir, 'metadata.xmp');
+        await ctx.get(MetadataRepository).writeTags(path, { Rating: 5 });
+        await repository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path });
+        await repository.unlockProperties(id, ['rating']);
+        return staleAsset;
+      });
+      try {
+        await sut.handleMetadataExtraction({ id: asset.id });
+      } finally {
+        fetch.mockRestore();
+      }
+      await expect(
+        ctx.database
+          .selectFrom('asset_exif')
+          .select('rating')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ rating: 5 });
+    });
+
     const timeZoneTests: TimeZoneTest[] = [
       {
         description: 'should handle no time zone information',

@@ -384,6 +384,8 @@ type UpsertExifOptions = {
   video?: Insertable<AssetVideoTable>;
   keyframes?: Insertable<AssetKeyframeTable>;
   lockedPropertiesBehavior: 'override' | 'append' | 'skip';
+  /** Extraction may apply file values only while the pre-read EXIF revision is still current. */
+  expectedUpdateId?: string | null;
 };
 
 const distinctLocked = <T extends LockableProperty[] | null>(eb: ExpressionBuilder<DB, 'asset_exif'>, columns: T) =>
@@ -457,7 +459,14 @@ export class AssetRepository {
       },
     ],
   })
-  async upsertExif({ exif, audio, video, keyframes, lockedPropertiesBehavior }: UpsertExifOptions): Promise<void> {
+  async upsertExif({
+    exif,
+    audio,
+    video,
+    keyframes,
+    lockedPropertiesBehavior,
+    expectedUpdateId,
+  }: UpsertExifOptions): Promise<void> {
     let query = this.db;
     if (audio) {
       (query as any) = this.db.with('audio', (qb) =>
@@ -527,8 +536,8 @@ export class AssetRepository {
     await query
       .insertInto('asset_exif')
       .values(exif)
-      .onConflict((oc) =>
-        oc.column('assetId').doUpdateSet((eb) => {
+      .onConflict((oc) => {
+        const update = oc.column('assetId').doUpdateSet((eb) => {
           const updateLocked = <T extends keyof AssetExifTable>(col: T) => eb.ref(`excluded.${col}`);
           const skipLocked = <T extends keyof AssetExifTable>(col: T) =>
             eb
@@ -578,8 +587,11 @@ export class AssetRepository {
               exif,
             ),
           };
-        }),
-      )
+        });
+        return expectedUpdateId === undefined
+          ? update
+          : update.where('asset_exif.updateId', expectedUpdateId === null ? 'is' : '=', expectedUpdateId);
+      })
       .execute();
   }
 
@@ -3093,7 +3105,7 @@ export class AssetRepository {
   async getForMetadataExtractionTags(id: string) {
     return this.db
       .selectFrom('asset_exif')
-      .select('asset_exif.tags')
+      .select(['asset_exif.tags', 'asset_exif.updateId'])
       .where('asset_exif.assetId', '=', id)
       .executeTakeFirst();
   }
