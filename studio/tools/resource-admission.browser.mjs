@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 // The generated policy admits what the owner approved (studio/rights-approval.json). These
 // entrypoint regressions check the refusal path, so they substitute a policy in which every
 // reviewed identity is blocked, as a checkout without an approval would generate.
@@ -17,6 +17,9 @@ const substitutePolicy = (context, policy) => context.route('**/resource-policy.
     ? { contentType: 'application/json', body: JSON.stringify(policy) }
     : { contentType: 'text/javascript', body: `export default ${JSON.stringify(policy)}` });
 });
+// RESOURCE_ADMISSION_REPORT=<path> writes every raw observation as JSON, whether the checks pass
+// or not, for measured-conformance evidence (FL-112).
+const report = { origin, built: Boolean(process.env.STUDIO_TEST_BUILT), entries: [], ort: null, fixture: null };
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   for (const entry of ['/', '/headless.html']) {
@@ -39,6 +42,8 @@ try {
     // Registered after the catch-all: Playwright runs the newest matching route first.
     if (!process.env.STUDIO_TEST_BUILT) await substitutePolicy(context, blockedPolicy);
     const page = await context.newPage();
+    const observed = { entry, external, resourcePayloads };
+    report.entries.push(observed);
     await page.goto(origin + entry);
     await page.waitForTimeout(1000);
     assert.deepEqual(external, [], `${entry}: implicit external startup request`);
@@ -48,6 +53,7 @@ try {
     if (process.env.STUDIO_TEST_BUILT) {
       if (entry === '/headless.html') {
         const frame = await page.evaluate(async () => { const project = window.freecut.createProject({ name: 'Local empty-frame smoke', width: 320, height: 240 }); project.timeline = { tracks: [], items: [], transitions: [], keyframes: [] }; return window.freecut.renderFrame({ project, frame: 0 }); });
+        observed.headlessFrame = frame;
         assert.equal(frame.ok, true); assert.ok(frame.fileSize > 0);
       }
       assert.deepEqual(external, []);
@@ -177,6 +183,7 @@ try {
       try { await globalThis.NanoReaderBrowserModelStore.ensureExternalBrowserOnnxModels(); return false; }
       catch (e) { return String(e).includes('FRAMELEAF_RESOURCE_BLOCKED'); }
     });
+    Object.assign(observed, { attempts: results.attempts, media: results.media, childBlocked });
     assert.equal(childBlocked, true);
     assert.ok(results.attempts.every(result => result.blocked), JSON.stringify(results));
     assert.deepEqual(results.media, { width: 16, height: 16, name: 'local-smoke.png' });
@@ -218,6 +225,7 @@ try {
       }
       return checked;
     });
+    report.ort = { files: ort, external: ortExternal };
     assert.equal(ort.length, 6);
     assert.ok(ort.every((file) => file.sameOrigin && file.ok && file.wasm), JSON.stringify(ort));
     assert.deepEqual(ortExternal, []);
@@ -242,8 +250,12 @@ try {
     return { accepted, tamperDenied: await refuses('fixture:approved', new Uint8Array([1, 2, 4])),
       aliasDenied, userImportDenied: await refuses('asset:user-import', new Uint8Array([1, 2, 3])) };
   });
+  report.fixture = fixture;
   assert.deepEqual(fixture, { accepted: [1, 2, 3], tamperDenied: true, aliasDenied: true, userImportDenied: true });
   console.log('Test-only approved fixture: bytes accepted; tamper, blob alias and user-import relabeling rejected');
   await fixtureContext.close();
   }
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+  if (process.env.RESOURCE_ADMISSION_REPORT) await writeFile(process.env.RESOURCE_ADMISSION_REPORT, JSON.stringify(report, null, 2));
+}
