@@ -36,9 +36,26 @@ type Kind =
   | 'pin'
   | 'trash'
   | 'spaceAlbum'
-  | 'spacePerson';
+  | 'spacePerson'
+  | 'albumAsset'
+  | 'partnerAsset';
 type ReadPins = () => Promise<PinnedCollectionsResponseDto>;
-const orderedKinds = new Set<Kind>(['space', 'duplicate', 'pin', 'trash', 'spaceAlbum', 'spacePerson']);
+const orderedKinds = new Set<Kind>([
+  'space',
+  'duplicate',
+  'pin',
+  'trash',
+  'spaceAlbum',
+  'spacePerson',
+  'albumAsset',
+  'partnerAsset',
+]);
+export type SharedAssetReader = (
+  db: Kysely<DB>,
+  auth: AuthDto,
+  kind: 'albumAsset' | 'partnerAsset',
+  key?: string,
+) => Promise<Visible[]>;
 type Visible = {
   key: string;
   entityId: string;
@@ -48,6 +65,8 @@ type Visible = {
 };
 const sequenced = (kind: Kind) => ['space', 'spaceAlbum', 'spacePerson'].includes(kind);
 const types = {
+  albumAsset: { upsert: SyncEntityType.AlbumAssetAccessV1, delete: SyncEntityType.AlbumAssetAccessDeleteV1 },
+  partnerAsset: { upsert: SyncEntityType.PartnerAssetAccessV1, delete: SyncEntityType.PartnerAssetAccessDeleteV1 },
   pin: { upsert: SyncEntityType.PinnedCollectionV1, delete: SyncEntityType.PinnedCollectionDeleteV1 },
   trash: { upsert: SyncEntityType.AssetTrashStateV1, delete: SyncEntityType.AssetTrashStateDeleteV1 },
   duplicate: { upsert: SyncEntityType.DuplicateGroupV1, delete: SyncEntityType.DuplicateGroupDeleteV1 },
@@ -63,7 +82,10 @@ const types = {
 
 /** Only additive ledger types have delivery IDs. Existing sync cursors are untouched. */
 export class TagSync {
-  constructor(private db: Kysely<DB>) {}
+  constructor(
+    private db: Kysely<DB>,
+    private readSharedAssets?: SharedAssetReader,
+  ) {}
 
   private async locked<T>(sessionId: string, run: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (tx) => {
@@ -81,6 +103,19 @@ export class TagSync {
     readPins?: ReadPins,
   ): Promise<Visible[]> {
     const options = getHiddenContentQueryOptions(auth);
+    if (kind === 'albumAsset' || kind === 'partnerAsset') {
+      if (auth.sharedLink) return [];
+      if (!this.readSharedAssets) throw new Error('Shared asset sync requires current authorized projection');
+      const rows = await this.readSharedAssets(db, auth, kind, key);
+      return rows.map((row) => {
+        const digest = createHash('sha256').update(JSON.stringify(row.data)).digest('hex').slice(0, 32);
+        return {
+          ...row,
+          sourceId: `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20)}`,
+        };
+      });
+    }
+
     if (kind === 'pin') {
       if (auth.sharedLink) throw new ForbiddenException('Pinned collections require a user session');
       if (!readPins) throw new Error('Pin sync requires current authorized hydration');
@@ -416,7 +451,7 @@ export class TagSync {
         )
         .orderBy('eventId', 'asc')
         .execute();
-      if (['duplicate', 'pin', 'trash'].includes(kind)) {
+      if (['duplicate', 'pin', 'trash', 'albumAsset', 'partnerAsset'].includes(kind)) {
         pending.sort((a, b) => {
           if (a.deliveryOrder !== null || b.deliveryOrder !== null)
             return (a.deliveryOrder ?? Infinity) - (b.deliveryOrder ?? Infinity);
@@ -469,27 +504,31 @@ export class TagSync {
         data:
           state.action === 'upsert'
             ? current!.data
-            : kind === 'pin'
-              ? { pinId: state.entityId }
-              : kind === 'trash'
-                ? { assetId: state.entityId }
-                : kind === 'duplicate'
-                  ? { groupId: state.entityId }
-                  : kind === 'spaceAlbum'
-                    ? { spaceId: state.entityId, albumId: state.key.split(':', 2)[1] }
-                    : kind === 'spacePerson'
-                      ? { spaceId: state.entityId, id: state.key }
-                      : kind === 'space'
-                        ? { spaceId: state.entityId }
-                        : kind === 'spaceMember'
-                          ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
-                          : kind === 'tag'
-                            ? { tagId: state.entityId }
-                            : kind === 'assetTag'
-                              ? { tagId: state.entityId, assetId: state.assetId! }
-                              : kind === 'pet'
-                                ? { petId: state.entityId }
-                                : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
+            : kind === 'albumAsset'
+              ? { albumId: state.entityId, assetId: state.assetId! }
+              : kind === 'partnerAsset'
+                ? { sharedById: state.entityId, assetId: state.assetId! }
+                : kind === 'pin'
+                  ? { pinId: state.entityId }
+                  : kind === 'trash'
+                    ? { assetId: state.entityId }
+                    : kind === 'duplicate'
+                      ? { groupId: state.entityId }
+                      : kind === 'spaceAlbum'
+                        ? { spaceId: state.entityId, albumId: state.key.split(':', 2)[1] }
+                        : kind === 'spacePerson'
+                          ? { spaceId: state.entityId, id: state.key }
+                          : kind === 'space'
+                            ? { spaceId: state.entityId }
+                            : kind === 'spaceMember'
+                              ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
+                              : kind === 'tag'
+                                ? { tagId: state.entityId }
+                                : kind === 'assetTag'
+                                  ? { tagId: state.entityId, assetId: state.assetId! }
+                                  : kind === 'pet'
+                                    ? { petId: state.entityId }
+                                    : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
       };
     });
   }
