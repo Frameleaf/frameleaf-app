@@ -86,7 +86,10 @@ describe('Frameleaf Cloud processing consent (FL-201)', () => {
           enabled: true,
           routing: {
             ...config.frameleafCloud!.cloudMl.routing,
+            descriptions: 'both',
+            upscale: 'both',
             restoration: 'both',
+            interpolation: 'both',
           },
         },
       },
