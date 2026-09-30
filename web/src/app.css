@@ -257,6 +257,19 @@
   ::view-transition-group(fl-hero) {
     animation: none;
   }
+  /*
+   * FL-139: the tokens.css kill switch only reaches .frameleaf roots; pages and portalled
+   * dialogs outside one kept animating. `*` has no specificity, so scoped exceptions (the
+   * sheet and menu fades) still win. Svelte transitions are gated in $lib/frameleaf/motion.
+   */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /*
