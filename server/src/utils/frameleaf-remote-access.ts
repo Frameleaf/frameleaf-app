@@ -700,7 +700,12 @@ export const detectHostAddresses = (localUrl: string | null): { lanAddresses: st
   const interfaces = Object.entries(networkInterfaces()).flatMap(([name, entries]) =>
     (entries ?? []).map(({ address, family, internal }) => ({ name, address, family, internal })),
   );
-  return hostAddresses({ localUrl, inContainer: inContainer(), interfaces, defaultInterfaces: defaultRouteInterfaces() });
+  return hostAddresses({
+    localUrl,
+    inContainer: inContainer(),
+    interfaces,
+    defaultInterfaces: defaultRouteInterfaces(),
+  });
 };
 
 // ------------------------------------------------------------------ arrivals

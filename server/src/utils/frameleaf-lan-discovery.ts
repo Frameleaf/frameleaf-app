@@ -10,7 +10,10 @@ import type { FrameleafRemoteConnection } from 'src/types.js';
  * detection the edge worker uses for its own (HTTPS, verified) candidates - so container/virtual-
  * interface filtering and the `FRAMELEAF_LOCAL_URL` override only need to be right in one place.
  */
-export const localConnectionCandidates = (options: { port: number; addresses: string[] }): FrameleafRemoteConnection[] =>
+export const localConnectionCandidates = (options: {
+  port: number;
+  addresses: string[];
+}): FrameleafRemoteConnection[] =>
   options.addresses.map((address) => ({
     kind: 'local',
     uri: `http://${address}:${options.port}`,
