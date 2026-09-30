@@ -7,6 +7,9 @@ name: Frameleaf Studio engine
       - web/src/lib/frameleaf/studio/**
       - scripts/frameleaf-studio-contracts.mjs
       - scripts/frameleaf-studio-rights.mjs
+      - server/src/services/studio-project.service.ts
+      - server/src/repositories/studio-project.repository.ts
+      - server/test/medium/specs/services/studio-project-lifecycle.service.spec.ts
       - .github/workflows/frameleaf-studio-engine.yml
   push:
     branches: [fork/main]
@@ -15,6 +18,9 @@ name: Frameleaf Studio engine
       - web/src/lib/frameleaf/studio/**
       - scripts/frameleaf-studio-contracts.mjs
       - scripts/frameleaf-studio-rights.mjs
+      - server/src/services/studio-project.service.ts
+      - server/src/repositories/studio-project.repository.ts
+      - server/test/medium/specs/services/studio-project-lifecycle.service.spec.ts
       - .github/workflows/frameleaf-studio-engine.yml
   workflow_dispatch:
 permissions:
@@ -23,7 +29,41 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  # FL-112: the command axis of readme.projects-storage.4 (trash, restore, permanent delete, empty
+  # trash) is measured on the Studio project service with a real PostgreSQL, so this job runs that
+  # one medium spec and hands its report to the engine job's evidence step.
+  lifecycle-evidence:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Setup Mise
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - name: Prepare the server for medium tests
+        run: |
+          mise run //server:install
+          mise run //:plugins
+          mise run //packages/plugin-core:build
+      - name: Studio project lifecycle on a real database (FL-112)
+        working-directory: server
+        env:
+          STUDIO_LIFECYCLE_REPORT: ${{ runner.temp }}/studio-lifecycle-report.json
+        run: pnpm exec vitest --config test/vitest.config.medium.mjs --run test/medium/specs/services/studio-project-lifecycle.service.spec.ts
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: studio-lifecycle-report
+          path: ${{ runner.temp }}/studio-lifecycle-report.json
+          if-no-files-found: error
   engine:
+    needs: lifecycle-evidence
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -123,9 +163,13 @@ jobs:
       # developer machine's evidence - actually measured as passed. See
       # applyCommandMatrixCoverage's doc: coverage is read per row from the report itself, not a
       # hand-reviewed static set, since which cases a row passes varies by command.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: studio-lifecycle-report
+          path: ${{ runner.temp }}
       - name: Record Studio command-matrix evidence (FL-112)
         run: |
-          node scripts/frameleaf-studio-evidence.mjs --command-matrix-report "$RUNNER_TEMP/command-matrix-report.json" --write
+          node scripts/frameleaf-studio-evidence.mjs --command-matrix-report "$RUNNER_TEMP/command-matrix-report.json" --command-matrix-report "$RUNNER_TEMP/studio-lifecycle-report.json" --write
           git diff --exit-code -- studio/conformance.json
       - name: Reproduce from a fresh generated workspace
         run: |
