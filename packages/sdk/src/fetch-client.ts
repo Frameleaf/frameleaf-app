@@ -10801,6 +10801,32 @@ export type ReconciliationBucketDto = {
     bucket: number;
     hashes: string[];
 };
+export type OwnerBackupsResponseDto = {
+    backups: {
+        backupDate: string;
+        manifestKey: string;
+        status: OwnerBackupKeptStatus;
+    }[];
+    nextOffset: number | null;
+};
+export type OwnerBackupHistoryResponseDto = {
+    items: {
+        assetId: string;
+        backupDate: string;
+        deletionDate: {
+            at: string | null;
+            state: OwnerBackupDeletionDateState;
+        };
+        name: string;
+        state: OwnerBackupItemState;
+        /** An eligible recorded thumbnail; remote availability/integrity is checked when read */
+        thumbnailAvailable: boolean;
+        /** Known current trash timestamp; distinct from physical deletion */
+        trashDate: string | null;
+    }[];
+    nextOffset: number | null;
+    total: number;
+};
 export type OnboardingResponseDto = {
     /** Is user onboarded */
     isOnboarded: boolean;
@@ -21639,6 +21665,66 @@ export function getMyCalendarHeatmap({ $from, to, $type }: {
     }));
 }
 /**
+ * List own kept backups with accessible deleted history
+ */
+export function listOwnKeptBackups({ limit, offset }: {
+    limit?: number;
+    offset?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OwnerBackupsResponseDto;
+    }>(`/users/me/cloud-backup/backups${QS.query(QS.explode({
+        limit,
+        offset
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Search own deleted history in one kept backup
+ */
+export function getOwnBackupHistory({ limit, manifestKey, offset, query }: {
+    limit?: number;
+    manifestKey: string;
+    offset?: number;
+    query?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: OwnerBackupHistoryResponseDto;
+    }>(`/users/me/cloud-backup/history${QS.query(QS.explode({
+        limit,
+        manifestKey,
+        offset,
+        query
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Read an authorized kept backup thumbnail
+ */
+export function getOwnBackupThumbnail({ id, limit, manifestKey, offset, query }: {
+    id: string;
+    limit?: number;
+    manifestKey: string;
+    offset?: number;
+    query?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/users/me/cloud-backup/history/${encodeURIComponent(id)}/thumbnail${QS.query(QS.explode({
+        limit,
+        manifestKey,
+        offset,
+        query
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Remove your supporter key
  */
 export function deleteUserLicense(opts?: Oazapfts.RequestOpts) {
@@ -24410,6 +24496,18 @@ export enum TrashItemSort {
 }
 export enum Evidence {
     RegisteredCurrentOriginals = "registered-current-originals"
+}
+export enum OwnerBackupKeptStatus {
+    Complete = "complete",
+    Degraded = "degraded"
+}
+export enum OwnerBackupDeletionDateState {
+    Available = "available",
+    Unavailable = "unavailable"
+}
+export enum OwnerBackupItemState {
+    Trashed = "trashed",
+    Deleted = "deleted"
 }
 export enum Kind9 {
     Album = "album",

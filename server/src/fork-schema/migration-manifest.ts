@@ -102,6 +102,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000722-PetSyncEvents',
   '2100000000723-SharedSpaceDeliveryOrder',
   '2100000000724-BackupDeviceReconciliation',
+  '2100000000725-OwnerBackupDeletionFacts',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(

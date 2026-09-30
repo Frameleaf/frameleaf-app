@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CronTime } from 'cron';
 import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
@@ -6,6 +12,12 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type {
+  OwnerBackupHistoryDto,
+  OwnerBackupHistoryResponseDto,
+  OwnerBackupPageDto,
+  OwnerBackupsResponseDto,
+} from 'src/dtos/cloud-backup-owner.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type {
   CloudBackupKeyMode,
@@ -111,6 +123,7 @@ import {
 } from 'src/services/cloud-backup-restore.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { escrowPassphraseProblem, unwrapBucketKey, wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
+import { ownerBackupHistoryPage, ownerThumbnail } from 'src/utils/cloud-backup-owner.js';
 import { manifestTime, readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
 import {
   CLOUD_BACKUP_BATCH,
@@ -2521,6 +2534,146 @@ export class CloudBackupService {
   /* FL-164: restore requests                                            */
   /* ------------------------------------------------------------------ */
 
+  /** Reauthenticate normal credentials after remote work; owner projections never accept a shared link. */
+  private async ownerBackupAuth(ownerId: string, refresh: () => Promise<AuthDto>): Promise<AuthDto> {
+    const auth = await refresh();
+    if (auth.sharedLink || auth.user.id !== ownerId) throw new ForbiddenException('Owner backup access required');
+    return auth;
+  }
+
+  private async ownerBackupClaim() {
+    const metadata = await this.requireClaim();
+    const settings = (await this.readSettings()).frameleafCloud.cloudBackup;
+    if (
+      !settings.enabled ||
+      settings.target === 'off' ||
+      settings.target !== metadata.target ||
+      (settings.target === 'byo-s3' && bucketRef(settings.s3.endpoint, settings.s3.bucket) !== metadata.bucketRef)
+    )
+      throw new ConflictException('Cloud backup is not configured');
+    await this.requireKeyForRequest(metadata);
+    return metadata;
+  }
+
+  private async ownerHistory(auth: AuthDto, dto: OwnerBackupHistoryDto, refresh: () => Promise<AuthDto>) {
+    await this.ownerBackupAuth(auth.user.id, refresh);
+    const metadata = await this.ownerBackupClaim();
+    const manifest = await this.readManifestForRequest(metadata, dto.manifestKey);
+    const ids = Object.entries(manifest.assets)
+      .filter(([, item]) => item.owner === auth.user.id)
+      .map(([id]) => id);
+    const latest = await this.ownerBackupClaim();
+    if (latest.bucketRef !== metadata.bucketRef || latest.keyFingerprint !== metadata.keyFingerprint)
+      throw new ConflictException('Cloud backup changed during the request');
+    if ((await this.index.listKeptManifests(metadata.bucketRef)).every((row) => row.key !== dto.manifestKey))
+      throw new NotFoundException('Backup unavailable');
+    const finalAuth = await this.ownerBackupAuth(auth.user.id, refresh);
+    // Read current owner/lock/classification again after I/O and auth refresh, not an earlier browse snapshot.
+    const finalStates = await this.index.getOwnerHistoryState(finalAuth, ids);
+    return { metadata: latest, manifest, page: ownerBackupHistoryPage(finalAuth, manifest, finalStates, dto) };
+  }
+
+  async listOwnerHistory(
+    auth: AuthDto,
+    dto: OwnerBackupHistoryDto,
+    refresh: () => Promise<AuthDto>,
+  ): Promise<OwnerBackupHistoryResponseDto> {
+    return (await this.ownerHistory(auth, dto, refresh)).page;
+  }
+
+  /** Discovery exposes only kept backups with a currently authorized history item, never global counts. */
+  async listOwnerBackups(
+    auth: AuthDto,
+    page: OwnerBackupPageDto,
+    refresh: () => Promise<AuthDto>,
+  ): Promise<OwnerBackupsResponseDto> {
+    await this.ownerBackupAuth(auth.user.id, refresh);
+    const metadata = await this.ownerBackupClaim();
+    const candidates: Array<{ manifestKey: string; manifest: CloudBackupManifest }> = [];
+    for (const row of await this.index.listKeptManifests(metadata.bucketRef)) {
+      const found = await this.ownerHistory(auth, { manifestKey: row.key, offset: 0, limit: 1 }, refresh);
+      if (found.metadata.bucketRef !== metadata.bucketRef)
+        throw new ConflictException('Cloud backup changed during the request');
+      candidates.push({ manifestKey: row.key, manifest: found.manifest });
+    }
+    const finalMetadata = await this.ownerBackupClaim();
+    if (finalMetadata.bucketRef !== metadata.bucketRef || finalMetadata.keyFingerprint !== metadata.keyFingerprint)
+      throw new ConflictException('Cloud backup changed during the request');
+    const kept = new Map((await this.index.listKeptManifests(metadata.bucketRef)).map((row) => [row.key, row]));
+    const finalAuth = await this.ownerBackupAuth(auth.user.id, refresh);
+    const ids = [
+      ...new Set(
+        candidates.flatMap(({ manifest }) =>
+          Object.entries(manifest.assets)
+            .filter(([, asset]) => asset.owner === auth.user.id)
+            .map(([id]) => id),
+        ),
+      ),
+    ];
+    const states = await this.index.getOwnerHistoryState(finalAuth, ids);
+    const visible: OwnerBackupsResponseDto['backups'] = [];
+    for (const row of candidates) {
+      const record = kept.get(row.manifestKey);
+      if (record && ownerBackupHistoryPage(finalAuth, row.manifest, states, { offset: 0, limit: 1 }).total > 0)
+        visible.push({ manifestKey: row.manifestKey, backupDate: row.manifest.createdAt, status: record.status });
+    }
+    return {
+      backups: visible.slice(page.offset, page.offset + page.limit),
+      nextOffset: page.offset + page.limit < visible.length ? page.offset + page.limit : null,
+    };
+  }
+
+  async readOwnerThumbnail(
+    auth: AuthDto,
+    assetId: string,
+    manifestKey: string,
+    refresh: () => Promise<AuthDto>,
+  ): Promise<Buffer> {
+    const dto = { manifestKey, limit: 100, offset: 0 };
+    const found = await this.ownerHistory(auth, dto, refresh);
+    const entry = found.manifest.assets[assetId];
+    // A specific item is authorized using the same pre-search projection, independently of paging.
+    const only = { ...found.manifest, assets: entry ? { [assetId]: entry } : {} };
+    const current = await this.ownerBackupAuth(auth.user.id, refresh);
+    const states = await this.index.getOwnerHistoryState(current, [assetId]);
+    const file = ownerThumbnail(entry?.files ?? []);
+    if (!file || ownerBackupHistoryPage(current, only, states, dto).total !== 1)
+      throw new NotFoundException('Backup preview unavailable');
+    const key = await this.requireKeyForRequest(found.metadata);
+    const read = async (connection: CloudBackupConnection) =>
+      this.store.getPreview(connection, objectKey(file.sha256), key, file.sha256, file.size);
+    let bytes: Buffer;
+    try {
+      bytes =
+        found.metadata.target === 'managed'
+          ? await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () => {
+              if (await this.activeBucketOperation()) throw new ConflictException('Cloud backup is busy');
+              return read(this.managedConnection(await this.cloudBackup.rotate(await this.managedApi())));
+            })
+          : await read(
+              this.ownBucketConnection(found.metadata, (await this.readSettings()).frameleafCloud.cloudBackup),
+            );
+    } catch {
+      throw new ConflictException('Backup preview unavailable');
+    }
+    const final = await this.ownerHistory(auth, dto, refresh);
+    const finalAuth = await this.ownerBackupAuth(auth.user.id, refresh);
+    const finalStates = await this.index.getOwnerHistoryState(finalAuth, [assetId]);
+    const finalEntry = final.manifest.assets[assetId];
+    const finalFile = ownerThumbnail(finalEntry?.files ?? []);
+    const finalOnly = { ...final.manifest, assets: finalEntry ? { [assetId]: finalEntry } : {} };
+    if (
+      final.metadata.bucketRef !== found.metadata.bucketRef ||
+      final.metadata.keyFingerprint !== found.metadata.keyFingerprint ||
+      !finalFile ||
+      finalFile.sha256 !== file.sha256 ||
+      finalFile.size !== file.size ||
+      ownerBackupHistoryPage(finalAuth, finalOnly, finalStates, dto).total !== 1
+    )
+      throw new NotFoundException('Backup preview unavailable');
+    return bytes;
+  }
+
   /** The kept backups a restore can be made from, newest first. */
   async listManifests(): Promise<CloudBackupManifestsResponseDto> {
     const metadata = await this.requireClaim();
@@ -2722,12 +2875,12 @@ export class CloudBackupService {
 
   /** A manifest for a request: from the bucket, once; managed storage only while nothing else holds it. */
   private async readManifestForRequest(metadata: FrameleafCloudBackup, key: string): Promise<CloudBackupManifest> {
-    if (this.manifestCache?.bucketRef === metadata.bucketRef && this.manifestCache.key === key) {
-      return this.manifestCache.manifest;
-    }
     const kept = await this.index.listKeptManifests(metadata.bucketRef);
     if (kept.every((manifest) => manifest.key !== key)) {
       throw new NotFoundException('This backup is not one of the kept backups.');
+    }
+    if (this.manifestCache?.bucketRef === metadata.bucketRef && this.manifestCache.key === key) {
+      return this.manifestCache.manifest;
     }
     const bucketKey = await this.requireKeyForRequest(metadata);
     const read = async (connection: CloudBackupConnection) => {

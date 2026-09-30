@@ -16,6 +16,7 @@ import { BestPhotosController } from 'src/controllers/best-photos.controller.js'
 import { ClassificationController } from 'src/controllers/classification.controller.js';
 import { CloudAdminController } from 'src/controllers/cloud-admin.controller.js';
 import { CloudBackupAdminController } from 'src/controllers/cloud-backup-admin.controller.js';
+import { CloudBackupOwnerController } from 'src/controllers/cloud-backup-owner.controller.js';
 import { CloudMlAdminController } from 'src/controllers/cloud-ml-admin.controller.js';
 import { CloudMlController } from 'src/controllers/cloud-ml.controller.js';
 import { ClusterGroupController } from 'src/controllers/cluster-group.controller.js';
@@ -96,6 +97,7 @@ export const controllers = [
   CloudMlAdminController,
   CloudMlController,
   CloudBackupAdminController,
+  CloudBackupOwnerController,
   HardwareCheckController,
   ICloudSyncController,
   ApiKeyController,

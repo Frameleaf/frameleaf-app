@@ -1,4 +1,5 @@
 import { registerFunction } from '@immich/sql-tools';
+import { BACKUP_DELETION_CAPTURE_BODY } from 'src/utils/cloud-backup-deletion-sql.js';
 
 export const immich_uuid_v7 = registerFunction({
   name: 'immich_uuid_v7',
@@ -423,4 +424,11 @@ export const pet_observation_update_id = registerFunction({
   returnType: 'trigger',
   language: 'PLPGSQL',
   body: `BEGIN NEW."updateId" := immich_uuid_v7(); RETURN NEW; END`,
+});
+
+export const asset_backup_deletion_capture = registerFunction({
+  name: 'asset_backup_deletion_capture',
+  returnType: 'trigger',
+  language: 'PLPGSQL',
+  body: BACKUP_DELETION_CAPTURE_BODY,
 });
