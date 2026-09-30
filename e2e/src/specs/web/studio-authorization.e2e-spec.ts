@@ -1,4 +1,11 @@
-import { AlbumKind, AlbumUserRole, LoginResponseDto, createStudioProject, removeUserFromAlbum } from '@immich/sdk';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  LoginResponseDto,
+  acceptSharedSpaceInvitation,
+  createStudioProject,
+  removeUserFromAlbum,
+} from '@immich/sdk';
 import { Browser, Page, expect, test } from '@playwright/test';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -206,6 +213,10 @@ test.describe('Studio authorization gates (FL-112)', () => {
       ],
     });
     spaceId = album.id;
+    // a shared space invites; nobody is a member until they accept
+    for (const member of [editor, viewer, revoked]) {
+      await acceptSharedSpaceInvitation({ id: spaceId }, { headers: asBearerAuth(member.accessToken) });
+    }
 
     // the Locked item, as the owner locks it; the owner's sessions stay locked afterwards
     const headers = asBearerAuth(owner.accessToken);
@@ -298,6 +309,9 @@ test.describe('Studio authorization gates (FL-112)', () => {
   ] as const) {
     test(`${scenario}: a space member reviews but never edits, exports, imports or bundles`, async ({ browser }) => {
       const page = await openAs(browser, member());
+      // a refusal below is evidence only from a real member, so membership is checked first
+      const reviewing = await call(page, 'GET', `/studio/projects/${projectId}`);
+      expect(reviewing.status, `${scenario} is a member of the space: ${reviewing.text}`).toBe(200);
 
       await record('project', scenario, async () => {
         const opened = await call(page, 'GET', `/studio/projects/${projectId}`);
@@ -331,6 +345,8 @@ test.describe('Studio authorization gates (FL-112)', () => {
   test('sensitive: a Locked source reaches no gate, for a locked owner or a member', async ({ browser }) => {
     const ownerPage = await openAs(browser, owner);
     const memberPage = await openAs(browser, editor);
+    const reviewing = await call(memberPage, 'GET', `/studio/projects/${sensitiveId}`);
+    expect(reviewing.status, `the member reviews the sensitive project: ${reviewing.text}`).toBe(200);
 
     await record('project', 'sensitive', async () => {
       const locked = await call(ownerPage, 'GET', `/studio/projects/${sensitiveId}`);
