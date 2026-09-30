@@ -8,6 +8,7 @@ import {
   AlbumUserRole,
   AlbumUserRoleSchema,
   AssetOrderSchema,
+  AssetStatus,
   AssetTypeSchema,
   AssetVisibilitySchema,
   MemoryTypeSchema,
@@ -593,9 +594,22 @@ class SyncPinnedCollectionDeleteV1 extends createZodDto(
   }),
 ) {}
 
+@ExtraModel()
+class SyncAssetTrashStateV1 extends createZodDto(
+  z
+    .object({ assetId: z.uuid(), deletedAt: isoDatetimeToDate, status: z.enum(AssetStatus), isOffline: z.boolean() })
+    .meta({ id: 'SyncAssetTrashStateV1' }),
+) {}
+@ExtraModel()
+class SyncAssetTrashStateDeleteV1 extends createZodDto(
+  z.object({ assetId: z.uuid() }).meta({ id: 'SyncAssetTrashStateDeleteV1' }),
+) {}
+
 export type SyncItem = {
   [SyncEntityType.PinnedCollectionV1]: SyncPinnedCollectionV1;
   [SyncEntityType.PinnedCollectionDeleteV1]: SyncPinnedCollectionDeleteV1;
+  [SyncEntityType.AssetTrashStateV1]: SyncAssetTrashStateV1;
+  [SyncEntityType.AssetTrashStateDeleteV1]: SyncAssetTrashStateDeleteV1;
   [SyncEntityType.DuplicateGroupV1]: SyncDuplicateGroupV1;
   [SyncEntityType.DuplicateGroupDeleteV1]: SyncDuplicateGroupDeleteV1;
   [SyncEntityType.SharedSpaceV1]: SyncSharedSpaceV1;

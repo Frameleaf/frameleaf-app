@@ -102,6 +102,27 @@ export class TrashRepository {
     );
   }
 
+  /** Narrow mirror state over precisely the same owner/Locked/privacy scope as the trash counts. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getSyncStates(userId: string, options: TrashScopeOptions = {}, assetId?: string) {
+    return this.scope(this.db, userId, 'listed', options)
+      .$if(!!assetId, (qb) => qb.where('asset.id', '=', asUuid(assetId!)))
+      .select('asset.id as assetId')
+      .select(
+        sql<{
+          assetId: string;
+          deletedAt: string;
+          status: AssetStatus;
+          isOffline: boolean;
+        }>`jsonb_build_object('assetId', asset.id, 'deletedAt', asset."deletedAt", 'status', asset.status, 'isOffline', asset."isOffline")`.as(
+          'data',
+        ),
+      )
+      .orderBy('asset.deletedAt', 'desc')
+      .orderBy('asset.id', 'desc')
+      .execute();
+  }
+
   /** The trash counts the page shows: what is in it, and what is still being removed from storage. */
   async getSummary(userId: string, options: TrashScopeOptions = {}) {
     const listed = await this.scope(this.db, userId, 'listed', options)
