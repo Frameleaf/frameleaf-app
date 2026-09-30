@@ -371,6 +371,24 @@ jobs:
           VITEST_DISABLE_DOCKER_SETUP: true
         run: pnpm test:maintenance
         if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+      - name: Start the upload transport fixture
+        id: upload-fixture
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.upload-transport.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
+          timeout 120s bash -c 'until curl --fail --silent --max-time 2 http://127.0.0.1:2285/api/server/ping > /dev/null; do sleep 2; done'
+        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+      - name: Run upload relay and proxy transport tests
+        working-directory: ./server
+        env:
+          FL225_API_URL: http://127.0.0.1:2285
+          FL225_PG_URL: postgres://postgres:postgres@127.0.0.1:5435/immich
+          FL225_CLOUD_URL: http://host.docker.internal:30185
+          FL225_EDGE_SECRET: fl225-local-transport-only-secret
+        run: pnpm exec vitest run --config test/vitest.config.transport.mjs
+        if: ${{ !cancelled() && steps.upload-fixture.outcome == 'success' }}
+      - name: Capture upload transport Docker logs
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.upload-transport.yml logs --no-color > docker-upload-transport-logs.txt
       # FL-201: the same image, now pointed at the fake Frameleaf Cloud (vendored contract fixtures), for the
       # processing-consent specs. Runs after the main suite, whose specs expect the default cloud address.
       # The whole stack starts fresh (new database and volumes): the server must record its media location
@@ -396,6 +414,7 @@ jobs:
           path: |
             e2e/docker-compose-logs.txt
             e2e/docker-diagnostics-after-api-tests.txt
+            e2e/docker-upload-transport-logs.txt
     # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
     timeout-minutes: 120
   e2e-tests-web:
