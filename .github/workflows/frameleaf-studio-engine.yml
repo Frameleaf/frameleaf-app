@@ -111,10 +111,20 @@ jobs:
           # config that `svelte-kit sync` generates. This job has no web workspace, so stand in for it.
           mkdir -p web/.svelte-kit
           test -f web/.svelte-kit/tsconfig.json || echo '{}' > web/.svelte-kit/tsconfig.json
-          node studio/tools/adapter.mjs test
+          COMMAND_MATRIX_REPORT="$RUNNER_TEMP/command-matrix-report.json" node studio/tools/adapter.mjs test
           node studio/tools/adapter.mjs build
           test -f web/static/studio-engine/manifest.json
           test -f web/static/studio-engine/notices/freecut.txt
+      # FL-112 (STU-405): record which conformance.json command-axis rows
+      # studio/adapters/web/test/command-matrix.test.ts's own report - written by the adapter test
+      # run just above, on the real command bridge/engine command handlers/graph history, not any
+      # developer machine's evidence - actually measured as passed. See
+      # applyCommandMatrixCoverage's doc: coverage is read per row from the report itself, not a
+      # hand-reviewed static set, since which cases a row passes varies by command.
+      - name: Record Studio command-matrix evidence (FL-112)
+        run: |
+          node scripts/frameleaf-studio-evidence.mjs --command-matrix-report "$RUNNER_TEMP/command-matrix-report.json" --write
+          git diff --exit-code -- studio/conformance.json
       - name: Reproduce from a fresh generated workspace
         run: |
           rm -rf studio/engine

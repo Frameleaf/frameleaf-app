@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  applyCommandMatrixCoverage,
   applyFamilyCoverage,
   blockedAxisEntry,
   buildPassedEntry,
+  commandMatrixCoverage,
   missingCases,
 } from "./frameleaf-studio-evidence.mjs";
 
@@ -56,6 +58,111 @@ test("blockedAxisEntry names the axis and the exact missing cases", () => {
 
 test("blockedAxisEntry returns null once nothing is missing", () => {
   assert.equal(blockedAxisEntry("chromium", []), null);
+});
+
+test("commandMatrixCoverage counts only passed cases, merged across commands sharing a row", () => {
+  const report = {
+    commands: [
+      {
+        id: "timeline.trim",
+        manifestIds: ["command.timeline-trim"],
+        cases: [
+          { case: "access", result: "passed" },
+          { case: "lease", result: "passed" },
+          { case: "revision", result: "failed", reason: "x" },
+          { case: "idempotence", result: "passed" },
+          { case: "undo", result: "not-applicable", reason: "no graph edit" },
+        ],
+      },
+      {
+        // A second command that happens to implement the same manifest row: its passed cases
+        // merge in rather than overwrite.
+        id: "timeline.trim.alias",
+        manifestIds: ["command.timeline-trim"],
+        cases: [{ case: "undo", result: "passed" }],
+      },
+    ],
+  };
+  const coverage = commandMatrixCoverage(report);
+  assert.deepEqual(
+    coverage.get("command.timeline-trim"),
+    new Set(["access", "lease", "idempotence", "undo"]),
+  );
+  assert.equal(coverage.size, 1);
+});
+
+test("applyCommandMatrixCoverage blocks a covered row on the cases the report didn't pass", async () => {
+  const overlay = {
+    engineRevision: "e",
+    rows: [
+      overlayRow("command.timeline-trim", {
+        command: { status: "not-tested" },
+      }),
+    ],
+  };
+  const catalog = { rows: [fixture("command.timeline-trim")] };
+  const report = {
+    commands: [
+      {
+        id: "timeline.trim",
+        manifestIds: ["command.timeline-trim"],
+        cases: [
+          { case: "access", result: "passed" },
+          { case: "lease", result: "passed" },
+          { case: "revision", result: "passed" },
+          { case: "idempotence", result: "passed" },
+          { case: "undo", result: "passed" },
+        ],
+      },
+    ],
+  };
+  const summary = await applyCommandMatrixCoverage(
+    overlay,
+    catalog,
+    manifest(),
+    build(),
+    report,
+  );
+  assert.deepEqual(summary, {
+    axis: "command",
+    rows: 1,
+    untested: 0,
+    blocked: 1,
+    alreadyPassed: 0,
+    fullyCovered: 0,
+    pendingArtifact: 0,
+    passed: 0,
+  });
+  // The report proves the 5 command-axis cases, but fixtureIds still requires the row's own base
+  // cases (normal/invalid) too - genuinely unmeasured by this report, so honestly still missing.
+  assert.deepEqual(overlay.rows[0].axes.command, {
+    status: "blocked",
+    reason: "Missing command-axis case(s): invalid, normal (FL-112).",
+  });
+});
+
+test("applyCommandMatrixCoverage treats a row absent from the report as fully untested, not as an empty pass", async () => {
+  const overlay = {
+    engineRevision: "e",
+    rows: [
+      overlayRow("command.untouched", { command: { status: "not-tested" } }),
+    ],
+  };
+  const catalog = { rows: [fixture("command.untouched")] };
+  const report = { commands: [] };
+  const summary = await applyCommandMatrixCoverage(
+    overlay,
+    catalog,
+    manifest(),
+    build(),
+    report,
+  );
+  assert.equal(summary.untested, 1);
+  assert.deepEqual(overlay.rows[0].axes.command, {
+    status: "blocked",
+    reason:
+      "Missing command-axis case(s): access, idempotence, invalid, lease, normal, revision, undo (FL-112).",
+  });
 });
 
 test("applyFamilyCoverage blocks every row of the family with partial coverage, and only that family", async () => {
