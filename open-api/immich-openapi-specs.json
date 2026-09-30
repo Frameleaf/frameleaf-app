@@ -85753,6 +85753,8 @@
       "SyncEntityType": {
         "description": "Sync entity type",
         "enum": [
+          "PinnedCollectionV1",
+          "PinnedCollectionDeleteV1",
           "DuplicateGroupV1",
           "DuplicateGroupDeleteV1",
           "SharedSpaceV1",
@@ -86168,6 +86170,91 @@
       "SyncPetV1": {
         "$ref": "#/components/schemas/PetResponseDto"
       },
+      "SyncPinnedCollectionDeleteV1": {
+        "description": "Remove available mirror hydration only. The opaque stored pin may remain as an unavailable V1 snapshot placeholder.",
+        "properties": {
+          "pinId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pinId"
+        ],
+        "type": "object"
+      },
+      "SyncPinnedCollectionV1": {
+        "description": "Current authorized pin hydration at its complete-list position. Unavailable pins retain their V1 snapshot placeholder but have no event hydration.",
+        "properties": {
+          "count": {
+            "description": "Current access-filtered item count; null when unavailable",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "countCapped": {
+            "description": "Whether a semantic saved-search count reached the existing smart-search cap",
+            "type": "boolean"
+          },
+          "coverAssetId": {
+            "description": "Current readable cover asset; null when unavailable or empty",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "album",
+              "smart-album",
+              "saved-search",
+              "person",
+              "pet",
+              "memory",
+              "builtin"
+            ],
+            "type": "string"
+          },
+          "position": {
+            "maximum": 49,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "title": {
+            "description": "Current access-filtered title; null when unavailable",
+            "nullable": true,
+            "type": "string"
+          },
+          "unavailable": {
+            "enum": [
+              false
+            ],
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "count",
+          "countCapped",
+          "coverAssetId",
+          "id",
+          "kind",
+          "position",
+          "targetId",
+          "title",
+          "unavailable"
+        ],
+        "type": "object"
+      },
       "SyncPinnedCollectionsV1": {
         "properties": {
           "pins": {
@@ -86199,6 +86286,7 @@
       "SyncRequestType": {
         "description": "Sync request type",
         "enum": [
+          "PinnedCollectionEventsV1",
           "DuplicateGroupsV1",
           "SharedSpacesV1",
           "SharedSpaceMembersV1",

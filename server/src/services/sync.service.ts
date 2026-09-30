@@ -123,6 +123,7 @@ const sendEntityBackfillCompleteAck = async (response: Writable, ackType: SyncEn
 };
 
 export const SYNC_TYPES_ORDER = [
+  SyncRequestType.PinnedCollectionEventsV1,
   SyncRequestType.DuplicateGroupsV1,
   SyncRequestType.SharedSpacesV1,
   SyncRequestType.SharedSpaceMembersV1,
@@ -210,6 +211,8 @@ export class SyncService extends BaseService {
       // TODO pick the latest ack for each type, instead of using the last one
       if (
         [
+          SyncEntityType.PinnedCollectionV1,
+          SyncEntityType.PinnedCollectionDeleteV1,
           SyncEntityType.DuplicateGroupV1,
           SyncEntityType.DuplicateGroupDeleteV1,
           SyncEntityType.SharedSpaceV1,
@@ -296,6 +299,7 @@ export class SyncService extends BaseService {
     const options: SyncQueryOptions = { nowId, userId: auth.user.id, ...getHiddenContentQueryOptions(auth) };
 
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
+      [SyncRequestType.PinnedCollectionEventsV1]: () => this.syncTags(auth, response, 'pin'),
       [SyncRequestType.DuplicateGroupsV1]: () => this.syncTags(auth, response, 'duplicate'),
       [SyncRequestType.SharedSpacesV1]: () => this.syncTags(auth, response, 'space'),
       [SyncRequestType.SharedSpaceMembersV1]: () => this.syncTags(auth, response, 'spaceMember'),
@@ -1114,12 +1118,17 @@ export class SyncService extends BaseService {
   private async syncTags(
     auth: AuthDto,
     response: Writable,
-    kind: 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate',
+    kind: 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate' | 'pin',
   ) {
-    const pending = await this.syncRepository.tag.reconcile(auth, kind);
+    const readPins = kind === 'pin' ? () => this.pins.get(auth) : undefined;
+    const pending = await (readPins
+      ? this.syncRepository.tag.reconcile(auth, kind, readPins)
+      : this.syncRepository.tag.reconcile(auth, kind));
     for (const { eventId } of pending) {
       if (response.destroyed || response.writableEnded) throw new ClientDisconnectedError();
-      const item = await this.syncRepository.tag.prepare(auth, kind, eventId);
+      const item = await (readPins
+        ? this.syncRepository.tag.prepare(auth, kind, eventId, readPins)
+        : this.syncRepository.tag.prepare(auth, kind, eventId));
       if (item) await send(response, { type: item.type, ids: [item.eventId], data: item.data as never });
     }
   }

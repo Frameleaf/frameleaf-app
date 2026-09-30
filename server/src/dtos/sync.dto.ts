@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { ExtraModel } from 'src/decorators.js';
 import { PetObservationResponseSchema, PetResponseSchema } from 'src/dtos/pet.dto.js';
-import { PinnedCollectionsResponseSchema } from 'src/dtos/pinned-collection.dto.js';
+import { PIN_LIMIT, PinnedCollectionSchema, PinnedCollectionsResponseSchema } from 'src/dtos/pinned-collection.dto.js';
 import {
   AlbumKindSchema,
   AlbumUserRole,
@@ -569,7 +569,33 @@ class SyncDuplicateGroupDeleteV1 extends createZodDto(
   z.object({ groupId: z.uuid() }).meta({ id: 'SyncDuplicateGroupDeleteV1' }),
 ) {}
 
+@ExtraModel()
+class SyncPinnedCollectionV1 extends createZodDto(
+  PinnedCollectionSchema.extend({
+    targetId: z.string(),
+    unavailable: z.literal(false),
+    position: z
+      .int()
+      .min(0)
+      .max(PIN_LIMIT - 1),
+  }).meta({
+    id: 'SyncPinnedCollectionV1',
+    description:
+      'Current authorized pin hydration at its complete-list position. Unavailable pins retain their V1 snapshot placeholder but have no event hydration.',
+  }),
+) {}
+@ExtraModel()
+class SyncPinnedCollectionDeleteV1 extends createZodDto(
+  z.object({ pinId: z.uuid() }).meta({
+    id: 'SyncPinnedCollectionDeleteV1',
+    description:
+      'Remove available mirror hydration only. The opaque stored pin may remain as an unavailable V1 snapshot placeholder.',
+  }),
+) {}
+
 export type SyncItem = {
+  [SyncEntityType.PinnedCollectionV1]: SyncPinnedCollectionV1;
+  [SyncEntityType.PinnedCollectionDeleteV1]: SyncPinnedCollectionDeleteV1;
   [SyncEntityType.DuplicateGroupV1]: SyncDuplicateGroupV1;
   [SyncEntityType.DuplicateGroupDeleteV1]: SyncDuplicateGroupDeleteV1;
   [SyncEntityType.SharedSpaceV1]: SyncSharedSpaceV1;
