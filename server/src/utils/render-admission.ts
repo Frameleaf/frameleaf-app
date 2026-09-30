@@ -399,7 +399,8 @@ export const evaluateRunningLimits = ({
  * `hevc_nvenc`, `libx265` and `hevc_vaapi` all prove HEVC.
  */
 /**
- * The ffmpeg *encoder* names that can write each export format. Evidence must name one of them
+ * Verified writer identities that can write each export format: ffmpeg encoders and the
+ * measured browser WebCodecs AVC writer. Evidence must name one of them
  * exactly: a decoder such as `h264_cuvid` or `hevc_qsv`'s decode-only sibling proves nothing about
  * writing the format, so substring matching is not allowed.
  */
@@ -419,6 +420,8 @@ const OUTPUT_FORMATS: Readonly<Record<string, { codec: readonly string[]; contai
   },
   'mp4-h264': {
     codec: [
+      // Explicit encoder evidence from a real WebCodecs AVC encode, never a decoder name.
+      'webcodecs-avc',
       'libx264',
       'h264_nvenc',
       'h264_qsv',

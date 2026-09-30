@@ -308,6 +308,40 @@ describe(evaluateClaimAdmission.name, () => {
       expect(evaluateClaimAdmission(claimInput())).toEqual({ admitted: true });
     });
 
+    it('admits the measured WebCodecs AVC writer at creation and claim without treating a decoder as a writer', () => {
+      const capabilities = { codecs: ['webcodecs-avc'], formats: ['mp4'] };
+      expect(
+        evaluateRenderOutput(
+          [
+            {
+              gpuMemoryBytes: 2 * 1024 ** 3,
+              codecs: capabilities.codecs,
+              colorPrecision: { maxBitDepth: 8, hdr10: false, dolbyVision: false },
+            },
+          ],
+          { format: 'mp4-h264', color: 'preserve', resolution: '720p' },
+        ),
+      ).toEqual({ supported: true });
+      expect(
+        evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: exporting('mp4-h264') })),
+      ).toEqual({ admitted: true });
+      for (const codecs of [['h264'], ['avc1.64001f'], ['h264_cuvid']]) {
+        expect(
+          evaluateClaimAdmission(
+            claimInput({ session: { capabilities: { codecs, formats: ['mp4'] } }, operation: exporting('mp4-h264') }),
+          ),
+        ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported });
+      }
+      for (const format of ['mp4-hevc-main10', 'webm-av1', 'prores-422-hq']) {
+        expect(evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: exporting(format) }))).toEqual(
+          { admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported },
+        );
+      }
+      expect(
+        provesOutput({ codecs: ['webcodecs-avc'], formats: ['webm'] }, requiredOutput({ format: 'mp4-h264' })!),
+      ).toBe(false);
+    });
+
     it('matches encoder names exactly, case-insensitively, so a decoder proves nothing', () => {
       expect(
         provesOutput({ codecs: ['LIBX265'], formats: ['MP4'] }, requiredOutput({ format: 'mp4-hevc-main10' })!),
