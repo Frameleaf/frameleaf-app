@@ -9,6 +9,7 @@ import {
 import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
+import { AssetType, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
@@ -68,6 +69,7 @@ export class AssetUploadResourceRepository {
           id,
           ownerId,
           metadata: input.metadata,
+          state: input.metadata.publication === 'live-photo' ? 'pair-receiving' : 'receiving',
           expectedChecksum: input.checksum,
           contentType: input.contentType,
           expectedSize: input.size ?? null,
@@ -103,58 +105,76 @@ export class AssetUploadResourceRepository {
     callback: (tx: Transaction<DB>, resource: AssetUploadResource) => Promise<T>,
     allowExpiredPublished = false,
   ) {
+    return this.lockedMany([id], ownerId, (tx, rows) => callback(tx, rows[0]), allowExpiredPublished);
+  }
+
+  /** All resource locks share one transaction and a deterministic acquisition order. */
+  async lockedMany<T>(
+    ids: string[],
+    ownerId: string,
+    callback: (tx: Transaction<DB>, resources: AssetUploadResource[]) => Promise<T>,
+    allowExpiredPublished = false,
+  ) {
+    if (ids.length === 0 || new Set(ids).size !== ids.length) {
+      throw new ConflictException('Distinct upload resources are required');
+    }
     return this.db.transaction().execute(async (tx) => {
       await this.ready(tx);
       await lockPublicForkWrites(tx);
-      const row = await tx
-        .selectFrom('asset_upload_resource')
-        .selectAll()
-        .where('id', '=', id)
-        .where('ownerId', '=', ownerId)
-        .where((eb) =>
-          allowExpiredPublished
-            ? eb.or([eb('expiresAt', '>', new Date()), eb('state', '=', 'published')])
-            : eb('expiresAt', '>', new Date()),
-        )
-        .where('state', '!=', 'cancelled')
-        .executeTakeFirst();
-      if (!row) {
-        throw new NotFoundException('Upload unavailable');
-      }
-      // A losing writer is refused immediately rather than consuming a second pooled connection.
-      const lock = await sql<{
-        acquired: boolean;
-      }>`SELECT pg_try_advisory_xact_lock(-225, hashtext(${id})::int) AS acquired`.execute(tx);
-      if (!lock.rows[0]?.acquired) {
-        throw new ConflictException('Upload has an active request');
-      }
-      const current = await tx
-        .selectFrom('asset_upload_resource')
-        .selectAll()
-        .where('id', '=', id)
-        .where('ownerId', '=', ownerId)
-        .where((eb) =>
-          allowExpiredPublished
-            ? eb.or([eb('expiresAt', '>', new Date()), eb('state', '=', 'published')])
-            : eb('expiresAt', '>', new Date()),
-        )
-        .where('state', '!=', 'cancelled')
-        .forUpdate()
-        .executeTakeFirst();
-      if (!current) {
-        throw new NotFoundException('Upload unavailable');
+      const rows: AssetUploadResource[] = [];
+      for (const id of [...ids].sort()) {
+        const row = await tx
+          .selectFrom('asset_upload_resource')
+          .selectAll()
+          .where('id', '=', id)
+          .where('ownerId', '=', ownerId)
+          .where((eb) =>
+            allowExpiredPublished
+              ? eb.or([eb('expiresAt', '>', new Date()), eb('state', '=', 'published')])
+              : eb('expiresAt', '>', new Date()),
+          )
+          .where('state', '!=', 'cancelled')
+          .executeTakeFirst();
+        if (!row) {
+          throw new NotFoundException('Upload unavailable');
+        }
+        // A losing writer is refused immediately rather than consuming a second pooled connection.
+        const lock = await sql<{
+          acquired: boolean;
+        }>`SELECT pg_try_advisory_xact_lock(-225, hashtext(${id})::int) AS acquired`.execute(tx);
+        if (!lock.rows[0]?.acquired) {
+          throw new ConflictException('Upload has an active request');
+        }
+        const current = await tx
+          .selectFrom('asset_upload_resource')
+          .selectAll()
+          .where('id', '=', id)
+          .where('ownerId', '=', ownerId)
+          .where((eb) =>
+            allowExpiredPublished
+              ? eb.or([eb('expiresAt', '>', new Date()), eb('state', '=', 'published')])
+              : eb('expiresAt', '>', new Date()),
+          )
+          .where('state', '!=', 'cancelled')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!current) {
+          throw new NotFoundException('Upload unavailable');
+        }
+        rows.push(current);
       }
       const owner = await tx
         .selectFrom('user')
         .select('id')
         .where('id', '=', ownerId)
         .where('deletedAt', 'is', null)
-        .forShare()
+        .$if(ids.length > 1, (qb) => qb.forUpdate())
+        .$if(ids.length === 1, (qb) => qb.forShare())
         .executeTakeFirst();
       if (!owner) {
         throw new NotFoundException('Upload owner unavailable');
       }
-      return callback(tx, current);
+      return callback(tx, rows);
     });
   }
 
@@ -215,10 +235,11 @@ export class AssetUploadResourceRepository {
     tx: Transaction<DB>,
     resource: AssetUploadResource,
     prepared: { asset: Parameters<AssetRepository['create']>[0]; lock: Parameters<AssetRepository['create']>[1] },
+    options: { rejectDuplicate?: boolean; quotaCharged?: boolean } = {},
   ) {
     if (
       resource.resultAssetId ||
-      resource.state !== 'verified' ||
+      resource.state !== (options.rejectDuplicate ? 'pair-verified' : 'verified') ||
       !resource.ownerId ||
       !resource.finalPath ||
       !resource.verifiedChecksum ||
@@ -227,26 +248,41 @@ export class AssetUploadResourceRepository {
       throw new ConflictException('Upload is not ready for publication');
     }
     const assets = new AssetRepository(tx);
-    const duplicateId = await assets.getUploadAssetIdByChecksum(resource.ownerId, resource.verifiedChecksum, {
-      lockedOwnerId: resource.ownerId,
-    });
+    const duplicateId = options.rejectDuplicate
+      ? (
+          await tx
+            .selectFrom('asset')
+            .select('id')
+            .where('ownerId', '=', resource.ownerId)
+            .where('checksum', '=', resource.verifiedChecksum)
+            .where('libraryId', 'is', null)
+            .executeTakeFirst()
+        )?.id
+      : await assets.getUploadAssetIdByChecksum(resource.ownerId, resource.verifiedChecksum, {
+          lockedOwnerId: resource.ownerId,
+        });
+    if (duplicateId && options.rejectDuplicate) {
+      throw new ConflictException('Live Photo resources cannot reuse an existing asset');
+    }
     const duplicatePending = duplicateId
       ? await this.pendingCreatedOrigin(tx, resource.ownerId, duplicateId, resource.verifiedChecksum)
       : undefined;
     let assetId = duplicateId;
     if (!assetId) {
-      const quota = await tx
-        .updateTable('user')
-        .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + ${resource.offset}` })
-        .where('id', '=', resource.ownerId)
-        .where('deletedAt', 'is', null)
-        .where(
-          sql<boolean>`("quotaSizeInBytes" IS NULL OR "quotaUsageInBytes" + ${resource.offset} <= "quotaSizeInBytes")`,
-        )
-        .returning('id')
-        .executeTakeFirst();
-      if (!quota) {
-        throw new BadRequestException('Quota has been exceeded');
+      if (!options.quotaCharged) {
+        const quota = await tx
+          .updateTable('user')
+          .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + ${resource.offset}` })
+          .where('id', '=', resource.ownerId)
+          .where('deletedAt', 'is', null)
+          .where(
+            sql<boolean>`("quotaSizeInBytes" IS NULL OR "quotaUsageInBytes" + ${resource.offset} <= "quotaSizeInBytes")`,
+          )
+          .returning('id')
+          .executeTakeFirst();
+        if (!quota) {
+          throw new BadRequestException('Quota has been exceeded');
+        }
       }
       const asset = await assets.create(prepared.asset, prepared.lock, tx);
       assetId = asset.id;
@@ -277,6 +313,142 @@ export class AssetUploadResourceRepository {
       .where('id', '=', resource.id)
       .returningAll()
       .executeTakeFirstOrThrow();
+  }
+
+  /** Both assets, checksum evidence, metadata, results and the combined quota debit commit atomically. */
+  async publishLivePhoto(
+    tx: Transaction<DB>,
+    still: AssetUploadResource,
+    video: AssetUploadResource,
+    prepared?: {
+      still: Parameters<AssetUploadResourceRepository['publish']>[2];
+      video: Parameters<AssetUploadResourceRepository['publish']>[2];
+    },
+  ) {
+    if (
+      still.id === video.id ||
+      !still.ownerId ||
+      still.ownerId !== video.ownerId ||
+      still.metadata.publication !== 'live-photo' ||
+      video.metadata.publication !== 'live-photo' ||
+      !still.verifiedChecksum?.equals(still.expectedChecksum) ||
+      !video.verifiedChecksum?.equals(video.expectedChecksum)
+    ) {
+      throw new ConflictException('Live Photo resources are not verified');
+    }
+    if (still.state === 'published' && video.state === 'published') {
+      const pair = await tx
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', still.resultAssetId!)
+        .where('ownerId', '=', still.ownerId)
+        .where('type', '=', AssetType.Image)
+        .where('livePhotoVideoId', '=', video.resultAssetId!)
+        .where('deletedAt', 'is', null)
+        .executeTakeFirst();
+      const motion = await tx
+        .selectFrom('asset')
+        .select('id')
+        .where('id', '=', video.resultAssetId!)
+        .where('ownerId', '=', still.ownerId)
+        .where('type', '=', AssetType.Video)
+        .where('deletedAt', 'is', null)
+        .executeTakeFirst();
+      if (
+        !pair ||
+        !motion ||
+        still.resultStatus !== AssetMediaStatus.CREATED ||
+        video.resultStatus !== AssetMediaStatus.CREATED
+      ) {
+        throw new ConflictException('Upload resources do not identify this Live Photo pair');
+      }
+      return { still, video };
+    }
+    if (
+      !prepared ||
+      still.state !== 'pair-verified' ||
+      video.state !== 'pair-verified' ||
+      prepared.still.asset.type !== AssetType.Image ||
+      prepared.video.asset.type !== AssetType.Video ||
+      prepared.still.asset.ownerId !== still.ownerId ||
+      prepared.video.asset.ownerId !== video.ownerId ||
+      prepared.still.asset.originalPath !== still.finalPath ||
+      prepared.video.asset.originalPath !== video.finalPath ||
+      !Buffer.from(prepared.still.asset.checksum).equals(still.verifiedChecksum) ||
+      !Buffer.from(prepared.video.asset.checksum).equals(video.verifiedChecksum) ||
+      prepared.still.asset.livePhotoVideoId ||
+      prepared.video.asset.livePhotoVideoId ||
+      (prepared.still.lock && prepared.still.lock.lockedBy !== still.ownerId) ||
+      prepared.still.lock?.reason !== prepared.video.lock?.reason ||
+      prepared.still.lock?.lockedBy !== prepared.video.lock?.lockedBy
+    ) {
+      throw new ConflictException('Live Photo types, publication or privacy are incompatible');
+    }
+    const quota = await tx
+      .updateTable('user')
+      .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + ${still.offset + video.offset}` })
+      .where('id', '=', still.ownerId)
+      .where('deletedAt', 'is', null)
+      .where(
+        sql<boolean>`("quotaSizeInBytes" IS NULL OR "quotaUsageInBytes" + ${still.offset + video.offset} <= "quotaSizeInBytes")`,
+      )
+      .returning('id')
+      .executeTakeFirst();
+    if (!quota) {
+      throw new BadRequestException('Quota has been exceeded');
+    }
+    const publishedVideo = await this.publish(
+      tx,
+      video,
+      {
+        ...prepared.video,
+        asset: { ...prepared.video.asset, visibility: AssetVisibility.Hidden },
+      },
+      { rejectDuplicate: true, quotaCharged: true },
+    );
+    const publishedStill = await this.publish(
+      tx,
+      still,
+      {
+        ...prepared.still,
+        asset: { ...prepared.still.asset, livePhotoVideoId: publishedVideo.resultAssetId },
+      },
+      { rejectDuplicate: true, quotaCharged: true },
+    );
+    return { still: publishedStill, video: publishedVideo };
+  }
+
+  /** A declared half cannot acknowledge completion until its current committed sibling is ingested too. */
+  async livePhotoPairIngested(resource: AssetUploadResource) {
+    if (resource.state !== 'published' || !resource.ingested || !resource.ownerId || !resource.resultAssetId) {
+      return false;
+    }
+    const pair = await this.db
+      .selectFrom('asset as still')
+      .innerJoin('asset as video', 'video.id', 'still.livePhotoVideoId')
+      .innerJoin('asset_upload_resource as stillUpload', 'stillUpload.resultAssetId', 'still.id')
+      .innerJoin('asset_upload_resource as videoUpload', 'videoUpload.resultAssetId', 'video.id')
+      .select('still.id')
+      .where('still.ownerId', '=', resource.ownerId)
+      .where('video.ownerId', '=', resource.ownerId)
+      .where('stillUpload.ownerId', '=', resource.ownerId)
+      .where('videoUpload.ownerId', '=', resource.ownerId)
+      .where('still.type', '=', AssetType.Image)
+      .where('video.type', '=', AssetType.Video)
+      .where('still.deletedAt', 'is', null)
+      .where('video.deletedAt', 'is', null)
+      .where('stillUpload.state', '=', 'published')
+      .where('videoUpload.state', '=', 'published')
+      .where('stillUpload.ingested', '=', true)
+      .where('videoUpload.ingested', '=', true)
+      .where('stillUpload.resultStatus', '=', AssetMediaStatus.CREATED)
+      .where('videoUpload.resultStatus', '=', AssetMediaStatus.CREATED)
+      .where(
+        sql<boolean>`"stillUpload".metadata ->> 'publication' = 'live-photo' AND "videoUpload".metadata ->> 'publication' = 'live-photo'`,
+      )
+      .where((eb) => eb.or([eb('stillUpload.id', '=', resource.id), eb('videoUpload.id', '=', resource.id)]))
+      .executeTakeFirst();
+    return !!pair;
   }
 
   async claimIngestion(id: string, ownerId: string, token: string) {
@@ -437,7 +609,7 @@ export class AssetUploadResourceRepository {
       .where('ownerId', 'is not', null)
       .where((eb) =>
         eb.or([
-          eb.and([eb('state', 'in', ['finalizing', 'verified']), eb('expiresAt', '>', new Date())]),
+          eb.and([eb('state', 'in', ['finalizing', 'pair-finalizing', 'verified']), eb('expiresAt', '>', new Date())]),
           eb.and([eb('state', '=', 'published'), eb('ingested', '=', false)]),
         ]),
       )

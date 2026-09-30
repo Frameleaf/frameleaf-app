@@ -16,6 +16,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
+import { LivePhotoUploadCommitDto } from 'src/dtos/asset-upload-resource.dto.js';
 import { ImmichWorker, Permission, StorageFolder } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import {
@@ -117,7 +118,10 @@ export class AssetUploadResourceService {
   }
 
   async head(auth: AuthDto, id: string) {
-    return this.uploads.get(id, await this.owner(auth));
+    const row = await this.uploads.get(id, await this.owner(auth));
+    return row.metadata.publication === 'live-photo'
+      ? { ...row, ingested: await this.uploads.livePhotoPairIngested(row) }
+      : row;
   }
 
   async append(auth: AuthDto, id: string, headers: IncomingHttpHeaders, input: Readable) {
@@ -215,7 +219,11 @@ export class AssetUploadResourceService {
     const timeout = setTimeout(() => input.destroy(new Error('Upload part timed out')), 10 * 60 * 1000);
     try {
       const initial = await this.uploads.get(id, auth.user.id);
-      if (['finalizing', 'verified', 'published'].includes(initial.state) && complete && initial.offset === offset) {
+      if (
+        ['finalizing', 'pair-finalizing', 'verified', 'pair-verified', 'published'].includes(initial.state) &&
+        complete &&
+        initial.offset === offset
+      ) {
         if (length !== undefined && length !== initial.expectedSize) {
           throw new BadRequestException('Upload length cannot change');
         }
@@ -236,7 +244,7 @@ export class AssetUploadResourceService {
             type: 'https://iana.org/assignments/http-problem-types#mismatching-upload-offset',
           });
         }
-        if (row.state !== 'receiving') {
+        if (row.state !== (row.metadata.publication === 'live-photo' ? 'pair-receiving' : 'receiving')) {
           throw new ConflictException('Upload is no longer accepting bytes');
         }
         if (
@@ -278,7 +286,14 @@ export class AssetUploadResourceService {
           .set({
             offset: newOffset,
             expectedSize: expectedSize ?? (finalizing ? newOffset : null),
-            state: finalizing ? 'finalizing' : 'receiving',
+            state:
+              row.metadata.publication === 'live-photo'
+                ? finalizing
+                  ? 'pair-finalizing'
+                  : 'pair-receiving'
+                : finalizing
+                  ? 'finalizing'
+                  : 'receiving',
           })
           .where('id', '=', id)
           .where('expiresAt', '>', new Date())
@@ -292,10 +307,10 @@ export class AssetUploadResourceService {
       if (part.interrupted) {
         return { resource };
       }
-      if (complete && resource.state === 'receiving') {
+      if (complete && ['receiving', 'pair-receiving'].includes(resource.state)) {
         throw new BadRequestException('Completed upload length does not match');
       }
-      if (resource.state === 'finalizing') {
+      if (['finalizing', 'pair-finalizing'].includes(resource.state)) {
         return this.resolveResult(auth, id, check);
       }
       return { resource };
@@ -326,7 +341,7 @@ export class AssetUploadResourceService {
 
   private async finalize(auth: AuthDto, id: string, check: () => Promise<void>) {
     let row = await this.uploads.get(id, auth.user.id);
-    if (row.state === 'finalizing') {
+    if (['finalizing', 'pair-finalizing'].includes(row.state)) {
       const initial = row;
       const parts = await this.uploads.parts(undefined, id);
       let verified;
@@ -342,7 +357,7 @@ export class AssetUploadResourceService {
         if (error instanceof BadRequestException) {
           await check();
           const rejected = await this.uploads.locked(id, auth.user.id, async (tx, current) => {
-            if (current.state !== 'finalizing' || current.offset !== initial.offset) {
+            if (current.state !== initial.state || current.offset !== initial.offset) {
               return false;
             }
             await tx.updateTable('asset_upload_resource').set({ state: 'rejected' }).where('id', '=', id).execute();
@@ -359,7 +374,7 @@ export class AssetUploadResourceService {
       await this.storage.utimes(verified.path, new Date(), new Date(initial.metadata.fileModifiedAt));
       await check();
       row = await this.uploads.locked(id, auth.user.id, async (tx, current) => {
-        if (current.state !== 'finalizing') {
+        if (current.state !== initial.state) {
           return current;
         }
         if (current.offset !== initial.offset || !current.expectedChecksum.equals(initial.expectedChecksum)) {
@@ -368,7 +383,7 @@ export class AssetUploadResourceService {
         return tx
           .updateTable('asset_upload_resource')
           .set({
-            state: 'verified',
+            state: current.metadata.publication === 'live-photo' ? 'pair-verified' : 'verified',
             finalPath: verified.path,
             verifiedChecksum: verified.sha256,
             legacyChecksum: verified.sha1,
@@ -381,7 +396,7 @@ export class AssetUploadResourceService {
     if (row.state === 'rejected') {
       throw new BadRequestException('Upload representation was rejected');
     }
-    if (row.state === 'verified') {
+    if (row.state === 'verified' && row.metadata.publication !== 'live-photo') {
       await check();
       const prepared = await this.media.prepareUploadAsset(auth, this.metadata(row), this.file(row));
       row = await this.uploads.locked(id, auth.user.id, (tx, current) =>
@@ -440,8 +455,12 @@ export class AssetUploadResourceService {
     check: () => Promise<void>,
   ): Promise<{ resource: AssetUploadResource; result?: NativeAssetUploadResult }> {
     const resource = await this.finalize(auth, id, check);
-    if (resource.state !== 'published' || !resource.ingested) {
-      return { resource };
+    if (
+      resource.state !== 'published' ||
+      !resource.ingested ||
+      (resource.metadata.publication === 'live-photo' && !(await this.uploads.livePhotoPairIngested(resource)))
+    ) {
+      return { resource: resource.metadata.publication === 'live-photo' ? { ...resource, ingested: false } : resource };
     }
     const visible = await this.media.getUploadAssetIdByChecksum(auth, resource.verifiedChecksum!.toString('hex'));
     return {
@@ -452,6 +471,64 @@ export class AssetUploadResourceService {
         sha256: resource.verifiedChecksum!.toString('hex'),
       },
     };
+  }
+
+  async commitLivePhoto(auth: AuthDto, dto: LivePhotoUploadCommitDto) {
+    await this.owner(auth);
+    const { stillResourceId, videoResourceId } = dto;
+    if (stillResourceId === videoResourceId) {
+      throw new BadRequestException('Distinct resources are required');
+    }
+    const ids = [stillResourceId, videoResourceId].sort();
+    // Acquire the existing short-lived admissions in the same order as the database locks.
+    return this.withStreamAdmission(auth, ids[0], (checkFirst) =>
+      this.withStreamAdmission(auth, ids[1], async (checkSecond) => {
+        const check = async () => {
+          await checkFirst();
+          await checkSecond();
+        };
+        for (const id of ids) {
+          const current = await this.uploads.get(id, auth.user.id);
+          if (current.metadata.publication !== 'live-photo') {
+            throw new ConflictException('Both resources must declare Live Photo publication');
+          }
+        }
+        const still = await this.finalize(auth, stillResourceId, check);
+        const video = await this.finalize(auth, videoResourceId, check);
+        let prepared: Parameters<AssetUploadResourceRepository['publishLivePhoto']>[3];
+        if (
+          still.state === 'pair-verified' &&
+          video.state === 'pair-verified' &&
+          still.metadata.publication === 'live-photo' &&
+          video.metadata.publication === 'live-photo'
+        ) {
+          prepared = {
+            still: await this.media.prepareUploadAsset(auth, this.metadata(still), this.file(still)),
+            video: await this.media.prepareUploadAsset(auth, this.metadata(video), this.file(video)),
+          };
+        }
+        await check();
+        const pair = await this.uploads.lockedMany(ids, auth.user.id, async (tx, current) => {
+          await check();
+          return this.uploads.publishLivePhoto(
+            tx,
+            current.find((row) => row.id === stillResourceId)!,
+            current.find((row) => row.id === videoResourceId)!,
+            prepared,
+          );
+        });
+        for (const row of [pair.video, pair.still]) {
+          if (!row.ingested) {
+            await this.ingest(auth, row);
+          }
+        }
+        const stillOutcome = await this.resolveResult(auth, stillResourceId, check);
+        const videoOutcome = await this.resolveResult(auth, videoResourceId, check);
+        return stillOutcome.result && videoOutcome.result
+          ? { still: stillOutcome.result, video: videoOutcome.result }
+          : undefined;
+      }),
+    );
   }
 
   async cancel(auth: AuthDto, id: string) {

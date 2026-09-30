@@ -70,6 +70,9 @@ describe('resumable asset byte commit boundaries', () => {
         }
       }),
       parts: vi.fn(),
+      lockedMany: vi.fn(),
+      publishLivePhoto: vi.fn(),
+      livePhotoPairIngested: vi.fn(() => Promise.resolve(false)),
       completeDuplicate: vi.fn(() => Promise.resolve(undefined)),
       claimIngestion: vi.fn(() => Promise.resolve(undefined)),
       publish: vi.fn(() => {
@@ -359,5 +362,198 @@ describe('resumable asset byte commit boundaries', () => {
     expect(harness.storage.utimes).toHaveBeenCalledOnce();
     expect(await readdir(folder)).toEqual([harness.row().finalPath!.split('/').at(-1)]);
     expect(harness.row().verifiedChecksum).toEqual(createHash('sha256').update('abcd').digest());
+  });
+  it('verifies a declared Live Photo half without preparing or publishing an independent asset', async () => {
+    const harness = setup();
+    const part = await writeAssetUploadPart(folder, Readable.from([Buffer.from('abcd')]), 4);
+    harness.mutate({
+      state: 'pair-finalizing',
+      offset: 4,
+      metadata: { ...harness.row().metadata, publication: 'live-photo' } as AssetUploadResource['metadata'],
+    });
+    harness.uploads.parts.mockResolvedValue([{ path: part.path, size: 4, offset: 0 }]);
+    const result = await harness.service['finalize'](auth, harness.row().id, () => Promise.resolve());
+    expect(result.state).toBe('pair-verified');
+    expect(result.verifiedChecksum).toEqual(createHash('sha256').update('abcd').digest());
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+  });
+  it('appends declared pair bytes only through held states and hashes them without publication', async () => {
+    const harness = setup();
+    harness.mutate({ state: 'pair-receiving', metadata: { ...harness.row().metadata, publication: 'live-photo' } });
+    harness.uploads.parts.mockImplementation(() => Promise.resolve(harness.inserts));
+    const outcome = await harness.service['receive'](
+      auth,
+      harness.row().id,
+      Readable.from([Buffer.from('abcd')]),
+      0,
+      true,
+      4,
+    );
+    expect(outcome.resource.state).toBe('pair-verified');
+    expect(outcome.resource.verifiedChecksum).toEqual(createHash('sha256').update('abcd').digest());
+    expect(outcome.result).toBeUndefined();
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+    expect(harness.uploads.claimIngestion).not.toHaveBeenCalled();
+  });
+
+  it('standalone result leaves a held verified half private and does not invoke publication or ingestion', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'pair-verified',
+      offset: 4,
+      expectedSize: 4,
+      verifiedChecksum: harness.row().expectedChecksum,
+      metadata: { ...harness.row().metadata, publication: 'live-photo' },
+    });
+    const outcome = await harness.service.result(auth, harness.row().id);
+    expect(outcome.resource.state).toBe('pair-verified');
+    expect(outcome.result).toBeUndefined();
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+    expect(harness.uploads.claimIngestion).not.toHaveBeenCalled();
+  });
+
+  it('refuses same-resource pair commit before acquiring an upload admission', async () => {
+    const harness = setup();
+    await expect(
+      harness.service.commitLivePhoto(auth, {
+        stillResourceId: harness.row().id,
+        videoResourceId: harness.row().id,
+      }),
+    ).rejects.toThrow('Distinct resources');
+    expect(harness.rateLimits.claimUploadStream).not.toHaveBeenCalled();
+  });
+
+  it('refuses undeclared resources before finalize can publish either half', async () => {
+    const harness = setup();
+    const finalize = vi.spyOn(harness.service as never, 'finalize' as never);
+    // Per-resource admissions are independent in production; both claims succeed in this control-flow test.
+    harness.rateLimits.claimUploadStream.mockResolvedValue(true);
+    await expect(
+      harness.service.commitLivePhoto(auth, {
+        stillResourceId: harness.row().id,
+        videoResourceId: randomUUID(),
+      }),
+    ).rejects.toThrow('Both resources must declare Live Photo');
+    expect(finalize).not.toHaveBeenCalled();
+    expect(harness.uploads.publish).not.toHaveBeenCalled();
+    expect(harness.rateLimits.releaseUploadStream).toHaveBeenCalledTimes(2);
+  });
+  it('withholds HEAD and result completion for an ingested half whose sibling is still pending', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'published',
+      ingested: true,
+      metadata: { ...harness.row().metadata, publication: 'live-photo' },
+    });
+    expect((await harness.service.head(auth, harness.row().id)).ingested).toBe(false);
+    const outcome = await harness.service.result(auth, harness.row().id);
+    expect(outcome.result).toBeUndefined();
+    expect(outcome.resource.ingested).toBe(false);
+    harness.uploads.livePhotoPairIngested.mockResolvedValue(true);
+    expect((await harness.service.head(auth, harness.row().id)).ingested).toBe(true);
+  });
+  it('refuses pair publication after either shared admission expires', async () => {
+    const harness = setup();
+    harness.mutate({
+      state: 'pair-verified',
+      finalPath: '/private/test.jpg',
+      verifiedChecksum: harness.row().expectedChecksum,
+      legacyChecksum: Buffer.alloc(20),
+      metadata: { ...harness.row().metadata, publication: 'live-photo' },
+    });
+    harness.rateLimits.claimUploadStream.mockResolvedValue(true);
+    harness.rateLimits.isUploadStreamCurrent.mockResolvedValue(false);
+    await expect(
+      harness.service.commitLivePhoto(auth, {
+        stillResourceId: harness.row().id,
+        videoResourceId: randomUUID(),
+      }),
+    ).rejects.toThrow('Upload admission expired');
+    expect(harness.uploads.publishLivePhoto).not.toHaveBeenCalled();
+    expect(harness.uploads.lockedMany).not.toHaveBeenCalled();
+    expect(harness.rateLimits.releaseUploadStream).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Live Photo required postcommit ingestion', () => {
+  it('withholds success on one-half ingestion failure and retries only the unfinished half', async () => {
+    const ownerId = randomUUID();
+    const auth = { user: { id: ownerId } } as AuthDto;
+    const rows = ['still.jpg', 'motion.mov'].map((filename) => ({
+      id: randomUUID(),
+      ownerId,
+      state: 'pair-verified',
+      offset: 4,
+      ingested: false,
+      resultAssetId: randomUUID(),
+      resultStatus: 'created',
+      finalPath: `/private/${filename}`,
+      expectedChecksum: createHash('sha256').update(filename).digest(),
+      verifiedChecksum: createHash('sha256').update(filename).digest(),
+      legacyChecksum: Buffer.alloc(20),
+      metadata: { filename, fileCreatedAt: new Date(), fileModifiedAt: new Date(), publication: 'live-photo' },
+    })) as AssetUploadResource[];
+    const rowFor = (id: string) => rows.find((row) => row.id === id)!;
+    const uploads = {
+      get: vi.fn((id: string) => Promise.resolve(rowFor(id))),
+      lockedMany: vi.fn((_ids, _owner, callback) => callback({}, rows)),
+      publishLivePhoto: vi.fn(() => {
+        for (const row of rows) {
+          row.state = 'published';
+        }
+        return Promise.resolve({ still: rows[0], video: rows[1] });
+      }),
+      claimIngestion: vi.fn((id: string) => Promise.resolve(rowFor(id))),
+      checkIngestion: vi.fn(() => Promise.resolve()),
+      completeIngestion: vi.fn((id: string) => {
+        rowFor(id).ingested = true;
+        return Promise.resolve();
+      }),
+      livePhotoPairIngested: vi.fn(() => Promise.resolve(rows.every((row) => row.ingested))),
+    };
+    const media = {
+      prepareUploadAsset: vi.fn(() => Promise.resolve({})),
+      finishUploadAsset: vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('still ingestion failed'))
+        .mockResolvedValue(undefined),
+      getUploadAssetIdByChecksum: vi.fn((_auth, checksum: string) =>
+        Promise.resolve({ id: rows.find((row) => row.verifiedChecksum!.toString('hex') === checksum)!.resultAssetId }),
+      ),
+    };
+    const rateLimits = {
+      claimUploadStream: vi.fn(() => Promise.resolve(true)),
+      isUploadStreamCurrent: vi.fn(() => Promise.resolve(true)),
+      releaseUploadStream: vi.fn(() => Promise.resolve()),
+    };
+    const service = new AssetUploadResourceService(
+      uploads as never,
+      media as never,
+      { getById: vi.fn((id) => Promise.resolve({ id })) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { warn: vi.fn() } as never,
+      rateLimits as never,
+    );
+    vi.spyOn(service as unknown as { owner: () => Promise<string> }, 'owner').mockResolvedValue(ownerId);
+    vi.spyOn(
+      service as unknown as { finalize: (_auth: AuthDto, id: string) => Promise<AssetUploadResource> },
+      'finalize',
+    ).mockImplementation((_auth, id) => Promise.resolve(rowFor(id)));
+    const dto = { stillResourceId: rows[0].id, videoResourceId: rows[1].id };
+    await expect(service.commitLivePhoto(auth, dto)).rejects.toThrow('still ingestion failed');
+    expect(rows.map((row) => row.ingested)).toEqual([false, true]);
+    expect(uploads.completeIngestion).toHaveBeenCalledTimes(1);
+    const result = await service.commitLivePhoto(auth, dto);
+    expect(result).toEqual({
+      still: { id: rows[0].resultAssetId, status: 'created', sha256: rows[0].verifiedChecksum!.toString('hex') },
+      video: { id: rows[1].resultAssetId, status: 'created', sha256: rows[1].verifiedChecksum!.toString('hex') },
+    });
+    expect(media.finishUploadAsset).toHaveBeenCalledTimes(3);
+    await expect(service.commitLivePhoto(auth, dto)).resolves.toEqual(result);
+    expect(media.finishUploadAsset).toHaveBeenCalledTimes(3);
+    expect(rateLimits.releaseUploadStream).toHaveBeenCalledTimes(6);
   });
 });

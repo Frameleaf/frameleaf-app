@@ -14,3 +14,16 @@ export class AssetUploadResultDto extends createZodDto(
     })
     .meta({ id: 'AssetUploadResultDto' }),
 ) {}
+
+export class LivePhotoUploadCommitDto extends createZodDto(
+  z
+    .object({ stillResourceId: z.uuid(), videoResourceId: z.uuid() })
+    .refine((value) => value.stillResourceId !== value.videoResourceId, 'Distinct resources are required')
+    .meta({ id: 'LivePhotoUploadCommitDto' }),
+) {}
+
+export class LivePhotoUploadResultDto extends createZodDto(
+  z
+    .object({ still: AssetUploadResultDto.schema, video: AssetUploadResultDto.schema })
+    .meta({ id: 'LivePhotoUploadResultDto' }),
+) {}

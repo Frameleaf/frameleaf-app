@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   ConflictException,
   Controller,
   Delete,
@@ -17,7 +18,11 @@ import type { Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { AssetUploadResultDto } from 'src/dtos/asset-upload-resource.dto.js';
+import {
+  AssetUploadResultDto,
+  LivePhotoUploadCommitDto,
+  LivePhotoUploadResultDto,
+} from 'src/dtos/asset-upload-resource.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { AssetUploadResourceService } from 'src/services/asset-upload-resource.service.js';
@@ -99,7 +104,7 @@ export class AssetUploadResourceController {
     name: 'Asset-Metadata',
     required: true,
     description:
-      'Canonical base64url UTF-8 JSON: filename, fileCreatedAt, fileModifiedAt; optional duration, isFavorite, visibility and metadata array. No LivePhoto or sidecar references.',
+      'Canonical base64url UTF-8 JSON: filename, fileCreatedAt, fileModifiedAt; optional duration, isFavorite, visibility, metadata array and publication: live-photo to defer publication until atomic pair commit. No sidecar or pre-existing asset references.',
   })
   @ApiBody({ schema: { type: 'string', format: 'binary' } })
   @ApiResponse({
@@ -112,7 +117,7 @@ export class AssetUploadResourceController {
   @Endpoint({
     summary: 'Create resumable asset upload',
     description:
-      'IETF resumable upload draft 12 / interop 9 prerequisite. Single asset only; atomic LivePhoto pairs remain unsupported.',
+      'IETF resumable upload draft 12 / interop 9 prerequisite. Single resources publish by default; explicitly declared Live Photo resources stay private until pair commit.',
     history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
   })
   async createAssetUploadResource(@Auth() auth: AuthDto, @Req() req: Request, @Res() res: Response) {
@@ -145,6 +150,25 @@ export class AssetUploadResourceController {
       res.status(200).json(outcome.result);
     } else {
       res.status(outcome.resource.state === 'published' ? 202 : created ? 201 : 204).end();
+    }
+  }
+
+  @Post('live-photo/commit')
+  @Authenticated({ permission: Permission.AssetUpload })
+  @ApiResponse({ status: 200, type: LivePhotoUploadResultDto })
+  @ApiResponse({ status: 202, description: 'Both assets committed atomically; required ingestion remains pending' })
+  @ApiResponse({ status: 409, description: 'Incompatible pair, existing unrelated duplicate, or concurrent request' })
+  @Endpoint({
+    summary: 'Commit two verified Live Photo upload resources atomically',
+    history: new HistoryBuilder().added('v3.2.0').beta('v3.2.0'),
+  })
+  async commitLivePhotoUpload(@Auth() auth: AuthDto, @Body() dto: LivePhotoUploadCommitDto, @Res() res: Response) {
+    this.headers(res);
+    const result = await this.service.commitLivePhoto(auth, dto);
+    if (result) {
+      res.status(200).json(result);
+    } else {
+      res.status(202).end();
     }
   }
 
