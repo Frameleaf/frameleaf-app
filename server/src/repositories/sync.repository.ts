@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ExpressionBuilder, Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SyncAck } from 'src/types.js';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
@@ -10,13 +10,16 @@ import { AlbumUserRole, AssetMetadataKey, ChecksumAlgorithm } from 'src/enum.js'
 import { TagSync } from 'src/repositories/tag-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, withHiddenContentFilter } from 'src/utils/database.js';
+import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import {
   effectiveVisibility,
+  getLockedOwnerId,
   isDefaultVisible,
   isLocked,
   isTimelineVisible,
   notLockedOrOwnedBy,
 } from 'src/utils/locked.js';
+import { mapPartnerAsset, mapSyncAssetV2 } from 'src/utils/sync.js';
 
 export type SyncBackfillOptions = HiddenContentQueryOptions & {
   nowId: string;
@@ -234,7 +237,22 @@ export class SyncRepository {
   userMetadata: UserMetadataSync;
 
   constructor(@InjectKysely() private db: Kysely<DB>) {
-    this.tag = new TagSync(this.db);
+    this.tag = new TagSync(this.db, async (db, auth, kind, key) => {
+      const rows =
+        kind === 'albumAsset'
+          ? await new AlbumAssetSync(db).getCurrent(auth, key)
+          : await new PartnerAssetsSync(db).getCurrent(auth, key);
+      return rows.map(({ scopeId, updateId, ...asset }) => ({
+        key: `${scopeId}:${asset.id}`,
+        entityId: scopeId,
+        assetId: asset.id,
+        sourceId: updateId,
+        data:
+          kind === 'albumAsset'
+            ? { albumId: scopeId, asset: mapSyncAssetV2(asset) }
+            : { sharedById: scopeId, asset: mapPartnerAsset(asset as typeof asset & { isLocked: boolean }) },
+      }));
+    });
     this.album = new AlbumSync(this.db);
     this.albumAsset = new AlbumAssetSync(this.db);
     this.albumAssetExif = new AlbumAssetExifSync(this.db);
@@ -443,6 +461,40 @@ class AlbumSync extends BaseSync {
 }
 
 class AlbumAssetSync extends BaseSync {
+  getCurrent(auth: AuthDto, key?: string) {
+    const options = getHiddenContentQueryOptions(auth);
+    return this.db
+      .selectFrom('album_asset')
+      .innerJoin('album_user', 'album_user.albumId', 'album_asset.albumId')
+      .innerJoin('album', 'album.id', 'album_asset.albumId')
+      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+      .innerJoin('user as mediaOwner', 'mediaOwner.id', 'asset.ownerId')
+      .where('mediaOwner.deletedAt', 'is', null)
+      .where('album_user.userId', '=', auth.user.id)
+      .where('album.deletedAt', 'is', null)
+      .where('asset.deletedAt', 'is', null)
+      .where(notLockedOrOwnedBy(getLockedOwnerId(auth)))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .$if(!!key, (qb) =>
+        qb.where('album.id', '=', key!.split(':', 1)[0]).where('asset.id', '=', key!.split(':', 2)[1]),
+      )
+      .select(syncAlbumAsset(options))
+      .select(['album.id as scopeId', 'asset.updateId'])
+      .select((eb) =>
+        eb
+          .case()
+          .when('asset.ownerId', '=', auth.user.id)
+          .then(eb.ref('asset.isFavorite'))
+          .else(eb.val(false))
+          .end()
+          .as('isFavorite'),
+      )
+      .orderBy(sql`asset."fileCreatedAt" desc nulls last`)
+      .orderBy('asset.id', 'desc')
+      .orderBy('album.id', 'desc')
+      .execute();
+  }
+
   @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
   getBackfill(options: SyncBackfillOptions, albumId: string, userId: string) {
     return this.backfillQuery('album_asset', options)
@@ -1016,6 +1068,27 @@ class PartnerSync extends BaseSync {
 }
 
 class PartnerAssetsSync extends BaseSync {
+  getCurrent(auth: AuthDto, key?: string) {
+    const options = getHiddenContentQueryOptions(auth);
+    return this.db
+      .selectFrom('asset')
+      .innerJoin('partner', 'partner.sharedById', 'asset.ownerId')
+      .innerJoin('user as mediaOwner', 'mediaOwner.id', 'asset.ownerId')
+      .where('mediaOwner.deletedAt', 'is', null)
+      .where('partner.sharedWithId', '=', auth.user.id)
+      .where('asset.deletedAt', 'is', null)
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .$if(!!key, (qb) =>
+        qb.where('partner.sharedById', '=', key!.split(':', 1)[0]).where('asset.id', '=', key!.split(':', 2)[1]),
+      )
+      .select(syncPartnerAsset(options))
+      .select(['partner.sharedById as scopeId', 'asset.updateId'])
+      .select(sql.val(false).as('isFavorite'))
+      .orderBy(sql`asset."fileCreatedAt" desc nulls last`)
+      .orderBy('asset.id', 'desc')
+      .execute();
+  }
+
   @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
   getBackfill(options: SyncBackfillOptions, partnerId: string) {
     return this.backfillQuery('asset', options)
