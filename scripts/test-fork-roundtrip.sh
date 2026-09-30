@@ -219,6 +219,9 @@ write_evidence() {
 # fails hard immediately; this never masks a genuine handoff problem.
 prepare_official_handoff() {
   local deadline=0
+  # A lease that keeps renewing (a job that never finishes) would keep moving the reported lapse
+  # time; this absolute cap stops the retry loop from outliving a stuck job.
+  local give_up_at="$(($(date -u +%s) + 900))"
   while true; do
     prepare_output="$(admin fork-schema-cutover prepare --batch-size 32)"
     echo "$prepare_output"
@@ -242,7 +245,7 @@ prepare_official_handoff() {
       # No lapse time reported: bound the wait ourselves rather than retry forever.
       deadline="$(($(date -u +%s) + 120))"
     fi
-    if (($(date -u +%s) >= deadline)); then
+    if (($(date -u +%s) >= deadline || $(date -u +%s) >= give_up_at)); then
       echo 'Official handoff preparation still refused after its reported lease(s) should have lapsed' >&2
       exit 1
     fi
