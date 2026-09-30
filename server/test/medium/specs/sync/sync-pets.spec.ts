@@ -83,6 +83,69 @@ it('creates updates deletes and acknowledges durable identities and observations
   ).toHaveLength(1);
 });
 
+it.each(['suppression', 'deletion'] as const)(
+  'revokes a merged observation with its current pet after %s',
+  async (reason) => {
+    const { ctx, auth, pet, observation, pets } = await setup();
+    const first = await ctx.syncStream(auth, types);
+    await ctx.syncAckAll(auth, first);
+    const target = await pets.create({ ownerId: auth.user.id, name: 'Merged' });
+    await pets.mergeInto(auth.user.id, {
+      sourceId: pet.id,
+      targetId: target.id,
+      reassign: [observation.id],
+      promote: [],
+      discard: [],
+    });
+    const merged = await ctx.syncStream(auth, types);
+    expect(events(merged)).toContainEqual(
+      expect.objectContaining({
+        type: SyncEntityType.PetObservationV1,
+        data: expect.objectContaining({ id: observation.id, petId: target.id }),
+      }),
+    );
+    await ctx.syncAckAll(auth, merged);
+    if (reason === 'deletion') await pets.deleteObservation(auth.user.id, observation.id);
+    const currentAuth = reason === 'suppression' ? suppress(auth, target.id) : auth;
+    const removed = await ctx.syncStream(currentAuth, types);
+    const deletes = events(removed).filter((row) => row.type === SyncEntityType.PetObservationDeleteV1);
+    expect(deletes).toEqual([
+      expect.objectContaining({
+        data: { observationId: observation.id, petId: target.id, assetId: observation.assetId },
+      }),
+    ]);
+    expect(events(await ctx.syncStream(currentAuth, types))).toEqual(events(removed));
+    await ctx.syncAckAll(currentAuth, removed);
+    await ctx.assertSyncIsComplete(currentAuth, types);
+  },
+);
+
+it('retries a merge between reconciliation and preparation under a fresh generation', async () => {
+  const { ctx, auth, pet, observation, pets, repo } = await setup();
+  const [queued] = await repo.reconcile(auth, 'petObservation');
+  const target = await pets.create({ ownerId: auth.user.id, name: 'Merge during delivery' });
+  await pets.mergeInto(auth.user.id, {
+    sourceId: pet.id,
+    targetId: target.id,
+    reassign: [observation.id],
+    promote: [],
+    discard: [],
+  });
+  expect(await repo.prepare(auth, 'petObservation', queued.eventId)).toBeUndefined();
+  const [fresh] = await repo.reconcile(auth, 'petObservation');
+  expect(fresh.eventId).not.toBe(queued.eventId);
+  const payload = await repo.prepare(auth, 'petObservation', fresh.eventId);
+  expect(payload).toMatchObject({ data: { id: observation.id, petId: target.id } });
+  await repo.acknowledge(auth.session!.id, { type: payload!.type, updateId: payload!.eventId });
+  const removed = events(await ctx.syncStream(suppress(auth, target.id), types));
+  expect(removed).toContainEqual(
+    expect.objectContaining({
+      type: SyncEntityType.PetObservationDeleteV1,
+      data: { observationId: observation.id, petId: target.id, assetId: observation.assetId },
+    }),
+  );
+});
+
 it.each([false, true])(
   'retries revocation and regrants unchanged sources before/after ACK=%s',
   async (acknowledged) => {

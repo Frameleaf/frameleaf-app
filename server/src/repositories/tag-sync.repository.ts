@@ -141,10 +141,17 @@ export class TagSync {
         const current = visible.get(state.key);
         visible.delete(state.key);
         if (current) {
-          if (state.action === 'delete' || current.sourceId !== state.sourceId) {
+          if (
+            state.action === 'delete' ||
+            current.sourceId !== state.sourceId ||
+            current.entityId !== state.entityId ||
+            current.assetId !== state.assetId
+          ) {
             await tx
               .updateTable('session_tag_sync_state')
               .set({
+                entityId: current.entityId,
+                assetId: current.assetId,
                 sourceId: current.sourceId,
                 action: 'upsert',
                 eventId: sql`immich_uuid_v7()`,
@@ -217,6 +224,14 @@ export class TagSync {
       if (!state) return;
       const current = (await this.visible(tx, kind, auth, state.key)).find((row) => row.key === state.key);
       if ((state.action === 'upsert' && !current) || (state.action === 'delete' && current)) return;
+      // A source changing after reconciliation needs a new generation before any payload is sent.
+      if (
+        state.action === 'upsert' &&
+        (current!.sourceId !== state.sourceId ||
+          current!.entityId !== state.entityId ||
+          current!.assetId !== state.assetId)
+      )
+        return;
       await tx
         .updateTable('session_tag_sync_state')
         .set({ delivered: true, potentiallyVisible: true })
