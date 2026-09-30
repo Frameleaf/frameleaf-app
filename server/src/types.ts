@@ -1430,6 +1430,7 @@ export type UserMetadataItem<T extends keyof UserMetadata = UserMetadataKey> = {
 };
 
 export interface UserMetadata extends Record<UserMetadataKey, Record<string, any>> {
+  [UserMetadataKey.PinnedCollections]: { pins: import('src/dtos/pinned-collection.dto.js').StoredPinnedCollection[] };
   [UserMetadataKey.Preferences]: DeepPartial<UserPreferences>;
   /** FL-156: a mirror of the person's supporter key summary (`immich_fork.frameleaf_user_license`). */
   [UserMetadataKey.License]: { kind: 'individual'; keyHint: string; activatedAt: string };
