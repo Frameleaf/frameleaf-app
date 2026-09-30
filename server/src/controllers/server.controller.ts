@@ -100,7 +100,7 @@ export class ServerController {
     description: 'Pong',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  pingServer(): ServerPingResponse {
+  pingServer(): Promise<ServerPingResponse> {
     return this.service.ping();
   }
 

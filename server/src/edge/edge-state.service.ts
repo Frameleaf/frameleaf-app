@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { isEqual } from 'lodash-es';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -44,10 +43,12 @@ import {
   certificateMatchesKey,
   certificateReport,
   challengeRecordName,
+  defaultRouteInterfaces,
   dnsTxtPutResponseSchema,
   enrollResponseSchema,
   enrollmentProblem,
   hostAddresses,
+  inContainer,
   nextRenewalCheck,
   remoteEndpoints,
   renewalDue,
@@ -980,7 +981,7 @@ export class EdgeStateService {
   // ------------------------------------------------------------------ state
 
   /** Whether this worker runs in a container (Docker, Podman). Specs replace it. */
-  inContainer = () => existsSync('/.dockerenv') || existsSync('/run/.containerenv');
+  inContainer = inContainer;
 
   /** Whether the listener takes IPv6 connections: bound to `::` or an IPv6 address. */
   private ipv6Listening() {
@@ -1010,26 +1011,7 @@ export class EdgeStateService {
   }
 
   /** The interfaces the default routes use (Linux `/proc/net/route` and `ipv6_route`). Specs replace it. */
-  defaultInterfaces = (): string[] => {
-    const names = new Set<string>();
-    try {
-      for (const line of readFileSync('/proc/net/route', 'utf8').split('\n').slice(1)) {
-        const [name, destination] = line.trim().split(/\s+/, 2);
-        if (destination === '00000000' && name) {
-          names.add(name);
-        }
-      }
-      for (const line of readFileSync('/proc/net/ipv6_route', 'utf8').split('\n')) {
-        const fields = line.trim().split(/\s+/);
-        if (fields[0] === '0'.repeat(32) && fields[1] === '00' && fields[9] && fields[9] !== 'lo') {
-          names.add(fields[9]);
-        }
-      }
-    } catch {
-      // not Linux: no LAN names are published unless FRAMELEAF_LOCAL_URL names the address
-    }
-    return [...names];
-  };
+  defaultInterfaces = defaultRouteInterfaces;
 
   /** Write the state when it changed, or at least every 20 seconds, so the API sees the edge worker is alive. */
   private async writeState(state: Omit<FrameleafRemoteAccess, 'updatedAt'>, now: number) {
