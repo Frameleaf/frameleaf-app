@@ -483,6 +483,8 @@ describe('/shared-links', () => {
           allowUpload: true,
         }),
       ]);
+      // file routes answer a file not yet generated with 404, like a refusal
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
     });
 
     describe('allowDownload=false', () => {
