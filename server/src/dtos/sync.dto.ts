@@ -549,7 +549,18 @@ class SyncAssetTagV1 extends createZodDto(SyncAssetTagV1Schema) {}
 @ExtraModel()
 class SyncAssetTagDeleteV1 extends createZodDto(SyncAssetTagV1Schema.meta({ id: 'SyncAssetTagDeleteV1' })) {}
 
+@ExtraModel()
+class SyncDuplicateGroupV1 extends createZodDto(
+  z.object({ groupId: z.uuid(), assetIds: z.array(z.uuid()).min(2) }).meta({ id: 'SyncDuplicateGroupV1' }),
+) {}
+@ExtraModel()
+class SyncDuplicateGroupDeleteV1 extends createZodDto(
+  z.object({ groupId: z.uuid() }).meta({ id: 'SyncDuplicateGroupDeleteV1' }),
+) {}
+
 export type SyncItem = {
+  [SyncEntityType.DuplicateGroupV1]: SyncDuplicateGroupV1;
+  [SyncEntityType.DuplicateGroupDeleteV1]: SyncDuplicateGroupDeleteV1;
   [SyncEntityType.SharedSpaceV1]: SyncSharedSpaceV1;
   [SyncEntityType.SharedSpaceDeleteV1]: SyncSharedSpaceDeleteV1;
   [SyncEntityType.SharedSpaceMemberV1]: SyncSharedSpaceMemberV1;

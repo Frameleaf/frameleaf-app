@@ -2471,6 +2471,7 @@ export enum ExitCode {
 }
 
 export enum SyncRequestType {
+  DuplicateGroupsV1 = 'DuplicateGroupsV1',
   SharedSpacesV1 = 'SharedSpacesV1',
   SharedSpaceMembersV1 = 'SharedSpaceMembersV1',
   PetsV1 = 'PetsV1',
@@ -2520,6 +2521,8 @@ export const SyncRequestTypeSchema = z
   .meta({ id: 'SyncRequestType' });
 
 export enum SyncEntityType {
+  DuplicateGroupV1 = 'DuplicateGroupV1',
+  DuplicateGroupDeleteV1 = 'DuplicateGroupDeleteV1',
   SharedSpaceV1 = 'SharedSpaceV1',
   SharedSpaceDeleteV1 = 'SharedSpaceDeleteV1',
   SharedSpaceMemberV1 = 'SharedSpaceMemberV1',

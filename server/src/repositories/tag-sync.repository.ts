@@ -5,6 +5,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SyncAck } from 'src/types.js';
 import { mapPet, mapPetObservation } from 'src/dtos/pet.dto.js';
 import { AlbumKind, AlbumUserRole, SyncEntityType } from 'src/enum.js';
+import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
@@ -15,12 +16,12 @@ import {
   tagIsSuppressed,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
-import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getHiddenContentQueryOptions, getRevealQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
 
-type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember';
+type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate';
 type Visible = {
   key: string;
   entityId: string;
@@ -29,6 +30,7 @@ type Visible = {
   data: Record<string, unknown>;
 };
 const types = {
+  duplicate: { upsert: SyncEntityType.DuplicateGroupV1, delete: SyncEntityType.DuplicateGroupDeleteV1 },
   space: { upsert: SyncEntityType.SharedSpaceV1, delete: SyncEntityType.SharedSpaceDeleteV1 },
   spaceMember: { upsert: SyncEntityType.SharedSpaceMemberV1, delete: SyncEntityType.SharedSpaceMemberDeleteV1 },
   tag: { upsert: SyncEntityType.TagV1, delete: SyncEntityType.TagDeleteV1 },
@@ -37,7 +39,7 @@ const types = {
   petObservation: { upsert: SyncEntityType.PetObservationV1, delete: SyncEntityType.PetObservationDeleteV1 },
 } as const;
 
-/** Only the additive tag/pet types have delivery IDs. Existing sync cursors are untouched. */
+/** Only additive ledger types have delivery IDs. Existing sync cursors are untouched. */
 export class TagSync {
   constructor(private db: Kysely<DB>) {}
 
@@ -51,6 +53,19 @@ export class TagSync {
 
   private async visible(db: Kysely<DB>, kind: Kind, auth: AuthDto, key?: string): Promise<Visible[]> {
     const options = getHiddenContentQueryOptions(auth);
+    if (kind === 'duplicate') {
+      if (auth.sharedLink) return [];
+      const groups = await new DuplicateRepository(db).getSyncGroups(
+        auth.user.id,
+        { ...options, ...getRevealQueryOptions(auth) },
+        key,
+      );
+      return groups.map((data) => {
+        const digest = createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0, 32);
+        const sourceId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20)}`;
+        return { key: data.groupId, entityId: data.groupId, assetId: null, sourceId, data: { ...data } };
+      });
+    }
     if (kind === 'space' || kind === 'spaceMember') {
       if (auth.sharedLink) return [];
       const spaces = db
@@ -179,7 +194,9 @@ export class TagSync {
   async reconcile(auth: AuthDto, kind: Kind) {
     const sessionId = auth.session!.id;
     return this.locked(sessionId, async (tx) => {
-      const visible = new Map((await this.visible(tx, kind, auth)).map((row) => [row.key, row]));
+      const visibleRows = await this.visible(tx, kind, auth);
+      const rank = new Map(visibleRows.map((row, index) => [row.key, index]));
+      const visible = new Map(visibleRows.map((row) => [row.key, row]));
       const stored = await tx
         .selectFrom('session_tag_sync_state')
         .selectAll()
@@ -207,7 +224,7 @@ export class TagSync {
                 delivered: false,
                 acknowledged: false,
               })
-              .$if(kind === 'space', (qb) => qb.set({ deliveryOrder: null }))
+              .$if(kind === 'space' || kind === 'duplicate', (qb) => qb.set({ deliveryOrder: null }))
               .where('sessionId', '=', sessionId)
               .where('kind', '=', kind)
               .where('key', '=', state.key)
@@ -218,7 +235,7 @@ export class TagSync {
             await tx
               .updateTable('session_tag_sync_state')
               .set({ action: 'delete', eventId: sql`immich_uuid_v7()`, delivered: false, acknowledged: false })
-              .$if(kind === 'space', (qb) => qb.set({ deliveryOrder: null }))
+              .$if(kind === 'space' || kind === 'duplicate', (qb) => qb.set({ deliveryOrder: null }))
               .where('sessionId', '=', sessionId)
               .where('kind', '=', kind)
               .where('key', '=', state.key)
@@ -250,25 +267,31 @@ export class TagSync {
           )
           .execute();
       }
-      return (
-        tx
-          .selectFrom('session_tag_sync_state')
-          .selectAll()
-          .where('sessionId', '=', sessionId)
-          .where('kind', '=', kind)
-          .where('acknowledged', '=', false)
-          // Delivery ACKs never confirm unsent rows, so ordering identity independently cannot skip older entries.
-          .$if(kind === 'space', (qb) =>
-            qb
-              .orderBy(sql`"deliveryOrder" asc nulls last`)
-              .orderBy(
-                sql`(select album."createdAt" from album where album.id = session_tag_sync_state."entityId") desc nulls last`,
-              )
-              .orderBy('entityId', 'desc'),
-          )
-          .orderBy('eventId', 'asc')
-          .execute()
-      );
+      const pending = await tx
+        .selectFrom('session_tag_sync_state')
+        .selectAll()
+        .where('sessionId', '=', sessionId)
+        .where('kind', '=', kind)
+        .where('acknowledged', '=', false)
+        // Delivery ACKs never confirm unsent rows, so ordering identity independently cannot skip older entries.
+        .$if(kind === 'space', (qb) =>
+          qb
+            .orderBy(sql`"deliveryOrder" asc nulls last`)
+            .orderBy(
+              sql`(select album."createdAt" from album where album.id = session_tag_sync_state."entityId") desc nulls last`,
+            )
+            .orderBy('entityId', 'desc'),
+        )
+        .orderBy('eventId', 'asc')
+        .execute();
+      if (kind === 'duplicate') {
+        pending.sort((a, b) => {
+          if (a.deliveryOrder !== null || b.deliveryOrder !== null)
+            return (a.deliveryOrder ?? Infinity) - (b.deliveryOrder ?? Infinity);
+          return (rank.get(a.key) ?? Infinity) - (rank.get(b.key) ?? Infinity) || b.entityId.localeCompare(a.entityId);
+        });
+      }
+      return pending;
     });
   }
 
@@ -297,7 +320,7 @@ export class TagSync {
       await tx
         .updateTable('session_tag_sync_state')
         .set({ delivered: true, potentiallyVisible: true })
-        .$if(kind === 'space' && state.deliveryOrder === null, (qb) =>
+        .$if((kind === 'space' || kind === 'duplicate') && state.deliveryOrder === null, (qb) =>
           qb.set({
             deliveryOrder: sql<number>`(select coalesce(max("deliveryOrder"), 0) + 1 from session_tag_sync_state where "sessionId" = ${sessionId} and kind = ${kind})`,
           }),
@@ -314,17 +337,19 @@ export class TagSync {
         data:
           state.action === 'upsert'
             ? current!.data
-            : kind === 'space'
-              ? { spaceId: state.entityId }
-              : kind === 'spaceMember'
-                ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
-                : kind === 'tag'
-                  ? { tagId: state.entityId }
-                  : kind === 'assetTag'
-                    ? { tagId: state.entityId, assetId: state.assetId! }
-                    : kind === 'pet'
-                      ? { petId: state.entityId }
-                      : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
+            : kind === 'duplicate'
+              ? { groupId: state.entityId }
+              : kind === 'space'
+                ? { spaceId: state.entityId }
+                : kind === 'spaceMember'
+                  ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
+                  : kind === 'tag'
+                    ? { tagId: state.entityId }
+                    : kind === 'assetTag'
+                      ? { tagId: state.entityId, assetId: state.assetId! }
+                      : kind === 'pet'
+                        ? { petId: state.entityId }
+                        : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
       };
     });
   }
@@ -346,14 +371,14 @@ export class TagSync {
         .where('action', '=', action)
         .where('delivered', '=', true)
         .executeTakeFirst();
-      if (!exact || (kind === 'space' && exact.deliveryOrder === null)) return;
+      if (!exact || ((kind === 'space' || kind === 'duplicate') && exact.deliveryOrder === null)) return;
       const pending = tx
         .selectFrom('session_tag_sync_state')
         .select('key')
         .where('sessionId', '=', sessionId)
         .where('kind', '=', kind)
-        .$if(kind === 'space', (qb) => qb.where('deliveryOrder', '<=', exact.deliveryOrder!))
-        .$if(kind !== 'space', (qb) => qb.where('eventId', '<=', ack.updateId))
+        .$if(kind === 'space' || kind === 'duplicate', (qb) => qb.where('deliveryOrder', '<=', exact.deliveryOrder!))
+        .$if(kind !== 'space' && kind !== 'duplicate', (qb) => qb.where('eventId', '<=', ack.updateId))
         .where('action', '=', action)
         .where('delivered', '=', true);
       if (action === 'delete') {
