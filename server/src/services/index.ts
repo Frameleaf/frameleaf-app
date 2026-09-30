@@ -11,6 +11,7 @@ import { AssetRestorationService } from 'src/services/asset-restoration.service.
 import { AssetService } from 'src/services/asset.service.js';
 import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { BackupDeviceService } from 'src/services/backup-device.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
@@ -126,6 +127,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  BackupDeviceService,
   SafetyService,
   CloudMlService,
   CloudBackupDetailsService,

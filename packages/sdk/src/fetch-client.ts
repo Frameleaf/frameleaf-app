@@ -54,6 +54,24 @@ export type ActivityStatisticsResponseDto = {
     /** Number of likes */
     likes: number;
 };
+export type BackupDeviceDto = {
+    appVersion: string;
+    deviceKey: string;
+    displayName: string;
+    id: string;
+    lastSuccessfulBackupAt: string | null;
+    model: string;
+    ownerId: string;
+    pendingCount: number;
+    platform: string;
+    /** Elapsed whole days since reported success; null if never reported */
+    quietForDays: number | null;
+    reportedAt: string;
+};
+export type BackupDeviceListDto = {
+    devices: BackupDeviceDto[];
+    nextOffset: number | null;
+};
 export type CloudBackupActiveRestoreDto = {
     bytes: number;
     bytesTotal: number;
@@ -10739,6 +10757,62 @@ export type UserUpdateMeDto = {
     /** User password (deprecated, use change password endpoint) */
     password?: string;
 };
+export type BackupDeviceWriteDto = {
+    appVersion: string;
+    /** Stable random client device identity, scoped to this owner */
+    deviceKey: string;
+    displayName: string;
+    /** Device-reported success; not server verification */
+    lastSuccessfulBackupAt: string | null;
+    model: string;
+    pendingCount: number;
+    platform: string;
+};
+export type ReconciliationHistoryDto = {
+    nextOffset: number | null;
+    runs: {
+        /** Inventory snapshot time, not a promise after commit */
+        checkedAt: string;
+        completedAt: string | null;
+        deviceId: string;
+        differingBuckets: number[];
+        /** Current database inventory, excludes offline/last-checked-missing; not a fresh filesystem integrity check */
+        evidence: Evidence;
+        id: string;
+        itemsChecked: number;
+        /** Provided SHA256 hashes absent from current registered inventory; not a filesystem loss diagnosis */
+        itemsMissing: number;
+        pendingBuckets: number[];
+        startedAt: string;
+    }[];
+};
+export type ReconciliationStartDto = {
+    /** First byte buckets in index order. Digest SHA256 of sorted distinct raw32-byte hashes; empty digest SHA256(empty). Maximum2000 hashes per bucket; larger sets refused. */
+    buckets: {
+        count: number;
+        digest: string;
+    }[];
+};
+export type ReconciliationResultDto = {
+    /** Inventory snapshot time, not a promise after commit */
+    checkedAt: string;
+    completedAt: string | null;
+    deviceId: string;
+    differingBuckets: number[];
+    /** Current database inventory, excludes offline/last-checked-missing; not a fresh filesystem integrity check */
+    evidence: Evidence;
+    id: string;
+    itemsChecked: number;
+    /** Provided SHA256 hashes absent from current registered inventory; not a filesystem loss diagnosis */
+    itemsMissing: number;
+    missingHashes: string[];
+    pendingBuckets: number[];
+    startedAt: string;
+};
+export type ReconciliationBucketDto = {
+    bucket: number;
+    hashes: string[];
+};
 export type OnboardingResponseDto = {
     /** Is user onboarded */
     isOnboarded: boolean;
@@ -11730,6 +11804,23 @@ export function unlinkAllOAuthAccountsAdmin(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchText("/admin/auth/unlink-all", {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * List backup device metadata across users
+ */
+export function listAllBackupDevices({ limit, offset }: {
+    limit?: number;
+    offset?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupDeviceListDto;
+    }>(`/admin/backup-devices${QS.query(QS.explode({
+        limit,
+        offset
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -21447,6 +21538,100 @@ export function updateMyUser({ userUpdateMeDto }: {
     })));
 }
 /**
+ * List own backup devices
+ */
+export function listBackupDevices({ limit, offset }: {
+    limit?: number;
+    offset?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupDeviceListDto;
+    }>(`/users/me/backup-devices${QS.query(QS.explode({
+        limit,
+        offset
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Register or report an own backup device
+ */
+export function registerBackupDevice({ backupDeviceWriteDto }: {
+    backupDeviceWriteDto: BackupDeviceWriteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BackupDeviceDto;
+    }>("/users/me/backup-devices", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: backupDeviceWriteDto
+    })));
+}
+/**
+ * Remove an own backup device without deleting assets
+ */
+export function removeBackupDevice({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/users/me/backup-devices/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * List own device reconciliation history
+ */
+export function listBackupReconciliations({ id, limit, offset }: {
+    id: string;
+    limit?: number;
+    offset?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ReconciliationHistoryDto;
+    }>(`/users/me/backup-devices/${encodeURIComponent(id)}/reconciliations${QS.query(QS.explode({
+        limit,
+        offset
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Start own device inventory reconciliation
+ */
+export function startBackupReconciliation({ id, reconciliationStartDto }: {
+    id: string;
+    reconciliationStartDto: ReconciliationStartDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ReconciliationResultDto;
+    }>(`/users/me/backup-devices/${encodeURIComponent(id)}/reconciliations`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: reconciliationStartDto
+    })));
+}
+/**
+ * Reconcile one complete differing bucket
+ */
+export function reconcileBackupBucket({ id, runId, reconciliationBucketDto }: {
+    id: string;
+    runId: string;
+    reconciliationBucketDto: ReconciliationBucketDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ReconciliationResultDto;
+    }>(`/users/me/backup-devices/${encodeURIComponent(id)}/reconciliations/${encodeURIComponent(runId)}/buckets`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: reconciliationBucketDto
+    })));
+}
+/**
  * Retrieve calendar heatmap activity
  */
 export function getMyCalendarHeatmap({ $from, to, $type }: {
@@ -24234,6 +24419,9 @@ export enum TrashItemSort {
     Recent = "recent",
     Size = "size",
     Name = "name"
+}
+export enum Evidence {
+    RegisteredCurrentOriginals = "registered-current-originals"
 }
 export enum Kind9 {
     Album = "album",
