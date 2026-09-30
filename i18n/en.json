@@ -555,6 +555,7 @@
     "frameleaf_ml_refusal_destination_disabled": "The destination is disabled.",
     "frameleaf_ml_refusal_destination_missing": "The destination no longer exists.",
     "frameleaf_ml_refusal_destination_unhealthy": "The destination did not answer.",
+    "frameleaf_ml_refusal_disclosure_pending": "Disclosure pending: this Cloud workload is unavailable until its approved disclosure is available.",
     "frameleaf_ml_refusal_endpoint_unresolved": "The destination has no running worker.",
     "frameleaf_ml_refusal_entitlement_missing": "Your Frameleaf plan does not include cloud processing.",
     "frameleaf_ml_refusal_insufficient_memory": "The worker does not have enough GPU memory for this work.",

@@ -129,6 +129,9 @@ export const mlRefusalLabelKey = (refusal: MlAdmissionRefusal): Translations => 
     case MlAdmissionRefusal.WorkloadNotServed: {
       return 'admin.frameleaf_ml_refusal_workload_not_served';
     }
+    case MlAdmissionRefusal.DisclosurePending: {
+      return 'admin.frameleaf_ml_refusal_disclosure_pending';
+    }
     case MlAdmissionRefusal.ConsentMissing: {
       return 'admin.frameleaf_ml_refusal_consent_missing';
     }

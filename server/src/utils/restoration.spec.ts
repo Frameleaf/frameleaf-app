@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import {
   AssetRestorationMode,
@@ -17,6 +17,7 @@ import {
   type MachineLearningRepository,
   type MlEndpointProbe,
 } from 'src/repositories/machine-learning.repository.js';
+import * as cloudDisclosure from 'src/utils/frameleaf-cloud.js';
 import { MlDestinationRefusedError, selectMlDestination } from 'src/utils/ml-destination.js';
 import {
   RESTORATION_PREVIEW_AFTER_DECISION_DAYS,
@@ -307,6 +308,8 @@ describe('restoration rules (FL-115)', () => {
   });
 });
 
+beforeEach(() => vi.restoreAllMocks());
+
 const deps = (overrides: {
   destination?: MlDestinationRow;
   probe?: MlEndpointProbe;
@@ -433,7 +436,8 @@ describe('selectRestorationDestination (FL-114)', () => {
     expect(d.machineLearningRepository.probe).not.toHaveBeenCalled();
   });
 
-  it('admits a consented cloud destination once the person confirms the upload', async () => {
+  it('admits a consented cloud destination once the person confirms the upload (downstream mechanics; disclosure policy mocked)', async () => {
+    vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false);
     const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: mlProbeStub.frameleafCloud });
 
     const selection = await selectRestorationDestination(d, {
@@ -462,7 +466,8 @@ describe('selectRestorationDestination (FL-114)', () => {
     expect(await refusalOf(selectRestorationDestination(d, request))).toBe(MlAdmissionRefusal.WorkloadNotServed);
   });
 
-  it('refuses a Frameleaf Cloud restoration the AI Wallet cannot pay for, without moving it (FL-159)', async () => {
+  it('refuses a Frameleaf Cloud restoration the AI Wallet cannot pay for, without moving it (FL-159) (downstream mechanics; disclosure policy mocked)', async () => {
+    vi.spyOn(cloudDisclosure, 'hasPendingCloudDisclosure').mockReturnValue(false);
     const cloud = mlProbeStub.frameleafCloud.cloud!;
     const emptyWallet = { ...mlProbeStub.frameleafCloud, cloud: { ...cloud, balanceUsd: 0, heldUsd: 0 } };
     const d = deps({ destination: mlDestinationStub.frameleafCloudConsented, probe: emptyWallet });

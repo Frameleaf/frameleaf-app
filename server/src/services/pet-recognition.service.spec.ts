@@ -136,6 +136,9 @@ describe(PetRecognitionService.name, () => {
   });
 
   it('has a Pets page reason for every destination refusal', () => {
+    expect(asUnavailableReason(MlAdmissionRefusal.DisclosurePending)).toBe(
+      PetRecognitionUnavailableReason.WorkloadNotAllowed,
+    );
     for (const refusal of Object.values(MlAdmissionRefusal)) {
       expect(Object.values(PetRecognitionUnavailableReason)).toContain(asUnavailableReason(refusal));
     }
