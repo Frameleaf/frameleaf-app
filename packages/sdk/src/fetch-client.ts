@@ -11236,6 +11236,11 @@ export type SyncAssetOcrV1 = {
     /** Bottom-left Y coordinate (normalized 0–1) */
     y4: number;
 };
+export type SyncAssetTagV1 = {
+    assetId: string;
+    tagId: string;
+};
+export type SyncAssetTagDeleteV1 = SyncAssetTagV1;
 export type SyncAssetV1 = {
     /** Checksum */
     checksum: string;
@@ -11476,6 +11481,18 @@ export type SyncStackV1 = {
     primaryAssetId: string;
     /** Updated at */
     updatedAt: string;
+};
+export type SyncTagDeleteV1 = {
+    tagId: string;
+};
+export type SyncTagV1 = {
+    color: string | null;
+    createdAt: string;
+    id: string;
+    parentId: string | null;
+    updatedAt: string;
+    userId: string;
+    value: string;
 };
 export type SyncUserDeleteV1 = {
     /** User ID */
@@ -23821,12 +23838,19 @@ export enum StudioRestoredVersionUnavailable {
     HiddenContent = "hidden-content"
 }
 export enum SyncEntityType {
+    TagV1 = "TagV1",
+    TagDeleteV1 = "TagDeleteV1",
+    AssetTagV1 = "AssetTagV1",
+    AssetTagDeleteV1 = "AssetTagDeleteV1",
     AuthUserV1 = "AuthUserV1",
     AuthUserV2 = "AuthUserV2",
     UserV1 = "UserV1",
     UserDeleteV1 = "UserDeleteV1",
     AssetV1 = "AssetV1",
     AssetV2 = "AssetV2",
+    AssetV3 = "AssetV3",
+    AssetBootstrapV1 = "AssetBootstrapV1",
+    AssetDeleteV2 = "AssetDeleteV2",
     AssetDeleteV1 = "AssetDeleteV1",
     AssetExifV1 = "AssetExifV1",
     AssetEditV1 = "AssetEditV1",
@@ -23885,6 +23909,8 @@ export enum SyncEntityType {
     SyncCompleteV1 = "SyncCompleteV1"
 }
 export enum SyncRequestType {
+    TagsV1 = "TagsV1",
+    AssetTagsV1 = "AssetTagsV1",
     AlbumsV1 = "AlbumsV1",
     AlbumsV2 = "AlbumsV2",
     AlbumUsersV1 = "AlbumUsersV1",
@@ -23894,6 +23920,7 @@ export enum SyncRequestType {
     AlbumAssetExifsV1 = "AlbumAssetExifsV1",
     AssetsV1 = "AssetsV1",
     AssetsV2 = "AssetsV2",
+    AssetsV3 = "AssetsV3",
     AssetExifsV1 = "AssetExifsV1",
     AssetEditsV1 = "AssetEditsV1",
     AssetMetadataV1 = "AssetMetadataV1",

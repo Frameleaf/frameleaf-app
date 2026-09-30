@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable } from '@ne
 import { Insertable } from 'kysely';
 import { DateTime, Duration } from 'luxon';
 import { Writable } from 'node:stream';
+import { z } from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SyncAck } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
@@ -24,6 +25,36 @@ import { getLocationHiddenPartnerIds, hideLocation } from 'src/utils/partner-loc
 import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
 import { SerializeOptions, fromAck, serialize, toAck } from 'src/utils/sync.js';
+
+const parseAssetBootstrapAck = (ack: string) => {
+  const parts = ack.split('|');
+  const invalid = () => {
+    throw new BadRequestException('Invalid asset bootstrap cursor');
+  };
+  if (parts.length !== 3 || parts[0] !== SyncEntityType.AssetBootstrapV1 || !z.uuid().safeParse(parts[1]).success)
+    return invalid();
+  if (parts[2] === COMPLETE_ID) return {};
+  const encoded = parts[2]!;
+  if (encoded.length > 256 || !/^[A-Za-z0-9_-]+$/.test(encoded)) return invalid();
+  try {
+    const text = Buffer.from(encoded, 'base64url').toString('utf8');
+    if (Buffer.from(text).toString('base64url') !== encoded) return invalid();
+    const value: unknown = JSON.parse(text);
+    const result = z.tuple([z.string(), z.uuid()]).safeParse(value);
+    if (!result.success) return invalid();
+    const [timestamp, id] = result.data;
+    if (
+      timestamp !== '-infinity' &&
+      (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(timestamp) ||
+        Number(timestamp.slice(0, 4)) === 0 ||
+        !DateTime.fromISO(timestamp, { zone: 'utc' }).isValid)
+    )
+      return invalid();
+    return { cursor: { timestamp, id } };
+  } catch {
+    return invalid();
+  }
+};
 
 type CheckpointMap = Partial<Record<SyncEntityType, SyncAck>>;
 type AssetLike = Omit<SyncAssetV2, 'checksum' | 'thumbhash'> & {
@@ -84,12 +115,15 @@ const sendEntityBackfillCompleteAck = async (response: Writable, ackType: SyncEn
 };
 
 export const SYNC_TYPES_ORDER = [
+  SyncRequestType.TagsV1,
+  SyncRequestType.AssetTagsV1,
   SyncRequestType.AuthUsersV1,
   SyncRequestType.AuthUsersV2,
   SyncRequestType.UsersV1,
   SyncRequestType.PartnersV1,
   SyncRequestType.AssetsV1,
   SyncRequestType.AssetsV2,
+  SyncRequestType.AssetsV3,
   SyncRequestType.StacksV1,
   SyncRequestType.PartnerAssetsV1,
   SyncRequestType.PartnerAssetsV2,
@@ -144,6 +178,7 @@ export class SyncService extends BaseService {
     for (const ack of dto.acks) {
       const { type } = fromAck(ack);
       if (type === SyncEntityType.SyncResetV1) {
+        await this.syncRepository.tag.reset(sessionId);
         await this.sessionRepository.resetSyncProgress(sessionId);
         return;
       }
@@ -152,11 +187,28 @@ export class SyncService extends BaseService {
         throw new BadRequestException(`Invalid ack type: ${type}`);
       }
 
+      if (type === SyncEntityType.AssetBootstrapV1) {
+        parseAssetBootstrapAck(ack);
+      }
+
       // TODO pick the latest ack for each type, instead of using the last one
+      if (
+        [
+          SyncEntityType.TagV1,
+          SyncEntityType.TagDeleteV1,
+          SyncEntityType.AssetTagV1,
+          SyncEntityType.AssetTagDeleteV1,
+        ].includes(type) &&
+        (await this.syncRepository.tag.acknowledge(sessionId, fromAck(ack)))
+      ) {
+        continue;
+      }
       checkpoints[type] = { sessionId, type, ack };
     }
 
-    await this.syncCheckpointRepository.upsertAll(Object.values(checkpoints));
+    if (Object.keys(checkpoints).length > 0) {
+      await this.syncCheckpointRepository.upsertAll(Object.values(checkpoints));
+    }
   }
 
   async deleteAcks(auth: AuthDto, dto: SyncAckDeleteDto) {
@@ -165,6 +217,7 @@ export class SyncService extends BaseService {
       return throwSessionRequired();
     }
 
+    await this.syncRepository.tag.reset(sessionId, dto.types);
     await this.syncCheckpointRepository.deleteAll(sessionId, dto.types);
   }
 
@@ -188,6 +241,7 @@ export class SyncService extends BaseService {
     }
 
     if (dto.reset) {
+      await this.syncRepository.tag.reset(session.id);
       await this.sessionRepository.resetSyncProgress(session.id);
     }
 
@@ -199,6 +253,9 @@ export class SyncService extends BaseService {
     }
 
     const checkpoints = await this.syncCheckpointRepository.getAll(session.id);
+    for (const { type, ack } of checkpoints) {
+      if (type === SyncEntityType.AssetBootstrapV1) parseAssetBootstrapAck(ack);
+    }
     const checkpointMap: CheckpointMap = Object.fromEntries(checkpoints.map(({ type, ack }) => [type, fromAck(ack)]));
 
     if (this.needsFullSync(checkpointMap)) {
@@ -211,6 +268,8 @@ export class SyncService extends BaseService {
     const options: SyncQueryOptions = { nowId, userId: auth.user.id, ...getHiddenContentQueryOptions(auth) };
 
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
+      [SyncRequestType.TagsV1]: () => this.syncTags(auth, response, 'tag'),
+      [SyncRequestType.AssetTagsV1]: () => this.syncTags(auth, response, 'assetTag'),
       // deprecated handlers
       [SyncRequestType.AssetsV1]: () => this.syncAssetsV1(),
       [SyncRequestType.AssetFacesV1]: () => this.syncAssetFacesV1(),
@@ -222,6 +281,7 @@ export class SyncService extends BaseService {
       [SyncRequestType.UsersV1]: () => this.syncUsersV1(options, response, checkpointMap),
       [SyncRequestType.PartnersV1]: () => this.syncPartnersV1(options, response, checkpointMap),
       [SyncRequestType.AssetsV2]: () => this.syncAssetsV2(options, response, checkpointMap),
+      [SyncRequestType.AssetsV3]: () => this.syncAssetsV3(options, response, checkpointMap),
       [SyncRequestType.AssetExifsV1]: () => this.syncAssetExifsV1(options, response, checkpointMap),
       [SyncRequestType.AssetEditsV1]: () => this.syncAssetEditsV1(options, response, checkpointMap),
       [SyncRequestType.PartnerAssetsV2]: () => this.syncPartnerAssetsV2(options, response, checkpointMap, session.id),
@@ -273,6 +333,7 @@ export class SyncService extends BaseService {
   @OnJob({ name: JobName.AuditTableCleanup, queue: QueueName.BackgroundTask })
   async onAuditTableCleanup() {
     const pruneThreshold = MAX_DAYS + 1;
+    await this.syncRepository.tag.cleanupAuditTables(pruneThreshold);
 
     await this.syncRepository.album.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.albumUser.cleanupAuditTable(pruneThreshold);
@@ -373,6 +434,43 @@ export class SyncService extends BaseService {
     const upsertType = SyncEntityType.AssetV2;
     const upserts = this.syncRepository.asset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
+      await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
+    }
+  }
+
+  private async syncAssetsV3(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
+    const bootstrapType = SyncEntityType.AssetBootstrapV1;
+    const checkpoint = checkpointMap[bootstrapType];
+    const parsed = checkpoint && parseAssetBootstrapAck(toAck(checkpoint));
+    const watermark = checkpoint?.updateId ?? options.nowId;
+    if (checkpoint?.extraId !== COMPLETE_ID) {
+      const assets = this.syncRepository.asset.getBootstrap({ ...options, nowId: watermark }, parsed?.cursor);
+      for await (const { bootstrapTimestamp, ...data } of assets) {
+        const cursor = Buffer.from(JSON.stringify([bootstrapTimestamp, data.id])).toString('base64url');
+        await send(response, {
+          type: SyncEntityType.AssetV3,
+          ackType: bootstrapType,
+          ids: [watermark, cursor],
+          data: mapSyncAssetV2(data),
+        });
+      }
+      await sendEntityBackfillCompleteAck(response, bootstrapType, watermark);
+    }
+
+    // The bootstrap floor is a fallback, never a separately emitted delta ack.
+    const floor = { type: bootstrapType, updateId: watermark };
+    const deleteType = SyncEntityType.AssetDeleteV2;
+    for await (const { id, ...data } of this.syncRepository.asset.getDeletes({
+      ...options,
+      ack: checkpointMap[deleteType] ?? floor,
+    })) {
+      await send(response, { type: deleteType, ids: [id], data });
+    }
+    const upsertType = SyncEntityType.AssetV3;
+    for await (const { updateId, ...data } of this.syncRepository.asset.getUpserts({
+      ...options,
+      ack: checkpointMap[upsertType] ?? floor,
+    })) {
       await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
     }
   }
@@ -934,6 +1032,15 @@ export class SyncService extends BaseService {
     const upserts = this.syncRepository.partnerStack.getUpserts({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
       await send(response, { type: upsertType, ids: [updateId], data });
+    }
+  }
+
+  private async syncTags(auth: AuthDto, response: Writable, kind: 'tag' | 'assetTag') {
+    const pending = await this.syncRepository.tag.reconcile(auth, kind);
+    for (const { eventId } of pending) {
+      if (response.destroyed || response.writableEnded) throw new ClientDisconnectedError();
+      const item = await this.syncRepository.tag.prepare(auth, kind, eventId);
+      if (item) await send(response, { type: item.type, ids: [item.eventId], data: item.data as never });
     }
   }
 
