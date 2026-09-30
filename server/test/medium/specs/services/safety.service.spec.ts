@@ -1,7 +1,15 @@
 import { Kysely, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
-import { AlbumUserRole, AssetLockReason, AssetVisibility, ChecksumAlgorithm, MediaOperationStatus } from 'src/enum.js';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  AssetLockReason,
+  AssetVisibility,
+  ChecksumAlgorithm,
+  MediaOperationStatus,
+} from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -41,6 +49,61 @@ const operation = async (ownerId: string, task: 'backup' | 'verify', depth = 'sa
     db,
   );
   return rows[0].id;
+};
+
+/** Fixture proof rows use real SQL; completion and verification remain distinct facts. */
+const recordSafetyProof = async (
+  index: CloudBackupIndexRepository,
+  assetId: string,
+  ownerId: string,
+  sha256: string,
+  completedAt: Date,
+) => {
+  const backup = await operation(ownerId, 'backup');
+  await db
+    .updateTable('media_operation')
+    .set({
+      createdAt: new Date(completedAt.getTime() - 2000),
+      startedAt: new Date(completedAt.getTime() - 1000),
+      finishedAt: completedAt,
+    })
+    .where('id', '=', backup)
+    .execute();
+  const manifest = await index.createManifest({ bucket, key: `${assetId}.json`, operationId: backup });
+  await index.record(bucket, [{ sha256, size: 10, etag: null }]);
+  await db
+    .updateTable('cloud_backup_object')
+    .set({ uploadedAt: completedAt })
+    .where('sha256', '=', sha256)
+    .where('bucket', '=', bucket)
+    .execute();
+  await db.insertInto('cloud_backup_manifest_original').values({ manifestId: manifest.id, assetId, sha256 }).execute();
+  await db
+    .updateTable('cloud_backup_manifest')
+    .set({ status: 'complete', createdAt: new Date(completedAt.getTime() - 1000), finishedAt: completedAt })
+    .where('id', '=', manifest.id)
+    .execute();
+  const verify = await operation(ownerId, 'verify');
+  await db
+    .updateTable('media_operation')
+    .set({
+      createdAt: new Date(completedAt.getTime() + 1000),
+      startedAt: new Date(completedAt.getTime() + 1000),
+      finishedAt: new Date(completedAt.getTime() + 2000),
+    })
+    .where('id', '=', verify)
+    .execute();
+  await db
+    .insertInto('cloud_backup_object_verification')
+    .values({
+      bucket,
+      sha256,
+      operationId: verify,
+      method: 'sha256-get',
+      result: 'passed',
+      checkedAt: new Date(completedAt.getTime() + 1000),
+    })
+    .execute();
 };
 
 describe('own safety API PostgreSQL authorization and proof qualification', () => {
@@ -105,6 +168,74 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
     const unlocked = factory.auth({ user: owner, session: { hasElevatedPermission: true } });
     expect((await sut.lookup(unlocked, { hashes })).assets).toHaveLength(1);
     expect((await sut.summary(unlocked)).total).toBe(1);
+  });
+
+  it('never reveals foreign safety facts to an accepted shared-space viewer who can read the source asset', async () => {
+    const { ctx, sut, index } = setup();
+    const { user: owner } = await ctx.newUser();
+    const { user: viewer } = await ctx.newUser();
+    const sha = hash('shared-space-foreign');
+    const { asset } = await ctx.newAsset({
+      ownerId: owner.id,
+      checksum: Buffer.from(sha, 'hex'),
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
+    const { album: space } = await ctx.newAlbum({ ownerId: owner.id, kind: AlbumKind.Space }, [asset.id]);
+    await ctx.newAlbumUser({ albumId: space.id, userId: viewer.id, role: AlbumUserRole.Viewer });
+    expect(await new AccessRepository(db).asset.checkAlbumAccess(viewer.id, new Set([asset.id]))).toEqual(
+      new Set([asset.id]),
+    );
+    await recordSafetyProof(index, asset.id, owner.id, sha, new Date('2026-09-20T12:00:00Z'));
+    const auth = factory.auth({ user: viewer });
+    expect(await sut.lookup(auth, { hashes: [sha] })).toEqual({ cloudAvailability: 'ready', assets: [] });
+    expect(await sut.summary(auth)).toEqual({
+      cloudAvailability: 'ready',
+      total: 0,
+      onServer: 0,
+      onServerPercent: 0,
+      backedUp: 0,
+      backedUpPercent: 0,
+      lastCompletedRunAt: null,
+      lastVerifiedRunAt: null,
+    });
+  });
+
+  it('aggregates positive mixed-library backup counts and dates without borrowing newer foreign proof', async () => {
+    const { ctx, sut, index } = setup();
+    const { user: owner } = await ctx.newUser();
+    const { user: foreign } = await ctx.newUser();
+    const ownHash = hash('summary-own-backed');
+    const otherHash = hash('summary-own-not-backed');
+    const foreignHash = hash('summary-foreign-backed');
+    const { asset: backed } = await ctx.newAsset({
+      ownerId: owner.id,
+      checksum: Buffer.from(ownHash, 'hex'),
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
+    await ctx.newAsset({
+      ownerId: owner.id,
+      checksum: Buffer.from(otherHash, 'hex'),
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
+    const { asset: other } = await ctx.newAsset({
+      ownerId: foreign.id,
+      checksum: Buffer.from(foreignHash, 'hex'),
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
+    const completedAt = new Date('2026-09-20T12:00:00Z');
+    await recordSafetyProof(index, backed.id, owner.id, ownHash, completedAt);
+    await recordSafetyProof(index, other.id, foreign.id, foreignHash, new Date('2026-09-25T12:00:00Z'));
+    expect(await sut.summary(factory.auth({ user: owner }))).toEqual({
+      cloudAvailability: 'ready',
+      total: 2,
+      onServer: 2,
+      onServerPercent: 100,
+      backedUp: 1,
+      backedUpPercent: 50,
+      lastCompletedRunAt: completedAt.toISOString(),
+      lastVerifiedRunAt: new Date(completedAt.getTime() + 2000).toISOString(),
+    });
+    expect((await sut.summary(factory.auth({ user: foreign }))).lastCompletedRunAt).toBe('2026-09-25T12:00:00.000Z');
   });
 
   it('requires current retained completion/object presence; HEAD, cancelled checks and deleted assets cannot invent verification', async () => {
