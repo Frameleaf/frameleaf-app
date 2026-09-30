@@ -124,6 +124,7 @@ const sendEntityBackfillCompleteAck = async (response: Writable, ackType: SyncEn
 
 export const SYNC_TYPES_ORDER = [
   SyncRequestType.PinnedCollectionEventsV1,
+  SyncRequestType.AssetTrashStatesV1,
   SyncRequestType.DuplicateGroupsV1,
   SyncRequestType.SharedSpacesV1,
   SyncRequestType.SharedSpaceMembersV1,
@@ -213,6 +214,8 @@ export class SyncService extends BaseService {
         [
           SyncEntityType.PinnedCollectionV1,
           SyncEntityType.PinnedCollectionDeleteV1,
+          SyncEntityType.AssetTrashStateV1,
+          SyncEntityType.AssetTrashStateDeleteV1,
           SyncEntityType.DuplicateGroupV1,
           SyncEntityType.DuplicateGroupDeleteV1,
           SyncEntityType.SharedSpaceV1,
@@ -300,6 +303,7 @@ export class SyncService extends BaseService {
 
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
       [SyncRequestType.PinnedCollectionEventsV1]: () => this.syncTags(auth, response, 'pin'),
+      [SyncRequestType.AssetTrashStatesV1]: () => this.syncTags(auth, response, 'trash'),
       [SyncRequestType.DuplicateGroupsV1]: () => this.syncTags(auth, response, 'duplicate'),
       [SyncRequestType.SharedSpacesV1]: () => this.syncTags(auth, response, 'space'),
       [SyncRequestType.SharedSpaceMembersV1]: () => this.syncTags(auth, response, 'spaceMember'),
@@ -1118,7 +1122,7 @@ export class SyncService extends BaseService {
   private async syncTags(
     auth: AuthDto,
     response: Writable,
-    kind: 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate' | 'pin',
+    kind: 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember' | 'duplicate' | 'pin' | 'trash',
   ) {
     const readPins = kind === 'pin' ? () => this.pins.get(auth) : undefined;
     const pending = await (readPins
