@@ -4,6 +4,7 @@ import { ExtraModel } from 'src/decorators.js';
 import { PetObservationResponseSchema, PetResponseSchema } from 'src/dtos/pet.dto.js';
 import { PinnedCollectionsResponseSchema } from 'src/dtos/pinned-collection.dto.js';
 import {
+  AlbumKindSchema,
   AlbumUserRole,
   AlbumUserRoleSchema,
   AssetOrderSchema,
@@ -251,6 +252,14 @@ const SyncAlbumV2Schema = z
   })
   .meta({ id: 'SyncAlbumV2' });
 
+const SyncAlbumV3Schema = SyncAlbumV2Schema.extend({
+  parentId: z.uuid().nullable(),
+  kind: AlbumKindSchema,
+  icon: z.string().nullable(),
+  sortOrder: z.number().meta({ format: 'double' }).nullable(),
+  deletedAt: isoDatetimeToDate.nullable(),
+}).meta({ id: 'SyncAlbumV3' });
+
 const SyncAlbumToAssetV1Schema = z
   .object({
     albumId: z.uuidv4().describe('Album ID'),
@@ -275,6 +284,8 @@ class SyncAlbumUserV1 extends createZodDto(SyncAlbumUserV1Schema) {}
 class SyncAlbumV1 extends createZodDto(SyncAlbumV1Schema) {}
 @ExtraModel()
 class SyncAlbumV2 extends createZodDto(SyncAlbumV2Schema) {}
+@ExtraModel()
+class SyncAlbumV3 extends createZodDto(SyncAlbumV3Schema) {}
 @ExtraModel()
 class SyncAlbumToAssetV1 extends createZodDto(SyncAlbumToAssetV1Schema) {}
 @ExtraModel()
@@ -548,6 +559,9 @@ export type SyncItem = {
   [SyncEntityType.PartnerAssetExifBackfillV1]: SyncAssetExifV1;
   [SyncEntityType.AlbumV1]: SyncAlbumV1;
   [SyncEntityType.AlbumV2]: SyncAlbumV2;
+  [SyncEntityType.AlbumV3]: SyncAlbumV3;
+  [SyncEntityType.AlbumBootstrapV1]: SyncAlbumV3;
+  [SyncEntityType.AlbumDeleteV2]: SyncAlbumDeleteV1;
   [SyncEntityType.AlbumDeleteV1]: SyncAlbumDeleteV1;
   [SyncEntityType.AlbumUserV1]: SyncAlbumUserV1;
   [SyncEntityType.AlbumUserBackfillV1]: SyncAlbumUserV1;

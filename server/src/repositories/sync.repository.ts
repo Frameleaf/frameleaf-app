@@ -309,6 +309,88 @@ export class BaseSync {
 }
 
 class AlbumSync extends BaseSync {
+  /** V3 adds tree/trash fields; membership and parent-access changes refresh the payload. */
+  private treeQuery(options: SyncQueryOptions) {
+    const userId = options.userId;
+    const parentGrant = this.db
+      .selectFrom('album_user as parent_user')
+      .select('parent_user.createId')
+      .where('parent_user.albumId', '=', sql.ref<string>('album.parentId'))
+      .where('parent_user.userId', '=', userId);
+    const parentRevoke = this.db
+      .selectFrom('album_audit as parent_audit')
+      .select('parent_audit.id')
+      .where('parent_audit.albumId', '=', sql.ref<string>('album.parentId'))
+      .where('parent_audit.userId', '=', userId)
+      .orderBy('parent_audit.id', 'desc')
+      .limit(1);
+    const eventId = sql<string>`greatest(album."updateId", album_users."createId",
+      coalesce((${parentGrant}), album."updateId"), coalesce((${parentRevoke}), album."updateId"))`;
+    return {
+      eventId,
+      query: this.db
+        .selectFrom('album')
+        .innerJoin('album_user as album_users', 'album.id', 'album_users.albumId')
+        .where('album_users.userId', '=', userId)
+        .select([
+          'album.id',
+          'album.albumName as name',
+          'album.description',
+          'album.createdAt',
+          'album.updatedAt',
+          albumThumbnailAssetId(options),
+          'album.isActivityEnabled',
+          'album.order',
+          'album.kind',
+          'album.icon',
+          'album.sortOrder',
+          'album.deletedAt',
+          eventId.as('updateId'),
+          sql<string | null>`case when (${parentGrant}) is not null then album."parentId" else null end`.as('parentId'),
+        ]),
+    };
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getTreeUpserts(options: SyncQueryOptions) {
+    const { query, eventId } = this.treeQuery(options);
+    return query
+      .where(eventId, '<', options.nowId)
+      .$if(!!options.ack, (qb) =>
+        options.ack!.extraId
+          ? qb.where(
+              sql<boolean>`(${eventId}, album.id) > (${options.ack!.updateId}::uuid, ${options.ack!.extraId}::uuid)`,
+            )
+          : qb.where(eventId, '>', options.ack!.updateId),
+      )
+      .orderBy(eventId, 'asc')
+      .orderBy('album.id', 'asc')
+      .stream();
+  }
+
+  @GenerateSql({
+    params: [dummyQueryOptions, { timestamp: '2026-01-01T00:00:00.000001Z', id: DummyValue.UUID }],
+    stream: true,
+  })
+  getTreeBootstrap(options: SyncQueryOptions, cursor?: { timestamp: string; id: string }) {
+    const { query, eventId } = this.treeQuery(options);
+    return query
+      .where(eventId, '<', options.nowId)
+      .select(
+        sql<string>`to_char(album."createdAt" at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.as(
+          'bootstrapTimestamp',
+        ),
+      )
+      .$if(!!cursor, (qb) =>
+        qb.where(
+          sql<boolean>`(album."createdAt", album.id) < (${cursor!.timestamp}::timestamptz, ${cursor!.id}::uuid)`,
+        ),
+      )
+      .orderBy('album.createdAt', 'desc')
+      .orderBy('album.id', 'desc')
+      .stream();
+  }
+
   @GenerateSql({ params: [dummyCreateAfterOptions] })
   getCreatedAfter({ nowId, userId, afterCreateId }: SyncCreatedAfterOptions) {
     return this.db
