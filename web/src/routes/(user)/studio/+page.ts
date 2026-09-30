@@ -1,9 +1,5 @@
-import {
-  getAssetInfo,
-  getStudioRestoredVersion,
-  type AssetResponseDto,
-  type StudioRestoredVersionDto,
-} from '@immich/sdk';
+import { getAssetInfo, getStudioProject, getStudioRestoredVersion, type StudioRestoredVersionDto } from '@immich/sdk';
+import { libraryAssetIdsIn, resolveStudioAssets } from '$lib/frameleaf/studio/assets';
 import { parseStudioHandoff } from '$lib/frameleaf/studio/handoff';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
@@ -29,10 +25,13 @@ export const load = (async ({ url }) => {
   const handoff = parseStudioHandoff(url.searchParams);
   const $t = await getFormatter();
 
-  const settled = await Promise.allSettled(handoff.assetIds.map((id) => getAssetInfo({ id })));
-  const assets = settled
-    .filter((result): result is PromiseFulfilledResult<AssetResponseDto> => result.status === 'fulfilled')
-    .map((result) => result.value);
+  // Resolve the caller-authorized stored graph before mount, so reopening needs no selection query.
+  // A refused project stays with the session's existing forbidden/missing state; its sources are not read.
+  const stored = handoff.projectId ? await getStudioProject({ id: handoff.projectId }).catch(() => null) : null;
+  const assetIds = [
+    ...new Set([...handoff.assetIds, ...libraryAssetIdsIn(stored?.envelope?.graph)].map((id) => id.toLowerCase())),
+  ];
+  const assets = await resolveStudioAssets(assetIds, (id) => getAssetInfo({ id }));
 
   // FL-115: restorations chosen with Use in Studio. The server decides each with the rules a clip of it
   // is resolved by; one that is not the person's is dropped like an unreadable asset, and one that was
@@ -52,8 +51,7 @@ export const load = (async ({ url }) => {
     returnTo: handoff.returnTo,
     at: handoff.at,
     /** Ids the handoff asked for that this session could not read, for the honest count. */
-    unavailableAssetCount:
-      handoff.assetIds.length - assets.length + handoff.restorationIds.length - restoredVersions.length,
+    unavailableAssetCount: assetIds.length - assets.length + handoff.restorationIds.length - restoredVersions.length,
     meta: {
       title: $t('frameleaf_studio_title'),
     },

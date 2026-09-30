@@ -24,6 +24,8 @@ const {
   isStudioEligibleAsset,
   restorationIdOfMedia,
   restoredVersionIdsIn,
+  libraryAssetIdsIn,
+  resolveStudioAssets,
   toStudioAsset,
   toStudioAssets,
   toStudioRestoredAsset,
@@ -225,5 +227,64 @@ describe('restored versions in the bin (FL-115)', () => {
     expect(restoredVersionIdsIn(null)).toEqual([]);
     expect(restorationIdOfMedia('asset-1')).toBeNull();
     expect(restorationIdOfMedia(`restored-${restorationId}`)).toBe(restorationId);
+  });
+});
+
+describe('stored project library hydration', () => {
+  const first = '9f803cc4-ce3d-4911-b9d0-936c85fc6cb1';
+  const second = '10b52632-3eac-46cb-83bf-a23f48f85209';
+
+  it('extracts only ordinary asset/media UUIDs, dedupes and survives cycles/deep data', () => {
+    const graph: Record<string, unknown> = {
+      timeline: { items: [{ mediaId: first }, { assetId: first.toUpperCase() }, { mediaId: second }] },
+      comments: [{ id: second }],
+      generated: [{ mediaId: `restored-${first}` }, { mediaId: `blob:${second}` }, { mediaId: 'not-a-uuid' }],
+    };
+    graph.cycle = graph;
+    expect(libraryAssetIdsIn(graph).sort()).toEqual([first, second].sort());
+    let deep: unknown = { mediaId: first };
+    for (let i = 0; i < 66; i++) {
+      deep = { nested: deep };
+    }
+    expect(libraryAssetIdsIn(deep)).toEqual([]);
+  });
+
+  it('does not truncate a stored project to the 200-item query handoff ceiling', () => {
+    const ids = Array.from({ length: 205 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    expect(libraryAssetIdsIn({ items: ids.map((mediaId) => ({ mediaId })) })).toHaveLength(205);
+  });
+
+  it('settles refusals and excludes Locked/trashed/wrong-identity metadata before publication', async () => {
+    const ids = [first, second, '11b52632-3eac-46cb-83bf-a23f48f85209', '12b52632-3eac-46cb-83bf-a23f48f85209'];
+    const lookup = vi.fn(async (id: string) => {
+      if (id === second) {
+        throw new Error('404 refused');
+      }
+      if (id === ids[2]) {
+        return asset({ id, visibility: AssetVisibility.Locked, originalFileName: 'private-locked' });
+      }
+      if (id === ids[3]) {
+        return asset({ id: second, originalFileName: 'wrong-identity' });
+      }
+      return asset({ id });
+    });
+    expect(await resolveStudioAssets([...ids, first], lookup)).toEqual([asset({ id: first })]);
+    expect(lookup).toHaveBeenCalledTimes(4);
+    expect(await resolveStudioAssets([first], async () => asset({ id: first, isTrashed: true }))).toEqual([]);
+  });
+
+  it('bounds in-flight lookups while resolving every source', async () => {
+    let active = 0;
+    let maximum = 0;
+    const ids = Array.from({ length: 25 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
+    const found = await resolveStudioAssets(ids, async (id: string) => {
+      active++;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active--;
+      return asset({ id });
+    });
+    expect(maximum).toBeLessThanOrEqual(8);
+    expect(found.map((a) => a.id)).toEqual(ids);
   });
 });
