@@ -184,6 +184,15 @@ test.describe('Studio authorization gates (FL-112)', () => {
     expect(JSON.parse(answer.text).message, label).toBe(JSON.parse(baseline.text).message);
     expectNoTrace(answer, label);
   };
+  /**
+   * A member, who can see the project, is refused an owner-only gate honestly with 403 (FL-112 ruling,
+   * 2026-09-30); only someone who cannot see it gets the missing-project 404. Nothing leaks either way.
+   */
+  const expectOwnerOnlyRefusal = async (page: Page, gate: Gate, id: string, label: string) => {
+    const answer = await probe(page, gate, id);
+    expect(answer.status, `${label}: ${answer.text}`).toBe(403);
+    expectNoTrace(answer, label);
+  };
 
   test.beforeAll(async () => {
     utils.initSdk();
@@ -322,9 +331,10 @@ test.describe('Studio authorization gates (FL-112)', () => {
         expectNoTrace({ ...renamed, text: renamed.text.replace(PROJECT_NAME, '') }, `${scenario} rename`);
         const again = await jsonOf(page, `/studio/projects/${projectId}`);
         expect(again.name).toBe(PROJECT_NAME);
-        // the browser opens it for review only
+        // the browser opens it for review only: the name as a heading, never the owner's rename box
         await page.goto(`/studio?project=${projectId}`);
-        await expect(page.getByRole('textbox', { name: 'Project name' })).toHaveValue(PROJECT_NAME);
+        await expect(page.getByRole('heading', { level: 1, name: PROJECT_NAME })).toBeVisible();
+        await expect(page.getByRole('textbox', { name: 'Project name' })).toHaveCount(0);
         await expect(page.getByText('Review only')).toBeVisible();
       });
       await record('source', scenario, async () => {
@@ -336,7 +346,7 @@ test.describe('Studio authorization gates (FL-112)', () => {
         expectPreviewAdmitted(await probe(page, 'preview', projectId), `${scenario} preview`);
       });
       for (const gate of ['export', 'import', 'bundle'] as const) {
-        await record(gate, scenario, () => expectRefusedLikeMissing(page, gate, projectId, `${scenario} ${gate}`));
+        await record(gate, scenario, () => expectOwnerOnlyRefusal(page, gate, projectId, `${scenario} ${gate}`));
       }
       await page.context().close();
     });
@@ -383,16 +393,16 @@ test.describe('Studio authorization gates (FL-112)', () => {
       const listed = await probe(ownerPage, 'export', sensitiveId);
       expect(listed.status, listed.text).toBe(200);
       expect(listed.text.includes(secretFileName)).toBe(false);
-      await expectRefusedLikeMissing(memberPage, 'export', sensitiveId, 'member export');
+      await expectOwnerOnlyRefusal(memberPage, 'export', sensitiveId, 'member export');
     });
     await record('import', 'sensitive', async () => {
       const listed = await probe(ownerPage, 'import', sensitiveId);
       expect(listed.status, listed.text).toBe(200);
       expect(listed.text.includes(secretFileName)).toBe(false);
-      await expectRefusedLikeMissing(memberPage, 'import', sensitiveId, 'member import');
+      await expectOwnerOnlyRefusal(memberPage, 'import', sensitiveId, 'member import');
     });
     await record('bundle', 'sensitive', async () => {
-      await expectRefusedLikeMissing(memberPage, 'bundle', sensitiveId, 'member bundle');
+      await expectOwnerOnlyRefusal(memberPage, 'bundle', sensitiveId, 'member bundle');
     });
     await ownerPage.context().close();
     await memberPage.context().close();
@@ -412,7 +422,9 @@ test.describe('Studio authorization gates (FL-112)', () => {
         if (gate === 'project') {
           await page.goto(`/studio?project=${projectId}`);
           await page.waitForLoadState('networkidle');
-          await expect(page.getByRole('textbox', { name: 'Project name' })).not.toHaveValue(PROJECT_NAME);
+          // neither the owner's rename box nor a reviewer's heading: the project is not shown at all
+          await expect(page.getByRole('textbox', { name: 'Project name' })).toHaveCount(0);
+          await expect(page.getByRole('heading', { level: 1, name: PROJECT_NAME })).toHaveCount(0);
           const shown = await page.locator('body').innerText();
           expect(shown.includes(PROJECT_NAME)).toBe(false);
         }
