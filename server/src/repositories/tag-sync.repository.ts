@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SyncAck } from 'src/types.js';
 import { mapPet, mapPetObservation } from 'src/dtos/pet.dto.js';
-import { SyncEntityType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, SyncEntityType } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
@@ -20,7 +20,7 @@ import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
 
-type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation';
+type Kind = 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember';
 type Visible = {
   key: string;
   entityId: string;
@@ -29,6 +29,8 @@ type Visible = {
   data: Record<string, unknown>;
 };
 const types = {
+  space: { upsert: SyncEntityType.SharedSpaceV1, delete: SyncEntityType.SharedSpaceDeleteV1 },
+  spaceMember: { upsert: SyncEntityType.SharedSpaceMemberV1, delete: SyncEntityType.SharedSpaceMemberDeleteV1 },
   tag: { upsert: SyncEntityType.TagV1, delete: SyncEntityType.TagDeleteV1 },
   assetTag: { upsert: SyncEntityType.AssetTagV1, delete: SyncEntityType.AssetTagDeleteV1 },
   pet: { upsert: SyncEntityType.PetV1, delete: SyncEntityType.PetDeleteV1 },
@@ -49,6 +51,53 @@ export class TagSync {
 
   private async visible(db: Kysely<DB>, kind: Kind, auth: AuthDto, key?: string): Promise<Visible[]> {
     const options = getHiddenContentQueryOptions(auth);
+    if (kind === 'space' || kind === 'spaceMember') {
+      if (auth.sharedLink) return [];
+      const spaces = db
+        .selectFrom('album')
+        .innerJoin('album_user as caller', 'caller.albumId', 'album.id')
+        .innerJoin('album_user as ownership', 'ownership.albumId', 'album.id')
+        .innerJoin('user as owner', 'owner.id', 'ownership.userId')
+        .innerJoin('user as reader', 'reader.id', 'caller.userId')
+        .where('album.kind', '=', AlbumKind.Space)
+        .where('ownership.role', '=', AlbumUserRole.Owner)
+        .where('album.deletedAt', 'is', null)
+        .where('owner.deletedAt', 'is', null)
+        .where('reader.deletedAt', 'is', null)
+        .where('caller.userId', '=', auth.user.id);
+      if (kind === 'space') {
+        return spaces
+          .$if(!!key, (qb) => qb.where('album.id', '=', key!))
+          .select(['album.id as key', 'album.id as entityId', 'album.updateId as sourceId'])
+          .select([
+            sql<null>`null`.as('assetId'),
+            sql<
+              Record<string, unknown>
+            >`jsonb_build_object('id', album.id, 'name', album."albumName", 'description', album.description, 'icon', album.icon, 'kind', album.kind, 'createdAt', album."createdAt", 'updatedAt', album."updatedAt")`.as(
+              'data',
+            ),
+          ])
+          .execute();
+      }
+      return spaces
+        .innerJoin('album_user as member', 'member.albumId', 'album.id')
+        .innerJoin('user as accepted', 'accepted.id', 'member.userId')
+        .where('accepted.deletedAt', 'is', null)
+        .$if(!!key, (qb) =>
+          qb.where('album.id', '=', key!.split(':', 1)[0]).where('member.userId', '=', key!.split(':', 2)[1]),
+        )
+        .select(['album.id as entityId', 'member.updateId as sourceId'])
+        .select([
+          sql<string>`album.id::text || ':' || member."userId"::text`.as('key'),
+          sql<null>`null`.as('assetId'),
+          sql<
+            Record<string, unknown>
+          >`jsonb_build_object('spaceId', album.id, 'userId', member."userId", 'role', member.role, 'createdAt', member."createdAt", 'updatedAt', member."updatedAt")`.as(
+            'data',
+          ),
+        ])
+        .execute();
+    }
     if (kind === 'pet' || kind === 'petObservation') {
       const pets = new PetRepository(db, LoggingRepository.create());
       const visiblePets = await pets.getAll(auth.user.id, {
@@ -158,6 +207,7 @@ export class TagSync {
                 delivered: false,
                 acknowledged: false,
               })
+              .$if(kind === 'space', (qb) => qb.set({ deliveryOrder: null }))
               .where('sessionId', '=', sessionId)
               .where('kind', '=', kind)
               .where('key', '=', state.key)
@@ -168,6 +218,7 @@ export class TagSync {
             await tx
               .updateTable('session_tag_sync_state')
               .set({ action: 'delete', eventId: sql`immich_uuid_v7()`, delivered: false, acknowledged: false })
+              .$if(kind === 'space', (qb) => qb.set({ deliveryOrder: null }))
               .where('sessionId', '=', sessionId)
               .where('kind', '=', kind)
               .where('key', '=', state.key)
@@ -199,14 +250,25 @@ export class TagSync {
           )
           .execute();
       }
-      return tx
-        .selectFrom('session_tag_sync_state')
-        .selectAll()
-        .where('sessionId', '=', sessionId)
-        .where('kind', '=', kind)
-        .where('acknowledged', '=', false)
-        .orderBy('eventId', 'asc')
-        .execute();
+      return (
+        tx
+          .selectFrom('session_tag_sync_state')
+          .selectAll()
+          .where('sessionId', '=', sessionId)
+          .where('kind', '=', kind)
+          .where('acknowledged', '=', false)
+          // Delivery ACKs never confirm unsent rows, so ordering identity independently cannot skip older entries.
+          .$if(kind === 'space', (qb) =>
+            qb
+              .orderBy(sql`"deliveryOrder" asc nulls last`)
+              .orderBy(
+                sql`(select album."createdAt" from album where album.id = session_tag_sync_state."entityId") desc nulls last`,
+              )
+              .orderBy('entityId', 'desc'),
+          )
+          .orderBy('eventId', 'asc')
+          .execute()
+      );
     });
   }
 
@@ -235,6 +297,11 @@ export class TagSync {
       await tx
         .updateTable('session_tag_sync_state')
         .set({ delivered: true, potentiallyVisible: true })
+        .$if(kind === 'space' && state.deliveryOrder === null, (qb) =>
+          qb.set({
+            deliveryOrder: sql<number>`(select coalesce(max("deliveryOrder"), 0) + 1 from session_tag_sync_state where "sessionId" = ${sessionId} and kind = ${kind})`,
+          }),
+        )
         .where('sessionId', '=', sessionId)
         .where('kind', '=', kind)
         .where('key', '=', state.key)
@@ -247,13 +314,17 @@ export class TagSync {
         data:
           state.action === 'upsert'
             ? current!.data
-            : kind === 'tag'
-              ? { tagId: state.entityId }
-              : kind === 'assetTag'
-                ? { tagId: state.entityId, assetId: state.assetId! }
-                : kind === 'pet'
-                  ? { petId: state.entityId }
-                  : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
+            : kind === 'space'
+              ? { spaceId: state.entityId }
+              : kind === 'spaceMember'
+                ? { spaceId: state.entityId, userId: state.key.split(':', 2)[1] }
+                : kind === 'tag'
+                  ? { tagId: state.entityId }
+                  : kind === 'assetTag'
+                    ? { tagId: state.entityId, assetId: state.assetId! }
+                    : kind === 'pet'
+                      ? { petId: state.entityId }
+                      : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
       };
     });
   }
@@ -268,20 +339,21 @@ export class TagSync {
       // Stale/forged ACKs cannot confirm a different action or a later regrant with the same key.
       const exact = await tx
         .selectFrom('session_tag_sync_state')
-        .select('key')
+        .selectAll()
         .where('sessionId', '=', sessionId)
         .where('kind', '=', kind)
         .where('eventId', '=', ack.updateId)
         .where('action', '=', action)
         .where('delivered', '=', true)
         .executeTakeFirst();
-      if (!exact) return;
+      if (!exact || (kind === 'space' && exact.deliveryOrder === null)) return;
       const pending = tx
         .selectFrom('session_tag_sync_state')
         .select('key')
         .where('sessionId', '=', sessionId)
         .where('kind', '=', kind)
-        .where('eventId', '<=', ack.updateId)
+        .$if(kind === 'space', (qb) => qb.where('deliveryOrder', '<=', exact.deliveryOrder!))
+        .$if(kind !== 'space', (qb) => qb.where('eventId', '<=', ack.updateId))
         .where('action', '=', action)
         .where('delivered', '=', true);
       if (action === 'delete') {

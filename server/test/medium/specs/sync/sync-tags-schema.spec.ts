@@ -5,6 +5,7 @@ import { getCatalogEvidence, serializeCatalogManifest } from 'src/fork-schema/ca
 import { DB } from 'src/schema/index.js';
 import * as migration from 'src/schema/migrations/2100000000721-TagSyncEvents.js';
 import * as petMigration from 'src/schema/migrations/2100000000722-PetSyncEvents.js';
+import * as spaceMigration from 'src/schema/migrations/2100000000723-SharedSpaceDeliveryOrder.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
@@ -16,6 +17,7 @@ afterAll(async () => {
 });
 it('round-trips the reserved migration and matches the registered schema', async () => {
   const before = await getCatalogEvidence(db);
+  await spaceMigration.down(db);
   await petMigration.down(db);
   await migration.down(db);
   expect(
@@ -23,6 +25,7 @@ it('round-trips the reserved migration and matches the registered schema', async
   ).toBe(false);
   await migration.up(db);
   await petMigration.up(db);
+  await spaceMigration.up(db);
   const after = await getCatalogEvidence(db);
   expect(after).toEqual(before);
   if (process.env.FL231_CATALOG_OUT) await writeFile(process.env.FL231_CATALOG_OUT, serializeCatalogManifest(after));

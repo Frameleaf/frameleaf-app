@@ -11498,6 +11498,29 @@ export type SyncPinnedCollectionsV1 = {
     userId: string;
 };
 export type SyncResetV1 = {};
+export type SyncSharedSpaceDeleteV1 = {
+    spaceId: string;
+};
+export type SyncSharedSpaceMemberDeleteV1 = {
+    spaceId: string;
+    userId: string;
+};
+export type SyncSharedSpaceMemberV1 = {
+    createdAt: string;
+    role: AlbumUserRole;
+    spaceId: string;
+    updatedAt: string;
+    userId: string;
+};
+export type SyncSharedSpaceV1 = {
+    createdAt: string;
+    description: string | null;
+    icon: string | null;
+    id: string;
+    kind: Kind10;
+    name: string;
+    updatedAt: string;
+};
 export type SyncStackDeleteV1 = {
     /** Stack ID */
     stackId: string;
@@ -23870,6 +23893,10 @@ export enum StudioRestoredVersionUnavailable {
     HiddenContent = "hidden-content"
 }
 export enum SyncEntityType {
+    SharedSpaceV1 = "SharedSpaceV1",
+    SharedSpaceDeleteV1 = "SharedSpaceDeleteV1",
+    SharedSpaceMemberV1 = "SharedSpaceMemberV1",
+    SharedSpaceMemberDeleteV1 = "SharedSpaceMemberDeleteV1",
     PetV1 = "PetV1",
     PetDeleteV1 = "PetDeleteV1",
     PetObservationV1 = "PetObservationV1",
@@ -23948,6 +23975,8 @@ export enum SyncEntityType {
     SyncCompleteV1 = "SyncCompleteV1"
 }
 export enum SyncRequestType {
+    SharedSpacesV1 = "SharedSpacesV1",
+    SharedSpaceMembersV1 = "SharedSpaceMembersV1",
     PetsV1 = "PetsV1",
     PetObservationsV1 = "PetObservationsV1",
     TagsV1 = "TagsV1",
@@ -24133,6 +24162,9 @@ export enum WorkflowResult {
 export enum WorkflowRunErrorCode {
     Unsupported = "unsupported",
     StepFailed = "step_failed"
+}
+export enum Kind10 {
+    Space = "space"
 }
 export enum UserMetadataKey {
     Preferences = "preferences",

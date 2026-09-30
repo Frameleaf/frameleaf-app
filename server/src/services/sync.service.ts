@@ -123,6 +123,8 @@ const sendEntityBackfillCompleteAck = async (response: Writable, ackType: SyncEn
 };
 
 export const SYNC_TYPES_ORDER = [
+  SyncRequestType.SharedSpacesV1,
+  SyncRequestType.SharedSpaceMembersV1,
   SyncRequestType.PetsV1,
   SyncRequestType.PetObservationsV1,
   SyncRequestType.TagsV1,
@@ -207,6 +209,10 @@ export class SyncService extends BaseService {
       // TODO pick the latest ack for each type, instead of using the last one
       if (
         [
+          SyncEntityType.SharedSpaceV1,
+          SyncEntityType.SharedSpaceDeleteV1,
+          SyncEntityType.SharedSpaceMemberV1,
+          SyncEntityType.SharedSpaceMemberDeleteV1,
           SyncEntityType.PetV1,
           SyncEntityType.PetDeleteV1,
           SyncEntityType.PetObservationV1,
@@ -287,6 +293,8 @@ export class SyncService extends BaseService {
     const options: SyncQueryOptions = { nowId, userId: auth.user.id, ...getHiddenContentQueryOptions(auth) };
 
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
+      [SyncRequestType.SharedSpacesV1]: () => this.syncTags(auth, response, 'space'),
+      [SyncRequestType.SharedSpaceMembersV1]: () => this.syncTags(auth, response, 'spaceMember'),
       [SyncRequestType.PetsV1]: () => this.syncTags(auth, response, 'pet'),
       [SyncRequestType.PetObservationsV1]: () => this.syncTags(auth, response, 'petObservation'),
       [SyncRequestType.TagsV1]: () => this.syncTags(auth, response, 'tag'),
@@ -1099,7 +1107,11 @@ export class SyncService extends BaseService {
     }
   }
 
-  private async syncTags(auth: AuthDto, response: Writable, kind: 'tag' | 'assetTag' | 'pet' | 'petObservation') {
+  private async syncTags(
+    auth: AuthDto,
+    response: Writable,
+    kind: 'tag' | 'assetTag' | 'pet' | 'petObservation' | 'space' | 'spaceMember',
+  ) {
     const pending = await this.syncRepository.tag.reconcile(auth, kind);
     for (const { eventId } of pending) {
       if (response.destroyed || response.writableEnded) throw new ClientDisconnectedError();
