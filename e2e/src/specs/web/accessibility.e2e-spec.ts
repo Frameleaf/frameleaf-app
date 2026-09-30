@@ -196,7 +196,14 @@ test.describe('Accessibility of the key web pages (FL-139)', () => {
     for (const id of ids) {
       await page.goto(`/photos/${id}`);
       await expect(viewer).toHaveAttribute('data-asset-id', id);
-      if (await next.isVisible()) {
+      // the next item is looked up after the viewer opens, so give its button time to appear
+      let hasNext = true;
+      try {
+        await next.waitFor({ state: 'visible', timeout: 5000 });
+      } catch {
+        hasNext = false;
+      }
+      if (hasNext) {
         start = id;
         break;
       }
