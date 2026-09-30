@@ -1,6 +1,5 @@
 import {
   LoginResponseDto,
-  QueueName,
   createStack,
   deleteUserAdmin,
   getMyUser,
@@ -286,7 +285,7 @@ describe('/admin/users', () => {
         { headers: asBearerAuth(user.accessToken) },
       );
 
-      await utils.waitForQueueFinish(admin.accessToken, QueueName.BackgroundTask);
+      await utils.waitForAllQueuesFinish(admin.accessToken);
 
       const { status, body } = await request(app)
         .delete(`/admin/users/${user.userId}`)
