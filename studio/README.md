@@ -228,14 +228,42 @@ Tests:
 - `tools/hdr-master.test.mjs` covers the metadata maths, refusals and a lossless round
   trip.
 
-The engine workflow installs FFmpeg with libx265 for these tests.
+- `tools/hdr-master-timing.test.mjs` checks diagnostic PQ/HLG masters against an
+  independently specified ffmpeg `setpts` VFR fixture. The helper accepts exact
+  integer PTS and rational time base validated by `sourceTimeline`; it preserves
+  those PTS with passthrough timing. The test checks decoded frame identity, 5.1
+  and 7.1(wide) layouts, compressed audio packet hashes, and independently decoded
+  channel order. Audio uses explicit stream copy, without a downmix or resample;
+  the selected codec must be supported by the MP4 muxer.
+- The timing test kills a real ffmpeg attempt after its unpublished output opens,
+  verifies the previous complete master remains untouched, and restarts from the
+  supplied immutable rendered sequence. Each attempt writes a unique sibling
+  partial MP4 and only publishes it with a rename after successful encoding.
+  An `AbortSignal` cleans up the interrupted attempt.
+
+The engine workflow installs FFmpeg with libx265 for these tests and retains
+`hdr-master-timing-report.json` with tool versions, commands, input/output SHA-256
+and raw PTS/audio probe results. Run the focused packet with
+`HDR_TIMING_REPORT=/absolute/path/report.json node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs`.
+
+This is diagnostic helper evidence only. The timestamp expression is deliberately
+limited to 256 frames and is not a streaming production export implementation.
+These cases do not clear conformance `timingColor` rows. The production render
+worker must map edited timeline frames to source sample PTS, preserve edited
+multichannel audio, and use the existing `media_operation_checkpoint` identities,
+checksums and restart planning. No checkpoint adapter is implemented here;
+helper abort/restart does not prove durable operation recovery.
 
 Not yet covered:
 
 - HDR source decode in the browser graph;
 - 4K throughput and device loss;
 - reference monitor review;
-- a render worker that streams frames to the encoder.
+- a render worker that streams frames to the encoder and maps edited/source PTS;
+- production edited-audio/layout preservation and checkpoint-backed restart;
+- qualification on each admitted deployment, including all effect families,
+  titles, masks and transitions, independent luma/chroma/error checks and
+  versioned evidence. FL-107 remains open until its full acceptance passes.
 
 Patch 0033 applies the owner's FL-97 decision: a project is HDR if and only if it
 contains HDR media.

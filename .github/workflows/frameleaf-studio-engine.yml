@@ -92,8 +92,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -hide_banner -encoders | grep -q libx265
           ffmpeg -hide_banner -encoders | grep -q libsvtav1
-      - name: HDR master metadata, refusals and HEVC Main10 round trip (FL-107)
-        run: node --test studio/tools/hdr-master.test.mjs
+      - name: HDR diagnostic master metadata, PTS, audio and interrupted restart (FL-107)
+        env:
+          HDR_TIMING_REPORT: ${{ runner.temp }}/hdr-master-timing-report.json
+        run: node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs
       - name: Install Chromium for compositor readback
         working-directory: studio/engine
         run: npx --no-install playwright install --with-deps chromium
@@ -188,5 +190,6 @@ jobs:
           path: |
             ${{ runner.temp }}/frameleaf-build-first.json
             studio/engine/frameleaf-source.json
+            ${{ runner.temp }}/hdr-master-timing-report.json
             studio/engine/frameleaf-build.json
           if-no-files-found: error
