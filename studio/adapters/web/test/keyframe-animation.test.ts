@@ -7,6 +7,7 @@ import { resolveAnimatedTransform } from '@/features/keyframes/utils/animated-tr
 import { applyMotionModifiers } from '@/features/keyframes/utils/motion-modifier-eval'
 import { evaluatePropertyExpression } from '@/features/keyframes/utils/property-expression'
 import { resolveTransform, getSourceDimensions } from '@/runtime/composition-runtime/utils/transform-resolver'
+import { applyCompositionControlOverrides } from '@/shared/utils/composition-controls'
 import { applyCanonicalCommands, type CanonicalEnvelope } from '../src/canonical-commands'
 
 /**
@@ -261,6 +262,177 @@ describe('procedural motion (FL-100)', () => {
       { clipId: clip.id, property: 'x', modifierId: 'sway-1' },
     ]) {
       await expect(apply(moving, [envelope('property.bakeModifier', payload)])).resolves.toMatchObject({
+        status: 'rejected',
+        reason: 'invalid',
+      })
+    }
+  })
+})
+
+type Stored = Project & {
+  timeline: NonNullable<Project['timeline']> & {
+    compositions?: Array<{ id: string; editorKind?: string; items: TimelineItem[]; compositionControls?: unknown }>
+  }
+}
+const withTitles = async () => {
+  const start = await withStill()
+  return applied(start, [
+    envelope('title.add', { text: 'Headline', at: seconds(0), duration: seconds(2) }),
+    envelope('title.add', { text: 'Caption', at: seconds(0), duration: seconds(2) }),
+  ])
+}
+const titlesOf = (graph: Project) => (graph.timeline?.items ?? []).filter((item) => item.type === 'text') as TimelineItem[]
+
+describe('motion text (FL-100)', () => {
+  it('sets per-character, per-word and per-line motion, clears it, and names what it refuses', async () => {
+    const start = await withTitles()
+    const [title] = titlesOf(start)
+    const motion = {
+      in: { presetId: 'fade-up', durationFrames: 12, staggerFrames: 2, intensity: 1, unit: 'character' },
+      loop: { presetId: 'wave', durationFrames: 30, staggerFrames: 3, intensity: 0.5, unit: 'word' },
+    }
+    const set = await applied(start, [envelope('text.setMotion', { clipId: title!.id, motion })])
+    const stored = titlesOf(set)[0] as unknown as { textMotion: Record<string, { presetId: string; unit?: string }> }
+    expect(stored.textMotion.in).toMatchObject({ presetId: 'fade-up', unit: 'character' })
+    expect(stored.textMotion.loop).toMatchObject({ presetId: 'wave', unit: 'word' })
+    const cleared = await applied(set, [envelope('text.setMotion', { clipId: title!.id, motion: null })])
+    expect((titlesOf(cleared)[0] as unknown as { textMotion?: unknown }).textMotion).toBeUndefined()
+
+    for (const bad of [
+      { in: { presetId: 'wave', durationFrames: 12, staggerFrames: 2, intensity: 1 } }, // a loop preset in the in slot
+      { sideways: { presetId: 'fade-up' } },
+      {},
+      'fade-up',
+    ]) {
+      await expect(apply(start, [envelope('text.setMotion', { clipId: title!.id, motion: bad })])).resolves.toMatchObject({
+        status: 'rejected',
+        reason: 'invalid',
+      })
+    }
+    await expect(
+      apply(start, [envelope('text.setMotion', { clipId: itemOf(start).id, motion })]),
+    ).resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
+  })
+})
+
+describe('Compose groups, published controls and instance overrides (FL-100)', () => {
+  it('groups into Compose, nests, publishes a control, overrides it per instance, and ungroups without flattening', async () => {
+    const start = await withTitles()
+    const [headline, caption] = titlesOf(start)
+    const keyed = await applied(start, [
+      envelope('keyframe.add', { clipId: headline!.id, property: 'opacity', at: seconds(5), value: { value: 0.5 } }),
+    ])
+    const grouped = (await applied(keyed, [
+      envelope('clip.group', { clipIds: [headline!.id], name: 'Lower third' }),
+    ])) as Stored
+    const group = grouped.timeline.items.find((item) => item.type === 'composition')!
+    const composition = grouped.timeline.compositions!.find(
+      (entry) => entry.id === (group as unknown as { compositionId: string }).compositionId,
+    )!
+    expect(composition.editorKind).toBe('composite-2d')
+    const inner = composition.items[0]!
+    expect(inner).toMatchObject({ type: 'text', text: 'Headline' })
+
+    // Nested: the group and the caption grouped again.
+    const nested = (await applied(grouped, [
+      envelope('clip.group', { clipIds: [group.id, caption!.id], name: 'Titles' }),
+    ])) as Stored
+    expect(nested.timeline.compositions!.filter((entry) => entry.editorKind === 'composite-2d')).toHaveLength(2)
+
+    const published = (await applied(grouped, [
+      envelope('composition.setPublishedControls', {
+        compositionId: composition.id,
+        controls: [
+          { id: 'headline', name: 'Headline', targetItemId: inner.id, property: 'text.text' },
+          { id: 'tint', name: 'Tint', targetItemId: inner.id, property: 'text.color' },
+        ],
+      }),
+    ])) as Stored
+    const schema = published.timeline.compositions!.find((entry) => entry.id === composition.id)!.compositionControls as {
+      controls: Array<{ id: string; kind: string; defaultValue: string }>
+    }
+    expect(schema.controls.map((control) => [control.id, control.kind, control.defaultValue])).toEqual([
+      ['headline', 'text', 'Headline'],
+      ['tint', 'color', expect.any(String)],
+    ])
+
+    const overridden = (await applied(published, [
+      envelope('composition.setControlOverrides', { compositionClipId: group.id, overrides: { headline: 'Chapter two', tint: '#ff8800' } }),
+    ])) as Stored
+    const instance = overridden.timeline.items.find((item) => item.id === group.id) as unknown as {
+      compositionControlOverrides: Record<string, string>
+    }
+    expect(instance.compositionControlOverrides).toEqual({ headline: 'Chapter two', tint: '#ff8800' })
+    // The renderer draws the instance with its override, and the shared composition is untouched.
+    const source = overridden.timeline.compositions!.find((entry) => entry.id === composition.id)!
+    const drawn = applyCompositionControlOverrides(source.items, source.compositionControls as never, instance.compositionControlOverrides)
+    expect(drawn[0]).toMatchObject({ text: 'Chapter two', color: '#ff8800' })
+    expect(source.items[0]).toMatchObject({ text: 'Headline' })
+
+    for (const [id, payload] of [
+      ['composition.setControlOverrides', { compositionClipId: group.id, overrides: { nope: 'x' } }],
+      ['composition.setControlOverrides', { compositionClipId: group.id, overrides: { tint: 'not a colour' } }],
+      ['composition.setControlOverrides', { compositionClipId: headline!.id, overrides: {} }],
+      ['composition.setPublishedControls', { compositionId: composition.id, controls: [{ name: 'X', targetItemId: 'missing', property: 'text.text' }] }],
+      ['composition.setPublishedControls', { compositionId: composition.id, controls: [{ name: 'X', targetItemId: inner.id, property: 'shape.fillColor' }] }],
+      ['composition.setPublishedControls', { compositionId: composition.id, controls: [
+        { name: 'A', targetItemId: inner.id, property: 'text.text' },
+        { name: 'B', targetItemId: inner.id, property: 'text.text' },
+      ] }],
+      ['clip.ungroup', { groupId: headline!.id }],
+    ] as const) {
+      await expect(apply(published, [envelope(id, payload as never)])).resolves.toMatchObject({ status: 'rejected', reason: 'invalid' })
+    }
+
+    // Ungrouping brings the clip back with its keyframes, not a flattened copy.
+    const ungrouped = (await applied(grouped, [envelope('clip.ungroup', { groupId: group.id })])) as Stored
+    const back = titlesOf(ungrouped).find((item) => (item as unknown as { text: string }).text === 'Headline')!
+    expect(back).toBeDefined()
+    expect(keyframesOf(ungrouped, back.id)?.properties[0]?.keyframes).toEqual([
+      expect.objectContaining({ frame: 30, value: 0.5 }),
+    ])
+  })
+})
+
+describe('Ken Burns (FL-100)', () => {
+  it('moves a still photo from one region to another, replaces the move, and removes it', async () => {
+    const start = await withStill()
+    const clip = itemOf(start)
+    const move = { from: { x: 0, y: 0, w: 1, h: 1 }, to: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 } }
+    const moved = await applied(start, [envelope('clip.setKenBurns', { clipId: clip.id, kenBurns: move })])
+    const last = clip.durationInFrames - 1
+    const base = resolveTransform(clip, CANVAS, getSourceDimensions(clip))
+    // Start: the whole photo. End: the region fills the frame (1/0.8 the size, same centre).
+    expect(pose(moved, 0)).toMatchObject({ x: base.x, y: base.y, width: base.width, height: base.height })
+    const end = pose(moved, last)
+    expect(end.width).toBeCloseTo(base.width / 0.8, 6)
+    expect(end.height).toBeCloseTo(base.height / 0.8, 6)
+    expect(end.x).toBeCloseTo(base.x, 6)
+    expect(end.y).toBeCloseTo(base.y, 6)
+    expect((itemOf(moved) as unknown as { frameleafKenBurns: unknown }).frameleafKenBurns).toMatchObject(move)
+
+    // A pan: the region's centre moves right, so the photo moves left.
+    const panned = await applied(moved, [
+      envelope('clip.setKenBurns', { clipId: clip.id, kenBurns: { from: { x: 0, y: 0.05, w: 0.8, h: 0.8 }, to: { x: 0.2, y: 0.05, w: 0.8, h: 0.8 } } }),
+    ])
+    expect(pose(panned, last).x).toBeLessThan(pose(panned, 0).x)
+    expect(keyframesOf(panned, clip.id)?.properties.find((entry) => entry.property === 'x')?.keyframes).toHaveLength(2)
+
+    const still = await applied(panned, [envelope('clip.setKenBurns', { clipId: clip.id, kenBurns: null })])
+    expect((keyframesOf(still, clip.id)?.properties ?? []).flatMap((entry) => entry.keyframes)).toEqual([])
+    expect((itemOf(still) as unknown as { frameleafKenBurns?: unknown }).frameleafKenBurns).toBeUndefined()
+
+    const animated = await applied(start, [
+      envelope('keyframe.add', { clipId: clip.id, property: 'x', at: seconds(1), value: { value: 40 } }),
+    ])
+    for (const [graph, kenBurns] of [
+      [animated, move], // would replace the clip's own animation
+      [start, { from: move.from, to: { x: 0.5, y: 0.5, w: 0.8, h: 0.8 } }], // outside the photo
+      [start, { from: move.from, to: { x: 0, y: 0, w: 0.1, h: 0.1 } }], // too small
+      [start, { from: move.from, to: { x: 0, y: 0, w: 0.8, h: 0.6 } }], // not the frame's shape
+      [start, 'push-in'],
+    ] as const) {
+      await expect(apply(graph, [envelope('clip.setKenBurns', { clipId: clip.id, kenBurns })])).resolves.toMatchObject({
         status: 'rejected',
         reason: 'invalid',
       })
