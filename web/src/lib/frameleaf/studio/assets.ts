@@ -171,3 +171,52 @@ export const restoredVersionIdsIn = (graph: unknown, limit = 200): string[] => {
   }
   return [...found];
 };
+
+/** Ordinary library references in a stored graph; generated/restored media use other resolvers. */
+export const libraryAssetIdsIn = (graph: unknown): string[] => {
+  const ids = new Set<string>();
+  const seen = new WeakSet<object>();
+  const stack = [{ node: graph, depth: 0 }];
+  while (stack.length > 0) {
+    const { node, depth } = stack.pop()!;
+    if (depth > 64 || !node || typeof node !== 'object' || seen.has(node)) {
+      continue;
+    }
+    seen.add(node);
+    for (const [key, value] of Object.entries(node)) {
+      if (
+        (key === 'assetId' || key === 'mediaId') &&
+        typeof value === 'string' &&
+        /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(value)
+      ) {
+        ids.add(value.toLowerCase());
+      } else if (value && typeof value === 'object') {
+        stack.push({ node: value, depth: depth + 1 });
+      }
+    }
+  }
+  return [...ids];
+};
+
+/** Normal caller reads, with bounded concurrency and the existing Studio privacy projection. */
+export const resolveStudioAssets = async (
+  ids: readonly string[],
+  lookup: (id: string) => Promise<AssetResponseDto>,
+): Promise<AssetResponseDto[]> => {
+  const wanted = [...new Set(ids.map((id) => id.toLowerCase()))];
+  const found: AssetResponseDto[] = [];
+  for (let at = 0; at < wanted.length; at += 8) {
+    const batch = wanted.slice(at, at + 8);
+    const results = await Promise.allSettled(batch.map((id) => lookup(id)));
+    for (const [index, result] of results.entries()) {
+      if (
+        result.status === 'fulfilled' &&
+        result.value.id.toLowerCase() === batch[index] &&
+        isStudioEligibleAsset(result.value)
+      ) {
+        found.push(result.value);
+      }
+    }
+  }
+  return found;
+};
