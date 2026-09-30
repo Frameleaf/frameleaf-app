@@ -12,6 +12,10 @@ import {
   missingCases,
 } from "./frameleaf-studio-evidence.mjs";
 
+// A rowCommands map used in tests instead of the real ROW_COMMAND_MAPPING, so these tests don't
+// depend on - or break when someone edits - the real reviewed entries.
+const rowCommands = (map) => map;
+
 const ROOT = new URL("..", import.meta.url).pathname;
 const fixture = (id) => ({ id, actions: ["apply"] });
 const overlayRow = (id, axes = {}) => ({
@@ -138,6 +142,84 @@ test("applyCommandMatrixCoverage blocks a covered row on the cases the report di
   assert.deepEqual(overlay.rows[0].axes.command, {
     status: "blocked",
     reason: "Missing command-axis case(s): invalid, normal (FL-112).",
+  });
+});
+
+test("commandMatrixCoverage merges a row's manifestIds coverage with its explicit rowCommands mapping", () => {
+  const report = {
+    commands: [
+      {
+        id: "effect.add",
+        manifestIds: [],
+        cases: [{ case: "access", result: "passed" }],
+      },
+      {
+        id: "effect.update",
+        manifestIds: ["command.effect-update"],
+        cases: [
+          { case: "access", result: "passed" },
+          { case: "lease", result: "passed" },
+        ],
+      },
+    ],
+  };
+  const coverage = commandMatrixCoverage(
+    report,
+    rowCommands({ "module.effects": ["effect.add", "effect.update"] }),
+  );
+  // module.effects has no manifestIds of its own, but gets the union of the passed cases from
+  // both mapped commands.
+  assert.deepEqual(
+    coverage.get("module.effects"),
+    new Set(["access", "lease"]),
+  );
+  // The command's own manifestIds-based row is untouched by the mapping.
+  assert.deepEqual(
+    coverage.get("command.effect-update"),
+    new Set(["access", "lease"]),
+  );
+});
+
+test("applyCommandMatrixCoverage covers a mapped row using the union of its commands' passed cases", async () => {
+  const overlay = {
+    engineRevision: "e",
+    rows: [overlayRow("module.effects", { command: { status: "not-tested" } })],
+  };
+  const catalog = { rows: [fixture("module.effects")] };
+  const report = {
+    commands: [
+      {
+        id: "effect.add",
+        manifestIds: [],
+        cases: [
+          { case: "access", result: "passed" },
+          { case: "idempotence", result: "passed" },
+        ],
+      },
+      {
+        id: "effect.remove",
+        manifestIds: [],
+        cases: [{ case: "lease", result: "passed" }],
+      },
+    ],
+  };
+  const summary = await applyCommandMatrixCoverage(
+    overlay,
+    catalog,
+    manifest(),
+    build(),
+    report,
+    {
+      rowCommands: rowCommands({
+        "module.effects": ["effect.add", "effect.remove"],
+      }),
+    },
+  );
+  assert.equal(summary.untested, 0);
+  assert.deepEqual(overlay.rows[0].axes.command, {
+    status: "blocked",
+    reason:
+      "Missing command-axis case(s): invalid, normal, revision, undo (FL-112).",
   });
 });
 
