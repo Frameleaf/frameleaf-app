@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import type { CloudBackupEntry } from 'src/repositories/cloud-backup-index.repository.js';
 import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
+import type { FrameleafCloudBackup } from 'src/types.js';
 import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
@@ -475,27 +476,52 @@ describe(CloudBackupService.name, () => {
       const settings = enabledConfig('own-memory');
       settings.frameleafCloud.cloudBackup.s3 = { ...s3, [field]: value };
       metadata[SystemMetadataKey.SystemConfig] = settings;
-      await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'not-configured', bucket: null });
+      await expect(sut.getSafetyAvailability()).resolves.toEqual({
+        state: 'not-configured',
+        bucket: null,
+        readOnly: false,
+        readOnlyReason: null,
+      });
       expect(cloudBackup.grant).not.toHaveBeenCalled();
       expect(store.probe).not.toHaveBeenCalled();
     });
 
     it('reports unavailable safety states without issuing a remote storage grant', async () => {
       metadata[SystemMetadataKey.SystemConfig] = { frameleafCloud: { cloudBackup: { enabled: false, target: 'off' } } };
-      await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'off', bucket: null });
+      await expect(sut.getSafetyAvailability()).resolves.toEqual({
+        state: 'off',
+        bucket: null,
+        readOnly: false,
+        readOnlyReason: null,
+      });
       metadata[SystemMetadataKey.SystemConfig] = {
         frameleafCloud: { cloudBackup: { enabled: true, target: 'managed' } },
       };
       delete metadata[SystemMetadataKey.FrameleafCloudLink];
-      await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'not-linked', bucket: null });
+      await expect(sut.getSafetyAvailability()).resolves.toEqual({
+        state: 'not-linked',
+        bucket: null,
+        readOnly: false,
+        readOnlyReason: null,
+      });
       expect(cloudBackup.grant).not.toHaveBeenCalled();
       expect(store.probe).not.toHaveBeenCalled();
     });
 
     it('reports a unloaded key and recognizes another worker loading it', async () => {
-      await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'paused-key-unloaded', bucket: ref });
+      await expect(sut.getSafetyAvailability()).resolves.toEqual({
+        state: 'paused-key-unloaded',
+        bucket: ref,
+        readOnly: false,
+        readOnlyReason: null,
+      });
       await sut.onKeyShare({ key: key.toString('base64') });
-      await expect(sut.getSafetyAvailability()).resolves.toEqual({ state: 'ready', bucket: ref });
+      await expect(sut.getSafetyAvailability()).resolves.toEqual({
+        state: 'ready',
+        bucket: ref,
+        readOnly: false,
+        readOnlyReason: null,
+      });
       expect(cloudBackup.grant).not.toHaveBeenCalled();
     });
 
@@ -1537,6 +1563,51 @@ describe(CloudBackupService.name, () => {
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 
+    it('pauses for a full plan, words it, and carries on by itself once the grant is writable (FL-301)', async () => {
+      cloudBackup.rotate.mockResolvedValue({ ...rotated, readOnly: true, readOnlyReason: 'plan_full' });
+
+      await sut.run(managedOperation(), 'claim-1');
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({ error: expect.stringContaining('because the Frameleaf plan is full') }),
+      );
+      expect((metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup).managed).toMatchObject({
+        readOnly: true,
+        readOnlyReason: 'plan_full',
+      });
+      expect(store.uploadFile).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+
+      operations.fail.mockClear();
+      cloudBackup.rotate.mockResolvedValue({ ...rotated, readOnly: false });
+      await sut.run(managedOperation(), 'claim-1');
+
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect((metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup).managed).toMatchObject({
+        readOnly: false,
+        readOnlyReason: null,
+      });
+    });
+
+    it('treats a read-only reason it does not know as read-only, worded generically (FL-301)', async () => {
+      cloudBackup.rotate.mockResolvedValue({ ...rotated, readOnly: true, readOnlyReason: 'something_new' });
+
+      await sut.run(managedOperation(), 'claim-1');
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        'run-1',
+        'claim-1',
+        expect.objectContaining({
+          error: expect.stringMatching(
+            /^Frameleaf-managed storage is read-only for this server, so backups are paused/,
+          ),
+        }),
+      );
+      expect(store.uploadFile).not.toHaveBeenCalled();
+    });
+
     it('asks for no storage while Frameleaf Cloud suspects a copy of this server, and says so', async () => {
       metadata[SystemMetadataKey.FrameleafCloudLink] = {
         status: 'linked',
@@ -2441,6 +2512,19 @@ describe(CloudBackupService.name, () => {
       await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({
         entitlement: 'pending',
         bucketClaimed: true,
+      });
+    });
+
+    it('tells the safety status that managed storage is paused for a full plan (FL-301)', async () => {
+      useManaged({ linked: true });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({
+        managed: { readOnly: true, readOnlyReason: 'plan_full', quotaBytes: 1, checkedAt: '2020-01-01T00:00:00.000Z' },
+      });
+      keys.read.mockResolvedValue(keyFileOf());
+
+      await expect(sut.getSafetyAvailability()).resolves.toMatchObject({
+        readOnly: true,
+        readOnlyReason: 'plan_full',
       });
     });
 

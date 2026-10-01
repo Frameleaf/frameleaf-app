@@ -3648,12 +3648,20 @@ export type AssetSafetyDto = {
 export type SafetyLookupResponseDto = {
     assets: AssetSafetyDto[];
     cloudAvailability: CloudAvailability;
+    /** Frameleaf-managed backup storage is read-only, so new items wait to be backed up; restores keep working and nothing already backed up is touched */
+    cloudReadOnly: boolean;
+    /** Why the backup storage is read-only, as Frameleaf Cloud says: purge_hold, entitlement, unlinked, suspended, purging or plan_full (Backup paused: plan full). Open-ended: show an unknown value generically. Null when it is writable or no reason was given */
+    cloudReadOnlyReason: string | null;
 };
 export type SafetySummaryDto = {
     backedUp: number | null;
     /** Retained completed original membership with current object presence; null if no configured accessible backup target */
     backedUpPercent: number | null;
     cloudAvailability: CloudAvailability;
+    /** Frameleaf-managed backup storage is read-only, so new items wait to be backed up; restores keep working and nothing already backed up is touched */
+    cloudReadOnly: boolean;
+    /** Why the backup storage is read-only, as Frameleaf Cloud says: purge_hold, entitlement, unlinked, suspended, purging or plan_full (Backup paused: plan full). Open-ended: show an unknown value generically. Null when it is writable or no reason was given */
+    cloudReadOnlyReason: string | null;
     /** Latest qualifying completion containing at least one current own accessible asset */
     lastCompletedRunAt: string | null;
     /** Latest successful completed GET + SHA-256 run qualifying a current own accessible backed-up asset */

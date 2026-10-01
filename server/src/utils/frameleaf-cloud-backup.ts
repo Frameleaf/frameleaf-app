@@ -24,6 +24,14 @@ const BackupBucketName = z
 
 const Timestamp = z.iso.datetime({ offset: true });
 
+/**
+ * Why Frameleaf Cloud made the storage read-only: `purge_hold`, `entitlement`, `unlinked`, `suspended`,
+ * `purging`, `plan_full` (FL-301, FC-91) so far. Open-ended: a reason this server does not know is shown
+ * generically, and `readOnly` alone decides whether backups pause. One this server cannot read at all reads as
+ * `unknown`, so it never fails the answer it came in.
+ */
+export const BackupReadOnlyReasonSchema = z.string().min(1).max(64).catch('unknown');
+
 export const backupGrantMetadataSchema = z.strictObject({
   provider: z.literal('wasabi'),
   region: z.string().regex(/^[a-z]{2}-[a-z]+-\d$/),
@@ -34,6 +42,8 @@ export const backupGrantMetadataSchema = z.strictObject({
   rotateAfterSec: z.int().min(0),
   quotaBytes: z.int().min(0),
   readOnly: z.boolean(),
+  // FL-301: the cloud may name why the grant is read-only (`plan_full`); the usage answer always does
+  readOnlyReason: BackupReadOnlyReasonSchema.nullable().optional(),
   versioning: z.literal(true),
   sseC: z.strictObject({ required: z.literal(true), algorithm: z.literal('AES256') }),
   policy: z.strictObject({ denies: z.array(z.string().regex(/^s3:[A-Za-z]+$/)).min(1) }),
@@ -61,12 +71,6 @@ export const backupGrantProblem = (grant: BackupGrantMetadata): string | null =>
   return null;
 };
 
-/**
- * Why Frameleaf Cloud made the storage read-only: `purge_hold`, `entitlement`, `unlinked`, `suspended`,
- * `purging`, `plan_full` (FL-301, FC-91) so far. Open-ended: a reason this server does not know is shown
- * generically, and `readOnly` alone decides whether backups pause.
- */
-export const BackupReadOnlyReasonSchema = z.string().min(1).max(64);
 export const backupUsageSchema = z.strictObject({
   measuredAt: Timestamp.nullable(),
   bytesCurrent: z.int().min(0),
