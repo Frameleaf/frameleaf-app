@@ -55,8 +55,7 @@ the mobile apps and `/api/server/ping`) get `503 Service Unavailable` with a `Re
 header. When the copy is saved, Frameleaf starts normally, and the screen moves on to
 sign-in by itself.
 
-The container's health check (`frameleaf-healthcheck`, or its old name
-`immich-healthcheck`) reports **healthy** for the whole of this step, however long the
+The container's health check (`frameleaf-healthcheck`, under either of its names) reports **healthy** for the whole of this step, however long the
 copy takes on a large library, so Docker, Kubernetes liveness probes and NAS app
 supervisors do not restart the container in the middle of it. It also reports healthy
 when the copy failed and the error screen is showing: restarting only tries the copy
