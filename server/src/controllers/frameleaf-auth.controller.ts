@@ -87,7 +87,7 @@ export class FrameleafAuthController {
     operationId: 'exchangeFrameleafToken',
     summary: 'Sign in with a Frameleaf account token',
     description:
-      'For the Frameleaf apps: exchanges a token the Frameleaf identity provider minted for this server (OAuth token exchange) for a session here, without a browser. The token is verified like a Sign in with Frameleaf ID token (the linked issuer, this server as its audience, the signature, its expiry and the instance-access claims), can be used once, and is at most five minutes old. The account is matched, linked or created as in Sign in with Frameleaf, and the session is a Sign in with Frameleaf session: a back-channel logout, unlinking the Frameleaf account or Frameleaf Cloud removing access ends it. Every refusal carries a FrameleafTokenExchangeErrorCode in `code`.',
+      'For the Frameleaf apps: exchanges a token the Frameleaf identity provider minted for this server (OAuth token exchange) for a session here, without a browser. The token is verified like a Sign in with Frameleaf ID token (the linked issuer, this server as its audience, the signature, its expiry and the instance-access claims), can be used once, and is at most two minutes old. The account is matched, linked or created as in Sign in with Frameleaf, and the session is a Sign in with Frameleaf session: a back-channel logout, unlinking the Frameleaf account or Frameleaf Cloud removing access ends it. Every refusal carries a FrameleafTokenExchangeErrorCode in `code`.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   @ApiResponse({
