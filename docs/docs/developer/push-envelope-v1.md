@@ -172,7 +172,7 @@ An update that could not be delivered is not sent again, because the next update
 
 ### APNs environment
 
-A development build gets APNs sandbox tokens, and only APNs sandbox delivers to them. Register such a build with `apnsEnvironment: "sandbox"` (`PUT /api/push/devices/current`, iOS only). The server then routes its pushes through the gateway as `apns-sandbox`. Production builds leave the field out.
+A development build gets APNs sandbox tokens, and only APNs sandbox delivers to them. Register such a build with `apnsEnvironment: "sandbox"` (`PUT /api/push/devices/current`, or later with `PATCH`; iOS only). The server then routes its pushes through the gateway as `apns-sandbox`. Production builds leave the field out.
 
 ## Test vectors
 
