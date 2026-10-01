@@ -352,9 +352,13 @@ export class ICloudIdentityService {
       }
       for (const record of inventory) {
         const connection = byConnection.get(record.connectionId);
+        // the sync keeps an item only while it still has something of it to bring: with nothing
+        // pending or delivered (what is left failed, needs review, or is not imported) the lookup
+        // tells the device to deliver the missing roles, and the claim must let it
         if (
           !connection ||
           !record.inScope ||
+          record.pendingRoles.length === 0 ||
           record.cplAssetRecordName !== parsed.cplAssetRecordName ||
           !isActionable(inventoryStrength(parsed, item, record))
         ) {
@@ -451,11 +455,16 @@ export class ICloudIdentityService {
     inventory: ICloudInventoryItem[],
   ): MatchStrength {
     const record = inventory.find(({ cplAssetRecordName }) => cplAssetRecordName === row.cplAssetRecordName);
-    return matchStrength({
+    const strength = matchStrength({
       known: row,
       reported: { ...parsed, ...(device && { sha256: Buffer.from(device, 'hex') }) },
       metadataAgrees: !!record && metadataAgrees(item, record.assetFields, record.masterFields, decodedName),
     });
+    // a device's record carries the names that device sent, so they always match a later report of
+    // the same item: if the record was only a hint when it was made, agreeing metadata now does not
+    // make it more (the same bytes still do)
+    const deviceHint = !row.deliveredBy.startsWith('icloud-sync:') && !isActionable(row.matchStrength);
+    return strength === 'corroborated' && deviceHint ? 'hint' : strength;
   }
 
   /** The caller's assets among these, by the safety lookup's rules (FL-226), and which hold these hashes. */
