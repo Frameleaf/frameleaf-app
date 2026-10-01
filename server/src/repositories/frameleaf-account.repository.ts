@@ -34,6 +34,26 @@ export type FrameleafSessionRow = {
  * exchange tokens already used and the sign-ins Frameleaf Cloud ended. Writes are refused while the
  * server is being handed over, like every fork table.
  */
+/**
+ * FL-230: whether Frameleaf Cloud ended this account's (`sub`) or Frameleaf session's (`sid`)
+ * sign-ins at or after `issuedAt`, with an unexpired record. The one query behind both the redemption
+ * of an exchange token and the check after its session is tagged.
+ */
+const signInRevoked = async (
+  db: Kysely<DB>,
+  token: { sub: string; sid: string | null; issuedAt: Date },
+): Promise<boolean> => {
+  const revoked = await sql<{ kind: string }>`
+    SELECT kind FROM immich_fork.frameleaf_sign_in_revocation
+    WHERE "expiresAt" >= clock_timestamp()
+      AND "revokedAt" >= ${token.issuedAt}
+      AND ((kind = 'sub' AND value = ${token.sub})
+        OR (${token.sid}::text IS NOT NULL AND kind = 'sid' AND value = ${token.sid}))
+    LIMIT 1
+  `.execute(db);
+  return revoked.rows.length > 0;
+};
+
 @Injectable()
 export class FrameleafAccountRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -226,15 +246,7 @@ export class FrameleafAccountRepository {
   }): Promise<'ok' | 'replayed' | 'revoked'> {
     return this.write('A sign-in cannot be recorded while the server is being handed over', async (trx) => {
       await sql`DELETE FROM immich_fork.frameleaf_exchange_token WHERE "expiresAt" < clock_timestamp()`.execute(trx);
-      const revoked = await sql<{ kind: string }>`
-        SELECT kind FROM immich_fork.frameleaf_sign_in_revocation
-        WHERE "expiresAt" >= clock_timestamp()
-          AND "revokedAt" >= ${token.issuedAt}
-          AND ((kind = 'sub' AND value = ${token.sub})
-            OR (${token.sid}::text IS NOT NULL AND kind = 'sid' AND value = ${token.sid}))
-        LIMIT 1
-      `.execute(trx);
-      if (revoked.rows.length > 0) {
+      if (await signInRevoked(trx, token)) {
         return 'revoked';
       }
       const inserted = await sql<{ jti: string }>`
@@ -245,6 +257,15 @@ export class FrameleafAccountRepository {
       `.execute(trx);
       return inserted.rows.length > 0 ? 'ok' : 'replayed';
     });
+  }
+
+  /**
+   * Whether Frameleaf Cloud ended this account's (`sub`) or Frameleaf session's (`sid`) sign-ins at or
+   * after `issuedAt`: checked again once an exchanged session is tagged, so a back-channel logout that
+   * raced the sign-in still ends it.
+   */
+  async isSignInRevoked(token: { sub: string; sid: string | null; issuedAt: Date }): Promise<boolean> {
+    return signInRevoked(this.db, token);
   }
 
   /**

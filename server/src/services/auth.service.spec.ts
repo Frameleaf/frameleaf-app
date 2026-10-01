@@ -418,8 +418,28 @@ describe(AuthService.name, () => {
         );
         const [, until] = mocks.frameleafAccount.revokeSignIns.mock.calls[0];
         // as long as an exchange token minted before now could still be accepted
-        expect(until.getTime()).toBeGreaterThanOrEqual(Date.now() + 5 * 60 * 1000);
-        expect(until.getTime()).toBeLessThanOrEqual(Date.now() + 6 * 60 * 1000);
+        expect(until.getTime()).toBeGreaterThanOrEqual(Date.now() + 2 * 60 * 1000);
+        expect(until.getTime()).toBeLessThanOrEqual(Date.now() + 3 * 60 * 1000);
+      });
+
+      it('records the revocation before it looks for sessions, and fails when it cannot (FL-230)', async () => {
+        mocks.oauth.validateLogoutToken.mockResolvedValue({ sid: 'fl-sid', sub: 'fl-sub' });
+        mocks.frameleafAccount.findSessions.mockResolvedValue([]);
+
+        await sut.backchannelLogout({ logout_token: token('instance-1') });
+        expect(mocks.frameleafAccount.revokeSignIns.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.frameleafAccount.findSessions.mock.invocationCallOrder[0],
+        );
+
+        // Frameleaf Cloud retries a logout that failed; a silent success would leave tokens usable
+        mocks.frameleafAccount.revokeSignIns.mockRejectedValueOnce(new Error('database unavailable'));
+        mocks.frameleafAccount.findSessions.mockResolvedValue([{ sessionId: 'session-3' }] as never);
+        mocks.session.delete.mockResolvedValue();
+        await expect(sut.backchannelLogout({ logout_token: token('instance-1') })).rejects.toThrow(
+          'database unavailable',
+        );
+        // the sessions still end
+        expect(mocks.session.delete).toHaveBeenCalledWith('session-3');
       });
 
       it('leaves a token for another audience to the administrator’s own provider', async () => {
