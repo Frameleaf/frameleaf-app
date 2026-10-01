@@ -28454,7 +28454,7 @@
         "x-immich-permission": "session.delete"
       },
       "patch": {
-        "description": "Changes a rotated token, the key, the linked backup device or preferences; omitted fields stay.",
+        "description": "Changes a rotated token, the key, the linked backup device or preferences; omitted fields stay. Payloads follow frameleaf-push-v1 (docs/developer/push-envelope-v1).",
         "operationId": "updatePushDevice",
         "parameters": [],
         "requestBody": {
@@ -28503,7 +28503,7 @@
         "x-immich-permission": "session.update"
       },
       "put": {
-        "description": "Registers or replaces the push registration of the calling session: platform, APNs or FCM token, the ActivityKit push-to-start token (iOS), the device's X25519 public key and notification preferences. Registering again rotates the tokens and key. Every payload is encrypted to the key; the Frameleaf push gateway receives only the target and the encrypted blob. Needs a signed-in device session (not an API key).",
+        "description": "Registers or replaces the push registration of the calling session: platform, APNs or FCM token, the ActivityKit push-to-start token (iOS), the device's X25519 public key and notification preferences. Registering again rotates the tokens and key. Every payload is encrypted to the key (frameleaf-push-v1, specified in docs/developer/push-envelope-v1: envelope layout, key agreement, plaintext and test vectors); the Frameleaf push gateway receives only the target and the encrypted blob. Needs a signed-in device session (not an API key).",
         "operationId": "registerPushDevice",
         "parameters": [],
         "requestBody": {
@@ -76715,7 +76715,7 @@
             "$ref": "#/components/schemas/PushPreferencesDto"
           },
           "publicKey": {
-            "description": "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1).",
+            "description": "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1).",
             "maxLength": 64,
             "minLength": 1,
             "type": "string"
@@ -76819,7 +76819,7 @@
             "$ref": "#/components/schemas/PushPreferencesDto"
           },
           "publicKey": {
-            "description": "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1).",
+            "description": "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1).",
             "maxLength": 64,
             "minLength": 1,
             "type": "string"
