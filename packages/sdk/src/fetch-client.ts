@@ -8132,6 +8132,8 @@ export type PushPreferencesResponseDto = {
 };
 export type PushDeviceResponseDto = {
     activities: PushDeviceActivityDto[];
+    /** iOS: the APNs environment; null for Android */
+    apnsEnvironment: (PushApnsEnvironment) | null;
     backupDeviceKey: string | null;
     createdAt: string;
     /** Whether this is the device of the session asking */
@@ -8158,6 +8160,7 @@ export type PushPreferencesDto = {
     sharedActivity?: boolean;
 };
 export type PushDeviceUpdateDto = {
+    apnsEnvironment?: PushApnsEnvironment;
     backupDeviceKey?: string | null;
     preferences?: PushPreferencesDto;
     /** The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1). */
@@ -8168,6 +8171,7 @@ export type PushDeviceUpdateDto = {
     pushToken?: string;
 };
 export type PushDeviceRegisterDto = {
+    apnsEnvironment?: PushApnsEnvironment;
     /** This device's phone backup identity (the backup device registry's deviceKey), for stale-backup wake-ups */
     backupDeviceKey?: string | null;
     platform: PushPlatform;
@@ -24916,6 +24920,10 @@ export enum FrameleafVia {
     Lan = "lan",
     Wan = "wan",
     Relay = "relay"
+}
+export enum PushApnsEnvironment {
+    Production = "production",
+    Sandbox = "sandbox"
 }
 export enum PushPlatform {
     Ios = "ios",

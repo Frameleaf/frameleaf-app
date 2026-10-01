@@ -1,15 +1,13 @@
-import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PushPlatform } from 'src/enum.js';
 import { FrameleafCloudPushRepository } from 'src/repositories/frameleaf-cloud-push.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
-import { PushDeliveryMode, PushGatewayMessage, PushTargetKind } from 'src/utils/frameleaf-push.js';
+import { PushSendRequest } from 'src/utils/frameleaf-push.js';
 import { FakeCloud, dpopTokenOf, startFakeCloud, tokenAnswer } from 'test/fake-frameleaf-cloud.js';
 
 describe(FrameleafCloudPushRepository.name, () => {
@@ -18,15 +16,14 @@ describe(FrameleafCloudPushRepository.name, () => {
   let cloudRepository: FrameleafCloudRepository;
   let sut: FrameleafCloudPushRepository;
 
-  const message = (overrides: Partial<PushGatewayMessage> = {}): PushGatewayMessage => ({
-    id: randomUUID(),
-    target: {
-      platform: PushPlatform.Ios,
-      token: 'apns-token',
-      kind: PushTargetKind.Device,
-      mode: PushDeliveryMode.Alert,
-    },
-    blob: 'AQIDBA',
+  const TOKEN = 'a'.repeat(64);
+  const request = (overrides: Partial<PushSendRequest> = {}): PushSendRequest => ({
+    platform: 'apns',
+    token: TOKEN,
+    type: 'alert',
+    priority: 'high',
+    ttlSec: 86_400,
+    payload: 'AQIDBA',
     ...overrides,
   });
 
@@ -42,7 +39,7 @@ describe(FrameleafCloudPushRepository.name, () => {
     cloud = await startFakeCloud();
     const discovery = cloud.discovery;
     cloud.discovery = () => ({ ...discovery(), endpoints: { push: `${cloud.url}/push` } });
-    cloud.on('POST /id/token', (request) => tokenAnswer(request, 'push-token'));
+    cloud.on('POST /id/token', (answer) => tokenAnswer(answer, 'push-token'));
     cloudRepository = new FrameleafCloudRepository(LoggingRepository.create());
     sut = new FrameleafCloudPushRepository(cloudRepository);
   });
@@ -52,56 +49,62 @@ describe(FrameleafCloudPushRepository.name, () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('sends only the targets and opaque blobs to the push gateway, with a DPoP-bound instance token', async () => {
-    const messages = [message(), message({ target: { ...message().target, platform: PushPlatform.Android } })];
-    cloud.on('POST /push/v1/push/messages', (request) => ({
-      status: 202,
-      body: { results: request.json().messages.map(({ id }: { id: string }) => ({ id, status: 'accepted' })) },
-    }));
+  it('routes one push to POST /v1/push/send on the push origin, with a DPoP-bound instance token (FC-92)', async () => {
+    cloud.on('POST /push/v1/push/send', () => ({ status: 200, body: { status: 'sent' } }));
 
-    const results = await sut.send(await target(), messages);
+    await expect(sut.send(await target(), request())).resolves.toEqual({ status: 'sent' });
 
-    expect(results).toEqual(messages.map(({ id }) => ({ id, status: 'accepted' })));
-    const request = cloud.requests.find(({ path }) => path === '/push/v1/push/messages')!;
-    expect(request.json()).toEqual({ messages });
-    expect(request.headers.authorization).toMatch(/^DPoP /);
-    expect(dpopTokenOf(request)).toBeTruthy();
-    expect(request.dpop?.claims.htu).toBe(`${cloud.url}/push/v1/push/messages`);
+    const sent = cloud.requests.find(({ path }) => path === '/push/v1/push/send')!;
+    expect(sent.json()).toEqual(request());
+    expect(sent.headers.authorization).toMatch(/^DPoP /);
+    expect(dpopTokenOf(sent)).toBeTruthy();
+    expect(sent.dpop?.claims.htu).toBe(`${cloud.url}/push/v1/push/send`);
     const token = cloud.requests.find(({ path }) => path === '/id/token')!;
     expect(token.form().get('resource')).toBe(`${cloud.url}/push`);
   });
 
-  it('splits a large delivery into gateway-sized batches', async () => {
-    const sizes: number[] = [];
-    cloud.on('POST /push/v1/push/messages', (request) => {
-      const { messages } = request.json();
-      sizes.push(messages.length);
-      return { status: 200, body: { results: messages.map(({ id }: { id: string }) => ({ id, status: 'accepted' })) } };
-    });
-
-    const results = await sut.send(
-      await target(),
-      Array.from({ length: 150 }, () => message()),
-    );
-
-    expect(sizes).toEqual([100, 50]);
-    expect(results).toHaveLength(150);
+  it('reads every result the gateway gives', async () => {
+    for (const body of [{ status: 'invalid-token' }, { status: 'throttled', retryAfterSec: 60 }, { status: 'retry' }]) {
+      cloud.on('POST /push/v1/push/send', () => ({ status: 200, body }));
+      await expect(sut.send(await target(), request())).resolves.toEqual(body);
+    }
   });
 
-  it('never sends a message carrying anything but a target and a blob', async () => {
-    await expect(
-      sut.send(await target(), [{ ...message(), title: 'Holiday photos' } as unknown as PushGatewayMessage]),
-    ).rejects.toThrow();
+  it('never sends anything the contract does not allow', async () => {
+    const refused = [
+      { ...request(), title: 'Holiday photos' } as unknown as PushSendRequest,
+      // a Live Activity carries a fixed state, never the encrypted payload or text
+      request({ type: 'live-activity-update', liveActivity: { state: { step: 'plan-active' } } }),
+      request({ type: 'live-activity-update', payload: undefined }),
+      request({
+        type: 'live-activity-start',
+        payload: undefined,
+        liveActivity: { state: { step: 'plan-active' } },
+      }),
+      request({
+        platform: 'fcm',
+        type: 'live-activity-update',
+        payload: undefined,
+        liveActivity: { state: { step: 'plan-active' } },
+      }),
+      request({ payload: undefined }),
+      request({ token: 'short' }),
+      request({ collapseId: 'has spaces' }),
+      request({ payload: 'A'.repeat(3073) }),
+    ];
+    for (const value of refused) {
+      await expect(sut.send(await target(), value)).rejects.toThrow();
+    }
     expect(cloud.requests.filter(({ path }) => path.startsWith('/push'))).toEqual([]);
   });
 
   it('reports a gateway refusal as a Frameleaf Cloud error', async () => {
-    cloud.on('POST /push/v1/push/messages', () => ({
+    cloud.on('POST /push/v1/push/send', () => ({
       status: 429,
       headers: { 'retry-after': '30' },
       body: { code: 'rate_limited', message: 'slow down', retryable: true },
     }));
 
-    await expect(sut.send(await target(), [message()])).rejects.toBeInstanceOf(FrameleafCloudError);
+    await expect(sut.send(await target(), request())).rejects.toBeInstanceOf(FrameleafCloudError);
   });
 });
