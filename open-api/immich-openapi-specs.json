@@ -76665,6 +76665,14 @@
         ],
         "type": "object"
       },
+      "PushApnsEnvironment": {
+        "description": "iOS only: the APNs environment of the tokens. A development build gets sandbox tokens, which only APNs sandbox delivers. Default production.",
+        "enum": [
+          "production",
+          "sandbox"
+        ],
+        "type": "string"
+      },
       "PushDeviceActivityDto": {
         "properties": {
           "activityId": {
@@ -76701,6 +76709,9 @@
       },
       "PushDeviceRegisterDto": {
         "properties": {
+          "apnsEnvironment": {
+            "$ref": "#/components/schemas/PushApnsEnvironment"
+          },
           "backupDeviceKey": {
             "description": "This device's phone backup identity (the backup device registry's deviceKey), for stale-backup wake-ups",
             "format": "uuid",
@@ -76750,6 +76761,15 @@
             },
             "type": "array"
           },
+          "apnsEnvironment": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PushApnsEnvironment"
+              }
+            ],
+            "description": "iOS: the APNs environment; null for Android",
+            "nullable": true
+          },
           "backupDeviceKey": {
             "format": "uuid",
             "nullable": true,
@@ -76794,6 +76814,7 @@
         },
         "required": [
           "activities",
+          "apnsEnvironment",
           "backupDeviceKey",
           "createdAt",
           "current",
@@ -76809,6 +76830,9 @@
       },
       "PushDeviceUpdateDto": {
         "properties": {
+          "apnsEnvironment": {
+            "$ref": "#/components/schemas/PushApnsEnvironment"
+          },
           "backupDeviceKey": {
             "format": "uuid",
             "nullable": true,

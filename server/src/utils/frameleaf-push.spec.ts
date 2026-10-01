@@ -1,11 +1,13 @@
-import { PushEventType, PushPlatform } from 'src/enum.js';
+import { PushEventType } from 'src/enum.js';
 import {
   PUSH_PLAINTEXT_MAX_BYTES,
   buildPushPayload,
   cloudBackupActivationProgress,
+  collapseIdOf,
+  liveActivityStateOf,
   pushGatewayBase,
-  pushGatewayRequestSchema,
   pushGatewayUrl,
+  pushTtlSec,
 } from 'src/utils/frameleaf-push.js';
 
 const document = {
@@ -20,30 +22,50 @@ const safe = '11111111-1111-4111-8111-111111111111';
 const locked = '22222222-2222-4222-8222-222222222222';
 const nsfw = '33333333-3333-4333-8333-333333333333';
 
-describe('Frameleaf push gateway contract (FL-228)', () => {
+describe('Frameleaf push gateway contract (FL-302, FC-92)', () => {
   it('reaches the push gateway through discovery, following api when it names none', () => {
     expect(pushGatewayBase(document)).toBe('https://api.frameleaf.test');
-    expect(pushGatewayUrl(document)).toBe('https://api.frameleaf.test/v1/push/messages');
+    expect(pushGatewayUrl(document)).toBe('https://api.frameleaf.test/v1/push/send');
     const named = { ...document, endpoints: { push: 'https://push.frameleaf.test/' } };
     expect(pushGatewayBase(named)).toBe('https://push.frameleaf.test');
-    expect(pushGatewayUrl(named)).toBe('https://push.frameleaf.test/v1/push/messages');
+    expect(pushGatewayUrl(named)).toBe('https://push.frameleaf.test/v1/push/send');
   });
 
-  it('accepts only a target and an opaque blob per message', () => {
-    const message = {
-      id: safe,
-      target: { platform: PushPlatform.Ios, token: 'apns-token', kind: 'device', mode: 'alert' },
-      blob: 'AQ',
-    };
-    expect(pushGatewayRequestSchema.safeParse({ messages: [message] }).success).toBe(true);
-    expect(pushGatewayRequestSchema.safeParse({ messages: [{ ...message, title: 'Hello' }] }).success).toBe(false);
-    expect(
-      pushGatewayRequestSchema.safeParse({ messages: [{ ...message, target: { ...message.target, body: 'Hello' } }] })
-        .success,
-    ).toBe(false);
-    expect(pushGatewayRequestSchema.safeParse({ messages: [{ ...message, blob: 'not base64url!' }] }).success).toBe(
-      false,
-    );
+  it('maps the activation chain onto fixed, non-personal Live Activity steps', () => {
+    const progress = { total: 4, firstRun: 'not-started' as const, nextRunAt: null };
+    expect(liveActivityStateOf({ ...progress, step: 1, stage: 'plan-active', state: 'active' })).toEqual({
+      step: 'plan-active',
+      progress: 0.25,
+    });
+    expect(liveActivityStateOf({ ...progress, step: 3, stage: 'preparing-storage', state: 'active' })).toEqual({
+      step: 'storage-ready',
+      progress: 0.75,
+    });
+    expect(liveActivityStateOf({ ...progress, step: 4, stage: 'first-backup', state: 'active' })).toEqual({
+      step: 'first-backup',
+      progress: 1,
+    });
+    expect(liveActivityStateOf({ ...progress, step: 4, stage: 'first-backup', state: 'complete' })).toEqual({
+      step: 'backup-done',
+      progress: 1,
+    });
+    expect(liveActivityStateOf({ ...progress, step: 4, stage: 'first-backup', state: 'failed' })).toEqual({
+      step: 'needs-attention',
+    });
+  });
+
+  it('turns a dedupe key into a collapse id the platforms accept', () => {
+    expect(collapseIdOf(undefined)).toBeUndefined();
+    expect(collapseIdOf('memories.2026-10-01')).toBe('memories.2026-10-01');
+    const hashed = collapseIdOf('album-update/8f6a3c1e-2b4d-4e5f-9a0b-1c2d3e4f5a6b/user');
+    expect(hashed).toMatch(/^[\da-f]{32}$/);
+    expect(collapseIdOf('album-update/8f6a3c1e-2b4d-4e5f-9a0b-1c2d3e4f5a6b/user')).toBe(hashed);
+  });
+
+  it('keeps a wake-up for hours and a notice for a day', () => {
+    expect(pushTtlSec({ background: true }, false)).toBe(4 * 3600);
+    expect(pushTtlSec({}, false)).toBe(86_400);
+    expect(pushTtlSec({}, true)).toBe(3600);
   });
 });
 
@@ -90,16 +112,6 @@ describe('push payloads (FL-228)', () => {
     expect(payload.preview).toBeNull();
     expect(payload.assetIds).toEqual([]);
     expect(JSON.stringify(payload)).not.toContain(locked);
-  });
-
-  it('a Live Activity payload never carries items or previews', () => {
-    const payload = buildPushPayload(
-      { type: PushEventType.CloudBackupActivation, title: 'Cloud Backup setup', body: '3 of 4', assetIds: [safe] },
-      { ...base, safeAssetIds: new Set([safe]), liveActivity: true },
-    );
-
-    expect(payload.assetIds).toEqual([]);
-    expect(payload.preview).toBeNull();
   });
 
   it('stays within the size a push can carry', () => {

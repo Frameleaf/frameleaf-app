@@ -7787,6 +7787,10 @@
     {
       "definition": "integer|not null|||",
       "identity": "immich_fork.asset_develop_artifact.width"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.push_device.apnsEnvironment"
     }
   ],
   "constraints": [
