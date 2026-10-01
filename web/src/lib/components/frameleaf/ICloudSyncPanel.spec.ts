@@ -32,7 +32,9 @@ vi.mock('@immich/sdk', async (originalImport) => ({
   updateICloudConnection: mocks.updateICloudConnection,
 }));
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
-vi.mock('$app/state', () => ({ page: { url: new URL('https://frameleaf.example/utilities/icloud-sync') } }));
+vi.mock('$app/state', () => ({
+  page: { url: new URL('https://frameleaf.example/user-settings?area=utilities&section=icloud') },
+}));
 
 const id = '00000000-0000-4000-8000-000000000001';
 
@@ -155,7 +157,9 @@ describe('ICloudSyncPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_save }));
     await fireEvent.click(await screen.findByRole('button', { name: en.frameleaf_icloud_consent_confirm }));
     await waitFor(() =>
-      expect(mocks.goto).toHaveBeenCalledWith('/auth/pin-prompt?continue=%2Futilities%2Ficloud-sync'),
+      expect(mocks.goto).toHaveBeenCalledWith(
+        '/auth/pin-prompt?continue=%2Fuser-settings%3Farea%3Dutilities%26section%3Dicloud',
+      ),
     );
     expect(mocks.updateICloudConnection).not.toHaveBeenCalled();
     expect(JSON.parse(sessionStorage.getItem('frameleaf.icloud.pending-save')!)).toMatchObject({
