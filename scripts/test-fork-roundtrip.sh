@@ -429,9 +429,9 @@ reset_lane
 start_official
 phase origin-seed src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
 stop_official
-# Run the real fork providers but keep plugin import stopped. The official
-# v3.1.0 ledger is already complete, so this applies only isolated fork schema
-# setup and gives a pre-plugin-sync digest boundary.
+# Run the real fork providers but keep plugin import stopped. FL-289: swapping the image is the
+# upgrade, so this first boot sets up the isolated fork schema and adopts the official library by
+# itself (no maintenance mode, no admin command); the phase below proves the official data survived.
 export FORK_DB_SKIP_MIGRATIONS=false FORK_WORKERS_INCLUDE=api
 start_fork
 phase origin-pre-migrator src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
@@ -473,12 +473,23 @@ BEGIN
       WHERE name = '1779400000000-UpdateWorkflowTables') <> 1 THEN
     RAISE EXCEPTION 'legacy workflow origin is absent from the official ledger';
   END IF;
-  IF (SELECT phase FROM immich_fork.state WHERE id = 1) IS DISTINCT FROM 'legacy' THEN
-    RAISE EXCEPTION 'fresh fork boot did not classify the database as a legacy installation';
+  -- FL-289: the API worker starts the compatibility backfill by itself at boot. Only the API
+  -- worker runs here, so no batch has been claimed yet.
+  IF (SELECT phase FROM immich_fork.state WHERE id = 1) IS DISTINCT FROM 'dual-write' THEN
+    RAISE EXCEPTION 'fresh fork boot did not start the compatibility backfill automatically';
+  END IF;
+  IF EXISTS (SELECT 1 FROM immich_fork.backfill_progress) THEN
+    RAISE EXCEPTION 'a backfill batch ran without the microservices worker';
   END IF;
 END
 $$;
 SQL
+# The certified pause/interrupt/resume proof below drives the backfill by hand from a seeded legacy
+# library. An operator pause holds the automatic start: it returns the library to legacy and later
+# starts leave it there until `fork-schema start` or `resume`.
+admin fork-schema pause
+held_phase="$(psql_sql -Atc 'SELECT phase FROM immich_fork.state WHERE id = 1')"
+[[ "$held_phase" == legacy ]] || { echo "Operator pause did not hold the automatic backfill: $held_phase" >&2; exit 1; }
 official_core_container="$(docker create "ghcr.io/immich-app/immich-server:$OFFICIAL_IMMICH_TAG")"
 docker cp "$official_core_container:/build/plugins/immich-plugin-core/dist/plugin.wasm" "$STATE_DIR/immich-plugin-core-v3.1.0.wasm"
 docker rm "$official_core_container" >/dev/null
@@ -616,22 +627,18 @@ stop_fork
 export FORK_WORKERS_INCLUDE=api,microservices
 start_fork
 phase origin-post-migrator src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
-# FL-44: starting Frameleaf on the official library keeps it certified-upstream (the origin phases
-# above prove that). The explicit adoption makes it a full Frameleaf library before any Frameleaf row
-# is written. As documented for operators, it runs in maintenance mode from a one-shot admin process
-# with every server stopped; the next start then boots the library the way every later start will.
+# FL-289: the first Frameleaf boot adopted the official library by itself (FL-44 adoption, inside
+# the boot migration lock) and the API worker started the backfill. Let it finish before stopping
+# the server: a batch killed mid-claim keeps its 15-minute lease, and no queued job takes it over.
+for _ in {1..600}; do
+  status="$(admin fork-schema verify)"
+  grep -q 'Verified: yes' <<<"$status" && break
+  sleep 1
+done
+grep -q 'Verified: yes' <<<"${status:-}" || { echo "$status"; echo 'Automatic backfill did not verify' >&2; exit 1; }
+# The manual `fork-schema adopt` stays available to operators; on an adopted library it confirms
+# and changes nothing.
 stop_fork
-one_shot_admin() {
-  local output code
-  set +e
-  output="$(compose run --rm --no-deps --entrypoint immich-admin fork-server "$@" 2>&1)"
-  code=$?
-  set -e
-  echo "$output"
-  [[ "$code" -eq 0 ]] || exit "$code"
-  if grep -q '^Error:' <<<"$output"; then exit 1; fi
-}
-one_shot_admin enable-maintenance-mode
 set +e
 adopt_output="$(printf 'y\n' | compose run --rm -T --no-deps --entrypoint immich-admin fork-server fork-schema adopt 2>&1)"
 adopt_code=$?
@@ -639,8 +646,12 @@ set -e
 echo "$adopt_output"
 [[ "$adopt_code" -eq 0 ]] || exit "$adopt_code"
 grep -q '^Error:' <<<"$adopt_output" && exit 1
-grep -q '^Adopted: yes' <<<"$adopt_output" || { echo 'Official library was not adopted' >&2; exit 1; }
-grep -q '^Phase: legacy' <<<"$adopt_output" || { echo 'Adopted library did not enter the legacy phase' >&2; exit 1; }
+# The confirmation prompt leaves terminal control codes on the line before the result.
+grep -q 'Adopted: already (nothing changed)' <<<"$adopt_output" || { echo 'Startup did not adopt the official library' >&2; exit 1; }
+grep -Eq '^Phase: (dual-write|ready)$' <<<"$adopt_output" || {
+  echo 'Startup did not start the backfill of the adopted library' >&2
+  exit 1
+}
 psql_sql -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
 BEGIN
@@ -657,13 +668,20 @@ BEGIN
       WHERE name = 'official-origin-adoption' AND status = 'applied') <> 1 THEN
     RAISE EXCEPTION 'adoption left no audit record';
   END IF;
+  IF EXISTS (SELECT 1 FROM public.system_metadata
+      WHERE key = 'maintenance-mode' AND (value->>'isMaintenanceMode')::boolean) THEN
+    RAISE EXCEPTION 'automatic adoption needed maintenance mode';
+  END IF;
 END
 $$;
 SQL
-one_shot_admin disable-maintenance-mode
 start_fork
 phase chain-fork-seed src/specs/server/fork-schema-chained-roundtrip.e2e-spec.ts
-printf 'y\n' | compose exec -T fork-server immich-admin fork-schema start --batch-size 32
+# The backfill already started at boot; an explicit start (existing operator scripts) reports the
+# status instead of failing, whether the backfill is still running or already ready.
+start_output="$(printf 'y\n' | compose exec -T fork-server immich-admin fork-schema start --batch-size 32 2>&1)"
+echo "$start_output"
+grep -Eq '^Phase: (dual-write|ready)$' <<<"$start_output" || { echo 'Explicit start did not report the status' >&2; exit 1; }
 for _ in {1..600}; do
   status="$(admin fork-schema verify)"
   grep -q 'Verified: yes' <<<"$status" && break
