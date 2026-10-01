@@ -134,9 +134,14 @@ const announce = async (deps: SetupGateDeps, code: string, reason: 'start' | 're
     'The code changes every time the server starts and stops working once the server is set up.',
     '',
   ];
-  for (const line of lines) {
-    deps.logger.log(line);
-  }
+  // straight to the console (the container's log) whatever the log level, so the code is never
+  // filtered out; the log line below does not carry it
+  process.stdout.write(`${lines.join('\n')}\n`);
+  deps.logger.log(
+    reason === 'replaced'
+      ? 'The setup code was replaced after too many wrong tries; the new one is on the console'
+      : 'This server is not set up yet; its setup code is on the console (frameleaf-admin setup-code prints it again)',
+  );
 };
 
 /**
@@ -261,10 +266,15 @@ export const withSetupProof = <T>(
         deps.logger.warn(`Refused a setup ticket from ${client.ip}`);
         throw setupRefusal(FrameleafSetupErrorCode.TicketInvalid);
       }
-      await writeState(deps, { ...state, ticket: undefined });
-    } else {
-      await checkCode(deps, proof.code, client);
+      const result = await claim();
+      // used up only once the claim worked: a refused link or a taken email can be tried again
+      const after = await readState(deps);
+      if (after) {
+        await writeState(deps, { ...after, ticket: undefined });
+      }
+      return result;
     }
+    await checkCode(deps, proof.code, client);
     return claim();
   });
 
