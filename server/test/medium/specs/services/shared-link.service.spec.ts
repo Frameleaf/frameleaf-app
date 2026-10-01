@@ -2,16 +2,19 @@ import { UnauthorizedException } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { randomBytes } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetLockReason, AssetVisibility, Permission, SharedLinkType } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, Permission, SharedLinkType, SystemMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { checkAccess, requireUploadAccess } from 'src/utils/access.js';
+import { clearConfigCache } from 'src/utils/config.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -21,7 +24,15 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   return newMediumService(SharedLinkService, {
     database: db || defaultDatabase,
-    real: [AccessRepository, DatabaseRepository, SharedLinkRepository, SharedLinkAssetRepository],
+    // FL-305: a link's address comes from the saved configuration, so the service reads it for real
+    real: [
+      AccessRepository,
+      ConfigRepository,
+      DatabaseRepository,
+      SharedLinkRepository,
+      SharedLinkAssetRepository,
+      SystemMetadataRepository,
+    ],
     mock: [LoggingRepository, StorageRepository],
   });
 };
@@ -30,7 +41,45 @@ beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
 
+beforeEach(() => clearConfigCache());
+afterAll(() => clearConfigCache());
+
 describe(SharedLinkService.name, () => {
+  describe('url (FL-305)', () => {
+    it('is null until a public address is saved, then built on it', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { album } = await ctx.newAlbum({ ownerId: user.id });
+      const key = randomBytes(16);
+      const sharedLink = await ctx.get(SharedLinkRepository).create({
+        key,
+        id: factory.uuid(),
+        userId: user.id,
+        albumId: album.id,
+        allowUpload: false,
+        type: SharedLinkType.Album,
+      });
+
+      await expect(sut.get(auth, sharedLink.id)).resolves.toMatchObject({ url: null });
+
+      await ctx
+        .get(SystemMetadataRepository)
+        .set(SystemMetadataKey.SystemConfig, { server: { externalDomain: 'https://photos.example.test/' } });
+      clearConfigCache();
+      try {
+        const expected = `https://photos.example.test/share/${key.toString('base64url')}`;
+        await expect(sut.get(auth, sharedLink.id)).resolves.toMatchObject({ url: expected });
+        await expect(sut.getAll(auth, {})).resolves.toEqual(
+          expect.arrayContaining([expect.objectContaining({ id: sharedLink.id, url: expected })]),
+        );
+      } finally {
+        await ctx.get(SystemMetadataRepository).delete(SystemMetadataKey.SystemConfig);
+        clearConfigCache();
+      }
+    });
+  });
+
   describe('get', () => {
     it('should return the correct dates on the shared link album', async () => {
       const { sut, ctx } = setup();
