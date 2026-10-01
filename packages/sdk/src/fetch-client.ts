@@ -7477,6 +7477,50 @@ export type PetObservationCreateDto = {
     /** Width of the image the region was drawn on */
     imageWidth?: number;
 };
+export type PhotographyWorkspaceDto = {
+    revision: string | null;
+    shoots: {
+        /** Owned source album; null retains an unavailable existing shoot */
+        albumId: string | null;
+        assetCount: number | null;
+        client: string;
+        coverAssetId: string | null;
+        date: string;
+        id: string;
+        name: string;
+        stage: Stage;
+        "type": Type;
+        unavailable: boolean;
+    }[];
+};
+export type PhotographyWorkspaceSaveDto = {
+    expectedRevision: string | null;
+    shoots: {
+        /** Owned source album; null retains an unavailable existing shoot */
+        albumId: string | null;
+        client: string;
+        date: string;
+        id: string;
+        name: string;
+        stage: Stage;
+        "type": Type;
+    }[];
+};
+export type PhotographyPhotosDto = {
+    nextCursor: string | null;
+    photos: {
+        canRate: boolean;
+        currentRevisionId: string | null;
+        fileName: string;
+        id: string;
+        rating: number | null;
+        stackCount: number;
+    }[];
+};
+export type PhotographyRatingDto = {
+    assetId: string;
+    rating: number | null;
+};
 export type PluginMethodResponseDto = {
     /** Hosts this method may send requests to; empty when it cannot reach other servers */
     allowedHosts: string[];
@@ -18105,6 +18149,61 @@ export function createPetObservation({ id, petObservationCreateDto }: {
     })));
 }
 /**
+ * Read your private shoots
+ */
+export function getPhotographyWorkspace(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyWorkspaceDto;
+    }>("/photography/shoots", {
+        ...opts
+    }));
+}
+/**
+ * Save your shoots using the loaded revision
+ */
+export function savePhotographyWorkspace({ photographyWorkspaceSaveDto }: {
+    photographyWorkspaceSaveDto: PhotographyWorkspaceSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyWorkspaceDto;
+    }>("/photography/shoots", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographyWorkspaceSaveDto
+    })));
+}
+/**
+ * Read a page of unlocked shoot photos
+ */
+export function getPhotographyPhotos({ cursor, id }: {
+    cursor?: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPhotosDto;
+    }>(`/photography/shoots/${encodeURIComponent(id)}/photos${QS.query(QS.explode({
+        cursor
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Rate or reject an owned photo in your shoot
+ */
+export function ratePhotographyPhoto({ id, photographyRatingDto }: {
+    id: string;
+    photographyRatingDto: PhotographyRatingDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/photography/shoots/${encodeURIComponent(id)}/rating`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: photographyRatingDto
+    })));
+}
+/**
  * List all plugins
  */
 export function searchPlugins({ description, enabled, id, name, title, version }: {
@@ -24001,6 +24100,22 @@ export enum PetObservationState {
     Confirmed = "confirmed",
     Rejected = "rejected"
 }
+export enum Stage {
+    Imported = "Imported",
+    Selected = "Selected",
+    Edited = "Edited",
+    Proofing = "Proofing",
+    Delivered = "Delivered"
+}
+export enum Type {
+    FamilyPortrait = "Family portrait",
+    Wedding = "Wedding",
+    Portrait = "Portrait",
+    Editorial = "Editorial",
+    Commercial = "Commercial",
+    Event = "Event",
+    Personal = "Personal"
+}
 export enum WorkflowType {
     AssetV1 = "AssetV1"
 }
@@ -24747,6 +24862,7 @@ export enum Kind10 {
 export enum UserMetadataKey {
     Preferences = "preferences",
     PinnedCollections = "pinned-collections",
+    PhotographyWorkspace = "photography-workspace",
     License = "license",
     Onboarding = "onboarding",
     FrameleafCloudTour = "frameleaf-cloud-tour"

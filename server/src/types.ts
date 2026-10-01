@@ -1432,6 +1432,10 @@ export type UserMetadataItem<T extends keyof UserMetadata = UserMetadataKey> = {
 };
 
 export interface UserMetadata extends Record<UserMetadataKey, Record<string, any>> {
+  [UserMetadataKey.PhotographyWorkspace]: {
+    shoots: import('src/dtos/photography-workspace.dto.js').StoredShoot[];
+    brand?: import('src/dtos/photography-workspace.dto.js').PhotographyBrand;
+  };
   [UserMetadataKey.PinnedCollections]: { pins: import('src/dtos/pinned-collection.dto.js').StoredPinnedCollection[] };
   [UserMetadataKey.Preferences]: DeepPartial<UserPreferences>;
   /** FL-156: a mirror of the person's supporter key summary (`immich_fork.frameleaf_user_license`). */
