@@ -1,0 +1,14 @@
+{
+  "commands": [],
+  "entitlementsChanged": false,
+  "servicesChanged": false,
+  "nextHeartbeatSec": 300,
+  "cloneSuspected": false,
+  "notices": [],
+  "observedIp": "203.0.113.7",
+  "pricing": { "pricesVersion": "2026-09-25.1", "licensedDiscountPercent": 20, "effectiveFrom": "2026-09-25T00:00:00Z" },
+  "backupPlan": {
+    "tierOverflow": { "id": "0192f1b0-1a2b-7c3d-8e4f-5a6b7c8d9e10", "status": "declined", "currentTier": "1tb", "suggestedTier": "2tb", "backupPaused": true },
+    "planFull": { "reason": "plan-full", "action": "upgrade", "suggestedTier": "2tb", "message": "Backup paused: plan full" }
+  }
+}
