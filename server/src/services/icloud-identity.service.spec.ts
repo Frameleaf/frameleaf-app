@@ -43,7 +43,7 @@ const record = (
   assetFields: fields.asset,
   masterFields: fields.master,
   inScope: true,
-  pending: false,
+  pendingRoles: [],
   pendingSince: null,
   ...overrides,
 });
@@ -167,7 +167,7 @@ describe(ICloudIdentityService.name, () => {
       const { sut } = setup({
         connections: [c],
         inventory: [
-          record(c.id, 1, { pending: true, pendingSince: new Date('2026-06-01T12:00:00Z') }),
+          record(c.id, 1, { pendingRoles: ['original'], pendingSince: new Date('2026-06-01T12:00:00Z') }),
           record(c.id, 2, { inScope: false }),
         ],
       });
@@ -190,16 +190,28 @@ describe(ICloudIdentityService.name, () => {
       expect(items[2]).toMatchObject({ editOwner: { kind: 'device' }, roles: [{ state: 'unknown' }] });
     });
 
-    it('never counts on an unhealthy sync, nor gives it the edits', async () => {
+    it('never counts on an unhealthy sync, but leaves it the edits it will import on recovery', async () => {
       const c = connection({ state: 'reauthentication-required', unhealthySince: new Date() });
-      const { sut } = setup({ connections: [c], inventory: [record(c.id, 1, { pending: true })] });
+      const { sut } = setup({ connections: [c], inventory: [record(c.id, 1, { pendingRoles: ['original'] })] });
       const { items } = await sut.lookup(auth, { items: [lookupItem(1)] });
-      expect(items[0]).toMatchObject({ editOwner: { kind: 'device' }, roles: [{ state: 'unknown' }] });
+      // two renders of one edit would follow if the device took the edits over while the sync is down
+      expect(items[0]).toMatchObject({ editOwner: { kind: 'icloud-sync', connectionId: c.id } });
+      expect(items[0].roles).toMatchObject([{ state: 'unknown' }]);
+    });
+
+    it('says sync-pending only for the roles the sync is still bringing', async () => {
+      const c = connection();
+      const { sut } = setup({ connections: [c], inventory: [record(c.id, 1, { pendingRoles: ['original'] })] });
+      const { items } = await sut.lookup(auth, {
+        items: [lookupItem(1, { roles: ['original', 'live-motion', 'raw-alternate'] })],
+      });
+      // a role the sync does not bring (nothing queued, failed, unsupported) stays with the device
+      expect(items[0].roles.map(({ state }) => state)).toEqual(['sync-pending', 'unknown', 'unknown']);
     });
 
     it('keeps edits with the device when the sync does not import them', async () => {
       const c = connection({ config: { includeEdits: false } });
-      const { sut } = setup({ connections: [c], inventory: [record(c.id, 1, { pending: true })] });
+      const { sut } = setup({ connections: [c], inventory: [record(c.id, 1, { pendingRoles: ['original'] })] });
       const { items } = await sut.lookup(auth, { items: [lookupItem(1, { roles: ['original', 'edit-render'] })] });
       expect(items[0].editOwner.kind).toBe('device');
       // an edit render is never "coming from the sync"
@@ -219,6 +231,12 @@ describe(ICloudIdentityService.name, () => {
       const { items } = await sut.lookup(auth, { items: [item(), item('v1'), item('v3')] });
       // v3 is no edit version on record: unknown
       expect(items.map(({ roles }) => roles[0].assetId)).toEqual([newer.assetId, older.assetId, null]);
+    });
+
+    it.each(['false', 'FALSE', '0', 'off', ' no '])('switches identity matching off with %j', async (value) => {
+      process.env.FRAMELEAF_ICLOUD_IDENTITY_MATCHING = value;
+      const { sut } = setup({});
+      await expect(sut.lookup(auth, { items: [lookupItem(1)] })).resolves.toMatchObject({ identityMatching: false });
     });
 
     it('matches only by SHA-256 when identity matching is switched off', async () => {

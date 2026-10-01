@@ -122,15 +122,43 @@ describe(ICloudIdentityRepository.name, () => {
           cplAssetRecordName: ASSET,
           cplMasterRecordName: MASTER,
           inScope: true,
-          pending: true,
+          pendingRoles: expect.arrayContaining(['original', 'live-motion']),
           pendingSince: expect.any(Date),
           masterFields: expect.objectContaining({ filenameEnc: expect.anything() }),
         }),
-        expect.objectContaining({ cplAssetRecordName: 'OUTSIDE-1', inScope: false, pending: false }),
+        expect.objectContaining({ cplAssetRecordName: 'OUTSIDE-1', inScope: false, pendingRoles: [] }),
       ]),
     );
     expect(items).toHaveLength(2);
     await expect(sut.inventory(randomUUID(), [ASSET])).resolves.toEqual([]);
+  });
+
+  it('stops calling a role pending once it is imported, or failed for good', async () => {
+    await commit('original', randomUUID(), Buffer.alloc(32, 1));
+    await sql`UPDATE immich_fork.icloud_resource SET status = 'failed'
+      WHERE "connectionId" = ${connection.id}::uuid AND role = 'motion'`.execute(db);
+    const [item] = await sut.inventory(connection.ownerId, [ASSET]);
+    expect(item.pendingRoles).not.toContain('original');
+    // a failed resource is not coming: the device keeps it
+    expect(item.pendingRoles).not.toContain('live-motion');
+  });
+
+  it('backfills each Apple item that reused one asset', async () => {
+    const original = randomUUID();
+    await recordSyncIdentity(db, await commit('original', original, Buffer.alloc(32, 1)));
+    // a duplicate in iCloud, imported before identities existed, reused the same asset
+    const twin = '0B0B0B0B-75DF-41B2-8773-80C153D73A5A';
+    await sql`
+      INSERT INTO immich_fork.icloud_resource ("connectionId", "ownerId", "libraryKey", library, "sourceAssetId",
+        "recordId", "resourceKey", role, fingerprint, source, "expectedSize", status, "assetId", sha256)
+      SELECT "connectionId", "ownerId", "libraryKey", library, ${twin}, "recordId", "resourceKey", role, fingerprint,
+        source, "expectedSize", status, "assetId", sha256
+      FROM immich_fork.icloud_resource WHERE "connectionId" = ${connection.id}::uuid AND role = 'original'
+    `.execute(db);
+    await expect(sut.backfill()).resolves.toBe(1);
+    await expect(sut.identities(connection.ownerId, [twin])).resolves.toEqual([
+      expect.objectContaining({ assetId: original, role: 'original' }),
+    ]);
   });
 
   it('describes the connections for the coverage probe, with when they stopped being healthy', async () => {

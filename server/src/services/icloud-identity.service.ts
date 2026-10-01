@@ -63,7 +63,8 @@ export const connectionHealth = (connection: Pick<ICloudCoverageConnection, 'sta
  * live-account spike shows the `PHCloudIdentifier` parse does not hold (owner decision 7): then
  * only SHA-256 matches count.
  */
-export const identityMatchingEnabled = () => process.env.FRAMELEAF_ICLOUD_IDENTITY_MATCHING !== 'false';
+export const identityMatchingEnabled = () =>
+  !['false', '0', 'no', 'off'].includes((process.env.FRAMELEAF_ICLOUD_IDENTITY_MATCHING ?? '').trim().toLowerCase());
 
 /** How well a device's item matches an inventory record: corroborated at best, as no bytes were compared. */
 const inventoryStrength = (
@@ -206,13 +207,19 @@ export class ICloudIdentityService {
           const connection = byConnection.get(record.connectionId);
           return record.inScope && connection && connectionHealth(connection) === 'healthy';
         });
-        const editsBySync = covering && byConnection.get(covering.connectionId)?.config.includeEdits !== false;
+        // The edit owner does not follow the connection's health: a sync that is briefly failing or
+        // waiting for sign-in still imports its renders once it recovers, so handing the edits to the
+        // device meanwhile would leave two renders of one edit. Moving them after 72 hours unhealthy
+        // (with a watermark) is the claims slice's handover, not this lookup's.
+        const editSource = [covering, ...records].find(
+          (record) => record?.inScope && byConnection.get(record.connectionId)?.config.includeEdits !== false,
+        );
 
         return {
           id: item.id,
           cplAssetRecordName: parsed?.cplAssetRecordName ?? null,
-          editOwner: editsBySync
-            ? { kind: 'icloud-sync' as const, connectionId: covering.connectionId }
+          editOwner: editSource
+            ? { kind: 'icloud-sync' as const, connectionId: editSource.connectionId }
             : { kind: 'device' as const, connectionId: null },
           roles: item.roles.map((role) => {
             const empty = {
@@ -270,7 +277,9 @@ export class ICloudIdentityService {
             // 3. the sync's inventory
             if (covering && role !== 'edit-render') {
               const connection = byConnection.get(covering.connectionId)!;
-              return covering.pending
+              // per role: the sync may bring the still but not, say, a RAW it does not import
+              const pendingRole = covering.pendingRoles.includes(role);
+              return pendingRole
                 ? {
                     ...empty,
                     connectionId: connection.id,
