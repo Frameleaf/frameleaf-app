@@ -548,8 +548,9 @@ const AdminConfigFrameleafCloudSchema = z
           .min(0)
           .max(1_000_000)
           .nullable()
+          .optional()
           .describe(
-            'Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null is unlimited. Applied when the account is created; existing accounts keep their quota.',
+            'Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota.',
           ),
       })
       .default(frameleafCloudDefaults.signIn)
