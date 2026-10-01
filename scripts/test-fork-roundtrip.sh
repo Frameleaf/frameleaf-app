@@ -170,7 +170,9 @@ start_fork_first_launch() {
     fork_schema="$(compose exec -T fork-server sh -c "gunzip -c '/data/backups/$copy' | grep -c 'CREATE SCHEMA immich_fork' || true")"
   fi
   skip_logged=false
-  docker logs "$id" 2>&1 | grep -Fq 'so no safety copy is needed before upgrading' && skip_logged=true
+  # read the log in full first: `grep -q` stopping early would fail the pipeline (pipefail)
+  docker logs "$id" >"$STATE_DIR/first-launch.log" 2>&1
+  grep -Fq 'so no safety copy is needed before upgrading' "$STATE_DIR/first-launch.log" && skip_logged=true
   jq -n \
     --arg expected "$expected" \
     --arg copy "$copy" \
