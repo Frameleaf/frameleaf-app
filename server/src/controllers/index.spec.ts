@@ -49,6 +49,8 @@ const ADMIN_ROUTES = new Set([
   'GET system-config/machine-learning/hardware',
   'GET system-config/smart-albums/reevaluate-estimate',
   'POST server/version-check',
+  // The server owner's (administrator's) cloud backup setup progress, polled without PIN elevation (FL-234).
+  'GET users/me/cloud-backup/setup',
   'POST system-config/image-description/defer-requeue',
   'POST system-config/image-description/requeue',
   'POST system-config/smart-albums/reevaluate',

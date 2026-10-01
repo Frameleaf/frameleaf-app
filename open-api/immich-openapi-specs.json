@@ -42536,6 +42536,48 @@
         "x-immich-permission": "asset.update"
       }
     },
+    "/users/me/cloud-backup/setup": {
+      "get": {
+        "description": "Read-only activation chain for the server owner (an administrator) to poll: plan entitlement seen, bucket claimed, key loaded, first run, next scheduled run. Never the bucket, endpoint, key, usage or file names. Other users are refused.",
+        "operationId": "getOwnSetupProgress",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudBackupOwnerSetupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the cloud backup setup progress",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read"
+      }
+    },
     "/users/me/license": {
       "delete": {
         "description": "Remove your supporter key from this server. The key stays yours to activate again.",
@@ -56061,6 +56103,67 @@
         },
         "required": [
           "manifests"
+        ],
+        "type": "object"
+      },
+      "CloudBackupOwnerSetupEntitlement": {
+        "description": "not-applicable: not Frameleaf-managed storage; pending: not linked to Frameleaf Cloud, or the plan does not include cloud backup; seen: linked and not refused for the plan",
+        "enum": [
+          "not-applicable",
+          "pending",
+          "seen"
+        ],
+        "type": "string"
+      },
+      "CloudBackupOwnerSetupFirstRun": {
+        "description": "done: a backup has succeeded; queued/running: a backup is waiting or in progress; failed: the last run failed; not-started: no run yet",
+        "enum": [
+          "not-started",
+          "queued",
+          "running",
+          "done",
+          "failed"
+        ],
+        "type": "string"
+      },
+      "CloudBackupOwnerSetupResponseDto": {
+        "properties": {
+          "bucketClaimed": {
+            "description": "A bucket holds this server’s Frameleaf claim",
+            "type": "boolean"
+          },
+          "claimedAt": {
+            "description": "When the bucket was claimed",
+            "nullable": true,
+            "type": "string"
+          },
+          "entitlement": {
+            "$ref": "#/components/schemas/CloudBackupOwnerSetupEntitlement"
+          },
+          "firstRun": {
+            "$ref": "#/components/schemas/CloudBackupOwnerSetupFirstRun"
+          },
+          "keyLoaded": {
+            "description": "The backup key is loaded on this server",
+            "type": "boolean"
+          },
+          "nextRunAt": {
+            "description": "The next scheduled backup, when cloud backup is set up and on",
+            "nullable": true,
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/CloudBackupTargetSetting"
+          }
+        },
+        "required": [
+          "bucketClaimed",
+          "claimedAt",
+          "entitlement",
+          "firstRun",
+          "keyLoaded",
+          "nextRunAt",
+          "target"
         ],
         "type": "object"
       },

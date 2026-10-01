@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { CloudBackupTargetSettingSchema } from 'src/dtos/cloud-backup.dto.js';
 
 export const OwnerBackupPageSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -71,4 +72,29 @@ export class OwnerBackupRestoreResponseDto extends createZodDto(
       status: z.string(),
     })
     .meta({ id: 'OwnerBackupRestoreResponseDto' }),
+) {}
+
+/** FL-234: the activation chain an owner's app polls; never bucket, key, usage, error or user details. */
+export class CloudBackupOwnerSetupResponseDto extends createZodDto(
+  z
+    .object({
+      target: CloudBackupTargetSettingSchema,
+      entitlement: z
+        .enum(['not-applicable', 'pending', 'seen'])
+        .describe(
+          'not-applicable: not Frameleaf-managed storage; pending: not linked to Frameleaf Cloud, or the plan does not include cloud backup; seen: linked and not refused for the plan',
+        )
+        .meta({ id: 'CloudBackupOwnerSetupEntitlement' }),
+      bucketClaimed: z.boolean().describe('A bucket holds this server’s Frameleaf claim'),
+      claimedAt: z.string().nullable().describe('When the bucket was claimed'),
+      keyLoaded: z.boolean().describe('The backup key is loaded on this server'),
+      firstRun: z
+        .enum(['not-started', 'queued', 'running', 'done', 'failed'])
+        .describe(
+          'done: a backup has succeeded; queued/running: a backup is waiting or in progress; failed: the last run failed; not-started: no run yet',
+        )
+        .meta({ id: 'CloudBackupOwnerSetupFirstRun' }),
+      nextRunAt: z.string().nullable().describe('The next scheduled backup, when cloud backup is set up and on'),
+    })
+    .meta({ id: 'CloudBackupOwnerSetupResponseDto' }),
 ) {}

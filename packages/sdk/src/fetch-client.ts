@@ -10850,6 +10850,19 @@ export type OwnerBackupRestoreResponseDto = {
     operationId: string;
     status: string;
 };
+export type CloudBackupOwnerSetupResponseDto = {
+    /** A bucket holds this server’s Frameleaf claim */
+    bucketClaimed: boolean;
+    /** When the bucket was claimed */
+    claimedAt: string | null;
+    entitlement: CloudBackupOwnerSetupEntitlement;
+    firstRun: CloudBackupOwnerSetupFirstRun;
+    /** The backup key is loaded on this server */
+    keyLoaded: boolean;
+    /** The next scheduled backup, when cloud backup is set up and on */
+    nextRunAt: string | null;
+    target: CloudBackupTargetSetting;
+};
 export type OnboardingResponseDto = {
     /** Is user onboarded */
     isOnboarded: boolean;
@@ -21891,6 +21904,17 @@ export function restoreOwnBackupItems({ ownerBackupRestoreDto }: {
     })));
 }
 /**
+ * Get the cloud backup setup progress
+ */
+export function getOwnSetupProgress(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: CloudBackupOwnerSetupResponseDto;
+    }>("/users/me/cloud-backup/setup", {
+        ...opts
+    }));
+}
+/**
  * Remove your supporter key
  */
 export function deleteUserLicense(opts?: Oazapfts.RequestOpts) {
@@ -24675,6 +24699,18 @@ export enum OwnerBackupDeletionDateState {
 export enum OwnerBackupItemState {
     Trashed = "trashed",
     Deleted = "deleted"
+}
+export enum CloudBackupOwnerSetupEntitlement {
+    NotApplicable = "not-applicable",
+    Pending = "pending",
+    Seen = "seen"
+}
+export enum CloudBackupOwnerSetupFirstRun {
+    NotStarted = "not-started",
+    Queued = "queued",
+    Running = "running",
+    Done = "done",
+    Failed = "failed"
 }
 export enum Kind9 {
     Album = "album",
