@@ -148,3 +148,9 @@ above.
   `server/src/services/frameleaf-auth.service.spec.ts` verifies each at its fixture `now` through
   `POST oauth/frameleaf/exchange` and the back-channel logout verifier. The cloud's `unlinked-server.json` and
   `revoked-access.json` are token-endpoint refusals the app receives; no token reaches this server, so they are not copied.
+- FL-301 / FC-91 (NAPI-013, backup plan signal): `instance/heartbeat-response-backup-plan.json`,
+  `instance/heartbeat-response-backup-plan-family.json` and `backup/usage-plan-full.json` are byte-identical to
+  frameleaf-cloud `916f12a1d787c8b9ef47a3937c6af44028a45d48`. The contract is `BackupPlanSignal` in
+  `packages/contracts/src/billing/stores.ts` and `INSTANCE_CAPABILITY_BACKUP_PLAN` in `src/instance/heartbeat.ts`;
+  `server/src/utils/frameleaf-cloud-link.ts` reads it and `server/src/services/frameleaf-cloud.service.spec.ts` checks the
+  pushes, `server/src/utils/frameleaf-cloud-backup.spec.ts` the `plan_full` reason.
