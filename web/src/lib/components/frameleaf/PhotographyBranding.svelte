@@ -50,9 +50,9 @@
       stored = value;
       draft = { ...value.brand };
       logoChanged = false;
-    } catch (cause) {
+    } catch (error_) {
       if (current === generation) {
-        error = failure(cause);
+        error = failure(error_);
       }
     } finally {
       if (current === generation) {
@@ -82,9 +82,9 @@
       logoChanged = false;
       message = 'Branding saved on your server';
       onSaved();
-    } catch (cause) {
+    } catch (error_) {
       if (current === generation) {
-        error = failure(cause);
+        error = failure(error_);
       }
     } finally {
       if (current === generation) {
@@ -109,11 +109,11 @@
       if (disposed || current !== generation) {
         return;
       }
-      logos = [...logos, ...value.logos.filter(({ id }) => !logos.some((logo) => logo.id === id))];
+      logos = [...logos, ...value.logos.filter(({ id }) => logos.every((logo) => logo.id !== id))];
       cursor = value.nextCursor;
-    } catch (cause) {
+    } catch (error_) {
       if (current === generation) {
-        logoError = failure(cause);
+        logoError = failure(error_);
       }
     } finally {
       if (current === generation) {
@@ -225,7 +225,7 @@
       <div class="phw-brand-intro">
         <h2>Colour palette</h2>
         <div class="phw-brand-swatches">
-          {#each [[draft.color, 'Accent'], [draft.background, 'Background'], [draft.textColor, 'Text']] as [color, label]}<div
+          {#each [[draft.color, 'Accent'], [draft.background, 'Background'], [draft.textColor, 'Text']] as [color, label] (label)}<div
             >
               <i style:background={color}></i><span>{label}</span><small>{color}</small>
             </div>{/each}
@@ -328,7 +328,7 @@
           ><img src={logoThumbnailUrl(logo.id)} alt="" loading="lazy" /><span>{logo.fileName}</span></button
         >{/each}
     </div>
-    {#if logoLoading}<p role="status">Loading logos…</p>{:else if !logos.length && !logoError}<p>
+    {#if logoLoading}<p role="status">Loading logos…</p>{:else if logos.length === 0 && !logoError}<p>
         No eligible images on this page. Add a logo to your library, or use initials.
       </p>{/if}{#if cursor}<Button disabled={logoLoading} onclick={() => candidates(true)}>Load more images</Button
       >{/if}

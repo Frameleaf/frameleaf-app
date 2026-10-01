@@ -80,7 +80,7 @@
   const listing = $derived(
     workspace.shoots
       .filter((shoot) => `${shoot.name} ${shoot.client} ${shoot.type}`.toLowerCase().includes(search.toLowerCase()))
-      .toSorted((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : b.date.localeCompare(a.date))),
+      .sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : b.date.localeCompare(a.date))),
   );
   const matches = (photo: Photo, filter: string) =>
     filter === 'All' ||
@@ -93,7 +93,7 @@
         album.albumUsers[0]?.user.id === authManager.user.id &&
         album.kind === 'album' &&
         !album.isSmart &&
-        !workspace.shoots.some((shoot) => shoot.albumId === album.id),
+        workspace.shoots.every((shoot) => shoot.albumId !== album.id),
     ),
   );
   const cover = (id: string) => getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail });
@@ -116,9 +116,9 @@
       if (activeId) {
         await openShoot(activeId);
       }
-    } catch (cause) {
+    } catch (error_) {
       if (current === generation) {
-        error = failure(cause);
+        error = failure(error_);
       }
     } finally {
       if (current === generation) {
@@ -143,9 +143,9 @@
       workspace = saved;
       message = 'Saved on your server';
       return true;
-    } catch (cause) {
+    } catch (error_) {
       if (current === generation) {
-        error = failure(cause);
+        error = failure(error_);
       }
       return false;
     } finally {
@@ -184,9 +184,9 @@
       }
       photos = page.photos;
       nextCursor = page.nextCursor;
-    } catch (cause) {
+    } catch (error_) {
       if (current === detailGeneration) {
-        photoError = failure(cause);
+        photoError = failure(error_);
       }
     } finally {
       if (current === detailGeneration) {
@@ -208,11 +208,11 @@
       if (disposed || current !== detailGeneration) {
         return;
       }
-      photos = [...photos, ...page.photos.filter((photo) => !photos.some(({ id }) => id === photo.id))];
+      photos = [...photos, ...page.photos.filter((photo) => photos.every(({ id }) => id !== photo.id))];
       nextCursor = page.nextCursor;
-    } catch (cause) {
+    } catch (error_) {
       if (current === detailGeneration) {
-        photoError = failure(cause);
+        photoError = failure(error_);
       }
     } finally {
       if (current === detailGeneration) {
@@ -263,9 +263,9 @@
         photos = photos.map((photo) => (photo.id === assetId ? { ...photo, rating } : photo));
       }
       message = 'Ratings saved on your server';
-    } catch (cause) {
+    } catch (error_) {
       if (current === generation) {
-        error = failure(cause);
+        error = failure(error_);
       }
     } finally {
       if (current === generation) {
@@ -285,9 +285,9 @@
       if (!disposed && current === versionGeneration) {
         versions = saved;
       }
-    } catch (cause) {
+    } catch (error_) {
       if (current === versionGeneration) {
-        versionError = failure(cause);
+        versionError = failure(error_);
       }
     } finally {
       if (current === versionGeneration) {
@@ -344,6 +344,7 @@
     </div>
     <nav aria-label="Photography workspace">
       <button
+        type="button"
         aria-current={section === 'shoots' ? 'page' : undefined}
         disabled={busy}
         onclick={() => {
@@ -356,10 +357,13 @@
           }
         }}><Icon icon={mdiCameraOutline} size="1.2rem" />Shoots</button
       >
-      {#each [['Galleries', mdiImageMultipleOutline], ['Website', mdiWeb]] as [label, icon]}
-        <button disabled title={`${label} is not available yet`}><Icon {icon} size="1.2rem" />{label}</button>
+      {#each [['Galleries', mdiImageMultipleOutline], ['Website', mdiWeb]] as [label, icon] (label)}
+        <button type="button" disabled title={`${label} is not available yet`}
+          ><Icon {icon} size="1.2rem" />{label}</button
+        >
       {/each}
       <button
+        type="button"
         aria-current={section === 'branding' ? 'page' : undefined}
         disabled={busy}
         onclick={() => {
@@ -367,7 +371,7 @@
           detailGeneration++;
         }}><Icon icon={mdiPaletteOutline} size="1.2rem" />Branding</button
       >
-      <button disabled title="Publishing is not available yet"
+      <button type="button" disabled title="Publishing is not available yet"
         ><Icon icon={mdiCloudUploadOutline} size="1.2rem" />Publishing</button
       >
     </nav>
@@ -427,7 +431,7 @@
             }}>All shoots</Button
           >
           <div class="phw-stages" aria-label="Shoot workflow">
-            {#each shootStages as stage, index}<span class:done={index <= shootStages.indexOf(active.stage)}
+            {#each shootStages as stage, index (stage)}<span class:done={index <= shootStages.indexOf(active.stage)}
                 ><i>{index + 1}</i>{stage}</span
               >{/each}
           </div>
@@ -451,13 +455,16 @@
             <section class="phw-contact-sheet">
               <div class="phw-contact-toolbar">
                 <div class="phw-tabs" aria-label="Photo filter">
-                  {#each ['All', 'Selected', 'Edited'] as name}<button
+                  {#each ['All', 'Selected', 'Edited'] as name (name)}<button
+                      type="button"
                       aria-pressed={tab === name}
                       onclick={() => {
                         tab = name;
                         selected = [];
                       }}>{name}<small>{photos.filter((photo) => matches(photo, name)).length}</small></button
-                    >{/each}<button disabled title="Pinned final deliveries are not available yet">Deliverables</button>
+                    >{/each}<button type="button" disabled title="Pinned final deliveries are not available yet"
+                    >Deliverables</button
+                  >
                 </div>
                 {#if active.albumId}<a href={Route.viewAlbum({ id: active.albumId })}>Add photos in album</a>{/if}
               </div>
@@ -466,14 +473,14 @@
                   ><input
                     type="checkbox"
                     aria-label="Select all editable visible photos"
-                    disabled={busy || !visible.some((photo) => photo.canRate)}
+                    disabled={busy || visible.every((photo) => !photo.canRate)}
                     checked={visible.some((photo) => photo.canRate) &&
                       visible.filter((photo) => photo.canRate).every(({ id }) => selected.includes(id))}
                     onchange={(event) =>
                       (selected = event.currentTarget.checked
                         ? visible.filter((photo) => photo.canRate).map(({ id }) => id)
                         : [])}
-                  />{selected.length ? `${selected.length} selected` : 'Select photos'}</label
+                  />{selected.length > 0 ? `${selected.length} selected` : 'Select photos'}</label
                 >{#if selected.length}<Button disabled={busy} onclick={() => rate(selected, 4)}>Keep</Button><Button
                     disabled={busy}
                     onclick={() => rate(selected, -1)}>Reject</Button
@@ -482,7 +489,7 @@
               {#if photoError}<div class="phw-notice" role="alert">
                   {photoError}<Button
                     disabled={photoLoading}
-                    onclick={() => (photos.length ? more() : openShoot(active.id))}>Retry</Button
+                    onclick={() => (photos.length > 0 ? more() : openShoot(active.id))}>Retry</Button
                   >
                 </div>{/if}
               <div class="phw-photo-grid">
@@ -493,6 +500,7 @@
                   >
                     <div class="phw-photo-image">
                       <button
+                        type="button"
                         class="phw-open-photo"
                         aria-label={`Inspect ${photo.fileName}`}
                         onclick={() => inspect(photo)}
@@ -515,7 +523,8 @@
                     <div class="phw-photo-meta">
                       <span title={photo.fileName}>{photo.fileName}</span>
                       <div class="phw-stars" aria-label={`Rating for ${photo.fileName}`}>
-                        {#each [1, 2, 3, 4, 5] as rating}<button
+                        {#each [1, 2, 3, 4, 5] as rating (rating)}<button
+                            type="button"
                             aria-label={`${rating} star rating for ${photo.fileName}`}
                             aria-pressed={photo.rating === rating}
                             disabled={busy || !photo.canRate}
@@ -525,6 +534,7 @@
                               size="0.875rem"
                             /></button
                           >{/each}<button
+                          type="button"
                           aria-label={`${photo.rating === -1 ? 'Restore' : 'Reject'} ${photo.fileName}`}
                           aria-pressed={photo.rating === -1}
                           disabled={busy || !photo.canRate}
@@ -537,11 +547,11 @@
               </div>
               {#if photoLoading}<div class="phw-empty" role="status">
                   Loading photos…
-                </div>{:else if !visible.length && !photoError}<div class="phw-empty">
+                </div>{:else if visible.length === 0 && !photoError}<div class="phw-empty">
                   <Icon icon={mdiCameraOutline} size="2rem" />
-                  <h2>{photos.length ? `No ${tab.toLowerCase()} photos yet` : 'Your new shoot is ready'}</h2>
+                  <h2>{photos.length > 0 ? `No ${tab.toLowerCase()} photos yet` : 'Your new shoot is ready'}</h2>
                   <p>
-                    {photos.length
+                    {photos.length > 0
                       ? 'Star your favourites, then continue into the editor.'
                       : 'Add your photographs to the linked album to begin.'}
                   </p>
@@ -575,7 +585,7 @@
                     /></label
                   ><label class="phw-field"
                     ><span>Stage</span><select bind:value={details.stage} disabled={busy}
-                      >{#each shootStages as stage}<option>{stage}</option>{/each}</select
+                      >{#each shootStages as stage (stage)}<option>{stage}</option>{/each}</select
                     ></label
                   ><Button type="submit" disabled={busy || !!error}>Save details</Button>
                 </form>
@@ -609,9 +619,9 @@
                     <Button onclick={() => inspect(inspecting!)}>Retry versions</Button>{:else if versions}<h3>
                       Saved versions
                     </h3>
-                    {#if !versions.revisions.length}<p>
+                    {#if versions.revisions.length === 0}<p>
                         No saved develop versions yet.
-                      </p>{/if}{#each versions.revisions as version}<p>
+                      </p>{/if}{#each versions.revisions as version (version.revision)}<p>
                         {version.label ?? `Version ${version.revision}`} · {version.status}{version.isCurrent
                           ? ' · Current'
                           : ''}
@@ -636,7 +646,10 @@
           ><span>{listing.length} shoots</span>
         </div>
         <div class="phw-shoot-grid">
-          {#each listing as shoot (shoot.id)}<button class="phw-shoot-card" onclick={() => openShoot(shoot.id)}
+          {#each listing as shoot (shoot.id)}<button
+              type="button"
+              class="phw-shoot-card"
+              onclick={() => openShoot(shoot.id)}
               ><div class="phw-shoot-image">
                 {#if shoot.coverAssetId}<img
                     src={cover(shoot.coverAssetId)}
@@ -656,11 +669,11 @@
               </div></button
             >{/each}
         </div>
-        {#if !listing.length}<div class="phw-empty">
+        {#if listing.length === 0}<div class="phw-empty">
             <Icon icon={mdiCameraOutline} size="2rem" />
-            <h2>{workspace.shoots.length ? 'No shoots match that search' : 'Your shoots start here'}</h2>
+            <h2>{workspace.shoots.length > 0 ? 'No shoots match that search' : 'Your shoots start here'}</h2>
             <p>
-              {workspace.shoots.length
+              {workspace.shoots.length > 0
                 ? 'Try a client name, or start a new shoot.'
                 : 'Link an album you own to keep the shoot and its client details together.'}
             </p>
@@ -695,7 +708,7 @@
       >
       <label class="phw-field"
         ><span>Shoot type</span><select bind:value={draft.type} disabled={busy}
-          >{#each shootTypes as type}<option>{type}</option>{/each}</select
+          >{#each shootTypes as type (type)}<option>{type}</option>{/each}</select
         ></label
       >
       <label class="phw-field"
@@ -703,7 +716,7 @@
       >
       <label class="phw-field"
         ><span>Source album</span><select required bind:value={draft.albumId} disabled={busy}
-          ><option value="" disabled>Choose an album you own</option>{#each availableAlbums as album}<option
+          ><option value="" disabled>Choose an album you own</option>{#each availableAlbums as album (album.id)}<option
               value={album.id}>{album.albumName}</option
             >{/each}</select
         ></label
@@ -711,7 +724,7 @@
       <p class="phw-small">
         Photographs, ratings, stacks and saved edits stay in this album. Client and shoot details are private to you.
       </p>
-      {#if !availableAlbums.length}<p>Create an album or choose one not already linked to a shoot.</p>
+      {#if availableAlbums.length === 0}<p>Create an album or choose one not already linked to a shoot.</p>
         <a href={Route.newAlbum({ kind: 'album' })}>Create album</a>{/if}
       {#if error}<p role="alert">{error}</p>{/if}
       <div class="phw-dialog-actions">
