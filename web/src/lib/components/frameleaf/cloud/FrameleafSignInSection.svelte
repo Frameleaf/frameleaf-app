@@ -60,7 +60,10 @@
   const savedQuota = $derived(status?.signInInvitedStorageQuota ?? null);
   let quotaText = $derived(savedQuota === null ? '' : String(savedQuota));
   const quotaValue = $derived(quotaText.trim() === '' ? null : Number(quotaText.trim()));
-  const quotaValid = $derived(quotaValue === null || (Number.isSafeInteger(quotaValue) && quotaValue >= 0));
+  const quotaValid = $derived(
+    quotaValue === null ||
+      (/^\d+$/.test(quotaText.trim()) && Number.isSafeInteger(quotaValue) && quotaValue <= 1_000_000),
+  );
   const quotaChanged = $derived(!!status && quotaValid && quotaValue !== savedQuota);
   const saveQuota = () => save(() => cloudManager.setInvitedStorageQuota(quotaValue));
   const quotaId = `${buttonTextId}-quota`;

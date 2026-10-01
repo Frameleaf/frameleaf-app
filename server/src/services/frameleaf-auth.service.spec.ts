@@ -475,6 +475,19 @@ describe(FrameleafAuthService.name, () => {
         expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: null }));
       });
 
+      it('recognises the owner by the cloud link’s account when the server knows it', async () => {
+        setQuota(5);
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'fl-sub' });
+        newAccount();
+        await sut.exchangeToken({ token: await mint() }, loginDetails);
+        expect(mocks.user.create).toHaveBeenLastCalledWith(expect.objectContaining({ quotaSizeInBytes: null }));
+
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'someone-else' });
+        const token = await mint({ claims: { frameleaf_role: 'admin', frameleaf_access: 'owner' } });
+        await sut.exchangeToken({ token }, loginDetails);
+        expect(mocks.user.create).toHaveBeenLastCalledWith(expect.objectContaining({ quotaSizeInBytes: 5 * GiB }));
+      });
+
       it('leaves existing accounts unchanged', async () => {
         setQuota(5);
         const existing = UserFactory.create({ email: 'remote@example.test' });
