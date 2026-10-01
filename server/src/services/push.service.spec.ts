@@ -20,7 +20,7 @@ import { InstanceIdentityRepository } from 'src/repositories/instance-identity.r
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PushService } from 'src/services/push.service.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
-import { PushNotice, PushSendRequest, PushSendResult } from 'src/utils/frameleaf-push.js';
+import { PushNotice, PushSendRequest, PushSendResult, collapseIdOf } from 'src/utils/frameleaf-push.js';
 import { openPushEnvelope } from 'src/utils/push-crypto.js';
 import { FakeCloud, startFakeCloud, tokenAnswer } from 'test/fake-frameleaf-cloud.js';
 import { factory } from 'test/small.factory.js';
@@ -538,18 +538,19 @@ describe(PushService.name, () => {
           notice: expect.objectContaining({
             dedupeKey: undefined,
             delayMs: 600_000,
-            retry: { targets: [`${busy.id}:device:`], attempt: 2 },
+            retry: { targets: [`${busy.id}:device:`], attempt: 2, collapseId: collapseIdOf('album-update/1') },
           }),
         },
       });
 
-      // the retry goes to that target alone
+      // the retry goes to that target alone, with the first attempt's collapse id
       const retry = jobs.queue.mock.calls[0][0].data.notice;
       gateway.send.mockClear();
       gateway.send.mockResolvedValue({ status: 'retry' });
       await sut.handleDeliver({ notice: retry });
       expect(gateway.send).toHaveBeenCalledTimes(1);
       expect(gateway.send.mock.calls[0][1].token).toBe('apns-busy-0123456789abcdef0123456789abcdef');
+      expect(gateway.send.mock.calls[0][1].collapseId).toBe(collapseIdOf('album-update/1'));
       expect(jobs.queue).toHaveBeenLastCalledWith(
         expect.objectContaining({ data: { notice: expect.objectContaining({ delayMs: 120_000 }) } }),
       );
@@ -569,6 +570,17 @@ describe(PushService.name, () => {
       await expect(sut.handleDeliver({ notice: notice() })).resolves.toBe(JobStatus.Success);
       expect(jobs.queue).toHaveBeenCalledTimes(1);
       expect(jobs.queue.mock.calls[0][0].data.notice.retry.targets).toHaveLength(1);
+    });
+
+    it('waits as long as an unavailable gateway asks before retrying', async () => {
+      const { sut, devices, gateway, jobs } = newHarness();
+      devices.getDeliveryTargets.mockResolvedValue([device(newDeviceKey())]);
+      gateway.send.mockRejectedValueOnce(
+        new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 503, 'push unavailable', null, null, 3600),
+      );
+
+      await sut.handleDeliver({ notice: notice() });
+      expect(jobs.queue.mock.calls[0][0].data.notice.delayMs).toBe(3_600_000);
     });
 
     it('forgets a registered token the gateway could never take, without sending, and refuses one at registration', async () => {

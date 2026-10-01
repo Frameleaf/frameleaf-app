@@ -202,8 +202,11 @@ export type PushNotice = {
   dedupeKey?: string;
   /** How long to wait before delivering, so a burst becomes one notice. */
   delayMs?: number;
-  /** FL-302: a later attempt for only these targets (`deliveryKeyOf`), which the gateway asked to retry. */
-  retry?: { targets: string[]; attempt: number };
+  /**
+   * FL-302: a later attempt for only these targets (`deliveryKeyOf`), which the gateway asked to retry.
+   * It keeps the first attempt's collapse id, since the retry job no longer carries the dedupe key.
+   */
+  retry?: { targets: string[]; attempt: number; collapseId?: string };
 };
 
 /** The plaintext a device decrypts. */

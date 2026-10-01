@@ -61,6 +61,20 @@ describe('push device registry (FL-228)', () => {
     expect(await sut.getByUser(user.id)).toHaveLength(1);
   });
 
+  it('keeps the APNs environment of a development build, and changes it in place (FL-302)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { session } = await ctx.newSession({ userId: user.id });
+
+    await sut.upsert(registration(user.id, session.id, { apnsEnvironment: 'sandbox' }));
+    expect(await sut.getBySession(session.id)).toMatchObject({ apnsEnvironment: 'sandbox' });
+    const [target] = await sut.getDeliveryTargets([user.id]);
+    expect(target).toMatchObject({ apnsEnvironment: 'sandbox' });
+
+    await sut.update(session.id, { apnsEnvironment: null });
+    expect(await sut.getBySession(session.id)).toMatchObject({ apnsEnvironment: null });
+  });
+
   it('moves a push token that reappears under a new session instead of keeping two registrations', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

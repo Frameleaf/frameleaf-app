@@ -111,6 +111,20 @@ type PlannedMessage = {
 const deliveryKeyOf = ({ deviceId, kind, activityRowId }: Omit<PlannedMessage, 'request'>) =>
   `${deviceId}:${kind}:${activityRowId ?? ''}`;
 
+/** The collapse id of a notice: from its dedupe key, or the one its first attempt had. */
+const collapseIdOfNotice = (notice: Pick<PushNotice, 'dedupeKey' | 'retry'>) =>
+  notice.retry?.collapseId ?? collapseIdOf(notice.dedupeKey);
+
+/** A 429 or 503 from the gateway may say when to come back (`Retry-After`, or the error's `retryAfterSec`). */
+const retryAfterOf = (error: unknown): { retryAfterSec?: number } => {
+  if (!(error instanceof FrameleafCloudError)) {
+    return {};
+  }
+  const fromData = error.envelope?.data?.retryAfterSec;
+  const seconds = error.retryAfterSeconds ?? (typeof fromData === 'number' ? fromData : null);
+  return seconds && Number.isFinite(seconds) && seconds > 0 ? { retryAfterSec: Math.ceil(seconds) } : {};
+};
+
 /** Wait before retry `attempt` (2, 3, …): 30 s, 2 min, 8 min, …, or the gateway's own `retryAfterSec` when longer. */
 const retryDelayMs = (attempt: number, retryAfterSec?: number) =>
   Math.max(30_000 * 4 ** (attempt - 2), (retryAfterSec ?? 0) * 1000);
@@ -453,7 +467,10 @@ export class PushService {
           this.logger.warn(`Push ${notice.type}: the gateway refused a send: ${errorMessage(error)}`);
           results.push({
             entry,
-            result: status === null || status >= 500 || status === 429 ? { status: 'retry' } : 'rejected',
+            result:
+              status === null || status >= 500 || status === 429
+                ? { status: 'retry', ...retryAfterOf(error) }
+                : 'rejected',
           });
         }
       }
@@ -504,14 +521,18 @@ export class PushService {
             ...notice,
             dedupeKey: undefined,
             delayMs: retryDelayMs(attempt, retryAfterSec),
-            retry: { targets: again.map((entry) => deliveryKeyOf(entry)), attempt },
+            retry: {
+              targets: again.map((entry) => deliveryKeyOf(entry)),
+              attempt,
+              ...(collapseIdOfNotice(notice) && { collapseId: collapseIdOfNotice(notice) }),
+            },
           },
         },
       });
     }
     if (rejected > 0 || goneDevices.size > 0 || again.length > 0) {
       this.logger.warn(
-        `Push ${notice.type}: ${delivered.size} device(s) reached, ${rejected} target(s) refused, ${goneDevices.size} invalid token(s) removed, ${again.length} to retry${retrying ? '' : ' (given up)'}`,
+        `Push ${notice.type}: ${delivered.size} device(s) reached, ${rejected} target(s) refused, ${goneDevices.size} invalid token(s) removed, ${again.length} to retry${retrying || again.length === 0 ? '' : ' (given up)'}`,
       );
     }
     return JobStatus.Success;
@@ -568,7 +589,7 @@ export class PushService {
         : device.apnsEnvironment === 'sandbox'
           ? ('apns-sandbox' as const)
           : ('apns' as const);
-    const collapseId = collapseIdOf(notice.dedupeKey);
+    const collapseId = collapseIdOfNotice(notice);
     const planned: PlannedMessage[] = [];
     const progress = notice.activation;
     if (progress && device.platform === PushPlatform.Ios) {
