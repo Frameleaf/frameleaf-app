@@ -29,7 +29,7 @@ The script will perform the following actions:
 
 The web application and mobile app will be available at `http://<machine-ip-address>:2283`
 
-The directory which is used to store the library files is `./immich-app` relative to the current directory.
+The directory which is used to store the library files is `./frameleaf-app` relative to the current directory.
 
 :::tip
 For common next steps, see [Post Install Steps](/install/post-install.mdx).

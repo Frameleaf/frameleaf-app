@@ -10,7 +10,7 @@ Choose every ZIP file from one Takeout export. Each archive is uploaded in parts
 
 An archive is refused when your storage quota or the server's free space could not hold it.
 
-Administrators can import from a folder on the server instead of uploading, but only from a folder inside one of the locations the server operator permitted with `IMMICH_IMPORT_ROOTS`. Folders are read without following links, and never from the library's own storage.
+Administrators can import from a folder on the server instead of uploading, but only from a folder inside one of the locations the server operator permitted with `FRAMELEAF_IMPORT_ROOTS`. Folders are read without following links, and never from the library's own storage.
 
 ## Scan
 

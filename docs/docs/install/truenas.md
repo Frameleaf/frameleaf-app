@@ -56,7 +56,7 @@ To change or verify the ACL mode, go to the **Datasets** screen, select the **li
 
 1. Download [`docker-compose.yml`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml) and [`example.env`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env) from the latest [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases).
 2. In `docker-compose.yml`, replace `${UPLOAD_LOCATION}` with the path of your `data` dataset (for example `/mnt/tank/frameleaf/data`) and `${DB_DATA_LOCATION}` with the path of your `pgData` dataset (for example `/mnt/tank/frameleaf/pgData`).
-3. TrueNAS does not read a separate `.env` file. Remove the two `env_file` entries, then copy the values you need from `example.env` (at least `DB_PASSWORD`, `DB_USERNAME`, `DB_DATABASE_NAME` and `IMMICH_VERSION`) into an `environment` section of each service, and replace the matching `${...}` references in the file. Choose your own database password.
+3. TrueNAS does not read a separate `.env` file. Remove the two `env_file` entries, then copy the values you need from `example.env` (at least `DB_PASSWORD`, `DB_USERNAME`, `DB_DATABASE_NAME` and `FRAMELEAF_VERSION`) into an `environment` section of each service, and replace the matching `${...}` references in the file. Choose your own database password.
 4. In TrueNAS, go to **Apps**, click **Discover Apps**, open the menu next to **Custom App** and choose **Install via YAML**.
 5. Give the app a name (for example, `frameleaf`), paste the edited Compose file and click **Save**.
 6. When the app is running, open `http://<truenas-ip>:2283` and follow the [post-install steps](/install/post-install.mdx).
