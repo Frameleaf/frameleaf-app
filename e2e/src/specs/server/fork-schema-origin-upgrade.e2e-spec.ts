@@ -107,7 +107,8 @@ type FirstLaunchEvidence = {
   expected: 'taken' | 'skipped';
   copy: { filename: string; complete: boolean; forkSchemaStatements: number } | null;
   backups: string[];
-  skipLogged: boolean;
+  /** The backups the skip log lines name (the worker's skip and the boot's check before migrating). */
+  skippedFor: string[];
   observations: GettingReadyObservation[];
 };
 
@@ -122,11 +123,16 @@ describe.runIf(phase === 'origin-pre-migrator')(`${lane}: compatible fork pre-mi
     const preparing = evidence.observations.filter(({ status }) => status !== null);
 
     expect(preparing.length).toBeGreaterThan(0);
+    // Each observation makes four requests in turn, so the server can start listening, or hand over,
+    // between two of them ('000' is no answer). Whatever answered was the "Getting Ready…" worker.
+    const gettingReady = /^302 http:\/\/127\.0\.0\.1:\d+\/getting-ready\?continue=%2Fphotos$/;
     for (const observation of preparing) {
-      expect(observation.ping).toBe('503 5');
-      expect(observation.redirect).toMatch(/^302 http:\/\/127\.0\.0\.1:\d+\/getting-ready\?continue=%2Fphotos$/);
-      expect(observation.page).toBe(1);
+      expect(['503 5', '000 ']).toContain(observation.ping);
+      expect(observation.redirect === '000 ' || gettingReady.test(observation.redirect)).toBe(true);
     }
+    expect(
+      preparing.some(({ ping, redirect, page }) => ping === '503 5' && gettingReady.test(redirect) && page === 1),
+    ).toBe(true);
     expect(evidence.observations.at(-1)?.ping).toMatch(/^200/);
 
     const states = new Set(preparing.map(({ status }) => status!.state));
@@ -138,7 +144,10 @@ describe.runIf(phase === 'origin-pre-migrator')(`${lane}: compatible fork pre-mi
       });
       expect([...states].some((state) => ['backing-up', 'done', 'ready'].includes(state))).toBe(true);
       expect(states.has('skipped')).toBe(false);
-      expect(evidence.skipLogged).toBe(false);
+      // only the boot's own check before migrating, finding the copy just taken
+      for (const filename of evidence.skippedFor) {
+        expect(filename).toBe(evidence.copy!.filename);
+      }
     } else {
       expect(evidence.copy).toBeNull();
       expect(evidence.backups.some((name) => OFFICIAL_BACKUP.test(name))).toBe(true);
@@ -146,7 +155,7 @@ describe.runIf(phase === 'origin-pre-migrator')(`${lane}: compatible fork pre-mi
       expect(states.has('backing-up')).toBe(false);
       const skipped = preparing.find(({ status }) => status!.state === 'skipped')!.status!;
       expect(skipped.backup?.filename).toMatch(OFFICIAL_BACKUP);
-      expect(evidence.skipLogged).toBe(true);
+      expect(evidence.skippedFor[0]).toBe(skipped.backup?.filename);
     }
   });
 
