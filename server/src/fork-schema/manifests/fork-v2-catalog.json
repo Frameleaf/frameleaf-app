@@ -7787,6 +7787,110 @@
     {
       "definition": "integer|not null|||",
       "identity": "immich_fork.asset_develop_artifact.width"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_claim.cplAssetRecordName"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.icloud_claim.createdAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "immich_fork.icloud_claim.expiresAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_claim.holder"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_claim.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_claim.ownerId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_connection.accountHint"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_connection.unhealthySince"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.appleFingerprint"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_source_identity.assetId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.cloudChecksum"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.cloudIdentifier"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_source_identity.cplAssetRecordName"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.cplMasterRecordName"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.icloud_source_identity.deliveredAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_source_identity.deliveredBy"
+    },
+    {
+      "definition": "text|not null|''::text||",
+      "identity": "immich_fork.icloud_source_identity.editVersion"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_source_identity.id"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.lastAuditResult"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.lastVerifiedAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.library"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.libraryKey"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.matchStrength"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_source_identity.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_source_identity.role"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.icloud_source_identity.sha256"
     }
   ],
   "constraints": [
@@ -10213,6 +10317,50 @@
     {
       "definition": "PRIMARY KEY (\"assetId\", id)",
       "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_pkey"
+    },
+    {
+      "definition": "CHECK (holder ~ '^(icloud-sync|device):.+$'::text)",
+      "identity": "immich_fork.icloud_claim.icloud_claim_holder_check"
+    },
+    {
+      "definition": "UNIQUE (id)",
+      "identity": "immich_fork.icloud_claim.icloud_claim_id_key"
+    },
+    {
+      "definition": "PRIMARY KEY (\"ownerId\", \"cplAssetRecordName\")",
+      "identity": "immich_fork.icloud_claim.icloud_claim_pkey"
+    },
+    {
+      "definition": "CHECK (\"lastAuditResult\" = ANY (ARRAY['match'::text, 'mismatch'::text]))",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_audit_check"
+    },
+    {
+      "definition": "CHECK (\"deliveredBy\" ~ '^(icloud-sync|device):.+$'::text)",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_delivered_check"
+    },
+    {
+      "definition": "CHECK ((role = 'edit-render'::text) = (\"editVersion\" <> ''::text))",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_edit_check"
+    },
+    {
+      "definition": "UNIQUE (\"ownerId\", \"cplAssetRecordName\", role, \"editVersion\", \"assetId\")",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_key"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_pkey"
+    },
+    {
+      "definition": "CHECK (role = ANY (ARRAY['original'::text, 'live-motion'::text, 'raw-alternate'::text, 'edit-render'::text]))",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_role_check"
+    },
+    {
+      "definition": "CHECK (octet_length(sha256) = 32)",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_sha256_check"
+    },
+    {
+      "definition": "CHECK (\"matchStrength\" = ANY (ARRAY['exact'::text, 'corroborated'::text, 'hint'::text]))",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_strength_check"
     }
   ],
   "enums": [
@@ -10333,7 +10481,8 @@
     "0000000000209-StudioHdrIntermediates",
     "0000000000210-FrameleafTokenExchange",
     "0000000000211-FrameleafAccountAccess",
-    "0000000000212-AssetDevelopArtifacts"
+    "0000000000212-AssetDevelopArtifacts",
+    "0000000000213-ICloudSourceIdentity"
   ],
   "functions": [
     {
@@ -11447,6 +11596,10 @@
     {
       "definition": "CREATE OR REPLACE FUNCTION public.asset_backup_deletion_capture()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  INSERT INTO asset_backup_deletion (\"assetId\", \"ownerId\", \"deletedAt\", visibility, \"wasLocked\", checksum, \"checksumAlgorithm\", \"livePhotoVideoId\", \"evidenceVersion\", \"modernPrivacyEvidenceUnavailable\")\n  VALUES (OLD.id, OLD.\"ownerId\", clock_timestamp(), OLD.visibility::text,\n    EXISTS (SELECT 1 FROM asset_lock WHERE \"assetId\" = OLD.id)\n    OR (OLD.visibility::text = 'hidden' AND (\n      EXISTS (SELECT 1 FROM asset AS parent JOIN asset_lock ON asset_lock.\"assetId\" = parent.id\n        WHERE parent.\"livePhotoVideoId\" = OLD.id AND parent.\"ownerId\" = OLD.\"ownerId\")\n      OR EXISTS (SELECT 1 FROM asset_backup_deletion AS parent\n        WHERE parent.\"livePhotoVideoId\" = OLD.id AND parent.\"ownerId\" = OLD.\"ownerId\" AND parent.\"wasLocked\")\n    )),\n    OLD.checksum, OLD.\"checksumAlgorithm\"::text, OLD.\"livePhotoVideoId\", 1, true)\n  ON CONFLICT (\"assetId\") DO UPDATE SET\n    \"ownerId\" = EXCLUDED.\"ownerId\", \"deletedAt\" = EXCLUDED.\"deletedAt\", visibility = EXCLUDED.visibility,\n    \"wasLocked\" = EXCLUDED.\"wasLocked\", checksum = EXCLUDED.checksum, \"checksumAlgorithm\" = EXCLUDED.\"checksumAlgorithm\",\n    \"livePhotoVideoId\" = EXCLUDED.\"livePhotoVideoId\", \"evidenceVersion\" = EXCLUDED.\"evidenceVersion\",\n    \"modernPrivacyEvidenceUnavailable\" = EXCLUDED.\"modernPrivacyEvidenceUnavailable\";\n  RETURN OLD;\nEND$function$",
       "identity": "public.asset_backup_deletion_capture()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION immich_fork.icloud_connection_unhealthy_since()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF NEW.state = 'connected' THEN\n        NEW.\"unhealthySince\" := NULL;\n      ELSIF NEW.\"unhealthySince\" IS NULL THEN\n        NEW.\"unhealthySince\" := now();\n      END IF;\n      RETURN NEW;\n    END\n    $function$",
+      "identity": "immich_fork.icloud_connection_unhealthy_since()"
     }
   ],
   "indexes": [
@@ -14345,6 +14498,30 @@
     {
       "definition": "CREATE UNIQUE INDEX asset_develop_artifact_pkey ON immich_fork.asset_develop_artifact USING btree (\"assetId\", id)",
       "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_claim_id_key ON immich_fork.icloud_claim USING btree (id)",
+      "identity": "immich_fork.icloud_claim.icloud_claim_id_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_claim_pkey ON immich_fork.icloud_claim USING btree (\"ownerId\", \"cplAssetRecordName\")",
+      "identity": "immich_fork.icloud_claim.icloud_claim_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_source_identity_asset_idx ON immich_fork.icloud_source_identity USING btree (\"assetId\")",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_asset_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_source_identity_key ON immich_fork.icloud_source_identity USING btree (\"ownerId\", \"cplAssetRecordName\", role, \"editVersion\", \"assetId\")",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_source_identity_pkey ON immich_fork.icloud_source_identity USING btree (id)",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_source_identity_sha256_idx ON immich_fork.icloud_source_identity USING btree (\"ownerId\", sha256)",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_sha256_idx"
     }
   ],
   "migrationOverrides": [
@@ -15360,6 +15537,14 @@
     {
       "definition": "table",
       "identity": "immich_fork.asset_develop_artifact"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_claim"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_source_identity"
     }
   ],
   "triggers": [
@@ -15674,6 +15859,10 @@
     {
       "definition": "CREATE TRIGGER asset_backup_deletion_capture_trigger BEFORE DELETE ON asset FOR EACH ROW EXECUTE FUNCTION asset_backup_deletion_capture()",
       "identity": "public.asset.asset_backup_deletion_capture_trigger"
+    },
+    {
+      "definition": "CREATE TRIGGER icloud_connection_unhealthy_since BEFORE INSERT OR UPDATE OF state ON immich_fork.icloud_connection FOR EACH ROW EXECUTE FUNCTION immich_fork.icloud_connection_unhealthy_since()",
+      "identity": "immich_fork.icloud_connection.icloud_connection_unhealthy_since"
     }
   ]
 }
