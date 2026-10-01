@@ -9,6 +9,7 @@
   import MaintenanceRestoreConfirmDialog from '$lib/components/frameleaf/MaintenanceRestoreConfirmDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import { BackupFileStatus } from '$lib/constants';
+  import { isPreUpgradeBackup } from '$lib/frameleaf/getting-ready';
   import { backupFileVersion } from '$lib/frameleaf/maintenance-page';
   import { handleDeleteDatabaseBackup, handleDownloadDatabaseBackup } from '$lib/services/database-backups.service';
   import { locale } from '$lib/stores/preferences.store';
@@ -77,6 +78,10 @@
     </small>
   </div>
   <div class="mt-row-meta">
+    {#if isPreUpgradeBackup(filename)}
+      <!-- FL-295: the safety copy the first start took before upgrading; never rotated away -->
+      <span class="mt-status">{$t('admin.frameleaf_maintenance_backup_pre_upgrade')}</span>
+    {/if}
     {#if status === BackupFileStatus.OK}
       <span class="mt-status is-ok">{$t('admin.frameleaf_maintenance_backup_complete')}</span>
     {:else if status === BackupFileStatus.DifferentVersion}

@@ -119,6 +119,23 @@ describe('MaintenanceBackupRow', () => {
     );
   });
 
+  it('marks the safety copy kept from before the upgrade, and says so before a restore (FL-295)', async () => {
+    renderWithTooltips(MaintenanceBackupRow, {
+      expectedVersion: '1.2.3',
+      filename: 'immich-db-backup-20260324T110000-pre-upgrade-v1.2.3-pg14.sql.gz',
+      filesize: 1024,
+      timezone: 'UTC',
+    });
+
+    expect(screen.getByText('Before upgrade')).toBeInTheDocument();
+    // the version still reads from the name, so the copy counts as from this server
+    expect(screen.getByText('Complete')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
+
+    expect(screen.getByText(/^Before upgrade backup from .+ · 1 KiB$/)).toBeInTheDocument();
+  });
+
   it('says an older backup is migrated, and keeps Restore disabled for a backup from a newer server (FL-81)', async () => {
     const { unmount } = renderWithTooltips(MaintenanceBackupRow, {
       expectedVersion: '1.2.3',
