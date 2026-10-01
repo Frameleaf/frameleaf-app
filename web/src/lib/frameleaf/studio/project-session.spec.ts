@@ -1172,9 +1172,18 @@ describe('studio project session', () => {
       resolveSave(saved(4));
       await flushPromises();
 
-      expect(api.releaseLease).toHaveBeenCalledWith('p-1', { clientId: 'tab-a' });
+      expect(api.releaseLease).toHaveBeenCalledWith('p-1', { clientId: 'tab-a' }, { keepalive: false });
       expect(timers.pending()).toEqual([]);
       expect(states.length).toBe(before);
+    });
+
+    it('releases with a keepalive request when the page is unloading, so a reload can take the lease', async () => {
+      const session = create();
+      await session.open();
+
+      await session.dispose({ keepalive: true });
+
+      expect(api.releaseLease).toHaveBeenCalledWith('p-1', { clientId: 'tab-a' }, { keepalive: true });
     });
   });
 });
