@@ -1,6 +1,11 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { KnownAssetDevelopRecipeSchema } from 'src/dtos/asset-develop.dto.js';
+import {
+  ASSET_DEVELOP_MAX_MASKS,
+  AssetDevelopMaskFields,
+  AssetDevelopMaskKind,
+  KnownAssetDevelopRecipeFields,
+} from 'src/dtos/asset-develop.dto.js';
 import { ApiCustomExtension } from 'src/enum.js';
 
 /**
@@ -11,14 +16,29 @@ import { ApiCustomExtension } from 'src/enum.js';
 /** The most presets one account keeps; a preset is a few hundred bytes, the cap only stops abuse. */
 export const DEVELOP_PRESET_MAX = 200;
 
+/** FL-233: a preset carries only the mask kinds that fit any photo (never brush or bitmap masks). */
+const DevelopPresetMaskSchema = AssetDevelopMaskFields.omit({ strokes: true, artifact: true, detector: true })
+  .extend({
+    kind: z
+      .enum([AssetDevelopMaskKind.Radial, AssetDevelopMaskKind.Linear])
+      .describe('Shape of a selective adjustment mask')
+      .meta({ id: 'DevelopPresetMaskKind' }),
+  })
+  .refine((mask) => mask.kind !== AssetDevelopMaskKind.Linear || mask.x !== mask.endX || mask.y !== mask.endY, {
+    error: 'A linear mask needs different start and end points',
+  })
+  .meta({ id: 'DevelopPresetMask' });
+
 /**
- * What a preset applies: every develop slider, the look and its strength, and the selective
- * masks. Geometry (crop, straighten, turns, flips) is never part of a preset, exactly like Copy
- * and Paste adjustments, so applying one never reframes a photo.
+ * What a preset applies: every develop slider (Brilliance included, FL-233), the look and its
+ * strength, and the radial and linear masks. Geometry (crop, straighten, turns, flips) is never part
+ * of a preset, exactly like Copy and Paste adjustments, so applying one never reframes a photo; nor
+ * are brush and subject/sky/background masks or Clean Up, which belong to one photo's content.
  */
-export const DevelopPresetSettingsSchema = KnownAssetDevelopRecipeSchema.pick({
+export const DevelopPresetSettingsSchema = KnownAssetDevelopRecipeFields.pick({
   exposure: true,
   contrast: true,
+  brilliance: true,
   highlights: true,
   shadows: true,
   whites: true,
@@ -35,8 +55,18 @@ export const DevelopPresetSettingsSchema = KnownAssetDevelopRecipeSchema.pick({
   noiseReduction: true,
   preset: true,
   presetStrength: true,
-  masks: true,
-}).meta({ id: 'DevelopPresetSettingsDto' });
+})
+  .extend({
+    masks: z
+      .array(DevelopPresetMaskSchema)
+      .max(ASSET_DEVELOP_MAX_MASKS)
+      .default([])
+      .refine((masks) => new Set(masks.map((mask) => mask.id)).size === masks.length, {
+        error: 'Mask identifiers must be unique',
+      })
+      .describe('Radial and linear selective adjustments, applied in order after the global develop'),
+  })
+  .meta({ id: 'DevelopPresetSettingsDto' });
 
 export type DevelopPresetSettings = z.infer<typeof DevelopPresetSettingsSchema>;
 

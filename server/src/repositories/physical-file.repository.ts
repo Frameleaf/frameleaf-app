@@ -1013,8 +1013,9 @@ export class PhysicalFileRepository {
     // exists holds nothing: its row is swept with the asset and must not pin the file forever.
     // Outputs a Frameleaf feature still serves are owned by their rows the same way: a Studio
     // export version, a preservation package not yet removed, and a restoration's preview or
-    // result (each clears its path before queueing the file's deletion), and a Studio HDR
-    // intermediate (FL-97; its row goes before its file is queued).
+    // result (each clears its path before queueing the file's deletion), a Studio HDR
+    // intermediate (FL-97; its row goes before its file is queued), and a develop artifact (FL-233:
+    // released with its row, so a re-upload that records the same file again keeps it).
     const retainedRefs = await sql<{ count: string }>`SELECT count(*) FROM (
       SELECT 1 FROM immich_fork.asset_physical_file mapping
       JOIN public.asset asset ON asset.id = mapping."assetId"
@@ -1028,6 +1029,7 @@ export class PhysicalFileRepository {
         )
       UNION ALL SELECT 1 FROM public.studio_export_version version WHERE version."outputPath" = ${path}
       UNION ALL SELECT 1 FROM immich_fork.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
+      UNION ALL SELECT 1 FROM immich_fork.asset_develop_artifact artifact WHERE artifact.path = ${path}
       UNION ALL SELECT 1 FROM public.preservation_package package
       WHERE package.path = ${path} AND package."removedAt" IS NULL
       UNION ALL SELECT 1 FROM public.asset_restoration restoration
@@ -1112,7 +1114,8 @@ export class PhysicalFileRepository {
    * FL-169: `removedAssetId` names an asset whose removal queued this delete inside its transaction
    * while holding this path's lock. Holding the lock here means that transaction has ended; if the
    * asset still exists it rolled back, and the path is kept even when no counted row names it (a
-   * video duplicate frame, a storage reservation, a develop revision output).
+   * video duplicate frame, a storage reservation, a develop revision output: those are not counted
+   * by `countPathReferencesIn`, which is why the asset's survival keeps them).
    */
   async deleteUnreferencedPath(
     path: string,

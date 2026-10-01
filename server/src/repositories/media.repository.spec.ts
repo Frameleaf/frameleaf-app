@@ -349,6 +349,43 @@ describe(MediaRepository.name, () => {
     });
   });
 
+  describe('develop artifacts (FL-233)', () => {
+    it('stores a mask as greyscale PNG and a fill with alpha, identically every time, and decodes them', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'develop-artifact-'));
+      try {
+        const input = join(dir, 'in.png');
+        writeFileSync(
+          input,
+          await sharp({
+            create: { width: 4, height: 3, channels: 4, background: { r: 200, g: 100, b: 50, alpha: 0.5 } },
+          })
+            .png()
+            .toBuffer(),
+        );
+        const mask = await sut.normalizeDevelopArtifact(input, 'mask');
+        expect(mask).toMatchObject({ width: 4, height: 3 });
+        expect((await sharp(mask.data).metadata()).channels).toBe(1);
+        expect((await sut.normalizeDevelopArtifact(input, 'mask')).data).toEqual(mask.data);
+
+        const fill = await sut.normalizeDevelopArtifact(input, 'fill');
+        expect((await sharp(fill.data).metadata()).channels).toBe(4);
+
+        const stored = join(dir, 'fill.png');
+        writeFileSync(stored, fill.data);
+        const decoded = await sut.decodeDevelopArtifact(stored, 'fill');
+        expect(decoded).toMatchObject({ width: 4, height: 3, channels: 4 });
+        expect([...decoded.data.subarray(0, 4)]).toEqual([200, 100, 50, 128]);
+
+        writeFileSync(stored, mask.data);
+        const grey = await sut.decodeDevelopArtifact(stored, 'mask');
+        expect(grey).toMatchObject({ width: 4, height: 3, channels: 1 });
+        expect(grey.data).toHaveLength(12);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('generateThumbnail', () => {
     it('should process random Authentik thumbnail image', async () => {
       const response = await fetch(

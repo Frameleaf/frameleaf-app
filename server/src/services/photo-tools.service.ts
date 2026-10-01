@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetDevelopMaskKind } from 'src/dtos/asset-develop.dto.js';
 import {
   DEVELOP_PRESET_MAX,
   DevelopPresetCreateDto,
@@ -10,7 +11,7 @@ import {
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type DevelopPreset, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { asDateTimeString } from 'src/utils/date.js';
-import { DEVELOP_SLIDER_KEYS, normalizeDevelopRecipe } from 'src/utils/develop-recipe.js';
+import { STILL_SLIDER_KEYS, normalizeDevelopRecipe } from 'src/utils/develop-recipe.js';
 
 /**
  * Reusable develop presets (FL-64). A preset is a named set of develop settings — sliders, look,
@@ -104,13 +105,18 @@ export class PhotoToolsService {
 export function normalizePresetSettings(settings: Partial<DevelopPresetSettings> | null | undefined) {
   const recipe = normalizeDevelopRecipe(settings ?? {});
   const picked: DevelopPresetSettings = {
-    ...(Object.fromEntries(DEVELOP_SLIDER_KEYS.map((key) => [key, recipe[key]])) as Pick<
+    ...(Object.fromEntries(STILL_SLIDER_KEYS.map((key) => [key, recipe[key]])) as Pick<
       DevelopPresetSettings,
-      (typeof DEVELOP_SLIDER_KEYS)[number]
+      (typeof STILL_SLIDER_KEYS)[number]
     >),
     preset: recipe.preset,
     presetStrength: recipe.presetStrength,
-    masks: recipe.masks,
+    // FL-233: a brush stroke or a subject/sky/background bitmap belongs to one photo's content
+    masks: recipe.masks
+      .filter((mask) => mask.kind === AssetDevelopMaskKind.Radial || mask.kind === AssetDevelopMaskKind.Linear)
+      .map(
+        ({ strokes: _strokes, artifact: _artifact, detector: _detector, ...mask }) => mask,
+      ) as DevelopPresetSettings['masks'],
   };
   return picked;
 }
