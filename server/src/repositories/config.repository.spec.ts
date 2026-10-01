@@ -435,6 +435,11 @@ describe('getEnv', () => {
       process.env.FRAMELEAF_WORKERS_INCLUDE = 'api,microservices,randomservice';
       expect(getEnv).toThrowError('Invalid worker(s) found: api,microservices,randomservice');
     });
+
+    it('refuses the "Getting Ready…" worker, which only the supervisor starts (FL-295)', () => {
+      process.env.FRAMELEAF_WORKERS_INCLUDE = 'api,first-launch';
+      expect(getEnv).toThrowError('Invalid worker(s) found: api,first-launch');
+    });
   });
 
   describe('network', () => {
