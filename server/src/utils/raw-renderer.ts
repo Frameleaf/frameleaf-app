@@ -1,8 +1,5 @@
-import { execFile as execFileCallback } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
-import { promisify } from 'node:util';
-
-const execFile = promisify(execFileCallback);
 const RAW_RENDER_TIMEOUT_MS = 120_000;
 // ponytail: 256 MiB TIFF ceiling; raise with qualified high-resolution camera fixtures.
 const RAW_RENDER_MAX_BYTES = 256 * 1024 * 1024;
@@ -36,18 +33,50 @@ export async function renderRawWithLibRaw(input: string, signal?: AbortSignal): 
     }
     // The absolute binary is built from the same pinned source as the server's LibRaw library.
     // stdout avoids temporary files and any derivative beside the immutable original.
-    const { stdout, stderr } = await execFile(
-      '/usr/local/bin/dcraw_emu',
-      ['-T', '-6', '-w', '-o', '1', '-Z', '-', resolve(input)],
-      {
-        encoding: 'buffer',
-        timeout: RAW_RENDER_TIMEOUT_MS,
-        killSignal: 'SIGKILL',
-        signal,
-        maxBuffer: RAW_RENDER_MAX_BYTES,
-        env: { ...process.env, LC_ALL: 'C', OMP_NUM_THREADS: '1' },
-      },
-    );
+    const { stdout, stderr } = await new Promise<{ stdout: Buffer; stderr: Buffer }>((resolveOutput, reject) => {
+      let failure: unknown;
+      let output: { stdout: Buffer; stderr: Buffer } | undefined;
+      const child = execFile(
+        '/usr/local/bin/dcraw_emu',
+        ['-T', '-6', '-w', '-o', '1', '-Z', '-', resolve(input)],
+        {
+          encoding: 'buffer',
+          timeout: RAW_RENDER_TIMEOUT_MS,
+          killSignal: 'SIGKILL',
+          maxBuffer: RAW_RENDER_MAX_BYTES,
+          env: { ...process.env, LC_ALL: 'C', OMP_NUM_THREADS: '1' },
+        },
+        (error, stdout, stderr) => {
+          failure = error;
+          if (error) {
+            Object.assign(error, { stdout, stderr });
+          }
+          output = { stdout, stderr };
+        },
+      );
+      // Node's native AbortSignal can invoke the execFile callback before close and clear its deadline.
+      // Own cancellation instead, and retain admission until the child and its streams have closed.
+      const abort = () => {
+        child.kill('SIGKILL');
+      };
+      child.once('close', () => {
+        signal?.removeEventListener('abort', abort);
+        if (signal?.aborted) {
+          reject(new RawRenderError('cancelled', 'ABORT_ERR', signal.reason));
+        } else if (failure) {
+          reject(failure);
+        } else if (output) {
+          resolveOutput(output);
+        } else {
+          reject(new Error('RAW decoder closed without a result'));
+        }
+      });
+      signal?.addEventListener('abort', abort, { once: true });
+      // Cancellation may arrive while execFile is creating the child, before the listener is installed.
+      if (signal?.aborted) {
+        abort();
+      }
+    });
     if (signal?.aborted) {
       throw new RawRenderError('cancelled', 'ABORT_ERR', signal.reason);
     }
