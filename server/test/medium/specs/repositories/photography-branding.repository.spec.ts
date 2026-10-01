@@ -5,8 +5,9 @@ import { PhotographyWorkspaceRepository } from 'src/repositories/photography-wor
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getKyselyDB } from 'test/utils.js';
 import { newUuid } from 'test/small.factory.js';
+import { getKyselyDB } from 'test/utils.js';
+
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();

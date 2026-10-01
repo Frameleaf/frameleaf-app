@@ -34,7 +34,7 @@ export type Photo = {
 export type PhotoPage = { nextCursor: string | null; photos: Photo[] };
 
 // Reuse the configured SDK transport, headers and base URL until SDK generation adds these new routes.
-const request = async <T,>(path: string, method = 'GET', body?: unknown): Promise<T> => {
+const request = async <T>(path: string, method = 'GET', body?: unknown): Promise<T> => {
   const headers = new Headers(defaults.headers as HeadersInit);
   headers.set('Accept', 'application/json');
   if (body !== undefined) {

@@ -1,4 +1,5 @@
 import { loadPhotos, loadWorkspace, ratePhoto, saveWorkspace, type Workspace } from './api';
+
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('@immich/sdk', () => ({
   defaults: { fetch: transport.fetch, headers: { 'x-test-header': 'configured' } },
@@ -26,9 +27,7 @@ it('reuses configured transport and removes hydrated fields from CAS writes', as
       },
     ],
   };
-  transport.fetch.mockResolvedValue(
-    new Response(JSON.stringify(stored), { headers: { 'Content-Type': 'application/json' } }),
-  );
+  transport.fetch.mockResolvedValue(Response.json(stored, { headers: { 'Content-Type': 'application/json' } }));
   await expect(saveWorkspace(stored)).resolves.toEqual(stored);
   const [url, options] = transport.fetch.mock.calls[0];
   expect(url).toBe('/custom-api/photography/shoots');
@@ -51,7 +50,7 @@ it('reuses configured transport and removes hydrated fields from CAS writes', as
 });
 it('preserves cursor encoding and sends culling to the shoot-scoped endpoint', async () => {
   transport.fetch
-    .mockResolvedValueOnce(new Response(JSON.stringify({ photos: [], nextCursor: null })))
+    .mockResolvedValueOnce(Response.json({ photos: [], nextCursor: null }))
     .mockResolvedValueOnce(new Response(null, { status: 204 }));
   await loadPhotos('shoot', 'a+/b=');
   expect(transport.fetch.mock.calls[0][0]).toBe('/custom-api/photography/shoots/shoot/photos?cursor=a%2B%2Fb%3D');
@@ -83,9 +82,7 @@ it('uses private branding routes and preserves the distinction between omitted a
     watermarkPosition: 'bottom-right' as const,
     watermarkSize: 6,
   };
-  transport.fetch.mockImplementation(
-    async () => new Response(JSON.stringify({ revision: 'new', brand, logoUnavailable: true })),
-  );
+  transport.fetch.mockImplementation(async () => Response.json({ revision: 'new', brand, logoUnavailable: true }));
   await loadBrand();
   expect(transport.fetch.mock.calls[0][0]).toBe('/custom-api/photography/shoots/branding');
   await saveBrand('loaded', brand);
