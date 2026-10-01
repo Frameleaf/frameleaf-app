@@ -7751,6 +7751,42 @@
     {
       "definition": "bytea|nullable|||",
       "identity": "public.asset_upload_resource.verifiedChecksum"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.assetId"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.bytes"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.asset_develop_artifact.createdAt"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.height"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.id"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.kind"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.path"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.width"
     }
   ],
   "constraints": [
@@ -10165,6 +10201,18 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.asset_upload_resource.asset_upload_resource_pkey"
+    },
+    {
+      "definition": "CHECK (id ~ '^[0-9a-f]{64}$'::text)",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_id_check"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['mask'::text, 'fill'::text]))",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"assetId\", id)",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_pkey"
     }
   ],
   "enums": [
@@ -10284,7 +10332,8 @@
     "0000000000208-StudioProjectImports",
     "0000000000209-StudioHdrIntermediates",
     "0000000000210-FrameleafTokenExchange",
-    "0000000000211-FrameleafAccountAccess"
+    "0000000000211-FrameleafAccountAccess",
+    "0000000000212-AssetDevelopArtifacts"
   ],
   "functions": [
     {
@@ -14284,6 +14333,18 @@
     {
       "definition": "CREATE UNIQUE INDEX asset_upload_resource_pkey ON public.asset_upload_resource USING btree (id)",
       "identity": "public.asset_upload_resource.asset_upload_resource_pkey"
+    },
+    {
+      "definition": "CREATE INDEX asset_develop_artifact_owner_idx ON immich_fork.asset_develop_artifact USING btree (\"ownerId\")",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_owner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_develop_artifact_path_key ON immich_fork.asset_develop_artifact USING btree (path)",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_path_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_develop_artifact_pkey ON immich_fork.asset_develop_artifact USING btree (\"assetId\", id)",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_pkey"
     }
   ],
   "migrationOverrides": [
@@ -15295,6 +15356,10 @@
     {
       "definition": "table",
       "identity": "public.asset_upload_resource"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.asset_develop_artifact"
     }
   ],
   "triggers": [

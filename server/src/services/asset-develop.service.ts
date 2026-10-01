@@ -10,6 +10,9 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   ASSET_DEVELOP_RECIPE_VERSION,
+  AssetDevelopArtifactKind,
+  AssetDevelopArtifactResponseDto,
+  AssetDevelopArtifactUploadDto,
   AssetDevelopFileKind,
   AssetDevelopPreviewDto,
   AssetDevelopResponseDto,
@@ -48,16 +51,24 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
 import { DARKTABLE_RENDERER_VERSION, renderDarktable } from 'src/utils/darktable-renderer.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import {
+  ARTIFACT_ID,
+  type DevelopBitmap,
+  applyDevelopCleanup,
+  developCleanupArtifacts,
+} from 'src/utils/develop-cleanup.js';
 import { assertRenderableDevelopRecipe, developEnvelope, renderDevelopProjection } from 'src/utils/develop-envelope.js';
 import {
   DEVELOP_RENDERER_VERSION,
   applyDevelopMasks,
   applyDevelopTone,
   defaultDevelopRecipe,
+  developMaskArtifacts,
   effectiveDevelop,
   maskMappingFor,
   planDevelopDetail,
@@ -85,6 +96,39 @@ export const DEVELOP_IMPORT_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.tif
  * a live render refreshes it well inside this window.
  */
 export const DEVELOP_RENDER_LEASE_MS = 10 * 60 * 1000;
+
+/**
+ * FL-233: develop artifact bounds. A mask covers the whole original, so it is never larger than the
+ * original (nor than `MASK_MAX_SIDE` when the original's size is unknown); a fill covers one Clean Up
+ * area. A photo keeps at most `PER_ASSET` artifacts; one no saved version references is released
+ * after `UNREFERENCED_GRACE_MS`.
+ */
+export const DEVELOP_ARTIFACT_MAX_BYTES = 64 * 1024 ** 2;
+export const DEVELOP_ARTIFACT_MASK_MAX_SIDE = 8192;
+export const DEVELOP_ARTIFACT_FILL_MAX_SIDE = 4096;
+export const DEVELOP_ARTIFACT_FILL_MAX_PIXELS = 16_000_000;
+export const DEVELOP_ARTIFACT_PER_ASSET = 64;
+export const DEVELOP_ARTIFACT_UNREFERENCED_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * FL-233: where a develop artifact of an asset is kept: beside its rendered versions, named by the
+ * asset and the SHA-256 of the stored PNG (never a path a client chose).
+ */
+export const developArtifactPath = (asset: { id: string; ownerId: string }, artifactId: string) => {
+  if (!ARTIFACT_ID.test(artifactId)) {
+    throw new BadRequestException('Invalid develop artifact');
+  }
+  return path.join(
+    StorageCore.getNestedFolder(StorageFolder.Thumbnails, asset.ownerId, asset.id),
+    `${asset.id}_develop_artifact_${artifactId}.png`,
+  );
+};
+
+const missingArtifact = () =>
+  new BadRequestException({
+    message: 'This recipe uses a develop artifact that was not uploaded for this photo',
+    code: 'develop_artifact_missing',
+  });
 
 /** Where uploaded developed files wait while they are checked; never a library or upload folder. */
 export const developImportStagingFolder = (ownerId: string) =>
@@ -125,6 +169,7 @@ export class AssetDevelopService {
     private storageRepository: StorageRepository,
     private systemMetadataRepository: SystemMetadataRepository,
     private mediaOperationRepository: MediaOperationRepository,
+    private userRepository: UserRepository,
   ) {
     this.logger.setContext(AssetDevelopService.name);
     this.editOperations = new EditOperationTracker(mediaOperationRepository, jobRepository, logger);
@@ -144,7 +189,10 @@ export class AssetDevelopService {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
     const recipe = developEnvelope(dto.recipe);
-    if (dto.render && !dto.sourceRevisionId) assertRenderableDevelopRecipe(recipe);
+    if (dto.render && !dto.sourceRevisionId) {
+      assertRenderableDevelopRecipe(recipe);
+      await this.requireArtifacts(asset, recipe);
+    }
     const revision = await this.assetDevelopRepository.create({
       assetId,
       ownerId: asset.ownerId,
@@ -166,7 +214,10 @@ export class AssetDevelopService {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
     const revision = await this.requireRevision(assetId, revisionId);
-    if (revision.kind === AssetDevelopRevisionKind.Recipe) assertRenderableDevelopRecipe(revision.recipe);
+    if (revision.kind === AssetDevelopRevisionKind.Recipe) {
+      assertRenderableDevelopRecipe(revision.recipe);
+      await this.requireArtifacts(asset, revision.recipe);
+    }
     if (
       revision.status === AssetDevelopRevisionStatus.Queued ||
       revision.status === AssetDevelopRevisionStatus.Rendering
@@ -234,7 +285,7 @@ export class AssetDevelopService {
     const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe) : undefined;
     // Legacy recipes decode at preview scale; native previews share the full-resolution final pipeline.
     const decoded = native ?? (await this.decodeSource(source, image, dto.size * 2));
-    const rendered = native ?? (await this.renderRecipe(decoded, renderDevelopProjection(dto.recipe), 0));
+    const rendered = native ?? (await this.renderRecipe(decoded, renderDevelopProjection(dto.recipe), 0, source));
     const format = image.preview.format;
     const buffer = await this.mediaRepository.encodeDevelopOutput(rendered.data, rendered.info, {
       detail: rendered.detail,
@@ -624,6 +675,148 @@ export class AssetDevelopService {
   @OnEvent({ name: 'AssetDelete' })
   async onAssetDelete({ assetId }: ArgOf<'AssetDelete'>) {
     await this.assetDevelopRepository.releaseRemovedAssetRevisions((files) => this.queueFileDelete(files), assetId);
+    // FL-233: the asset's develop artifacts go with it
+    await this.assetDevelopRepository.releaseArtifacts((files) => this.queueFileDelete(files), { assetId });
+  }
+
+  /**
+   * FL-233: `POST assets/:id/develop/artifacts`: keep a mask bitmap or a generated fill a client
+   * computed for this photo, so recipes can reference it by its SHA-256 and every client and the
+   * server render the same result. Stored normalized (orientation applied, metadata dropped, PNG);
+   * uploading the same bitmap again returns the same id. The original is never touched.
+   */
+  async uploadArtifact(
+    auth: AuthDto,
+    assetId: string,
+    dto: AssetDevelopArtifactUploadDto,
+    file: ImportedFile | undefined,
+  ): Promise<AssetDevelopArtifactResponseDto> {
+    if (!file?.path) {
+      throw new BadRequestException('Choose the bitmap to upload');
+    }
+    try {
+      await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
+      const asset = await this.requireEditableStill(assetId);
+      if (file.size === 0 || file.size > DEVELOP_ARTIFACT_MAX_BYTES) {
+        throw new BadRequestException('The bitmap is empty or larger than a develop artifact may be');
+      }
+      const probe = await this.mediaRepository.getImageMetadata(file.path).catch(() => null);
+      if (!probe || !(probe.width > 0 && probe.height > 0) || !this.artifactSizeAllowed(asset, dto.kind, probe)) {
+        throw new BadRequestException(
+          dto.kind === AssetDevelopArtifactKind.Mask
+            ? 'A mask must be a readable bitmap no larger than the original'
+            : `A fill must be a readable bitmap of at most ${DEVELOP_ARTIFACT_FILL_MAX_SIDE} pixels a side`,
+        );
+      }
+      const normalized = await this.mediaRepository.normalizeDevelopArtifact(file.path, dto.kind);
+      const id = this.cryptoRepository.hashSha256(normalized.data).toString('hex');
+      const [existing] = await this.assetDevelopRepository.getArtifacts(asset.id, [id]);
+      if (existing) {
+        return { id, kind: existing.kind as AssetDevelopArtifactKind, width: existing.width, height: existing.height };
+      }
+      const usage = await this.assetDevelopRepository.getArtifactUsage(asset.id, asset.ownerId);
+      if (usage.assetCount >= DEVELOP_ARTIFACT_PER_ASSET) {
+        throw new BadRequestException({
+          message:
+            'This photo has as many edit masks and fills as it may keep (64); ones no saved version uses are released a week after their last use',
+          code: 'develop_artifact_limit',
+        });
+      }
+      const owner = await this.userRepository.get(asset.ownerId, {});
+      if (
+        owner?.quotaSizeInBytes !== null &&
+        owner?.quotaSizeInBytes !== undefined &&
+        Number(owner.quotaUsageInBytes) + usage.ownerBytes + normalized.data.length > Number(owner.quotaSizeInBytes)
+      ) {
+        throw new BadRequestException({ message: 'Your storage is full', code: 'develop_artifact_quota' });
+      }
+      const target = developArtifactPath(asset, id);
+      this.storageRepository.mkdirSync(path.dirname(target));
+      try {
+        await this.storageRepository.createFile(target, normalized.data);
+      } catch (error: any) {
+        // the same bitmap uploaded twice at once: the first one is kept
+        if (error?.code !== 'EEXIST') {
+          throw error;
+        }
+      }
+      await this.assetDevelopRepository.addArtifact({
+        assetId: asset.id,
+        id,
+        ownerId: asset.ownerId,
+        kind: dto.kind,
+        path: target,
+        bytes: normalized.data.length,
+        width: normalized.width,
+        height: normalized.height,
+      });
+      // a deletion queued by an earlier release may have run between finding the file and recording
+      // it; the recorded row now protects the path, so write the file again if it went
+      if (!(await this.storageRepository.checkFileExists(target))) {
+        await this.storageRepository.createFile(target, normalized.data).catch((error: any) => {
+          if (error?.code !== 'EEXIST') {
+            throw error;
+          }
+        });
+      }
+      return { id, kind: dto.kind, width: normalized.width, height: normalized.height };
+    } finally {
+      await this.discard([file.path]);
+    }
+  }
+
+  /** FL-233: a mask no larger than the original (either way round), a fill within the fill bounds. */
+  private artifactSizeAllowed(
+    asset: { exifInfo?: { exifImageWidth?: number | null; exifImageHeight?: number | null } | null },
+    kind: AssetDevelopArtifactKind,
+    size: { width: number; height: number },
+  ) {
+    const long = Math.max(size.width, size.height);
+    const short = Math.min(size.width, size.height);
+    if (kind === AssetDevelopArtifactKind.Fill) {
+      return long <= DEVELOP_ARTIFACT_FILL_MAX_SIDE && size.width * size.height <= DEVELOP_ARTIFACT_FILL_MAX_PIXELS;
+    }
+    const width = asset.exifInfo?.exifImageWidth ?? 0;
+    const height = asset.exifInfo?.exifImageHeight ?? 0;
+    if (width > 0 && height > 0) {
+      return long <= Math.max(width, height) && short <= Math.min(width, height);
+    }
+    return long <= DEVELOP_ARTIFACT_MASK_MAX_SIDE;
+  }
+
+  /** FL-233: refuse a recipe whose masks or Clean Up reference an artifact this photo does not have. */
+  private async requireArtifacts(asset: { id: string; ownerId: string }, recipe: unknown) {
+    const projection = renderDevelopProjection(recipe);
+    if (projection.version !== ASSET_DEVELOP_RECIPE_VERSION) {
+      return;
+    }
+    const ids = [
+      ...developMaskArtifacts(projection.masks),
+      ...developCleanupArtifacts((projection.cleanup ?? []).filter((op) => op.enabled)),
+    ];
+    const wanted = [...new Set(ids)];
+    const stored = await this.assetDevelopRepository.getArtifacts(asset.id, wanted);
+    if (stored.length !== wanted.length) {
+      throw missingArtifact();
+    }
+  }
+
+  /** FL-233: decode the artifacts a render needs; a missing one refuses the render. */
+  private async loadArtifacts(
+    asset: { id: string; ownerId: string },
+    ids: string[],
+    kind: AssetDevelopArtifactKind,
+  ): Promise<Map<string, DevelopBitmap>> {
+    const bitmaps = new Map<string, DevelopBitmap>();
+    const wanted = [...new Set(ids)];
+    const stored = await this.assetDevelopRepository.getArtifacts(asset.id, wanted);
+    if (stored.length !== wanted.length || stored.some((artifact) => artifact.kind !== kind)) {
+      throw missingArtifact();
+    }
+    for (const artifact of stored) {
+      bitmaps.set(artifact.id, await this.mediaRepository.decodeDevelopArtifact(artifact.path, kind));
+    }
+    return bitmaps;
   }
 
   /** FL-179: revisions of removed assets that were left while fork writes were refused. */
@@ -634,6 +827,14 @@ export class AssetDevelopService {
     } catch (error: any) {
       this.logger.warn(`Develop revision cleanup deferred: ${error}`);
     }
+    // FL-233: artifacts of removed photos, and those no saved version used for a week
+    try {
+      await this.assetDevelopRepository.releaseArtifacts((files) => this.queueFileDelete(files), {
+        unreferencedBefore: new Date(Date.now() - DEVELOP_ARTIFACT_UNREFERENCED_GRACE_MS),
+      });
+    } catch (error: any) {
+      this.logger.warn(`Develop artifact cleanup deferred: ${error}`);
+    }
   }
 
   private async queueFileDelete(files: string[]) {
@@ -641,7 +842,10 @@ export class AssetDevelopService {
   }
 
   private async queueRender(revision: AssetDevelopRevision, label: string): Promise<AssetDevelopRevisionResponseDto> {
-    if (revision.kind === AssetDevelopRevisionKind.Recipe) assertRenderableDevelopRecipe(revision.recipe);
+    if (revision.kind === AssetDevelopRevisionKind.Recipe) {
+      assertRenderableDevelopRecipe(revision.recipe);
+      await this.requireArtifacts({ id: revision.assetId, ownerId: revision.ownerId }, revision.recipe);
+    }
     // A person asking for a render starts afresh: it gets its own automatic retry.
     const queued = await this.assetDevelopRepository.update(revision.id, {
       status: AssetDevelopRevisionStatus.Queued,
@@ -735,12 +939,20 @@ export class AssetDevelopService {
     decoded: { data: Buffer; info: RawImageInfo },
     recipe: ReturnType<typeof renderDevelopProjection>,
     seed: number,
+    asset: { id: string; ownerId: string },
   ) {
+    // FL-233: Clean Up works on the original, before every other step
+    const cleanup = (recipe.cleanup ?? []).filter((op) => op.enabled);
+    if (cleanup.length > 0) {
+      const fills = await this.loadArtifacts(asset, developCleanupArtifacts(cleanup), AssetDevelopArtifactKind.Fill);
+      applyDevelopCleanup(decoded.data, decoded.info as never, cleanup, fills);
+    }
     const geometry = planDevelopGeometry(recipe, decoded.info.width, decoded.info.height);
     const shaped = await this.mediaRepository.renderDevelopGeometry(decoded.data, decoded.info, geometry);
     const { params, look } = effectiveDevelop(recipe);
     applyDevelopTone(shaped.data, shaped.info, params, look, seed + 1);
-    applyDevelopMasks(shaped.data, shaped.info, recipe.masks, maskMappingFor(geometry));
+    const bitmaps = await this.loadArtifacts(asset, developMaskArtifacts(recipe.masks), AssetDevelopArtifactKind.Mask);
+    applyDevelopMasks(shaped.data, shaped.info, recipe.masks, maskMappingFor(geometry), bitmaps);
     const detail = planDevelopDetail(params, { width: shaped.info.width, height: shaped.info.height });
     return { data: shaped.data, info: shaped.info, detail };
   }
@@ -827,7 +1039,7 @@ export class AssetDevelopService {
     await this.progress(revision.id, 25);
 
     const rendered =
-      native ?? (await this.renderRecipe(decoded, renderDevelopProjection(revision.recipe), revision.revision));
+      native ?? (await this.renderRecipe(decoded, renderDevelopProjection(revision.recipe), revision.revision, source));
     await this.progress(revision.id, 60);
 
     this.storageRepository.mkdirSync(path.dirname(outputs.master));
