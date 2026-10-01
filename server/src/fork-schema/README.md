@@ -13,19 +13,34 @@ needs its entries in `manifests/fork-v2-catalog.json` and the ledger spec.
 A database the official v3.1.0 server created is classified `official-origin` on its first
 Frameleaf boot. That boot runs only the certified official provider and the `immich_fork`
 migrations: the public schema stays exactly the certified tag, and `immich_fork.state` is
-`inactive` with schema version `1`. The library is readable but not yet a Frameleaf library, and
-startup logs a warning saying so.
+`inactive` with schema version `1`.
 
-`immich-admin fork-schema adopt` (`official-adoption.ts`, `DatabaseRepository.adoptOfficialOrigin`)
-completes it in one transaction:
+FL-289: swapping the image is the upgrade. Right after those migrations, still inside
+`DatabaseService.onBootstrap`'s `DatabaseLock.Migrations` block, startup adopts the library
+(`adoptOfficialOrigin({ atBoot: true })`). That block is the first `AppBootstrap` handler, so it
+finishes before the queue workers start (`QueueService`, `BootstrapEventPriority.JobService`) and
+before the API listens (`configureExpress` runs after module init). A refusal is logged as a warning
+naming the connected clients and retried at the next start; it never fails startup. Then the API
+worker's `ForkSchemaMigrationService.onBootstrap` (`ForkSchemaAutoStart`, after the queues exist)
+starts the compatibility backfill through `ForkSchemaRepository.beginInitialBackfill`: one
+transaction that locks the state row and moves `legacy` to `dual-write` only when no backfill
+progress row and no `fork-schema-backfill-pause` audit row exist. `fork-schema pause` writes that
+audit row, so a pause (even one before any batch ran) is never undone by a restart; any other phase
+is left alone. If queueing the first batches fails, the library returns to `legacy` and the next
+start retries.
+
+Adoption (`official-adoption.ts`, `DatabaseRepository.adoptOfficialOrigin`; `immich-admin
+fork-schema adopt` is the manual form) completes the library in one transaction:
 
 - It refuses anything but an `inactive` / `1` state without Frameleaf tables whose ledger is the
   exact certified tag, optionally followed by an ordered prefix of the post-certified migrations.
-- It refuses to run unless maintenance mode is on, and when `pg_stat_activity` shows another
-  client backend that holds a transaction, is active, or connects from a different address. Idle
-  connections from the admin process's own address (the same Unix socket, a pooler, `docker exec`
-  into a server container) cannot be told apart from the admin's own pool. That is why maintenance
-  mode is required.
+- It refuses when `pg_stat_activity` shows another client backend that holds a transaction, is
+  active, or connects from a different address. Idle connections from the process's own address (the
+  same Unix socket, a pooler, `docker exec` into a server container) cannot be told apart from its own
+  pool, so the manual command also requires maintenance mode. The boot adoption does not (it runs as a
+  boot migration under the migrations lock) and additionally ignores exactly one kind of backend: one
+  waiting, ungranted, for the `DatabaseLock.Migrations` advisory lock (a sibling worker blocked behind
+  this boot). Any other lock wait, idle-in-transaction session or active query still refuses.
 - It sets the phase to `legacy`, the phase a fresh install starts in, so migrations that read the
   phase follow the same rules they follow on a fresh install.
 - It applies every missing post-certified upstream migration through its registered apply in
@@ -42,13 +57,14 @@ completes it in one transaction:
   which ones are exact. `docs/docs/administration/upstream-handoff.md` lists these changes for operators.
 - Its ledger timestamps follow the latest existing one, so a lagging clock cannot reorder the ledger.
 
-A failure rolls everything back. The certified official server can still read the library, and the
-command can be run again. Once it has succeeded, running it again changes nothing.
+A failure rolls everything back. The certified official server can still read the library, and
+adoption is tried again at the next start (or by the command). Once it has succeeded, running it
+again changes nothing.
 
 After adoption the ledger contains Frameleaf names, so startup classifies the database as `legacy`.
 The combined provider leaves out `1779400000000` whenever the ledger holds the official marker, so
-the rewrite never runs at a later boot either. From there, the normal backfill (`fork-schema start`)
-and the certified handoff and return apply unchanged. The cutover sees a `current-fork`
+the rewrite never runs at a later boot either. From there, the normal backfill (started automatically,
+see above) and the certified handoff and return apply unchanged. The cutover sees a `current-fork`
 installation whose workflow marker is already official, so it aliases nothing.
 
 Adoption adds no migration. Adding an `immich_fork` migration that only acts when a Frameleaf public

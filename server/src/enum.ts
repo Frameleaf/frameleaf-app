@@ -2111,6 +2111,8 @@ export enum BootstrapEventPriority {
   StorageService = -195,
   // Other services may need to queue jobs on bootstrap.
   JobService = -190,
+  // FL-289: start the fork-schema backfill once the queues exist, on the API worker
+  ForkSchemaAutoStart = -185,
   // Initialize config after other bootstrap services, stop other services from using config on bootstrap
   SystemConfig = 100,
   PluginSync = 190,

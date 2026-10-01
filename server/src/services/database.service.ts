@@ -137,10 +137,9 @@ export class DatabaseService extends BaseService {
         }
         await this.databaseRepository.runForkMigrations();
         if (await this.databaseRepository.isAwaitingOfficialAdoption()) {
-          this.logger.warn(
-            'This library was created by the official server and has not been adopted yet. ' +
-              'Frameleaf features stay unavailable until an administrator takes database and media checkpoints, enables maintenance mode, stops every server and runs `immich-admin fork-schema adopt`.',
-          );
+          // FL-289: swapping the image is the upgrade. Adoption runs here, inside the boot migration
+          // lock and before any queue worker starts or the API listens.
+          await this.adoptOfficialOriginAtBoot();
         }
 
         this.logger.log('Checking for schema drift');
@@ -159,6 +158,24 @@ export class DatabaseService extends BaseService {
         this.databaseRepository.prewarm(VectorIndex.Face),
       ]);
     });
+  }
+
+  private async adoptOfficialOriginAtBoot() {
+    try {
+      const { adopted, applied } = await this.databaseRepository.adoptOfficialOrigin({ atBoot: true });
+      if (adopted) {
+        this.logger.log(
+          `This library was created by the official server and was adopted automatically (${applied.length} migrations applied); the Frameleaf backfill starts next`,
+        );
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `This library was created by the official server and could not be adopted yet: ${reason}. ` +
+          'Nothing was changed, so the official server can still read it, and Frameleaf features stay unavailable for now. ' +
+          'Adoption retries automatically at the next start.',
+      );
+    }
   }
 
   private async runIsolatedFrameleafMigrations() {

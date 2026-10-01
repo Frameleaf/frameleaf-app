@@ -21,12 +21,14 @@ import { LEGACY_WORKFLOW_MIGRATION, WorkflowCompatibility } from 'src/fork-schem
  * `1787148183729-ClusterGroups`) and every Frameleaf public migration (`2100…`) are missing, and
  * `immich_fork.state` is `inactive` / schema version `1`.
  *
- * `immich-admin fork-schema adopt` closes that gap in one transaction: it applies the missing
+ * Adoption closes that gap in one transaction. The server runs it by itself at startup, inside the
+ * boot migration lock (FL-289); `immich-admin fork-schema adopt` is the manual form. It applies the missing
  * post-certified migrations through their registered applies and the Frameleaf public migrations in
  * name order (never the Frameleaf copy of the workflow rewrite, whose official original already ran),
  * repeats the parts of `immich_fork` migrations that only act when a Frameleaf public table exists,
  * and moves the state to `legacy`, the phase a fresh Frameleaf install starts in. From there the
- * normal compatibility backfill (`fork-schema start`) and the certified handoff apply unchanged.
+ * normal compatibility backfill (started automatically by the API worker, or `fork-schema start`) and
+ * the certified handoff apply unchanged.
  */
 export const OFFICIAL_ADOPTION_AUDIT = 'official-origin-adoption';
 
