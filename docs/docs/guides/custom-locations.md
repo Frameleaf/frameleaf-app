@@ -17,11 +17,11 @@ In our `.env` file, we will define the paths we want to use. Note that you don't
 
 # Custom location where your uploaded, thumbnails, and transcoded video files are stored
 - UPLOAD_LOCATION=./library
-+ UPLOAD_LOCATION=/custom/path/immich/immich_files
-+ THUMB_LOCATION=/custom/path/immich/thumbs
-+ ENCODED_VIDEO_LOCATION=/custom/path/immich/encoded-video
-+ PROFILE_LOCATION=/custom/path/immich/profile
-+ BACKUP_LOCATION=/custom/path/immich/backups
++ UPLOAD_LOCATION=/custom/path/frameleaf/library
++ THUMB_LOCATION=/custom/path/frameleaf/thumbs
++ ENCODED_VIDEO_LOCATION=/custom/path/frameleaf/encoded-video
++ PROFILE_LOCATION=/custom/path/frameleaf/profile
++ BACKUP_LOCATION=/custom/path/frameleaf/backups
 ...
 ```
 

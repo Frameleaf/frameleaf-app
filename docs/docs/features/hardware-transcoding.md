@@ -76,7 +76,7 @@ For RKMPP to work:
 5. (Optional) Enable hardware decoding for optimal performance.
 
 <details>
-<summary>immich.json</summary>
+<summary>frameleaf.json</summary>
 
 If you use a [configuration file](/install/config-file.md), use the `accel` option to select the hardware (e.g. `qsv` for Intel or `nvenc` for Nvidia). Set `accelDecode` to `true` if you want hardware decoding.
 
@@ -107,7 +107,7 @@ You can add this to the `immich-server` service instead of extending from `hwacc
 ```yaml
 immich-server:
   container_name: frameleaf_server
-  image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}
+  image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
   # Note the lack of an `extends` section
   devices:
     - /dev/dri:/dev/dri

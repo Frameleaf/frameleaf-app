@@ -18,14 +18,14 @@ Frameleaf retains console and structured JSON logs for local troubleshooting. Th
 
 ### Configuration
 
-By default, Frameleaf outputs human-readable console logs. To enable JSON logging, set the `IMMICH_LOG_FORMAT` environment variable:
+By default, Frameleaf outputs human-readable console logs. To enable JSON logging, set the `FRAMELEAF_LOG_FORMAT` environment variable:
 
 ```bash
-IMMICH_LOG_FORMAT=json
+FRAMELEAF_LOG_FORMAT=json
 ```
 
 :::tip
-The default is `IMMICH_LOG_FORMAT=console` for human-readable logs with colors during development. For production deployments using log aggregation, use `IMMICH_LOG_FORMAT=json`.
+The default is `FRAMELEAF_LOG_FORMAT=console` for human-readable logs with colors during development. For production deployments using log aggregation, use `FRAMELEAF_LOG_FORMAT=json`.
 :::
 
 ### JSON Log Format
@@ -46,4 +46,4 @@ This format includes:
 - `message`: Log message
 - `context`: Service or component that generated the log
 
-For more information on log formats, see [`IMMICH_LOG_FORMAT`](/install/environment-variables.md#general).
+For more information on log formats, see [`FRAMELEAF_LOG_FORMAT`](/install/environment-variables.md#general).

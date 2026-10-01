@@ -305,6 +305,6 @@ You can think of it as App-Which-Must-Not-Be-Named, the only access to viewing, 
 ## Backup ordering
 
 A backup of Frameleaf should contain both the database and the asset files. When backing these up it's possible for them to get out of sync, potentially resulting in broken assets after you restore.  
-The best way of dealing with this is to stop the immich-server container while you take a backup. If nothing is changing then the backup will always be in sync.
+The best way of dealing with this is to stop the server container (the `immich-server` service) while you take a backup. If nothing is changing then the backup will always be in sync.
 
 If stopping the container is not an option, then the recommended order is to back up the database first, and the filesystem second. This way, the worst case scenario is that there are files on the filesystem that the database doesn't know about. If necessary, these can be (re)uploaded manually after a restore. If the backup is done the other way around, with the filesystem first and the database second, it's possible for the restored database to reference files that aren't in the filesystem backup, thus resulting in broken assets.

@@ -9,7 +9,7 @@ Breaking changes are listed in the [release notes][releases].
 :::
 
 When a new version of Frameleaf is [released][releases], you should read the release notes and account for any breaking changes noted (as mentioned above).
-If you use `IMMICH_VERSION` in your `.env` file, it will need to be updated to the latest or desired version.
+If you use `FRAMELEAF_VERSION` in your `.env` file, it will need to be updated to the latest or desired version.
 After that, the application can be upgraded and restarted with the following commands, run in the directory with the `docker-compose.yml` file:
 
 ```bash title="Upgrade and restart Frameleaf"
@@ -54,7 +54,7 @@ Frameleaf does not support running an older version on a database a newer versio
 
 1. Stop Frameleaf: `docker compose down`.
 2. Restore the database backup taken before the upgrade (see [Backup and restore](/administration/backup-and-restore)). Photos and videos in the library are not changed by an upgrade.
-3. Set `IMMICH_VERSION` in `.env` to the release you ran before (for example `frameleaf-v3.2.0-15`), or use that release's installation files.
+3. Set `FRAMELEAF_VERSION` in `.env` to the release you ran before (for example `frameleaf-v3.2.0-15`), or use that release's installation files.
 4. Start Frameleaf: `docker compose pull && docker compose up -d`.
 
 Skip step 2 only when the withdrawal notice says the release did not change the database. Files uploaded between the upgrade and the restore stay in the library folder but are not in the restored database; upload them again.
@@ -93,7 +93,7 @@ After making a backup, please modify your `docker-compose.yml` file with the fol
   [...]
 
   database:
-    container_name: immich_postgres
+    container_name: frameleaf_postgres
 -   image: docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:739cdd626151ff1f796dc95a6591b55a714f341c737e27f045019ceabf8e8c52
 +   image: ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0
     environment:

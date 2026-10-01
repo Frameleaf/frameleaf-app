@@ -73,10 +73,10 @@ two server addresses, then type each key when the terminal waits for input
 (nothing is shown while you type):
 
 ```bash
-export IMMICH_FROM_URL=https://old-server.example/api
-export IMMICH_TO_URL=https://new-server.example/api
-read -rs IMMICH_FROM_KEY && export IMMICH_FROM_KEY
-read -rs IMMICH_TO_KEY && export IMMICH_TO_KEY
+export FRAMELEAF_FROM_URL=https://old-server.example/api
+export FRAMELEAF_TO_URL=https://new-server.example/api
+read -rs FRAMELEAF_FROM_KEY && export FRAMELEAF_FROM_KEY
+read -rs FRAMELEAF_TO_KEY && export FRAMELEAF_TO_KEY
 ```
 
 The variable names are the tool's own and cannot be renamed. Every command

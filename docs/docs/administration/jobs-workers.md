@@ -10,7 +10,7 @@ The `immich-server` container contains multiple workers:
 - `microservices`: handles most other work, such as thumbnail generation and video encoding, in the form of _jobs_. Simply put, a job is a request to process data in the background.
 - `edge`: serves configured remote access and passes requests to `api`. It does nothing until remote access is turned on for a linked server.
 
-By default `edge` runs wherever `api` runs: a container started with `IMMICH_WORKERS_EXCLUDE: 'api'` does not run it. To run it without the API, name it in `IMMICH_WORKERS_INCLUDE`, and give that container and the API's the same `FRAMELEAF_EDGE_SECRET`.
+By default `edge` runs wherever `api` runs: a container started with `FRAMELEAF_WORKERS_EXCLUDE: 'api'` does not run it. To run it without the API, name it in `FRAMELEAF_WORKERS_INCLUDE`, and give that container and the API's the same `FRAMELEAF_EDGE_SECRET`.
 
 ### Stopping the server
 
@@ -28,27 +28,27 @@ Copy the entire `immich-server` block as a new service and make the following ch
 
 ```diff
 - immich-server:
--   container_name: immich_server
+-   container_name: frameleaf_server
 ...
 -   ports:
 -     - 2283:2283
-+ immich-microservices:
-+   container_name: immich_microservices
++ frameleaf-microservices:
++   container_name: frameleaf_microservices
 ```
 
-Once you have two copies of the immich-server service, make the following changes to each one. This will allow one container to only serve the web UI and API, and the other one to handle all other tasks.
+Once you have two copies of the `immich-server` service, make the following changes to each one. This will allow one container to only serve the web UI and API, and the other one to handle all other tasks.
 
 ```diff
 services:
   immich-server:
     ...
 +   environment:
-+     IMMICH_WORKERS_INCLUDE: 'api'
++     FRAMELEAF_WORKERS_INCLUDE: 'api'
 
-  immich-microservices:
+  frameleaf-microservices:
     ...
 +   environment:
-+     IMMICH_WORKERS_EXCLUDE: 'api'
++     FRAMELEAF_WORKERS_EXCLUDE: 'api'
 ```
 
 ## Machine-learning and restoration workers

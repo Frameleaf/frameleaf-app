@@ -24,17 +24,17 @@ If you are using this script, it is therefore safe to turn off the built-in auto
 To initialize the borg repository, run the following commands once.
 
 ```bash title='Borg set-up'
-UPLOAD_LOCATION="/path/to/immich/directory"       # Frameleaf database location, as set in your .env file
+UPLOAD_LOCATION="/path/to/frameleaf/directory"       # Frameleaf database location, as set in your .env file
 BACKUP_PATH="/path/to/local/backup/directory"
 
 mkdir "$UPLOAD_LOCATION/database-backup"
-borg init --encryption=none "$BACKUP_PATH/immich-borg"
+borg init --encryption=none "$BACKUP_PATH/frameleaf-borg"
 
 ## Remote set up
 REMOTE_HOST="remote_host@IP"
 REMOTE_BACKUP_PATH="/path/to/remote/backup/directory"
 
-borg init --encryption=none "$REMOTE_HOST:$REMOTE_BACKUP_PATH/immich-borg"
+borg init --encryption=none "$REMOTE_HOST:$REMOTE_BACKUP_PATH/frameleaf-borg"
 ```
 
 Edit the following script as necessary and add it to your crontab. Note that this script assumes there are no `:`, `@`, or `"` characters in your paths. If these characters exist, you will need to escape and/or rename the paths.
@@ -43,7 +43,7 @@ Edit the following script as necessary and add it to your crontab. Note that thi
 #!/bin/sh
 
 # Paths
-UPLOAD_LOCATION="/path/to/immich/directory"
+UPLOAD_LOCATION="/path/to/frameleaf/directory"
 BACKUP_PATH="/path/to/local/backup/directory"
 REMOTE_HOST="remote_host@IP"
 REMOTE_BACKUP_PATH="/path/to/remote/backup/directory"
@@ -52,20 +52,20 @@ REMOTE_BACKUP_PATH="/path/to/remote/backup/directory"
 ### Local
 
 # Backup Frameleaf database
-docker exec -t immich_postgres pg_dump --clean --if-exists --dbname <DB_DATABASE_NAME> --username=<DB_USERNAME> > "$UPLOAD_LOCATION"/database-backup/immich-database.sql
+docker exec -t frameleaf_postgres pg_dump --clean --if-exists --dbname <DB_DATABASE_NAME> --username=<DB_USERNAME> > "$UPLOAD_LOCATION"/database-backup/frameleaf-database.sql
 # For deduplicating backup programs such as Borg or Restic, compressing the content can increase backup size by making it harder to deduplicate. If you are using a different program or still prefer to compress, you can use the following command instead:
-# docker exec -t immich_postgres pg_dump --clean --if-exists --dbname <DB_DATABASE_NAME> --username=<DB_USERNAME> | /usr/bin/gzip --rsyncable > "$UPLOAD_LOCATION"/database-backup/immich-database.sql.gz
+# docker exec -t frameleaf_postgres pg_dump --clean --if-exists --dbname <DB_DATABASE_NAME> --username=<DB_USERNAME> | /usr/bin/gzip --rsyncable > "$UPLOAD_LOCATION"/database-backup/frameleaf-database.sql.gz
 
 ### Append to local Borg repository
-borg create "$BACKUP_PATH/immich-borg::{now}" "$UPLOAD_LOCATION" --exclude "$UPLOAD_LOCATION"/thumbs/ --exclude "$UPLOAD_LOCATION"/encoded-video/
-borg prune --keep-weekly=4 --keep-monthly=3 "$BACKUP_PATH"/immich-borg
-borg compact "$BACKUP_PATH"/immich-borg
+borg create "$BACKUP_PATH/frameleaf-borg::{now}" "$UPLOAD_LOCATION" --exclude "$UPLOAD_LOCATION"/thumbs/ --exclude "$UPLOAD_LOCATION"/encoded-video/
+borg prune --keep-weekly=4 --keep-monthly=3 "$BACKUP_PATH"/frameleaf-borg
+borg compact "$BACKUP_PATH"/frameleaf-borg
 
 
 ### Append to remote Borg repository
-borg create "$REMOTE_HOST:$REMOTE_BACKUP_PATH/immich-borg::{now}" "$UPLOAD_LOCATION" --exclude "$UPLOAD_LOCATION"/thumbs/ --exclude "$UPLOAD_LOCATION"/encoded-video/
-borg prune --keep-weekly=4 --keep-monthly=3 "$REMOTE_HOST:$REMOTE_BACKUP_PATH"/immich-borg
-borg compact "$REMOTE_HOST:$REMOTE_BACKUP_PATH"/immich-borg
+borg create "$REMOTE_HOST:$REMOTE_BACKUP_PATH/frameleaf-borg::{now}" "$UPLOAD_LOCATION" --exclude "$UPLOAD_LOCATION"/thumbs/ --exclude "$UPLOAD_LOCATION"/encoded-video/
+borg prune --keep-weekly=4 --keep-monthly=3 "$REMOTE_HOST:$REMOTE_BACKUP_PATH"/frameleaf-borg
+borg compact "$REMOTE_HOST:$REMOTE_BACKUP_PATH"/frameleaf-borg
 ```
 
 ### Restoring
@@ -74,17 +74,17 @@ To restore from a backup, use the `borg mount` command.
 
 ```bash title='Restore from local backup'
 BACKUP_PATH="/path/to/local/backup/directory"
-mkdir /tmp/immich-mountpoint
-borg mount "$BACKUP_PATH"/immich-borg /tmp/immich-mountpoint
-cd /tmp/immich-mountpoint
+mkdir /tmp/frameleaf-mountpoint
+borg mount "$BACKUP_PATH"/frameleaf-borg /tmp/frameleaf-mountpoint
+cd /tmp/frameleaf-mountpoint
 ```
 
 ```bash title='Restore from remote backup'
 REMOTE_HOST="remote_host@IP"
 REMOTE_BACKUP_PATH="/path/to/remote/backup/directory"
-mkdir /tmp/immich-mountpoint
-borg mount "$REMOTE_HOST:$REMOTE_BACKUP_PATH"/immich-borg /tmp/immich-mountpoint
-cd /tmp/immich-mountpoint
+mkdir /tmp/frameleaf-mountpoint
+borg mount "$REMOTE_HOST:$REMOTE_BACKUP_PATH"/frameleaf-borg /tmp/frameleaf-mountpoint
+cd /tmp/frameleaf-mountpoint
 ```
 
-You can find available snapshots in separate sub-directories at `/tmp/immich-mountpoint`. Restore the files you need, and unmount the Borg repository using `borg umount /tmp/immich-mountpoint`
+You can find available snapshots in separate sub-directories at `/tmp/frameleaf-mountpoint`. Restore the files you need, and unmount the Borg repository using `borg umount /tmp/frameleaf-mountpoint`

@@ -20,8 +20,8 @@ Now create a `./postgres` and `./library` directory as sub-directories of the `.
 
 When you're all done, you should have the following:
 
-- `./docker/immich-app/postgres`
-- `./docker/immich-app/library`
+- `./docker/frameleaf/postgres`
+- `./docker/frameleaf/library`
 
 Download [`docker-compose.yml`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml) and [`example.env`](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/example.env) to your computer. Upload the files to the `./docker/frameleaf` directory, and rename `example.env` to `.env`. Note: If you plan to use the Synology Text editor to edit the `.env` file on the NAS within File Station, you will need to rename it to a temporary name (e.g. `example.txt`) in order to see 'Open with Text Editor' in the file context menu. Once saved, rename it back to `.env`.
 

@@ -24,7 +24,7 @@ Hardware and software requirements for Frameleaf:
     Most CPUs released since ~2012 support this microarchitecture.
     If you are using a virtual machine, ensure you have selected a [supported microarchitecture](https://pve.proxmox.com/pve-docs/chapter-qm.html#_qemu_cpu_types).
     If you are unable to support this instruction set, the last version to support `x86-64-v1` is `v2.7.5`.
-    Note that this release is no longer supported, and you must run a matching `immich-server` version.
+    Note that this release is no longer supported, and you must run a matching Frameleaf server version.
 - **Storage**: Recommended Unix-compatible filesystem (EXT4, ZFS, APFS, etc.) with support for user/group ownership and permissions.
   - The generation of thumbnails and transcoded video can increase the size of the photo library by 10-20% on average.
 

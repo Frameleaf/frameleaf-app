@@ -25,7 +25,7 @@ The Unraid Community Apps templates use community images of other software, not 
 
 :::
 
-Use the Compose files and images from a [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases). Keep an existing stack name, `.env`, database directory and media paths when updating. The container display names are `frameleaf_*`; the Compose service names and `IMMICH_*` variables remain compatible.
+Use the Compose files and images from a [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases). Keep an existing stack name, `.env`, database directory and media paths when updating. The container display names are `frameleaf_*`; the Compose service names remain compatible, and the old `IMMICH_*` variable names keep working as [deprecated aliases](/install/environment-variables#deprecated-names).
 
 ## Installation Steps
 

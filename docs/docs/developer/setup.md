@@ -63,7 +63,7 @@ You can access the web from `http://your-machine-ip:3000` or `http://localhost:3
 If you only want to do web development connected to an existing, remote backend, run from the repo root:
 
 ```bash
-IMMICH_SERVER_URL=https://photos.example.com/ mise //web:start
+FRAMELEAF_SERVER_URL=https://photos.example.com/ mise //web:start
 ```
 
 This will install all dependencies (including the SDK) and start the dev server in one step. To connect to the hosted demo server specifically, use the shorthand:
@@ -75,7 +75,7 @@ mise //web:start-demo
 If you're using PowerShell on Windows you may need to set the env var separately like so:
 
 ```powershell
-$env:IMMICH_SERVER_URL = "https://photos.example.com/"
+$env:FRAMELEAF_SERVER_URL = "https://photos.example.com/"
 mise //web:start
 ```
 
@@ -83,7 +83,7 @@ mise //web:start
 
 To see local changes to `@immich/ui` in Frameleaf, do the following:
 
-1. Install `@immich/ui` as a sibling to `immich/`, for example `/home/user/immich` and `/home/user/ui`
+1. Install `@immich/ui` as a sibling to `frameleaf-app/`, for example `/home/user/frameleaf-app` and `/home/user/ui`
 2. Build the `@immich/ui` project via `pnpm run build`
 3. Uncomment the corresponding volume in web service of the `docker/docker-compose.dev.yml` file (`../../ui:/usr/src/ui`)
 4. Uncomment the corresponding alias in the `web/vite.config.ts` file (`'@immich/ui': path.resolve(\_\_dirname, '../../ui/packages/ui')`)

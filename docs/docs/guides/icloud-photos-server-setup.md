@@ -6,17 +6,17 @@ The feature requires a fork build containing iCloud sync, its database migration
 
 ## Deploy the bridge
 
-Use the [Compose overlay](https://github.com/adamtaylor152/immich/blob/fork/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed fork release. The bridge imports Rclone **v1.75.1**, commit `687d264b689b8c49a67e2e52a8a5e0caa01c04ce`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/adamtaylor152/immich/blob/fork/main/icloud-bridge/api.md) records the transport contract and limitations.
+Use the [Compose overlay](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/deployment/icloud-sync.compose.yml) with the Compose file for your installed fork release. The bridge imports Rclone **v1.75.1**, commit `687d264b689b8c49a67e2e52a8a5e0caa01c04ce`; its Go modules and container base images are pinned. The original Rclone MIT copyright and permission notice is included at `icloud-bridge/licenses/rclone/COPYING` in the checkout and `/usr/share/licenses/icloud-bridge/rclone/COPYING` in the runtime image. The [protocol reference](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/icloud-bridge/api.md) records the transport contract and limitations.
 
 Prepare absolute paths in your deployment environment:
 
 ```dotenv
-IMMICH_SOURCE_ROOT=/opt/immich
-IMMICH_FORK_IMAGE=your-registry/immich-server:your-tested-fork-release
-IMMICH_UID=1000
-IMMICH_GID=1000
-ICLOUD_SECRETS_DIR=/srv/immich-icloud/secrets
-ICLOUD_STAGING_DIR=/srv/immich-icloud/staging
+FRAMELEAF_SOURCE_ROOT=/opt/frameleaf-app
+FRAMELEAF_IMAGE=your-registry/frameleaf-server:your-tested-fork-release
+FRAMELEAF_UID=1000
+FRAMELEAF_GID=1000
+ICLOUD_SECRETS_DIR=/srv/frameleaf-icloud/secrets
+ICLOUD_STAGING_DIR=/srv/frameleaf-icloud/staging
 ```
 
 Set the UID/GID to the non-root identity that owns this installation's Frameleaf media files. Both services use that identity. Existing media directories must already be writable by it; this overlay does not recursively change their ownership. Do not set either ID to zero.
@@ -39,7 +39,7 @@ printf 'subjectAltName=DNS:icloud-bridge\nextendedKeyUsage=serverAuth\nbasicCons
 openssl x509 -req -days 365 -in "$ICLOUD_SECRETS_DIR/bridge.csr" \
   -CA "$ICLOUD_SECRETS_DIR/ca.crt" -CAkey "$ICLOUD_SECRETS_DIR/ca.key" -CAcreateserial \
   -extfile "$ICLOUD_SECRETS_DIR/bridge.ext" -out "$ICLOUD_SECRETS_DIR/bridge.crt"
-sudo chown -R "$IMMICH_UID:$IMMICH_GID" "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
+sudo chown -R "$FRAMELEAF_UID:$FRAMELEAF_GID" "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
 chmod 700 "$ICLOUD_SECRETS_DIR" "$ICLOUD_STAGING_DIR"
 chmod 600 "$ICLOUD_SECRETS_DIR"/*
 ```
@@ -51,17 +51,17 @@ Compose file-backed secrets are bind mounts on many installations; host ownershi
 Validate and start from the checkout, using your release's base Compose path:
 
 ```sh
-docker compose --env-file /absolute/path/to/immich.env \
+docker compose --env-file /absolute/path/to/frameleaf.env \
   -f /absolute/path/to/docker-compose.yml \
-  -f "$IMMICH_SOURCE_ROOT/deployment/icloud-sync.compose.yml" config --quiet
-docker compose --env-file /absolute/path/to/immich.env \
+  -f "$FRAMELEAF_SOURCE_ROOT/deployment/icloud-sync.compose.yml" config --quiet
+docker compose --env-file /absolute/path/to/frameleaf.env \
   -f /absolute/path/to/docker-compose.yml \
-  -f "$IMMICH_SOURCE_ROOT/deployment/icloud-sync.compose.yml" up -d --build
+  -f "$FRAMELEAF_SOURCE_ROOT/deployment/icloud-sync.compose.yml" up -d --build
 ```
 
 The bridge has no published port or media mount. Its private Docker network permits outbound Apple HTTPS traffic. Do not add host networking or a public reverse-proxy route. The Frameleaf web application itself must be served over HTTPS for account authentication.
 
-The server configuration paths are `IMMICH_ICLOUD_BRIDGE_URL`, `IMMICH_ICLOUD_BRIDGE_TOKEN_FILE`, `IMMICH_ICLOUD_KEY_FILE`, `IMMICH_ICLOUD_CA_FILE`, and `IMMICH_ICLOUD_STAGING_PATH`. They are set by the overlay. For split API/worker deployments, give each process the same transport/key configuration and consistent access to the private staging directory.
+The server configuration paths are `FRAMELEAF_ICLOUD_BRIDGE_URL`, `FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE`, `FRAMELEAF_ICLOUD_KEY_FILE`, `FRAMELEAF_ICLOUD_CA_FILE`, and `FRAMELEAF_ICLOUD_STAGING_PATH`. They are set by the overlay. For split API/worker deployments, give each process the same transport/key configuration and consistent access to the private staging directory.
 
 ### Check readiness and the pinned version
 
@@ -71,8 +71,8 @@ From the server container, verify the bridge's HTTPS certificate and health resp
 docker compose exec immich-server node --input-type=module -e '
 import https from "node:https";
 import fs from "node:fs";
-https.get(new URL("/health", process.env.IMMICH_ICLOUD_BRIDGE_URL), {
-  ca: fs.readFileSync(process.env.IMMICH_ICLOUD_CA_FILE)
+https.get(new URL("/health", process.env.FRAMELEAF_ICLOUD_BRIDGE_URL), {
+  ca: fs.readFileSync(process.env.FRAMELEAF_ICLOUD_CA_FILE)
 }, response => {
   if (response.statusCode !== 200) process.exitCode = 1;
   response.pipe(process.stdout);
@@ -88,23 +88,23 @@ The staging directory must be owned by the server user and have mode `0700`. It 
 
 Per-connection controls are limited to 1–4 concurrent downloads. The worker also applies server-wide limits:
 
-| Environment variable              | Default                  | Purpose                                                    |
-| --------------------------------- | ------------------------ | ---------------------------------------------------------- |
-| `IMMICH_ICLOUD_MAX_CONCURRENCY`   | `4`                      | Maximum active resource leases across connections          |
-| `IMMICH_ICLOUD_MAX_STAGING_BYTES` | `107374182400` (100 GiB) | Total reserved staging budget                              |
-| `IMMICH_ICLOUD_FREE_SPACE_BYTES`  | `1073741824` (1 GiB)     | Free disk space to retain in addition to the next download |
+| Environment variable                 | Default                  | Purpose                                                    |
+| ------------------------------------ | ------------------------ | ---------------------------------------------------------- |
+| `FRAMELEAF_ICLOUD_MAX_CONCURRENCY`   | `4`                      | Maximum active resource leases across connections          |
+| `FRAMELEAF_ICLOUD_MAX_STAGING_BYTES` | `107374182400` (100 GiB) | Total reserved staging budget                              |
+| `FRAMELEAF_ICLOUD_FREE_SPACE_BYTES`  | `1073741824` (1 GiB)     | Free disk space to retain in addition to the next download |
 
 Set these on the workers that run sync. Increasing a reservation limit does not create disk space. Retained copies outside a user's current selection still consume their reservation; `staging_retained_capacity` requires reselection/recovery or additional capacity. Do not clear database reservations or empty staging to bypass it. Committed cleanup remains eligible when the budget is full.
 
 ### Media validation timeout
 
-The server environment variable `IMMICH_MEDIA_VALIDATION_TIMEOUT_MS` controls the integrity validator's timeout, including full video decoding. Its default is **120000 ms (two minutes)**; finite values are clamped to **10000–86400000 ms** and invalid values use the default. Set it on each server/worker that performs validation, for example in an additional Compose override:
+The server environment variable `FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS` controls the integrity validator's timeout, including full video decoding. Its default is **120000 ms (two minutes)**; finite values are clamped to **10000–86400000 ms** and invalid values use the default. Set it on each server/worker that performs validation, for example in an additional Compose override:
 
 ```yaml
 services:
   immich-server:
     environment:
-      IMMICH_MEDIA_VALIDATION_TIMEOUT_MS: '600000'
+      FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS: '600000'
 ```
 
 A timeout is unresolved validation, not proof of corruption or successful repair. Raising the timeout can permit long videos to finish; it does not add decoder support. Native operations keep their concurrency slot until they actually finish after a timeout, preventing timed-out work from creating unbounded parallel decoding.

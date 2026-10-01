@@ -22,12 +22,12 @@ This error is related to the location of media files _inside the container_. Nev
 
 Frameleaf automatically tries to detect where your Frameleaf data is located. On start up, it compares the detected media location with the file paths in the database and throws an Inconsistent Media Location error when they do not match.
 
-To fix this issue, verify that the `IMMICH_MEDIA_LOCATION` environment variable and `UPLOAD_LOCATION` volume mount are in sync with the database paths.
+To fix this issue, verify that the `FRAMELEAF_MEDIA_LOCATION` environment variable and `UPLOAD_LOCATION` volume mount are in sync with the database paths.
 
 If you would like to migrate from one media location to another, start Frameleaf on `v1.136.0` or later, then do the following steps:
 
 1. Stop Frameleaf
-2. Update `IMMICH_MEDIA_LOCATION` to the new location
+2. Update `FRAMELEAF_MEDIA_LOCATION` to the new location
 3. Update the right-hand side of the `UPLOAD_LOCATION` volume mount to the new location
 4. Start up Frameleaf
 

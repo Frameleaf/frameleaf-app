@@ -1,6 +1,6 @@
 # Server Commands
 
-The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with an administrative CLI (`immich-admin`) that supports the following commands:
+The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with an administrative CLI (`frameleaf-admin`) that supports the following commands:
 
 | Command                    | Description                                                   |
 | -------------------------- | ------------------------------------------------------------- |
@@ -21,20 +21,20 @@ The `ghcr.io/frameleaf/frameleaf-server` container image comes preinstalled with
 
 ## How to run a command
 
-From your Compose directory, run `docker compose exec immich-server immich-admin <command>`. For an interactive shell, use `docker compose exec immich-server bash`, then run `immich-admin <command>`. The `immich-server` service name is unchanged by the Frameleaf container rename.
+From your Compose directory, run `docker compose exec immich-server frameleaf-admin <command>`. For an interactive shell, use `docker compose exec immich-server bash`, then run `frameleaf-admin <command>`. The `immich-server` service name is unchanged by the Frameleaf container rename. The old command names `immich-admin`, `immich` and `immich-healthcheck` still work as deprecated aliases of `frameleaf-admin`, `frameleaf` and `frameleaf-healthcheck`.
 
 ## Examples
 
 Reset Admin Password
 
 ```
-immich-admin reset-admin-password
+frameleaf-admin reset-admin-password
 Found Admin:
 - ID=e65e6f88-2a30-4dbe-8dd9-1885f4889b53
 - OAuth ID=
 - Email=admin@example.com
 - Name=Frameleaf Admin
-? Please choose a new password (optional) immich-is-cool
+? Please choose a new password (optional) frameleaf-is-cool
 ? Invalidate existing sessions? Yes
 The admin password has been updated.
 ```
@@ -42,28 +42,28 @@ The admin password has been updated.
 Disable Password Login
 
 ```
-immich-admin disable-password-login
+frameleaf-admin disable-password-login
 Password login has been disabled.
 ```
 
 Enable Password Login
 
 ```
-immich-admin enable-password-login
+frameleaf-admin enable-password-login
 Password login has been enabled.
 ```
 
 Disable Maintenance Mode
 
 ```
-immich-admin disable-maintenance-mode
+frameleaf-admin disable-maintenance-mode
 Maintenance mode has been disabled.
 ```
 
 Enable Maintenance Mode
 
 ```
-immich-admin enable-maintenance-mode
+frameleaf-admin enable-maintenance-mode
 Maintenance mode has been enabled.
 
 Log in using the following URL:
@@ -73,25 +73,25 @@ https://photos.example.com/maintenance?token=<token>
 Enable OAuth login
 
 ```
-immich-admin enable-oauth-login
+frameleaf-admin enable-oauth-login
 OAuth login has been enabled.
 ```
 
 Disable OAuth login
 
 ```
-immich-admin disable-oauth-login
+frameleaf-admin disable-oauth-login
 OAuth login has been disabled.
 ```
 
 List Users
 
 ```
-immich-admin list-users
+frameleaf-admin list-users
 [
   {
     id: 'e65e6f88-2a30-4dbe-8dd9-1885f4889b53',
-    email: 'immich@example.com',
+    email: 'admin@example.com',
     name: 'Frameleaf Admin',
     storageLabel: 'admin',
     externalPath: null,
@@ -109,7 +109,7 @@ immich-admin list-users
 Grant Admin
 
 ```
-immich-admin grant-admin
+frameleaf-admin grant-admin
 ? Please enter the user email:  user@example.com
 Admin access has been granted to user@example.com
 ```
@@ -117,7 +117,7 @@ Admin access has been granted to user@example.com
 Revoke Admin
 
 ```
-immich-admin revoke-admin
+frameleaf-admin revoke-admin
 ? Please enter the user email:  user@example.com
 Admin access has been revoked from user@example.com
 ```
@@ -125,16 +125,16 @@ Admin access has been revoked from user@example.com
 Print Frameleaf Version
 
 ```
-immich-admin version
+frameleaf-admin version
 v1.129.0
 ```
 
 Change media location
 
 ```
-immich-admin change-media-location
-? Enter the previous value of IMMICH_MEDIA_LOCATION: /data
-? Enter the new value of IMMICH_MEDIA_LOCATION: /my-data
+frameleaf-admin change-media-location
+? Enter the previous value of FRAMELEAF_MEDIA_LOCATION: /data
+? Enter the new value of FRAMELEAF_MEDIA_LOCATION: /my-data
 ...
   Previous value: /data
   Current value:  /my-data
@@ -150,7 +150,7 @@ Database file paths updated successfully! 🎉
 Schema Check
 
 ```
-immich-admin schema-check
+frameleaf-admin schema-check
 Migrations are up to date
 
 No schema drift detected
@@ -158,4 +158,4 @@ No schema drift detected
 
 Downgrading to the upstream server
 
-There is no `immich-admin` command for downgrading to upstream. The previously documented `schema-revert-to-upstream` CLI was removed (several Frameleaf migrations had empty `down()` stubs that reported success while leaving Frameleaf-only tables intact). See [Reverting back to the upstream server](../features/revert-to-upstream.md) for the supported `pg_restore`-from-backup procedure.
+There is no `frameleaf-admin` command for downgrading to upstream. The previously documented `schema-revert-to-upstream` CLI was removed (several Frameleaf migrations had empty `down()` stubs that reported success while leaving Frameleaf-only tables intact). See [Reverting back to the upstream server](../features/revert-to-upstream.md) for the supported `pg_restore`-from-backup procedure.

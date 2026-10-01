@@ -9,7 +9,7 @@ Dev Containers provide a consistent, reproducible development environment using 
 
 Get started fast!
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/immich-app/immich/)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Frameleaf/frameleaf-app/)
 
 [Learn more about Dev Containers](https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration/introduction-to-dev-containers)
 
@@ -135,13 +135,13 @@ The `${localEnv:VARIABLE:default}` syntax reads from your shell environment with
 The `UPLOAD_LOCATION` environment variable controls where files are stored:
 
 **Default:** `./Library` (relative to the `docker` directory)
-**Resolved to:** `<immich-root>/docker/Library`
+**Resolved to:** `<repo-root>/docker/Library`
 
 **Bind Mounts Created:**
 
 ```yaml
 # From .devcontainer/server/container-compose-overrides.yml
-- ${UPLOAD_LOCATION-./Library}/photos:/workspaces/immich/server/upload
+- ${UPLOAD_LOCATION-./Library}/photos:/data
 - ${UPLOAD_LOCATION-./Library}/postgres:/var/lib/postgresql/data
 ```
 
@@ -370,8 +370,8 @@ cd frameleaf-app
 devpod provider add docker
 devpod provider use docker
 
-# Step 3: Build 'immich-server-dev' docker image first manually
-docker build -f server/Dockerfile.dev -t immich-server-dev .
+# Step 3: Build 'frameleaf-server-dev:local' docker image first manually
+docker build -f server/Dockerfile.dev -t frameleaf-server-dev:local .
 
 # Step 4: Now you can start devcontainer
 devpod up .
