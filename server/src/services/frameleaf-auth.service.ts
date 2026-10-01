@@ -266,6 +266,18 @@ export class FrameleafAuthService extends BaseService {
       throw refuse('email', emailProblem);
     }
     const role = frameleafRole(profile);
+    // FL-292: a server nobody administers yet (set up from the Frameleaf app) gets its first
+    // administrator only from the Frameleaf account that owns it, never by creation or promotion
+    const firstAdministrator = !(await this.userRepository.getAdmin());
+    if (firstAdministrator) {
+      const { link: cloudLink } = await readCloudLink({
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      if (role !== 'admin' || !cloudLink?.accountId || cloudLink.accountId !== profile.sub) {
+        throw refuse('setup', 'This server is not set up yet: the Frameleaf account that owns it signs in first');
+      }
+    }
 
     let user: UserAdmin | undefined;
     const link = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
@@ -298,36 +310,34 @@ export class FrameleafAuthService extends BaseService {
     }
     if (!user) {
       // Frameleaf Cloud authorized this person for this server: it is the access authority
-      // FL-292: on a server set up from the Frameleaf app nobody administers it yet; only the account
-      // that linked (owns) it may become its first administrator
-      const firstAdministrator = !(await this.userRepository.getAdmin());
-      if (firstAdministrator) {
-        const { link: cloudLink } = await readCloudLink({
-          configRepository: this.configRepository,
-          systemMetadataRepository: this.systemMetadataRepository,
-        });
-        if (role !== 'admin' || !cloudLink?.accountId || cloudLink.accountId !== profile.sub) {
-          throw refuse('setup', 'This server is not set up yet: the Frameleaf account that owns it signs in first');
-        }
-      }
       this.logger.log(`Creating the account ${email} for a Frameleaf sign-in`);
-      user = await this.createUser({
-        name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
-        email,
-        isAdmin: role === 'admin',
-      });
-      if (firstAdministrator) {
-        await this.recordAdminEvents([
-          {
-            userId: user.id,
-            actorId: user.id,
-            action: AdminAuditAction.ServerClaimed,
-            subject: user.name,
-            detail: 'app-frameleaf',
-          },
-        ]);
-        this.logger.log(`This server's owner ${email} signed in with Frameleaf and administers it`);
-      }
+      const create = () =>
+        this.createUser({
+          name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
+          email,
+          isAdmin: role === 'admin',
+        });
+      // FL-292: while nobody administers the server (set up from the Frameleaf app), only the account
+      // that owns it may become its first administrator, one claim at a time with the other setup paths
+      user = firstAdministrator
+        ? await this.databaseRepository.withLock(DatabaseLock.FrameleafServerClaim, async () => {
+            if (await this.userRepository.getAdmin()) {
+              return create();
+            }
+            const created = await create();
+            await this.recordAdminEvents([
+              {
+                userId: created.id,
+                actorId: created.id,
+                action: AdminAuditAction.ServerClaimed,
+                subject: created.name,
+                detail: 'app-frameleaf',
+              },
+            ]);
+            this.logger.log(`This server's owner ${email} signed in with Frameleaf and administers it`);
+            return created;
+          })
+        : await create();
       await this.frameleafAccountRepository.upsertLink({
         userId: user.id,
         sub: profile.sub,

@@ -50,10 +50,13 @@ describe(FrameleafServerSetupService.name, () => {
   const state = () => metadata.get(SystemMetadataKey.FrameleafSetupCode) as State | undefined;
   const refusal = (code: string, extra: object = {}) =>
     expect.objectContaining({ response: expect.objectContaining({ code, ...extra }) });
-  const logged = () => mocks.logger.log.mock.calls.map(([line]) => line).join('\n');
+  const printed = () => stdout.mock.calls.map((call: unknown[]) => String(call[0])).join('\n');
+  let stdout: { mock: { calls: unknown[][] }; mockClear: () => void; mockRestore: () => void };
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(FrameleafServerSetupService));
+    stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true) as never;
+    onTestFinished(() => stdout.mockRestore());
     metadata = new Map();
     pinned = null;
     const env = mockEnvData({});
@@ -79,18 +82,20 @@ describe(FrameleafServerSetupService.name, () => {
     await sut.onBootstrap();
     const first = state()!.code;
     expect(first).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/);
-    expect(logged()).toContain(`${first.slice(0, 4)}-${first.slice(4)}`);
-    expect(logged()).toMatch(/[█▀▄]/);
+    expect(printed()).toContain(`${first.slice(0, 4)}-${first.slice(4)}`);
+    expect(printed()).toMatch(/[█▀▄]/);
+    // the log line itself never carries the code
+    expect(mocks.logger.log.mock.calls.map(([line]) => line).join('\n')).not.toContain(first.slice(0, 4));
 
     await sut.onBootstrap();
     expect(state()!.code).not.toBe(first);
 
     // set up: nothing is kept, nothing is shown
     mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
-    mocks.logger.log.mockClear();
+    stdout.mockClear();
     await sut.onBootstrap();
     expect(state()).toBeUndefined();
-    expect(mocks.logger.log).not.toHaveBeenCalled();
+    expect(stdout).not.toHaveBeenCalled();
   });
 
   it('hands out a ticket for the right code, from the home network only, and never the code', async () => {
@@ -149,6 +154,9 @@ describe(FrameleafServerSetupService.name, () => {
     await expect(sut.claimWithPassword(dto, { ...phone, ip: '192.168.1.41' })).rejects.toEqual(
       refusal('setup_ticket_invalid'),
     );
+    // a refused claim (an email already taken) leaves the ticket for another try
+    mocks.user.getByEmail.mockResolvedValueOnce(UserFactory.create() as never);
+    await expect(sut.claimWithPassword(dto, phone)).rejects.toThrow('Email is not available');
     await expect(sut.claimWithPassword(dto, phone)).resolves.toMatchObject({ email: 'me@example.test' });
     expect(mocks.user.create).toHaveBeenCalledWith(
       expect.objectContaining({ isAdmin: true, email: 'me@example.test' }),
