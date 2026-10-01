@@ -52,17 +52,17 @@ const FrameleafSetupErrorSchema = z
   })
   .meta({ id: 'FrameleafSetupErrorDto' });
 
+// no shape checks here: an empty code, a short ticket or a malformed link token is refused with its
+// own FrameleafSetupErrorCode (setup_code_required, setup_ticket_invalid, setup_link_token_invalid)
 const setupCode = z
   .string()
   .trim()
-  .min(1)
   .max(32)
   .describe("The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional)");
 
 const ticket = z
   .string()
   .trim()
-  .min(16)
   .max(256)
   .describe('The setup ticket POST server/setup/code returned, used once, from the same device');
 
@@ -81,7 +81,7 @@ const FrameleafSetupLinkSchema = z
     linkToken: z
       .string()
       .trim()
-      .regex(/^fll_[A-Za-z0-9_-]{8,512}$/)
+      .max(520)
       .describe('A single-use Frameleaf link token (fll_…) the app got from Frameleaf Cloud for this server'),
     serverName: z
       .string()

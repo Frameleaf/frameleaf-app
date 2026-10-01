@@ -62340,7 +62340,6 @@
           "ticket": {
             "description": "The setup ticket POST server/setup/code returned, used once, from the same device",
             "maxLength": 256,
-            "minLength": 16,
             "type": "string"
           }
         },
@@ -62427,7 +62426,6 @@
           "code": {
             "description": "The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional)",
             "maxLength": 32,
-            "minLength": 1,
             "type": "string"
           }
         },
@@ -62540,7 +62538,7 @@
         "properties": {
           "linkToken": {
             "description": "A single-use Frameleaf link token (fll_…) the app got from Frameleaf Cloud for this server",
-            "pattern": "^fll_[A-Za-z0-9_-]{8,512}$",
+            "maxLength": 520,
             "type": "string"
           },
           "serverName": {
@@ -62552,7 +62550,6 @@
           "ticket": {
             "description": "The setup ticket POST server/setup/code returned, used once, from the same device",
             "maxLength": 256,
-            "minLength": 16,
             "type": "string"
           }
         },
