@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  CloudBackupOwnerSetupResponseDto,
   OwnerBackupHistoryDto,
   OwnerBackupHistoryResponseDto,
   OwnerBackupPageDto,
@@ -40,6 +41,19 @@ export class CloudBackupOwnerController {
         },
       });
   }
+  @Get('setup')
+  @Header('Cache-Control', 'private, no-store')
+  @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true, refreshElevation: false })
+  @Endpoint({
+    summary: 'Get the cloud backup setup progress',
+    description:
+      'Read-only activation chain for the server owner (an administrator) to poll: plan entitlement seen, bucket claimed, key loaded, first run, next scheduled run. Never the bucket, endpoint, key, usage or file names. Other users are refused.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getOwnSetupProgress(@Auth() auth: AuthDto): Promise<CloudBackupOwnerSetupResponseDto> {
+    return this.service.getOwnerSetup(auth);
+  }
+
   @Post('restore')
   @Authenticated({ permission: Permission.AssetUpdate, refreshElevation: false })
   @Endpoint({

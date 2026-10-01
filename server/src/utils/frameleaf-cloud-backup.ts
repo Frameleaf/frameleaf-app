@@ -150,6 +150,9 @@ export const backupEndpoints = (document: { api: string }) => {
   };
 };
 
+/** FL-234: the refusal recorded when cloud backup is not part of this server's Frameleaf Cloud plan. */
+export const MANAGED_ENTITLEMENT_MISSING_REFUSAL = 'Cloud backup is not part of this server’s Frameleaf Cloud plan.';
+
 const REVOKED_REASONS: Record<z.infer<typeof grantRevokedDataSchema>['reason'], string> = {
   unlinked: 'This server was unlinked from Frameleaf Cloud, so its managed backup storage was withdrawn.',
   suspended: 'This server is suspended on Frameleaf Cloud, so its managed backup storage was withdrawn.',
@@ -189,7 +192,7 @@ export const managedBackupRefusal = (
     }
     case 'entitlement-missing': {
       return {
-        message: 'Cloud backup is not part of this server’s Frameleaf Cloud plan.',
+        message: MANAGED_ENTITLEMENT_MISSING_REFUSAL,
         retry: false,
         retryAfterSeconds: null,
         cloneSuspected: false,

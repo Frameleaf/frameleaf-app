@@ -1,3 +1,5 @@
+import { RequestMethod } from '@nestjs/common';
+import { HEADERS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants.js';
 import { Reflector } from '@nestjs/core';
 import { CloudBackupOwnerController } from 'src/controllers/cloud-backup-owner.controller.js';
 import { Permission } from 'src/enum.js';
@@ -77,4 +79,29 @@ describe('owner backup route scopes', () => {
       expect(options).not.toMatchObject({ sharedLink: true });
     },
   );
+});
+
+describe('owner setup progress route (FL-234)', () => {
+  it('is an owner-only (administrator) cloud backup status read that never needs or extends PIN elevation', () => {
+    const options = getAuthenticatedOptions(reflector, CloudBackupOwnerController.prototype.getOwnSetupProgress);
+    expect(options).toMatchObject({
+      permission: Permission.AdminCloudBackupRead,
+      admin: true,
+      refreshElevation: false,
+    });
+    expect(options).not.toMatchObject({ sharedLink: true });
+  });
+
+  it('serves GET users/me/cloud-backup/setup without caching and passes the caller to the service', async () => {
+    const proto = CloudBackupOwnerController.prototype.getOwnSetupProgress;
+    expect(reflector.get(PATH_METADATA, proto)).toBe('setup');
+    expect(reflector.get(METHOD_METADATA, proto)).toBe(RequestMethod.GET);
+    expect(reflector.get(HEADERS_METADATA, proto)).toEqual(
+      expect.arrayContaining([{ name: 'Cache-Control', value: 'private, no-store' }]),
+    );
+    const service = { getOwnerSetup: vi.fn().mockResolvedValue({ target: 'off' }) };
+    const controller = new CloudBackupOwnerController(service as never, {} as never);
+    await expect(controller.getOwnSetupProgress(authStub.admin)).resolves.toEqual({ target: 'off' });
+    expect(service.getOwnerSetup).toHaveBeenCalledWith(authStub.admin);
+  });
 });
