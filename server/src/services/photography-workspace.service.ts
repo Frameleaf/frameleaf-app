@@ -7,27 +7,27 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
 import {
+  type PhotographyBrand,
   PhotographyBrandDto,
   PhotographyBrandSaveDto,
   PhotographyLogoCandidatesDto,
-  type PhotographyBrand,
-  PhotographyPhotosDto,
   PhotographyPhotoQueryDto,
+  PhotographyPhotosDto,
   PhotographyRatingDto,
   PhotographyWorkspaceDto,
   PhotographyWorkspaceSaveDto,
   type StoredShoot,
 } from 'src/dtos/photography-workspace.dto.js';
-import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
 import { MetadataSearchDto } from 'src/dtos/search.dto.js';
 import { AlbumKind, AssetType, AssetVisibility, CacheControl } from 'src/enum.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
-import { ImmichFileResponse } from 'src/utils/file.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { SearchService } from 'src/services/search.service.js';
+import { ImmichFileResponse } from 'src/utils/file.js';
 
 @Injectable()
 export class PhotographyWorkspaceService {

@@ -2,9 +2,9 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { PhotographyBrand, StoredShoot } from 'src/dtos/photography-workspace.dto.js';
+import type { UserMetadata } from 'src/types.js';
 import { AlbumUserRole, UserMetadataKey } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
-import type { UserMetadata } from 'src/types.js';
 import { DB } from 'src/schema/index.js';
 
 @Injectable()
@@ -26,7 +26,7 @@ export class PhotographyWorkspaceRepository {
     return this.db.transaction().execute(async (tx) => {
       await lockPublicForkWrites(tx);
       // Hold current ownership and deletion state until the reference write commits.
-      if (validateAlbumIds.length) {
+      if (validateAlbumIds.length > 0) {
         const albums = await tx
           .selectFrom('album')
           .innerJoin('album_user', 'album.id', 'album_user.albumId')
@@ -91,7 +91,7 @@ export class PhotographyWorkspaceRepository {
   }
 
   async currentRevisions(userId: string, assetIds: string[]) {
-    if (!assetIds.length) {
+    if (assetIds.length === 0) {
       return new Map<string, string>();
     }
     const { rows } = await sql<{ assetId: string; id: string }>`

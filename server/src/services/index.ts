@@ -1,4 +1,3 @@
-import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
@@ -77,6 +76,7 @@ import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
 import { PhotoToolsService } from 'src/services/photo-tools.service.js';
+import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';

@@ -11,19 +11,23 @@ it('omits private photography metadata from both legacy sync upserts and deletes
   mocks.syncCheckpoint.getNow.mockResolvedValue({ nowId: 'now-id' });
   Object.assign(mocks.sync, {
     userMetadata: {
-      getDeletes: async function* () {
-        yield { id: 'private-delete', key: UserMetadataKey.PhotographyWorkspace, userId: authStub.user1.user.id };
+      async *getDeletes() {
+        yield await Promise.resolve({
+          id: 'private-delete',
+          key: UserMetadataKey.PhotographyWorkspace,
+          userId: authStub.user1.user.id,
+        });
         yield { id: 'onboarding-delete', key: UserMetadataKey.Onboarding, userId: authStub.user1.user.id };
       },
-      getUpserts: async function* () {
-        yield {
+      async *getUpserts() {
+        yield await Promise.resolve({
           updateId: 'private-upsert',
           key: UserMetadataKey.PhotographyWorkspace,
           value: {
             shoots: [{ client: 'Private client' }],
             brand: { email: 'private-studio@example.test', logoAssetId: 'private-logo' },
           },
-        };
+        });
         yield { updateId: 'onboarding-upsert', key: UserMetadataKey.Onboarding, value: { isOnboarded: true } };
       },
     },
