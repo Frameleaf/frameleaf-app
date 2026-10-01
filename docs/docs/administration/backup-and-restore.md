@@ -320,3 +320,12 @@ A backup of Frameleaf should contain both the database and the asset files. When
 The best way of dealing with this is to stop the server container (the `immich-server` service) while you take a backup. If nothing is changing then the backup will always be in sync.
 
 If stopping the container is not an option, then the recommended order is to back up the database first, and the filesystem second. This way, the worst case scenario is that there are files on the filesystem that the database doesn't know about. If necessary, these can be (re)uploaded manually after a restore. If the backup is done the other way around, with the filesystem first and the database second, it's possible for the restored database to reference files that aren't in the filesystem backup, thus resulting in broken assets.
+
+## Frameleaf Cloud Backup: plan full {#cloud-backup-plan-full}
+
+When the backups no longer fit the Frameleaf plan, Frameleaf Cloud makes the server's backup storage read-only with the reason `plan_full`. **Backup paused: plan full** then shows on the server and in the Frameleaf app. Your library is untouched and restores keep working. New items wait until the plan is upgraded or the backup gets smaller, and then backups carry on by themselves.
+
+The server's push notifications go out like this (type `backup-needs-attention`, `data.screen` `plan`, which opens the plan screen in the app):
+
+- **Your plan has outgrown its tier** (`data.reason` `tier-overflow`): sent once each time the case changes (asked, accepted or declined). Only the server owner's devices get it, because it shows plan and usage details. The owner is the administrator who signs in with the Frameleaf account the server is linked to.
+- **Backup paused: plan full** (`data.reason` `plan-full`): sent to every administrator, without tier details, once each time the plan fills up. A Family Sharing member is asked to contact their family organiser.
