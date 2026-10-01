@@ -11944,6 +11944,10 @@
       "identity": "immich_fork.icloud_membership.icloud_membership_snapshot_idx"
     },
     {
+      "definition": "CREATE INDEX icloud_record_asset_name_idx ON immich_fork.icloud_record USING btree (\"connectionId\", upper(\"recordId\")) WHERE ((\"recordType\" = 'CPLAsset'::text) AND (NOT deleted))",
+      "identity": "immich_fork.icloud_record.icloud_record_asset_name_idx"
+    },
+    {
       "definition": "CREATE INDEX icloud_record_master_idx ON immich_fork.icloud_record USING btree (\"connectionId\", \"libraryKey\", \"masterId\") WHERE (\"masterId\" IS NOT NULL)",
       "identity": "immich_fork.icloud_record.icloud_record_master_idx"
     },

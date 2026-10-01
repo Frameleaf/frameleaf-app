@@ -143,7 +143,8 @@ describe(ICloudIdentityService.name, () => {
       expect(agreed.items[0].roles[0]).toMatchObject({ state: 'on-server', matchStrength: 'corroborated' });
 
       const disagreed = await sut.lookup(auth, { items: [lookupItem(1, { originalFilename: 'OTHER.HEIC' })] });
-      expect(disagreed.items[0].roles[0]).toMatchObject({ state: 'unknown', assetId: null });
+      // reported, so hint rates can be measured, but never acted on
+      expect(disagreed.items[0].roles[0]).toMatchObject({ state: 'unknown', assetId: null, matchStrength: 'hint' });
     });
 
     it('reports two assets for one item and role for review', async () => {
@@ -278,6 +279,20 @@ describe(ICloudIdentityService.name, () => {
         samples: samples(25, { originalFilename: 'OTHER.HEIC' }),
       });
       expect(unconfirmed.connections[0]).toMatchObject({ sampled: 25, matched: 0, covers: false });
+    });
+
+    it('counts only dated samples, and proves nothing while identity matching is switched off', async () => {
+      const c = connection();
+      const { sut } = setup({ connections: [c], inventory: Array.from({ length: 30 }, (_, n) => record(c.id, n)) });
+      const undated = await sut.coverage(auth, {
+        deviceKey: randomUUID(),
+        samples: samples(25, { creationDate: undefined }),
+      });
+      expect(undated.connections[0]).toMatchObject({ sampled: 0, covers: false });
+
+      process.env.FRAMELEAF_ICLOUD_IDENTITY_MATCHING = 'false';
+      const off = await sut.coverage(auth, { deviceKey: randomUUID(), samples: samples(25) });
+      expect(off).toMatchObject({ identityMatching: false, connections: [{ sampled: 0, matched: 0, covers: false }] });
     });
 
     it('never covers before a complete inventory, and reports an albums-only scope', async () => {

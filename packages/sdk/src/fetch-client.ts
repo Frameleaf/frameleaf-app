@@ -5877,6 +5877,8 @@ export type ICloudCoverageConnectionDto = {
 };
 export type ICloudCoverageResponseDto = {
     connections: ICloudCoverageConnectionDto[];
+    /** False when identity matching is switched off: no connection can then be shown to cover the library */
+    identityMatching: boolean;
 };
 export type ICloudLookupItemDto = {
     /** PHCloudIdentifier.stringValue, as the device reports it */
