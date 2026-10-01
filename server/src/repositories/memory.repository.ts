@@ -399,6 +399,53 @@ export class MemoryRepository implements IBulkAsset {
   }
 
   /**
+   * FL-228: per owner, the memories that became visible in `(since, now]` and were not seen or deleted
+   * (a memory without `showAt` counts from its creation), with a few of their items. The items are only
+   * candidates for a push preview: the push service drops Locked and sensitive ones.
+   */
+  async getNewlyVisibleSummaries(
+    since: Date,
+    now: Date,
+  ): Promise<Array<{ ownerId: string; count: number; assetIds: string[] }>> {
+    const rows = await this.db
+      .selectFrom('memory')
+      .select(['memory.id', 'memory.ownerId'])
+      .select((eb) =>
+        eb
+          .selectFrom('memory_asset')
+          .select((inner) => sql<string[]>`coalesce(array_agg(${inner.ref('memory_asset.assetId')}), '{}')`.as('ids'))
+          .whereRef('memory_asset.memoriesId', '=', 'memory.id')
+          .as('assetIds'),
+      )
+      .where('memory.deletedAt', 'is', null)
+      .where('memory.seenAt', 'is', null)
+      .where((eb) => eb.or([eb('memory.hideAt', 'is', null), eb('memory.hideAt', '>', now)]))
+      .where((eb) =>
+        eb.or([
+          eb.and([eb('memory.showAt', '>', since), eb('memory.showAt', '<=', now)]),
+          eb.and([eb('memory.showAt', 'is', null), eb('memory.createdAt', '>', since)]),
+        ]),
+      )
+      .orderBy('memory.ownerId')
+      .orderBy('memory.memoryAt', 'desc')
+      .orderBy('memory.id')
+      .execute();
+
+    const summaries = new Map<string, { ownerId: string; count: number; assetIds: string[] }>();
+    for (const row of rows) {
+      const summary = summaries.get(row.ownerId) ?? { ownerId: row.ownerId, count: 0, assetIds: [] };
+      summary.count++;
+      for (const assetId of row.assetIds ?? []) {
+        if (summary.assetIds.length < 5 && !summary.assetIds.includes(assetId)) {
+          summary.assetIds.push(assetId);
+        }
+      }
+      summaries.set(row.ownerId, summary);
+    }
+    return summaries.values().toArray();
+  }
+
+  /**
    * The `memoryAt` instants of the owner's existing memories of one type in a window, used
    * to avoid regenerating a story that already exists. Deleted memories count: a story the
    * owner threw away must not come straight back on the next generation pass.

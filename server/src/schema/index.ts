@@ -114,6 +114,7 @@ import {
   PreservationRestoreItemTable,
   PreservationRestoreTable,
 } from 'src/schema/tables/preservation.table.js';
+import { PushDeviceActivityTable, PushDeviceTable } from 'src/schema/tables/push-device.table.js';
 import {
   RenderWorkerAuditTable,
   RenderWorkerLimitTable,
@@ -200,6 +201,8 @@ export class ImmichDatabase {
     AssetUploadResourceTable,
     AssetUploadPartTable,
     BackupDeviceTable,
+    PushDeviceTable,
+    PushDeviceActivityTable,
     AssetBackupDeletionTable,
     BackupReconciliationTable,
     ActivityTable,
@@ -544,6 +547,8 @@ export interface DB {
   session_tag_sync_state: TagSyncStateTable;
   asset_upload_resource: AssetUploadResourceTable;
   asset_upload_part: AssetUploadPartTable;
+  push_device: PushDeviceTable;
+  push_device_activity: PushDeviceActivityTable;
   tag_asset: TagAssetTable;
   tag_closure: TagClosureTable;
 

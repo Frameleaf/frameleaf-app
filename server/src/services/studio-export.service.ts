@@ -25,6 +25,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   MlWorkload,
+  PushEventType,
   RenderWorkerStatus,
   StudioExportRemoteReason,
   StudioExportScope,
@@ -33,6 +34,7 @@ import {
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -220,6 +222,7 @@ export class StudioExportService {
     private media: MediaRepository,
     private restorations: AssetRestorationService,
     private mlDestinations: MlDestinationRepository,
+    private events: EventRepository,
   ) {
     this.logger.setContext(StudioExportService.name);
   }
@@ -859,6 +862,7 @@ export class StudioExportService {
       const published = await this.publishAcknowledged(version, operation, claimToken, prepared);
       await this.afterPublished(published, prepared);
       await this.finishJob(operation, claimToken, published.version.resultAssetId);
+      await this.notifyRenderFinished(version, 'published', published.version.resultAssetId, operation.label);
       await this.queueSmoothMotion(snapshot, published.version.resultAssetId, version.ownerId, operation.label);
       this.logger.log(
         `Studio export ${version.id} published as version ${published.version.version} (${published.privacy.scope}${
@@ -1156,6 +1160,32 @@ export class StudioExportService {
     }
   }
 
+  /**
+   * FL-228: tell the owner's devices that the render finished. The result is offered as the preview;
+   * the push service drops it when the published item is Locked or sensitive (FL-212/FL-213). A
+   * failure to notify never touches the export.
+   */
+  private async notifyRenderFinished(
+    version: StudioExportVersion,
+    status: 'published' | 'failed',
+    resultAssetId: string | null,
+    label: string | null,
+  ): Promise<void> {
+    const name = label?.trim() || 'Your Studio export';
+    try {
+      await this.events.emit('PushNotify', {
+        type: PushEventType.RenderFinished,
+        userIds: [version.ownerId],
+        title: status === 'published' ? 'Render finished' : 'Render failed',
+        body: status === 'published' ? `${name} is ready` : `${name} could not be finished`,
+        data: { versionId: version.id, projectId: version.projectId, status },
+        assetIds: resultAssetId ? [resultAssetId] : [],
+      });
+    } catch (error) {
+      this.logger.warn(`Could not announce Studio export ${version.id}: ${errorMessage(error)}`);
+    }
+  }
+
   /** A cancelled version's publication ends as cancelled too. Nothing remote is involved here. */
   private async settleCancelled(operation: MediaOperation, claimToken: string): Promise<void> {
     const cancelling = await this.operations.requestCancel(operation.id, operation.ownerId);
@@ -1178,6 +1208,7 @@ export class StudioExportService {
     if (outcome === 'failed' && version) {
       await this.repository.markFailed(version.id, failure);
       this.logger.error(`Studio export ${version.id} failed to publish: ${failure.error}`);
+      await this.notifyRenderFinished(version, 'failed', null, operation.label);
     } else if (outcome === 'retrying') {
       this.logger.warn(`Studio export publication ${operation.id} failed and will be retried once: ${failure.error}`);
     }

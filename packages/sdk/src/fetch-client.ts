@@ -8077,6 +8077,92 @@ export type PublicConfigDto = {
     server: PublicConfigServerDto;
     theme: PublicConfigThemeDto;
 };
+export type PushDeviceActivityDto = {
+    activityId: string;
+    kind: string;
+    updatedAt: string;
+};
+export type PushPreferencesResponseDto = {
+    accessChanged: boolean;
+    backupNeedsAttention: boolean;
+    backupStale: boolean;
+    cloudBackupActivation: boolean;
+    memories: boolean;
+    renderFinished: boolean;
+    sharedActivity: boolean;
+};
+export type PushDeviceResponseDto = {
+    activities: PushDeviceActivityDto[];
+    backupDeviceKey: string | null;
+    createdAt: string;
+    /** Whether this is the device of the session asking */
+    current: boolean;
+    hasPushToStartToken: boolean;
+    id: string;
+    lastDeliveredAt: string | null;
+    platform: PushPlatform;
+    preferences: PushPreferencesResponseDto;
+    /** A short fingerprint of the registered public key; never the token */
+    publicKeyFingerprint: string;
+    updatedAt: string;
+};
+export type PushDeviceListResponseDto = {
+    devices: PushDeviceResponseDto[];
+};
+export type PushPreferencesDto = {
+    accessChanged?: boolean;
+    backupNeedsAttention?: boolean;
+    backupStale?: boolean;
+    cloudBackupActivation?: boolean;
+    memories?: boolean;
+    renderFinished?: boolean;
+    sharedActivity?: boolean;
+};
+export type PushDeviceUpdateDto = {
+    backupDeviceKey?: string | null;
+    preferences?: PushPreferencesDto;
+    /** The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1). */
+    publicKey?: string;
+    /** iOS only: a rotated ActivityKit push-to-start token, or null */
+    pushToStartToken?: string | null;
+    /** A rotated APNs or FCM token */
+    pushToken?: string;
+};
+export type PushDeviceRegisterDto = {
+    /** This device's phone backup identity (the backup device registry's deviceKey), for stale-backup wake-ups */
+    backupDeviceKey?: string | null;
+    platform: PushPlatform;
+    preferences?: PushPreferencesDto;
+    /** The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1). */
+    publicKey: string;
+    /** iOS only: the ActivityKit push-to-start token */
+    pushToStartToken?: string | null;
+    /** The APNs device token or FCM registration token */
+    pushToken: string;
+};
+export type PushActivityTokenDto = {
+    /** The Live Activity type */
+    kind: Kind9;
+    /** The ActivityKit push token of this activity */
+    token: string;
+};
+export type PushStatusResponseDto = {
+    /** Whether this server delivers push notifications now (it must be linked) */
+    available: boolean;
+    /** How payloads are encrypted to the device key */
+    encryption: {
+        cipher: Cipher;
+        kdf: Kdf;
+        keyAgreement: KeyAgreement;
+        scheme: Scheme;
+    };
+    /** The events this server can deliver */
+    events: PushEventType[];
+    /** Why push is unavailable; null when available */
+    reason: (PushUnavailableReason) | null;
+    /** Whether the session asking has registered its device */
+    registered: boolean;
+};
 export type QueueResponseDto = {
     /** Whether the queue is paused */
     isPaused: boolean;
@@ -10982,7 +11068,7 @@ export type PinnedCollection = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind9;
+    kind: Kind10;
     /** Null when unavailable; the inaccessible target identity is not disclosed */
     targetId: string | null;
     /** Current access-filtered title; null when unavailable */
@@ -10997,7 +11083,7 @@ export type PinnedCollectionsResponseDto = {
 export type PinnedCollectionRef = {
     /** Opaque pin ID chosen by the client and retained across reorders */
     id: string;
-    kind: Kind9;
+    kind: Kind10;
     /** Target UUID, saved-search name, or built-in ID. Null retains an existing unavailable pin by its opaque ID */
     targetId: string | null;
 };
@@ -11761,7 +11847,7 @@ export type SyncPinnedCollectionV1 = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind9;
+    kind: Kind10;
     position: number;
     targetId: string;
     /** Current access-filtered title; null when unavailable */
@@ -11819,7 +11905,7 @@ export type SyncSharedSpaceV1 = {
     description: string | null;
     icon: string | null;
     id: string;
-    kind: Kind10;
+    kind: Kind11;
     name: string;
     updatedAt: string;
 };
@@ -18703,6 +18789,105 @@ export function getPublicConfigDefaults(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * List own push devices
+ */
+export function listPushDevices(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PushDeviceListResponseDto;
+    }>("/push/devices", {
+        ...opts
+    }));
+}
+/**
+ * Unregister this device from push
+ */
+export function unregisterPushDevice(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/push/devices/current", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Update this device’s push registration
+ */
+export function updatePushDevice({ pushDeviceUpdateDto }: {
+    pushDeviceUpdateDto: PushDeviceUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PushDeviceResponseDto;
+    }>("/push/devices/current", oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: pushDeviceUpdateDto
+    })));
+}
+/**
+ * Register this device for push
+ */
+export function registerPushDevice({ pushDeviceRegisterDto }: {
+    pushDeviceRegisterDto: PushDeviceRegisterDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PushDeviceResponseDto;
+    }>("/push/devices/current", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: pushDeviceRegisterDto
+    })));
+}
+/**
+ * Remove a Live Activity push token
+ */
+export function removePushActivityToken({ activityId }: {
+    activityId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/push/devices/current/activities/${encodeURIComponent(activityId)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Set a Live Activity push token
+ */
+export function setPushActivityToken({ activityId, pushActivityTokenDto }: {
+    activityId: string;
+    pushActivityTokenDto: PushActivityTokenDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PushDeviceResponseDto;
+    }>(`/push/devices/current/activities/${encodeURIComponent(activityId)}`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: pushActivityTokenDto
+    })));
+}
+/**
+ * Remove an own push device
+ */
+export function removePushDevice({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/push/devices/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Push availability
+ */
+export function getPushStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PushStatusResponseDto;
+    }>("/push/status", {
+        ...opts
+    }));
+}
+/**
  * List all queues
  */
 export function getQueues(opts?: Oazapfts.RequestOpts) {
@@ -24392,6 +24577,39 @@ export enum FrameleafVia {
     Wan = "wan",
     Relay = "relay"
 }
+export enum PushPlatform {
+    Ios = "ios",
+    Android = "android"
+}
+export enum Kind9 {
+    CloudBackupActivation = "cloud-backup-activation"
+}
+export enum Cipher {
+    Aes256Gcm = "AES-256-GCM"
+}
+export enum Kdf {
+    HkdfSha256 = "HKDF-SHA256"
+}
+export enum KeyAgreement {
+    X25519 = "X25519"
+}
+export enum Scheme {
+    FrameleafPushV1 = "frameleaf-push-v1"
+}
+export enum PushEventType {
+    BackupNeedsAttention = "backup-needs-attention",
+    BackupStale = "backup-stale",
+    CloudBackupActivation = "cloud-backup-activation",
+    SharedActivity = "shared-activity",
+    Memories = "memories",
+    RenderFinished = "render-finished",
+    AccessChanged = "access-changed"
+}
+export enum PushUnavailableReason {
+    NotConfigured = "not-configured",
+    NotLinked = "not-linked",
+    CloneSuspected = "clone-suspected"
+}
 export enum QueueJobStatus {
     Active = "active",
     Failed = "failed",
@@ -24478,6 +24696,8 @@ export enum JobName {
     CloudMlDescriptionBatch = "CloudMlDescriptionBatch",
     CloudBackupSchedule = "CloudBackupSchedule",
     CloudBackupVerify = "CloudBackupVerify",
+    PushDeliver = "PushDeliver",
+    PushBackupStaleCheck = "PushBackupStaleCheck",
     OcrQueueAll = "OcrQueueAll",
     Ocr = "Ocr",
     ImageDescriptionQueueAll = "ImageDescriptionQueueAll",
@@ -24987,7 +25207,7 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
-export enum Kind9 {
+export enum Kind10 {
     Album = "album",
     SmartAlbum = "smart-album",
     SavedSearch = "saved-search",
@@ -25016,7 +25236,7 @@ export enum Status4 {
     Trashed = "trashed",
     Deleted = "deleted"
 }
-export enum Kind10 {
+export enum Kind11 {
     Space = "space"
 }
 export enum UserMetadataKey {

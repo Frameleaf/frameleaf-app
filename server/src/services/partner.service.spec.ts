@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { PushEventType } from 'src/enum.js';
 import { PartnerDirection } from 'src/repositories/partner.repository.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -65,6 +66,26 @@ describe(PartnerService.name, () => {
       });
     });
 
+    it('tells the partner by push that they gained access (FL-228)', async () => {
+      const user1 = UserFactory.create();
+      const user2 = UserFactory.create();
+      const partner = PartnerFactory.from().sharedBy(user1).sharedWith(user2).build();
+      mocks.partner.get.mockResolvedValue(void 0);
+      mocks.user.get.mockResolvedValue(user2);
+      mocks.partner.create.mockResolvedValue(getForPartner(partner));
+
+      await sut.create(AuthFactory.create({ id: user1.id }), { sharedWithId: user2.id });
+
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({
+          type: PushEventType.AccessChanged,
+          userIds: [user2.id],
+          data: { partnerId: user1.id, change: 'partner-added' },
+        }),
+      );
+    });
+
     it('should throw an error when the partner already exists', async () => {
       const user1 = UserFactory.create();
       const user2 = UserFactory.create();
@@ -117,6 +138,24 @@ describe(PartnerService.name, () => {
       const payload = { sharedById: user1.id, sharedWithId: user2.id };
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('PartnerRevokeV1', user2.id, payload);
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('PartnerRevokeV1', user1.id, payload);
+    });
+
+    it('tells the former partner by push that their access ended (FL-228)', async () => {
+      const user1 = UserFactory.create();
+      const user2 = UserFactory.create();
+      const partner = PartnerFactory.from().sharedBy(user1).sharedWith(user2).build();
+      mocks.partner.get.mockResolvedValue(getForPartner(partner));
+
+      await sut.remove(AuthFactory.create({ id: user1.id }), user2.id);
+
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({
+          type: PushEventType.AccessChanged,
+          userIds: [user2.id],
+          data: { partnerId: user1.id, change: 'partner-removed' },
+        }),
+      );
     });
 
     it('should throw an error when the partner does not exist', async () => {

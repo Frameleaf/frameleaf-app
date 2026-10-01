@@ -3,7 +3,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Partner } from 'src/database.js';
 import { PartnerCreateDto, PartnerResponseDto, PartnerSearchDto, PartnerUpdateDto } from 'src/dtos/partner.dto.js';
 import { mapUser } from 'src/dtos/user.dto.js';
-import { Permission } from 'src/enum.js';
+import { Permission, PushEventType } from 'src/enum.js';
 import { PartnerDirection, PartnerIds } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 
@@ -23,6 +23,14 @@ export class PartnerService extends BaseService {
     }
 
     const partner = await this.partnerRepository.create(partnerId);
+    // FL-228: the new partner gained access to this library
+    await this.eventRepository.emit('PushNotify', {
+      type: PushEventType.AccessChanged,
+      userIds: [sharedWithId],
+      title: 'Access changed',
+      body: `${auth.user.name} shared their library with you`,
+      data: { partnerId: auth.user.id, change: 'partner-added' },
+    });
     return this.mapPartner(partner, PartnerDirection.SharedBy);
   }
 
@@ -41,6 +49,14 @@ export class PartnerService extends BaseService {
     for (const userId of [sharedWithId, auth.user.id]) {
       this.websocketRepository.clientSend('PartnerRevokeV1', userId, partnerId);
     }
+    // FL-228: the former partner's access ended
+    await this.eventRepository.emit('PushNotify', {
+      type: PushEventType.AccessChanged,
+      userIds: [sharedWithId],
+      title: 'Access changed',
+      body: `${auth.user.name} stopped sharing their library with you`,
+      data: { partnerId: auth.user.id, change: 'partner-removed' },
+    });
   }
 
   async search(auth: AuthDto, { direction }: PartnerSearchDto): Promise<PartnerResponseDto[]> {

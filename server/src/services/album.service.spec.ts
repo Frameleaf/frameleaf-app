@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { CreateAlbumDto } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
-import { AlbumKind, AlbumUserRole, AssetOrder, AssetVisibility, UserMetadataKey } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetOrder, AssetVisibility, PushEventType, UserMetadataKey } from 'src/enum.js';
 import { ALBUM_MOVE_OWNER_ONLY, AlbumService } from 'src/services/album.service.js';
 import { AlbumUserFactory } from 'test/factories/album-user.factory.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
@@ -972,6 +972,26 @@ describe(AlbumService.name, () => {
       const payload = { albumId: album.id, userId: user.id, role: AlbumUserRole.Viewer };
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AlbumUserUpdateV1', user.id, payload);
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('AlbumUserUpdateV1', owner.id, payload);
+    });
+
+    it('tells the member by push that their access changed (FL-228)', async () => {
+      const user = UserFactory.create();
+      const album = AlbumFactory.from().albumUser({ userId: user.id }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.albumUser.update.mockResolvedValue();
+
+      await sut.updateUser(AuthFactory.create(owner), album.id, user.id, { role: AlbumUserRole.Viewer });
+
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({
+          type: PushEventType.AccessChanged,
+          userIds: [user.id],
+          data: { albumId: album.id, change: 'role', role: AlbumUserRole.Viewer },
+        }),
+      );
     });
   });
 

@@ -666,6 +666,17 @@ export class JobRepository {
       case JobName.CloudBackupVerify: {
         return { deduplication: { id: JobName.CloudBackupVerify } };
       }
+      case JobName.PushDeliver: {
+        // FL-228: a burst about the same thing (photos added one by one) waits and goes out once
+        const { dedupeKey, delayMs } = item.data.notice;
+        if (!dedupeKey && !delayMs) {
+          return null;
+        }
+        return { ...(dedupeKey && { jobId: `push/${dedupeKey}` }), ...(delayMs && { delay: delayMs }) };
+      }
+      case JobName.PushBackupStaleCheck: {
+        return { deduplication: { id: JobName.PushBackupStaleCheck } };
+      }
       case JobName.DatabaseBackup: {
         return { deduplication: { id: JobName.DatabaseBackup } };
       }

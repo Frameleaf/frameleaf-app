@@ -1110,6 +1110,7 @@ describe(MemoryService.name, () => {
         {} as never,
         {} as never,
         {} as never,
+        { emit: vi.fn() } as never,
       );
       vi.spyOn(studioExports, 'create').mockImplementation(async (auth, projectId, dto, options) => {
         const settings = { format: dto.format, color: dto.color, resolution: dto.resolution };

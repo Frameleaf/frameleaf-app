@@ -5,6 +5,7 @@ import type { BackfillKind } from 'src/repositories/fork-schema.repository.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { CloudMlJobEstimateRecord } from 'src/utils/cloud-ml-job.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
+import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
 import type { Rational } from 'src/utils/rational-time.js';
 import { VECTOR_EXTENSIONS } from 'src/constants.js';
@@ -420,6 +421,11 @@ export interface INotifyAlbumUpdateJob extends IEntityJob, IDelayedJob {
   recipientId: string;
 }
 
+/** FL-228: a push notice; tokens and keys are read at delivery, never carried in the job. */
+export interface IPushDeliverJob extends IBaseJob {
+  notice: PushNotice;
+}
+
 export interface IIntegrityJob {
   refreshOnly?: boolean;
 }
@@ -599,6 +605,9 @@ export type JobItem =
   // FL-164: the cloud backup schedule and the verification check
   | { name: JobName.CloudBackupSchedule; data: IBaseJob }
   | { name: JobName.CloudBackupVerify; data: IBaseJob }
+  // FL-228: push delivery through the Frameleaf push gateway, and the nightly stale-backup wake-up
+  | { name: JobName.PushDeliver; data: IPushDeliverJob }
+  | { name: JobName.PushBackupStaleCheck; data?: IBaseJob }
 
   // OCR
   | { name: JobName.OcrQueueAll; data: IBaseJob }

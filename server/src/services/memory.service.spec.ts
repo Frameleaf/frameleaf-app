@@ -9,6 +9,7 @@ import {
   MemoryShowLessKind,
   MemoryType,
   PetSpecies,
+  PushEventType,
 } from 'src/enum.js';
 import { MemoryService } from 'src/services/memory.service.js';
 import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
@@ -282,6 +283,36 @@ describe(MemoryService.name, () => {
       expect(mocks.memory.create).not.toHaveBeenCalledWith(
         expect.objectContaining({ type: MemoryType.PetStory }),
         expect.anything(),
+      );
+    });
+  });
+
+  describe('onMemoriesCreate push (FL-228)', () => {
+    it('tells each owner once that new memories are ready, offering their items as previews', async () => {
+      const [userId] = newUuids();
+      mocks.user.getList.mockResolvedValue([{ id: userId }] as never);
+      mocks.systemMetadata.get.mockResolvedValue({
+        lastOnThisDayDate: new Date().toISOString(),
+        lastYearInReviewYear: 9999,
+        lastPersonRecapYear: 9999,
+      });
+      mocks.asset.getEventStoryCandidates.mockResolvedValue([]);
+      mocks.memory.getPetStoryCandidates.mockResolvedValue([]);
+      mocks.memory.getNewlyVisibleSummaries.mockResolvedValue([
+        { ownerId: userId, count: 2, assetIds: ['asset-1', 'asset-2'] },
+      ]);
+
+      await sut.onMemoriesCreate();
+
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({
+          type: PushEventType.Memories,
+          userIds: [userId],
+          assetIds: ['asset-1', 'asset-2'],
+          data: { count: 2 },
+          dedupeKey: expect.stringContaining(`memories/${userId}/`),
+        }),
       );
     });
   });

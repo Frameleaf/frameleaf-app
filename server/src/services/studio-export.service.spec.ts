@@ -10,6 +10,7 @@ import {
   MediaOperationStatus,
   MlDestinationKind,
   MlWorkload,
+  PushEventType,
   StudioExportRemoteReason,
   StudioExportScope,
   StudioExportVersionState,
@@ -238,6 +239,7 @@ describe(StudioExportService.name, () => {
   let renderWorkers: { listLiveSessions: ReturnType<typeof vi.fn> };
   let media: { probe: ReturnType<typeof vi.fn> };
   let restorations: { queueExportSmoothMotion: ReturnType<typeof vi.fn> };
+  let events: { emit: ReturnType<typeof vi.fn> };
   let mlDestinations: { getById: ReturnType<typeof vi.fn> };
   let staged: string;
 
@@ -336,6 +338,7 @@ describe(StudioExportService.name, () => {
     renderWorkers = { listLiveSessions: vi.fn().mockResolvedValue([liveSession()]) };
     media = { probe: vi.fn().mockResolvedValue(renderedOutput()) };
     restorations = { queueExportSmoothMotion: vi.fn().mockResolvedValue(null) };
+    events = { emit: vi.fn().mockResolvedValue(undefined) };
     mlDestinations = {
       getById: vi
         .fn()
@@ -368,6 +371,7 @@ describe(StudioExportService.name, () => {
       media as never,
       restorations as never,
       mlDestinations as never,
+      events as never,
     );
   });
 
@@ -919,6 +923,39 @@ describe(StudioExportService.name, () => {
       });
       expect(operations.fail).not.toHaveBeenCalled();
       expect(operations.requestCancel).not.toHaveBeenCalled();
+    });
+
+    it('tells the owner by push that the render finished, previewing only what may be shown (FL-228)', async () => {
+      repository.publish.mockResolvedValue(published());
+
+      await sut.run(job());
+
+      expect(events.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({
+          type: PushEventType.RenderFinished,
+          userIds: [OWNER],
+          assetIds: ['asset-new'],
+          data: expect.objectContaining({ versionId: VERSION, status: 'published' }),
+        }),
+      );
+      expect(operations.complete.mock.invocationCallOrder[0]).toBeLessThan(events.emit.mock.invocationCallOrder[0]);
+    });
+
+    it('tells the owner by push that the render failed (FL-228)', async () => {
+      crypto.hashFile.mockResolvedValue(Buffer.from('cd'.repeat(32), 'hex'));
+      operations.fail.mockResolvedValue('failed');
+
+      await sut.run(job());
+
+      expect(events.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({
+          type: PushEventType.RenderFinished,
+          userIds: [OWNER],
+          data: expect.objectContaining({ versionId: VERSION, status: 'failed' }),
+        }),
+      );
     });
 
     it('queues Smooth motion of the published video as its own job, only after publication (FL-162)', async () => {

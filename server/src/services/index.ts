@@ -83,6 +83,7 @@ import { PinnedCollectionService } from 'src/services/pinned-collection.service.
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
 import { PreservationService } from 'src/services/preservation.service.js';
+import { PushService } from 'src/services/push.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
@@ -132,6 +133,7 @@ export const services = [
   PhotographyWorkspaceService,
   AssetUploadResourceService,
   BackupDeviceService,
+  PushService,
   SafetyService,
   CloudMlService,
   CloudBackupDetailsService,

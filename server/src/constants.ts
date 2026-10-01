@@ -46,6 +46,8 @@ export const JOBS_NOT_RETRIED: ReadonlySet<JobName> = new Set([
   // stalled run skips the steps it completed, but only while those are kept; a failed record retried
   // from the Job manager later would run completed steps again
   JobName.WorkflowAssetTrigger,
+  // FL-228: a notice is news of the moment; one retried later from the Job manager would be stale
+  JobName.PushDeliver,
 ]);
 
 export const ErrorMessages = {
@@ -272,6 +274,8 @@ export const endpointTags: Record<ApiTag, string> = {
     'A plugin is an installed module that makes filters and actions available for the workflow feature.',
   [ApiTag.Preservation]:
     'A preservation package is an independent copy of selected originals with checksums, metadata sidecars, album structure, people, tags, Locked records and edit recipes. Packages are written, verified, reviewed and restored by durable media operations; a restoration never overwrites an existing original and never creates a duplicate.',
+  [ApiTag.Push]:
+    'Push notifications for the native apps (FL-228). A device registers its push token and a per-device public key; the server encrypts each notification to that key and hands only the target and the encrypted blob to the Frameleaf push gateway, so it never holds APNs or FCM keys. Push works only on a server linked to Frameleaf Cloud.',
   [ApiTag.Queues]:
     'Queues and background jobs are used for processing tasks asynchronously. Queues can be paused and resumed as needed.',
   [ApiTag.RenderWorkers]: 'Render workers and their admitted media operations.',

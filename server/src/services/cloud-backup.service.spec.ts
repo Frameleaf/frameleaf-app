@@ -8,12 +8,14 @@ import type { CloudBackupEntry } from 'src/repositories/cloud-backup-index.repos
 import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
 import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
+import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import {
   DatabaseLock,
   JobStatus,
   MediaOperationKind,
   MediaOperationStatus,
   MlAdmissionRefusal,
+  PushEventType,
   SystemMetadataKey,
 } from 'src/enum.js';
 import {
@@ -1112,6 +1114,22 @@ describe(CloudBackupService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith('/data/backups/cloud-backup-immich-db-backup-dump.sql.gz');
     });
 
+    it('tells the owner by push that cloud backup needs attention when a run fails for good (FL-228)', async () => {
+      store.uploadFile.mockRejectedValue(new CloudBackupStoreError('The storage provider refused PUT: 403', 403, null));
+
+      await sut.run(operationOf(), 'claim-1');
+
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({
+          type: PushEventType.BackupNeedsAttention,
+          admins: true,
+          title: 'Cloud backup failed',
+          data: { reason: 'cloud-backup:failed' },
+        }),
+      );
+    });
+
     it('keeps the manifest for the automatic retry and does not notify yet', async () => {
       store.uploadFile.mockRejectedValue(new CloudBackupStoreError('unreachable', null, null));
       operations.fail.mockResolvedValue('retrying');
@@ -1453,6 +1471,55 @@ describe(CloudBackupService.name, () => {
       expect(JSON.stringify(metadata)).not.toContain(secret);
       expect(JSON.stringify(mocks.forkSchema.persistConfig.mock.calls)).not.toContain(secret);
       expect(JSON.stringify(mocks.logger.log.mock.calls)).not.toContain(secret);
+    });
+
+    it('follows the first backup of the activation chain by push, ending it when the backup is done (FL-228)', async () => {
+      await sut.run(managedOperation(), 'claim-1');
+
+      const activation = mocks.event.emit.mock.calls
+        .filter(([name]) => name === 'PushNotify')
+        .map(([, notice]) => notice as PushNotice)
+        .filter(({ type }) => type === PushEventType.CloudBackupActivation);
+      expect(activation.length).toBeGreaterThanOrEqual(2);
+      expect(activation[0]).toMatchObject({
+        admins: true,
+        activation: { step: 4, total: 4, stage: 'first-backup', state: 'active' },
+      });
+      expect(activation.at(-1)).toMatchObject({
+        admins: true,
+        body: '4 of 4 · First backup complete',
+        activation: { step: 4, stage: 'first-backup', state: 'complete', firstRun: 'done' },
+      });
+    });
+
+    it('says storage is being prepared when managed setup starts (FL-228)', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
+      cloudBackup.grant.mockRejectedValue(new Error('stop here'));
+
+      await expect(
+        sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never),
+      ).rejects.toThrow();
+
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({
+          type: PushEventType.CloudBackupActivation,
+          admins: true,
+          body: '3 of 4 · Preparing storage',
+          activation: expect.objectContaining({ step: 3, stage: 'preparing-storage', state: 'active' }),
+        }),
+      );
+    });
+
+    it('leaves the activation chain alone once a first backup has been done (FL-228)', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({ lastSuccessAt: '2026-09-20T00:00:00.000Z' });
+
+      await sut.run(managedOperation(), 'claim-1');
+
+      expect(mocks.event.emit).not.toHaveBeenCalledWith(
+        'PushNotify',
+        expect.objectContaining({ type: PushEventType.CloudBackupActivation }),
+      );
     });
 
     it('stops uploads without touching this server’s files while the grant is read-only', async () => {
