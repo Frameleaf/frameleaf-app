@@ -82,9 +82,9 @@ export class FrameleafServerSetupService extends BaseService {
         {
           userId: admin.id,
           actorId: admin.id,
-          action: AdminAuditAction.ServerClaimed,
+          action: AdminAuditAction.AccountCreated,
           subject: admin.name,
-          detail: 'app-password',
+          detail: 'server-claimed:app-password',
         },
       ]);
       this.logger.log(`This server was set up from the Frameleaf app (${client.ip}): ${admin.email} administers it`);

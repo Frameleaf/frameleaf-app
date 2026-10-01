@@ -452,9 +452,9 @@ export class AuthService extends BaseService {
         {
           userId: admin.id,
           actorId: admin.id,
-          action: AdminAuditAction.ServerClaimed,
+          action: AdminAuditAction.AccountCreated,
           subject: admin.name,
-          detail: dto.setupTicket ? 'app-password' : 'web',
+          detail: dto.setupTicket ? 'server-claimed:app-password' : 'server-claimed:web',
         },
       ]);
       this.logger.log(`This server was set up (${client.ip}): ${admin.email} administers it`);

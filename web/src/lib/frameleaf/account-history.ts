@@ -26,6 +26,13 @@ export const describeAdminEvent = (
 ): string => {
   switch (action) {
     case AdminAuditAction.AccountCreated: {
+      // FL-292: the first administrator of a new server, claimed with its setup code
+      if (detail === 'server-claimed:web') {
+        return $t('frameleaf_account_history_server_claimed_web');
+      }
+      if (detail?.startsWith('server-claimed:')) {
+        return $t('frameleaf_account_history_server_claimed_app');
+      }
       return $t('frameleaf_account_history_account_created');
     }
     case AdminAuditAction.AccountUpdated: {
@@ -144,11 +151,6 @@ export const describeAdminEvent = (
     }
     case AdminAuditAction.FrameleafAccountUnlinked: {
       return $t('frameleaf_account_history_frameleaf_account_unlinked');
-    }
-    case AdminAuditAction.ServerClaimed: {
-      return detail === 'web'
-        ? $t('frameleaf_account_history_server_claimed_web')
-        : $t('frameleaf_account_history_server_claimed_app');
     }
     default: {
       // an action from a newer server this client does not know yet

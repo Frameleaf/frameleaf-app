@@ -268,7 +268,8 @@ export const withSetupProof = <T>(
       }
       const result = await claim();
       // used up only once the claim worked: a refused link or a taken email can be tried again
-      const after = await readState(deps);
+      // once an administrator exists, setup is over and nothing is written back
+      const after = (await deps.userRepository.getAdmin()) ? null : await readState(deps);
       if (after) {
         await writeState(deps, { ...after, ticket: undefined });
       }
