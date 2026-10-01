@@ -275,11 +275,12 @@ export class DatabaseBackupService {
   /**
    * A full `pg_dump` of the database, gzipped into `<media>/backups`, written to a `.tmp` file and renamed
    * once complete. FL-295: `label` goes between the timestamp and the version (the pre-upgrade copy), and
-   * `verify` checks the temporary file is a complete dump before it is renamed.
+   * `verify` checks the temporary file is a complete dump before it is renamed. FL-298: every backup is
+   * verified by default (routine, restore point, cloud dump), so an empty or partial file never counts.
    */
   async createDatabaseBackup(
     filenamePrefix: string = '',
-    { label, verify = false }: { label?: string; verify?: boolean } = {},
+    { label, verify = true }: { label?: string; verify?: boolean } = {},
   ): Promise<string> {
     this.logger.debug(`Database Backup Started`);
 
