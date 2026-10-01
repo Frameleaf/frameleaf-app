@@ -5909,8 +5909,7 @@ export type ICloudCoverageConnectionDto = {
     sampled: number;
     scope: {
         albums: string[];
-        /** Whole libraries, or only some albums */
-        kind: Kind3;
+        kind: ICloudCoverageScopeKind;
         /** Library zones; empty means every supported library */
         libraries: string[];
     };
@@ -5964,7 +5963,7 @@ export type ICloudLookupAnswerDto = {
     /** Who delivers edit renders for this item; the other path never uploads one */
     editOwner: {
         connectionId: string | null;
-        kind: Kind4;
+        kind: ICloudEditOwnerKind;
     };
     id: string;
     roles: ICloudLookupRoleDto[];
@@ -6320,7 +6319,7 @@ export type LicenseLinkCodeResponseDto = {
 };
 export type LicenseProductDto = {
     id: string;
-    kind: Kind5;
+    kind: Kind3;
     period: Period;
     priceUsd: number;
     /** Where to buy it; null when no store is configured */
@@ -6826,7 +6825,7 @@ export type EventStoryDto = {
     /** Last local day of the event, 'yyyy-MM-dd' */
     endDate: string;
     /** Discriminator for an event story */
-    kind: Kind6;
+    kind: Kind4;
     place?: MemoryStoryPlaceDto;
     /** First local day of the event, 'yyyy-MM-dd' */
     startDate: string;
@@ -6839,7 +6838,7 @@ export type YearInReviewDto = {
     /** Number of assets captured that year */
     assetCount: number;
     /** Discriminator for a year in review recap */
-    kind: Kind7;
+    kind: Kind5;
     /** Number of distinct months represented */
     monthCount: number;
     /** Calendar year being recapped */
@@ -6849,7 +6848,7 @@ export type PetStoryDto = {
     /** Confirmed photos of the pet that month, before the diversity pass */
     assetCount: number;
     /** Discriminator for a pet story */
-    kind: Kind8;
+    kind: Kind6;
     /** The owner's local month, 'yyyy-MM' */
     month: string;
     /** The pet name */
@@ -6867,7 +6866,7 @@ export type BirthdayMemoryDto = {
     /** The birthday this year, 'yyyy-MM-dd' */
     date: string;
     /** Discriminator for a birthday */
-    kind: Kind9;
+    kind: Kind7;
     /** Their name when the memory was made */
     name: string;
     /** Whether the birthday is a person's or a pet's */
@@ -6881,7 +6880,7 @@ export type PersonRecapDto = {
     /** Number of their photos and videos that year */
     assetCount: number;
     /** Discriminator for a person or pet recap */
-    kind: Kind10;
+    kind: Kind8;
     /** Their name when the memory was made */
     name: string;
     /** Whether the recap is about a person or a pet */
@@ -8323,7 +8322,7 @@ export type PushDeviceRegisterDto = {
 };
 export type PushActivityTokenDto = {
     /** The Live Activity type */
-    kind: Kind11;
+    kind: Kind9;
     /** The ActivityKit push token of this activity */
     token: string;
 };
@@ -11334,7 +11333,7 @@ export type PinnedCollection = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind12;
+    kind: Kind10;
     /** Null when unavailable; the inaccessible target identity is not disclosed */
     targetId: string | null;
     /** Current access-filtered title; null when unavailable */
@@ -11349,7 +11348,7 @@ export type PinnedCollectionsResponseDto = {
 export type PinnedCollectionRef = {
     /** Opaque pin ID chosen by the client and retained across reorders */
     id: string;
-    kind: Kind12;
+    kind: Kind10;
     /** Target UUID, saved-search name, or built-in ID. Null retains an existing unavailable pin by its opaque ID */
     targetId: string | null;
 };
@@ -12255,7 +12254,7 @@ export type SyncPinnedCollectionV1 = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind12;
+    kind: Kind10;
     position: number;
     targetId: string;
     /** Current access-filtered title; null when unavailable */
@@ -12313,7 +12312,7 @@ export type SyncSharedSpaceV1 = {
     description: string | null;
     icon: string | null;
     id: string;
-    kind: Kind13;
+    kind: Kind11;
     name: string;
     updatedAt: string;
 };
@@ -24636,7 +24635,7 @@ export enum ICloudReviewKind {
     KeptTrashed = "kept-trashed",
     SourceRemoved = "source-removed"
 }
-export enum Kind3 {
+export enum ICloudCoverageScopeKind {
     Libraries = "libraries",
     Albums = "albums"
 }
@@ -24654,7 +24653,7 @@ export enum ICloudIdentityRole {
     RawAlternate = "raw-alternate",
     EditRender = "edit-render"
 }
-export enum Kind4 {
+export enum ICloudEditOwnerKind {
     IcloudSync = "icloud-sync",
     Device = "device"
 }
@@ -24757,7 +24756,7 @@ export enum LicenseLinkCodeKind {
 export enum Currency {
     Usd = "USD"
 }
-export enum Kind5 {
+export enum Kind3 {
     Plan = "plan",
     Supporter = "supporter",
     Credit = "credit"
@@ -24855,23 +24854,23 @@ export enum MemoryType {
     Birthday = "birthday",
     PersonRecap = "person_recap"
 }
-export enum Kind6 {
+export enum Kind4 {
     EventStory = "event_story"
 }
-export enum Kind7 {
+export enum Kind5 {
     YearInReview = "year_in_review"
 }
-export enum Kind8 {
+export enum Kind6 {
     PetStory = "pet_story"
 }
-export enum Kind9 {
+export enum Kind7 {
     Birthday = "birthday"
 }
 export enum Subject {
     Person = "person",
     Pet = "pet"
 }
-export enum Kind10 {
+export enum Kind8 {
     PersonRecap = "person_recap"
 }
 export enum MemoryShowLessKind {
@@ -25132,7 +25131,7 @@ export enum PushPlatform {
     Ios = "ios",
     Android = "android"
 }
-export enum Kind11 {
+export enum Kind9 {
     CloudBackupActivation = "cloud-backup-activation"
 }
 export enum Cipher {
@@ -25785,7 +25784,7 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
-export enum Kind12 {
+export enum Kind10 {
     Album = "album",
     SmartAlbum = "smart-album",
     SavedSearch = "saved-search",
@@ -25828,7 +25827,7 @@ export enum Status4 {
     Trashed = "trashed",
     Deleted = "deleted"
 }
-export enum Kind13 {
+export enum Kind11 {
     Space = "space"
 }
 export enum UserMetadataKey {

@@ -63,7 +63,10 @@ const CoverageConnection = z
     state: ICloudConnectionHealthSchema,
     unhealthySince: DateTime.nullable(),
     scope: z.object({
-      kind: z.enum(['libraries', 'albums']).describe('Whole libraries, or only some albums'),
+      kind: z
+        .enum(['libraries', 'albums'])
+        .describe('Whole libraries, or only some albums')
+        .meta({ id: 'ICloudCoverageScopeKind' }),
       libraries: z.array(z.string()).describe('Library zones; empty means every supported library'),
       albums: z.array(z.string()),
     }),
@@ -147,7 +150,7 @@ const LookupAnswer = z
     cplAssetRecordName: z.string().nullable(),
     editOwner: z
       .object({
-        kind: z.enum(['icloud-sync', 'device']),
+        kind: z.enum(['icloud-sync', 'device']).meta({ id: 'ICloudEditOwnerKind' }),
         connectionId: z.uuid().nullable(),
       })
       .describe('Who delivers edit renders for this item; the other path never uploads one'),
