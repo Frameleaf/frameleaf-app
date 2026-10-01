@@ -133,8 +133,11 @@ describe(ICloudIdentityRepository.name, () => {
     await expect(sut.inventory(randomUUID(), [ASSET])).resolves.toEqual([]);
   });
 
-  it('stops calling a role pending once it is imported, or failed for good', async () => {
+  it('stops calling a role pending once it is finalized, or failed for good', async () => {
     await commit('original', randomUUID(), Buffer.alloc(32, 1));
+    // committed is still the worker's to finish; finalized is done
+    await sql`UPDATE immich_fork.icloud_resource SET status = 'finalized'
+      WHERE "connectionId" = ${connection.id}::uuid AND role = 'original'`.execute(db);
     await sql`UPDATE immich_fork.icloud_resource SET status = 'failed'
       WHERE "connectionId" = ${connection.id}::uuid AND role = 'motion'`.execute(db);
     const [item] = await sut.inventory(connection.ownerId, [ASSET]);
