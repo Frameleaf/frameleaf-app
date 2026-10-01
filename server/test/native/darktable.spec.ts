@@ -30,7 +30,12 @@ it('develops an actual RAW through pinned darktable, changes EV, and preserves t
 
   const media = new MediaRepository({ setContext: () => {} } as unknown as LoggingRepository);
   const decoded = await media.decodeImage(brighter, { colorspace: Colorspace.Srgb, processInvalidImages: false });
-  const options = { detail: { median: 0 }, colorspace: Colorspace.Srgb, format: ImageFormat.Jpeg, quality: 92 };
+  const options = {
+    detail: { median: 0 as const },
+    colorspace: Colorspace.Srgb,
+    format: ImageFormat.Jpeg,
+    quality: 92,
+  };
   const master = await media.encodeDevelopOutput(decoded.data, decoded.info as RawImageInfo, options);
   const preview = await media.encodeDevelopOutput(decoded.data, decoded.info as RawImageInfo, {
     ...options,
