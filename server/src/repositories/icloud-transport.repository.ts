@@ -4,6 +4,7 @@ import { request } from 'node:https';
 import type { IncomingMessage } from 'node:http';
 import type { ICloudAuthDto } from 'src/dtos/icloud-sync.dto.js';
 import type { ICloudLibrary, ICloudRecord } from 'src/repositories/icloud-sync.repository.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { decryptICloudSession, encryptICloudSession } from 'src/utils/icloud-sync.js';
 
 export type ICloudPage = {
@@ -23,11 +24,11 @@ export class ICloudTransportError extends Error {
 @Injectable()
 export class ICloudTransportRepository {
   enabled(): boolean {
-    return !!process.env.IMMICH_ICLOUD_BRIDGE_URL;
+    return !!readAliasedEnv('FRAMELEAF_ICLOUD_BRIDGE_URL');
   }
 
   private async configuration() {
-    const raw = process.env.IMMICH_ICLOUD_BRIDGE_URL;
+    const raw = readAliasedEnv('FRAMELEAF_ICLOUD_BRIDGE_URL');
     if (!raw) {
       throw new ICloudTransportError('icloud_disabled');
     }
@@ -36,9 +37,9 @@ export class ICloudTransportRepository {
       throw new ICloudTransportError('icloud_bridge_configuration_invalid');
     }
     const paths = [
-      process.env.IMMICH_ICLOUD_KEY_FILE,
-      process.env.IMMICH_ICLOUD_BRIDGE_TOKEN_FILE,
-      process.env.IMMICH_ICLOUD_CA_FILE,
+      readAliasedEnv('FRAMELEAF_ICLOUD_KEY_FILE'),
+      readAliasedEnv('FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE'),
+      readAliasedEnv('FRAMELEAF_ICLOUD_CA_FILE'),
     ];
     if (paths.some((value) => !value)) {
       throw new ICloudTransportError('icloud_secrets_not_configured');

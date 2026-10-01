@@ -106,6 +106,7 @@ export const envData: EnvData = {
   },
 
   noColor: false,
+  deprecatedEnv: [],
 };
 
 export const mockEnvData = (config: Partial<EnvData>) => ({ ...envData, ...config });

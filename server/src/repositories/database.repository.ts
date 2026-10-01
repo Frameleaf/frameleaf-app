@@ -1221,7 +1221,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
 
   /**
    * An official-origin library the first Frameleaf boot set up (`inactive`, schema version 1) and that
-   * has not been adopted yet. Startup adopts it automatically (FL-289); `immich-admin fork-schema adopt` is the manual form.
+   * has not been adopted yet. Startup adopts it automatically (FL-289); `frameleaf-admin fork-schema adopt` is the manual form.
    */
   async isAwaitingOfficialAdoption(): Promise<boolean> {
     const relation = await sql<{ present: boolean }>`
@@ -1409,7 +1409,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
     const readiness = result.rows[0];
     if (!atBoot && !readiness?.maintenanceMode) {
       throw new Error(
-        'Adoption requires maintenance mode: run `immich-admin enable-maintenance-mode`, stop every server, then adopt',
+        'Adoption requires maintenance mode: run `frameleaf-admin enable-maintenance-mode`, stop every server, then adopt',
       );
     }
     const others = readiness?.others ?? [];

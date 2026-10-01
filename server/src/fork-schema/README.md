@@ -39,7 +39,7 @@ until just after the lease ends; the delayed job takes over the claimed ids thro
 an active batch it is kept (`keepLastIfActive`) and later adds merge into it while it waits
 (`src/repositories/fork-schema-job-lifecycle.spec.ts`).
 
-Adoption (`official-adoption.ts`, `DatabaseRepository.adoptOfficialOrigin`; `immich-admin
+Adoption (`official-adoption.ts`, `DatabaseRepository.adoptOfficialOrigin`; `frameleaf-admin
 fork-schema adopt` is the manual form) completes the library in one transaction:
 
 - It refuses anything but an `inactive` / `1` state without Frameleaf tables whose ledger is the

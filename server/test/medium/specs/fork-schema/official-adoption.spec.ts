@@ -23,7 +23,7 @@ import { getKyselyDB } from 'test/utils.js';
 
 /**
  * FL-44: a library the official v3.1.0 server created, started once under Frameleaf and then adopted
- * with `immich-admin fork-schema adopt`, becomes the same library a fresh Frameleaf install has.
+ * with `frameleaf-admin fork-schema adopt`, becomes the same library a fresh Frameleaf install has.
  */
 class FailingAdoptionRepository extends DatabaseRepository {
   protected override afterOfficialAdoptionStep(_transaction: Kysely<DB>, name: string): Promise<void> {

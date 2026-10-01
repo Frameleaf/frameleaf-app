@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 test('container health accepts additive ping identity and rejects failed or invalid responses', () => {
   const directory = mkdtempSync(join(tmpdir(), 'frameleaf-healthcheck-'));
-  const script = fileURLToPath(new URL('../../bin/immich-healthcheck', import.meta.url));
+  const script = fileURLToPath(new URL('../../bin/frameleaf-healthcheck', import.meta.url));
   try {
     writeFileSync(
       join(directory, 'curl'),
@@ -34,6 +34,9 @@ test('container health accepts additive ping identity and rejects failed or inva
         env: {
           ...process.env,
           PATH: `${directory}:${process.env.PATH}`,
+          FRAMELEAF_WORKERS_INCLUDE: '',
+          FRAMELEAF_WORKERS_EXCLUDE: '',
+          FRAMELEAF_LOG_LEVEL: '',
           IMMICH_WORKERS_INCLUDE: '',
           IMMICH_WORKERS_EXCLUDE: '',
           IMMICH_LOG_LEVEL: '',
@@ -43,6 +46,50 @@ test('container health accepts additive ping identity and rejects failed or inva
       });
       assert.equal(result.status, expected, `${body}: ${result.stdout}${result.stderr}`);
     }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+// FL-294: `immich-healthcheck` and the IMMICH_* names keep working for unchanged Immich Compose files
+test('the deprecated immich-healthcheck name and IMMICH_* variables still work', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'frameleaf-healthcheck-'));
+  const legacy = fileURLToPath(new URL('../../bin/immich-healthcheck', import.meta.url));
+  try {
+    // curl records the address it was asked for and answers pong
+    writeFileSync(
+      join(directory, 'curl'),
+      '#!/usr/bin/env bash\nprintf "%s" "${@: -1}" > "$CURL_URL_FILE"\nprintf \'{"res":"pong"}\'\n',
+      {
+        mode: 0o755,
+      },
+    );
+    const urlFile = join(directory, 'url');
+    const run = (env) =>
+      spawnSync('sh', [legacy], {
+        encoding: 'utf8',
+        env: {
+          PATH: `${directory}:${process.env.PATH}`,
+          CURL_URL_FILE: urlFile,
+          ...env,
+        },
+      });
+
+    let result = run({ IMMICH_HOST: '10.0.0.5', IMMICH_PORT: '3001' });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(readFileSync(urlFile, 'utf8'), 'http://10.0.0.5:3001/api/server/ping');
+
+    result = run({ FRAMELEAF_HOST: '10.0.0.6', IMMICH_HOST: '10.0.0.5', FRAMELEAF_PORT: '3002' });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(readFileSync(urlFile, 'utf8'), 'http://10.0.0.6:3002/api/server/ping');
+
+    result = run({ IMMICH_WORKERS_EXCLUDE: 'api' });
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /API worker excluded/);
+
+    result = run({ FRAMELEAF_WORKERS_INCLUDE: 'microservices' });
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /API worker excluded/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

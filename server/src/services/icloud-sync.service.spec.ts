@@ -197,7 +197,7 @@ describe(ICloudSyncService.name, () => {
       'Elevated permission is required',
     );
     expect(repository.update).not.toHaveBeenCalled();
-    vi.stubEnv('IMMICH_ICLOUD_MAX_CONCURRENCY', '2');
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY', '2');
     try {
       await expect(sut.update(auth, connection.id, dto)).rejects.toThrow('icloud_admin_limit_exceeded');
       expect(repository.update).not.toHaveBeenCalled();

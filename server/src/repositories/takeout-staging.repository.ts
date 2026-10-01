@@ -62,7 +62,7 @@ const digesting = (declared: number, onProgress?: (bytes: number) => void) => {
  * Staged copies live under `<media>/takeout/<owner>/<import>/` with opaque generated names: an
  * archive as `<source id>.zip`, each extracted or copied file as its file id. No name from an
  * archive or a selected directory is ever used as a destination path. A server directory can only be
- * read when it lies under one of the roots the administrator configured (`IMMICH_IMPORT_ROOTS`), and
+ * read when it lies under one of the roots the administrator configured (`FRAMELEAF_IMPORT_ROOTS`), and
  * it is walked without following links.
  */
 @Injectable()

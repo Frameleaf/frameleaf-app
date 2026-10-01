@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { PostgresError } from 'postgres';
 import { DatabaseLock, ExitCode, ImmichWorker, LogLevel, SystemMetadataKey } from 'src/enum.js';
-import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { ConfigRepository, warnDeprecatedEnv } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
@@ -310,9 +310,12 @@ async function main() {
     process.argv.splice(2, 1);
   }
 
-  if (immichApp === 'immich-admin') {
-    process.title = 'immich_admin_cli';
-    process.env.IMMICH_LOG_LEVEL = LogLevel.Warn;
+  // FL-294: `frameleaf-admin`; `immich-admin` is its deprecated alias
+  if (immichApp === 'frameleaf-admin' || immichApp === 'immich-admin') {
+    process.title = 'frameleaf_admin_cli';
+    process.env.FRAMELEAF_LOG_LEVEL = LogLevel.Warn;
+    // the old name would otherwise conflict with the level set here
+    delete process.env.IMMICH_LOG_LEVEL;
 
     // imported lazily, so that the supervisor process does not build the whole application
     // graph on every start.
@@ -338,7 +341,9 @@ async function main() {
     process.exit(1);
   }
 
-  process.title = 'immich';
+  process.title = 'frameleaf';
+  // FL-294: one warning per start for deprecated IMMICH_ variables (the workers stay quiet)
+  warnDeprecatedEnv();
   const workers = new Workers();
   // FL-291: Docker (through tini) sends SIGTERM here only; the workers are stopped from here
   process.on('SIGTERM', () => workers.stop('SIGTERM'));

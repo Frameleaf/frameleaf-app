@@ -1,4 +1,5 @@
-import { ConfigRepository, clearEnvCache } from 'src/repositories/config.repository.js';
+import { ConfigRepository, clearEnvCache, warnDeprecatedEnv } from 'src/repositories/config.repository.js';
+import { ENV_ALIASES } from 'src/utils/env-aliases.js';
 
 const getEnv = () => {
   clearEnvCache();
@@ -7,16 +8,16 @@ const getEnv = () => {
 
 const resetEnv = () => {
   for (const env of [
-    'IMMICH_ALLOW_EXTERNAL_PLUGINS',
+    'FRAMELEAF_ALLOW_EXTERNAL_PLUGINS',
     'FRAMELEAF_SHUTDOWN_GRACE_SECONDS',
     'FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS',
-    'IMMICH_ALLOW_SETUP',
-    'IMMICH_ENV',
-    'IMMICH_WORKERS_INCLUDE',
-    'IMMICH_WORKERS_EXCLUDE',
-    'IMMICH_TRUSTED_PROXIES',
+    'FRAMELEAF_ALLOW_SETUP',
+    'FRAMELEAF_ENV',
+    'FRAMELEAF_WORKERS_INCLUDE',
+    'FRAMELEAF_WORKERS_EXCLUDE',
+    'FRAMELEAF_TRUSTED_PROXIES',
     'IMMICH_API_METRICS_PORT',
-    'IMMICH_MEDIA_LOCATION',
+    'FRAMELEAF_MEDIA_LOCATION',
     'IMMICH_MICROSERVICES_METRICS_PORT',
     'IMMICH_TELEMETRY_INCLUDE',
     'IMMICH_TELEMETRY_EXCLUDE',
@@ -53,6 +54,10 @@ const resetEnv = () => {
     'FRAMELEAF_LICENSE_EXTRA_JWKS_FILE',
   ]) {
     delete process.env[env];
+  }
+  for (const { legacy, current } of ENV_ALIASES) {
+    delete process.env[legacy];
+    delete process.env[current];
   }
 };
 
@@ -134,36 +139,150 @@ describe('getEnv', () => {
     });
   });
 
-  describe('IMMICH_MEDIA_LOCATION', () => {
+  describe('FRAMELEAF_MEDIA_LOCATION', () => {
     it('should throw an error for relative paths', () => {
-      process.env.IMMICH_MEDIA_LOCATION = './relative/path';
-      expect(() => getEnv()).toThrowError('[IMMICH_MEDIA_LOCATION] Must be an absolute path');
+      process.env.FRAMELEAF_MEDIA_LOCATION = './relative/path';
+      expect(() => getEnv()).toThrowError('[FRAMELEAF_MEDIA_LOCATION] Must be an absolute path');
     });
   });
 
-  describe('IMMICH_ALLOW_EXTERNAL_PLUGINS', () => {
+  describe('FRAMELEAF_ALLOW_EXTERNAL_PLUGINS', () => {
     it('should disable plugins', () => {
-      process.env.IMMICH_ALLOW_EXTERNAL_PLUGINS = 'false';
+      process.env.FRAMELEAF_ALLOW_EXTERNAL_PLUGINS = 'false';
       const config = getEnv();
       expect(config.plugins.external).toEqual({ allow: false });
     });
 
     it('should throw an error for invalid value', () => {
-      process.env.IMMICH_ALLOW_EXTERNAL_PLUGINS = 'invalid';
-      expect(() => getEnv()).toThrowError('[IMMICH_ALLOW_EXTERNAL_PLUGINS] Invalid option: expected one of');
+      process.env.FRAMELEAF_ALLOW_EXTERNAL_PLUGINS = 'invalid';
+      expect(() => getEnv()).toThrowError('[FRAMELEAF_ALLOW_EXTERNAL_PLUGINS] Invalid option: expected one of');
     });
   });
 
-  describe('IMMICH_ALLOW_SETUP', () => {
+  describe('FRAMELEAF_ALLOW_SETUP', () => {
     it('should disable setup', () => {
-      process.env.IMMICH_ALLOW_SETUP = 'false';
+      process.env.FRAMELEAF_ALLOW_SETUP = 'false';
       const { setup } = getEnv();
       expect(setup).toEqual({ allow: false });
     });
 
     it('should throw an error for invalid value', () => {
-      process.env.IMMICH_ALLOW_SETUP = 'invalid';
-      expect(() => getEnv()).toThrowError('[IMMICH_ALLOW_SETUP] Invalid option: expected one of');
+      process.env.FRAMELEAF_ALLOW_SETUP = 'invalid';
+      expect(() => getEnv()).toThrowError('[FRAMELEAF_ALLOW_SETUP] Invalid option: expected one of');
+    });
+  });
+
+  describe('deprecated IMMICH_ aliases (FL-294)', () => {
+    it('reports no deprecated names by default', () => {
+      expect(getEnv().deprecatedEnv).toEqual([]);
+    });
+
+    it('starts from an unchanged Immich environment, using every old name', () => {
+      process.env.IMMICH_PORT = '3001';
+      process.env.IMMICH_HOST = '0.0.0.0';
+      process.env.IMMICH_ENV = 'development';
+      process.env.IMMICH_LOG_LEVEL = 'debug';
+      process.env.IMMICH_MEDIA_LOCATION = '/usr/src/app/upload';
+      process.env.IMMICH_WORKERS_EXCLUDE = 'microservices';
+      process.env.IMMICH_TRUSTED_PROXIES = '10.0.0.0/8';
+      process.env.IMMICH_ALLOW_SETUP = 'false';
+      process.env.IMMICH_API_METRICS_PORT = '9001';
+      process.env.IMMICH_IMPORT_ROOTS = '/imports';
+
+      const env = getEnv();
+
+      expect(env).toMatchObject({
+        port: 3001,
+        host: '0.0.0.0',
+        environment: 'development',
+        logLevel: 'debug',
+        workers: ['api', 'edge'],
+        network: { trustedProxies: ['10.0.0.0/8'] },
+        setup: { allow: false },
+        storage: { mediaLocation: '/usr/src/app/upload', importRoots: ['/imports'] },
+        telemetry: { apiPort: 9001 },
+      });
+      expect(env.deprecatedEnv).toEqual(
+        expect.arrayContaining([
+          { legacy: 'IMMICH_PORT', current: 'FRAMELEAF_PORT' },
+          { legacy: 'IMMICH_MEDIA_LOCATION', current: 'FRAMELEAF_MEDIA_LOCATION' },
+        ]),
+      );
+      // the inert metrics port keeps its old name only, so it is not reported
+      expect(env.deprecatedEnv).toHaveLength(9);
+    });
+
+    it('reads the build metadata from the old names, as images built before the rename set them', () => {
+      process.env.IMMICH_SOURCE_REF = 'v3.2.0';
+      process.env.IMMICH_SOURCE_URL = 'https://github.com/Frameleaf/frameleaf-app/commit/abc';
+
+      expect(getEnv().buildMetadata).toMatchObject({
+        sourceRef: 'v3.2.0',
+        sourceUrl: 'https://github.com/Frameleaf/frameleaf-app/commit/abc',
+      });
+    });
+
+    it('prefers nothing when both names agree', () => {
+      process.env.IMMICH_PORT = '3001';
+      process.env.FRAMELEAF_PORT = '3001';
+
+      expect(getEnv().port).toBe(3001);
+    });
+
+    it('refuses to start when an old and a new name disagree', () => {
+      process.env.IMMICH_PORT = '3001';
+      process.env.FRAMELEAF_PORT = '3002';
+
+      expect(() => getEnv()).toThrowError(/FRAMELEAF_PORT and its deprecated alias IMMICH_PORT/);
+    });
+
+    it('refuses before validating, so the conflict is the error reported', () => {
+      process.env.IMMICH_MEDIA_LOCATION = './relative';
+      process.env.FRAMELEAF_MEDIA_LOCATION = '/data';
+
+      expect(() => getEnv()).toThrowError(/FRAMELEAF_MEDIA_LOCATION and its deprecated alias IMMICH_MEDIA_LOCATION/);
+    });
+
+    it('names the old variable when its value is invalid', () => {
+      process.env.IMMICH_MEDIA_LOCATION = './relative/path';
+
+      expect(() => getEnv()).toThrowError(
+        '[FRAMELEAF_MEDIA_LOCATION (set as IMMICH_MEDIA_LOCATION)] Must be an absolute path',
+      );
+    });
+
+    it('keeps an invalid legacy help link out instead of refusing to start', () => {
+      // eslint-disable-next-line unicorn/prefer-https -- an insecure legacy address must be left out
+      process.env.IMMICH_THIRD_PARTY_DOCUMENTATION_URL = 'http://docs.example';
+      process.env.IMMICH_THIRD_PARTY_SUPPORT_URL = 'https://support.example';
+
+      const { buildMetadata, deprecatedEnv } = getEnv();
+      expect(buildMetadata.thirdPartyDocumentationUrl).toBeUndefined();
+      expect(buildMetadata.thirdPartySupportUrl).toBe('https://support.example');
+      expect(deprecatedEnv).toHaveLength(2);
+    });
+
+    it('warns once, listing each old name with its new name', () => {
+      process.env.IMMICH_PORT = '3001';
+      process.env.IMMICH_LOG_LEVEL = 'warn';
+      const warn = vi.fn();
+      clearEnvCache();
+
+      warnDeprecatedEnv(warn);
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('IMMICH_LOG_LEVEL → FRAMELEAF_LOG_LEVEL'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('IMMICH_PORT → FRAMELEAF_PORT'));
+    });
+
+    it('does not warn when only new names are used', () => {
+      process.env.FRAMELEAF_PORT = '3001';
+      const warn = vi.fn();
+      clearEnvCache();
+
+      warnDeprecatedEnv(warn);
+
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 
@@ -269,51 +388,51 @@ describe('getEnv', () => {
     });
 
     it('runs the edge worker without the API only when it is included by name (FL-165)', () => {
-      process.env.IMMICH_WORKERS_INCLUDE = 'microservices,edge';
+      process.env.FRAMELEAF_WORKERS_INCLUDE = 'microservices,edge';
       expect(getEnv().workers).toEqual(['microservices', 'edge']);
     });
 
     it('should return included workers', () => {
-      process.env.IMMICH_WORKERS_INCLUDE = 'api';
+      process.env.FRAMELEAF_WORKERS_INCLUDE = 'api';
       const { workers } = getEnv();
       expect(workers).toEqual(['api']);
     });
 
     it('should excluded workers from defaults', () => {
-      process.env.IMMICH_WORKERS_EXCLUDE = 'api';
+      process.env.FRAMELEAF_WORKERS_EXCLUDE = 'api';
       const { workers } = getEnv();
       // the edge worker follows the API unless it is included by name
       expect(workers).toEqual(['microservices']);
     });
 
     it('should exclude workers from include list', () => {
-      process.env.IMMICH_WORKERS_INCLUDE = 'api,microservices,randomservice';
-      process.env.IMMICH_WORKERS_EXCLUDE = 'randomservice,microservices';
+      process.env.FRAMELEAF_WORKERS_INCLUDE = 'api,microservices,randomservice';
+      process.env.FRAMELEAF_WORKERS_EXCLUDE = 'randomservice,microservices';
       const { workers } = getEnv();
       expect(workers).toEqual(['api']);
     });
 
     it('should remove whitespace from included workers before parsing', () => {
-      process.env.IMMICH_WORKERS_INCLUDE = 'api, microservices';
+      process.env.FRAMELEAF_WORKERS_INCLUDE = 'api, microservices';
       const { workers } = getEnv();
       expect(workers).toEqual(['api', 'microservices']);
     });
 
     it('should remove whitespace from excluded workers before parsing', () => {
-      process.env.IMMICH_WORKERS_EXCLUDE = 'api, microservices';
+      process.env.FRAMELEAF_WORKERS_EXCLUDE = 'api, microservices';
       const { workers } = getEnv();
       expect(workers).toEqual([]);
     });
 
     it('should remove whitespace from included and excluded workers before parsing', () => {
-      process.env.IMMICH_WORKERS_INCLUDE = 'api, microservices, randomservice,randomservice2';
-      process.env.IMMICH_WORKERS_EXCLUDE = 'randomservice,microservices, randomservice2';
+      process.env.FRAMELEAF_WORKERS_INCLUDE = 'api, microservices, randomservice,randomservice2';
+      process.env.FRAMELEAF_WORKERS_EXCLUDE = 'randomservice,microservices, randomservice2';
       const { workers } = getEnv();
       expect(workers).toEqual(['api']);
     });
 
     it('should throw error for invalid workers', () => {
-      process.env.IMMICH_WORKERS_INCLUDE = 'api,microservices,randomservice';
+      process.env.FRAMELEAF_WORKERS_INCLUDE = 'api,microservices,randomservice';
       expect(getEnv).toThrowError('Invalid worker(s) found: api,microservices,randomservice');
     });
   });
@@ -327,7 +446,7 @@ describe('getEnv', () => {
     });
 
     it('should parse trusted proxies', () => {
-      process.env.IMMICH_TRUSTED_PROXIES = '10.1.0.0,10.2.0.0, 169.254.0.0/16';
+      process.env.FRAMELEAF_TRUSTED_PROXIES = '10.1.0.0,10.2.0.0, 169.254.0.0/16';
       const { network } = getEnv();
       expect(network).toEqual({
         trustedProxies: ['10.1.0.0', '10.2.0.0', '169.254.0.0/16'],
@@ -335,8 +454,8 @@ describe('getEnv', () => {
     });
 
     it('should reject invalid trusted proxies', () => {
-      process.env.IMMICH_TRUSTED_PROXIES = '10.1';
-      expect(() => getEnv()).toThrow('[IMMICH_TRUSTED_PROXIES] Must be an ip address or ip address range');
+      process.env.FRAMELEAF_TRUSTED_PROXIES = '10.1';
+      expect(() => getEnv()).toThrow('[FRAMELEAF_TRUSTED_PROXIES] Must be an ip address or ip address range');
     });
   });
 
@@ -378,7 +497,7 @@ describe('getEnv', () => {
   describe('versionCheck (FL-71)', () => {
     it("asks only Frameleaf's own release services, with no editable address", () => {
       process.env.IMMICH_VERSION_CHECK_URL = 'https://updates.invalid/latest';
-      process.env.IMMICH_ENV = 'development';
+      process.env.FRAMELEAF_ENV = 'development';
       try {
         const { versionCheck } = getEnv();
         expect(versionCheck).toEqual({

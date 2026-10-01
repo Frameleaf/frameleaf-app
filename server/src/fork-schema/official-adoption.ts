@@ -22,7 +22,7 @@ import { LEGACY_WORKFLOW_MIGRATION, WorkflowCompatibility } from 'src/fork-schem
  * `immich_fork.state` is `inactive` / schema version `1`.
  *
  * Adoption closes that gap in one transaction. The server runs it by itself at startup, inside the
- * boot migration lock (FL-289); `immich-admin fork-schema adopt` is the manual form. It applies the missing
+ * boot migration lock (FL-289); `frameleaf-admin fork-schema adopt` is the manual form. It applies the missing
  * post-certified migrations through their registered applies and the Frameleaf public migrations in
  * name order (never the Frameleaf copy of the workflow rewrite, whose official original already ran),
  * repeats the parts of `immich_fork` migrations that only act when a Frameleaf public table exists,

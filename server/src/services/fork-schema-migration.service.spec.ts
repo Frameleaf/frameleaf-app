@@ -247,7 +247,7 @@ describe(ForkSchemaMigrationService.name, () => {
       );
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('storage'));
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('disk full'));
-      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('immich-admin fork-schema resume'));
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('frameleaf-admin fork-schema resume'));
     });
 
     it.each(['ready', 'active', 'inactive', 'failed'] as const)('leaves a %s library untouched', async (phase) => {
