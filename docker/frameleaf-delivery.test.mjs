@@ -87,7 +87,7 @@ for (const [filename, project, rootless] of [
   });
 }
 
-// FL-291: the stop grace period must exceed IMMICH_SHUTDOWN_DEADLINE_SECONDS (9 s by default) so Docker
+// FL-291: the stop grace period must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default) so Docker
 // does not kill the server during its graceful stop. Engines differ in their default stop timeout.
 test("every server service gives the graceful stop its 10 s", () => {
   for (const filename of [

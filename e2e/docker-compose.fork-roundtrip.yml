@@ -80,7 +80,7 @@ services:
         BUILD_SOURCE_REF: fork-roundtrip
       secrets:
         - mise_github_token
-    # FL-291: must exceed IMMICH_SHUTDOWN_DEADLINE_SECONDS (9 s by default); the graceful stop hands back running jobs first
+    # FL-291: must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default); the graceful stop hands back running jobs first
     stop_grace_period: 10s
     environment:
       <<: *server-environment

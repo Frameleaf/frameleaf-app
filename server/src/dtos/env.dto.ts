@@ -73,9 +73,9 @@ export const EnvSchema = z
     IMMICH_PORT: z.coerce.number().int().optional(),
     IMMICH_REPOSITORY: z.string().optional(),
     /** FL-291: how long running jobs and in-flight requests get to finish when the server stops. */
-    IMMICH_SHUTDOWN_GRACE_SECONDS: z.coerce.number().positive().optional(),
+    FRAMELEAF_SHUTDOWN_GRACE_SECONDS: z.coerce.number().positive().optional(),
     /** FL-291: when the server has exited after a stop, whatever is still running. */
-    IMMICH_SHUTDOWN_DEADLINE_SECONDS: z.coerce.number().positive().optional(),
+    FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS: z.coerce.number().positive().optional(),
     IMMICH_REPOSITORY_URL: z.string().optional(),
     IMMICH_SOURCE_REF: z.string().optional(),
     IMMICH_SOURCE_COMMIT: z.string().optional(),
@@ -162,13 +162,13 @@ export const EnvSchema = z
   })
   .superRefine((env, context) => {
     // FL-291: running work must be handed back before the deadline ends the server
-    const grace = env.IMMICH_SHUTDOWN_GRACE_SECONDS ?? DEFAULT_SHUTDOWN_GRACE_SECONDS;
-    const deadline = env.IMMICH_SHUTDOWN_DEADLINE_SECONDS ?? DEFAULT_SHUTDOWN_DEADLINE_SECONDS;
+    const grace = env.FRAMELEAF_SHUTDOWN_GRACE_SECONDS ?? DEFAULT_SHUTDOWN_GRACE_SECONDS;
+    const deadline = env.FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS ?? DEFAULT_SHUTDOWN_DEADLINE_SECONDS;
     if (grace >= deadline) {
       context.addIssue({
         code: 'custom',
-        path: ['IMMICH_SHUTDOWN_GRACE_SECONDS'],
-        message: `Must be less than IMMICH_SHUTDOWN_DEADLINE_SECONDS (${deadline})`,
+        path: ['FRAMELEAF_SHUTDOWN_GRACE_SECONDS'],
+        message: `Must be less than FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (${deadline})`,
       });
     }
   })

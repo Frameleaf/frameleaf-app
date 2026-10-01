@@ -119,10 +119,10 @@ Information on the current workers can be found [here](/administration/jobs-work
 
 ## Stopping
 
-| Variable                           | Description                                                                                                                   | Default | Containers |
-| :--------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- | :-----: | :--------- |
-| `IMMICH_SHUTDOWN_GRACE_SECONDS`    | How long running jobs and in-flight requests get to finish when the server stops. Jobs still running then go back to waiting. |   `5`   | server     |
-| `IMMICH_SHUTDOWN_DEADLINE_SECONDS` | When the server has exited after a stop, whatever is still running. Must be greater than `IMMICH_SHUTDOWN_GRACE_SECONDS`.     |   `9`   | server     |
+| Variable                              | Description                                                                                                                   | Default | Containers |
+| :------------------------------------ | :---------------------------------------------------------------------------------------------------------------------------- | :-----: | :--------- |
+| `FRAMELEAF_SHUTDOWN_GRACE_SECONDS`    | How long running jobs and in-flight requests get to finish when the server stops. Jobs still running then go back to waiting. |   `5`   | server     |
+| `FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS` | When the server has exited after a stop, whatever is still running. Must be greater than `FRAMELEAF_SHUTDOWN_GRACE_SECONDS`.  |   `9`   | server     |
 
 Both must be positive numbers, and the grace period must end before the deadline; otherwise the server refuses to start. Docker kills the container when its stop timeout ends, so the server's `stop_grace_period` must be longer than the deadline. The provided Compose files and NAS packages use 10 seconds, which fits the defaults; raise it with the deadline. See [Stopping the server](/administration/jobs-workers#stopping-the-server).
 

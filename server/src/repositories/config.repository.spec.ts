@@ -8,8 +8,8 @@ const getEnv = () => {
 const resetEnv = () => {
   for (const env of [
     'IMMICH_ALLOW_EXTERNAL_PLUGINS',
-    'IMMICH_SHUTDOWN_GRACE_SECONDS',
-    'IMMICH_SHUTDOWN_DEADLINE_SECONDS',
+    'FRAMELEAF_SHUTDOWN_GRACE_SECONDS',
+    'FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS',
     'IMMICH_ALLOW_SETUP',
     'IMMICH_ENV',
     'IMMICH_WORKERS_INCLUDE',
@@ -100,36 +100,36 @@ describe('getEnv', () => {
     });
 
     it('reads the grace period and deadline from the environment', () => {
-      process.env.IMMICH_SHUTDOWN_GRACE_SECONDS = '20';
-      process.env.IMMICH_SHUTDOWN_DEADLINE_SECONDS = '28';
+      process.env.FRAMELEAF_SHUTDOWN_GRACE_SECONDS = '20';
+      process.env.FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS = '28';
 
       expect(getEnv().shutdown).toEqual({ graceMs: 20_000, deadlineMs: 28_000, workerDeadlineMs: 27_000 });
     });
 
     it('keeps the worker exit between the grace period and the deadline when they are close', () => {
-      process.env.IMMICH_SHUTDOWN_GRACE_SECONDS = '2';
-      process.env.IMMICH_SHUTDOWN_DEADLINE_SECONDS = '2.5';
+      process.env.FRAMELEAF_SHUTDOWN_GRACE_SECONDS = '2';
+      process.env.FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS = '2.5';
 
       expect(getEnv().shutdown).toEqual({ graceMs: 2000, deadlineMs: 2500, workerDeadlineMs: 2250 });
     });
 
     it.each(['0', '-1', 'soon'])('refuses a grace period of %s', (value) => {
-      process.env.IMMICH_SHUTDOWN_GRACE_SECONDS = value;
+      process.env.FRAMELEAF_SHUTDOWN_GRACE_SECONDS = value;
 
-      expect(() => getEnv()).toThrowError(/\[IMMICH_SHUTDOWN_GRACE_SECONDS\]/);
+      expect(() => getEnv()).toThrowError(/\[FRAMELEAF_SHUTDOWN_GRACE_SECONDS\]/);
     });
 
     it.each(['0', '-3', 'later'])('refuses a deadline of %s', (value) => {
-      process.env.IMMICH_SHUTDOWN_DEADLINE_SECONDS = value;
+      process.env.FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS = value;
 
-      expect(() => getEnv()).toThrowError(/\[IMMICH_SHUTDOWN_DEADLINE_SECONDS\]/);
+      expect(() => getEnv()).toThrowError(/\[FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS\]/);
     });
 
     it('refuses a grace period that does not end before the deadline', () => {
-      process.env.IMMICH_SHUTDOWN_GRACE_SECONDS = '12';
+      process.env.FRAMELEAF_SHUTDOWN_GRACE_SECONDS = '12';
 
       expect(() => getEnv()).toThrowError(
-        '[IMMICH_SHUTDOWN_GRACE_SECONDS] Must be less than IMMICH_SHUTDOWN_DEADLINE_SECONDS (9)',
+        '[FRAMELEAF_SHUTDOWN_GRACE_SECONDS] Must be less than FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9)',
       );
     });
   });

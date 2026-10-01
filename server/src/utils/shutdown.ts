@@ -2,8 +2,8 @@ import { type MessagePort, parentPort as threadPort } from 'node:worker_threads'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 
 /**
- * FL-291: the stop budget, in seconds, unless IMMICH_SHUTDOWN_GRACE_SECONDS and
- * IMMICH_SHUTDOWN_DEADLINE_SECONDS say otherwise (`ConfigRepository` reads them as `shutdown`):
+ * FL-291: the stop budget, in seconds, unless FRAMELEAF_SHUTDOWN_GRACE_SECONDS and
+ * FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS say otherwise (`ConfigRepository` reads them as `shutdown`):
  *
  * - running jobs and in-flight HTTP requests get the grace period to finish; jobs still running then
  *   go back to waiting, requests still running are cut;

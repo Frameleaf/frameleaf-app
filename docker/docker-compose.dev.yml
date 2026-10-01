@@ -70,7 +70,7 @@ services:
       dockerfile: server/Dockerfile.dev
       target: dev
     restart: unless-stopped
-    # must exceed IMMICH_SHUTDOWN_DEADLINE_SECONDS (9 s by default): running jobs finish or go back to waiting first
+    # must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default): running jobs finish or go back to waiting first
     stop_grace_period: 10s
     volumes:
       - ${UPLOAD_LOCATION}/photos:/data

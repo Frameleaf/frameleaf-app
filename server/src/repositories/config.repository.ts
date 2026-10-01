@@ -125,7 +125,7 @@ export interface EnvData {
 
   workers: ImmichWorker[];
 
-  /** FL-291: the stop budget (IMMICH_SHUTDOWN_GRACE_SECONDS, IMMICH_SHUTDOWN_DEADLINE_SECONDS). */
+  /** FL-291: the stop budget (FRAMELEAF_SHUTDOWN_GRACE_SECONDS, FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS). */
   shutdown: {
     /** Running jobs and in-flight requests get this long to finish. */
     graceMs: number;
@@ -271,8 +271,8 @@ const getEnv = (): EnvData => {
     }
   }
 
-  const shutdownGraceMs = (dto.IMMICH_SHUTDOWN_GRACE_SECONDS ?? DEFAULT_SHUTDOWN_GRACE_SECONDS) * 1000;
-  const shutdownDeadlineMs = (dto.IMMICH_SHUTDOWN_DEADLINE_SECONDS ?? DEFAULT_SHUTDOWN_DEADLINE_SECONDS) * 1000;
+  const shutdownGraceMs = (dto.FRAMELEAF_SHUTDOWN_GRACE_SECONDS ?? DEFAULT_SHUTDOWN_GRACE_SECONDS) * 1000;
+  const shutdownDeadlineMs = (dto.FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS ?? DEFAULT_SHUTDOWN_DEADLINE_SECONDS) * 1000;
 
   return {
     host: dto.IMMICH_HOST,

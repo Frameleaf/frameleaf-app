@@ -22,7 +22,7 @@ The generated XML files belong on a versioned `nas-catalog` branch of `Frameleaf
 
 ## Stop timeout
 
-Every package gives the server container a 10 s stop timeout: `stop_grace_period: 10s` in the Synology Compose project, `set_grace_period(10)` in the TrueNAS template and `--stop-timeout=10` in the Unraid template's extra parameters. The server stops gracefully by `IMMICH_SHUTDOWN_DEADLINE_SECONDS` (9 s by default; running jobs finish or go back to waiting), and the stop timeout must be longer than that deadline. The docker-compose files under `docker/` use the same value.
+Every package gives the server container a 10 s stop timeout: `stop_grace_period: 10s` in the Synology Compose project, `set_grace_period(10)` in the TrueNAS template and `--stop-timeout=10` in the Unraid template's extra parameters. The server stops gracefully by `FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS` (9 s by default; running jobs finish or go back to waiting), and the stop timeout must be longer than that deadline. The docker-compose files under `docker/` use the same value.
 
 ## Migration and rollback
 

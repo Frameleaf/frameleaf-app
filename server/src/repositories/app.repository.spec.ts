@@ -124,7 +124,7 @@ describe(AppRepository.name, () => {
       expect(exit).toHaveBeenCalledWith(0);
     });
 
-    it('exits at the configured worker deadline (IMMICH_SHUTDOWN_*) when closing hangs', async () => {
+    it('exits at the configured worker deadline (FRAMELEAF_SHUTDOWN_*) when closing hangs', async () => {
       const sut = new AppRepository();
       sut.setCloseFn(() => new Promise<void>(() => {}));
 

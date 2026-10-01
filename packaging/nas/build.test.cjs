@@ -140,7 +140,7 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     const read = (name) => fs.readFileSync(path.join(output, name), 'utf8');
     const unraidServer = read('unraid/templates/frameleaf-server.xml');
     assert(unraidServer.includes(nas.images.server));
-    // FL-291: the stop timeout must exceed IMMICH_SHUTDOWN_DEADLINE_SECONDS (9 s by default)
+    // FL-291: the stop timeout must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default)
     assert(unraidServer.includes('<ExtraParams>--stop-timeout=10</ExtraParams>'));
     assert(read('truenas/ix-dev/community/frameleaf/templates/docker-compose.yaml').includes('server_container.set_grace_period(10)'));
     assert.match(unraidServer, /<Config Name="Machine learning" Target="IMMICH_MACHINE_LEARNING_ENABLED" Default=""[^>]*><\/Config>/);
