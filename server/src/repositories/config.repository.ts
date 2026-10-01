@@ -26,6 +26,11 @@ import { parseTrustedLanCidrs } from 'src/utils/frameleaf-cloud.js';
 import { FRAMELEAF_RELEASES_API, FRAMELEAF_RELEASE_FEED } from 'src/utils/frameleaf-release.js';
 import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
 import { setDifference } from 'src/utils/set.js';
+import {
+  DEFAULT_SHUTDOWN_DEADLINE_SECONDS,
+  DEFAULT_SHUTDOWN_GRACE_SECONDS,
+  getWorkerDeadlineMs,
+} from 'src/utils/shutdown.js';
 
 export interface EnvData {
   host?: string;
@@ -119,6 +124,16 @@ export interface EnvData {
   };
 
   workers: ImmichWorker[];
+
+  /** FL-291: the stop budget (IMMICH_SHUTDOWN_GRACE_SECONDS, IMMICH_SHUTDOWN_DEADLINE_SECONDS). */
+  shutdown: {
+    /** Running jobs and in-flight requests get this long to finish. */
+    graceMs: number;
+    /** The supervisor kills what is left and exits. */
+    deadlineMs: number;
+    /** Each worker exits by then, whatever its teardown is doing. */
+    workerDeadlineMs: number;
+  };
 
   plugins: {
     external: {
@@ -256,9 +271,17 @@ const getEnv = (): EnvData => {
     }
   }
 
+  const shutdownGraceMs = (dto.IMMICH_SHUTDOWN_GRACE_SECONDS ?? DEFAULT_SHUTDOWN_GRACE_SECONDS) * 1000;
+  const shutdownDeadlineMs = (dto.IMMICH_SHUTDOWN_DEADLINE_SECONDS ?? DEFAULT_SHUTDOWN_DEADLINE_SECONDS) * 1000;
+
   return {
     host: dto.IMMICH_HOST,
     port: dto.IMMICH_PORT || 2283,
+    shutdown: {
+      graceMs: shutdownGraceMs,
+      deadlineMs: shutdownDeadlineMs,
+      workerDeadlineMs: getWorkerDeadlineMs(shutdownGraceMs, shutdownDeadlineMs),
+    },
     environment,
     configFile: dto.IMMICH_CONFIG_FILE,
     logLevel: dto.IMMICH_LOG_LEVEL,

@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vitest } from 'vitest';
 import { ExitCode } from 'src/enum.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
-import { SHUTDOWN_WORKER_DEADLINE_MS } from 'src/utils/shutdown.js';
 
 const mocks = vitest.hoisted(() => {
   const pubClient = {
@@ -35,7 +34,9 @@ vitest.mock('socket.io', () => ({
 }));
 vitest.mock('src/repositories/config.repository.js', () => ({
   ConfigRepository: vitest.fn(function () {
-    return { getEnv: () => ({ redis: {} }) };
+    return {
+      getEnv: () => ({ redis: {}, shutdown: { graceMs: 2000, deadlineMs: 4000, workerDeadlineMs: 3000 } }),
+    };
   }),
 }));
 
@@ -115,7 +116,7 @@ describe(AppRepository.name, () => {
 
       sut.stop(0);
       expect(close).toHaveBeenCalledOnce();
-      await vitest.advanceTimersByTimeAsync(4000);
+      await vitest.advanceTimersByTimeAsync(2500);
       expect(exit).not.toHaveBeenCalled();
 
       finish();
@@ -123,12 +124,12 @@ describe(AppRepository.name, () => {
       expect(exit).toHaveBeenCalledWith(0);
     });
 
-    it('exits at the deadline when closing hangs', async () => {
+    it('exits at the configured worker deadline (IMMICH_SHUTDOWN_*) when closing hangs', async () => {
       const sut = new AppRepository();
       sut.setCloseFn(() => new Promise<void>(() => {}));
 
       sut.stop(0);
-      await vitest.advanceTimersByTimeAsync(SHUTDOWN_WORKER_DEADLINE_MS - 1);
+      await vitest.advanceTimersByTimeAsync(3000 - 1);
       expect(exit).not.toHaveBeenCalled();
       await vitest.advanceTimersByTimeAsync(1);
 

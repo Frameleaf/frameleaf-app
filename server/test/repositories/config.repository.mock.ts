@@ -5,6 +5,7 @@ import { ConfigRepository, EnvData } from 'src/repositories/config.repository.js
 
 export const envData: EnvData = {
   port: 2283,
+  shutdown: { graceMs: 5000, deadlineMs: 9000, workerDeadlineMs: 8000 },
   environment: ImmichEnvironment.Production,
   logFormat: LogFormat.Console,
 
