@@ -139,7 +139,7 @@ export class SharedLinkService extends BaseService {
         slug: dto.slug || null,
       });
 
-      return mapSharedLink(sharedLink, { stripAssetMetadata: false });
+      return mapSharedLink(sharedLink, { stripAssetMetadata: false, externalDomain: await this.externalDomain() });
     } catch (error) {
       this.handleError(error);
     }
@@ -357,7 +357,10 @@ export class SharedLinkService extends BaseService {
     sharedLink: SharedLink,
     options: { stripAssetMetadata: boolean },
   ): Promise<SharedLinkResponseDto> {
-    const response = mapSharedLink(await this.applyNsfwPrivacy(auth, sharedLink), options);
+    const response = mapSharedLink(await this.applyNsfwPrivacy(auth, sharedLink), {
+      ...options,
+      externalDomain: await this.externalDomain(),
+    });
     if (options.stripAssetMetadata || response.assets.length === 0) {
       return response;
     }
@@ -369,6 +372,12 @@ export class SharedLinkService extends BaseService {
       repository: this.partnerRepository,
     });
     return { ...response, assets };
+  }
+
+  /** FL-305: the configured public address links are built on. */
+  private async externalDomain() {
+    const { server } = await this.getConfig({ withCache: true });
+    return server.externalDomain;
   }
 
   private async applyNsfwPrivacy(auth: AuthDto, sharedLink: SharedLink): Promise<SharedLink> {

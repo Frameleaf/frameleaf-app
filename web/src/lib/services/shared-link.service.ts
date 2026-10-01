@@ -16,6 +16,10 @@ import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
 export const asUrl = (sharedLink: SharedLinkResponseDto) => {
+  // FL-305: the server's address when it has one (an external domain is set)
+  if (sharedLink.url) {
+    return sharedLink.url;
+  }
   const path = Route.viewSharedLink(sharedLink);
   return new URL(path, serverConfigManager.value.externalDomain || location.origin).href;
 };

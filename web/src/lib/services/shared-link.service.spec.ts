@@ -27,6 +27,11 @@ describe('SharedLinkService', () => {
     it('should properly encode characters in slug', () => {
       expect(asUrl(sharedLinkFactory.build({ slug: 'foo/bar' }))).toBe('http://localhost:2283/s/foo%2Fbar');
     });
+    it("uses the server's public address when it has one (FL-305)", () => {
+      expect(asUrl(sharedLinkFactory.build({ slug: 'foo', url: 'https://photos.example.com/s/foo' }))).toBe(
+        'https://photos.example.com/s/foo',
+      );
+    });
   });
   describe('a custom address already in use (FL-83 AL-26)', () => {
     const slugTaken = () => ({ name: 'HttpError', status: 400, data: { message: SHARED_LINK_SLUG_TAKEN } });
