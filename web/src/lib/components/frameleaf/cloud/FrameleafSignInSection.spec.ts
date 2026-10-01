@@ -122,8 +122,10 @@ describe('FrameleafSignInSection (FL-158)', () => {
     expect(input).toHaveAttribute('placeholder', 'Unlimited');
     expect(field.getByRole('button', { name: 'Save' })).toBeDisabled();
 
-    await fireEvent.input(input, { target: { value: '1.5' } });
-    expect(field.getByRole('button', { name: 'Save' })).toBeDisabled();
+    for (const value of ['1.5', '1e3', '-1', '2000000']) {
+      await fireEvent.input(input, { target: { value } });
+      expect(field.getByRole('button', { name: 'Save' })).toBeDisabled();
+    }
     await fireEvent.input(input, { target: { value: '50' } });
     await fireEvent.click(field.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
