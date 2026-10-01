@@ -166,25 +166,33 @@ export class MediaIntegrityService {
       }
       if (error instanceof RawRenderError) {
         switch (error.reason) {
-          case 'cancelled':
+          case 'cancelled': {
             return { status: 'timeout', reason: 'validation_timeout' };
-          case 'timeout':
+          }
+          case 'timeout': {
             return { status: 'timeout', reason: 'decode_timeout' };
-          case 'dependency_missing':
+          }
+          case 'dependency_missing': {
             return { status: 'transient', reason: 'decoder_unavailable' };
-          case 'resource_limit':
+          }
+          case 'resource_limit': {
             return { status: 'transient', reason: 'decoder_resource_limit' };
-          case 'damaged':
+          }
+          case 'damaged': {
             // A decoder report alone cannot confirm damage or make a RAW eligible for trash.
             return { status: 'transient', reason: 'raw_decode_damaged' };
-          case 'io':
+          }
+          case 'io': {
             return error.code === 'EACCES' || error.code === 'EPERM'
               ? { status: 'unreadable', reason: 'access_denied' }
               : { status: 'transient', reason: 'io_failed' };
-          case 'unsupported':
+          }
+          case 'unsupported': {
             return { status: 'unsupported', reason: 'raw_decode_unsupported' };
-          case 'decode_failed':
+          }
+          case 'decode_failed': {
             return { status: 'transient', reason: 'decode_unverified' };
+          }
         }
       }
       const details = error && typeof error === 'object' ? error : {};

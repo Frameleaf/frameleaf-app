@@ -137,10 +137,7 @@ describe(MediaIntegrityService.name, () => {
 
   it('aborts an active RAW decoder at the validation deadline', async () => {
     vi.useFakeTimers();
-    let started!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      started = resolve;
-    });
+    const { promise: ready, resolve: started } = Promise.withResolvers<void>();
     let decoderSignal: AbortSignal | undefined;
     vi.mocked(renderRawWithLibRaw).mockImplementation((_path, signal) => {
       decoderSignal = signal;

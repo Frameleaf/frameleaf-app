@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
+
 const RAW_RENDER_TIMEOUT_MS = 120_000;
 // ponytail: 256 MiB TIFF ceiling; raise with qualified high-resolution camera fixtures.
 const RAW_RENDER_MAX_BYTES = 256 * 1024 * 1024;
