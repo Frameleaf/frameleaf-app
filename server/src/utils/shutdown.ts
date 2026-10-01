@@ -2,17 +2,24 @@ import { type MessagePort, parentPort as threadPort } from 'node:worker_threads'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 
 /**
- * FL-291: the stop budget. Docker sends SIGTERM and kills the container 10 s later unless the
- * compose file says otherwise, so everything below fits inside that default:
+ * FL-291: the stop budget, in seconds, unless IMMICH_SHUTDOWN_GRACE_SECONDS and
+ * IMMICH_SHUTDOWN_DEADLINE_SECONDS say otherwise (`ConfigRepository` reads them as `shutdown`):
  *
- * - running jobs and in-flight HTTP requests get {@link SHUTDOWN_GRACE_MS} to finish; jobs still
- *   running then go back to waiting, requests still running are cut;
- * - each worker exits by {@link SHUTDOWN_WORKER_DEADLINE_MS} whatever its teardown is doing;
- * - the supervisor kills any worker still alive at {@link SHUTDOWN_SUPERVISOR_DEADLINE_MS} and exits.
+ * - running jobs and in-flight HTTP requests get the grace period to finish; jobs still running then
+ *   go back to waiting, requests still running are cut;
+ * - each worker exits shortly before the deadline whatever its teardown is doing
+ *   ({@link getWorkerDeadlineMs});
+ * - the supervisor kills any worker still alive at the deadline and exits.
+ *
+ * Docker kills the container when its stop timeout ends, so the server's `stop_grace_period` (10 s in
+ * the provided compose files and NAS packages) must be longer than the deadline.
  */
-export const SHUTDOWN_GRACE_MS = 5000;
-export const SHUTDOWN_WORKER_DEADLINE_MS = 8000;
-export const SHUTDOWN_SUPERVISOR_DEADLINE_MS = 9000;
+export const DEFAULT_SHUTDOWN_GRACE_SECONDS = 5;
+export const DEFAULT_SHUTDOWN_DEADLINE_SECONDS = 9;
+
+/** When a worker exits: a second before the deadline, or halfway between grace and deadline if closer. */
+export const getWorkerDeadlineMs = (graceMs: number, deadlineMs: number) =>
+  deadlineMs - Math.min(1000, (deadlineMs - graceMs) / 2);
 
 /** What the supervisor posts to a worker thread (microservices, maintenance) to stop it. */
 export const WORKER_STOP_MESSAGE = 'frameleaf:stop';
@@ -79,18 +86,17 @@ export class HttpRequestTracker {
  * period; then the application closes (Nest's destroy and shutdown hooks: the `AppShutdown` event,
  * queue and database connections). The caller bounds the whole of it with a deadline.
  */
-export const closeGracefully = async (
-  {
-    http,
-    stopJobs,
-    close,
-  }: {
-    http?: Pick<HttpRequestTracker, 'drain'>;
-    stopJobs?: (graceMs: number) => Promise<void>;
-    close: () => Promise<void>;
-  },
-  graceMs = SHUTDOWN_GRACE_MS,
-) => {
+export const closeGracefully = async ({
+  http,
+  stopJobs,
+  close,
+  graceMs,
+}: {
+  http?: Pick<HttpRequestTracker, 'drain'>;
+  stopJobs?: (graceMs: number) => Promise<void>;
+  close: () => Promise<void>;
+  graceMs: number;
+}) => {
   try {
     await Promise.all([http?.drain(graceMs), stopJobs?.(graceMs)]);
   } finally {
@@ -148,11 +154,7 @@ export class SupervisorStop {
   stopping = false;
   private timer?: NodeJS.Timeout;
 
-  constructor(
-    private options: { exit: (code: number) => void; deadlineMs?: number } = {
-      exit: (code) => process.exit(code),
-    },
-  ) {}
+  constructor(private options: { exit: (code: number) => void; deadlineMs: number }) {}
 
   begin(workers: () => SupervisedWorker[]) {
     if (this.stopping) {
@@ -175,7 +177,7 @@ export class SupervisorStop {
         worker.kill();
       }
       this.options.exit(0);
-    }, this.options.deadlineMs ?? SHUTDOWN_SUPERVISOR_DEADLINE_MS);
+    }, this.options.deadlineMs);
   }
 
   /** Called when a worker has exited, with how many are still running. */

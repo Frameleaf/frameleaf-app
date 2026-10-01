@@ -1,12 +1,12 @@
 import { EventEmitter } from 'node:events';
 import {
+  DEFAULT_SHUTDOWN_DEADLINE_SECONDS,
+  DEFAULT_SHUTDOWN_GRACE_SECONDS,
   HttpRequestTracker,
-  SHUTDOWN_GRACE_MS,
-  SHUTDOWN_SUPERVISOR_DEADLINE_MS,
-  SHUTDOWN_WORKER_DEADLINE_MS,
   SupervisorStop,
   WORKER_STOP_MESSAGE,
   closeGracefully,
+  getWorkerDeadlineMs,
   onStopRequest,
 } from 'src/utils/shutdown.js';
 
@@ -23,10 +23,17 @@ class FakeServer extends EventEmitter {
 }
 
 describe('shutdown budget (FL-291)', () => {
-  it("fits inside Docker's default 10 s stop timeout", () => {
-    expect(SHUTDOWN_GRACE_MS).toBeLessThan(SHUTDOWN_WORKER_DEADLINE_MS);
-    expect(SHUTDOWN_WORKER_DEADLINE_MS).toBeLessThan(SHUTDOWN_SUPERVISOR_DEADLINE_MS);
-    expect(SHUTDOWN_SUPERVISOR_DEADLINE_MS).toBeLessThan(10_000);
+  it('fits the 10 s stop_grace_period of the provided compose files and NAS packages by default', () => {
+    expect(DEFAULT_SHUTDOWN_GRACE_SECONDS).toBeLessThan(DEFAULT_SHUTDOWN_DEADLINE_SECONDS);
+    expect(DEFAULT_SHUTDOWN_DEADLINE_SECONDS).toBeLessThan(10);
+  });
+
+  it.each([
+    [5000, 9000, 8000],
+    [20_000, 28_000, 27_000],
+    [2000, 2500, 2250],
+  ])('exits a worker with grace %i ms and deadline %i ms at %i ms', (grace, deadline, expected) => {
+    expect(getWorkerDeadlineMs(grace, deadline)).toBe(expected);
   });
 });
 
@@ -133,10 +140,10 @@ describe(closeGracefully.name, () => {
       return Promise.resolve();
     });
 
-    const closing = closeGracefully({ http: http as any, stopJobs, close });
+    const closing = closeGracefully({ http: http as any, stopJobs, close, graceMs: 7000 });
     await vi.waitFor(() => expect(order).toEqual(['drain:start', 'jobs:start']));
-    expect(http.drain).toHaveBeenCalledWith(SHUTDOWN_GRACE_MS);
-    expect(stopJobs).toHaveBeenCalledWith(SHUTDOWN_GRACE_MS);
+    expect(http.drain).toHaveBeenCalledWith(7000);
+    expect(stopJobs).toHaveBeenCalledWith(7000);
 
     finishJobs();
     await Promise.resolve();
@@ -150,7 +157,7 @@ describe(closeGracefully.name, () => {
     const close = vi.fn(() => Promise.resolve());
     const stopJobs = vi.fn(() => Promise.reject(new Error('redis away')));
 
-    await expect(closeGracefully({ stopJobs, close })).rejects.toThrow('redis away');
+    await expect(closeGracefully({ stopJobs, close, graceMs: 5000 })).rejects.toThrow('redis away');
     expect(close).toHaveBeenCalled();
   });
 });
@@ -193,6 +200,7 @@ describe(SupervisorStop.name, () => {
     vi.useRealTimers();
   });
 
+  const DEADLINE_MS = 9000;
   const worker = () => ({ stop: vi.fn(), kill: vi.fn() });
 
   it('asks every worker to stop and exits once the last one has', () => {
@@ -200,7 +208,7 @@ describe(SupervisorStop.name, () => {
     const api = worker();
     const microservices = worker();
     const workers = [api, microservices];
-    const sut = new SupervisorStop({ exit });
+    const sut = new SupervisorStop({ exit, deadlineMs: DEADLINE_MS });
 
     sut.begin(() => workers);
     expect(sut.stopping).toBe(true);
@@ -214,7 +222,7 @@ describe(SupervisorStop.name, () => {
     sut.workerExited(workers.length);
     expect(exit).toHaveBeenCalledWith(0);
 
-    vi.advanceTimersByTime(SHUTDOWN_SUPERVISOR_DEADLINE_MS);
+    vi.advanceTimersByTime(DEADLINE_MS);
     expect(exit).toHaveBeenCalledTimes(1);
     expect(api.kill).not.toHaveBeenCalled();
   });
@@ -222,10 +230,10 @@ describe(SupervisorStop.name, () => {
   it('kills whatever is still running at the deadline, then exits', () => {
     const exit = vi.fn();
     const stuck = worker();
-    const sut = new SupervisorStop({ exit });
+    const sut = new SupervisorStop({ exit, deadlineMs: DEADLINE_MS });
 
     sut.begin(() => [stuck]);
-    vi.advanceTimersByTime(SHUTDOWN_SUPERVISOR_DEADLINE_MS - 1);
+    vi.advanceTimersByTime(DEADLINE_MS - 1);
     expect(stuck.kill).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
 
@@ -236,7 +244,7 @@ describe(SupervisorStop.name, () => {
   it('ignores a second stop request', () => {
     const exit = vi.fn();
     const api = worker();
-    const sut = new SupervisorStop({ exit });
+    const sut = new SupervisorStop({ exit, deadlineMs: DEADLINE_MS });
 
     sut.begin(() => [api]);
     sut.begin(() => [api]);
@@ -246,7 +254,7 @@ describe(SupervisorStop.name, () => {
 
   it('exits at once when no worker is running yet', () => {
     const exit = vi.fn();
-    const sut = new SupervisorStop({ exit });
+    const sut = new SupervisorStop({ exit, deadlineMs: DEADLINE_MS });
 
     sut.begin(() => []);
 
@@ -255,7 +263,7 @@ describe(SupervisorStop.name, () => {
 
   it('does nothing on a worker exit before a stop was asked for', () => {
     const exit = vi.fn();
-    const sut = new SupervisorStop({ exit });
+    const sut = new SupervisorStop({ exit, deadlineMs: DEADLINE_MS });
 
     sut.workerExited(0);
 

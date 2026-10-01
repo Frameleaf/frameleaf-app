@@ -5,7 +5,7 @@ import { Job, JobsOptions, Queue, WaitingError, Worker, type WorkerOptions } fro
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Redis } from 'ioredis';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
-import { JOBS_NOT_RETRIED, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
+import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { ImmichWorker, JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
@@ -272,8 +272,8 @@ export class JobRepository {
    * FL-291: stop this process's workers for a server stop. No worker takes a new job; running jobs get
    * `graceMs` to finish. A job still running then goes back to waiting at once, so the next boot runs
    * it without waiting for BullMQ's stalled-job check — except a job that is unsafe to run again
-   * (JOBS_NOT_RETRIED: it may already have sent its mail, notice or push, or made its partial
-   * records), which is recorded as failed instead, as a failed handler would have left it. Then the
+   * (JOBS_UNSAFE_TO_RERUN_AFTER_STOP: it may already have sent its mail, notice or push, or made its
+   * partial records), which is recorded as failed instead, as a failed handler would have left it. Then the
    * workers close. The handler of a job handed back may still be running; the process exits shortly
    * after and its result is ignored.
    */
@@ -316,7 +316,7 @@ export class JobRepository {
   private async handBack({ queueName, job, token, release }: RunningJob) {
     const label = `${job.name} (${job.id}) in queue ${queueName}`;
     try {
-      if (JOBS_NOT_RETRIED.has(job.name as JobName)) {
+      if (JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(job.name as JobName)) {
         await job.moveToFailed(new Error('The server stopped while the job was running'), token as string, false);
         this.logger.warn(`Job ${label} was still running when the server stopped; not run again`);
       } else {
