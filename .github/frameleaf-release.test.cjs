@@ -361,8 +361,9 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
       "utf8",
     );
     assert(
-      compose.includes("${FRAMELEAF_VERSION:-${IMMICH_VERSION:-" + tag + "}}") &&
-        compose.includes("model-cache"),
+      compose.includes(
+        "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-" + tag + "}}",
+      ) && compose.includes("model-cache"),
     );
     const original = await fs.readFile(
       path.join(root, "docker/example.env"),
