@@ -24,6 +24,8 @@ export class SafetyService {
     );
     return {
       cloudAvailability: availability.state,
+      cloudReadOnly: availability.readOnly,
+      cloudReadOnlyReason: availability.readOnlyReason,
       assets: assets.map((row) => ({
         id: row.id,
         sha256: row.sha256!,
@@ -44,6 +46,8 @@ export class SafetyService {
     const row = await this.index.getSafetySummary(this.integrity.getSafetyQuery(auth), availability.bucket);
     return {
       cloudAvailability: availability.state,
+      cloudReadOnly: availability.readOnly,
+      cloudReadOnlyReason: availability.readOnlyReason,
       total: row.total,
       onServer: row.onServer,
       onServerPercent: percent(row.onServer, row.total),

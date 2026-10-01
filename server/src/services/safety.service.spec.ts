@@ -106,6 +106,33 @@ describe(SafetyService.name, () => {
     });
   });
 
+  it('reports backups paused for a full plan without hiding what is already backed up (FL-301)', async () => {
+    cloud.getSafetyAvailability.mockResolvedValue({
+      state: 'ready',
+      bucket: 'private-bucket',
+      readOnly: true,
+      readOnlyReason: 'plan_full',
+    });
+    index.getSafetySummary.mockResolvedValue({
+      total: 4,
+      onServer: 4,
+      backedUp: 3,
+      lastCompletedAt: at,
+      lastVerifiedAt: null,
+    });
+    index.getSafetyAssets.mockResolvedValue([]);
+    expect(await sut.summary(auth)).toMatchObject({
+      cloudAvailability: 'ready',
+      cloudReadOnly: true,
+      cloudReadOnlyReason: 'plan_full',
+      backedUp: 3,
+    });
+    expect(await sut.lookup(auth, { hashes: ['a'.repeat(64)] })).toMatchObject({
+      cloudReadOnly: true,
+      cloudReadOnlyReason: 'plan_full',
+    });
+  });
+
   it('returns no dates or counts for an empty accessible library', async () => {
     index.getSafetySummary.mockResolvedValue({
       total: 0,

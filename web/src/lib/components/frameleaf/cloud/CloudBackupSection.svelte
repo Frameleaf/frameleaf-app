@@ -319,7 +319,11 @@
       </div>
     </CloudCard>
   {:else}
-    {#if readOnly}
+    {#if readOnly && managed?.readOnlyReason === 'plan_full'}
+      <CloudBanner tone="warning" icon={mdiLockOutline} title={$t('frameleaf_cloud_backup_plan_full_title')}>
+        {$t('frameleaf_cloud_backup_plan_full_body')}
+      </CloudBanner>
+    {:else if readOnly}
       <CloudBanner tone="warning" icon={mdiLockOutline} title={$t('frameleaf_cloud_backup_read_only_title')}>
         {$t('frameleaf_cloud_backup_read_only_body')}
       </CloudBanner>

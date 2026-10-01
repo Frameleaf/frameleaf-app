@@ -56859,6 +56859,7 @@
             "type": "boolean"
           },
           "readOnlyReason": {
+            "description": "Why uploads are stopped, as Frameleaf Cloud says: purge_hold, entitlement, unlinked, suspended, purging or plan_full (the plan is full; new items wait until it is upgraded). Open-ended: show an unknown value generically.",
             "nullable": true,
             "type": "string"
           },
@@ -79931,11 +79932,22 @@
               "ready"
             ],
             "type": "string"
+          },
+          "cloudReadOnly": {
+            "description": "Frameleaf-managed backup storage is read-only, so new items wait to be backed up; restores keep working and nothing already backed up is touched",
+            "type": "boolean"
+          },
+          "cloudReadOnlyReason": {
+            "description": "Why the backup storage is read-only, as Frameleaf Cloud says: purge_hold, entitlement, unlinked, suspended, purging or plan_full (Backup paused: plan full). Open-ended: show an unknown value generically. Null when it is writable or no reason was given",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
           "assets",
-          "cloudAvailability"
+          "cloudAvailability",
+          "cloudReadOnly",
+          "cloudReadOnlyReason"
         ],
         "type": "object"
       },
@@ -79963,6 +79975,15 @@
               "paused-key-unloaded",
               "ready"
             ],
+            "type": "string"
+          },
+          "cloudReadOnly": {
+            "description": "Frameleaf-managed backup storage is read-only, so new items wait to be backed up; restores keep working and nothing already backed up is touched",
+            "type": "boolean"
+          },
+          "cloudReadOnlyReason": {
+            "description": "Why the backup storage is read-only, as Frameleaf Cloud says: purge_hold, entitlement, unlinked, suspended, purging or plan_full (Backup paused: plan full). Open-ended: show an unknown value generically. Null when it is writable or no reason was given",
+            "nullable": true,
             "type": "string"
           },
           "lastCompletedRunAt": {
@@ -80000,6 +80021,8 @@
           "backedUp",
           "backedUpPercent",
           "cloudAvailability",
+          "cloudReadOnly",
+          "cloudReadOnlyReason",
           "lastCompletedRunAt",
           "lastVerifiedRunAt",
           "onServer",
