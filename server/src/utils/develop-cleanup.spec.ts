@@ -299,13 +299,15 @@ describe('worst-case cost (FL-233)', () => {
       ],
     } as never);
     expect(recipe.masks.flatMap((mask) => mask.strokes ?? []).flatMap((stroke) => stroke.points)).toHaveLength(3072);
-    const started = performance.now();
+    // CPU time of this worker, not wall time: a busy machine running the suite in parallel stretches
+    // the wall clock many times over without the render doing any more work
+    const started = process.cpuUsage();
     applyDevelopCleanup(image, { width, height, channels: 3 }, recipe.cleanup);
     applyDevelopMasks(image, { width, height, channels: 3 }, recipe.masks, identityMaskMapping(width, height));
-    const elapsed = performance.now() - started;
+    const { user, system } = process.cpuUsage(started);
     // a few seconds on a laptop (before FL-233 review: minutes); the bound leaves room for a slow runner
-    expect(elapsed).toBeLessThan(15_000);
-  }, 30_000);
+    expect((user + system) / 1000).toBeLessThan(15_000);
+  }, 180_000);
 
   it('keeps at most 4096 stroke points in a recipe', () => {
     const recipe = normalizeDevelopRecipe({
