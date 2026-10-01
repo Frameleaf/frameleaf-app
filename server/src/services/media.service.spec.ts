@@ -25,7 +25,7 @@ import {
 import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
@@ -42,7 +42,8 @@ const extractedBuffer = Buffer.from('embedded image file');
 const renderedRawBuffer = Buffer.from('rendered raw image');
 const getFilterOption = (outputOptions: string[], option = '-vf') => outputOptions[outputOptions.indexOf(option) + 1];
 
-vi.mock('src/utils/raw-renderer.js', () => ({
+vi.mock('src/utils/raw-renderer.js', async (original) => ({
+  ...(await original<typeof import('src/utils/raw-renderer.js')>()),
   renderRawWithLibRaw: vi.fn(),
 }));
 
@@ -372,14 +373,14 @@ describe(MediaService.name, () => {
       mocks.ocr.getByAssetId.mockResolvedValue([]);
       mocks.media.decodeImage.mockImplementation((input) =>
         Promise.resolve(
-          typeof input === 'string'
+          typeof input === 'string' || input === renderedRawBuffer
             ? { data: rawBuffer, info: rawInfo as OutputInfo } // string implies original file
             : { data: fullsizeBuffer, info: rawInfo as OutputInfo }, // buffer implies embedded image extracted
         ),
       );
       mocks.media.getImageMetadata.mockResolvedValue({ width: 100, height: 100, isTransparent: false });
       vi.mocked(renderRawWithLibRaw).mockReset();
-      vi.mocked(renderRawWithLibRaw).mockRejectedValue(new Error('dcraw_emu unavailable'));
+      vi.mocked(renderRawWithLibRaw).mockResolvedValue(renderedRawBuffer);
     });
 
     it('should skip thumbnail generation if asset not found', async () => {
@@ -1300,6 +1301,7 @@ describe(MediaService.name, () => {
 
       await sut.handleGenerateThumbnails({ id: asset.id });
 
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(extractedBuffer, {
         colorspace: Colorspace.P3,
@@ -1346,7 +1348,7 @@ describe(MediaService.name, () => {
 
       await sut.handleGenerateThumbnails({ id: asset.id });
 
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, {
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
         size: 1440,
@@ -1363,7 +1365,7 @@ describe(MediaService.name, () => {
       await sut.handleGenerateThumbnails({ id: asset.id });
 
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, {
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
         size: 1440,
@@ -1381,7 +1383,7 @@ describe(MediaService.name, () => {
 
       expect(mocks.media.extract).not.toHaveBeenCalled();
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, {
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
         size: 1440,
@@ -1405,7 +1407,39 @@ describe(MediaService.name, () => {
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
     });
 
-    it('should render RAW with LibRaw when Sharp cannot decode the source and enhanced RAW rendering is enabled', async () => {
+    it.each([false, true])('skips classified unsupported RAW with enhanced rendering %s', async (enabled) => {
+      const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
+      const failure = new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: false, enhancedRaw: { enabled } } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.decodeImage.mockRejectedValue(failure);
+      vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+    });
+
+    it.each([
+      new RawRenderError('dependency_missing', 'ENOENT'),
+      new RawRenderError('timeout', 'ETIMEDOUT'),
+      new RawRenderError('resource_limit', 'ERR_RAW_RESOURCE_LIMIT'),
+      new RawRenderError('io', 'EIO'),
+      new RawRenderError('damaged', 'ERR_RAW_DAMAGED'),
+      new RawRenderError('decode_failed', 'ERR_RAW_DECODE'),
+    ])('propagates classified RAW failure for retry or diagnosis: %s', async (failure) => {
+      const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
+      mocks.systemMetadata.get.mockResolvedValue({
+        image: { extractEmbedded: false, enhancedRaw: { enabled: false } },
+      });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.decodeImage.mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(failure);
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+    });
+
+    it('should render the sensor directly when enhanced RAW rendering is enabled', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.cr2' })
         .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
         .build();
@@ -1431,22 +1465,17 @@ describe(MediaService.name, () => {
       expect(mocks.media.generateThumbnail).toHaveBeenCalled();
     });
 
-    it('should not render RAW with LibRaw when enhanced RAW rendering is disabled', async () => {
-      const asset = AssetFactory.from({ originalFileName: 'file.cr2' })
-        .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
-        .build();
+    it('should render RAW with LibRaw when enhanced RAW rendering is disabled', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
       mocks.systemMetadata.get.mockResolvedValue({
         image: { extractEmbedded: false, enhancedRaw: { enabled: false } },
       });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
-      mocks.media.decodeImage.mockRejectedValue(
-        new Error(`Input file has corrupt header: unsupported RAW file '${asset.originalPath}'`),
-      );
-
-      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
-
-      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
-      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, expect.any(Object));
+      expect(mocks.media.decodeImage).not.toHaveBeenCalledWith(asset.originalPath, expect.any(Object));
+      expect(mocks.media.generateThumbnail).toHaveBeenCalled();
     });
 
     it('should process invalid images if enabled', async () => {
@@ -1461,7 +1490,7 @@ describe(MediaService.name, () => {
 
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
       expect(mocks.media.decodeImage).toHaveBeenCalledWith(
-        asset.originalPath,
+        renderedRawBuffer,
         expect.objectContaining({ processInvalidImages: true }),
       );
 
@@ -1486,89 +1515,124 @@ describe(MediaService.name, () => {
       vi.unstubAllEnvs();
     });
 
-    it('should extract full-size JPEG preview from RAW', async () => {
-      const asset = AssetFactory.from({ originalFileName: 'file.dng' })
-        .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
-        .build();
+    it.each([RawExtractedFormat.Jpeg, RawExtractedFormat.Jxl])(
+      'renders fullsize from the sensor instead of the available embedded %s',
+      async (format) => {
+        const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif({ orientation: '6' }).build();
+        mocks.systemMetadata.get.mockResolvedValue({
+          image: {
+            fullsize: { enabled: true, format: ImageFormat.Webp },
+            extractEmbedded: true,
+            enhancedRaw: { enabled: false },
+          },
+        });
+        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format });
+        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+        await sut.handleGenerateThumbnails({ id: asset.id });
+        expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+        expect(mocks.media.extract).not.toHaveBeenCalled();
+        expect(mocks.media.decodeImage).toHaveBeenCalledExactlyOnceWith(
+          renderedRawBuffer,
+          expect.objectContaining({
+            size: undefined,
+            orientation: undefined,
+          }),
+        );
+        expect(mocks.media.generateThumbnail).toHaveBeenCalledTimes(3);
+        expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
+          rawBuffer,
+          expect.objectContaining({
+            format: ImageFormat.Webp,
+            raw: rawInfo,
+          }),
+          expect.stringContaining('fullsize.webp'),
+        );
+        // Pixel re-encoding cannot copy the camera JPEG's GPS or other original metadata.
+        expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+        expect(mocks.media.writeExif).not.toHaveBeenCalled();
+        expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
+          expect.arrayContaining([expect.objectContaining({ type: AssetFileType.FullSize })]),
+        );
+      },
+    );
 
-      mocks.systemMetadata.get.mockResolvedValue({
-        image: { fullsize: { enabled: true, format: ImageFormat.Webp }, extractEmbedded: true },
-      });
+    it('does not publish a fullsize file if sensor re-encoding fails (FL-54)', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+      mocks.systemMetadata.get.mockResolvedValue({ image: { fullsize: { enabled: true }, extractEmbedded: true } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.generateThumbnail.mockRejectedValue(new Error('encoding failed'));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('encoding failed');
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+    });
+
+    it('falls back once from a failed embedded preview decode to the sensor', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif({ orientation: '6' }).build();
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: true } });
       mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
       mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
-
-      await sut.handleGenerateThumbnails({ id: asset.id });
-
-      expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(extractedBuffer, {
-        colorspace: Colorspace.P3,
-        processInvalidImages: false,
-        size: 1440, // capped to preview size as fullsize conversion is skipped
-      });
-
-      expect(mocks.media.generateThumbnail).toHaveBeenCalledTimes(2);
-      expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
-        fullsizeBuffer,
-        {
-          colorspace: Colorspace.P3,
-          format: ImageFormat.Jpeg,
-          size: 1440,
-          quality: 80,
-          progressive: false,
-          processInvalidImages: false,
-          raw: rawInfo,
-          edits: [],
-        },
-        expect.any(String),
+      mocks.media.decodeImage.mockRejectedValueOnce(new Error('bad embedded JPEG'));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+      expect(mocks.media.decodeImage).toHaveBeenNthCalledWith(
+        1,
+        extractedBuffer,
+        expect.objectContaining({ orientation: 6 }),
+      );
+      expect(mocks.media.decodeImage).toHaveBeenNthCalledWith(
+        2,
+        renderedRawBuffer,
+        expect.objectContaining({ orientation: undefined }),
       );
     });
 
-    describe('extracted RAW preview location (FL-54)', () => {
-      const setupExtracted = () => {
-        const asset = AssetFactory.from({ originalFileName: 'file.dng' })
-          .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
-          .build();
-        mocks.systemMetadata.get.mockResolvedValue({
-          image: { fullsize: { enabled: true, format: ImageFormat.Webp }, extractEmbedded: true },
-        });
-        mocks.media.extract.mockResolvedValue({ buffer: extractedBuffer, format: RawExtractedFormat.Jpeg });
-        mocks.media.getImageMetadata.mockResolvedValue({ width: 3840, height: 2160, isTransparent: false });
-        mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
-        return asset;
+    it('uses full sensor resolution for edits even when fullsize viewing is disabled', async () => {
+      const asset = getForGenerateThumbnail(
+        AssetFactory.from({ originalFileName: 'file.dng' }).exif({ orientation: '6' }).build(),
+      );
+      const image = {
+        ...defaults.image,
+        extractEmbedded: true,
+        enhancedRaw: { enabled: false },
+        fullsize: { ...defaults.image.fullsize, enabled: false },
       };
-
-      it('removes the camera location from the extracted fullsize file for every viewer', async () => {
-        const asset = setupExtracted();
-
-        await sut.handleGenerateThumbnails({ id: asset.id });
-
-        const [fullsizePath, buffer] = mocks.storage.createOrOverwriteFile.mock.calls[0];
-        expect(buffer).toBe(extractedBuffer);
-        expect(mocks.media.removeLocation).toHaveBeenCalledWith(fullsizePath);
-        expect(mocks.media.removeLocation.mock.invocationCallOrder[0]).toBeGreaterThan(
-          mocks.media.writeExif.mock.invocationCallOrder[0],
-        );
-        expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
-          expect.arrayContaining([expect.objectContaining({ type: AssetFileType.FullSize, path: fullsizePath })]),
-        );
-      });
-
-      it('drops the fullsize file rather than keep a location it cannot remove', async () => {
-        const asset = setupExtracted();
-        mocks.media.removeLocation.mockResolvedValue(false);
-
-        await sut.handleGenerateThumbnails({ id: asset.id });
-
-        const [fullsizePath] = mocks.storage.createOrOverwriteFile.mock.calls[0];
-        expect(mocks.storage.unlink).toHaveBeenCalledWith(fullsizePath);
-        expect(mocks.asset.upsertFiles).not.toHaveBeenCalledWith(
-          expect.arrayContaining([expect.objectContaining({ path: fullsizePath })]),
-        );
-      });
+      const result = await sut['extractOriginalImage'](asset, image, true);
+      expect(result.convertFullsize).toBe(true);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(asset.originalPath);
+      expect(mocks.media.extract).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).toHaveBeenCalledExactlyOnceWith(
+        renderedRawBuffer,
+        expect.objectContaining({
+          size: undefined,
+          orientation: undefined,
+        }),
+      );
     });
 
-    it('should convert full-size WEBP preview from JXL preview of RAW', async () => {
+    it('does not repeat a failed sensor attempt or use the embedded JPEG to hide it', async () => {
+      const asset = AssetFactory.from({ originalFileName: 'file.dng' }).exif().build();
+      const error = new RawRenderError('damaged', 'ERR_RAW_DAMAGED');
+      mocks.systemMetadata.get.mockResolvedValue({
+        image: { fullsize: { enabled: true }, extractEmbedded: true, enhancedRaw: { enabled: true } },
+      });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      vi.mocked(renderRawWithLibRaw).mockRejectedValue(error);
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(error);
+      expect(renderRawWithLibRaw).toHaveBeenCalledOnce();
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(mocks.media.extract).not.toHaveBeenCalled();
+    });
+
+    it.each(['photo.jpeg', 'layered.psd'])('preserves direct successful decoding for %s', async (originalFileName) => {
+      const asset = AssetFactory.from({ originalFileName }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, expect.any(Object));
+    });
+
+    it('should convert sensor fullsize even when embedded JXL is available', async () => {
       const asset = AssetFactory.from({ originalFileName: 'file.dng' })
         .exif({ fileSizeInByte: 5000, profileDescription: 'Adobe RGB', bitsPerSample: 14, orientation: undefined })
         .build();
@@ -1583,14 +1647,14 @@ describe(MediaService.name, () => {
       await sut.handleGenerateThumbnails({ id: asset.id });
 
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(extractedBuffer, {
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
       });
 
       expect(mocks.media.generateThumbnail).toHaveBeenCalledTimes(3);
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
-        fullsizeBuffer,
+        rawBuffer,
         {
           colorspace: Colorspace.P3,
           format: ImageFormat.Webp,
@@ -1603,7 +1667,7 @@ describe(MediaService.name, () => {
         expect.any(String),
       );
       expect(mocks.media.generateThumbnail).toHaveBeenCalledWith(
-        fullsizeBuffer,
+        rawBuffer,
         {
           colorspace: Colorspace.P3,
           format: ImageFormat.Jpeg,
@@ -1631,7 +1695,7 @@ describe(MediaService.name, () => {
       await sut.handleGenerateThumbnails({ id: asset.id });
 
       expect(mocks.media.decodeImage).toHaveBeenCalledOnce();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(asset.originalPath, {
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(renderedRawBuffer, {
         colorspace: Colorspace.P3,
         processInvalidImages: false,
       });
@@ -1850,7 +1914,7 @@ describe(MediaService.name, () => {
       mocks.ocr.getByAssetId.mockResolvedValue([]);
       mocks.media.decodeImage.mockImplementation((input) =>
         Promise.resolve(
-          typeof input === 'string'
+          typeof input === 'string' || input === renderedRawBuffer
             ? { data: rawBuffer, info: rawInfo as OutputInfo } // string implies original file
             : { data: fullsizeBuffer, info: rawInfo as OutputInfo }, // buffer implies embedded image extracted
         ),

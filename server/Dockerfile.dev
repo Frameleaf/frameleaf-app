@@ -152,12 +152,17 @@ RUN ./ffmpeg.sh
 
 COPY --from=base-server-libvips /usr/local/lib/ /usr/local/lib/
 COPY --from=base-server-libvips /usr/local/bin/vips* /usr/local/bin/
+COPY --from=base-server-libraw /usr/local/bin/dcraw_emu /usr/local/bin/
 COPY --from=base-server-libvips /usr/local/include/vips/ /usr/local/include/vips/
 COPY --from=base-server-geodata /build/geodata /build/geodata
 
 ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib
 
-RUN ldconfig /usr/local/lib
+RUN ldconfig /usr/local/lib && \
+  ldd /usr/local/bin/dcraw_emu > /tmp/libraw-linkage && \
+  grep -Eq 'libraw(_r)?\.so.*=> /usr/local/lib/' /tmp/libraw-linkage && \
+  ! grep -q 'not found' /tmp/libraw-linkage && \
+  rm /tmp/libraw-linkage
 
 # Record the exact source revisions and package versions this base was built from.
 COPY server/base-image/packages/ ./packages/
