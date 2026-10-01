@@ -37,11 +37,19 @@ For the September 24 refinements also try:
 
 Read the authorized private design requirements for the latest written decisions; this approved template remains the UI reference. Studio controls are an interaction layout; exports, restoration, job progress and account actions are simulations. Video playback uses local MP4 demonstrations; editing/restoration still shows sample imagery. Nothing changes a real user's library or contacts cloud compute.
 
+The photographer review starts at `/?screen=photography`: open a shoot, cull and rate its contact sheet, develop a photograph, draw or refine masks, save a version, and return to configure its proof gallery. Preview the client gallery, choose favourites and submit them, then return to prepare approved delivery. Branding and Website configure the client presentation; Publishing compares independent hosting with the proposed managed Cloud Pro service. Universal RAW status and repair are always available at `/?screen=raw-support`, separately from the photographer workspace.
+
+`/?screen=photography-editor`, `/?screen=photography-client`, and `/?screen=photography-site` also open standalone sample review states. Try light mode, phone width, expired/offline galleries, selection limits, paused repair and cancelled batch jobs. Photo adjustments, semantic masks, watermarks, access controls, download packages, and subscription actions are local design simulations. They do not prove processing quality or enforce real client security. The September 30 additions are maintained in this template; `../source-manifest.json` remains the immutable record of the original source capture, and the historical `prototypes/frameleaf` copy has not been changed.
+
 ## Source map
 
 | Area | Entry points |
 | --- | --- |
 | Shell, library and session | `src/App.jsx`, `LibraryRail.jsx`, `styles.css`, `reference/library-session.ts` |
+| Universal RAW care | `src/RawLibraryCare.jsx`, `raw-library.mjs`, `raw-library.css` |
+| Photographer shoots, brand and publishing | `src/PhotographyWorkspace.jsx`, `photography-data.mjs`, `photography-workspace.css` |
+| RAW editor, masks, versions and batch design | `src/PhotographyEditor.jsx`, `photography-edit.mjs`, `photography-editor.css` |
+| Client proofs, delivery and studio website | `src/PhotographyClient.jsx`, `photography-client.mjs`, `photography-client.css` |
 | Search, filters and people | `SearchPalette.jsx` (typed filters and the Advanced graphical view), `search-palette.mjs`, `FilterPanel.jsx` (also embedded in the palette), `SearchableSelect.jsx`, `People.jsx` |
 | Apple-style refinements (September 24) | `apple-style.css` (font, materials, corners, per-tab grids, floating toolbar, viewer, info card, slideshow transitions, command palette, phone tab bar, settings icon tiles), `interactions.js` (zoom transition, grid zoom, reduced-motion check), `media-viewer.mjs` (slideshow transitions and Ken Burns moves), `memory-engine.mjs` (shared Memories motion and captions), `timeline-highlights.mjs` (curated Years and Months), `MediaViewer.jsx` `EnrichmentCard` (AI provenance) |
 | Timeline, Explore and full-size viewer | `TimelineLibrary.jsx`, `ExploreLibrary.jsx`, `MediaViewer.jsx`, `FaceTagger.jsx` |

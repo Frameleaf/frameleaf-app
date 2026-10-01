@@ -250,6 +250,22 @@ export function LibraryRail({
         {heading("tools", "Tools")}
         {open("tools") && (
           <>
+            {link(
+              "Photography",
+              "mdiCameraIris",
+              () => onScreen?.("photography"),
+              {
+                active: screen.startsWith("photography"),
+              },
+            )}
+            {link(
+              "RAW support",
+              "mdiCameraOutline",
+              () => onScreen?.("raw-support"),
+              {
+                active: screen === "raw-support",
+              },
+            )}
             {link("Workflows", "mdiTuneVariant", () => onTool?.("workflows"))}
             {link("Trash", "mdiDeleteOutline", onTrash)}
           </>
