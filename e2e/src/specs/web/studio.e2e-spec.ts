@@ -187,6 +187,86 @@ test.describe('Studio', () => {
     }
   });
 
+  test('FL-144 a restore whose acknowledgement is lost is applied once, and a reload resumes editing', async ({
+    page,
+  }) => {
+    const options = { headers: asBearerAuth(admin.accessToken) };
+    const clientId = randomUUID();
+    const project = await createStudioProject(
+      {
+        studioProjectCreateDto: {
+          name: 'Lost acknowledgement',
+          clientId,
+          requestKey: randomUUID(),
+          envelope: envelope(1),
+        },
+      },
+      options,
+    );
+    for (let revision = 2; revision <= 3; revision++) {
+      await saveStudioProjectRevision(
+        {
+          id: project.id,
+          studioProjectSaveDto: {
+            clientId,
+            expectedRevision: revision - 1,
+            requestKey: randomUUID(),
+            envelope: envelope(revision),
+          },
+        },
+        options,
+      );
+    }
+    await releaseStudioProjectLease({ id: project.id, studioProjectLeaseRequestDto: { clientId } }, options);
+
+    await page.goto(`/studio?project=${project.id}`);
+    const studio = page.getByRole('region', { name: 'Studio', exact: true });
+    await expect(studio.getByText('All changes saved', { exact: true })).toBeVisible();
+    await studio.getByRole('button', { name: 'Review', exact: true }).click();
+    const history = page.getByRole('complementary', { name: 'History', exact: true });
+    await expect(history.locator('ol strong')).toHaveText(['Version 3', 'Version 2', 'Version 1']);
+
+    // The restore reaches the real server and commits; only its response is lost on the way back.
+    const restorePath = `/api/studio/projects/${project.id}/restore`;
+    let delivered = false;
+    await page.route(
+      (url) => url.pathname === restorePath,
+      async (route) => {
+        const response = await route.fetch();
+        delivered = response.status() === 201;
+        await route.abort('connectionreset');
+      },
+      { times: 1 },
+    );
+    await history
+      .getByRole('listitem')
+      .filter({ has: page.getByText('Version 1', { exact: true }) })
+      .getByRole('button', { name: 'Restore', exact: true })
+      .click();
+    await expect.poll(() => delivered).toBe(true);
+    const committed = await getStudioProject({ id: project.id }, options);
+    expect(committed.revision).toBe(4);
+
+    // A reload is a new editor instance; the page released its lease on the way out, so it edits
+    // again instead of opening behind its own previous lease, and shows the restore exactly once.
+    const leasePath = `/api/studio/projects/${project.id}/lease`;
+    const reacquired = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === leasePath && response.request().method() === 'POST',
+    );
+    await page.reload();
+    // Without the release on unload this is a 409 from the page's own previous instance.
+    const reacquiredResponse = await reacquired;
+    expect(reacquiredResponse.status()).toBeLessThan(300);
+    await expect(studio.getByText('All changes saved', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('studio-save-banner')).toHaveCount(0);
+    await studio.getByRole('button', { name: 'Review', exact: true }).click();
+    await expect(history.locator('ol strong')).toHaveText(['Version 4', 'Version 3', 'Version 2', 'Version 1']);
+    await expect(history.getByText('Restored from version 1', { exact: true })).toHaveCount(1);
+    const stored = await getStudioProject({ id: project.id }, options);
+    expect(stored.revision).toBe(4);
+    expect(stored.envelope?.graph).toEqual(envelope(1).graph);
+  });
+
   test('disposes on sign-out and does not come back without a session', async ({ page, context }) => {
     await page.goto('/studio');
     await expect(page.getByRole('region', { name: 'Studio' })).toBeVisible();
