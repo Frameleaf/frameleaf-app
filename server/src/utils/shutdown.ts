@@ -21,6 +21,14 @@ export const DEFAULT_SHUTDOWN_DEADLINE_SECONDS = 9;
 export const getWorkerDeadlineMs = (graceMs: number, deadlineMs: number) =>
   deadlineMs - Math.min(1000, (deadlineMs - graceMs) / 2);
 
+/**
+ * FL-291: the budget of a restart (maintenance mode on or off, a restart request). Unlike a stop, the
+ * supervisor starts the workers again as soon as they have exited, and callers wait for the server to
+ * come back, so a restart keeps the 2 s ceiling it had before graceful stops: in-flight requests and
+ * running jobs get 1 s, then jobs still running go back to waiting and the worker exits by 2 s.
+ */
+export const RESTART_BUDGET = { graceMs: 1000, workerDeadlineMs: 2000 } as const;
+
 /** What the supervisor posts to a worker thread (microservices, maintenance) to stop it. */
 export const WORKER_STOP_MESSAGE = 'frameleaf:stop';
 
