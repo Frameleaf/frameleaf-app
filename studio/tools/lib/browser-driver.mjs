@@ -48,6 +48,7 @@ export async function createChromiumDriver({ harnessOrigin, args = [], channel, 
           if (!frame) throw new Error(`iframe unavailable: ${selector}`);
           return run({
             click: (target) => frame.locator(target).click(),
+            hover: (target, position) => frame.locator(target).hover({ position }),
             evaluate: (fn, arg) => frame.evaluate(fn, arg),
             waitForFunction: (fn, options) => frame.waitForFunction(fn, undefined, options),
             shortcut: (key, shift = false) => page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+${shift ? 'Shift+' : ''}${key}`),
@@ -174,6 +175,17 @@ export async function createWebDriverClassicDriver({ endpoint, harnessOrigin, ca
           ] }] }),
         }),
         click: (selector) => elementCommand(selector, 'click'),
+        // W3C element-origin offsets are measured from the element's center, not its top-left.
+        async hover(selector, position) {
+          const id = await element(selector);
+          const rect = await call(`/element/${id}/rect`, { method: 'GET' });
+          return call('/actions', { method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ actions: [{ type: 'pointer', id: 'fixture-mouse', parameters: { pointerType: 'mouse' }, actions: [
+              { type: 'pointerMove', origin: { 'element-6066-11e4-a52e-4f735466cecf': id },
+                x: Math.round(position.x - rect.width / 2), y: Math.round(position.y - rect.height / 2), duration: 0 },
+            ] }] }),
+          });
+        },
         async fill(selector, value) {
           // WebDriver clear does not produce React's native input sequence. Replace the value
           // with real select-all/delete/type keys so controlled inputs see the user's edit.
