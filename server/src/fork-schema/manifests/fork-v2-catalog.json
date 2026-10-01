@@ -5389,6 +5389,10 @@
       "identity": "public.preservation_restore.updateId"
     },
     {
+      "definition": "text|nullable|||",
+      "identity": "public.push_device.apnsEnvironment"
+    },
+    {
       "definition": "text|not null|||",
       "identity": "public.push_device_activity.activityId"
     },
@@ -7787,10 +7791,6 @@
     {
       "definition": "integer|not null|||",
       "identity": "immich_fork.asset_develop_artifact.width"
-    },
-    {
-      "definition": "text|nullable|||",
-      "identity": "public.push_device.apnsEnvironment"
     }
   ],
   "constraints": [
