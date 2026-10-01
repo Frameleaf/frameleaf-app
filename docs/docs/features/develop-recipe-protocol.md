@@ -92,3 +92,10 @@ Saving with `render: true`, rendering, or previewing a recipe that references an
 The editor sends its complete opaque snapshot with `replaceRecipe: true` and the explicitly loaded source revision ID when available. Original reset clears the opaque snapshot and source ID. Undo restores the snapshot; replacement is still explicit and never inherits the latest working revision implicitly.
 
 Unsupported render semantics return HTTP 400 with `code: develop_renderer_unsupported` before a revision, master, or job is created, including after preservation inside the named-source transaction. The editor initially requests rendering. Only that exact status and code permits retrying the identical source and recipe with `render: false`. The saved-only result announces that a newer renderer is required, retains the current preview, and does not follow a queued render. Authorization, missing sources, conflicts, malformed recipes, and transport failures do not trigger this fallback.
+
+### Saved develop presets
+
+A preset holds the develop sliders (Brilliance included), the look and its strength, and its radial and linear masks.
+
+- **Create:** any setting the request leaves out takes its neutral value. A preset saved from the web, which has no Brilliance control, starts with Brilliance at 0.
+- **Update:** `settings` is a patch. Only the settings the request sends change. Every other stored setting keeps its value, including Brilliance and any setting the server or client does not know yet. `masks`, when sent, replaces every mask of the preset.

@@ -5202,13 +5202,55 @@ export type DevelopPresetResponseDto = {
 export type DevelopPresetCreateDto = {
     /** Name shown in the presets list; unique per account */
     name: string;
+    /** Settings of the new preset; any left out take their neutral value */
     settings: DevelopPresetSettingsDto;
+};
+export type DevelopPresetSettingsUpdateDto = {
+    /** Black point */
+    blacks?: number;
+    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    brilliance?: number;
+    /** Local contrast in the midtones */
+    clarity?: number;
+    /** Contrast around middle grey */
+    contrast?: number;
+    /** Haze removal (positive) or addition (negative) */
+    dehaze?: number;
+    /** Exposure in EV; each whole stop doubles the light */
+    exposure?: number;
+    /** Film grain amount */
+    grain?: number;
+    /** Highlight recovery (negative) or lift (positive) */
+    highlights?: number;
+    /** Radial and linear selective adjustments, applied in order after the global develop */
+    masks?: DevelopPresetMask[];
+    /** Luminance noise reduction amount */
+    noiseReduction?: number;
+    preset?: AssetDevelopPreset;
+    /** How much of the preset is applied, as a percentage */
+    presetStrength?: number;
+    /** Global saturation */
+    saturation?: number;
+    /** Shadow lift (positive) or deepening (negative) */
+    shadows?: number;
+    /** Detail sharpening amount */
+    sharpen?: number;
+    /** Warm (positive) or cool (negative) white balance shift */
+    temperature?: number;
+    /** Magenta (positive) or green (negative) tint */
+    tint?: number;
+    /** Saturation weighted towards muted colours */
+    vibrance?: number;
+    /** Darkened (positive) or lightened (negative) edges */
+    vignette?: number;
+    /** White point */
+    whites?: number;
 };
 export type DevelopPresetUpdateDto = {
     /** Name shown in the presets list; unique per account */
     name?: string;
-    /** Replaces every stored setting of the preset */
-    settings?: DevelopPresetSettingsDto;
+    /** Settings to change; every setting left out, including ones this client does not know, keeps its stored value */
+    settings?: DevelopPresetSettingsUpdateDto;
 };
 export type DocumentSearchResponseDto = {
     items: AssetResponseDto[];

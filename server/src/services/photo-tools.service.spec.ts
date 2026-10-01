@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { Mock } from 'vitest';
 import { AssetDevelopMaskKind, AssetDevelopPreset } from 'src/dtos/asset-develop.dto.js';
-import { DEVELOP_PRESET_MAX } from 'src/dtos/photo-tools.dto.js';
+import { DEVELOP_PRESET_MAX, DevelopPresetUpdateDto } from 'src/dtos/photo-tools.dto.js';
 import { type DevelopPreset, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { PhotoToolsService, normalizePresetSettings } from 'src/services/photo-tools.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -120,6 +120,78 @@ describe(PhotoToolsService.name, () => {
     await expect(sut.deletePreset(authStub.user1, presetRow().id)).rejects.toBeInstanceOf(NotFoundException);
     expect(repository.getPreset).toHaveBeenCalledWith(authStub.user1.user.id, presetRow().id);
     expect(repository.deletePreset).toHaveBeenCalledWith(authStub.user1.user.id, presetRow().id);
+  });
+
+  describe('updating from a client that does not show every field (FL-303)', () => {
+    /** What the web editor sends: its sliders (no Brilliance), the look, the strength and the masks. */
+    const webSettings = {
+      exposure: 0.5,
+      contrast: 0,
+      highlights: 0,
+      shadows: 0,
+      whites: 0,
+      blacks: 0,
+      temperature: -30,
+      tint: 0,
+      vibrance: 0,
+      saturation: 0,
+      clarity: 0,
+      dehaze: 0,
+      vignette: 0,
+      grain: 0,
+      sharpen: 0,
+      noiseReduction: 0,
+      preset: AssetDevelopPreset.Cool,
+      presetStrength: 80,
+      masks: [],
+    };
+
+    const updateFromWeb = async (stored: Record<string, unknown>) => {
+      repository.getPreset.mockResolvedValue(presetRow({ settings: stored as never }));
+      repository.updatePreset.mockImplementation((_owner, _id, patch) =>
+        Promise.resolve(presetRow({ ...patch, settings: patch.settings ?? stored })),
+      );
+      const dto = DevelopPresetUpdateDto.schema.parse({ settings: webSettings }) as DevelopPresetUpdateDto;
+      const result = await sut.updatePreset(authStub.user1, presetRow().id, dto);
+      return { result, written: repository.updatePreset.mock.calls[0][2].settings as Record<string, unknown> };
+    };
+
+    it('keeps a Brilliance of 0.4 set in another app', async () => {
+      const { result, written } = await updateFromWeb({ ...normalizePresetSettings({ brilliance: 0.4 }) });
+      expect(written).toMatchObject({ brilliance: 0.4, exposure: 0.5, temperature: -30, presetStrength: 80 });
+      expect(result.settings).toMatchObject({ brilliance: 0.4, exposure: 0.5, preset: AssetDevelopPreset.Cool });
+    });
+
+    it('keeps a field this server does not know about', async () => {
+      const { written } = await updateFromWeb({
+        ...normalizePresetSettings({ brilliance: 0.4 }),
+        futureTone: { amount: 12 },
+      });
+      expect(written).toMatchObject({ futureTone: { amount: 12 }, brilliance: 0.4, temperature: -30 });
+    });
+
+    it('still replaces what the client sends, masks included', async () => {
+      const stored = normalizePresetSettings({
+        brilliance: 0.4,
+        masks: [{ id: 'old', kind: AssetDevelopMaskKind.Radial }],
+      } as never);
+      const { written } = await updateFromWeb({ ...stored });
+      expect(written.masks).toEqual([]);
+      expect(written).toMatchObject({ exposure: 0.5, brilliance: 0.4 });
+    });
+
+    it('keeps stored masks when the update leaves them out', async () => {
+      const stored = normalizePresetSettings({ masks: [{ id: 'old', kind: AssetDevelopMaskKind.Radial }] } as never);
+      repository.getPreset.mockResolvedValue(presetRow({ settings: stored as never }));
+      repository.updatePreset.mockImplementation((_owner, _id, patch) => Promise.resolve(presetRow(patch)));
+      await sut.updatePreset(
+        authStub.user1,
+        presetRow().id,
+        DevelopPresetUpdateDto.schema.parse({ settings: { exposure: 1 } }) as DevelopPresetUpdateDto,
+      );
+      const written = repository.updatePreset.mock.calls[0][2].settings as Record<string, unknown>;
+      expect(written).toMatchObject({ exposure: 1, masks: [expect.objectContaining({ id: 'old' })] });
+    });
   });
 
   it('renames and replaces settings in one update', async () => {

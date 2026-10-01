@@ -106,7 +106,8 @@ export class PhotoToolsController {
   @Authenticated()
   @Endpoint({
     summary: 'Update a develop preset',
-    description: 'Renames a preset, replaces its settings, or both.',
+    description:
+      'Renames a preset, changes its settings, or both. Settings the request leaves out keep their stored values.',
     history: history(),
   })
   updateDevelopPreset(
