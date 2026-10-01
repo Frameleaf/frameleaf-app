@@ -233,9 +233,10 @@ A new server has no administrator. Until it has one, it shows a **setup code** (
   - With Docker Compose: `docker compose logs immich-server`, or print it again with `docker compose exec immich-server frameleaf-admin setup-code`.
   - On Unraid, TrueNAS or Synology: the container's log.
 - **When it changes:** a new code is made every time the server starts. After five wrong tries a new code is shown and the old one stops working.
-- **Pinning the code:** for automated installs, set `FRAMELEAF_SETUP_CODE`. A pinned code is not replaced after wrong tries; it locks until the next start instead.
-- **Where it works:** only from the home network, never over remote access. Tries are limited per address. The code stops working once an administrator exists.
-- **Keeping it private:** the code is only as private as the server's console and log. Once the server is set up it is worthless.
+- **Pinning the code:** for automated installs and tests, set `FRAMELEAF_SETUP_CODE`. A pinned code is not replaced after wrong tries; it locks until the next start instead, so anyone on the network can lock it. Don't pin it on a server people use.
+- **Where it works:** only from the home network, never over remote access. A request counts as home when it comes from a private address, or through a trusted local reverse proxy that passes the visitor's address in `X-Forwarded-For`. Tries are limited per address. The code stops working once an administrator exists.
+- **Keeping it private:** the code is only as private as the server's console and log. It is printed to the console whatever the log level. Once the server is set up it is worthless.
+- **Onboarding:** whether the first-run onboarding is finished is reported by `GET /api/server/config` (`isOnboarded`), so the app can say so.
 
 There are three ways to claim a new server, and each needs the code:
 

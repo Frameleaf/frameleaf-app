@@ -150,6 +150,8 @@ describe(FrameleafAuthService.name, () => {
     });
     mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
     mocks.session.create.mockImplementation((row) => Promise.resolve({ id: 'session-1', ...row } as never));
+    // FL-292: a set-up server (one administrator exists) unless a test says otherwise
+    mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
     mocks.frameleafAccount.upsertLink.mockImplementation((row) =>
       Promise.resolve({ ...row, access: row.access ?? null, linkedAt: new Date(), lastSignInAt: null }),
     );
