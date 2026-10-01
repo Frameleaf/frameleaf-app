@@ -3,6 +3,7 @@ import { KeyObject, generateKeyPairSync, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ZodError } from 'zod';
 import type { PushDeviceWithActivities } from 'src/repositories/push-device.repository.js';
 import {
   JobName,
@@ -182,8 +183,8 @@ describe(PushService.name, () => {
 
       const result = await sut.register(auth, {
         platform: PushPlatform.Ios,
-        pushToken: 'apns-1',
-        pushToStartToken: 'start-1',
+        pushToken: 'apns-1-0123456789abcdef0123456789abcdef',
+        pushToStartToken: 'start-1-0123456789abcdef0123456789abcdef',
         publicKey: key.publicKey,
         preferences: { memories: false },
       });
@@ -192,16 +193,16 @@ describe(PushService.name, () => {
         userId: auth.user.id,
         sessionId: auth.session!.id,
         platform: PushPlatform.Ios,
-        pushToken: 'apns-1',
-        pushToStartToken: 'start-1',
+        pushToken: 'apns-1-0123456789abcdef0123456789abcdef',
+        pushToStartToken: 'start-1-0123456789abcdef0123456789abcdef',
         apnsEnvironment: null,
         publicKey: key.publicKey,
         backupDeviceKey: null,
         disabledEvents: [PushEventType.Memories],
       });
       expect(result).toMatchObject({ current: true, hasPushToStartToken: true, preferences: { memories: false } });
-      expect(JSON.stringify(result)).not.toContain('apns-1');
-      expect(JSON.stringify(result)).not.toContain('start-1');
+      expect(JSON.stringify(result)).not.toContain('apns-1-0123456789abcdef0123456789abcdef');
+      expect(JSON.stringify(result)).not.toContain('start-1-0123456789abcdef0123456789abcdef');
     });
 
     it('records the APNs environment of a development build, for iOS only (FL-302)', async () => {
@@ -213,7 +214,7 @@ describe(PushService.name, () => {
 
       const result = await sut.register(auth, {
         platform: PushPlatform.Ios,
-        pushToken: 'apns-1',
+        pushToken: 'apns-1-0123456789abcdef0123456789abcdef',
         apnsEnvironment: 'sandbox',
         publicKey: key.publicKey,
       });
@@ -223,7 +224,7 @@ describe(PushService.name, () => {
       await expect(
         sut.register(auth, {
           platform: PushPlatform.Android,
-          pushToken: 'fcm-1',
+          pushToken: 'fcm-1-0123456789abcdef0123456789abcdef',
           apnsEnvironment: 'sandbox',
           publicKey: key.publicKey,
         }),
@@ -237,10 +238,17 @@ describe(PushService.name, () => {
       devices.getBySession.mockResolvedValue(device(key, { disabledEvents: [PushEventType.Memories] }));
       devices.upsert.mockImplementation((registration) => Promise.resolve(device(key, registration)));
 
-      await sut.register(auth, { platform: PushPlatform.Ios, pushToken: 'apns-2', publicKey: key.publicKey });
+      await sut.register(auth, {
+        platform: PushPlatform.Ios,
+        pushToken: 'apns-2-0123456789abcdef0123456789abcdef',
+        publicKey: key.publicKey,
+      });
 
       expect(devices.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ pushToken: 'apns-2', disabledEvents: [PushEventType.Memories] }),
+        expect.objectContaining({
+          pushToken: 'apns-2-0123456789abcdef0123456789abcdef',
+          disabledEvents: [PushEventType.Memories],
+        }),
       );
     });
 
@@ -251,10 +259,13 @@ describe(PushService.name, () => {
       devices.getBySession.mockResolvedValue(device(key));
       devices.update.mockImplementation((_sessionId, changes) => Promise.resolve(device(key, changes)));
 
-      await sut.update(auth, { pushToken: 'fcm-rotated', preferences: { sharedActivity: false } });
+      await sut.update(auth, {
+        pushToken: 'fcm-rotated-0123456789abcdef0123456789abcdef',
+        preferences: { sharedActivity: false },
+      });
 
       expect(devices.update).toHaveBeenCalledWith(auth.session!.id, {
-        pushToken: 'fcm-rotated',
+        pushToken: 'fcm-rotated-0123456789abcdef0123456789abcdef',
         disabledEvents: [PushEventType.SharedActivity],
       });
     });
@@ -282,16 +293,22 @@ describe(PushService.name, () => {
       devices.getBySession.mockResolvedValue(ios);
       devices.getByUser.mockResolvedValue([ios]);
 
-      await sut.setActivityToken(auth, 'activity-1', { kind: 'cloud-backup-activation', token: 'update-1' });
+      await sut.setActivityToken(auth, 'activity-1', {
+        kind: 'cloud-backup-activation',
+        token: 'update-1-0123456789abcdef0123456789abcdef',
+      });
       expect(devices.setActivity).toHaveBeenCalledWith(ios.id, {
         activityId: 'activity-1',
         kind: 'cloud-backup-activation',
-        token: 'update-1',
+        token: 'update-1-0123456789abcdef0123456789abcdef',
       });
 
       devices.getBySession.mockResolvedValue(device(newDeviceKey(), { platform: PushPlatform.Android }));
       await expect(
-        sut.setActivityToken(auth, 'activity-1', { kind: 'cloud-backup-activation', token: 'update-1' }),
+        sut.setActivityToken(auth, 'activity-1', {
+          kind: 'cloud-backup-activation',
+          token: 'update-1-0123456789abcdef0123456789abcdef',
+        }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -384,7 +401,7 @@ describe(PushService.name, () => {
       deviceId: 'd',
       activityId: 'activity-1',
       kind: 'cloud-backup-activation',
-      token: 'update-1',
+      token: 'update-1-0123456789abcdef0123456789abcdef',
       updatedAt: new Date(),
     });
 
@@ -393,8 +410,12 @@ describe(PushService.name, () => {
       const ios = newDeviceKey();
       const android = newDeviceKey();
       devices.getDeliveryTargets.mockResolvedValue([
-        device(ios, { userId: 'user-1', pushToken: 'apns-1' }),
-        device(android, { userId: 'user-1', platform: PushPlatform.Android, pushToken: 'fcm-1' }),
+        device(ios, { userId: 'user-1', pushToken: 'apns-1-0123456789abcdef0123456789abcdef' }),
+        device(android, {
+          userId: 'user-1',
+          platform: PushPlatform.Android,
+          pushToken: 'fcm-1-0123456789abcdef0123456789abcdef',
+        }),
       ]);
       devices.getPreviewSafeAssetIds.mockResolvedValue(new Set(['asset-1']));
 
@@ -406,7 +427,7 @@ describe(PushService.name, () => {
       expect(sent.map(({ payload: _, ...rest }) => rest)).toEqual([
         {
           platform: 'apns',
-          token: 'apns-1',
+          token: 'apns-1-0123456789abcdef0123456789abcdef',
           type: 'alert',
           priority: 'high',
           ttlSec: 86_400,
@@ -414,7 +435,7 @@ describe(PushService.name, () => {
         },
         {
           platform: 'fcm',
-          token: 'fcm-1',
+          token: 'fcm-1-0123456789abcdef0123456789abcdef',
           type: 'alert',
           priority: 'high',
           ttlSec: 86_400,
@@ -478,7 +499,10 @@ describe(PushService.name, () => {
       const { sut, devices, gateway, users } = newHarness();
       users.getAdmins.mockResolvedValue([{ id: 'admin-1' }]);
       const gone = device(newDeviceKey(), { userId: 'admin-1', activities: [activity()] });
-      const startOnly = device(newDeviceKey(), { userId: 'admin-1', pushToStartToken: 'start-1' });
+      const startOnly = device(newDeviceKey(), {
+        userId: 'admin-1',
+        pushToStartToken: 'start-1-0123456789abcdef0123456789abcdef',
+      });
       devices.getDeliveryTargets.mockResolvedValue([gone, startOnly]);
       gateway.send.mockResolvedValue({ status: 'invalid-token' });
 
@@ -495,12 +519,12 @@ describe(PushService.name, () => {
 
     it('retries only what the gateway asked to, later, and gives up after five attempts', async () => {
       const { sut, devices, gateway, jobs } = newHarness();
-      const reached = device(newDeviceKey(), { pushToken: 'apns-reached' });
-      const busy = device(newDeviceKey(), { pushToken: 'apns-busy' });
+      const reached = device(newDeviceKey(), { pushToken: 'apns-reached-0123456789abcdef0123456789abcdef' });
+      const busy = device(newDeviceKey(), { pushToken: 'apns-busy-0123456789abcdef0123456789abcdef' });
       devices.getDeliveryTargets.mockResolvedValue([reached, busy]);
       gateway.send.mockImplementation((_target, request: PushSendRequest) =>
         Promise.resolve(
-          request.token === 'apns-busy'
+          request.token === 'apns-busy-0123456789abcdef0123456789abcdef'
             ? { status: 'throttled' as const, retryAfterSec: 600 }
             : { status: 'sent' as const },
         ),
@@ -525,7 +549,7 @@ describe(PushService.name, () => {
       gateway.send.mockResolvedValue({ status: 'retry' });
       await sut.handleDeliver({ notice: retry });
       expect(gateway.send).toHaveBeenCalledTimes(1);
-      expect(gateway.send.mock.calls[0][1].token).toBe('apns-busy');
+      expect(gateway.send.mock.calls[0][1].token).toBe('apns-busy-0123456789abcdef0123456789abcdef');
       expect(jobs.queue).toHaveBeenLastCalledWith(
         expect.objectContaining({ data: { notice: expect.objectContaining({ delayMs: 120_000 }) } }),
       );
@@ -545,6 +569,37 @@ describe(PushService.name, () => {
       await expect(sut.handleDeliver({ notice: notice() })).resolves.toBe(JobStatus.Success);
       expect(jobs.queue).toHaveBeenCalledTimes(1);
       expect(jobs.queue.mock.calls[0][0].data.notice.retry.targets).toHaveLength(1);
+    });
+
+    it('forgets a registered token the gateway could never take, without sending, and refuses one at registration', async () => {
+      const { sut, devices, gateway } = newHarness();
+      const bad = device(newDeviceKey(), { pushToken: 'too short' });
+      devices.getDeliveryTargets.mockResolvedValue([bad]);
+
+      await sut.handleDeliver({ notice: notice() });
+      expect(gateway.send).not.toHaveBeenCalled();
+      expect(devices.deleteByIds).toHaveBeenCalledWith([bad.id]);
+
+      const auth = factory.auth({ session: {} });
+      await expect(
+        sut.register(auth, { platform: PushPlatform.Ios, pushToken: 'short', publicKey: newDeviceKey().publicKey }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('never retries a Live Activity update, which the next one replaces, nor a request the contract refuses', async () => {
+      const { sut, devices, gateway, jobs, users } = newHarness();
+      users.getAdmins.mockResolvedValue([{ id: 'admin-1' }]);
+      devices.getDeliveryTargets.mockResolvedValue([
+        device(newDeviceKey(), { userId: 'admin-1', activities: [activity()] }),
+      ]);
+      gateway.send.mockResolvedValue({ status: 'retry' });
+      await sut.handleDeliver({ notice: notice({ admins: true, activation: activation('active') }) });
+      expect(jobs.queue).not.toHaveBeenCalled();
+
+      devices.getDeliveryTargets.mockResolvedValue([device(newDeviceKey())]);
+      gateway.send.mockRejectedValue(new ZodError([]));
+      await sut.handleDeliver({ notice: notice() });
+      expect(jobs.queue).not.toHaveBeenCalled();
     });
 
     it('sends the activation chain as a Live Activity with a fixed state, never the payload or items', async () => {
@@ -570,22 +625,24 @@ describe(PushService.name, () => {
       expect(sent).toEqual([
         {
           platform: 'apns',
-          token: 'update-1',
+          token: 'update-1-0123456789abcdef0123456789abcdef',
           type: 'live-activity-update',
           priority: 'high',
           ttlSec: 3600,
-          liveActivity: { state: { step: 'storage-ready', progress: 0.75 } },
+          liveActivity: { state: { step: 'storage-ready', progress: 0.75 }, staleAfterSec: 3600 },
         },
       ]);
     });
 
     it('starts the Live Activity with the push-to-start token, and ends it with an alert when the chain ends', async () => {
       const { sut, devices, sent } = newHarness();
-      devices.getDeliveryTargets.mockResolvedValue([device(newDeviceKey(), { pushToStartToken: 'start-1' })]);
+      devices.getDeliveryTargets.mockResolvedValue([
+        device(newDeviceKey(), { pushToStartToken: 'start-1-0123456789abcdef0123456789abcdef' }),
+      ]);
 
       await sut.handleDeliver({ notice: notice({ activation: activation('active', 1) }) });
       expect(sent[0]).toMatchObject({
-        token: 'start-1',
+        token: 'start-1-0123456789abcdef0123456789abcdef',
         type: 'live-activity-start',
         liveActivity: { state: { step: 'storage-ready' }, attributesType: 'ActivationAttributes' },
       });
@@ -630,7 +687,11 @@ describe(PushService.name, () => {
 
     it('sends a stale-backup wake-up as a background push to the linked device only', async () => {
       const { sut, devices, sent } = newHarness();
-      const linked = device(newDeviceKey(), { userId: 'user-1', backupDeviceKey: 'backup-1', pushToken: 'apns-a' });
+      const linked = device(newDeviceKey(), {
+        userId: 'user-1',
+        backupDeviceKey: 'backup-1',
+        pushToken: 'apns-a-0123456789abcdef0123456789abcdef',
+      });
       devices.getDeliveryTargets.mockResolvedValue([linked, device(newDeviceKey(), { userId: 'user-1' })]);
 
       await sut.handleDeliver({
@@ -638,7 +699,13 @@ describe(PushService.name, () => {
       });
 
       expect(sent.map(({ payload: _, ...rest }) => rest)).toEqual([
-        { platform: 'apns', token: 'apns-a', type: 'background', priority: 'normal', ttlSec: 4 * 3600 },
+        {
+          platform: 'apns',
+          token: 'apns-a-0123456789abcdef0123456789abcdef',
+          type: 'background',
+          priority: 'normal',
+          ttlSec: 4 * 3600,
+        },
       ]);
     });
   });

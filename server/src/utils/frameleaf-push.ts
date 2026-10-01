@@ -77,17 +77,16 @@ const liveActivityStateSchema = z
   .strict();
 export type LiveActivityState = z.infer<typeof liveActivityStateSchema>;
 
+/** A token the gateway takes: an APNs (hex) or ActivityKit token, or an FCM registration token. */
+export const isGatewayToken = (token: string) => token.length >= 32 && token.length <= 4096 && /^[\w:-]+$/.test(token);
+
 const LIVE_TYPES = ['live-activity-start', 'live-activity-update', 'live-activity-end'] as const;
 
 /** What may go to the gateway; checked before every request, so nothing else can leave. */
 export const pushSendRequestSchema = z
   .object({
     platform: z.enum(['apns', 'apns-sandbox', 'fcm']),
-    token: z
-      .string()
-      .min(32)
-      .max(4096)
-      .regex(/^[\w:-]+$/),
+    token: z.string().refine((token) => isGatewayToken(token)),
     type: z.enum(['alert', 'background', ...LIVE_TYPES]),
     priority: z.enum(['high', 'normal']),
     collapseId: z

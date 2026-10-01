@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { ZodError } from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { PushDeviceWithActivities } from 'src/repositories/push-device.repository.js';
@@ -39,6 +40,7 @@ import {
   PushTargetKind,
   buildPushPayload,
   collapseIdOf,
+  isGatewayToken,
   liveActivityStateOf,
   pushTtlSec,
 } from 'src/utils/frameleaf-push.js';
@@ -164,6 +166,7 @@ export class PushService {
     if (dto.platform !== PushPlatform.Ios && (pushToStartToken || dto.apnsEnvironment)) {
       throw new BadRequestException('Only iOS devices have an ActivityKit push-to-start token or an APNs environment');
     }
+    this.requireTokens(dto.pushToken, pushToStartToken);
     const publicKey = this.parseKey(dto.publicKey);
     const current = await this.devices.getBySession(sessionId);
     const device = await this.devices.upsert({
@@ -190,6 +193,7 @@ export class PushService {
     if (current.platform !== PushPlatform.Ios && (dto.pushToStartToken || dto.apnsEnvironment)) {
       throw new BadRequestException('Only iOS devices have an ActivityKit push-to-start token or an APNs environment');
     }
+    this.requireTokens(dto.pushToken, dto.pushToStartToken);
     const changes = {
       ...(dto.apnsEnvironment !== undefined && {
         apnsEnvironment: dto.apnsEnvironment === 'sandbox' ? ('sandbox' as const) : null,
@@ -230,6 +234,7 @@ export class PushService {
     if (current.platform !== PushPlatform.Ios) {
       throw new BadRequestException('Only iOS devices have Live Activity push tokens');
     }
+    this.requireTokens(dto.token);
     await this.devices.setActivity(current.id, { activityId, kind: dto.kind, token: dto.token });
     const device = await this.devices.getBySession(sessionId);
     return mapDevice(device ?? current, sessionId);
@@ -434,10 +439,16 @@ export class PushService {
     const queue = [...planned];
     const worker = async () => {
       for (let entry = queue.shift(); entry; entry = queue.shift()) {
+        if (!isGatewayToken(entry.request.token)) {
+          // registered before tokens were checked: the gateway could never deliver to it
+          results.push({ entry, result: { status: 'invalid-token' } });
+          continue;
+        }
         try {
           results.push({ entry, result: await this.gateway.send(target, entry.request) });
         } catch (error) {
-          const status = error instanceof FrameleafCloudError ? error.status : null;
+          // a request this server built wrongly is refused, never retried
+          const status = error instanceof FrameleafCloudError ? error.status : error instanceof ZodError ? 400 : null;
           // never the request: it holds the device token
           this.logger.warn(`Push ${notice.type}: the gateway refused a send: ${errorMessage(error)}`);
           results.push({
@@ -469,6 +480,9 @@ export class PushService {
         } else if (entry.activityRowId) {
           goneActivities.add(entry.activityRowId);
         }
+      } else if (entry.request.type === 'live-activity-update') {
+        // never retried: a later attempt could show an older step, and the next update replaces it anyway
+        rejected++;
       } else {
         again.push(entry);
         retryAfterSec = Math.max(retryAfterSec, result.retryAfterSec ?? 0);
@@ -562,7 +576,7 @@ export class PushService {
         platform,
         priority: 'high' as const,
         ttlSec: pushTtlSec(notice, true),
-        liveActivity: { state: liveActivityStateOf(progress) },
+        liveActivity: { state: liveActivityStateOf(progress), staleAfterSec: 3600 },
       };
       const activities = device.activities.filter(({ kind }) => kind === CLOUD_BACKUP_ACTIVITY_KIND);
       for (const activity of activities) {
@@ -679,6 +693,15 @@ export class PushService {
       throw new BadRequestException('Push registration needs a signed-in device session, not an API key');
     }
     return auth.session.id;
+  }
+
+  /** A token the push gateway could never deliver to is refused at once, never stored. */
+  private requireTokens(...tokens: Array<string | null | undefined>) {
+    if (tokens.some((token) => typeof token === 'string' && !isGatewayToken(token))) {
+      throw new BadRequestException(
+        'A push token is an APNs, ActivityKit or FCM token (32 or more letters, digits, -, _ or :)',
+      );
+    }
   }
 
   private parseKey(value: string): string {
