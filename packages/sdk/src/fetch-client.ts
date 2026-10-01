@@ -8160,7 +8160,7 @@ export type PushPreferencesDto = {
 export type PushDeviceUpdateDto = {
     backupDeviceKey?: string | null;
     preferences?: PushPreferencesDto;
-    /** The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1). */
+    /** The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1). */
     publicKey?: string;
     /** iOS only: a rotated ActivityKit push-to-start token, or null */
     pushToStartToken?: string | null;
@@ -8172,7 +8172,7 @@ export type PushDeviceRegisterDto = {
     backupDeviceKey?: string | null;
     platform: PushPlatform;
     preferences?: PushPreferencesDto;
-    /** The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1). */
+    /** The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1). */
     publicKey: string;
     /** iOS only: the ActivityKit push-to-start token */
     pushToStartToken?: string | null;
