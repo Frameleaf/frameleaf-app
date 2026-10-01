@@ -51,12 +51,14 @@ const DELETED_ACCOUNT_MESSAGE =
   'The account this Frameleaf account is linked to is being removed from this server. Ask an administrator to restore it.';
 
 /** Why a person Frameleaf vouched for cannot be signed in (the account rules of every Frameleaf sign-in). */
-type SignInRefusal = 'email' | 'removed' | 'conflict';
+type SignInRefusal = 'email' | 'removed' | 'conflict' | 'setup';
 
 const SIGN_IN_REFUSAL_CODES: Record<SignInRefusal, FrameleafTokenExchangeErrorCode> = {
   email: FrameleafTokenExchangeErrorCode.EmailUnverified,
   removed: FrameleafTokenExchangeErrorCode.AccountRemoved,
   conflict: FrameleafTokenExchangeErrorCode.AccountConflict,
+  // FL-292: only the owner may become a new server's first administrator
+  setup: FrameleafTokenExchangeErrorCode.NoAccess,
 };
 
 const EXCHANGE_REFUSALS: Record<
@@ -303,6 +305,18 @@ export class FrameleafAuthService extends BaseService {
     }
     if (!user) {
       // Frameleaf Cloud authorized this person for this server: it is the access authority
+      // FL-292: on a server set up from the Frameleaf app nobody administers it yet; only the account
+      // that linked (owns) it may become its first administrator
+      const firstAdministrator = !(await this.userRepository.getAdmin());
+      if (firstAdministrator) {
+        const { link: cloudLink } = await readCloudLink({
+          configRepository: this.configRepository,
+          systemMetadataRepository: this.systemMetadataRepository,
+        });
+        if (role !== 'admin' || !cloudLink?.accountId || cloudLink.accountId !== profile.sub) {
+          throw refuse('setup', 'This server is not set up yet: the Frameleaf account that owns it signs in first');
+        }
+      }
       this.logger.log(`Creating the account ${email} for a Frameleaf sign-in`);
       // FL-235: a person invited to this server gets their own account, with the quota the
       // administrator chose for invited accounts (unlimited by default); the server's owner is never
@@ -321,6 +335,18 @@ export class FrameleafAuthService extends BaseService {
         isAdmin: role === 'admin',
         quotaSizeInBytes: quota === null ? null : quota * HumanReadableSize.GiB,
       });
+      if (firstAdministrator) {
+        await this.recordAdminEvents([
+          {
+            userId: user.id,
+            actorId: user.id,
+            action: AdminAuditAction.ServerClaimed,
+            subject: user.name,
+            detail: 'app-frameleaf',
+          },
+        ]);
+        this.logger.log(`This server's owner ${email} signed in with Frameleaf and administers it`);
+      }
       await this.frameleafAccountRepository.upsertLink({
         userId: user.id,
         sub: profile.sub,

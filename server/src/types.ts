@@ -804,6 +804,18 @@ export type MediaLocation = { location: string };
  * only reads it: without `status: 'linked'` and an `instanceId`, nothing is contacted and every Frameleaf
  * Cloud admission is refused with `cloud-unavailable`.
  */
+/** FL-292: the setup state of a server without an administrator (system metadata, never in an API). */
+export type FrameleafSetupCodeState = {
+  code: string;
+  /** `FRAMELEAF_SETUP_CODE`: not replaced after wrong tries, locked until the next start instead. */
+  pinned: boolean;
+  failures: number;
+  locked: boolean;
+  generatedAt: string;
+  /** The one setup ticket handed out: SHA-256 (hex), the address it is bound to, and its expiry. */
+  ticket?: { hash: string; address: string; expiresAt: string };
+};
+
 export type FrameleafCloudLink = {
   status: 'unlinked' | 'pending' | 'linked' | 'revoked';
   /** The cloud base address this link was made against; a different FRAMELEAF_CLOUD_URL voids it. */
@@ -1329,6 +1341,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafCloudLink]: FrameleafCloudLink;
   [SystemMetadataKey.FrameleafInstance]: FrameleafInstanceIdentity;
   [SystemMetadataKey.FrameleafServerId]: { id: string; createdAt: string };
+  [SystemMetadataKey.FrameleafSetupCode]: FrameleafSetupCodeState;
   [SystemMetadataKey.FrameleafServiceDiscovery]: FrameleafServiceDiscovery;
   [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
   [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
