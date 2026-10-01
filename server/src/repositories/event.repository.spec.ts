@@ -1,5 +1,5 @@
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { ImmichWorker } from 'src/enum.js';
+import { BootstrapEventPriority, ImmichWorker } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -58,6 +58,67 @@ describe(EventRepository.name, () => {
         expect(assetDelete.length).toBeGreaterThan(1);
       },
     );
+  });
+
+  describe('AppBootstrap order (FL-289)', () => {
+    // Boot adoption of an official-origin library skips the maintenance-mode check, which is only safe
+    // because it runs in DatabaseService's bootstrap migration step: the first AppBootstrap handler,
+    // awaited before the queue workers start (QueueService) and before the API listens for HTTP
+    // (configureExpress runs after NestFactory.create resolves module init).
+    it('runs the database bootstrap first and the queue workers after it on the API worker', () => {
+      const { labels } = setupServices(ImmichWorker.Api);
+      const bootstrap = labels('AppBootstrap');
+
+      expect(bootstrap[0]).toBe('DatabaseService.onBootstrap');
+      expect(bootstrap.indexOf('QueueService.onBootstrap')).toBeGreaterThan(0);
+      expect(bootstrap.indexOf('ForkSchemaMigrationService.onBootstrap')).toBeGreaterThan(
+        bootstrap.indexOf('QueueService.onBootstrap'),
+      );
+    });
+
+    it('runs the database bootstrap first on the microservices worker and never auto-starts the backfill there', () => {
+      const { labels } = setupServices(ImmichWorker.Microservices);
+      const bootstrap = labels('AppBootstrap');
+
+      expect(bootstrap[0]).toBe('DatabaseService.onBootstrap');
+      expect(bootstrap.indexOf('QueueService.onBootstrap')).toBeGreaterThan(0);
+      expect(bootstrap).not.toContain('ForkSchemaMigrationService.onBootstrap');
+    });
+
+    it('keeps the database bootstrap priority strictly below every other bootstrap priority', () => {
+      const others = Object.entries(BootstrapEventPriority)
+        .filter(([key, value]) => key !== 'DatabaseService' && typeof value === 'number')
+        .map(([, value]) => value as number);
+
+      expect(others.every((value) => value > BootstrapEventPriority.DatabaseService)).toBe(true);
+    });
+
+    it('awaits each bootstrap handler before starting the next one', async () => {
+      const order: string[] = [];
+      let release!: () => void;
+      const first = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            release = () => {
+              order.push('first done');
+              resolve();
+            };
+          }),
+      );
+      const second = vi.fn(() => {
+        order.push('second');
+        return Promise.resolve();
+      });
+      const { sut } = setup('AppBootstrap', [first, second]);
+
+      const emitting = sut.emit('AppBootstrap');
+      await vi.waitFor(() => expect(first).toHaveBeenCalledOnce());
+      expect(second).not.toHaveBeenCalled();
+      release();
+      await emitting;
+
+      expect(order).toEqual(['first done', 'second']);
+    });
   });
 
   describe('AssetDelete (FL-169)', () => {

@@ -17,6 +17,18 @@ import {
 const lane = 'origin-v3.1.0-to-fork';
 const backfillFixtureCount = 256;
 
+/**
+ * FL-289: the first Frameleaf boot adopts the official library, which applies the post-certified
+ * upstream `1786741078327-AddWorkflowLogsTable`. That adds `workflow.logging` (default false) and
+ * changes nothing else in a workflow row. Compare the official columns and check the new one.
+ */
+const officialWorkflowDigests = (rows: any[]) =>
+  rows.map((row) => {
+    const { logging, ...official } = row;
+    expect(logging ?? false).toBe(false);
+    return digest(official);
+  });
+
 describe.runIf(phase === 'origin-seed')(`${lane}: exact official origin`, () => {
   it('seeds users, assets, albums, plugins, methods, workflows, and steps in the real official image', async () => {
     const ping = await api<{ res: string }>('/server/ping');
@@ -84,14 +96,31 @@ describe.runIf(phase === 'origin-seed')(`${lane}: exact official origin`, () => 
 });
 
 describe.runIf(phase === 'origin-pre-migrator')(`${lane}: compatible fork pre-migrator`, () => {
-  it('boots the compatible fork with migrations disabled and preserves exact ledger and row digests', async () => {
+  // FL-289: swapping the image is the upgrade. The first boot adopts the official library by itself
+  // (inside the boot migration lock, without maintenance mode) and the API worker starts the backfill.
+  it('adopts the official library at its first boot and preserves the official workflow ledger and rows', async () => {
     const ping = await api<{ res: string }>('/server/ping');
     expect(ping.res).toBe('pong');
     const before = await loadState<{ evidence: Awaited<ReturnType<typeof workflowEvidence>> }>(lane);
     const after = await workflowEvidence();
     expect(after.ledger).toEqual(before.evidence.ledger);
-    expect(after.schemaDigest).toBe(before.evidence.schemaDigest);
-    expect(after.rowDigests).toEqual(before.evidence.rowDigests);
+    expect(after.rowIds.workflow).toEqual(before.evidence.rowIds.workflow);
+    expect(after.rowIds.workflow_step).toEqual(before.evidence.rowIds.workflow_step);
+    expect(officialWorkflowDigests(after.rows.workflow)).toEqual(
+      before.evidence.rows.workflow.map((row: any) => digest(row)),
+    );
+    expect(after.rowDigests.workflow_step).toEqual(before.evidence.rowDigests.workflow_step);
+    const adoption = await withDatabase(async (client) => {
+      const result = await client.query<{ adoptions: number; phase: string }>(
+        `SELECT
+          (SELECT count(*)::int FROM immich_fork.migration_audit
+            WHERE name = 'official-origin-adoption' AND status = 'applied') AS adoptions,
+          (SELECT phase FROM immich_fork.state WHERE id = 1) AS phase`,
+      );
+      return result.rows[0]!;
+    });
+    // Only the API worker runs in this phase, so the started backfill has not finished.
+    expect(adoption).toEqual({ adoptions: 1, phase: 'dual-write' });
   });
 });
 
@@ -101,7 +130,7 @@ describe.runIf(phase === 'origin-post-migrator')(`${lane}: compatible fork post-
     const after = await workflowEvidence();
     expect(after.rowIds.workflow).toEqual(before.evidence.rowIds.workflow);
     expect(after.rowIds.workflow_step).toEqual(before.evidence.rowIds.workflow_step);
-    expect(after.rows.workflow.map((row: any) => digest(row))).toEqual(
+    expect(officialWorkflowDigests(after.rows.workflow)).toEqual(
       before.evidence.rows.workflow.map((row: any) => digest(row)),
     );
   });
