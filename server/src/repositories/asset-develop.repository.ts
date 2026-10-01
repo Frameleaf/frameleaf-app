@@ -9,7 +9,7 @@ import {
 import { canWriteFork } from 'src/repositories/fork-write-guard.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
-import { developEnvelope, preserveDevelopEnvelope, renderDevelopProjection } from 'src/utils/develop-envelope.js';
+import { assertRenderableDevelopRecipe, developEnvelope, preserveDevelopEnvelope } from 'src/utils/develop-envelope.js';
 
 export type AssetDevelopRevision = {
   id: string;
@@ -124,7 +124,7 @@ export class AssetDevelopRepository {
         if (!source.rows[0]) throw new BadRequestException('Develop source revision is not available for this asset');
         if (!input.replaceRecipe) recipe = preserveDevelopEnvelope(source.rows[0].recipe, recipe);
       }
-      if (input.requireRenderable) renderDevelopProjection(recipe);
+      if (input.requireRenderable) assertRenderableDevelopRecipe(recipe);
       const { rows } = await sql<AssetDevelopRevision>`
         INSERT INTO ${TABLE} (
           "assetId", "ownerId", revision, "recipeVersion", recipe, label, status,
