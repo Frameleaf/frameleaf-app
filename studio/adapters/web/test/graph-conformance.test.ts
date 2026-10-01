@@ -52,6 +52,8 @@ interface Draw {
   draw: number
   id: string
   at: string[]
+  /** Paths whose value holds the id inside a longer string, with `{id}` marking where. */
+  as?: Record<string, string>
 }
 
 type CaseExpectation =
@@ -126,10 +128,10 @@ const graphDigestOf = (graph: unknown) => sha256(canonicalJson(graph))
 const envelopeDigestOf = (graph: unknown) =>
   sha256(canonicalJson({ schemaVersion: 1, engine: 'freecut', engineRevision: engineBuild.upstreamCommit, graph }))
 
-/** Every JSON path, in canonical key order, whose string value is `id`. */
-const pathsOf = (value: unknown, id: string, at = '', found: string[] = []): string[] => {
+/** Every JSON path, in canonical key order, whose string value is or contains `id`. */
+const pathsOf = (value: unknown, id: string, at = '', found: Array<[string, string]> = []): Array<[string, string]> => {
   if (typeof value === 'string') {
-    if (value === id) found.push(at)
+    if (value.includes(id)) found.push([at, value])
   } else if (Array.isArray(value)) {
     value.forEach((entry, index) => pathsOf(entry, id, `${at}[${index}]`, found))
   } else if (value && typeof value === 'object') {
@@ -149,7 +151,11 @@ const drawsOf = (graph: unknown, envelopes: readonly CanonicalEnvelope[]): Draw[
     const next = deterministicUuids(`${envelope.idempotencyKey}:${index}`)
     const draws = Array.from({ length: DRAW_WINDOW }, (_, draw) => {
       const id = next()
-      return { draw, id, at: pathsOf(graph, id) }
+      const hits = pathsOf(graph, id)
+      const as = Object.fromEntries(
+        hits.filter(([, value]) => value !== id).map(([at, value]) => [at, value.replaceAll(id, '{id}')]),
+      )
+      return { draw, id, at: hits.map(([at]) => at), ...(Object.keys(as).length > 0 ? { as } : {}) }
     })
     const last = draws.findLastIndex((entry) => entry.at.length > 0)
     return draws.slice(0, last + 1)
