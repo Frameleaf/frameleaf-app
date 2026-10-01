@@ -152,6 +152,8 @@ export interface EnvData {
     identityDir: string | null;
     /** FL-155: single-use headless link token, or null. */
     linkToken: string | null;
+    /** FL-292: a pinned setup code (`FRAMELEAF_SETUP_CODE`), or null for a random one per start. */
+    setupCode: string | null;
     /** FL-154: the edge worker's direct listener. */
     edge: { port: number; bind: string; secret: string | null; acmeDirectoryUrl: string | null };
     /** FL-158: this server's home-network address, or null. */
@@ -391,6 +393,7 @@ const getEnv = (): EnvData => {
       url: dto.FRAMELEAF_CLOUD_URL ? dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, '') : null,
       identityDir: dto.FRAMELEAF_IDENTITY_DIR ?? null,
       linkToken: dto.FRAMELEAF_LINK_TOKEN ?? null,
+      setupCode: dto.FRAMELEAF_SETUP_CODE ?? null,
       edge: {
         port: dto.FRAMELEAF_EDGE_PORT ?? 2443,
         bind: dto.FRAMELEAF_EDGE_BIND ?? '0.0.0.0',

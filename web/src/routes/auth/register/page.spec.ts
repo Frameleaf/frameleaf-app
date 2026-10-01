@@ -48,11 +48,16 @@ describe('new server setup (FL-176)', () => {
     await fireEvent.input(screen.getByLabelText(en.frameleaf_auth_confirm_password), {
       target: { value: 'Correct-Horse-9' },
     });
+    // FL-292: without the setup code the step does not go on
+    await fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    expect(await screen.findByText(en.frameleaf_setup_error_setup_code)).toBeInTheDocument();
+    expect(sdkMock.signUpAdmin).not.toHaveBeenCalled();
+    await fireEvent.input(screen.getByLabelText(en.frameleaf_setup_claim_code), { target: { value: 'abcd-2345' } });
     await fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
 
     await waitFor(() =>
       expect(sdkMock.signUpAdmin).toHaveBeenCalledWith({
-        signUpDto: { email: 'ada@example.test', password: 'Correct-Horse-9', name: 'Ada' },
+        signUpDto: { email: 'ada@example.test', password: 'Correct-Horse-9', name: 'Ada', setupCode: 'abcd-2345' },
       }),
     );
     expect(sdkMock.login).toHaveBeenCalledWith({

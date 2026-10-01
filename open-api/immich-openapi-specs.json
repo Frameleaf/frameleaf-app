@@ -32354,6 +32354,168 @@
         "x-immich-state": "Stable"
       }
     },
+    "/server/setup/admin": {
+      "post": {
+        "description": "For the Frameleaf apps, from the home network, with a setup ticket: creates the server's first administrator with an email and password (the same account as the web first-run sign-up), for sign-in without Frameleaf Cloud. Every refusal carries a FrameleafSetupErrorCode in `code`: setup_lan_only (only from the home network, never over remote access), setup_complete (the server already has an administrator), setup_code_required, setup_code_invalid (with `attemptsLeft`), setup_code_replaced (too many wrong tries: a new code is on the console), setup_code_locked (a code pinned with FRAMELEAF_SETUP_CODE after too many wrong tries: restart the server), setup_ticket_invalid, setup_cloud_unavailable, setup_already_linked, setup_link_token_invalid, setup_link_token_used, setup_link_failed. Too many requests from one address answer 429 rate_limited.",
+        "operationId": "createNewServerAdmin",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameleafSetupAdminDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAdminResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafSetupErrorDto"
+                }
+              }
+            },
+            "description": "A refused setup"
+          }
+        },
+        "summary": "Set up a new server with a password administrator",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/setup/code": {
+      "post": {
+        "description": "For the Frameleaf apps, from the home network, while the server has no administrator: checks the setup code shown on the server's console and in its log (or its QR code), and returns a setup ticket, usable once from this device for ten minutes, to link the server or create its administrator. Five wrong codes replace the code. The code is never in any response. Every refusal carries a FrameleafSetupErrorCode in `code`: setup_lan_only (only from the home network, never over remote access), setup_complete (the server already has an administrator), setup_code_required, setup_code_invalid (with `attemptsLeft`), setup_code_replaced (too many wrong tries: a new code is on the console), setup_code_locked (a code pinned with FRAMELEAF_SETUP_CODE after too many wrong tries: restart the server), setup_ticket_invalid, setup_cloud_unavailable, setup_already_linked, setup_link_token_invalid, setup_link_token_used, setup_link_failed. Too many requests from one address answer 429 rate_limited.",
+        "operationId": "verifyServerSetupCode",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameleafSetupCodeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafSetupTicketResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafSetupErrorDto"
+                }
+              }
+            },
+            "description": "A wrong, replaced or locked setup code"
+          }
+        },
+        "summary": "Check a new server’s setup code",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/setup/link": {
+      "post": {
+        "description": "For the Frameleaf apps, from the home network, with a setup ticket: links this new server with a single-use Frameleaf link token (fll_…, the same kind FRAMELEAF_LINK_TOKEN takes) under the name the person chose. The Frameleaf account that minted the token owns the server, and its first Sign in with Frameleaf (in a browser or by token exchange) creates the administrator, without a server password. Every refusal carries a FrameleafSetupErrorCode in `code`: setup_lan_only (only from the home network, never over remote access), setup_complete (the server already has an administrator), setup_code_required, setup_code_invalid (with `attemptsLeft`), setup_code_replaced (too many wrong tries: a new code is on the console), setup_code_locked (a code pinned with FRAMELEAF_SETUP_CODE after too many wrong tries: restart the server), setup_ticket_invalid, setup_cloud_unavailable, setup_already_linked, setup_link_token_invalid, setup_link_token_used, setup_link_failed. Too many requests from one address answer 429 rate_limited.",
+        "operationId": "linkNewServer",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameleafSetupLinkDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafSetupLinkResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafSetupErrorDto"
+                }
+              }
+            },
+            "description": "A refused setup or link"
+          }
+        },
+        "summary": "Set up a new server with a Frameleaf account",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/server/statistics": {
       "get": {
         "description": "Retrieve statistics about the entire Frameleaf instance such as asset counts.",
@@ -62156,6 +62318,40 @@
         ],
         "type": "object"
       },
+      "FrameleafSetupAdminDto": {
+        "properties": {
+          "email": {
+            "description": "The administrator’s email",
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+            "type": "string"
+          },
+          "name": {
+            "description": "The administrator’s name",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "description": "The administrator’s password (min 8 characters)",
+            "minLength": 8,
+            "type": "string"
+          },
+          "ticket": {
+            "description": "The setup ticket POST server/setup/code returned, used once, from the same device",
+            "maxLength": 256,
+            "minLength": 16,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "name",
+          "password",
+          "ticket"
+        ],
+        "type": "object"
+      },
       "FrameleafSetupChoicesDto": {
         "additionalProperties": false,
         "properties": {
@@ -62226,6 +62422,70 @@
         },
         "type": "object"
       },
+      "FrameleafSetupCodeDto": {
+        "properties": {
+          "code": {
+            "description": "The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional)",
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "FrameleafSetupErrorCode": {
+        "description": "Why setting up this server was refused",
+        "enum": [
+          "setup_lan_only",
+          "setup_complete",
+          "setup_code_required",
+          "setup_code_invalid",
+          "setup_code_replaced",
+          "setup_code_locked",
+          "setup_ticket_invalid",
+          "setup_cloud_unavailable",
+          "setup_already_linked",
+          "setup_link_token_invalid",
+          "setup_link_token_used",
+          "setup_link_failed"
+        ],
+        "type": "string"
+      },
+      "FrameleafSetupErrorDto": {
+        "properties": {
+          "attemptsLeft": {
+            "description": "For setup_code_invalid: wrong tries left before the code is replaced",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "code": {
+            "$ref": "#/components/schemas/FrameleafSetupErrorCode"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "description": "What went wrong, in words a person can act on",
+            "type": "string"
+          },
+          "statusCode": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "error",
+          "message",
+          "statusCode"
+        ],
+        "type": "object"
+      },
       "FrameleafSetupFlow": {
         "description": "Setup flow",
         "enum": [
@@ -62273,6 +62533,50 @@
           "items",
           "people",
           "users"
+        ],
+        "type": "object"
+      },
+      "FrameleafSetupLinkDto": {
+        "properties": {
+          "linkToken": {
+            "description": "A single-use Frameleaf link token (fll_…) the app got from Frameleaf Cloud for this server",
+            "pattern": "^fll_[A-Za-z0-9_-]{8,512}$",
+            "type": "string"
+          },
+          "serverName": {
+            "description": "The name the person chose for this server; it is linked under this name",
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ticket": {
+            "description": "The setup ticket POST server/setup/code returned, used once, from the same device",
+            "maxLength": 256,
+            "minLength": 16,
+            "type": "string"
+          }
+        },
+        "required": [
+          "linkToken",
+          "ticket"
+        ],
+        "type": "object"
+      },
+      "FrameleafSetupLinkResponseDto": {
+        "properties": {
+          "account": {
+            "description": "The Frameleaf account that now owns this server; its first Sign in with Frameleaf creates the administrator",
+            "nullable": true,
+            "type": "string"
+          },
+          "instanceId": {
+            "description": "This server's Frameleaf Cloud instance id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "instanceId"
         ],
         "type": "object"
       },
@@ -62407,6 +62711,24 @@
           "light"
         ],
         "type": "string"
+      },
+      "FrameleafSetupTicketResponseDto": {
+        "properties": {
+          "expiresAt": {
+            "description": "When the ticket stops working",
+            "format": "date-time",
+            "type": "string"
+          },
+          "ticket": {
+            "description": "Proof the setup code was entered: use it once, from this device, before it expires",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "ticket"
+        ],
+        "type": "object"
       },
       "FrameleafSetupUpdateDto": {
         "additionalProperties": false,
@@ -82153,6 +82475,14 @@
       },
       "ServerPingResponse": {
         "properties": {
+          "cloud": {
+            "description": "Whether this server can link to Frameleaf Cloud (FRAMELEAF_CLOUD_URL is set)",
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "type": "string"
+          },
           "id": {
             "description": "This server's identity: the Frameleaf Cloud instance id while linked, else a stable local id",
             "example": "018f5e7a-6b1e-7f6e-9c2e-1a2b3c4d5e6f",
@@ -82169,13 +82499,23 @@
           "res": {
             "example": "pong",
             "type": "string"
+          },
+          "setup": {
+            "description": "`needed` while the server has no administrator: the Frameleaf app can set it up from the home network",
+            "enum": [
+              "needed",
+              "complete"
+            ],
+            "type": "string"
           }
         },
         "required": [
+          "cloud",
           "id",
           "linked",
           "name",
-          "res"
+          "res",
+          "setup"
         ],
         "type": "object"
       },
@@ -83425,6 +83765,16 @@
           "password": {
             "description": "User password",
             "example": "password",
+            "type": "string"
+          },
+          "setupCode": {
+            "description": "The setup code shown on the server's console and in its log (XXXX-XXXX); required to create the first administrator",
+            "maxLength": 32,
+            "type": "string"
+          },
+          "setupTicket": {
+            "description": "Instead of the code: a setup ticket from POST server/setup/code, from the same device",
+            "maxLength": 256,
             "type": "string"
           }
         },
