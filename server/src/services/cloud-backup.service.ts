@@ -24,6 +24,7 @@ import type { OwnerRestoreDetailsContext } from 'src/services/cloud-backup-detai
 import type {
   CloudBackupKeyMode,
   FrameleafCloudBackup,
+  FrameleafCloudBackupManaged,
   FrameleafCloudBackupRestore,
   FrameleafCloudBackupRun,
 } from 'src/types.js';
@@ -520,17 +521,28 @@ export class CloudBackupService {
   async getSafetyAvailability(): Promise<{
     state: 'off' | 'not-linked' | 'not-configured' | 'paused-key-unloaded' | 'ready';
     bucket: string | null;
+    /** FL-301: Frameleaf-managed storage is read-only, so new items wait; restores keep working. */
+    readOnly: boolean;
+    /** Why, as Frameleaf Cloud last said (`plan_full`, …); open-ended, null when it did not say. */
+    readOnlyReason: string | null;
   }> {
+    const unavailable = { bucket: null, readOnly: false, readOnlyReason: null };
     const settings = (await this.readSettings()).frameleafCloud.cloudBackup;
-    if (!settings.enabled || settings.target === 'off') return { state: 'off', bucket: null };
+    if (!settings.enabled || settings.target === 'off') return { state: 'off', ...unavailable };
     if (settings.target === 'managed' && !(await readCloudLink(this.gatewayDeps())).linked)
-      return { state: 'not-linked', bucket: null };
+      return { state: 'not-linked', ...unavailable };
     const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
-    if (!metadata || metadata.target !== settings.target) return { state: 'not-configured', bucket: null };
+    if (!metadata || metadata.target !== settings.target) return { state: 'not-configured', ...unavailable };
     if (settings.target === 'byo-s3' && bucketRef(settings.s3.endpoint, settings.s3.bucket) !== metadata.bucketRef)
-      return { state: 'not-configured', bucket: null };
+      return { state: 'not-configured', ...unavailable };
     const key = await this.loadKeyOrAsk(metadata).catch(() => null);
-    return { state: key ? 'ready' : 'paused-key-unloaded', bucket: metadata.bucketRef };
+    const readOnly = settings.target === 'managed' && !!metadata.managed?.readOnly;
+    return {
+      state: key ? 'ready' : 'paused-key-unloaded',
+      bucket: metadata.bucketRef,
+      readOnly,
+      readOnlyReason: readOnly ? (metadata.managed?.readOnlyReason ?? null) : null,
+    };
   }
 
   /**
@@ -1468,12 +1480,16 @@ export class CloudBackupService {
 
     let connection: CloudBackupConnection;
     let readOnly = false;
+    let current = metadata;
     if (metadata.target === 'managed') {
-      const managed = await this.openManaged(metadata, operation, claimToken);
-      if (!managed) {
+      const opened = await this.openManaged(metadata, operation, claimToken);
+      if (!opened) {
         return null;
       }
-      ({ connection, readOnly } = managed);
+      connection = opened.connection;
+      readOnly = opened.managed.readOnly;
+      // FL-301: the grant just issued decides the read-only state and its wording, not the one last saved
+      current = { ...metadata, managed: opened.managed };
     } else {
       connection = this.ownBucketConnection(metadata, settings);
     }
@@ -1484,7 +1500,7 @@ export class CloudBackupService {
     if (marker.instanceId !== metadata.instanceId) {
       throw new Error('This bucket is now claimed by another Frameleaf server. Set up cloud backup again.');
     }
-    return { bucketRef: metadata.bucketRef, metadata, settings, connection, bucketKey, readOnly };
+    return { bucketRef: metadata.bucketRef, metadata: current, settings, connection, bucketKey, readOnly };
   }
 
   /** Your own bucket, as the settings name it; it must still be the bucket this server claimed. */
@@ -1520,7 +1536,7 @@ export class CloudBackupService {
     metadata: FrameleafCloudBackup,
     operation: MediaOperation,
     claimToken: string,
-  ): Promise<{ connection: CloudBackupConnection; readOnly: boolean } | null> {
+  ): Promise<{ connection: CloudBackupConnection; managed: FrameleafCloudBackupManaged } | null> {
     let grant: BackupGrantResponse;
     try {
       // under the bucket lock, so a request reading the bucket never has its key revoked mid-read
@@ -1559,18 +1575,20 @@ export class CloudBackupService {
     if (problem) {
       throw new Error(problem);
     }
-    await this.updateMetadata((current) => ({
-      ...current,
-      managed: {
-        ...current.managed,
-        readOnly: grant.readOnly,
-        readOnlyReason: grant.readOnly ? (current.managed?.readOnlyReason ?? null) : null,
-        quotaBytes: grant.quotaBytes,
-        checkedAt: new Date().toISOString(),
-        refusal: undefined,
-      },
-    }));
-    return { connection: this.managedConnection(grant), readOnly: grant.readOnly };
+    const managedOf = (current: FrameleafCloudBackup): FrameleafCloudBackupManaged => ({
+      ...current.managed,
+      readOnly: grant.readOnly,
+      readOnlyReason: grant.readOnly ? (grant.readOnlyReason ?? current.managed?.readOnlyReason ?? null) : null,
+      quotaBytes: grant.quotaBytes,
+      checkedAt: new Date().toISOString(),
+      refusal: undefined,
+    });
+    let managed = managedOf(metadata);
+    await this.updateMetadata((current) => {
+      managed = managedOf(current);
+      return { ...current, managed };
+    });
+    return { connection: this.managedConnection(grant), managed };
   }
 
   /** The connection a managed grant's key opens, waited on for a few seconds while the new key goes live. */
@@ -3906,6 +3924,7 @@ const READ_ONLY_REASONS: Record<string, string> = {
   unlinked: ' because it was unlinked',
   suspended: ' because it is suspended',
   purging: ' because its backups are being deleted',
+  plan_full: ' because the Frameleaf plan is full: new items wait until the plan is upgraded',
 };
 
 /** FL-164: why managed storage is read-only, as a phrase, when Frameleaf Cloud said. */

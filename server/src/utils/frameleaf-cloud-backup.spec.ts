@@ -45,6 +45,32 @@ describe('Frameleaf Cloud managed backup contract (FL-164)', () => {
     expect(backupGrantProblem(backupGrantResponseSchema.parse(permissive))).toContain('s3:DeleteObjectVersion');
   });
 
+  it("accepts the cloud's plan_full read-only reason (FL-301, FC-91)", () => {
+    const usage = backupUsageSchema.parse(cloudContractFixture('backup/usage-plan-full.json'));
+    expect(usage).toMatchObject({ readOnly: true, readOnlyReason: 'plan_full' });
+    // a reason added later still reads, and readOnly alone decides
+    const later = backupUsageSchema.parse({
+      ...(cloudContractFixture('backup/usage-plan-full.json') as object),
+      readOnlyReason: 'something_new',
+    });
+    expect(later).toMatchObject({ readOnly: true, readOnlyReason: 'something_new' });
+    // one it cannot read at all still never fails the answer, and stays read-only
+    const garbled = backupUsageSchema.parse({
+      ...(cloudContractFixture('backup/usage-plan-full.json') as object),
+      readOnlyReason: 'x'.repeat(500),
+    });
+    expect(garbled).toMatchObject({ readOnly: true, readOnlyReason: 'unknown' });
+  });
+
+  it('reads a grant that names its read-only reason, and one that does not (FL-301)', () => {
+    const grant = cloudContractFixture('backup/grant-response.json') as Record<string, unknown>;
+    expect(backupGrantResponseSchema.parse({ ...grant, readOnly: true, readOnlyReason: 'plan_full' })).toMatchObject({
+      readOnly: true,
+      readOnlyReason: 'plan_full',
+    });
+    expect(backupGrantResponseSchema.parse(grant).readOnlyReason).toBeUndefined();
+  });
+
   it('reads usage, an escrow record and the agent settings, and checks a run report before it is sent', () => {
     const usage = backupUsageSchema.parse(cloudContractFixture('backup/usage.json'));
 

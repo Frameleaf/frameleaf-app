@@ -29,7 +29,7 @@ const setup = () => {
   const index = new CloudBackupIndexRepository(db);
   const integrity = new IntegrityRepository(db);
   const cloud = {
-    getSafetyAvailability: () => Promise.resolve({ state: 'ready', bucket }),
+    getSafetyAvailability: () => Promise.resolve({ state: 'ready', bucket, readOnly: false, readOnlyReason: null }),
   } as unknown as CloudBackupService;
   return { ctx, index, integrity, sut: new SafetyService(integrity, index, cloud) };
 };
@@ -187,9 +187,16 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
     );
     await recordSafetyProof(index, asset.id, owner.id, sha, new Date('2026-09-20T12:00:00Z'));
     const auth = factory.auth({ user: viewer });
-    expect(await sut.lookup(auth, { hashes: [sha] })).toEqual({ cloudAvailability: 'ready', assets: [] });
+    expect(await sut.lookup(auth, { hashes: [sha] })).toEqual({
+      cloudAvailability: 'ready',
+      cloudReadOnly: false,
+      cloudReadOnlyReason: null,
+      assets: [],
+    });
     expect(await sut.summary(auth)).toEqual({
       cloudAvailability: 'ready',
+      cloudReadOnly: false,
+      cloudReadOnlyReason: null,
       total: 0,
       onServer: 0,
       onServerPercent: 0,
@@ -227,6 +234,8 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
     await recordSafetyProof(index, other.id, foreign.id, foreignHash, new Date('2026-09-25T12:00:00Z'));
     expect(await sut.summary(factory.auth({ user: owner }))).toEqual({
       cloudAvailability: 'ready',
+      cloudReadOnly: false,
+      cloudReadOnlyReason: null,
       total: 2,
       onServer: 2,
       onServerPercent: 100,
