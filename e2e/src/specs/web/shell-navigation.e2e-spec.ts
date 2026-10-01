@@ -85,6 +85,7 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
       'Documents',
       'All albums',
       'Shared links',
+      'Photography',
       'Workflows',
       'Trash',
       'Library Care',
@@ -113,6 +114,13 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
           // Tools, Library Care and Settings open Command Center areas, which bring their own
           // navigation in place of the library rail (CommandCenter.jsx); Back returns to the rail.
           await expect(page.getByRole('navigation', { name: 'Settings navigation' })).toBeVisible();
+          await page.goBack();
+          await page.waitForURL(at(previous));
+          return;
+        }
+        if (name === 'Photography') {
+          // Like Studio, the photography workspace is a full-page tool without the library rail (App.jsx).
+          await expect(rail(page)).toHaveCount(0);
           await page.goBack();
           await page.waitForURL(at(previous));
           return;
