@@ -1977,7 +1977,7 @@ export class FrameleafCloudService extends BaseService {
     }
     this.eventRepository
       .emit('PushNotify', { type: PushEventType.BackupNeedsAttention, userIds, title, body, data, dedupeKey: key })
-      .catch((error) => this.logger.warn(`Could not notify administrators' devices: ${error}`));
+      .catch((error) => this.logger.warn(`Could not push the Frameleaf backup plan notice: ${error}`));
   }
 
   private notify(notice: {

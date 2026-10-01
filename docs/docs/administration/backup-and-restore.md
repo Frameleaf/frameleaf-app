@@ -328,4 +328,6 @@ When the backups no longer fit the Frameleaf plan, Frameleaf Cloud makes the ser
 The server's push notifications go out like this (type `backup-needs-attention`, `data.screen` `plan`, which opens the plan screen in the app):
 
 - **Your plan has outgrown its tier** (`data.reason` `tier-overflow`): sent once each time the case changes (asked, accepted or declined). Only the server owner's devices get it, because it shows plan and usage details. The owner is the administrator who signs in with the Frameleaf account the server is linked to.
-- **Backup paused: plan full** (`data.reason` `plan-full`): sent to every administrator, without tier details, once each time the plan fills up. A Family Sharing member is asked to contact their family organiser.
+- **Backup paused: plan full** (`data.reason` `plan-full`): sent to every administrator, without tier details, once each time the plan fills up. The owner does not get it while their own tier case already covers it. A Family Sharing member is asked to contact their family organiser.
+
+The safety status the Frameleaf app reads (`GET /assets/safety/summary` and `POST /assets/safety/lookup`) reports the pause as `cloudReadOnly: true` with `cloudReadOnlyReason: "plan_full"`. A reason the server does not know is shown generically, and the storage stays read-only.

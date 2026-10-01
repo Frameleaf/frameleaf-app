@@ -1132,6 +1132,25 @@ describe(FrameleafCloudService.name, () => {
         await checkIn(answer);
         expect(pushes()).toEqual([]);
       });
+
+      it("never passes the cloud's own plan-full text to the administrators, so no tier detail reaches them", async () => {
+        const answer = cloudContractFixture('instance/heartbeat-response-backup-plan.json');
+        answer.backupPlan.tierOverflow = null;
+        answer.backupPlan.planFull.message = 'Your 1 TB plan is full: 1.01 TB used. Move to 2 TB.';
+        await checkIn(answer);
+        expect(pushes()).toEqual([
+          expect.objectContaining({
+            userIds: [admin.id, otherAdmin.id],
+            title: 'Backups are paused: plan full',
+            body: expect.not.stringMatching(/TB/),
+            data: { reason: 'plan-full', screen: 'plan', action: 'upgrade' },
+          }),
+        ]);
+        expect(mocks.event.emit).toHaveBeenCalledWith(
+          'AdminNotify',
+          expect.objectContaining({ description: expect.not.stringMatching(/TB/) }),
+        );
+      });
     });
 
     it('asks for a new link when every instance route answers key_retired, without revoking (FC-19)', async () => {

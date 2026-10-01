@@ -394,9 +394,19 @@ export type BackupPlanNotice = {
 };
 
 /**
+ * FL-301: the full plan's push text by action. `ask-organiser` is a Family Sharing member's plan: only the family
+ * organiser can change it, so no upgrade is offered (the cloud contract's generic wording).
+ */
+const PLAN_FULL_BODY: Record<NonNullable<BackupPlanSignal['planFull']>['action'], string> = {
+  upgrade:
+    'Backups no longer fit the Frameleaf plan, so new items wait until it is upgraded. Your library is untouched and restores keep working.',
+  'ask-organiser': "Your family's plan is full. Ask your family organiser to upgrade.",
+};
+
+/**
  * FL-301: what is heard about the backup plan, each keyed so it is pushed once: the owner's tier-overflow
- * case once per id and status, and a full plan (to the administrators, in the cloud's own wording, which
- * asks a Family Sharing member to ask their organiser) once per action until it clears.
+ * case once per id and status, and a full plan (to the administrators, without tier details; a Family Sharing
+ * member is asked to ask their organiser) once per action until it clears.
  */
 export const backupPlanNotices = (signal: BackupPlanSignal | undefined): BackupPlanNotice[] => {
   const notices: BackupPlanNotice[] = [];
@@ -444,7 +454,8 @@ export const backupPlanNotices = (signal: BackupPlanSignal | undefined): BackupP
       key: `${PLAN_FULL_NOTICE_PREFIX}${full.action}`,
       audience: 'admins',
       title: 'Backups are paused: plan full',
-      body: full.message,
+      // the server's own words, never the cloud's `message`, so nothing about the tier can reach the administrators
+      body: PLAN_FULL_BODY[full.action],
       data: { reason: 'plan-full', screen: 'plan', action: full.action },
     });
   }

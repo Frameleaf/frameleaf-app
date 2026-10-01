@@ -3665,6 +3665,8 @@
   "frameleaf_cloud_backup_own_bucket": "Your own bucket",
   "frameleaf_cloud_backup_own_bucket_description": "On {host}. Frameleaf never holds its credentials or key.",
   "frameleaf_cloud_backup_paste_key": "Or paste the key",
+  "frameleaf_cloud_backup_plan_full_body": "Your backups no longer fit the Frameleaf plan, so new items wait until it is upgraded. Your library is untouched, restores keep working and backups carry on by themselves once there is room.",
+  "frameleaf_cloud_backup_plan_full_title": "Backup paused: plan full",
   "frameleaf_cloud_backup_print": "Print",
   "frameleaf_cloud_backup_progress_label": "Backup progress",
   "frameleaf_cloud_backup_progress_pruning": "Cleaning up runs past retention",
