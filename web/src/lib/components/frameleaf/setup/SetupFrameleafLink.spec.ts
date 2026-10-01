@@ -37,6 +37,7 @@ const refused = (canContinue: boolean): CloudStatusResponseDto => ({
   signInLinkedAccounts: 0,
   signInShowOnLocalLogin: false,
   signInButtonText: 'Sign in with Frameleaf',
+  signInInvitedStorageQuota: null,
   allowOriginalsOverRelay: false,
   allowPasswordOverRelay: false,
 });
