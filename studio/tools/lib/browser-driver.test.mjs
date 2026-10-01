@@ -33,6 +33,10 @@ async function startStubDriver() {
         res.end(JSON.stringify({ value: null }));
         return;
       }
+      if (req.method === 'GET' && req.url.endsWith('/element/native-frame/rect')) {
+        res.end(JSON.stringify({ value: { x: 10, y: 20, width: 200, height: 20 } }));
+        return;
+      }
       if (req.method === 'POST' && req.url.endsWith('/url')) {
         res.end(JSON.stringify({ value: null }));
         return;
@@ -247,4 +251,34 @@ test('Chromium iframe operations use frame context and real page keyboard', asyn
     assert.equal(calls[0], 'button');
     assert.match(calls[1], /(?:Meta|Control)\+z/);
   } finally { await driver.close(); }
+});
+
+test('Chromium iframe hover uses the native locator position without forced events', async () => {
+  const calls = [];
+  const nativeFrame = { locator: selector => ({ hover: async options => calls.push({selector, options}) }) };
+  const driver = await createChromiumDriver({ harnessOrigin: 'http://127.0.0.1:5555', chromium: {
+    launch: async () => ({ newContext: async () => ({ newPage: async () => ({
+      locator: () => ({ waitFor: async () => {}, elementHandle: async () => ({ contentFrame: async () => nativeFrame }) }),
+    }) }), close: async () => {} }),
+  } });
+  try {
+    const page = await driver.newPage();
+    await page.inFrame('iframe', frame => frame.hover('[data-testid="dopesheet-ruler"]', {x: 50, y: 8}));
+    assert.deepEqual(calls, [{selector:'[data-testid="dopesheet-ruler"]', options:{position:{x:50,y:8}}}]);
+  } finally { await driver.close(); }
+});
+
+test('WebDriver native iframe hover sends one element-origin pointerMove and restores frame on refusal', async () => {
+  const stub = await startStubDriver();
+  const driver = await createWebDriverClassicDriver({endpoint:stub.endpoint,harnessOrigin:'http://127.0.0.1:5555'});
+  try {
+    const page = await driver.newPage();
+    await assert.rejects(page.inFrame('iframe', frame => frame.hover('[data-testid="dopesheet-ruler"]', {x:50,y:8})), /unknown command/);
+    const action = stub.requests.find(r => r.url.endsWith('/actions'));
+    assert.ok(action, 'native pointer actions required');
+    assert.deepEqual(action.body.actions, [{type:'pointer',id:'fixture-mouse',parameters:{pointerType:'mouse'},actions:[{
+      type:'pointerMove',origin:{'element-6066-11e4-a52e-4f735466cecf':'native-frame'},x:-50,y:-2,duration:0,
+    }]}]);
+    assert.equal(stub.requests.at(-1).url,'/session/s1/frame/parent');
+  } finally { await driver.close(); await stub.close(); }
 });
