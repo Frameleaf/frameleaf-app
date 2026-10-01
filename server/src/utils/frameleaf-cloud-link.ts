@@ -338,6 +338,111 @@ const noticeSchema = z.object({
   message: z.string().min(1).max(2000),
 });
 
+const storeTierSchema = z.enum(['1tb', '2tb', '3tb', '5tb']);
+
+/**
+ * FL-301 (FC-91): the owner's backup plan signal, sent only because this server lists `backup.plan`.
+ * `tierOverflow.id` is stable for one case, so its push goes out once per id and status.
+ */
+export const backupPlanSignalSchema = z.object({
+  tierOverflow: z
+    .object({
+      id: z.uuid(),
+      status: z.enum(['asked', 'accepted', 'declined']),
+      currentTier: storeTierSchema,
+      suggestedTier: storeTierSchema.nullable(),
+      backupPaused: z.boolean(),
+    })
+    .nullable(),
+  planFull: z
+    .object({
+      reason: z.literal('plan-full'),
+      action: z.enum(['upgrade', 'ask-organiser']),
+      suggestedTier: storeTierSchema.nullable(),
+      message: z.string().min(1).max(2000),
+    })
+    .nullable(),
+});
+export type BackupPlanSignal = z.infer<typeof backupPlanSignalSchema>;
+
+/** The `shownNotices` key prefix of the backup plan's pushes. */
+export const BACKUP_PLAN_NOTICE_PREFIX = 'backup-plan:';
+const PLAN_FULL_NOTICE_PREFIX = `${BACKUP_PLAN_NOTICE_PREFIX}plan-full:`;
+
+const tierLabel = (tier: string | null) => (tier ? tier.replace('tb', ' TB') : 'a larger plan');
+
+export type BackupPlanNotice = {
+  key: string;
+  title: string;
+  body: string;
+  data: Record<string, string | boolean | null>;
+};
+
+/**
+ * FL-301: what the owner hears about the backup plan, each keyed so it is pushed once: a tier-overflow
+ * case once per id and status, and a full plan (a Family Sharing member's, which has no case of its
+ * own) once per action until it clears.
+ */
+export const backupPlanNotices = (signal: BackupPlanSignal | undefined): BackupPlanNotice[] => {
+  const notices: BackupPlanNotice[] = [];
+  const overflow = signal?.tierOverflow;
+  if (overflow) {
+    const current = tierLabel(overflow.currentTier);
+    const suggested = tierLabel(overflow.suggestedTier);
+    const text = {
+      asked: {
+        title: 'Your backups have outgrown your plan',
+        body: `Your backups no longer fit the ${current} plan. Open the Frameleaf app to move to ${suggested}.`,
+      },
+      accepted: {
+        title: 'Your Frameleaf plan was upgraded',
+        body: `Your plan is now ${suggested}. Backups continue as usual.`,
+      },
+      declined: overflow.backupPaused
+        ? {
+            title: 'Backups are paused: plan full',
+            body: `Your backups no longer fit the ${current} plan, so new items wait. Upgrade in the Frameleaf app to back them up.`,
+          }
+        : {
+            title: 'Your plan stays the same',
+            body: `Your plan stays at ${current}. Backups that do not fit wait until the plan is upgraded.`,
+          },
+    }[overflow.status];
+    notices.push({
+      key: `${BACKUP_PLAN_NOTICE_PREFIX}${overflow.id}:${overflow.status}`,
+      ...text,
+      data: {
+        reason: 'tier-overflow',
+        caseId: overflow.id,
+        status: overflow.status,
+        currentTier: overflow.currentTier,
+        suggestedTier: overflow.suggestedTier,
+        backupPaused: overflow.backupPaused,
+      },
+    });
+  }
+  const full = signal?.planFull;
+  // the owner's own case already says the plan is full
+  if (full && !overflow) {
+    notices.push({
+      key: `${PLAN_FULL_NOTICE_PREFIX}${full.action}`,
+      title: 'Backups are paused: plan full',
+      body: full.message,
+      data: { reason: 'plan-full', action: full.action, suggestedTier: full.suggestedTier },
+    });
+  }
+  return notices;
+};
+
+/** FL-301: a full plan that cleared is forgotten, so the next time it fills the owner hears it again. */
+export const forgetClearedPlanFull = (
+  shown: Record<string, string>,
+  signal: BackupPlanSignal | undefined,
+): Record<string, string> =>
+  signal?.planFull
+    ? shown
+    : Object.fromEntries(Object.entries(shown).filter(([key]) => !key.startsWith(PLAN_FULL_NOTICE_PREFIX)));
+
 export const heartbeatResponseSchema = z.object({
   commands: z.array(commandSchema).max(50).default([]),
   entitlementsChanged: z.boolean().default(false),
@@ -350,6 +455,8 @@ export const heartbeatResponseSchema = z.object({
   observedIp: z.union([z.ipv4(), z.ipv6()]).nullable().optional().catch(null),
   // validated on its own by acceptPublishedPricing, so a bad value never fails the check-in
   pricing: z.unknown().optional(),
+  // FL-301: a signal this server cannot read never fails the check-in
+  backupPlan: backupPlanSignalSchema.optional().catch(undefined),
 });
 export type HeartbeatResponse = z.infer<typeof heartbeatResponseSchema>;
 
