@@ -84,6 +84,7 @@ describe(EdgeStateService.name, () => {
           url: env.url,
           identityDir,
           linkToken: null,
+          setupCode: null,
           edge: { port: 2443, bind: '0.0.0.0', secret: env.secret, acmeDirectoryUrl: 'https://acme.test/directory' },
           localUrl: 'http://192.168.1.10:2283',
           trustedLanCidrs: [],

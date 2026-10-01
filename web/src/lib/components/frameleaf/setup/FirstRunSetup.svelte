@@ -136,7 +136,7 @@
   let setup = $state<SetupState>(initial);
   // svelte-ignore state_referenced_locally
   let signedIn = $state(authenticated);
-  let secrets = $state({ email: '', password: '', confirm: '' });
+  let secrets = $state({ email: '', password: '', confirm: '', setupCode: '' });
   let errors = $state<Record<string, string>>({});
   let formError = $state('');
   let direction = $state(1);
@@ -320,10 +320,18 @@
     if (current.id === 'account' && setup.flow === 'new' && createsAdmin && !choices.accountCreated) {
       const linkNext = choices.signIn === 'frameleaf';
       const email = choices.adminEmail.trim();
-      await signUpAdmin({ signUpDto: { email, password: secrets.password, name: choices.adminName.trim() } });
+      await signUpAdmin({
+        signUpDto: {
+          email,
+          password: secrets.password,
+          name: choices.adminName.trim(),
+          setupCode: secrets.setupCode.trim(),
+        },
+      });
       await login({ loginCredentialDto: { email, password: secrets.password } });
       secrets.password = '';
       secrets.confirm = '';
+      secrets.setupCode = '';
       // The administrator exists, so this step is passed. Save the step after it before loading the
       // session: signing in re-verifies the session and redraws the page (SessionPrivacyGuard), and
       // setup then resumes from the saved copy at the library, not at the account form.
@@ -970,6 +978,23 @@
                       bind:value={secrets.confirm}
                     />
                     {#if errors.confirm}<p class="auth-error" role="alert">{errors.confirm}</p>{/if}
+                    <div class="auth-field">
+                      <label for="frs-setup-code">{$t('frameleaf_setup_claim_code')}</label>
+                      <input
+                        id="frs-setup-code"
+                        class="frs-setup-code"
+                        autocomplete="one-time-code"
+                        autocapitalize="characters"
+                        spellcheck="false"
+                        maxlength="9"
+                        placeholder="XXXX-XXXX"
+                        aria-describedby="frs-setup-code-note"
+                        aria-invalid={errors.setupCode ? true : undefined}
+                        bind:value={secrets.setupCode}
+                      />
+                    </div>
+                    <p id="frs-setup-code-note" class="auth-note">{$t('frameleaf_setup_claim_code_note')}</p>
+                    {#if errors.setupCode}<p class="auth-error" role="alert">{errors.setupCode}</p>{/if}
                     <p class="auth-note">{$t('frameleaf_setup_password_note')}</p>
                   {/if}
                 </div>

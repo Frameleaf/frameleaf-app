@@ -1613,3 +1613,10 @@
   font-size: var(--fl-font-small);
   font-weight: 600;
 }
+
+/* FL-292: the setup code the server shows on its console, typed as it is shown */
+.frs-root .frs-setup-code {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}

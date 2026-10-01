@@ -4417,6 +4417,10 @@ export type SignUpDto = {
     name: string;
     /** User password */
     password: string;
+    /** The setup code shown on the server's console and in its log (XXXX-XXXX); required to create the first administrator */
+    setupCode?: string;
+    /** Instead of the code: a setup ticket from POST server/setup/code, from the same device */
+    setupTicket?: string;
 };
 export type ChangePasswordDto = {
     /** Invalidate all other sessions */
@@ -9287,6 +9291,8 @@ export type ServerMediaTypesResponseDto = {
     video: string[];
 };
 export type ServerPingResponse = {
+    /** Whether this server can link to Frameleaf Cloud (FRAMELEAF_CLOUD_URL is set) */
+    cloud: Cloud;
     /** This server's identity: the Frameleaf Cloud instance id while linked, else a stable local id */
     id: string;
     /** Whether `id` is a Frameleaf Cloud instance id (true) or a local-only id (false) */
@@ -9294,6 +9300,51 @@ export type ServerPingResponse = {
     /** The server's display name (the admin-set server name, or a default) */
     name: string;
     res: string;
+    /** `needed` while the server has no administrator: the Frameleaf app can set it up from the home network */
+    setup: Setup;
+};
+export type FrameleafSetupAdminDto = {
+    /** The administrator’s email */
+    email: string;
+    /** The administrator’s name */
+    name: string;
+    /** The administrator’s password (min 8 characters) */
+    password: string;
+    /** The setup ticket POST server/setup/code returned, used once, from the same device */
+    ticket: string;
+};
+export type FrameleafSetupErrorDto = {
+    /** For setup_code_invalid: wrong tries left before the code is replaced */
+    attemptsLeft?: number;
+    code: FrameleafSetupErrorCode;
+    error: string;
+    /** What went wrong, in words a person can act on */
+    message: string;
+    statusCode: number;
+};
+export type FrameleafSetupCodeDto = {
+    /** The setup code shown on the server's console and in its log (XXXX-XXXX, the dash optional) */
+    code: string;
+};
+export type FrameleafSetupTicketResponseDto = {
+    /** When the ticket stops working */
+    expiresAt: string;
+    /** Proof the setup code was entered: use it once, from this device, before it expires */
+    ticket: string;
+};
+export type FrameleafSetupLinkDto = {
+    /** A single-use Frameleaf link token (fll_…) the app got from Frameleaf Cloud for this server */
+    linkToken: string;
+    /** The name the person chose for this server; it is linked under this name */
+    serverName?: string;
+    /** The setup ticket POST server/setup/code returned, used once, from the same device */
+    ticket: string;
+};
+export type FrameleafSetupLinkResponseDto = {
+    /** The Frameleaf account that now owns this server; its first Sign in with Frameleaf creates the administrator */
+    account: string | null;
+    /** This server's Frameleaf Cloud instance id */
+    instanceId: string;
 };
 export type UsageByUserDto = {
     /** Number of photos */
@@ -19762,6 +19813,60 @@ export function pingServer(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Set up a new server with a password administrator
+ */
+export function createNewServerAdmin({ frameleafSetupAdminDto }: {
+    frameleafSetupAdminDto: FrameleafSetupAdminDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: UserAdminResponseDto;
+    } | {
+        status: 400;
+        data: FrameleafSetupErrorDto;
+    }>("/server/setup/admin", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: frameleafSetupAdminDto
+    })));
+}
+/**
+ * Check a new server’s setup code
+ */
+export function verifyServerSetupCode({ frameleafSetupCodeDto }: {
+    frameleafSetupCodeDto: FrameleafSetupCodeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafSetupTicketResponseDto;
+    } | {
+        status: 401;
+        data: FrameleafSetupErrorDto;
+    }>("/server/setup/code", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: frameleafSetupCodeDto
+    })));
+}
+/**
+ * Set up a new server with a Frameleaf account
+ */
+export function linkNewServer({ frameleafSetupLinkDto }: {
+    frameleafSetupLinkDto: FrameleafSetupLinkDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafSetupLinkResponseDto;
+    } | {
+        status: 400;
+        data: FrameleafSetupErrorDto;
+    }>("/server/setup/link", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: frameleafSetupLinkDto
+    })));
+}
+/**
  * Get statistics
  */
 export function getServerStatistics(opts?: Oazapfts.RequestOpts) {
@@ -24832,6 +24937,28 @@ export enum SearchSuggestionType {
     CameraMake = "camera-make",
     CameraModel = "camera-model",
     CameraLensModel = "camera-lens-model"
+}
+export enum Cloud {
+    Available = "available",
+    Unavailable = "unavailable"
+}
+export enum Setup {
+    Needed = "needed",
+    Complete = "complete"
+}
+export enum FrameleafSetupErrorCode {
+    SetupLanOnly = "setup_lan_only",
+    SetupComplete = "setup_complete",
+    SetupCodeRequired = "setup_code_required",
+    SetupCodeInvalid = "setup_code_invalid",
+    SetupCodeReplaced = "setup_code_replaced",
+    SetupCodeLocked = "setup_code_locked",
+    SetupTicketInvalid = "setup_ticket_invalid",
+    SetupCloudUnavailable = "setup_cloud_unavailable",
+    SetupAlreadyLinked = "setup_already_linked",
+    SetupLinkTokenInvalid = "setup_link_token_invalid",
+    SetupLinkTokenUsed = "setup_link_token_used",
+    SetupLinkFailed = "setup_link_failed"
 }
 export enum ReleaseType {
     Major = "major",

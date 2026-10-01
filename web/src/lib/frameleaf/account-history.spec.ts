@@ -87,3 +87,13 @@ describe(formatHistoryDate.name, () => {
     expect(formatHistoryDate('2026-09-23T12:00:00.000Z', 'en-US')).toBe('Sep 23, 2026');
   });
 });
+
+it('says when the account set up a new server with its setup code (FL-292)', () => {
+  expect(describe_(AdminAuditAction.AccountCreated, 'server-claimed:web')).toBe(
+    en.frameleaf_account_history_server_claimed_web,
+  );
+  expect(describe_(AdminAuditAction.AccountCreated, 'server-claimed:app-frameleaf')).toBe(
+    en.frameleaf_account_history_server_claimed_app,
+  );
+  expect(describe_(AdminAuditAction.AccountCreated)).toBe(en.frameleaf_account_history_account_created);
+});
