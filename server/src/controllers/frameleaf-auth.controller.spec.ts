@@ -62,6 +62,36 @@ describe(FrameleafAuthController.name, () => {
     );
   });
 
+  it('exchanges a Frameleaf token without authentication and signs in like the browser flow (FL-230)', async () => {
+    service.exchangeToken.mockResolvedValue({
+      accessToken: 'token',
+      userId: 'user-1',
+      userEmail: 'a@example.test',
+      name: 'A',
+      isAdmin: false,
+      profileImagePath: '',
+      shouldChangePassword: false,
+      isOnboarded: true,
+    });
+    const { status, body, headers } = await request(ctx.getHttpServer())
+      .post('/oauth/frameleaf/exchange')
+      .send({ token: 'header.payload.signature' });
+    expect(status).toBe(201);
+    expect(body).toMatchObject({ accessToken: 'token', userId: 'user-1' });
+    expect(service.exchangeToken).toHaveBeenCalledWith({ token: 'header.payload.signature' }, expect.anything());
+    expect(headers['set-cookie']).toEqual(
+      expect.arrayContaining([expect.stringContaining('immich_auth_type=password')]),
+    );
+  });
+
+  it('requires a token to exchange', async () => {
+    for (const body of [{}, { token: '' }, { token: 'x'.repeat(20_000) }]) {
+      const { status } = await request(ctx.getHttpServer()).post('/oauth/frameleaf/exchange').send(body);
+      expect(status).toBe(400);
+    }
+    expect(service.exchangeToken).not.toHaveBeenCalled();
+  });
+
   it('requires a handoff code', async () => {
     const { status } = await request(ctx.getHttpServer()).post('/oauth/frameleaf/handoff/redeem').send({});
     expect(status).toBe(400);

@@ -42,7 +42,9 @@ import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
+import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
+import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -56,6 +58,7 @@ import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { MetadataRepository } from 'src/repositories/metadata.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
+import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
@@ -667,6 +670,15 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
 
     case EventRepository: {
       return automock(EventRepository, { args: [undefined, undefined, { setContext: () => {} }] });
+    }
+
+    case FrameleafCloudRepository:
+    case OAuthRepository: {
+      return automock(key, { args: [{ setContext: () => {} }] });
+    }
+
+    case InstanceIdentityRepository: {
+      return automock(InstanceIdentityRepository);
     }
 
     case WebsocketRepository: {

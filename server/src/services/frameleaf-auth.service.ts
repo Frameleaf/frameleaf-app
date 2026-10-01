@@ -1,26 +1,41 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { parse } from 'cookie';
+import type { JWTPayload } from 'jose';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { UserAdmin } from 'src/database.js';
 import type { AuthDto, OAuthCallbackDto, OAuthConfigDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { OAuthConfig } from 'src/repositories/oauth.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import {
   FrameleafAccountLinkResponseDto,
   FrameleafHandoffCreateDto,
   FrameleafHandoffRedeemDto,
   FrameleafHandoffResponseDto,
+  FrameleafTokenExchangeDto,
+  FrameleafTokenExchangeErrorCode,
 } from 'src/dtos/frameleaf-auth.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { AdminAuditAction, DatabaseLock, ImmichCookie } from 'src/enum.js';
-import { type LoginDetails, emailVerificationProblem } from 'src/services/auth.service.js';
+import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
+import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE, emailVerificationProblem } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
+  FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
+  FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS,
+  FRAMELEAF_EXCHANGE_TOKEN_TYPE,
   frameleafCallbackUrl,
   frameleafOAuthConfig,
   frameleafRedirectUri,
   frameleafRole,
+  hasInstanceAccess,
 } from 'src/utils/frameleaf-sign-in.js';
 import { publishedLocalOrigins } from 'src/utils/public-url.js';
 import { createSession } from 'src/utils/session.js';
@@ -29,8 +44,70 @@ import { createSession } from 'src/utils/session.js';
 export const HANDOFF_TTL_SECONDS = 60;
 
 const NOT_AVAILABLE_MESSAGE = 'Sign in with Frameleaf is not available on this server';
+const NOT_LINKED_MESSAGE = 'This server is not linked to Frameleaf Cloud';
 const DELETED_ACCOUNT_MESSAGE =
   'The account this Frameleaf account is linked to is being removed from this server. Ask an administrator to restore it.';
+
+/** Why a person Frameleaf vouched for cannot be signed in (the account rules of every Frameleaf sign-in). */
+type SignInRefusal = 'email' | 'removed' | 'conflict';
+
+const SIGN_IN_REFUSAL_CODES: Record<SignInRefusal, FrameleafTokenExchangeErrorCode> = {
+  email: FrameleafTokenExchangeErrorCode.EmailUnverified,
+  removed: FrameleafTokenExchangeErrorCode.AccountRemoved,
+  conflict: FrameleafTokenExchangeErrorCode.AccountConflict,
+};
+
+const EXCHANGE_REFUSALS: Record<
+  FrameleafTokenExchangeErrorCode,
+  { status: HttpStatus.BAD_REQUEST | HttpStatus.UNAUTHORIZED | HttpStatus.FORBIDDEN; message: string }
+> = {
+  [FrameleafTokenExchangeErrorCode.NotLinked]: { status: HttpStatus.BAD_REQUEST, message: NOT_LINKED_MESSAGE },
+  [FrameleafTokenExchangeErrorCode.SignInOff]: { status: HttpStatus.BAD_REQUEST, message: NOT_AVAILABLE_MESSAGE },
+  [FrameleafTokenExchangeErrorCode.NoAccess]: {
+    status: HttpStatus.FORBIDDEN,
+    message: 'Your Frameleaf account does not have access to this server',
+  },
+  [FrameleafTokenExchangeErrorCode.WrongAudience]: {
+    status: HttpStatus.UNAUTHORIZED,
+    message: 'This sign-in is for another server',
+  },
+  [FrameleafTokenExchangeErrorCode.Expired]: {
+    status: HttpStatus.UNAUTHORIZED,
+    message: 'This sign-in has expired. Try again.',
+  },
+  [FrameleafTokenExchangeErrorCode.Replayed]: {
+    status: HttpStatus.UNAUTHORIZED,
+    message: 'This sign-in was already used. Try again.',
+  },
+  [FrameleafTokenExchangeErrorCode.Invalid]: {
+    status: HttpStatus.UNAUTHORIZED,
+    message: 'This is not a Frameleaf sign-in for this server',
+  },
+  [FrameleafTokenExchangeErrorCode.EmailUnverified]: {
+    status: HttpStatus.BAD_REQUEST,
+    message: UNVERIFIED_EMAIL_MESSAGE,
+  },
+  [FrameleafTokenExchangeErrorCode.AccountRemoved]: {
+    status: HttpStatus.BAD_REQUEST,
+    message: DELETED_ACCOUNT_MESSAGE,
+  },
+  [FrameleafTokenExchangeErrorCode.AccountConflict]: {
+    status: HttpStatus.BAD_REQUEST,
+    message: 'This account is already linked to another Frameleaf account',
+  },
+};
+
+const ERROR_NAMES = {
+  [HttpStatus.BAD_REQUEST]: 'Bad Request',
+  [HttpStatus.UNAUTHORIZED]: 'Unauthorized',
+  [HttpStatus.FORBIDDEN]: 'Forbidden',
+} as const;
+
+/** FL-230: a token exchange refusal, with the code the app explains it by. */
+const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode) => {
+  const { status, message } = EXCHANGE_REFUSALS[code];
+  return new HttpException({ message, error: ERROR_NAMES[status], statusCode: status, code }, status);
+};
 
 /**
  * Sign in with Frameleaf (FL-158, CLD-005): the second OpenID Connect provider slot.
@@ -44,6 +121,8 @@ const DELETED_ACCOUNT_MESSAGE =
  *   linked by email or a new one is created.
  * - Every session it creates is tagged in `immich_fork.frameleaf_session`, so a back-channel logout
  *   from the cloud ends it, and remote-access enforcement can recognise it.
+ * - A Frameleaf app can exchange a server-audience token from the identity provider for a session
+ *   without a browser (FL-230, `exchangeToken`), under the same account rules and session tagging.
  */
 @Injectable()
 export class FrameleafAuthService extends BaseService {
@@ -61,13 +140,111 @@ export class FrameleafAuthService extends BaseService {
   async callback(dto: OAuthCallbackDto, headers: IncomingHttpHeaders, loginDetails: LoginDetails) {
     const config = await this.requireConfig();
     const { profile, sid, idToken } = await this.exchange(config, dto, headers);
+    return this.signIn(profile, loginDetails, { sid, bearerToken: idToken });
+  }
+
+  /**
+   * `POST oauth/frameleaf/exchange` (FL-230, NAPI-006): a native app that holds a Frameleaf account
+   * session presents a server-audience token the identity provider minted for this server (OAuth
+   * token exchange, after the same `instance-access` checks as a browser sign-in) and gets a session
+   * here without a browser:
+   *
+   * - verified like a Sign in with Frameleaf ID token: the linked issuer's JWKS and advertised
+   *   algorithms, `iss`, `aud` = this server's client id, `exp`; plus `typ` `frameleaf-exchange+jwt`,
+   *   at most five minutes old, a `jti` and the instance-access claims;
+   * - used once (`jti`), and refused when minted before Frameleaf Cloud ended this account's or
+   *   Frameleaf session's sign-ins (back-channel logout);
+   * - the browser flow's account matching and linking, role, and a session tagged as a Frameleaf
+   *   session, so back-channel logout, unlinking and access removal end it like a browser one.
+   *
+   * Every refusal carries a `FrameleafTokenExchangeErrorCode`.
+   */
+  async exchangeToken(dto: FrameleafTokenExchangeDto, loginDetails: LoginDetails) {
+    const config = await this.config();
+    if (!config) {
+      const { linked } = await readCloudLink({
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      throw exchangeRefusal(
+        linked ? FrameleafTokenExchangeErrorCode.SignInOff : FrameleafTokenExchangeErrorCode.NotLinked,
+      );
+    }
+
+    let claims: JWTPayload;
+    try {
+      claims = await this.oauthRepository.verifyClientToken(config, dto.token, {
+        typ: FRAMELEAF_EXCHANGE_TOKEN_TYPE,
+        maxTokenAgeSeconds: FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS,
+        clockToleranceSeconds: FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
+        requiredClaims: ['iss', 'aud', 'sub', 'iat', 'exp', 'jti'],
+      });
+    } catch (error) {
+      this.logger.warn(`Refused a Frameleaf token exchange: ${error}`);
+      if (error instanceof ClientTokenRejection && error.reason === 'unavailable') {
+        throw new ServiceUnavailableException('Sign in with Frameleaf could not reach Frameleaf. Try again.');
+      }
+      const reason = error instanceof ClientTokenRejection ? error.reason : 'invalid';
+      throw exchangeRefusal(
+        reason === 'expired'
+          ? FrameleafTokenExchangeErrorCode.Expired
+          : reason === 'audience'
+            ? FrameleafTokenExchangeErrorCode.WrongAudience
+            : FrameleafTokenExchangeErrorCode.Invalid,
+      );
+    }
+    const { sub, jti, iat, exp } = claims as Required<Pick<JWTPayload, 'sub' | 'jti' | 'iat' | 'exp'>>;
+    if (!sub || !jti) {
+      throw exchangeRefusal(FrameleafTokenExchangeErrorCode.Invalid);
+    }
+    if (!hasInstanceAccess(claims)) {
+      throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+    }
+
+    const sid = typeof claims.sid === 'string' ? claims.sid : null;
+    const tolerance = FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS;
+    const redeemed = await this.frameleafAccountRepository.redeemExchangeToken({
+      jti,
+      sub,
+      sid,
+      // a revocation within the clock tolerance of the mint counts as after it
+      issuedAt: new Date((iat - tolerance) * 1000),
+      // after this the token is refused as expired anyway
+      expiresAt: new Date((Math.min(exp, iat + FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS) + tolerance) * 1000),
+    });
+    if (redeemed === 'revoked') {
+      throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+    }
+    if (redeemed === 'replayed') {
+      this.logger.warn(`Refused a Frameleaf exchange token that was already used`);
+      throw exchangeRefusal(FrameleafTokenExchangeErrorCode.Replayed);
+    }
+
+    return this.signIn(claims as OAuthProfile, loginDetails, { sid: sid ?? undefined }, (refusal) =>
+      exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal]),
+    );
+  }
+
+  /**
+   * Sign a person Frameleaf vouched for in: the account linked to their Frameleaf account, else an
+   * account here with the same verified email (linked now), else a new account Frameleaf Cloud
+   * authorized; `frameleaf_role` applied; a session tagged as a Frameleaf session.
+   */
+  private async signIn(
+    profile: OAuthProfile,
+    loginDetails: LoginDetails,
+    oauth: { sid?: string; bearerToken?: string },
+    refuse: (refusal: SignInRefusal, message: string) => Error = (_refusal, message) =>
+      new BadRequestException(message),
+  ) {
+    const { sid } = oauth;
     const email = profile.email?.trim().toLowerCase();
     if (!email) {
-      throw new BadRequestException('Frameleaf did not send an email address');
+      throw refuse('email', 'Frameleaf did not send an email address');
     }
     const emailProblem = emailVerificationProblem(profile);
     if (emailProblem) {
-      throw new BadRequestException(emailProblem);
+      throw refuse('email', emailProblem);
     }
     const role = frameleafRole(profile);
 
@@ -77,7 +254,7 @@ export class FrameleafAuthService extends BaseService {
       user = await this.userRepository.get(link.userId, { withDeleted: false });
       if (!user) {
         // the linked account is in the trash (scheduled for removal): never create a second one
-        throw new BadRequestException(DELETED_ACCOUNT_MESSAGE);
+        throw refuse('removed', DELETED_ACCOUNT_MESSAGE);
       }
     }
     if (!user) {
@@ -86,7 +263,7 @@ export class FrameleafAuthService extends BaseService {
       if (existing) {
         const other = await this.frameleafAccountRepository.getLinkByUser(existing.id);
         if (other && other.sub !== profile.sub) {
-          throw new BadRequestException('This account is already linked to another Frameleaf account');
+          throw refuse('conflict', 'This account is already linked to another Frameleaf account');
         }
         user = existing;
         await this.frameleafAccountRepository.upsertLink({
@@ -127,7 +304,7 @@ export class FrameleafAuthService extends BaseService {
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
       user,
       loginDetails,
-      { sid, bearerToken: idToken },
+      oauth,
     );
     await this.frameleafAccountRepository.tagSession({
       sessionId: session.id,

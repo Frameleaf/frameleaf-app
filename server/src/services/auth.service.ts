@@ -34,6 +34,8 @@ import { isGranted } from 'src/utils/access.js';
 import { HumanReadableSize } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
+  FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
+  FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS,
   type FrameleafVia,
   claimsFrameleafVia,
   frameleafLogoutUrl,
@@ -329,6 +331,16 @@ export class AuthService extends BaseService {
       await this.eventRepository.emit('SessionDelete', { sessionId });
     }
     await this.frameleafAccountRepository.deleteSessions(tagged.map(({ sessionId }) => sessionId));
+    // FL-230: an exchange token minted before this logout is refused for as long as it could be accepted
+    try {
+      const seconds = FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS + 2 * FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS;
+      await this.frameleafAccountRepository.revokeSignIns(
+        { sid: claims.sid, sub: claims.sub },
+        new Date(Date.now() + seconds * 1000),
+      );
+    } catch (error) {
+      this.logger.error(`Could not record a Frameleaf back-channel logout for token exchange: ${error}`);
+    }
     return true;
   }
 

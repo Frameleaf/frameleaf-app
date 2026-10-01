@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { JWTVerifyGetKey, createRemoteJWKSet, jwtVerify } from 'jose';
+import { type JWTPayload, JWTVerifyGetKey, createRemoteJWKSet, errors as joseErrors, jwtVerify } from 'jose';
 import {
   AuthorizationResponseError,
   type ClientAuth,
@@ -45,6 +45,21 @@ export type OAuthConfig = {
   clientAuth?: ClientAuth;
 };
 export type OAuthProfile = UserInfoResponse;
+
+/**
+ * FL-230: why a provider-minted token was refused: the provider could not be reached (`unavailable`),
+ * it expired or is too old (`expired`), it names another audience (`audience`), or anything else
+ * (signature, issuer, type, a missing claim: `invalid`).
+ */
+export class ClientTokenRejection extends Error {
+  constructor(
+    public readonly reason: 'unavailable' | 'expired' | 'audience' | 'invalid',
+    detail: string,
+  ) {
+    super(`Token refused (${reason}): ${detail}`);
+    this.name = 'ClientTokenRejection';
+  }
+}
 
 /**
  * FL-80: a callback that must not sign anyone in is the visitor's problem, not the server's: the
@@ -178,38 +193,91 @@ export class OAuthRepository {
   }
 
   private jwksClients: Map<string, JWTVerifyGetKey> = new Map(); // useful for caching and performnce
-  async validateLogoutToken(config: OAuthConfig, logoutToken: string): Promise<{ sub?: string; sid?: string } | null> {
+
+  /**
+   * The issuer, key (or key set) and algorithms a JWT from this provider is verified with: the
+   * configured algorithm, or (FL-158) for a client without one the issuer's advertised ID token
+   * algorithms, never a shared-secret or unsigned one. Shared by logout tokens and (FL-230)
+   * Sign in with Frameleaf exchange tokens.
+   */
+  private async getVerification(config: OAuthConfig) {
     const client = await this.getClient(config);
     const configured = client.clientMetadata().id_token_signed_response_alg;
-    // FL-158: a client without a fixed algorithm (Sign in with Frameleaf) takes what the issuer
-    // advertises for ID tokens, never a shared-secret or unsigned one
     const algorithms = configured
       ? [configured]
       : (client.serverMetadata().id_token_signing_alg_values_supported ?? ['RS256']).filter(
           (value) => value !== 'none' && !value.startsWith('HS'),
         );
     const algorithm = algorithms[0] ?? 'RS256';
-    let keyOrGetter: Uint8Array | JWTVerifyGetKey;
-
-    try {
-      if (algorithm.startsWith('HS')) {
-        keyOrGetter = new TextEncoder().encode(config.clientSecret);
-      } else {
-        const jwksUri = client.serverMetadata().jwks_uri;
-        if (!jwksUri) {
-          throw new Error('Unable to get JWKS URI');
-        }
-
-        if (!this.jwksClients.has(jwksUri)) {
-          this.jwksClients.set(jwksUri, createRemoteJWKSet(new URL(jwksUri)));
-        }
-        keyOrGetter = this.jwksClients.get(jwksUri) as JWTVerifyGetKey;
+    let key: Uint8Array | JWTVerifyGetKey;
+    if (algorithm.startsWith('HS')) {
+      key = new TextEncoder().encode(config.clientSecret);
+    } else {
+      const jwksUri = client.serverMetadata().jwks_uri;
+      if (!jwksUri) {
+        throw new Error('Unable to get JWKS URI');
       }
 
-      const { payload } = await jwtVerify(logoutToken, keyOrGetter as any, {
-        issuer: client.serverMetadata().issuer,
+      if (!this.jwksClients.has(jwksUri)) {
+        this.jwksClients.set(jwksUri, createRemoteJWKSet(new URL(jwksUri)));
+      }
+      key = this.jwksClients.get(jwksUri) as JWTVerifyGetKey;
+    }
+    return {
+      issuer: client.serverMetadata().issuer,
+      key,
+      algorithms: algorithm.startsWith('HS') ? [algorithm] : algorithms,
+    };
+  }
+
+  /**
+   * FL-230 (NAPI-006): verify a token the provider minted for this client (`aud` = client id) like
+   * its ID tokens (issuer, audience, signature from the issuer's JWKS, expiry), with an explicit
+   * `typ`, a maximum age and the claims it must carry. A refusal says which check failed.
+   */
+  async verifyClientToken(
+    config: OAuthConfig,
+    token: string,
+    options: { typ: string; maxTokenAgeSeconds: number; clockToleranceSeconds: number; requiredClaims: string[] },
+  ): Promise<JWTPayload> {
+    let verification;
+    try {
+      verification = await this.getVerification(config);
+    } catch (error: any) {
+      throw new ClientTokenRejection('unavailable', error?.message ?? String(error));
+    }
+    try {
+      const { payload } = await jwtVerify(token, verification.key as any, {
+        issuer: verification.issuer,
         audience: config.clientId,
-        algorithms: algorithm.startsWith('HS') ? [algorithm] : algorithms,
+        algorithms: verification.algorithms,
+        typ: options.typ,
+        maxTokenAge: options.maxTokenAgeSeconds,
+        clockTolerance: options.clockToleranceSeconds,
+        requiredClaims: options.requiredClaims,
+      });
+      return payload;
+    } catch (error: any) {
+      if (error instanceof joseErrors.JWKSTimeout) {
+        throw new ClientTokenRejection('unavailable', error.message);
+      }
+      if (error instanceof joseErrors.JWTExpired) {
+        throw new ClientTokenRejection('expired', error.message);
+      }
+      if (error instanceof joseErrors.JWTClaimValidationFailed && error.claim === 'aud') {
+        throw new ClientTokenRejection('audience', error.message);
+      }
+      throw new ClientTokenRejection('invalid', error?.message ?? String(error));
+    }
+  }
+
+  async validateLogoutToken(config: OAuthConfig, logoutToken: string): Promise<{ sub?: string; sid?: string } | null> {
+    try {
+      const { issuer, key, algorithms } = await this.getVerification(config);
+      const { payload } = await jwtVerify(logoutToken, key as any, {
+        issuer,
+        audience: config.clientId,
+        algorithms,
         maxTokenAge: '2m',
         clockTolerance: '5s',
       });
