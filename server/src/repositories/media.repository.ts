@@ -40,8 +40,10 @@ import {
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
 import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
+import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { createAffineMatrix } from 'src/utils/transform.js';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> =>
@@ -169,8 +171,19 @@ export class MediaRepository {
     }
   }
 
-  decodeImage(input: string | Buffer, options: DecodeToBufferOptions) {
-    return this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
+  async decodeImage(input: string | Buffer, options: DecodeToBufferOptions) {
+    try {
+      return await this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
+    } catch (error) {
+      if (typeof input !== 'string' || options.raw || !mimeTypes.isRaw(input)) {
+        throw error;
+      }
+      const rendered = await renderRawWithLibRaw(input);
+      // LibRaw already applies sensor orientation; preserve size, colour conversion and edits.
+      return this.getImageDecodingPipeline(rendered, { ...options, orientation: undefined })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    }
   }
 
   private applyEdits(pipeline: Sharp, edits: AssetEditActionItem[]): Sharp {
