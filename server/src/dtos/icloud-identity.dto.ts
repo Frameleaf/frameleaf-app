@@ -7,6 +7,7 @@ import z from 'zod';
  */
 
 const DateTime = z.string().meta({ format: 'date-time' });
+const ICloudClaimHolderSchema = z.enum(['device', 'icloud-sync']).meta({ id: 'ICloudClaimHolder' });
 const Sha256 = z
   .string()
   .regex(/^[\dA-Fa-f]{64}$/)
@@ -141,7 +142,7 @@ const RoleAnswer = z
     connectionId: z.uuid().nullable(),
     expectedBy: DateTime.nullable().describe('sync-pending: the next sync run'),
     pendingSince: DateTime.nullable(),
-    claimedBy: z.enum(['device', 'icloud-sync']).nullable().describe('claimed: who is fetching it'),
+    claimedBy: ICloudClaimHolderSchema.nullable().describe('claimed: who is fetching it'),
     claimExpiresAt: DateTime.nullable(),
   })
   .meta({ id: 'ICloudLookupRoleDto' });
@@ -208,7 +209,7 @@ const ClaimAnswer = z
     state: ICloudClaimStateSchema,
     claimId: z.uuid().nullable(),
     expiresAt: DateTime.nullable(),
-    holder: z.enum(['device', 'icloud-sync']).nullable().describe('held: who holds it'),
+    holder: ICloudClaimHolderSchema.nullable().describe('held: who holds it'),
     connectionId: z.uuid().nullable().describe('sync-covers: the connection that covers it'),
     takeOverAt: DateTime.nullable().describe(
       'sync-covers on an unhealthy connection: when this device may take over without asking (72 hours after it became unhealthy)',

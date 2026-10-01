@@ -5789,7 +5789,7 @@ export type ICloudClaimAnswerDto = {
     cplAssetRecordName: string | null;
     expiresAt: string | null;
     /** held: who holds it */
-    holder: Holder | null;
+    holder: (ICloudClaimHolder) | null;
     id: string;
     state: ICloudClaimState;
     /** sync-covers on an unhealthy connection: when this device may take over without asking (72 hours after it became unhealthy) */
@@ -6005,7 +6005,7 @@ export type ICloudLookupRoleDto = {
     auditVerifiedAt: string | null;
     claimExpiresAt: string | null;
     /** claimed: who is fetching it */
-    claimedBy: ClaimedBy | null;
+    claimedBy: (ICloudClaimHolder) | null;
     connectionId: string | null;
     /** icloud-sync:<connectionId> or device:<deviceKey> */
     deliveredBy: string | null;
@@ -24715,10 +24715,9 @@ export enum SourceType {
     Exif = "exif",
     Manual = "manual"
 }
-export enum Holder {
+export enum ICloudClaimHolder {
     Device = "device",
-    IcloudSync = "icloud-sync",
-    Null
+    IcloudSync = "icloud-sync"
 }
 export enum ICloudClaimState {
     Granted = "granted",
@@ -24772,11 +24771,6 @@ export enum ICloudIdentityRole {
 export enum ICloudEditOwnerKind {
     IcloudSync = "icloud-sync",
     Device = "device"
-}
-export enum ClaimedBy {
-    Device = "device",
-    IcloudSync = "icloud-sync",
-    Null
 }
 export enum ICloudMatchStrength {
     Exact = "exact",

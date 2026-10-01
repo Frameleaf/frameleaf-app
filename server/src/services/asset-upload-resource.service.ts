@@ -433,6 +433,9 @@ export class AssetUploadResourceService {
     if (!parsed) {
       throw new BadRequestException('Invalid iCloud identifier');
     }
+    if (source.deviceKey && !(await this.identities.ownsDevice(ownerId, source.deviceKey))) {
+      throw new BadRequestException('The device key is not one of your backup devices');
+    }
     const [claim] = await this.identities.claims(ownerId, [parsed.cplAssetRecordName]);
     if (claim && claim.id !== source.claimId) {
       throw new ConflictException('icloud_claimed');

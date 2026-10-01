@@ -567,6 +567,7 @@ describe('iCloud source identity on resumable uploads (FL-296)', () => {
     const identities = {
       claims: vi.fn().mockResolvedValue(claims.map((claim) => ({ ...claim, cplAssetRecordName: ASSET }))),
       recordDevice: vi.fn(),
+      ownsDevice: vi.fn((_owner: string, key: string) => Promise.resolve(key !== 'stranger-key')),
     };
     const service = new AssetUploadResourceService(
       ...(Array.from({ length: 8 }, () => ({})) as never as [never, never, never, never, never, never, never, never]),
@@ -593,6 +594,10 @@ describe('iCloud source identity on resumable uploads (FL-296)', () => {
     await expect(internals.refuseClaimedItem('owner', source({ claimId }))).resolves.toBeUndefined();
     await expect(internals.refuseClaimedItem('owner', undefined)).resolves.toBeUndefined();
     await expect(internals.refuseClaimedItem('owner', source({ cloudIdentifier: 'nonsense' }))).rejects.toThrow(
+      HttpException,
+    );
+    // the device named must be one of the caller's own
+    await expect(internals.refuseClaimedItem('owner', source({ claimId, deviceKey: 'stranger-key' }))).rejects.toThrow(
       HttpException,
     );
   });

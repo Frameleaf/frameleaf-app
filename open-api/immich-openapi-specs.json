@@ -17799,7 +17799,7 @@
     },
     "/icloud-sync/claims": {
       "post": {
-        "description": "Up to 500 items. A claim covers the whole item (still, Live Photo motion, RAW and the current edit) for 10 minutes, renewable to 4 hours. An item a healthy sync connection covers is the sync's to fetch; one an unhealthy connection covers is the device's after 72 hours, or at once with takeOver. An upload naming an item someone else claimed is refused with 409 icloud_claimed. The device key must be one of the caller's backup devices.",
+        "description": "Up to 500 items. A claim covers the whole item (still, Live Photo motion, RAW and the current edit) for 10 minutes, renewable to 4 hours. An item a healthy sync connection covers is the sync's to fetch; one an unhealthy connection covers is the device's after 72 hours, or at once with takeOver. An upload naming an item someone else claimed is refused with 409 icloud_claimed. Send each item's filename and capture date: without them the server cannot confirm a sync covers it. The claim stays until it is released or runs out, so all of an item's roles come from one path. The device key must be one of the caller's backup devices.",
         "operationId": "claimICloudItems",
         "parameters": [],
         "requestBody": {
@@ -64213,14 +64213,13 @@
             "type": "string"
           },
           "holder": {
-            "description": "held: who holds it",
-            "enum": [
-              "device",
-              "icloud-sync",
-              null
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ICloudClaimHolder"
+              }
             ],
-            "nullable": true,
-            "type": "string"
+            "description": "held: who holds it",
+            "nullable": true
           },
           "id": {
             "type": "string"
@@ -64279,6 +64278,13 @@
           "items"
         ],
         "type": "object"
+      },
+      "ICloudClaimHolder": {
+        "enum": [
+          "device",
+          "icloud-sync"
+        ],
+        "type": "string"
       },
       "ICloudClaimItemDto": {
         "properties": {
@@ -65286,14 +65292,13 @@
             "type": "string"
           },
           "claimedBy": {
-            "description": "claimed: who is fetching it",
-            "enum": [
-              "device",
-              "icloud-sync",
-              null
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ICloudClaimHolder"
+              }
             ],
-            "nullable": true,
-            "type": "string"
+            "description": "claimed: who is fetching it",
+            "nullable": true
           },
           "connectionId": {
             "format": "uuid",

@@ -56,7 +56,7 @@ export class ICloudIdentityController {
   @Endpoint({
     summary: 'Claim iCloud items for this device to fetch and upload',
     description:
-      "Up to 500 items. A claim covers the whole item (still, Live Photo motion, RAW and the current edit) for 10 minutes, renewable to 4 hours. An item a healthy sync connection covers is the sync's to fetch; one an unhealthy connection covers is the device's after 72 hours, or at once with takeOver. An upload naming an item someone else claimed is refused with 409 icloud_claimed. The device key must be one of the caller's backup devices.",
+      "Up to 500 items. A claim covers the whole item (still, Live Photo motion, RAW and the current edit) for 10 minutes, renewable to 4 hours. An item a healthy sync connection covers is the sync's to fetch; one an unhealthy connection covers is the device's after 72 hours, or at once with takeOver. An upload naming an item someone else claimed is refused with 409 icloud_claimed. Send each item's filename and capture date: without them the server cannot confirm a sync covers it. The claim stays until it is released or runs out, so all of an item's roles come from one path. The device key must be one of the caller's backup devices.",
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   claimICloudItems(@Auth() auth: AuthDto, @Body() dto: ICloudClaimDto): Promise<ICloudClaimResponseDto> {
