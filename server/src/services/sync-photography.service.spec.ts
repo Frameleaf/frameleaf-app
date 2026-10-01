@@ -19,7 +19,10 @@ it('omits private photography metadata from both legacy sync upserts and deletes
         yield {
           updateId: 'private-upsert',
           key: UserMetadataKey.PhotographyWorkspace,
-          value: { shoots: [{ client: 'Private client' }] },
+          value: {
+            shoots: [{ client: 'Private client' }],
+            brand: { email: 'private-studio@example.test', logoAssetId: 'private-logo' },
+          },
         };
         yield { updateId: 'onboarding-upsert', key: UserMetadataKey.Onboarding, value: { isOnboarded: true } };
       },
@@ -41,5 +44,7 @@ it('omits private photography metadata from both legacy sync upserts and deletes
   ]);
   expect(chunks.join('')).not.toContain('photography-workspace');
   expect(chunks.join('')).not.toContain('Private client');
+  expect(chunks.join('')).not.toContain('private-studio');
+  expect(chunks.join('')).not.toContain('private-logo');
   expect(delivered[1].data).toEqual({ key: UserMetadataKey.Onboarding, value: { isOnboarded: true } });
 });

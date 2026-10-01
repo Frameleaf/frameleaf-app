@@ -1,9 +1,10 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import type { StoredShoot } from 'src/dtos/photography-workspace.dto.js';
+import type { PhotographyBrand, StoredShoot } from 'src/dtos/photography-workspace.dto.js';
 import { AlbumUserRole, UserMetadataKey } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import type { UserMetadata } from 'src/types.js';
 import { DB } from 'src/schema/index.js';
 
 @Injectable()
@@ -16,7 +17,9 @@ export class PhotographyWorkspaceRepository {
       .select(['value', 'updateId'])
       .where('userId', '=', userId)
       .where('key', '=', UserMetadataKey.PhotographyWorkspace)
-      .executeTakeFirst() as Promise<{ value: { shoots: StoredShoot[] }; updateId: string } | undefined>;
+      .executeTakeFirst() as Promise<
+      { value: { shoots: StoredShoot[]; brand?: PhotographyBrand }; updateId: string } | undefined
+    >;
   }
 
   async save(userId: string, shoots: StoredShoot[], expectedRevision: string | null, validateAlbumIds: string[]) {
@@ -41,7 +44,11 @@ export class PhotographyWorkspaceRepository {
       if (expectedRevision !== null) {
         return tx
           .updateTable('user_metadata')
-          .set({ value: { shoots } })
+          .set({
+            value: sql<
+              UserMetadata[UserMetadataKey.PhotographyWorkspace]
+            >`value || ${JSON.stringify({ shoots })}::jsonb`,
+          })
           .where('userId', '=', userId)
           .where('key', '=', UserMetadataKey.PhotographyWorkspace)
           .where('updateId', '=', expectedRevision)
@@ -51,6 +58,32 @@ export class PhotographyWorkspaceRepository {
       return tx
         .insertInto('user_metadata')
         .values({ userId, key: UserMetadataKey.PhotographyWorkspace, value: { shoots } })
+        .onConflict((oc) => oc.columns(['userId', 'key']).doNothing())
+        .returning('updateId')
+        .executeTakeFirst();
+    });
+  }
+
+  async saveBrand(userId: string, brand: PhotographyBrand, expectedRevision: string | null) {
+    return this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx);
+      if (expectedRevision !== null) {
+        return tx
+          .updateTable('user_metadata')
+          .set({
+            value: sql<
+              UserMetadata[UserMetadataKey.PhotographyWorkspace]
+            >`value || ${JSON.stringify({ brand })}::jsonb`,
+          })
+          .where('userId', '=', userId)
+          .where('key', '=', UserMetadataKey.PhotographyWorkspace)
+          .where('updateId', '=', expectedRevision)
+          .returning('updateId')
+          .executeTakeFirst();
+      }
+      return tx
+        .insertInto('user_metadata')
+        .values({ userId, key: UserMetadataKey.PhotographyWorkspace, value: { shoots: [], brand } })
         .onConflict((oc) => oc.columns(['userId', 'key']).doNothing())
         .returning('updateId')
         .executeTakeFirst();

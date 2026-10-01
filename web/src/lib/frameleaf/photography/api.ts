@@ -49,7 +49,7 @@ const request = async <T,>(path: string, method = 'GET', body?: unknown): Promis
   if (!response.ok) {
     throw new Error(
       response.status === 409
-        ? 'Shoots changed in another window. Reload before saving.'
+        ? 'Photography settings changed in another window. Reload before saving.'
         : 'The request could not be completed. Try again.',
     );
   }
@@ -73,3 +73,31 @@ export const loadPhotos = (id: string, cursor?: string | null) =>
   request<PhotoPage>(`/${encodeURIComponent(id)}/photos${cursor ? '?cursor=' + encodeURIComponent(cursor) : ''}`);
 export const ratePhoto = (id: string, assetId: string, rating: number | null) =>
   request<void>(`/${encodeURIComponent(id)}/rating`, 'PATCH', { assetId, rating });
+
+export type Brand = {
+  name: string;
+  tagline: string;
+  email: string;
+  phone: string;
+  logoInitials: string;
+  logoAssetId: string | null;
+  color: string;
+  background: string;
+  textColor: string;
+  font: 'editorial' | 'modern' | 'classic';
+  watermarkColor: string;
+  watermarkOpacity: number;
+  watermarkPosition: 'bottom-right' | 'bottom-left' | 'center' | 'top-right';
+  watermarkSize: number;
+};
+export type Branding = { revision: string | null; brand: Brand; logoUnavailable: boolean };
+export type LogoPage = { nextCursor: string | null; logos: { id: string; fileName: string }[] };
+export const loadBrand = () => request<Branding>('/branding');
+export const saveBrand = (
+  revision: string | null,
+  brand: Omit<Brand, 'logoAssetId'> & { logoAssetId?: string | null },
+) => request<Branding>('/branding', 'PUT', { expectedRevision: revision, brand });
+export const loadLogos = (cursor?: string | null) =>
+  request<LogoPage>(`/branding/logos${cursor ? '?cursor=' + encodeURIComponent(cursor) : ''}`);
+export const logoThumbnailUrl = (id: string) =>
+  `${getBaseUrl()}/photography/shoots/branding/logos/${encodeURIComponent(id)}/thumbnail`;
