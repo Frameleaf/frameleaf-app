@@ -53,7 +53,7 @@ export class PushController {
   @Endpoint({
     summary: 'Register this device for push',
     description:
-      "Registers or replaces the push registration of the calling session: platform, APNs or FCM token, the ActivityKit push-to-start token (iOS), the device's X25519 public key and notification preferences. Registering again rotates the tokens and key. Every payload is encrypted to the key; the Frameleaf push gateway receives only the target and the encrypted blob. Needs a signed-in device session (not an API key).",
+      "Registers or replaces the push registration of the calling session: platform, APNs or FCM token, the ActivityKit push-to-start token (iOS), the device's X25519 public key and notification preferences. Registering again rotates the tokens and key. Every payload is encrypted to the key (frameleaf-push-v1, specified in docs/developer/push-envelope-v1: envelope layout, key agreement, plaintext and test vectors); the Frameleaf push gateway receives only the target and the encrypted blob. Needs a signed-in device session (not an API key).",
     history: new HistoryBuilder().added('v3'),
   })
   registerPushDevice(@Auth() auth: AuthDto, @Body() dto: PushDeviceRegisterDto): Promise<PushDeviceResponseDto> {
@@ -64,7 +64,8 @@ export class PushController {
   @Authenticated({ permission: Permission.SessionUpdate })
   @Endpoint({
     summary: 'Update this device’s push registration',
-    description: 'Changes a rotated token, the key, the linked backup device or preferences; omitted fields stay.',
+    description:
+      'Changes a rotated token, the key, the linked backup device or preferences; omitted fields stay. Payloads follow frameleaf-push-v1 (docs/developer/push-envelope-v1).',
     history: new HistoryBuilder().added('v3'),
   })
   updatePushDevice(@Auth() auth: AuthDto, @Body() dto: PushDeviceUpdateDto): Promise<PushDeviceResponseDto> {
