@@ -1,6 +1,7 @@
 import { AssetDevelopMaskKind, AssetDevelopPreset } from '@immich/sdk';
 import {
   MAX_MASKS,
+  carriedMaskCount,
   createMask,
   flipMask,
   maskIsActive,
@@ -93,5 +94,22 @@ describe('photo tools (FL-64)', () => {
     await expect(sha256Hex(new Blob(['abc']))).resolves.toBe(
       'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
     );
+  });
+
+  it('counts the stored masks this editor carries without showing (FL-233)', () => {
+    expect(carriedMaskCount(undefined)).toBe(0);
+    expect(carriedMaskCount({ masks: 'not a list' })).toBe(0);
+    expect(
+      carriedMaskCount({
+        masks: [
+          { id: 'r', kind: 'radial' },
+          { id: 'l', kind: 'linear' },
+          { id: 'b', kind: 'brush', strokes: [] },
+          { id: 's', kind: 'subject' },
+          { id: 'f', kind: 'depth' },
+          null,
+        ],
+      }),
+    ).toBe(3);
   });
 });

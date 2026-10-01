@@ -330,10 +330,15 @@ export class MediaRepository {
     raw: RawImageInfo,
     plan: DevelopGeometryPlan,
   ): Promise<{ data: Buffer; info: RawImageInfo }> {
+    // The recipe turns first and mirrors the turned frame (the editor's preview, the protocol and the
+    // mask mapping all do). sharp mirrors before it rotates, whatever the call order, so after a
+    // quarter turn the mirror axes swap: mirroring the turned frame left to right is mirroring the
+    // original top to bottom.
+    const quarter = plan.rotation === 90 || plan.rotation === 270;
     let current = await sharp(input, { raw, limitInputPixels: false, unlimited: true })
       .rotate(plan.rotation)
-      .flop(plan.flipHorizontal)
-      .flip(plan.flipVertical)
+      .flop(quarter ? plan.flipVertical : plan.flipHorizontal)
+      .flip(quarter ? plan.flipHorizontal : plan.flipVertical)
       .raw()
       .toBuffer({ resolveWithObject: true });
 
@@ -673,6 +678,33 @@ export class MediaRepository {
         })
         .run();
     });
+  }
+
+  /**
+   * FL-233: a develop artifact stored the same way every time: EXIF orientation applied, metadata
+   * dropped, 8-bit PNG, greyscale for a mask and RGBA for a fill. The PNG's SHA-256 is its id.
+   */
+  async normalizeDevelopArtifact(
+    input: string,
+    kind: 'mask' | 'fill',
+  ): Promise<{ data: Buffer; width: number; height: number }> {
+    let pipeline = sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 }).rotate();
+    pipeline = kind === 'mask' ? pipeline.greyscale().removeAlpha().toColourspace('b-w') : pipeline.ensureAlpha();
+    const { data, info } = await pipeline
+      .png({ compressionLevel: 9, adaptiveFiltering: false, palette: false })
+      .toBuffer({ resolveWithObject: true });
+    return { data, width: info.width, height: info.height };
+  }
+
+  /** FL-233: a stored develop artifact as raw pixels: 1 channel for a mask, 4 for a fill. */
+  async decodeDevelopArtifact(
+    input: string,
+    kind: 'mask' | 'fill',
+  ): Promise<{ data: Buffer; width: number; height: number; channels: 1 | 4 }> {
+    let pipeline = sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 });
+    pipeline = kind === 'mask' ? pipeline.extractChannel(0) : pipeline.ensureAlpha();
+    const { data, info } = await pipeline.raw().toBuffer({ resolveWithObject: true });
+    return { data, width: info.width, height: info.height, channels: kind === 'mask' ? 1 : 4 };
   }
 
   async getImageMetadata(input: string | Buffer): Promise<ImageDimensions & { isTransparent: boolean }> {

@@ -1,6 +1,9 @@
 import {
+  ASSET_DEVELOP_BITMAP_MASK_KINDS,
   ASSET_DEVELOP_MAX_MASKS,
+  ASSET_DEVELOP_MAX_RECIPE_POINTS,
   ASSET_DEVELOP_RECIPE_VERSION,
+  type AssetDevelopCleanup,
   type AssetDevelopCrop,
   type AssetDevelopMask,
   type AssetDevelopMaskAdjustments,
@@ -8,6 +11,19 @@ import {
   AssetDevelopPreset,
   type KnownAssetDevelopRecipe as AssetDevelopRecipe,
 } from 'src/dtos/asset-develop.dto.js';
+import {
+  ARTIFACT_ID,
+  type DevelopBitmap,
+  type DevelopCoverage,
+  brushGrid,
+  developCleanupArtifacts,
+  normalizeDevelopCleanup,
+  normalizeStrokes,
+  orientedToOriginal,
+  rasterizeStrokes,
+  sampleBitmap,
+  sampleCoverage,
+} from 'src/utils/develop-cleanup.js';
 
 /**
  * Pure still-image develop maths shared by the recipe renderer (FL-113).
@@ -28,8 +44,14 @@ import {
  * Renderer v2 (FL-64) adds selective adjustments: after the global tone pass each enabled mask
  * blends in its own tone result, weighted per pixel by the mask shape. A recipe without masks
  * renders to the same bytes as under v1.
+ *
+ * Renderer v3 (FL-233) adds Brilliance to the per-pixel pass, brush masks and bitmap masks
+ * (subject, sky, background) in original-image coordinates, and Clean Up operations on the original
+ * before every other step (`develop-cleanup.ts`). A recipe that uses none of them renders to the
+ * same bytes as under v2. The definitions are in docs/docs/features/develop-recipe-protocol.md and
+ * are shared by the native renderers.
  */
-export const DEVELOP_RENDERER_VERSION = 'frameleaf-develop/2';
+export const DEVELOP_RENDERER_VERSION = 'frameleaf-develop/3';
 
 export const FULL_CROP: AssetDevelopCrop = { x: 0, y: 0, w: 1, h: 1 };
 
@@ -52,12 +74,19 @@ export const DEVELOP_SLIDER_KEYS = [
   'noiseReduction',
 ] as const;
 
-export type DevelopSliderKey = (typeof DEVELOP_SLIDER_KEYS)[number];
+/**
+ * FL-233: the still renderer's sliders, which saved develop presets also carry. Brilliance is a
+ * still-only control: the video renderer keeps `DEVELOP_SLIDER_KEYS`.
+ */
+export const STILL_SLIDER_KEYS = [...DEVELOP_SLIDER_KEYS, 'brilliance'] as const;
+
+export type DevelopSliderKey = (typeof STILL_SLIDER_KEYS)[number];
 export type DevelopSliders = Record<DevelopSliderKey, number>;
 
 const SLIDER_RANGE: Record<DevelopSliderKey, { min: number; max: number }> = {
   exposure: { min: -2, max: 2 },
   contrast: { min: -100, max: 100 },
+  brilliance: { min: -100, max: 100 },
   highlights: { min: -100, max: 100 },
   shadows: { min: -100, max: 100 },
   whites: { min: -100, max: 100 },
@@ -113,6 +142,7 @@ export const defaultDevelopRecipe = (): AssetDevelopRecipe => ({
   version: ASSET_DEVELOP_RECIPE_VERSION,
   exposure: 0,
   contrast: 0,
+  brilliance: 0,
   highlights: 0,
   shadows: 0,
   whites: 0,
@@ -135,6 +165,7 @@ export const defaultDevelopRecipe = (): AssetDevelopRecipe => ({
   preset: AssetDevelopPreset.Original,
   presetStrength: 100,
   masks: [],
+  cleanup: [],
 });
 
 export const normalizeCrop = (candidate: Partial<AssetDevelopCrop> | null | undefined): AssetDevelopCrop => {
@@ -155,7 +186,7 @@ export const isFullCrop = (crop: AssetDevelopCrop | null | undefined) =>
 export function normalizeDevelopRecipe(candidate: Partial<AssetDevelopRecipe> | null | undefined): AssetDevelopRecipe {
   const value = candidate ?? {};
   const recipe = defaultDevelopRecipe();
-  for (const key of DEVELOP_SLIDER_KEYS) {
+  for (const key of STILL_SLIDER_KEYS) {
     const { min, max } = SLIDER_RANGE[key];
     recipe[key] = round(clamp(finite(value[key], 0), min, max));
   }
@@ -170,6 +201,26 @@ export function normalizeDevelopRecipe(candidate: Partial<AssetDevelopRecipe> | 
     : AssetDevelopPreset.Original;
   recipe.presetStrength = Math.round(clamp(finite(value.presetStrength, 100), 0, 100));
   recipe.masks = normalizeDevelopMasks(value.masks);
+  recipe.cleanup = normalizeDevelopCleanup(value.cleanup);
+  // FL-233: at most ASSET_DEVELOP_MAX_RECIPE_POINTS stroke points in all, masks first
+  let budget = ASSET_DEVELOP_MAX_RECIPE_POINTS;
+  const within = <T extends { strokes?: { points: [number, number][] }[] }>(item: T): T => {
+    if (!item.strokes) {
+      return item;
+    }
+    const strokes = [];
+    for (const stroke of item.strokes) {
+      if (budget <= 0) {
+        break;
+      }
+      const points = stroke.points.slice(0, budget);
+      budget -= points.length;
+      strokes.push({ ...stroke, points });
+    }
+    return { ...item, strokes };
+  };
+  recipe.masks = recipe.masks.map((mask) => within(mask));
+  recipe.cleanup = recipe.cleanup.map((op) => within(op)).filter((op) => !op.strokes || op.strokes.length > 0);
   return recipe;
 }
 
@@ -235,14 +286,38 @@ export function normalizeDevelopMasks(candidate: unknown): AssetDevelopMask[] {
       feather: Math.round(clamp(finite(item.feather, 50), 0, 100)),
       amount: Math.round(clamp(finite(item.amount, 100), 0, 100)),
       adjustments,
+      ...(kind === AssetDevelopMaskKind.Brush && { strokes: normalizeStrokes(item.strokes, true) }),
+      ...(ASSET_DEVELOP_BITMAP_MASK_KINDS.includes(kind) && {
+        artifact: typeof item.artifact === 'string' && ARTIFACT_ID.test(item.artifact) ? item.artifact : null,
+      }),
     });
   }
   return masks;
 }
 
-/** A mask changes the picture only when it is on, has an amount and moves at least one control. */
+/** A mask changes the picture only when it is on, has an amount, a shape and moves at least one control. */
 export const isActiveMask = (mask: AssetDevelopMask) =>
-  mask.enabled && mask.amount > 0 && DEVELOP_MASK_KEYS.some((key) => mask.adjustments[key] !== 0);
+  mask.enabled &&
+  mask.amount > 0 &&
+  DEVELOP_MASK_KEYS.some((key) => mask.adjustments[key] !== 0) &&
+  (mask.kind !== AssetDevelopMaskKind.Brush || (mask.strokes ?? []).some((stroke) => !stroke.erase)) &&
+  (!ASSET_DEVELOP_BITMAP_MASK_KINDS.includes(mask.kind) || !!mask.artifact);
+
+/** FL-233: the artifacts (mask bitmaps) the active masks of a recipe need to render. */
+export const developMaskArtifacts = (masks: AssetDevelopMask[]) =>
+  masks.filter((mask) => isActiveMask(mask) && mask.artifact).map((mask) => mask.artifact as string);
+
+/**
+ * FL-233: the artifacts a render of this recipe reads, by kind: the bitmaps of its active masks and
+ * the fills of its enabled Remove operations. Anything else a recipe names is kept, never required.
+ */
+export const developRenderArtifacts = (recipe: {
+  masks?: AssetDevelopMask[];
+  cleanup?: AssetDevelopCleanup[];
+}): { mask: string[]; fill: string[] } => ({
+  mask: [...new Set(developMaskArtifacts(recipe.masks ?? []))],
+  fill: [...new Set(developCleanupArtifacts(recipe.cleanup ?? []))],
+});
 
 /**
  * How strongly a mask applies at a point of the oriented frame, 0 to 1 (before `amount`).
@@ -251,6 +326,10 @@ export const isActiveMask = (mask: AssetDevelopMask) =>
  */
 export function maskWeight(mask: AssetDevelopMask, px: number, py: number, aspect = 1): number {
   let weight: number;
+  if (mask.kind !== AssetDevelopMaskKind.Radial && mask.kind !== AssetDevelopMaskKind.Linear) {
+    // brush and bitmap masks live in original-image coordinates: `originalMaskWeight`
+    return 0;
+  }
   if (mask.kind === AssetDevelopMaskKind.Radial) {
     const dx = (px - mask.x) / mask.radiusX;
     const dy = (py - mask.y) / mask.radiusY;
@@ -271,15 +350,61 @@ export function maskWeight(mask: AssetDevelopMask, px: number, py: number, aspec
 }
 
 /**
+ * FL-233: how strongly a brush or bitmap mask applies at a point of the original image, 0 to 1
+ * (before `amount`). `ux`/`uy` are original-image pixels, `original` the original's size. A brush
+ * paints its strokes in order (an erasing stroke takes away); a bitmap mask reads its stored
+ * greyscale bitmap, stretched over the whole original, bilinearly.
+ */
+export function originalMaskWeight(
+  mask: AssetDevelopMask,
+  ux: number,
+  uy: number,
+  original: { width: number; height: number },
+  bitmaps: ReadonlyMap<string, DevelopBitmap> = new Map(),
+): number {
+  let weight: number;
+  if (mask.kind === AssetDevelopMaskKind.Brush) {
+    weight = sampleCoverage(brushCoverage(mask, original), ux, uy);
+  } else if (ASSET_DEVELOP_BITMAP_MASK_KINDS.includes(mask.kind)) {
+    const bitmap = mask.artifact ? bitmaps.get(mask.artifact) : undefined;
+    weight = bitmap ? sampleBitmap(bitmap, ux / original.width, uy / original.height, 0) / 255 : 0;
+  } else {
+    return 0;
+  }
+  return mask.invert ? 1 - weight : weight;
+}
+
+/**
+ * A brush mask's strokes drawn once per original size (`brushGrid`), then sampled for every pixel:
+ * the cost follows the painted area, never pixels × points.
+ */
+const brushCoverages = new WeakMap<AssetDevelopMask, { key: string; coverage: DevelopCoverage }>();
+function brushCoverage(mask: AssetDevelopMask, original: { width: number; height: number }): DevelopCoverage {
+  const key = `${original.width}x${original.height}`;
+  const cached = brushCoverages.get(mask);
+  if (cached?.key === key) {
+    return cached.coverage;
+  }
+  const { bounds, scale } = brushGrid(original, mask.strokes ?? []);
+  const coverage = rasterizeStrokes(mask.strokes ?? [], original, mask.feather, bounds, scale);
+  brushCoverages.set(mask, { key, coverage });
+  return coverage;
+}
+
+/**
  * Where each output pixel came from in the oriented frame, so masks drawn over the full picture
  * land on the same content after straightening and cropping. Inverse of the geometry stage:
  * output pixel → straightened frame (add the crop offset) → oriented frame (undo the straighten
- * rotation and its cover scale about the centre).
+ * rotation and its cover scale about the centre). FL-233: and from there to the original image
+ * (undo the flips, then the quarter turn) for brush and bitmap masks.
  */
 export type DevelopMaskMapping = {
   oriented: { width: number; height: number };
   extract: { left: number; top: number };
   straighten: number;
+  rotation?: 0 | 90 | 180 | 270;
+  flipHorizontal?: boolean;
+  flipVertical?: boolean;
 };
 
 export const identityMaskMapping = (width: number, height: number): DevelopMaskMapping => ({
@@ -292,6 +417,9 @@ export const maskMappingFor = (plan: DevelopGeometryPlan): DevelopMaskMapping =>
   oriented: plan.oriented,
   extract: { left: plan.extract.left, top: plan.extract.top },
   straighten: plan.straighten,
+  rotation: plan.rotation,
+  flipHorizontal: plan.flipHorizontal,
+  flipVertical: plan.flipVertical,
 });
 
 /**
@@ -304,6 +432,7 @@ export function applyDevelopMasks(
   info: ToneImageInfo,
   masks: AssetDevelopMask[],
   mapping: DevelopMaskMapping = identityMaskMapping(info.width, info.height),
+  bitmaps: ReadonlyMap<string, DevelopBitmap> = new Map(),
 ): Uint8Array {
   const active = masks.filter((mask) => isActiveMask(mask));
   if (active.length === 0 || info.channels < 3) {
@@ -331,7 +460,14 @@ export function applyDevelopMasks(
         const sy = mapping.extract.top + y + 0.5 - cy;
         const ox = (sx * cos + sy * sin) / scale + cx;
         const oy = (-sx * sin + sy * cos) / scale + cy;
-        const weight = maskWeight(mask, ox / ow, oy / oh, aspect) * amount;
+        let shape: number;
+        if (mask.kind === AssetDevelopMaskKind.Radial || mask.kind === AssetDevelopMaskKind.Linear) {
+          shape = maskWeight(mask, ox / ow, oy / oh, aspect);
+        } else {
+          const point = orientedToOriginal(ox, oy, mapping);
+          shape = originalMaskWeight(mask, point.x, point.y, point.original, bitmaps);
+        }
+        const weight = shape * amount;
         if (weight <= 0) {
           continue;
         }
@@ -349,14 +485,14 @@ export function applyDevelopMasks(
 }
 
 const zeroSliders = (): DevelopSliders =>
-  Object.fromEntries(DEVELOP_SLIDER_KEYS.map((key) => [key, 0])) as DevelopSliders;
+  Object.fromEntries(STILL_SLIDER_KEYS.map((key) => [key, 0])) as DevelopSliders;
 
 /** The manual sliders plus the chosen preset scaled by its strength, as the prototype defines it. */
 export function effectiveDevelop(recipe: AssetDevelopRecipe): { params: DevelopSliders; look: DevelopLook } {
   const preset = DEVELOP_PRESETS[recipe.preset] ?? DEVELOP_PRESETS[AssetDevelopPreset.Original];
   const strength = clamp(finite(recipe.presetStrength, 100), 0, 100) / 100;
   const params = {} as DevelopSliders;
-  for (const key of DEVELOP_SLIDER_KEYS) {
+  for (const key of STILL_SLIDER_KEYS) {
     const { min, max } = SLIDER_RANGE[key];
     const base = clamp(finite(recipe[key], 0), min, max);
     const nudge = finite(preset.params[key]) * strength;
@@ -374,7 +510,7 @@ export function effectiveDevelop(recipe: AssetDevelopRecipe): { params: DevelopS
 export const isIdentityDevelop = (recipe: AssetDevelopRecipe) => {
   const { params, look } = effectiveDevelop(recipe);
   return (
-    DEVELOP_SLIDER_KEYS.every((key) => params[key] === 0) &&
+    STILL_SLIDER_KEYS.every((key) => params[key] === 0) &&
     look.grayscale === 0 &&
     look.sepia === 0 &&
     isFullCrop(recipe.crop) &&
@@ -382,7 +518,8 @@ export const isIdentityDevelop = (recipe: AssetDevelopRecipe) => {
     recipe.rotation === 0 &&
     !recipe.flipHorizontal &&
     !recipe.flipVertical &&
-    (recipe.masks ?? []).every((mask) => !isActiveMask(mask))
+    (recipe.masks ?? []).every((mask) => !isActiveMask(mask)) &&
+    (recipe.cleanup ?? []).every((op) => !op.enabled)
   );
 };
 
@@ -506,9 +643,11 @@ export function createNoise(seed: number) {
 
 export type ToneImageInfo = { width: number; height: number; channels: 1 | 2 | 3 | 4 };
 
-type LocalTone = { highlights: number; shadows: number; saturation: number; vibrance: number };
+type LocalTone = { brilliance: number; highlights: number; shadows: number; saturation: number; vibrance: number };
 
 const localToneFor = (params: DevelopSliders): LocalTone => ({
+  // video callers have no brilliance
+  brilliance: finite(params.brilliance) / 100,
   highlights: params.highlights / 100,
   shadows: params.shadows / 100,
   saturation: 1 + params.saturation / 100,
@@ -520,7 +659,10 @@ const localToneFor = (params: DevelopSliders): LocalTone => ({
  * saturation and vibrance. Values are 0–1 and may leave that range; callers clamp.
  */
 function toneRgb(r: number, g: number, b: number, local: LocalTone): [number, number, number] {
-  const { highlights, shadows, saturation, vibrance } = local;
+  const { brilliance, highlights, shadows, saturation, vibrance } = local;
+  if (brilliance !== 0) {
+    [r, g, b] = brillianceRgb(r, g, b, brilliance);
+  }
   let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   if (highlights !== 0) {
     const mask = smoothstep(0.45, 1, luma);
@@ -555,6 +697,34 @@ function toneRgb(r: number, g: number, b: number, local: LocalTone): [number, nu
     b = luma + (b - luma) * factor;
   }
   return [r, g, b];
+}
+
+/**
+ * FL-233 Brilliance, `k` = brilliance / 100 in [-1, 1], on display-referred RGB in [0, 1] after the
+ * global tone lookup and before highlights and shadows:
+ *
+ * - luminance L = 0.2126 R + 0.7152 G + 0.0722 B;
+ * - target L' = clamp(L + 1.2 k · L (1 − L)(1 − 2L), 0, 1): with positive k the shadows open and
+ *   the highlights are held back (no change at black, middle grey and white); negative k does the
+ *   reverse;
+ * - each channel is scaled by L' / L, which keeps the hue (a black pixel gains L' − L instead);
+ * - chroma around L' is multiplied by 1 + 0.12 k.
+ */
+export function brillianceRgb(r: number, g: number, b: number, k: number): [number, number, number] {
+  const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const target = clamp(luma + 1.2 * k * luma * (1 - luma) * (1 - 2 * luma), 0, 1);
+  if (luma > 1e-6) {
+    const gain = target / luma;
+    r *= gain;
+    g *= gain;
+    b *= gain;
+  } else {
+    r += target - luma;
+    g += target - luma;
+    b += target - luma;
+  }
+  const chroma = 1 + 0.12 * k;
+  return [target + (r - target) * chroma, target + (g - target) * chroma, target + (b - target) * chroma];
 }
 
 /**

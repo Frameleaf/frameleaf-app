@@ -39,6 +39,7 @@
     "0000000000208-StudioProjectImports",
     "0000000000209-StudioHdrIntermediates",
     "0000000000210-FrameleafTokenExchange",
-    "0000000000211-FrameleafAccountAccess"
+    "0000000000211-FrameleafAccountAccess",
+    "0000000000212-AssetDevelopArtifacts"
   ]
 }
