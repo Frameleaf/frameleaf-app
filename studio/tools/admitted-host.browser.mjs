@@ -1015,6 +1015,21 @@ async function runEaseOutHost(project, graph) {
     await host.fill("#auth-email", "admitted-host@example.test");
     await host.fill("#auth-password", "Fixture-host-only-password-24!");
     await host.click('button.auth-submit[type="submit"]');
+    await host.waitForFunction(() => location.pathname !== "/auth/login");
+    if (await host.evaluate(() => location.pathname === "/auth/onboarding")) {
+      await host.waitForFunction(() => {
+        const buttons = [
+          ...document.querySelectorAll(".frs-tool-root .frs-tool-foot button.primary"),
+        ];
+        return (
+          buttons.length === 1 &&
+          buttons[0].checkVisibility() &&
+          !buttons[0].disabled &&
+          buttons[0].textContent.trim() === "Done"
+        );
+      });
+      await host.click(".frs-tool-root .frs-tool-foot button.primary");
+    }
     await host.waitForFunction(() => !location.pathname.startsWith("/auth/"));
     await host.goto(base + "/studio?project=" + project.id);
     await host.waitForFunction(
