@@ -987,7 +987,42 @@ async function runEaseOutHost(project, graph) {
       await acknowledge(frame, i);
     }
   };
-  const pixelRead = async (frame, x, label) => {
+  // Native Edit ruler skimming at the SAME committed frame: Player presentation of a paused plain
+  // Shape is DOM/SVG, and only the production ruler pointerMove (onSkim) hands the frame to the
+  // preview canvas. The visible k0/k30 markers define the ruler axis used only to address it.
+  const skim = async (frame, committed) => {
+    const position = await frame.evaluate((n) => {
+      const visible = (selector) =>
+        [...document.querySelectorAll(selector)].filter((element) => element.checkVisibility());
+      const rulers = visible('[data-testid="dopesheet-ruler"]');
+      const k0 = visible('[data-testid="row-keyframe-x-k0"]');
+      const k30 = visible('[data-testid="row-keyframe-x-k30"]');
+      if (rulers.length !== 1 || k0.length !== 1 || k30.length !== 1)
+        return { error: `ruler/axis markers ${rulers.length}/${k0.length}/${k30.length}` };
+      const center = (element) => {
+        const { x, width } = element.getBoundingClientRect();
+        return x + width / 2;
+      };
+      const ruler = rulers[0].getBoundingClientRect();
+      const x = center(k0[0]) + ((center(k30[0]) - center(k0[0])) * n) / 30 - ruler.x;
+      if (!(x >= 0 && x <= ruler.width)) return { error: `frame ${n} outside visible ruler` };
+      return { x, y: ruler.height / 2 };
+    }, committed);
+    assert.ok(!position.error, position.error);
+    await frame.hover('[data-testid="dopesheet-ruler"]', position);
+    await acknowledge(frame, committed);
+    assert.ok(
+      await frame.evaluate(() => {
+        const selected = [...document.querySelectorAll("button[data-motion-keyframe-id]")]
+          .filter((marker) => marker.querySelector("span.border-blue-100"))
+          .map((marker) => marker.dataset.motionKeyframeId);
+        return selected.length === 1 && selected[0] === "k0";
+      }),
+      "skimming keeps the native k0 selection",
+    );
+  };
+  const pixelRead = async (frame, x, label, committed) => {
+    await skim(frame, committed);
     const deadline = Date.now() + 30000;
     let result;
     while (Date.now() < deadline) {
@@ -1218,21 +1253,21 @@ async function runEaseOutHost(project, graph) {
       );
       await selectInline(frame);
       await seek(frame, 15);
-      const baseline = await pixelRead(frame, 0, "baseline");
+      const baseline = await pixelRead(frame, 0, "baseline", 15);
       await nativeSegmentEasing(frame, "Out", true);
       const oracle = process.env.FL112_HOST_COUNTERFACTUAL === "linear-ease-out" ? 0 : expectedX;
-      const changed = await pixelRead(frame, oracle, "ease-out");
+      const changed = await pixelRead(frame, oracle, "ease-out", 15);
       assert.notEqual(changed.digest, baseline.digest);
       await frame.shortcut("z");
       await nativeSegmentEasing(frame, "Linear");
-      assert.equal((await pixelRead(frame, 0, "undo")).digest, baseline.digest);
+      assert.equal((await pixelRead(frame, 0, "undo", 15)).digest, baseline.digest);
       await frame.shortcut("z", true);
       await nativeSegmentEasing(frame, "Out");
-      assert.equal((await pixelRead(frame, expectedX, "redo")).digest, changed.digest);
+      assert.equal((await pixelRead(frame, expectedX, "redo", 15)).digest, changed.digest);
       await seek(frame, 0);
-      await pixelRead(frame, -24, "start");
+      await pixelRead(frame, -24, "start", 0);
       await seek(frame, 30);
-      await pixelRead(frame, 24, "end");
+      await pixelRead(frame, 24, "end", 30);
       // Save remains the actual editor control; no API graph writes after initial seed.
       await frame.click(button("Save project"));
     });
@@ -1264,7 +1299,7 @@ async function runEaseOutHost(project, graph) {
       await nativeSegmentEasing(frame, "Out");
       await seek(frame, 15);
       assert.equal(
-        (await pixelRead(frame, expectedX, "reopen")).digest,
+        (await pixelRead(frame, expectedX, "reopen", 15)).digest,
         renders["ease-out"].digest,
       );
     });
