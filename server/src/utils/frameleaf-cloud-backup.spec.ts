@@ -48,6 +48,12 @@ describe('Frameleaf Cloud managed backup contract (FL-164)', () => {
   it("accepts the cloud's plan_full read-only reason (FL-301, FC-91)", () => {
     const usage = backupUsageSchema.parse(cloudContractFixture('backup/usage-plan-full.json'));
     expect(usage).toMatchObject({ readOnly: true, readOnlyReason: 'plan_full' });
+    // a reason added later still reads, and readOnly alone decides
+    const later = backupUsageSchema.parse({
+      ...(cloudContractFixture('backup/usage-plan-full.json') as object),
+      readOnlyReason: 'something_new',
+    });
+    expect(later).toMatchObject({ readOnly: true, readOnlyReason: 'something_new' });
   });
 
   it('reads usage, an escrow record and the agent settings, and checks a run report before it is sent', () => {

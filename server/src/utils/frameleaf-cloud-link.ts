@@ -338,7 +338,8 @@ const noticeSchema = z.object({
   message: z.string().min(1).max(2000),
 });
 
-const storeTierSchema = z.enum(['1tb', '2tb', '3tb', '5tb']);
+// '1tb', '2tb', '3tb', '5tb' today; a tier added later is shown as the cloud names it
+const storeTierSchema = z.string().min(1).max(16);
 
 /**
  * FL-301 (FC-91): the owner's backup plan signal, sent only because this server lists `backup.plan`.
@@ -369,19 +370,33 @@ export type BackupPlanSignal = z.infer<typeof backupPlanSignalSchema>;
 export const BACKUP_PLAN_NOTICE_PREFIX = 'backup-plan:';
 const PLAN_FULL_NOTICE_PREFIX = `${BACKUP_PLAN_NOTICE_PREFIX}plan-full:`;
 
-const tierLabel = (tier: string | null) => (tier ? tier.replace('tb', ' TB') : 'a larger plan');
+const tierLabel = (tier: string | null) => (tier ? tier.replace(/^(\d+)tb$/, '$1 TB') : 'a larger plan');
+
+/** FL-301: the heartbeat's `backupPlan`: absent, read, or present but unreadable (`null`). */
+export const readBackupPlan = (value: unknown): BackupPlanSignal | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = backupPlanSignalSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+};
 
 export type BackupPlanNotice = {
   key: string;
+  /**
+   * `owner`: only the server owner's devices, since it carries plan and usage details (FC-91 review).
+   * `admins`: every administrator, without tier details.
+   */
+  audience: 'owner' | 'admins';
   title: string;
   body: string;
   data: Record<string, string | boolean | null>;
 };
 
 /**
- * FL-301: what the owner hears about the backup plan, each keyed so it is pushed once: a tier-overflow
- * case once per id and status, and a full plan (a Family Sharing member's, which has no case of its
- * own) once per action until it clears.
+ * FL-301: what is heard about the backup plan, each keyed so it is pushed once: the owner's tier-overflow
+ * case once per id and status, and a full plan (to the administrators, in the cloud's own wording, which
+ * asks a Family Sharing member to ask their organiser) once per action until it clears.
  */
 export const backupPlanNotices = (signal: BackupPlanSignal | undefined): BackupPlanNotice[] => {
   const notices: BackupPlanNotice[] = [];
@@ -396,7 +411,7 @@ export const backupPlanNotices = (signal: BackupPlanSignal | undefined): BackupP
       },
       accepted: {
         title: 'Your Frameleaf plan was upgraded',
-        body: `Your plan is now ${suggested}. Backups continue as usual.`,
+        body: `Your plan is now ${suggested}. Backups carry on with the room it gives them.`,
       },
       declined: overflow.backupPaused
         ? {
@@ -410,9 +425,11 @@ export const backupPlanNotices = (signal: BackupPlanSignal | undefined): BackupP
     }[overflow.status];
     notices.push({
       key: `${BACKUP_PLAN_NOTICE_PREFIX}${overflow.id}:${overflow.status}`,
+      audience: 'owner',
       ...text,
       data: {
         reason: 'tier-overflow',
+        screen: 'plan',
         caseId: overflow.id,
         status: overflow.status,
         currentTier: overflow.currentTier,
@@ -422,24 +439,27 @@ export const backupPlanNotices = (signal: BackupPlanSignal | undefined): BackupP
     });
   }
   const full = signal?.planFull;
-  // the owner's own case already says the plan is full
-  if (full && !overflow) {
+  if (full) {
     notices.push({
       key: `${PLAN_FULL_NOTICE_PREFIX}${full.action}`,
+      audience: 'admins',
       title: 'Backups are paused: plan full',
       body: full.message,
-      data: { reason: 'plan-full', action: full.action, suggestedTier: full.suggestedTier },
+      data: { reason: 'plan-full', screen: 'plan', action: full.action },
     });
   }
   return notices;
 };
 
-/** FL-301: a full plan that cleared is forgotten, so the next time it fills the owner hears it again. */
+/**
+ * FL-301: a full plan the cloud says cleared is forgotten, so the next time it fills it is heard again.
+ * An absent or unreadable signal says nothing, so it forgets nothing.
+ */
 export const forgetClearedPlanFull = (
   shown: Record<string, string>,
-  signal: BackupPlanSignal | undefined,
+  signal: BackupPlanSignal | null | undefined,
 ): Record<string, string> =>
-  signal?.planFull
+  !signal || signal.planFull
     ? shown
     : Object.fromEntries(Object.entries(shown).filter(([key]) => !key.startsWith(PLAN_FULL_NOTICE_PREFIX)));
 
@@ -455,8 +475,8 @@ export const heartbeatResponseSchema = z.object({
   observedIp: z.union([z.ipv4(), z.ipv6()]).nullable().optional().catch(null),
   // validated on its own by acceptPublishedPricing, so a bad value never fails the check-in
   pricing: z.unknown().optional(),
-  // FL-301: a signal this server cannot read never fails the check-in
-  backupPlan: backupPlanSignalSchema.optional().catch(undefined),
+  // FL-301: read on its own by readBackupPlan, so a signal this server cannot read never fails the check-in
+  backupPlan: z.unknown().optional(),
 });
 export type HeartbeatResponse = z.infer<typeof heartbeatResponseSchema>;
 
