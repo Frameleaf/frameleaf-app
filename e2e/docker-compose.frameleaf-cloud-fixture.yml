@@ -14,9 +14,12 @@ services:
     environment:
       FRAMELEAF_CLOUD_FIXTURE_PORT: '3010'
       FRAMELEAF_CLOUD_FIXTURE_URL: http://frameleaf-cloud-fixture:3010
+      FRAMELEAF_CLOUD_FIXTURE_MODE: ${FRAMELEAF_CLOUD_FIXTURE_MODE:-}
+      FRAMELEAF_CLOUD_FIXTURE_CONTRACTS: file:///fixture-contracts/ml/
     volumes:
       - ./src/fixtures/frameleaf-cloud-fixture.mjs:/fixture/frameleaf-cloud-fixture.mjs:ro
       - ./src/fixtures/frameleaf-cloud:/fixture/frameleaf-cloud:ro
+      - ../server/test/fixtures/frameleaf-cloud-contracts/ml:/fixture-contracts/ml:ro
     ports:
       - 3010:3010
     healthcheck:
