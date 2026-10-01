@@ -404,6 +404,9 @@ describe(AuthService.name, () => {
         expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'session-2' });
         expect(mocks.frameleafAccount.deleteSessions).toHaveBeenCalledWith(['session-1', 'session-2']);
         expect(mocks.session.invalidateOAuth).not.toHaveBeenCalled();
+        // FL-235: ending a person's access never removes their own account or library
+        expect(mocks.user.delete).not.toHaveBeenCalled();
+        expect(mocks.user.update).not.toHaveBeenCalled();
       });
 
       it('refuses, for a while, exchange tokens minted before the logout (FL-230)', async () => {

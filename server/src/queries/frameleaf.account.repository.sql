@@ -16,6 +16,14 @@ FROM
 WHERE
   sub = $1
 
+-- FrameleafAccountRepository.getAccess
+SELECT
+  access
+FROM
+  immich_fork.frameleaf_account_link
+WHERE
+  "userId" = $1::uuid
+
 -- FrameleafAccountRepository.countLinks
 SELECT
   count(*)::text AS count

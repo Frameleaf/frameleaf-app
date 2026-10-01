@@ -19,7 +19,14 @@ import {
   mapPreferences,
 } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
-import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto, mapUser, mapUserAdmin } from 'src/dtos/user.dto.js';
+import {
+  UserAdminResponseDto,
+  UserMeResponseDto,
+  UserResponseDto,
+  UserUpdateMeDto,
+  mapUser,
+  mapUserAdmin,
+} from 'src/dtos/user.dto.js';
 import {
   CacheControl,
   JobName,
@@ -49,6 +56,7 @@ import {
   mergePreferences,
 } from 'src/utils/preferences.js';
 import { generateProfileImage } from 'src/utils/profile-image.js';
+import { canUploadWith, getServerRole } from 'src/utils/server-role.js';
 
 /** FL-67: an account sees its own Locked people, pets and tags only while its session is unlocked. */
 const preferencesAudience = (auth: AuthDto): PreferencesAudience =>
@@ -97,13 +105,15 @@ export class UserService extends BaseService {
     return users.map((user) => mapUser(user));
   }
 
-  async getMe(auth: AuthDto): Promise<UserAdminResponseDto> {
+  async getMe(auth: AuthDto): Promise<UserMeResponseDto> {
     const user = await this.userRepository.get(auth.user.id, {});
     if (!user) {
       throw new BadRequestException('User not found');
     }
 
-    return mapUserAdmin(user);
+    // FL-235: the role here, so an app can label the server and show backup only where it may upload
+    const serverRole = getServerRole(user.isAdmin, await this.frameleafAccountRepository.getAccess(user.id));
+    return { ...mapUserAdmin(user), serverRole, canUpload: canUploadWith(auth.apiKey?.permissions) };
   }
 
   getCalendarHeatmap(auth: AuthDto, dto: CalendarHeatmapDto): Promise<CalendarHeatmapResponseDto> {
