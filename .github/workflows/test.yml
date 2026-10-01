@@ -541,6 +541,32 @@ jobs:
         with:
           name: e2e-web-docker-logs-${{ matrix.runner }}
           path: e2e/docker-compose-logs.txt
+      # FL-144: FL-68 iCloud Photos sync against the test-only fake bridge. The whole stack restarts fresh
+      # with the bridge override (after the main logs above are kept); the main web run never sees it.
+      - name: Start the fake iCloud bridge
+        id: icloud-fixture
+        run: docker compose -f docker-compose.yml -f docker-compose.icloud-bridge-fixture.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
+        if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
+      - name: Run e2e tests (iCloud sync)
+        env:
+          PLAYWRIGHT_DISABLE_WEBSERVER: true
+        run: pnpm test:web:icloud
+        if: ${{ !cancelled() && steps.icloud-fixture.outcome == 'success' }}
+      - name: Archive e2e test (iCloud sync) results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ !cancelled() && steps.icloud-fixture.outcome == 'success' }}
+        with:
+          name: e2e-icloud-test-results-${{ matrix.runner }}
+          path: e2e/playwright-report/
+      - name: Capture iCloud sync Docker logs
+        if: ${{ always() && steps.icloud-fixture.outcome != 'skipped' }}
+        run: docker compose -f docker-compose.yml -f docker-compose.icloud-bridge-fixture.yml logs --no-color > docker-icloud-logs.txt
+      - name: Archive iCloud sync Docker logs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() && steps.icloud-fixture.outcome != 'skipped' }}
+        with:
+          name: e2e-icloud-docker-logs-${{ matrix.runner }}
+          path: e2e/docker-icloud-logs.txt
     # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
     timeout-minutes: 120
   success-check-e2e:
