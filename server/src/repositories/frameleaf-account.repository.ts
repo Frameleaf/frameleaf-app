@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import type { FrameleafAccess } from 'src/utils/frameleaf-sign-in.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
@@ -14,6 +15,8 @@ export type FrameleafAccountLinkRow = {
   autoRegistered: boolean;
   linkedAt: Date;
   lastSignInAt: Date | null;
+  /** FL-235: the `frameleaf_access` the cloud last gave this account on this server (fork migration 0211). */
+  access: FrameleafAccess | null;
 };
 
 export type FrameleafSessionRow = {
@@ -30,8 +33,9 @@ export type FrameleafSessionRow = {
 /**
  * Sign in with Frameleaf (FL-158): the Frameleaf account linked to each local account
  * (`immich_fork.frameleaf_account_link`, fork migration 0000000000202) and the sessions a Frameleaf
- * sign-in created (`immich_fork.frameleaf_session`, 0000000000203), and (FL-230, 0000000000210) the
- * exchange tokens already used and the sign-ins Frameleaf Cloud ended. Writes are refused while the
+ * sign-in created (`immich_fork.frameleaf_session`, 0000000000203), (FL-230, 0000000000210) the
+ * exchange tokens already used and the sign-ins Frameleaf Cloud ended, and the access the cloud gives
+ * each account on this server (FL-235, 0000000000211). Writes are refused while the
  * server is being handed over, like every fork table.
  */
 /**
@@ -94,19 +98,22 @@ export class FrameleafAccountRepository {
 
   /** Link a Frameleaf account to a local account (replacing its previous link). */
   async upsertLink(
-    row: Pick<FrameleafAccountLinkRow, 'userId' | 'sub' | 'email' | 'emailVerified' | 'role' | 'autoRegistered'>,
+    row: Pick<FrameleafAccountLinkRow, 'userId' | 'sub' | 'email' | 'emailVerified' | 'role' | 'autoRegistered'> & {
+      access?: FrameleafAccess | null;
+    },
   ): Promise<FrameleafAccountLinkRow> {
     return this.db.transaction().execute(async (trx) => {
       await lockForkWrites(trx, 'A Frameleaf account cannot be linked while the server is being handed over');
       const result = await sql<FrameleafAccountLinkRow>`
-        INSERT INTO immich_fork.frameleaf_account_link ("userId", sub, email, "emailVerified", role, "autoRegistered")
-        VALUES (${row.userId}::uuid, ${row.sub}, ${row.email}, ${row.emailVerified}, ${row.role}, ${row.autoRegistered})
+        INSERT INTO immich_fork.frameleaf_account_link ("userId", sub, email, "emailVerified", role, "autoRegistered", access)
+        VALUES (${row.userId}::uuid, ${row.sub}, ${row.email}, ${row.emailVerified}, ${row.role}, ${row.autoRegistered}, ${row.access ?? null})
         ON CONFLICT ("userId") DO UPDATE SET
           sub = excluded.sub,
           email = excluded.email,
           "emailVerified" = excluded."emailVerified",
           role = excluded.role,
           "autoRegistered" = excluded."autoRegistered",
+          access = excluded.access,
           "linkedAt" = CASE
             WHEN immich_fork.frameleaf_account_link.sub = excluded.sub THEN immich_fork.frameleaf_account_link."linkedAt"
             ELSE clock_timestamp()
@@ -117,13 +124,16 @@ export class FrameleafAccountRepository {
     });
   }
 
-  /** Record a sign-in: the latest email, verification and role the cloud reported. */
-  async touchLink(userId: string, update: { email: string; emailVerified: boolean; role: 'admin' | 'user' | null }) {
+  /** Record a sign-in: the latest email, verification, role and access the cloud reported. */
+  async touchLink(
+    userId: string,
+    update: { email: string; emailVerified: boolean; role: 'admin' | 'user' | null; access?: FrameleafAccess | null },
+  ) {
     return this.write('A sign-in cannot be recorded while the server is being handed over', async (trx) => {
       await sql`
         UPDATE immich_fork.frameleaf_account_link
         SET email = ${update.email}, "emailVerified" = ${update.emailVerified}, role = ${update.role},
-            "lastSignInAt" = clock_timestamp()
+            access = COALESCE(${update.access ?? null}, access), "lastSignInAt" = clock_timestamp()
         WHERE "userId" = ${userId}::uuid
       `.execute(trx);
     });

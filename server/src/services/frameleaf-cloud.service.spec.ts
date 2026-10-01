@@ -2525,6 +2525,16 @@ describe(FrameleafCloudService.name, () => {
         changes: [expect.objectContaining({ path: 'frameleafCloud.signIn.buttonText', after: '"Use Frameleaf"' })],
       });
     });
+
+    it('sets the storage quota for invited accounts, unlimited by default (FL-235)', async () => {
+      await expect(sut.getStatus()).resolves.toMatchObject({ signInInvitedStorageQuota: null });
+      await expect(sut.updateSignIn(authStub.admin, { invitedStorageQuota: 25 })).resolves.toMatchObject({
+        signInInvitedStorageQuota: 25,
+      });
+      await expect(sut.updateSignIn(authStub.admin, { invitedStorageQuota: null })).resolves.toMatchObject({
+        signInInvitedStorageQuota: null,
+      });
+    });
   });
 
   describe('remote access settings (FL-161)', () => {

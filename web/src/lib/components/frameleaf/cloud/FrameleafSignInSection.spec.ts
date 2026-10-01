@@ -1,5 +1,5 @@
 import { CloudHeartbeatField, CloudLinkState, type CloudStatusResponseDto } from '@immich/sdk';
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -34,6 +34,7 @@ const status = (overrides: Partial<CloudStatusResponseDto> = {}): CloudStatusRes
   signInLinkedAccounts: 0,
   signInShowOnLocalLogin: false,
   signInButtonText: 'Sign in with Frameleaf',
+  signInInvitedStorageQuota: null,
   allowOriginalsOverRelay: false,
   allowPasswordOverRelay: false,
   ...overrides,
@@ -100,12 +101,49 @@ describe('FrameleafSignInSection (FL-158)', () => {
     render(FrameleafSignInSection);
 
     const input = await screen.findByLabelText('Button text');
+    const field = within(input.closest('.fc-field') as HTMLElement);
     await waitFor(() => expect(input).toHaveValue('Sign in with Frameleaf'));
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(field.getByRole('button', { name: 'Save' })).toBeDisabled();
     await fireEvent.input(input, { target: { value: '  Use Frameleaf ' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await fireEvent.click(field.getByRole('button', { name: 'Save' }));
     await waitFor(() =>
       expect(sdkMock.updateCloudSignIn).toHaveBeenCalledWith({ cloudSignInUpdateDto: { buttonText: 'Use Frameleaf' } }),
+    );
+  });
+
+  it('sets the storage quota invited accounts start with, unlimited when empty (FL-235)', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(linked());
+    sdkMock.updateCloudSignIn.mockResolvedValue(linked({ signInInvitedStorageQuota: 50 }));
+    render(FrameleafSignInSection);
+
+    const input = await screen.findByLabelText('Storage quota for invited accounts');
+    const field = within(input.closest('.fc-field') as HTMLElement);
+    expect(input).toHaveValue('');
+    expect(input).toHaveAttribute('placeholder', 'Unlimited');
+    expect(field.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    for (const value of ['1.5', '1e3', '-1', '2000000']) {
+      await fireEvent.input(input, { target: { value } });
+      expect(field.getByRole('button', { name: 'Save' })).toBeDisabled();
+    }
+    await fireEvent.input(input, { target: { value: '50' } });
+    await fireEvent.click(field.getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(sdkMock.updateCloudSignIn).toHaveBeenCalledWith({ cloudSignInUpdateDto: { invitedStorageQuota: 50 } }),
+    );
+  });
+
+  it('clears the invited quota back to unlimited', async () => {
+    sdkMock.getCloudStatus.mockResolvedValue(linked({ signInInvitedStorageQuota: 20 }));
+    sdkMock.updateCloudSignIn.mockResolvedValue(linked({ signInInvitedStorageQuota: null }));
+    render(FrameleafSignInSection);
+
+    const input = await screen.findByLabelText('Storage quota for invited accounts');
+    await waitFor(() => expect(input).toHaveValue('20'));
+    await fireEvent.input(input, { target: { value: '' } });
+    await fireEvent.click(within(input.closest('.fc-field') as HTMLElement).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(sdkMock.updateCloudSignIn).toHaveBeenCalledWith({ cloudSignInUpdateDto: { invitedStorageQuota: null } }),
     );
   });
 });

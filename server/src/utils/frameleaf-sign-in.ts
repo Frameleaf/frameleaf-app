@@ -21,6 +21,8 @@ import { cloudAddressProblem } from 'src/utils/frameleaf-cloud.js';
  */
 
 export const FRAMELEAF_ROLE_CLAIM = 'frameleaf_role';
+/** FL-235: the account's role on this server in Frameleaf Cloud (`owner`, `admin`, `editor`, `viewer`). */
+export const FRAMELEAF_ACCESS_CLAIM = 'frameleaf_access';
 export const FRAMELEAF_SCOPE = 'openid email profile';
 /** The Frameleaf app's callback (instance contract step 5). */
 export const FRAMELEAF_APP_CALLBACK = 'frameleaf-auth:///oauth-callback';
@@ -38,8 +40,6 @@ export const FRAMELEAF_EXCHANGE_TOKEN_TYPE = 'frameleaf-exchange+jwt';
 export const FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS = 2 * 60;
 /** The clock difference allowed between this server and the identity provider. */
 export const FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS = 5;
-/** The instance-access result (`frameleaf_access`) of an account that may use this server. */
-const FRAMELEAF_ACCESS_VALUES = new Set(['owner', 'admin', 'editor', 'viewer']);
 
 /**
  * FL-230: whether a verified token carries the instance-access claims (the provider's
@@ -88,12 +88,27 @@ export const frameleafCallbackUrl = (value: string): string => {
 /**
  * `admin` or `user` from the `frameleaf_role` claim, or null when the cloud sent neither. It is
  * applied on every Sign in with Frameleaf to every linked account (FL-177, as-built decision #32).
- * `frameleaf_access` (`owner`, `admin`, `editor`, `viewer`) is informational in this version: nothing
- * on this server is granted from it beyond what `frameleaf_role` grants.
+ * `frameleaf_access` never grants anything beyond what `frameleaf_role` grants (see `frameleafAccess`).
  */
 export const frameleafRole = (profile: OAuthProfile): 'admin' | 'user' | null => {
   const value = profile[FRAMELEAF_ROLE_CLAIM as keyof OAuthProfile];
   return value === 'admin' || value === 'user' ? value : null;
+};
+
+export type FrameleafAccess = 'owner' | 'admin' | 'editor' | 'viewer';
+/** The instance-access results (`frameleaf_access`) of an account that may use this server. */
+const FRAMELEAF_ACCESS_VALUES = new Set<string>(['owner', 'admin', 'editor', 'viewer']);
+
+/**
+ * FL-235: the `frameleaf_access` claim, the role the cloud's invitation gives this account on this
+ * server, or null when the cloud sent none. Recorded on every Sign in with Frameleaf and link. It
+ * grants nothing: an invited person (`editor` or `viewer` too) gets their own regular account and
+ * library, and sees the owner's media only through what is shared with them (owner decision,
+ * 2026-10-01). `GET /users/me` uses `owner` to report the server owner.
+ */
+export const frameleafAccess = (profile: OAuthProfile): FrameleafAccess | null => {
+  const value = profile[FRAMELEAF_ACCESS_CLAIM as keyof OAuthProfile];
+  return typeof value === 'string' && FRAMELEAF_ACCESS_VALUES.has(value) ? (value as FrameleafAccess) : null;
 };
 
 /** The link's OpenID client, when this server is linked and the cloud registered one. */
