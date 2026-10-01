@@ -10,6 +10,10 @@ The provenance ledger was cross-checked against a temporary clean checkout of `w
 
 The engine tooling rejects duplicate keys in its contract JSON and verifies the pinned source identity.
 
+## Studio graph protocol (native apps)
+
+`docs/docs/developer/studio-graph-protocol-v1.md` specifies the project graph for the native apps, which may not read engine source. Its machine-readable files are `graph-schema-v1.json` (JSON Schema of a graph in normal form) and `graph-conformance-v1.json` (fixtures whose answers come from the real engine). `adapters/web/test/graph-conformance.test.ts` replays every fixture through the engine and fails on drift; `GRAPH_CONFORMANCE_WRITE=1 node studio/tools/adapter.mjs test` regenerates the answers. `tools/graph-protocol.test.mjs` re-derives digests, id draws and rounding from the prose without the engine, and validates every fixture graph against the schema.
+
 ## Local source preflight
 
 The local source preflight (`node scripts/frameleaf-studio-preflight.mjs /absolute/path/to/local-plan.json`)
