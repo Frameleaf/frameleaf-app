@@ -832,6 +832,25 @@ async function runEaseOutHost(project, graph) {
     throw new Error("real saved revision did not settle");
   };
   const button = (label) => `button[aria-label=${JSON.stringify(label)}]`;
+  const acknowledge = async (frame, index) => {
+    const timecode = `00:${String(Math.floor(index / 30)).padStart(2, "0")}:${String(index % 30).padStart(2, "0")} / 00:01:29`;
+    const deadline = Date.now() + 30000;
+    for (;;) {
+      const count = await frame.evaluate(
+        (expected) =>
+          [...document.querySelectorAll("button")].filter(
+            (button) => button.checkVisibility() && button.textContent.trim() === expected,
+          ).length,
+        timecode,
+      );
+      if (count === 1) return;
+      assert.ok(
+        Date.now() < deadline,
+        `native timecode acknowledgement ${timecode}: ${count} visible buttons`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  };
   const selectInline = async (frame) => {
     await frame.waitForFunction(() => !!document.querySelector('[data-item-id="still"]'));
     await frame.click('[data-item-id="still"]');
@@ -854,35 +873,31 @@ async function runEaseOutHost(project, graph) {
     await frame.waitForFunction(
       () => !!document.querySelector('[data-testid="row-keyframe-x-k0"]'),
     );
-    await frame.click('[data-testid="row-keyframe-x-k0"]');
+    // Native navigation selects the frame-zero key without the separately recorded edge-hit defect.
+    await frame.click(button("Next Position keyframe"));
+    await acknowledge(frame, 30);
+    await frame.click(button("Previous Position keyframe"));
+    await acknowledge(frame, 0);
+    await frame.waitForFunction(() => {
+      const selected = new Set(
+        [...document.querySelectorAll("button[data-motion-keyframe-id]")]
+          .filter((marker) => marker.querySelector("span.border-blue-100"))
+          .map((marker) => marker.dataset.motionKeyframeId),
+      );
+      const easeOut = document.querySelector('button[aria-label="Set interpolation to Ease Out"]');
+      return (
+        selected.size === 1 && selected.has("k0") && easeOut?.checkVisibility() && !easeOut.disabled
+      );
+    });
   };
   const seek = async (frame, n) => {
     // Same native timecode acknowledgement as the owner runner; the portable driver reads
     // the unique visible button via W3C rather than Playwright expect. Never add seek clicks.
-    const acknowledge = async (index) => {
-      const timecode = `00:${String(Math.floor(index / 30)).padStart(2, "0")}:${String(index % 30).padStart(2, "0")} / 00:01:29`;
-      const deadline = Date.now() + 30000;
-      for (;;) {
-        const count = await frame.evaluate(
-          (expected) =>
-            [...document.querySelectorAll("button")].filter(
-              (button) => button.checkVisibility() && button.textContent.trim() === expected,
-            ).length,
-          timecode,
-        );
-        if (count === 1) return;
-        assert.ok(
-          Date.now() < deadline,
-          `native timecode acknowledgement ${timecode}: ${count} visible buttons`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-    };
     await frame.click(button("Go To Start"));
-    await acknowledge(0);
+    await acknowledge(frame, 0);
     for (let i = 1; i <= n; i++) {
       await frame.click(button("Next Frame"));
-      await acknowledge(i);
+      await acknowledge(frame, i);
     }
   };
   const pixelRead = async (frame, x, label) => {
