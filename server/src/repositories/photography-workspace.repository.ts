@@ -47,7 +47,7 @@ export class PhotographyWorkspaceRepository {
           .set({
             value: sql<
               UserMetadata[UserMetadataKey.PhotographyWorkspace]
-            >`value || ${JSON.stringify({ shoots })}::jsonb`,
+            >`value || ${JSON.stringify({ shoots })}::text::jsonb`,
           })
           .where('userId', '=', userId)
           .where('key', '=', UserMetadataKey.PhotographyWorkspace)
@@ -73,7 +73,7 @@ export class PhotographyWorkspaceRepository {
           .set({
             value: sql<
               UserMetadata[UserMetadataKey.PhotographyWorkspace]
-            >`value || ${JSON.stringify({ brand })}::jsonb`,
+            >`value || ${JSON.stringify({ brand })}::text::jsonb`,
           })
           .where('userId', '=', userId)
           .where('key', '=', UserMetadataKey.PhotographyWorkspace)
