@@ -200,6 +200,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
         include:
           - runner: ubuntu-24.04
             arch: x86_64
@@ -262,7 +263,9 @@ jobs:
           echo 'APPIMAGE_EXTRACT_AND_RUN=1' >> "$GITHUB_ENV"
       - name: Build the local plugin SDK required by native media tests
         if: inputs.raw_engine == 'darktable'
-        run: pnpm --filter @immich/plugin-sdk build
+        run: |
+          pnpm --filter @immich/sdk build
+          pnpm --filter @immich/plugin-sdk build
       - name: Qualify actual native history, exposure and export pipeline
         if: inputs.raw_engine == 'darktable'
         working-directory: server
