@@ -17,6 +17,16 @@ describe('photo tools DTOs (FL-64)', () => {
     expect(DevelopPresetUpdateDto.schema.safeParse({ name: 'Renamed' }).success).toBe(true);
   });
 
+  it('leaves settings an update does not send unset instead of defaulting them (FL-303)', () => {
+    const parsed = DevelopPresetUpdateDto.schema.safeParse({ settings: { temperature: -30 } });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.settings).toEqual({ temperature: -30 });
+    expect(DevelopPresetUpdateDto.schema.safeParse({ settings: { exposure: 5 } }).success).toBe(false);
+    expect(DevelopPresetUpdateDto.schema.safeParse({ settings: { crop: { x: 0, y: 0, w: 1, h: 1 } } }).data).toEqual({
+      settings: {},
+    });
+  });
+
   it('requires the original a returned file was developed from, as an export or a SHA-256', () => {
     expect(AssetDevelopImportDto.schema.safeParse({}).success).toBe(false);
     expect(AssetDevelopImportDto.schema.safeParse({ exportId: '0d9f8b4e-2f7c-4a51-9d1e-6c1e4a2b3c4d' }).success).toBe(

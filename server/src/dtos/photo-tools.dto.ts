@@ -29,13 +29,15 @@ const DevelopPresetMaskSchema = AssetDevelopMaskFields.omit({ strokes: true, art
   })
   .meta({ id: 'DevelopPresetMask' });
 
-/**
- * What a preset applies: every develop slider (Brilliance included, FL-233), the look and its
- * strength, and the radial and linear masks. Geometry (crop, straighten, turns, flips) is never part
- * of a preset, exactly like Copy and Paste adjustments, so applying one never reframes a photo; nor
- * are brush and subject/sky/background masks or Clean Up, which belong to one photo's content.
- */
-export const DevelopPresetSettingsSchema = KnownAssetDevelopRecipeFields.pick({
+const DevelopPresetMasksSchema = z
+  .array(DevelopPresetMaskSchema)
+  .max(ASSET_DEVELOP_MAX_MASKS)
+  .refine((masks) => new Set(masks.map((mask) => mask.id)).size === masks.length, {
+    error: 'Mask identifiers must be unique',
+  })
+  .describe('Radial and linear selective adjustments, applied in order after the global develop');
+
+const DevelopPresetSettingsFields = KnownAssetDevelopRecipeFields.pick({
   exposure: true,
   contrast: true,
   brilliance: true,
@@ -55,31 +57,53 @@ export const DevelopPresetSettingsSchema = KnownAssetDevelopRecipeFields.pick({
   noiseReduction: true,
   preset: true,
   presetStrength: true,
-})
-  .extend({
-    masks: z
-      .array(DevelopPresetMaskSchema)
-      .max(ASSET_DEVELOP_MAX_MASKS)
-      .default([])
-      .refine((masks) => new Set(masks.map((mask) => mask.id)).size === masks.length, {
-        error: 'Mask identifiers must be unique',
-      })
-      .describe('Radial and linear selective adjustments, applied in order after the global develop'),
-  })
-  .meta({ id: 'DevelopPresetSettingsDto' });
+});
+
+/**
+ * What a preset applies: every develop slider (Brilliance included, FL-233), the look and its
+ * strength, and the radial and linear masks. Geometry (crop, straighten, turns, flips) is never part
+ * of a preset, exactly like Copy and Paste adjustments, so applying one never reframes a photo; nor
+ * are brush and subject/sky/background masks or Clean Up, which belong to one photo's content.
+ * A new preset fills every setting it is not sent with its neutral value (no change).
+ */
+export const DevelopPresetSettingsSchema = DevelopPresetSettingsFields.extend({
+  masks: DevelopPresetMasksSchema.default([]),
+}).meta({ id: 'DevelopPresetSettingsDto' });
 
 export type DevelopPresetSettings = z.infer<typeof DevelopPresetSettingsSchema>;
+
+/**
+ * FL-303: the settings of an update are a patch. A setting left out keeps its stored value instead
+ * of falling back to neutral, so a client without a control (the web has no Brilliance) or older than
+ * a field never resets it. `masks`, when sent, replaces every mask of the preset.
+ */
+const DevelopPresetSettingsUpdateSchema = z
+  .object({
+    ...Object.fromEntries(
+      Object.entries(DevelopPresetSettingsFields.shape).map(([key, schema]) => {
+        const optional = (schema instanceof z.ZodDefault ? schema.unwrap() : schema).optional();
+        return [key, schema.description ? optional.describe(schema.description) : optional];
+      }),
+    ),
+    masks: DevelopPresetMasksSchema.optional(),
+  })
+  .meta({ id: 'DevelopPresetSettingsUpdateDto' }) as unknown as z.ZodType<Partial<DevelopPresetSettings>>;
 
 const presetName = z.string().trim().min(1).max(80).describe('Name shown in the presets list; unique per account');
 
 const DevelopPresetCreateSchema = z
-  .object({ name: presetName, settings: DevelopPresetSettingsSchema })
+  .object({
+    name: presetName,
+    settings: DevelopPresetSettingsSchema.describe('Settings of the new preset; any left out take their neutral value'),
+  })
   .meta({ id: 'DevelopPresetCreateDto' });
 
 const DevelopPresetUpdateSchema = z
   .object({
     name: presetName.optional(),
-    settings: DevelopPresetSettingsSchema.optional().describe('Replaces every stored setting of the preset'),
+    settings: DevelopPresetSettingsUpdateSchema.optional().describe(
+      'Settings to change; every setting left out, including ones this client does not know, keeps its stored value',
+    ),
   })
   .refine((value) => value.name !== undefined || value.settings !== undefined, {
     error: 'Change the name or the settings',

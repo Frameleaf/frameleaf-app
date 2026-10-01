@@ -15729,7 +15729,7 @@
         "x-immich-state": "Alpha"
       },
       "put": {
-        "description": "Renames a preset, replaces its settings, or both.",
+        "description": "Renames a preset, changes its settings, or both. Settings the request leaves out keep their stored values.",
         "operationId": "updateDevelopPreset",
         "parameters": [
           {
@@ -60328,7 +60328,8 @@
             "type": "string"
           },
           "settings": {
-            "$ref": "#/components/schemas/DevelopPresetSettingsDto"
+            "$ref": "#/components/schemas/DevelopPresetSettingsDto",
+            "description": "Settings of the new preset; any left out take their neutral value"
           }
         },
         "required": [
@@ -60655,6 +60656,147 @@
         },
         "type": "object"
       },
+      "DevelopPresetSettingsUpdateDto": {
+        "properties": {
+          "blacks": {
+            "description": "Black point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "brilliance": {
+            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "clarity": {
+            "description": "Local contrast in the midtones",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "contrast": {
+            "description": "Contrast around middle grey",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "dehaze": {
+            "description": "Haze removal (positive) or addition (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "description": "Exposure in EV; each whole stop doubles the light",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "grain": {
+            "description": "Film grain amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "highlights": {
+            "description": "Highlight recovery (negative) or lift (positive)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "masks": {
+            "description": "Radial and linear selective adjustments, applied in order after the global develop",
+            "items": {
+              "$ref": "#/components/schemas/DevelopPresetMask"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "noiseReduction": {
+            "description": "Luminance noise reduction amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/AssetDevelopPreset"
+          },
+          "presetStrength": {
+            "description": "How much of the preset is applied, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "saturation": {
+            "description": "Global saturation",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "shadows": {
+            "description": "Shadow lift (positive) or deepening (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "sharpen": {
+            "description": "Detail sharpening amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "temperature": {
+            "description": "Warm (positive) or cool (negative) white balance shift",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "tint": {
+            "description": "Magenta (positive) or green (negative) tint",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vibrance": {
+            "description": "Saturation weighted towards muted colours",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vignette": {
+            "description": "Darkened (positive) or lightened (negative) edges",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
+            "description": "White point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
       "DevelopPresetUpdateDto": {
         "properties": {
           "name": {
@@ -60664,8 +60806,8 @@
             "type": "string"
           },
           "settings": {
-            "$ref": "#/components/schemas/DevelopPresetSettingsDto",
-            "description": "Replaces every stored setting of the preset"
+            "$ref": "#/components/schemas/DevelopPresetSettingsUpdateDto",
+            "description": "Settings to change; every setting left out, including ones this client does not know, keeps its stored value"
           }
         },
         "type": "object"
