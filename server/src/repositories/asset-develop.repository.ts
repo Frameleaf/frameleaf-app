@@ -63,6 +63,24 @@ export type AssetDevelopRevisionUpdate = Partial<
 const TABLE = sql`immich_fork.asset_develop_revision`;
 const ARTIFACTS = sql`immich_fork.asset_develop_artifact`;
 
+/** FL-233: the artifact ids a recipe's masks and Clean Up name (whether or not they render). */
+const referencedArtifacts = (recipe: AssetDevelopRecipe): string[] => {
+  const ids = new Set<string>();
+  const value = recipe as { masks?: unknown; cleanup?: unknown };
+  for (const [list, key] of [
+    [value.masks, 'artifact'],
+    [value.cleanup, 'fill'],
+  ] as const) {
+    for (const item of Array.isArray(list) ? list : []) {
+      const id = item && typeof item === 'object' ? (item as Record<string, unknown>)[key] : undefined;
+      if (typeof id === 'string' && /^[0-9a-f]{64}$/.test(id)) {
+        ids.add(id);
+      }
+    }
+  }
+  return [...ids];
+};
+
 /** FL-233: a stored develop artifact (fork migration 0000000000212). */
 export type AssetDevelopArtifact = {
   assetId: string;
@@ -139,6 +157,23 @@ export class AssetDevelopRepository {
         if (!input.replaceRecipe) recipe = preserveDevelopEnvelope(source.rows[0].recipe, recipe);
       }
       if (input.requireRenderable) assertRenderableDevelopRecipe(recipe);
+      // FL-233: the artifacts this version uses start their grace period again, under their row
+      // locks, so the nightly release (which re-checks `createdAt` once these commit) never takes
+      // one a version is being saved with; a render needs every one of them
+      const artifactIds = referencedArtifacts(recipe);
+      if (artifactIds.length > 0) {
+        const touched = await sql<{ id: string }>`
+          UPDATE ${ARTIFACTS} SET "createdAt" = clock_timestamp()
+          WHERE "assetId" = ${input.assetId}::uuid AND id IN (${sql.join(artifactIds)})
+          RETURNING id
+        `.execute(trx);
+        if (input.requireRenderable && touched.rows.length < artifactIds.length) {
+          throw new BadRequestException({
+            message: 'This recipe uses a develop artifact that was not uploaded for this photo',
+            code: 'develop_artifact_missing',
+          });
+        }
+      }
       const { rows } = await sql<AssetDevelopRevision>`
         INSERT INTO ${TABLE} (
           "assetId", "ownerId", revision, "recipeVersion", recipe, label, status,
@@ -311,21 +346,21 @@ export class AssetDevelopRepository {
 
   /**
    * Record a stored artifact. `true` when it is new; `false` when the asset already had it (the
-   * same bitmap uploaded again). Refused while fork writes are.
+   * same bitmap uploaded again, which restarts its grace period). Refused while fork writes are.
    */
   async addArtifact(artifact: Omit<AssetDevelopArtifact, 'createdAt'>): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
       await lockForkWrites(trx, 'An edit cannot be saved while the server is being handed over');
-      const { rows } = await sql<{ id: string }>`
+      const { rows } = await sql<{ inserted: boolean }>`
         INSERT INTO ${ARTIFACTS} ("assetId", id, "ownerId", kind, path, bytes, width, height)
         VALUES (
           ${artifact.assetId}::uuid, ${artifact.id}, ${artifact.ownerId}::uuid, ${artifact.kind}, ${artifact.path},
           ${artifact.bytes}, ${artifact.width}, ${artifact.height}
         )
-        ON CONFLICT ("assetId", id) DO NOTHING
-        RETURNING id
+        ON CONFLICT ("assetId", id) DO UPDATE SET "createdAt" = clock_timestamp()
+        RETURNING (xmax = 0) AS inserted
       `.execute(trx);
-      return rows.length > 0;
+      return !!rows[0]?.inserted;
     });
   }
 
