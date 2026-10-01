@@ -10713,6 +10713,74 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assets/{id}/develop/artifacts": {
+      "post": {
+        "description": "FL-233: keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.",
+        "operationId": "uploadAssetDevelopArtifact",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopArtifactUploadDto"
+              }
+            }
+          },
+          "description": "A mask bitmap or a generated fill for this photo",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopArtifactResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Upload a develop artifact",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/{id}/develop/exports": {
       "get": {
         "description": "Every recorded export of the original, newest first, and whether the original still matches it.",
@@ -51519,6 +51587,150 @@
         ],
         "type": "object"
       },
+      "AssetDevelopArtifactKind": {
+        "description": "What a develop artifact is used for",
+        "enum": [
+          "mask",
+          "fill"
+        ],
+        "type": "string"
+      },
+      "AssetDevelopArtifactResponseDto": {
+        "properties": {
+          "height": {
+            "description": "Height of the stored bitmap in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "id": {
+            "description": "A develop artifact uploaded for this asset: the lowercase hex SHA-256 of its stored PNG",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AssetDevelopArtifactKind"
+          },
+          "width": {
+            "description": "Width of the stored bitmap in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "height",
+          "id",
+          "kind",
+          "width"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopArtifactUploadDto": {
+        "properties": {
+          "file": {
+            "description": "A PNG (or another still image the server can read): greyscale for a mask, with alpha for a fill",
+            "format": "binary",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AssetDevelopArtifactKind"
+          }
+        },
+        "required": [
+          "file",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopCleanup": {
+        "properties": {
+          "blockSize": {
+            "default": 0.02,
+            "description": "Pixelate: block size as a fraction of the original image's shorter side",
+            "format": "double",
+            "maximum": 0.2,
+            "minimum": 0.002,
+            "type": "number"
+          },
+          "enabled": {
+            "default": true,
+            "description": "A disabled operation is kept but not rendered",
+            "type": "boolean"
+          },
+          "feather": {
+            "default": 0,
+            "description": "Softness of the area's edge, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fill": {
+            "description": "Remove: the generated fill, an RGBA artifact covering the bounding box of the area",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "id": {
+            "description": "Client-chosen identifier, unique within the recipe",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "method": {
+            "$ref": "#/components/schemas/AssetDevelopCleanupMethod"
+          },
+          "region": {
+            "$ref": "#/components/schemas/AssetDevelopRegion"
+          },
+          "source": {
+            "description": "Heal and clone: where the pixels come from, relative to the area, in original-image fractions",
+            "properties": {
+              "dx": {
+                "description": "Horizontal offset, fraction of the width",
+                "format": "double",
+                "maximum": 1,
+                "minimum": -1,
+                "type": "number"
+              },
+              "dy": {
+                "description": "Vertical offset, fraction of the height",
+                "format": "double",
+                "maximum": 1,
+                "minimum": -1,
+                "type": "number"
+              }
+            },
+            "required": [
+              "dx",
+              "dy"
+            ],
+            "type": "object"
+          },
+          "strokes": {
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopStroke"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "method"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopCleanupMethod": {
+        "description": "How a Clean Up operation changes its area",
+        "enum": [
+          "heal",
+          "clone",
+          "remove",
+          "pixelate"
+        ],
+        "type": "string"
+      },
       "AssetDevelopCrop": {
         "additionalProperties": {},
         "properties": {
@@ -51633,6 +51845,17 @@
             "minimum": 0,
             "type": "integer"
           },
+          "artifact": {
+            "description": "Subject, sky and background masks: the stored greyscale mask bitmap, covering the whole original image",
+            "nullable": true,
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "detector": {
+            "additionalProperties": {},
+            "description": "Subject, sky and background masks: an opaque descriptor that lets a client detect the mask again; the server never runs it",
+            "type": "object"
+          },
           "enabled": {
             "default": true,
             "description": "A disabled mask is kept but not rendered",
@@ -51656,7 +51879,7 @@
           },
           "feather": {
             "default": 50,
-            "description": "Softness of a radial edge as a percentage of the radius",
+            "description": "Softness of a radial edge as a percentage of the radius, or of a brush stroke as one of its radius",
             "maximum": 100,
             "minimum": 0,
             "type": "integer"
@@ -51699,15 +51922,23 @@
             "minimum": 0.01,
             "type": "number"
           },
+          "strokes": {
+            "description": "Brush masks: the painted strokes, in order",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopStroke"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
           "x": {
-            "description": "Centre (radial) or start (linear) across the oriented frame",
+            "description": "Centre (radial) or start (linear) across the oriented frame; any value for brush and bitmap masks",
             "format": "double",
             "maximum": 1,
             "minimum": 0,
             "type": "number"
           },
           "y": {
-            "description": "Centre (radial) or start (linear) down the oriented frame",
+            "description": "Centre (radial) or start (linear) down the oriented frame; any value for brush and bitmap masks",
             "format": "double",
             "maximum": 1,
             "minimum": 0,
@@ -51819,7 +52050,11 @@
         "description": "Shape of a selective adjustment mask",
         "enum": [
           "radial",
-          "linear"
+          "linear",
+          "brush",
+          "subject",
+          "sky",
+          "background"
         ],
         "type": "string"
       },
@@ -51874,6 +52109,12 @@
                 "format": "double"
               },
               "contrast": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "brilliance": {
                 "type": "number",
                 "minimum": -100,
                 "maximum": 100,
@@ -51997,6 +52238,13 @@
                   "type": "object",
                   "additionalProperties": {}
                 }
+              },
+              "cleanup": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
               }
             },
             "required": [
@@ -52019,6 +52267,45 @@
             "additionalProperties": {}
           }
         ]
+      },
+      "AssetDevelopRegion": {
+        "properties": {
+          "h": {
+            "description": "Height as a fraction of the original",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.001,
+            "type": "number"
+          },
+          "w": {
+            "description": "Width as a fraction of the original",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.001,
+            "type": "number"
+          },
+          "x": {
+            "description": "Left edge as a fraction of the original image width",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Top edge as a fraction of the original image height",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "h",
+          "w",
+          "x",
+          "y"
+        ],
+        "type": "object"
       },
       "AssetDevelopResponseDto": {
         "properties": {
@@ -52264,6 +52551,50 @@
         },
         "required": [
           "recipe"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopStroke": {
+        "properties": {
+          "erase": {
+            "default": false,
+            "description": "Erase from the mask instead of painting it (brush masks only)",
+            "type": "boolean"
+          },
+          "points": {
+            "items": {
+              "description": "A point as [x, y] fractions of the original image (before rotation, flips and crop)",
+              "prefixItems": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "format": "double"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "format": "double"
+                }
+              ],
+              "type": "array"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "type": "array"
+          },
+          "radius": {
+            "description": "Stroke radius as a fraction of the original image's shorter side",
+            "format": "double",
+            "maximum": 0.5,
+            "minimum": 0.001,
+            "type": "number"
+          }
+        },
+        "required": [
+          "points",
+          "radius"
         ],
         "type": "object"
       },
@@ -59843,6 +60174,128 @@
         ],
         "type": "object"
       },
+      "DevelopPresetMask": {
+        "properties": {
+          "adjustments": {
+            "$ref": "#/components/schemas/AssetDevelopMaskAdjustments",
+            "default": {
+              "blacks": 0,
+              "contrast": 0,
+              "dehaze": 0,
+              "exposure": 0,
+              "highlights": 0,
+              "saturation": 0,
+              "shadows": 0,
+              "temperature": 0,
+              "tint": 0,
+              "vibrance": 0,
+              "whites": 0
+            }
+          },
+          "amount": {
+            "default": 100,
+            "description": "How much of the adjustment is applied, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "default": true,
+            "description": "A disabled mask is kept but not rendered",
+            "type": "boolean"
+          },
+          "endX": {
+            "default": 0.5,
+            "description": "Where a linear mask has faded out, across the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "endY": {
+            "default": 1,
+            "description": "Where a linear mask has faded out, down the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "feather": {
+            "default": 50,
+            "description": "Softness of a radial edge as a percentage of the radius, or of a brush stroke as one of its radius",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Client-chosen identifier, unique within the recipe",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "invert": {
+            "default": false,
+            "description": "Apply the adjustment outside the shape instead of inside",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DevelopPresetMaskKind"
+          },
+          "name": {
+            "default": null,
+            "description": "Optional name shown in the editor",
+            "maxLength": 60,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "radiusX": {
+            "default": 0.25,
+            "description": "Horizontal radius of a radial mask as a fraction of the frame width",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.01,
+            "type": "number"
+          },
+          "radiusY": {
+            "default": 0.25,
+            "description": "Vertical radius of a radial mask as a fraction of the frame height",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.01,
+            "type": "number"
+          },
+          "x": {
+            "description": "Centre (radial) or start (linear) across the oriented frame; any value for brush and bitmap masks",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Centre (radial) or start (linear) down the oriented frame; any value for brush and bitmap masks",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "DevelopPresetMaskKind": {
+        "description": "Shape of a selective adjustment mask",
+        "enum": [
+          "radial",
+          "linear"
+        ],
+        "type": "string"
+      },
       "DevelopPresetResponseDto": {
         "properties": {
           "createdAt": {
@@ -59883,6 +60336,14 @@
           "blacks": {
             "default": 0,
             "description": "Black point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "brilliance": {
+            "default": 0,
+            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
             "format": "double",
             "maximum": 100,
             "minimum": -100,
@@ -59938,9 +60399,9 @@
           },
           "masks": {
             "default": [],
-            "description": "Selective adjustments, applied in order after the global develop",
+            "description": "Radial and linear selective adjustments, applied in order after the global develop",
             "items": {
-              "$ref": "#/components/schemas/AssetDevelopMask"
+              "$ref": "#/components/schemas/DevelopPresetMask"
             },
             "maxItems": 8,
             "type": "array"
@@ -64193,6 +64654,260 @@
           "IntegrityDeleteReports"
         ],
         "type": "string"
+      },
+      "KnownAssetDevelopCrop": {
+        "properties": {
+          "h": {
+            "description": "Crop height as a fraction of the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.05,
+            "type": "number"
+          },
+          "w": {
+            "description": "Crop width as a fraction of the frame",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0.05,
+            "type": "number"
+          },
+          "x": {
+            "description": "Left edge of the crop as a fraction of the oriented frame width",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Top edge of the crop as a fraction of the oriented frame height",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "h",
+          "w",
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "KnownAssetDevelopRecipe": {
+        "properties": {
+          "blacks": {
+            "default": 0,
+            "description": "Black point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "brilliance": {
+            "default": 0,
+            "description": "FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "clarity": {
+            "default": 0,
+            "description": "Local contrast in the midtones",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "cleanup": {
+            "default": [],
+            "description": "FL-233: Clean Up operations, applied in order to the original before every other step",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopCleanup"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "contrast": {
+            "default": 0,
+            "description": "Contrast around middle grey",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "crop": {
+            "$ref": "#/components/schemas/KnownAssetDevelopCrop",
+            "default": {
+              "h": 1,
+              "w": 1,
+              "x": 0,
+              "y": 0
+            }
+          },
+          "dehaze": {
+            "default": 0,
+            "description": "Haze removal (positive) or addition (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "exposure": {
+            "default": 0,
+            "description": "Exposure in EV; each whole stop doubles the light",
+            "format": "double",
+            "maximum": 2,
+            "minimum": -2,
+            "type": "number"
+          },
+          "flipHorizontal": {
+            "default": false,
+            "description": "Mirror left to right",
+            "type": "boolean"
+          },
+          "flipVertical": {
+            "default": false,
+            "description": "Mirror top to bottom",
+            "type": "boolean"
+          },
+          "grain": {
+            "default": 0,
+            "description": "Film grain amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "highlights": {
+            "default": 0,
+            "description": "Highlight recovery (negative) or lift (positive)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "masks": {
+            "default": [],
+            "description": "Selective adjustments, applied in order after the global develop",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopMask"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "noiseReduction": {
+            "default": 0,
+            "description": "Luminance noise reduction amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/AssetDevelopPreset",
+            "default": "Original"
+          },
+          "presetStrength": {
+            "default": 100,
+            "description": "How much of the preset is applied, as a percentage",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rotation": {
+            "default": 0,
+            "description": "Quarter-turn rotation in degrees, clockwise",
+            "maximum": 270,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "saturation": {
+            "default": 0,
+            "description": "Global saturation",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "shadows": {
+            "default": 0,
+            "description": "Shadow lift (positive) or deepening (negative)",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "sharpen": {
+            "default": 0,
+            "description": "Detail sharpening amount",
+            "format": "double",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number"
+          },
+          "straighten": {
+            "default": 0,
+            "description": "Straighten angle in degrees, applied before the crop",
+            "format": "double",
+            "maximum": 45,
+            "minimum": -45,
+            "type": "number"
+          },
+          "temperature": {
+            "default": 0,
+            "description": "Warm (positive) or cool (negative) white balance shift",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "tint": {
+            "default": 0,
+            "description": "Magenta (positive) or green (negative) tint",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "version": {
+            "description": "Recipe contract version",
+            "enum": [
+              1
+            ],
+            "format": "double",
+            "type": "number"
+          },
+          "vibrance": {
+            "default": 0,
+            "description": "Saturation weighted towards muted colours",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "vignette": {
+            "default": 0,
+            "description": "Darkened (positive) or lightened (negative) edges",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "whites": {
+            "default": 0,
+            "description": "White point",
+            "format": "double",
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
       },
       "LibraryImportPathReason": {
         "description": "Why an import folder was accepted or refused",
