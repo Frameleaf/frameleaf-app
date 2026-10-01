@@ -615,12 +615,29 @@ test("the server base is built in-repo and identical in the production and devel
   // An unreachable package index fails the build instead of warning, and the HTTPS PostgreSQL source
   // keeps the CA certificates it needs in the runtime image.
   assert.doesNotMatch(server, /apt-get update/);
-  assert.match(server, /^RUN apt-update-strict --allow-releaseinfo-change/m);
   assert.match(
     read("server/base-image/apt-update-strict.sh"),
     /apt-get update -o APT::Update::Error-Mode=any/,
   );
   assert.doesNotMatch(server, /apt-get remove[^\n]*ca-certificates/);
+  // FL-281: the CLI is built alongside the pinned library; container stages execute ldd to
+  // reject a missing dependency or a system LibRaw instead of the packaged /usr/local build.
+  assert.doesNotMatch(server, /apt-get install[^\n]*libraw-bin/);
+  assert.match(
+    read("server/base-image/sources/libraw.sh"),
+    /configure --enable-examples/,
+  );
+  for (const file of ["server/Dockerfile", "server/Dockerfile.dev"]) {
+    assert.match(
+      read(file),
+      /COPY --from=base-server-libraw \/usr\/local\/bin\/dcraw_emu/,
+    );
+    assert.match(read(file), /ldd \/usr\/local\/bin\/dcraw_emu/);
+  }
+  assert.match(
+    server,
+    /COPY --from=base-server-dev \/usr\/local\/bin\/dcraw_emu/,
+  );
   // The vendored build pins every compiled library to an exact revision.
   for (const name of [
     "imagemagick",

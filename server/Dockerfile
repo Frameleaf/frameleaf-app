@@ -152,12 +152,17 @@ RUN ./ffmpeg.sh
 
 COPY --from=base-server-libvips /usr/local/lib/ /usr/local/lib/
 COPY --from=base-server-libvips /usr/local/bin/vips* /usr/local/bin/
+COPY --from=base-server-libraw /usr/local/bin/dcraw_emu /usr/local/bin/
 COPY --from=base-server-libvips /usr/local/include/vips/ /usr/local/include/vips/
 COPY --from=base-server-geodata /build/geodata /build/geodata
 
 ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib
 
-RUN ldconfig /usr/local/lib
+RUN ldconfig /usr/local/lib && \
+  ldd /usr/local/bin/dcraw_emu > /tmp/libraw-linkage && \
+  grep -Eq 'libraw(_r)?\.so.*=> /usr/local/lib/' /tmp/libraw-linkage && \
+  ! grep -q 'not found' /tmp/libraw-linkage && \
+  rm /tmp/libraw-linkage
 
 # Record the exact source revisions and package versions this base was built from.
 COPY server/base-image/packages/ ./packages/
@@ -283,6 +288,7 @@ RUN . /etc/os-release && \
   /usr/share/lintian/overrides/libjpeg62-turbo
 
 COPY --from=base-server-dev /usr/local/lib/ /usr/local/lib/
+COPY --from=base-server-dev /usr/local/bin/dcraw_emu /usr/local/bin/
 COPY --from=base-server-dev /build/ /build/
 
 WORKDIR /usr/src/app
@@ -291,7 +297,11 @@ ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib \
   # jellyfin-ffmpeg keeps its Vulkan ICD manifests outside the loader's default search path
   XDG_DATA_DIRS=/usr/lib/jellyfin-ffmpeg/share:/usr/local/share:/usr/share
 
-RUN ldconfig /usr/local/lib
+RUN ldconfig /usr/local/lib && \
+  ldd /usr/local/bin/dcraw_emu > /tmp/libraw-linkage && \
+  grep -Eq 'libraw(_r)?\.so.*=> /usr/local/lib/' /tmp/libraw-linkage && \
+  ! grep -q 'not found' /tmp/libraw-linkage && \
+  rm /tmp/libraw-linkage
 
 FROM base-server-dev AS builder
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
@@ -441,10 +451,6 @@ WORKDIR /usr/src/app
 ENV NODE_ENV=production \
   NVIDIA_DRIVER_CAPABILITIES=all \
   NVIDIA_VISIBLE_DEVICES=all
-
-RUN apt-update-strict --allow-releaseinfo-change && \
-  apt-get install -y --no-install-recommends libraw-bin && \
-  rm -rf /var/lib/apt/lists/*
 
 COPY --from=server /output/server-pruned ./server
 COPY --from=web /usr/src/app/web/build /build/www

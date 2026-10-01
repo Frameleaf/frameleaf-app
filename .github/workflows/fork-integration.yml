@@ -5,6 +5,12 @@ on:
     branches: ['fork/main']
   workflow_call:
   workflow_dispatch:
+    inputs:
+      raw_engine:
+        description: Execute actual native RAW camera qualification
+        type: choice
+        default: none
+        options: [none, libraw, darktable]
 
 permissions:
   contents: read
@@ -69,13 +75,24 @@ jobs:
           pnpm --filter @immich/plugin-core build
       - name: Verify generated API artifacts are tracked
         run: git ls-files --error-unmatch -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
-      - name: Verify OpenAPI and TypeScript client freshness
+      - name: Generate OpenAPI and TypeScript client
+        id: api-generation
         run: |
           pnpm --filter immich build
           pnpm --filter immich exec node dist/bin/sync-open-api.js
-          git diff --exit-code -- open-api/immich-openapi-specs.json
           oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
-          git diff --exit-code -- packages/sdk/src/fetch-client.ts
+      - name: Retain generated API artifacts for source reconciliation
+        if: ${{ steps.api-generation.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: generated-api-${{ github.sha }}
+          path: |
+            open-api/immich-openapi-specs.json
+            packages/sdk/src/fetch-client.ts
+          if-no-files-found: error
+      - name: Verify OpenAPI and TypeScript client freshness
+        run: |
+          git diff --exit-code -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
           pnpm --filter @immich/sdk build
           pnpm --filter @immich/sdk test
       - name: Check server types and lint
@@ -175,3 +192,107 @@ jobs:
         if: matrix.device == 'cuda'
         run: |
           docker run --rm --entrypoint python fork-ml-test -c 'import torch; import torchvision; from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration'
+
+  native-raw:
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.raw_engine != 'none'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            darktable_sha256: 867ba61fca41d614e6650fd92d6e7968d8c56a1d1dd2bbc3aa06b52508694ed6
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            darktable_sha256: 87088ada0a614c2c61c6bc663249388fe9e1d4b57689de3a5fd98c7af348d75d
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the candidate's pinned LibRaw source and CLI
+        if: inputs.raw_engine == 'libraw'
+        working-directory: server/base-image/sources
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends autoconf automake build-essential jq libtool pkg-config liblcms2-dev libjpeg-dev zlib1g-dev
+          sudo bash ./libraw.sh
+      - name: Qualify actual RAW sensor output and preservation
+        if: inputs.raw_engine == 'libraw'
+        working-directory: server
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { exiftool } from 'exiftool-vendored';
+          import { spawnSync } from 'node:child_process';
+          import { resolve } from 'node:path';
+          // Expected active dimensions come from pinned LibRaw e419de08 identify.cpp
+          // EOS70D row/lines1016 and Nikon D80 lines1980, and tiff.cpp ActiveArea.
+          // EXIF image dimensions describe the camera JPEG/default crop instead.
+          function rawFixtureDimensions(model, tags) {
+            if (/EOS\s*70D\b/i.test(model)) return [5568 - 72, 3708 - 38];
+            const groups = Object.entries(tags).filter(([key, value]) => key.endsWith(':PhotometricInterpretation') && Number(value) === 32803).map(([key]) => key.slice(0, key.lastIndexOf(':')));
+            assert.equal(groups.length, 1, 'Expected one unambiguous CFA raw IFD');
+            const group = groups[0];
+            const width = Number(tags[group + ':ImageWidth']), height = Number(tags[group + ':ImageHeight']);
+            if (/\bD80\b/i.test(model)) return [width - 4, height - 3];
+            assert.match(model, /GR\s*III|GR\s*3/i);
+            const active = tags[group + ':ActiveArea'];
+            if (active === undefined) return [width, height];
+            const area = (Array.isArray(active) ? active : String(active).trim().split(/[ ,]+/)).map(Number);
+            assert.equal(area.length, 4);
+            assert.ok(area.every(value => Number.isSafeInteger(value) && value >= 0));
+            assert.ok(area[2] <= height && area[3] <= width && area[2] > area[0] && area[3] > area[1]);
+            return [area[3] - area[1], area[2] - area[0]];
+          }
+          assert.deepEqual(rawFixtureDimensions('Canon EOS 70D', {}), [5496, 3670]);
+          assert.deepEqual(rawFixtureDimensions('NIKON D80', { 'SubIFD:PhotometricInterpretation': 32803, 'SubIFD:ImageWidth': 3900, 'SubIFD:ImageHeight': 2600 }), [3896, 2597]);
+          assert.deepEqual(rawFixtureDimensions('RICOH GR III', { 'IFD0:PhotometricInterpretation': 32803, 'IFD0:ImageWidth': 6048, 'IFD0:ImageHeight': 4024, 'IFD0:ActiveArea': '12 24 4012 6024' }), [6000, 4000]);
+          assert.throws(() => rawFixtureDimensions('RICOH GR III', {}));
+          const fixtures = ['Canon/EOS_70D.CR2', 'Ricoh/GR3/Ricoh_GR3-450.DNG', 'Nikon/D80/glarus.nef'];
+          try {
+            for (const name of fixtures) {
+              const file = resolve('../e2e/test-assets/formats/raw', name);
+              const tags = await exiftool.read(file);
+              const rawTags = await exiftool.readRaw(file, { readArgs: ['-a', '-G1', '-n'] });
+              let [width, height] = rawFixtureDimensions(String(tags.Model), rawTags);
+              if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1000 || height < 1000) throw new Error('Missing qualified active sensor dimensions');
+              if ([5, 6, 7, 8].includes(Number(tags.Orientation)) || /90|270/.test(String(tags.Orientation))) [width, height] = [height, width];
+              console.log({ fixture: name, camera: tags.Model, activeSensor: [width, height], cameraImage: [tags.ImageWidth, tags.ImageHeight] });
+              const result = spawnSync(process.execPath, ['--experimental-transform-types', 'base-image/verify-raw.mjs', file, String(width), String(height), 'src/utils/raw-renderer.ts'], { stdio: 'inherit' });
+              if (result.error || result.status !== 0) throw result.error ?? new Error('Native RAW qualification failed: ' + name);
+            }
+          } finally { await exiftool.end(); }
+          JS
+      - name: Install the hash-pinned darktable release for qualification
+        if: inputs.raw_engine == 'darktable'
+        env:
+          DT_ARCH: ${{ matrix.arch }}
+          DT_SHA256: ${{ matrix.darktable_sha256 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/darktable"
+          cd "$RUNNER_TEMP/darktable"
+          curl --fail --location "https://github.com/darktable-org/darktable/releases/download/release-5.6.1/Darktable-5.6.1-${DT_ARCH}.AppImage" --output darktable.AppImage
+          echo "$DT_SHA256  darktable.AppImage" | sha256sum --check -
+          chmod +x darktable.AppImage
+          ln -s darktable.AppImage darktable-cli
+          echo "$RUNNER_TEMP/darktable" >> "$GITHUB_PATH"
+          echo 'APPIMAGE_EXTRACT_AND_RUN=1' >> "$GITHUB_ENV"
+      - name: Build the local plugin SDK required by native media tests
+        if: inputs.raw_engine == 'darktable'
+        run: |
+          pnpm --filter @immich/sdk build
+          pnpm --filter @immich/plugin-sdk build
+      - name: Qualify actual native history, exposure and export pipeline
+        if: inputs.raw_engine == 'darktable'
+        working-directory: server
+        run: pnpm exec vitest run --config test/vitest.config.darktable.mjs
