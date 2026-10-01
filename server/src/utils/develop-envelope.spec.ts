@@ -97,6 +97,23 @@ describe('develop recipe envelope', () => {
   ])('rejects unsafe or over-budget JSON %j', (value) =>
     expect(() => developEnvelope(value)).toThrow(BadRequestException),
   );
+  it('bounds the number of values and the size of the JSON (FL-233)', () => {
+    // over the value budget
+    expect(() =>
+      developEnvelope({ version: 1, future: Array.from({ length: 9 }, () => Array.from({ length: 4096 }, () => 0)) }),
+    ).toThrow(BadRequestException);
+    // within the value budget, over 512 KiB of JSON
+    expect(() =>
+      developEnvelope({
+        version: 1,
+        future: Array.from({ length: 8 }, () => Array.from({ length: 4000 }, () => 0.1234567890123456)),
+      }),
+    ).toThrow(BadRequestException);
+    // within both
+    expect(() =>
+      developEnvelope({ version: 1, future: Array.from({ length: 7 }, () => Array.from({ length: 4000 }, () => 0.5)) }),
+    ).not.toThrow();
+  });
   it('bounds recursive depth and handles cycles without overflow', () => {
     let item: unknown = null;
     for (let i = 0; i < 17; i++) item = { nested: item };
