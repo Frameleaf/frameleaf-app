@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { ZodError } from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { PushDeviceWithActivities } from 'src/repositories/push-device.repository.js';
@@ -27,14 +28,21 @@ import { PushDeviceRepository } from 'src/repositories/push-device.repository.js
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import {
   CLOUD_BACKUP_ACTIVITY_KIND,
-  PushDeliveryMode,
-  PushGatewayMessage,
-  PushGatewayTarget,
+  CLOUD_BACKUP_ATTRIBUTES_TYPE,
+  PUSH_GATEWAY_CONCURRENCY,
+  PUSH_GATEWAY_MAX_ATTEMPTS,
   PushNotice,
+  PushSendRequest,
+  PushSendResult,
   PushTargetKind,
   buildPushPayload,
+  collapseIdOf,
+  isGatewayToken,
+  liveActivityStateOf,
+  pushTtlSec,
 } from 'src/utils/frameleaf-push.js';
 import { parsePushPublicKey, pushKeyFingerprint, sealPushEnvelope } from 'src/utils/push-crypto.js';
 
@@ -75,6 +83,7 @@ const mapDevice = (device: PushDeviceWithActivities, currentSessionId?: string):
   current: device.sessionId === currentSessionId,
   publicKeyFingerprint: pushKeyFingerprint(device.publicKey),
   hasPushToStartToken: !!device.pushToStartToken,
+  apnsEnvironment: device.platform === PushPlatform.Ios ? (device.apnsEnvironment ?? 'production') : null,
   backupDeviceKey: device.backupDeviceKey,
   preferences: Object.fromEntries(
     Object.entries(PREFERENCE_EVENTS).map(([name, event]) => [name, !device.disabledEvents.includes(event)]),
@@ -92,11 +101,19 @@ const mapDevice = (device: PushDeviceWithActivities, currentSessionId?: string):
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 type PlannedMessage = {
-  message: PushGatewayMessage;
+  request: PushSendRequest;
   deviceId: string;
   kind: PushTargetKind;
   activityRowId?: string;
 };
+
+/** One target of a notice: which device, which of its tokens. A retry names the targets it is for. */
+const deliveryKeyOf = ({ deviceId, kind, activityRowId }: Omit<PlannedMessage, 'request'>) =>
+  `${deviceId}:${kind}:${activityRowId ?? ''}`;
+
+/** Wait before retry `attempt` (2, 3, …): 30 s, 2 min, 8 min, …, or the gateway's own `retryAfterSec` when longer. */
+const retryDelayMs = (attempt: number, retryAfterSec?: number) =>
+  Math.max(30_000 * 4 ** (attempt - 2), (retryAfterSec ?? 0) * 1000);
 
 /**
  * FL-228: push notifications for the native apps. Devices register a push token and a per-device key;
@@ -146,9 +163,10 @@ export class PushService {
   async register(auth: AuthDto, dto: PushDeviceRegisterDto): Promise<PushDeviceResponseDto> {
     const sessionId = this.requireSession(auth);
     const pushToStartToken = dto.pushToStartToken ?? null;
-    if (dto.platform !== PushPlatform.Ios && pushToStartToken) {
-      throw new BadRequestException('Only iOS devices have an ActivityKit push-to-start token');
+    if (dto.platform !== PushPlatform.Ios && (pushToStartToken || dto.apnsEnvironment)) {
+      throw new BadRequestException('Only iOS devices have an ActivityKit push-to-start token or an APNs environment');
     }
+    this.requireTokens(dto.pushToken, pushToStartToken);
     const publicKey = this.parseKey(dto.publicKey);
     const current = await this.devices.getBySession(sessionId);
     const device = await this.devices.upsert({
@@ -157,6 +175,7 @@ export class PushService {
       platform: dto.platform,
       pushToken: dto.pushToken,
       pushToStartToken,
+      apnsEnvironment: dto.apnsEnvironment === 'sandbox' ? 'sandbox' : null,
       publicKey,
       backupDeviceKey: dto.backupDeviceKey ?? null,
       disabledEvents: disabledEventsOf(dto.preferences, current?.disabledEvents),
@@ -171,10 +190,14 @@ export class PushService {
     if (!current) {
       throw new NotFoundException('This device is not registered for push notifications');
     }
-    if (current.platform !== PushPlatform.Ios && dto.pushToStartToken) {
-      throw new BadRequestException('Only iOS devices have an ActivityKit push-to-start token');
+    if (current.platform !== PushPlatform.Ios && (dto.pushToStartToken || dto.apnsEnvironment)) {
+      throw new BadRequestException('Only iOS devices have an ActivityKit push-to-start token or an APNs environment');
     }
+    this.requireTokens(dto.pushToken, dto.pushToStartToken);
     const changes = {
+      ...(dto.apnsEnvironment !== undefined && {
+        apnsEnvironment: dto.apnsEnvironment === 'sandbox' ? ('sandbox' as const) : null,
+      }),
       ...(dto.pushToken !== undefined && { pushToken: dto.pushToken }),
       ...(dto.pushToStartToken !== undefined && { pushToStartToken: dto.pushToStartToken }),
       ...(dto.publicKey !== undefined && { publicKey: this.parseKey(dto.publicKey) }),
@@ -211,6 +234,7 @@ export class PushService {
     if (current.platform !== PushPlatform.Ios) {
       throw new BadRequestException('Only iOS devices have Live Activity push tokens');
     }
+    this.requireTokens(dto.token);
     await this.devices.setActivity(current.id, { activityId, kind: dto.kind, token: dto.token });
     const device = await this.devices.getBySession(sessionId);
     return mapDevice(device ?? current, sessionId);
@@ -393,38 +417,62 @@ export class PushService {
 
     const safeAssetIds = await this.devices.getPreviewSafeAssetIds([...new Set(notice.assetIds)]);
     const sentAt = new Date().toISOString();
-    const planned = devices.flatMap((device) => this.plan(device, notice, safeAssetIds, sentAt));
+    let planned = devices.flatMap((device) => this.plan(device, notice, safeAssetIds, sentAt));
+    if (notice.retry) {
+      const wanted = new Set(notice.retry.targets);
+      planned = planned.filter((entry) => wanted.has(deliveryKeyOf(entry)));
+    }
     if (planned.length === 0) {
       return JobStatus.Skipped;
     }
 
-    let results;
+    let target;
     try {
-      const target = await this.gatewayTarget(availability.instanceId!, availability.cloudUrl!);
-      results = await this.gateway.send(
-        target,
-        planned.map(({ message }) => message),
-      );
+      target = await this.gatewayTarget(availability.instanceId!, availability.cloudUrl!);
     } catch (error) {
-      // never the request body: it holds the device tokens
       this.logger.warn(`Push ${notice.type} to ${planned.length} target(s) failed: ${errorMessage(error)}`);
       return JobStatus.Failed;
     }
 
-    const byId = new Map(planned.map((entry) => [entry.message.id, entry]));
+    // one push per request, a few at a time; a failed request is the gateway's `retry` or a refusal
+    const results: Array<{ entry: PlannedMessage; result: PushSendResult | 'rejected' }> = [];
+    const queue = [...planned];
+    const worker = async () => {
+      for (let entry = queue.shift(); entry; entry = queue.shift()) {
+        if (!isGatewayToken(entry.request.token)) {
+          // registered before tokens were checked: the gateway could never deliver to it
+          results.push({ entry, result: { status: 'invalid-token' } });
+          continue;
+        }
+        try {
+          results.push({ entry, result: await this.gateway.send(target, entry.request) });
+        } catch (error) {
+          // a request this server built wrongly is refused, never retried
+          const status = error instanceof FrameleafCloudError ? error.status : error instanceof ZodError ? 400 : null;
+          // never the request: it holds the device token
+          this.logger.warn(`Push ${notice.type}: the gateway refused a send: ${errorMessage(error)}`);
+          results.push({
+            entry,
+            result: status === null || status >= 500 || status === 429 ? { status: 'retry' } : 'rejected',
+          });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PUSH_GATEWAY_CONCURRENCY, planned.length) }, () => worker()));
+
     const delivered = new Set<string>();
     const goneDevices = new Set<string>();
     const goneStartTokens = new Set<string>();
     const goneActivities = new Set<string>();
+    const again: PlannedMessage[] = [];
+    let retryAfterSec = 0;
     let rejected = 0;
-    for (const { id, status } of results) {
-      const entry = byId.get(id);
-      if (!entry) {
-        continue;
-      }
-      if (status === 'accepted') {
+    for (const { entry, result } of results) {
+      if (result === 'rejected') {
+        rejected++;
+      } else if (result.status === 'sent') {
         delivered.add(entry.deviceId);
-      } else if (status === 'unregistered') {
+      } else if (result.status === 'invalid-token') {
         if (entry.kind === PushTargetKind.Device) {
           goneDevices.add(entry.deviceId);
         } else if (entry.kind === PushTargetKind.ActivityStart) {
@@ -432,17 +480,38 @@ export class PushService {
         } else if (entry.activityRowId) {
           goneActivities.add(entry.activityRowId);
         }
-      } else {
+      } else if (entry.request.type === 'live-activity-update') {
+        // never retried: a later attempt could show an older step, and the next update replaces it anyway
         rejected++;
+      } else {
+        again.push(entry);
+        retryAfterSec = Math.max(retryAfterSec, result.retryAfterSec ?? 0);
       }
     }
     await this.devices.deleteByIds([...goneDevices]);
     await this.devices.clearPushToStartTokens([...goneStartTokens].filter((id) => !goneDevices.has(id)));
     await this.devices.deleteActivitiesByIds([...goneActivities]);
     await this.devices.markDelivered([...delivered].filter((id) => !goneDevices.has(id)));
-    if (rejected > 0 || goneDevices.size > 0) {
+
+    const attempt = (notice.retry?.attempt ?? 1) + 1;
+    const retrying = again.length > 0 && attempt <= PUSH_GATEWAY_MAX_ATTEMPTS;
+    if (retrying) {
+      // only the targets the gateway asked to retry; a fresh job id, as the first one may still be kept
+      await this.jobRepository.queue({
+        name: JobName.PushDeliver,
+        data: {
+          notice: {
+            ...notice,
+            dedupeKey: undefined,
+            delayMs: retryDelayMs(attempt, retryAfterSec),
+            retry: { targets: again.map((entry) => deliveryKeyOf(entry)), attempt },
+          },
+        },
+      });
+    }
+    if (rejected > 0 || goneDevices.size > 0 || again.length > 0) {
       this.logger.warn(
-        `Push ${notice.type}: ${delivered.size} device(s) reached, ${rejected} target(s) rejected, ${goneDevices.size} unregistered token(s) removed`,
+        `Push ${notice.type}: ${delivered.size} device(s) reached, ${rejected} target(s) refused, ${goneDevices.size} invalid token(s) removed, ${again.length} to retry${retrying ? '' : ' (given up)'}`,
       );
     }
     return JobStatus.Success;
@@ -483,41 +552,54 @@ export class PushService {
   /* Helpers                                                             */
   /* ------------------------------------------------------------------ */
 
-  /** The gateway messages for one device: one per token the notice goes to, each sealed to the device key. */
+  /**
+   * The gateway requests for one device: one per token the notice goes to. Alerts and wake-ups carry
+   * the payload sealed to the device key; a Live Activity carries only its fixed, non-personal state.
+   */
   private plan(
     device: PushDeviceWithActivities,
     notice: PushNotice,
     safeAssetIds: ReadonlySet<string>,
     sentAt: string,
   ): PlannedMessage[] {
-    const targets: Array<{ target: PushGatewayTarget; kind: PushTargetKind; activityRowId?: string }> = [];
+    const platform =
+      device.platform === PushPlatform.Android
+        ? ('fcm' as const)
+        : device.apnsEnvironment === 'sandbox'
+          ? ('apns-sandbox' as const)
+          : ('apns' as const);
+    const collapseId = collapseIdOf(notice.dedupeKey);
+    const planned: PlannedMessage[] = [];
     const progress = notice.activation;
     if (progress && device.platform === PushPlatform.Ios) {
+      const live = {
+        platform,
+        priority: 'high' as const,
+        ttlSec: pushTtlSec(notice, true),
+        liveActivity: { state: liveActivityStateOf(progress), staleAfterSec: 3600 },
+      };
       const activities = device.activities.filter(({ kind }) => kind === CLOUD_BACKUP_ACTIVITY_KIND);
       for (const activity of activities) {
-        targets.push({
+        planned.push({
+          deviceId: device.id,
           kind: PushTargetKind.ActivityUpdate,
           activityRowId: activity.id,
-          target: {
-            platform: device.platform,
+          request: {
+            ...live,
             token: activity.token,
-            kind: PushTargetKind.ActivityUpdate,
-            mode: PushDeliveryMode.LiveActivity,
-            activityEvent: progress.state === 'complete' ? 'end' : 'update',
-            activityKind: CLOUD_BACKUP_ACTIVITY_KIND,
+            type: progress.state === 'active' ? 'live-activity-update' : 'live-activity-end',
           },
         });
       }
       if (activities.length === 0 && device.pushToStartToken && progress.state === 'active') {
-        targets.push({
+        planned.push({
+          deviceId: device.id,
           kind: PushTargetKind.ActivityStart,
-          target: {
-            platform: device.platform,
+          request: {
+            ...live,
             token: device.pushToStartToken,
-            kind: PushTargetKind.ActivityStart,
-            mode: PushDeliveryMode.LiveActivity,
-            activityEvent: 'start',
-            activityKind: CLOUD_BACKUP_ACTIVITY_KIND,
+            type: 'live-activity-start',
+            liveActivity: { ...live.liveActivity, attributesType: CLOUD_BACKUP_ATTRIBUTES_TYPE },
           },
         });
       }
@@ -525,29 +607,22 @@ export class PushService {
     // While the chain runs, iOS follows it in the Live Activity alone; Android shows it as a progress
     // notification, and the end of the chain (complete or failed) is an alert everywhere
     if (!progress || device.platform !== PushPlatform.Ios || progress.state !== 'active') {
-      targets.push({
-        kind: PushTargetKind.Device,
-        target: {
-          platform: device.platform,
-          token: device.pushToken,
-          kind: PushTargetKind.Device,
-          mode: notice.background ? PushDeliveryMode.Background : PushDeliveryMode.Alert,
-        },
-      });
-    }
-
-    const planned: PlannedMessage[] = [];
-    for (const { target, kind, activityRowId } of targets) {
       const id = randomUUID();
-      const payload = buildPushPayload(notice, {
-        id,
-        sentAt,
-        safeAssetIds,
-        liveActivity: target.mode === PushDeliveryMode.LiveActivity,
-      });
+      const payload = buildPushPayload(notice, { id, sentAt, safeAssetIds });
       try {
-        const blob = sealPushEnvelope(device.publicKey, Buffer.from(JSON.stringify(payload), 'utf8'));
-        planned.push({ message: { id, target, blob }, deviceId: device.id, kind, activityRowId });
+        planned.push({
+          deviceId: device.id,
+          kind: PushTargetKind.Device,
+          request: {
+            platform,
+            token: device.pushToken,
+            type: notice.background ? 'background' : 'alert',
+            priority: notice.background ? 'normal' : 'high',
+            ttlSec: pushTtlSec(notice, false),
+            payload: sealPushEnvelope(device.publicKey, Buffer.from(JSON.stringify(payload), 'utf8')),
+            ...(collapseId && { collapseId }),
+          },
+        });
       } catch (error) {
         this.logger.warn(`Push device ${device.id} has an unusable key and was skipped: ${errorMessage(error)}`);
       }
@@ -618,6 +693,15 @@ export class PushService {
       throw new BadRequestException('Push registration needs a signed-in device session, not an API key');
     }
     return auth.session.id;
+  }
+
+  /** A token the push gateway could never deliver to is refused at once, never stored. */
+  private requireTokens(...tokens: Array<string | null | undefined>) {
+    if (tokens.some((token) => typeof token === 'string' && !isGatewayToken(token))) {
+      throw new BadRequestException(
+        'A push token is an APNs, ActivityKit or FCM token (32 or more letters, digits, -, _ or :)',
+      );
+    }
   }
 
   private parseKey(value: string): string {

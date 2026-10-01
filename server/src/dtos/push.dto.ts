@@ -7,6 +7,13 @@ const DateTime = z.string().meta({ format: 'date-time' });
 
 const PushTokenSchema = z.string().trim().min(1).max(4096);
 
+const ApnsEnvironmentSchema = z
+  .enum(['production', 'sandbox'])
+  .describe(
+    'iOS only: the APNs environment of the tokens. A development build gets sandbox tokens, which only APNs sandbox delivers. Default production.',
+  )
+  .meta({ id: 'PushApnsEnvironment' });
+
 const PushPublicKeySchema = z
   .string()
   .trim()
@@ -47,6 +54,7 @@ export const PushDeviceRegisterSchema = z
     platform: PushPlatformSchema,
     pushToken: PushTokenSchema.describe('The APNs device token or FCM registration token'),
     pushToStartToken: PushTokenSchema.nullish().describe('iOS only: the ActivityKit push-to-start token'),
+    apnsEnvironment: ApnsEnvironmentSchema.optional(),
     publicKey: PushPublicKeySchema,
     backupDeviceKey: z
       .uuid()
@@ -65,6 +73,7 @@ export const PushDeviceUpdateSchema = z
     pushToStartToken: PushTokenSchema.nullish().describe(
       'iOS only: a rotated ActivityKit push-to-start token, or null',
     ),
+    apnsEnvironment: ApnsEnvironmentSchema.optional(),
     publicKey: PushPublicKeySchema.optional(),
     backupDeviceKey: z.uuid().nullish(),
     preferences: PushPreferencesSchema.optional(),
@@ -105,6 +114,7 @@ const PushDeviceResponseSchema = z
     current: z.boolean().describe('Whether this is the device of the session asking'),
     publicKeyFingerprint: z.string().describe('A short fingerprint of the registered public key; never the token'),
     hasPushToStartToken: z.boolean(),
+    apnsEnvironment: ApnsEnvironmentSchema.nullable().describe('iOS: the APNs environment; null for Android'),
     backupDeviceKey: z.uuid().nullable(),
     preferences: PushPreferencesResponseSchema,
     activities: z.array(PushDeviceActivitySchema),
