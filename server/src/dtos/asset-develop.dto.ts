@@ -12,6 +12,17 @@ import z from 'zod';
  */
 export const ASSET_DEVELOP_RECIPE_VERSION = 1;
 
+/** FL-282: explicit native semantics; version 1 keeps its existing renderer. */
+export const DarktableDevelopRecipeSchema = z
+  .strictObject({
+    version: z.literal(2),
+    renderer: z.literal('darktable/5.6.1'),
+    exposureEV: z.number().min(-18).max(18).describe('Manual native exposure in EV, without camera bias compensation'),
+  })
+  .meta({ id: 'DarktableDevelopRecipe' });
+
+export type DarktableDevelopRecipe = z.infer<typeof DarktableDevelopRecipeSchema>;
+
 export enum AssetDevelopPreset {
   Original = 'Original',
   Vivid = 'Vivid',
