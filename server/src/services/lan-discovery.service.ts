@@ -7,6 +7,13 @@ import { BaseService } from 'src/services/base.service.js';
 import { detectHostAddresses } from 'src/utils/frameleaf-remote-access.js';
 import { serverIdentity } from 'src/utils/frameleaf-server-identity.js';
 
+/** Wait for a callback, or a second at most. */
+const settle = (run: (done: () => void) => void) =>
+  Promise.race([
+    new Promise<void>((resolve) => run(resolve)),
+    new Promise<void>((resolve) => setTimeout(resolve, 1000).unref()),
+  ]);
+
 /**
  * FL-229 (NAPI-005, owner decision 2026-09-30): advertises this server on the LAN via DNS-SD
  * (`_frameleaf._tcp`) so an app on the same Wi-Fi can find it without typing an address. On by
@@ -28,6 +35,8 @@ export class LanDiscoveryService extends BaseService {
   private service: Service | null = null;
   private published: string | null = null;
   private watch: ReturnType<typeof setInterval> | null = null;
+  /** FL-291: set once the worker is shutting down, so nothing is published again. */
+  private closed = false;
 
   /** FL-292: how often the setup state is checked while the record is published. */
   static readonly REFRESH_MS = 30_000;
@@ -46,6 +55,28 @@ export class LanDiscoveryService extends BaseService {
     if (isAdmin && this.service) {
       await this.refresh();
     }
+  }
+
+  /** FL-291: a graceful shutdown withdraws the record and stops the setup-state check. */
+  @OnEvent({ name: 'AppShutdown', workers: [ImmichWorker.Api] })
+  async onShutdown(): Promise<void> {
+    this.closed = true;
+    const bonjour = this.bonjour;
+    this.bonjour = null;
+    if (this.watch) {
+      clearInterval(this.watch);
+      this.watch = null;
+    }
+    if (!bonjour) {
+      this.stop();
+      return;
+    }
+    // the goodbye goes out before the multicast socket closes, so apps drop the server at once;
+    // never waits more than a moment, so it cannot hold up the shutdown
+    await settle((done) => bonjour.unpublishAll(() => done()));
+    this.service = null;
+    this.published = null;
+    await settle((done) => bonjour.destroy(() => done()));
   }
 
   @OnEvent({ name: 'ConfigUpdate', server: true, workers: [ImmichWorker.Api] })
@@ -74,6 +105,9 @@ export class LanDiscoveryService extends BaseService {
     });
     const name = server.name?.trim() || 'Frameleaf server';
     const txt = { id, name, ...(await this.setupRecord()) };
+    if (this.closed) {
+      return;
+    }
 
     this.bonjour ??= new Bonjour();
     this.service = this.bonjour.publish({ name, type: 'frameleaf', protocol: 'tcp', port, txt });
