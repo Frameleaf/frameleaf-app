@@ -77,7 +77,10 @@ it('records an artifact once, counts it, and releases unreferenced and removed o
   await sut.create({
     assetId: asset.id,
     ownerId: user.id,
-    recipe: { ...defaultDevelopRecipe(), masks: [{ id: 's', kind: 'subject', artifact: sha('a') }] } as never,
+    recipe: {
+      ...defaultDevelopRecipe(),
+      masks: [{ id: 's', kind: 'subject', x: 0.5, y: 0.5, artifact: sha('a') }],
+    } as never,
     recipeVersion: 1,
     label: null,
     status: AssetDevelopRevisionStatus.Saved,
@@ -145,7 +148,10 @@ it('keeps a file recorded again before its queued deletion runs, and restarts th
     sut.create({
       assetId: asset.id,
       ownerId: user.id,
-      recipe: { ...defaultDevelopRecipe(), masks: [{ id: 's', kind: 'sky', artifact: sha('f') }] } as never,
+      recipe: {
+        ...defaultDevelopRecipe(),
+        masks: [{ id: 's', kind: 'sky', x: 0.5, y: 0.5, artifact: sha('f') }],
+      } as never,
       recipeVersion: 1,
       requireRenderable: true,
       label: null,
