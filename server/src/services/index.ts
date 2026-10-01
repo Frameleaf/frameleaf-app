@@ -1,3 +1,4 @@
+import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
@@ -128,6 +129,7 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  PhotographyWorkspaceService,
   AssetUploadResourceService,
   BackupDeviceService,
   SafetyService,

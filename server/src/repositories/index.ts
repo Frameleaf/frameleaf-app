@@ -1,3 +1,4 @@
+import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
@@ -118,6 +119,7 @@ export const repositories = [
   MediaRecoveryRepository,
   ICloudTransportRepository,
   ICloudSyncRepository,
+  PhotographyWorkspaceRepository,
   AccessRepository,
   ActivityRepository,
   AdminAuditRepository,
