@@ -98,7 +98,7 @@ export const immichCli = (args: string[]) =>
   executeCommand('pnpm', ['exec', 'immich', '-d', `/${tempDir}/immich/`, ...args], { cwd: '../packages/cli' }).promise;
 export const dockerExec = (args: string[]) =>
   executeCommand('docker', ['exec', '-i', 'immich-e2e-server', '/bin/bash', '-c', args.join(' ')]);
-export const immichAdmin = (args: string[]) => dockerExec([`immich-admin ${args.join(' ')}`]);
+export const immichAdmin = (args: string[]) => dockerExec([`frameleaf-admin ${args.join(' ')}`]);
 export const specialCharStrings = ["'", '"', ',', '{', '}', '*'];
 export const TEN_TIMES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 

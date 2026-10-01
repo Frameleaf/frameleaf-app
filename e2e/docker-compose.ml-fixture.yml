@@ -18,7 +18,7 @@ services:
 
   immich-server:
     environment:
-      IMMICH_MACHINE_LEARNING_URL: http://immich-machine-learning-fixture:3003
+      FRAMELEAF_MACHINE_LEARNING_URL: http://immich-machine-learning-fixture:3003
     depends_on:
       immich-machine-learning-fixture:
         condition: service_healthy

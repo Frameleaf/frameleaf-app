@@ -55,8 +55,8 @@ export const handleRelease = ({ type }: ReleaseOptions) => {
     const major = `v${newVersion.major}`;
 
     // sync major tag references in docs and example env file
-    pump(Files.ExampleEnv, /^IMMICH_VERSION=v\d+$/m, `IMMICH_VERSION=${major}`);
-    pump(Files.Docs.Env, /(`IMMICH_VERSION`.*?)`v\d+`/, `$1\`${major}\``);
+    pump(Files.ExampleEnv, /^FRAMELEAF_VERSION=v\d+$/m, `FRAMELEAF_VERSION=${major}`);
+    pump(Files.Docs.Env, /(`FRAMELEAF_VERSION`.*?)`v\d+`/, `$1\`${major}\``);
     pump(Files.Docs.Upgrading, /:v\d+/, `:${major}`);
   }
 
@@ -64,7 +64,7 @@ export const handleRelease = ({ type }: ReleaseOptions) => {
     // make available for following steps
     appendFileSync(
       process.env.GITHUB_ENV,
-      `IMMICH_VERSION=v${newVersionRaw}\n`,
+      `FRAMELEAF_VERSION=v${newVersionRaw}\n`,
     );
   }
 

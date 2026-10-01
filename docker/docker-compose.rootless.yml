@@ -12,7 +12,7 @@ name: immich
 services:
   immich-server:
     container_name: frameleaf_server
-    image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}
+    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
     # extends:
     #   file: hwaccel.transcoding.yml
     #   service: cpu # set to one of [nvenc, quicksync, rkmpp, vaapi, vaapi-wsl] for accelerated transcoding
@@ -43,8 +43,8 @@ services:
   immich-machine-learning:
     container_name: frameleaf_machine_learning
     # For hardware acceleration, add one of -[armnn, cuda, rocm, openvino, rknn] to the image tag.
-    # Example tag: ${IMMICH_VERSION:-release}-cuda
-    image: ghcr.io/frameleaf/frameleaf-machine-learning:${IMMICH_VERSION:-release}
+    # Example tag: ${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}-cuda
+    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
     # extends: # uncomment this section for hardware acceleration - see https://help.frameleaf.app/features/ml-hardware-acceleration
     #   file: hwaccel.ml.yml
     #   service: cpu # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference - use the `-wsl` version for WSL2 where applicable

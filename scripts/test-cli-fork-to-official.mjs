@@ -73,7 +73,7 @@ const main = async () => {
   const migrate = (...args) => execFileSync('node', [join(root, 'packages/cli/bin/immich'), 'migrate', ...args], {
     cwd: root,
     stdio: 'inherit',
-    env: { ...process.env, IMMICH_FROM_URL: fork, IMMICH_FROM_KEY: from.secret, IMMICH_TO_URL: official, IMMICH_TO_KEY: to.secret },
+    env: { ...process.env, FRAMELEAF_FROM_URL: fork, FRAMELEAF_FROM_KEY: from.secret, FRAMELEAF_TO_URL: official, FRAMELEAF_TO_KEY: to.secret },
   });
   migrate('--ledger', ledger, '--no-faces');
   migrate('--verify', '--ledger', ledger);

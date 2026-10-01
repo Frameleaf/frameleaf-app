@@ -85,7 +85,7 @@ describe('MigrationSettingsSection', () => {
     const dialog = await toReview();
 
     expect(dialog.querySelector('input:not([type="file"]), textarea')).toBeNull();
-    expect(migrationCommands.keys).toContain('read -rs IMMICH_FROM_KEY');
+    expect(migrationCommands.keys).toContain('read -rs FRAMELEAF_FROM_KEY');
     for (const command of Object.values(migrationCommands)) {
       expect(command).not.toMatch(/--(from|to)-key/);
     }
