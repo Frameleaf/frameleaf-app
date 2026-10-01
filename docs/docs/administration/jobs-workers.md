@@ -12,6 +12,12 @@ The `immich-server` container contains multiple workers:
 
 By default `edge` runs wherever `api` runs: a container started with `IMMICH_WORKERS_EXCLUDE: 'api'` does not run it. To run it without the API, name it in `IMMICH_WORKERS_INCLUDE`, and give that container and the API's the same `FRAMELEAF_EDGE_SECRET`.
 
+### Stopping the server
+
+When the container stops (`docker compose stop`, an image upgrade or a NAS package restart), each worker stops taking new work. Running jobs and in-flight requests get 5 seconds to finish. A job still running after that goes back to waiting, so it runs again as soon as the server is back. Jobs that could repeat a side effect if they ran twice, such as sending an email or a push notification, are recorded as failed instead. The server exits within 9 seconds.
+
+The provided Compose files and NAS packages give the server container `stop_grace_period: 10s` (Unraid: `--stop-timeout=10`), so Docker does not kill it first. Some Docker engines kill a container sooner by default, so keep this setting if you write your own Compose file. If the server is killed or crashes, jobs that were running are picked up again about a minute after the next start.
+
 ## Split workers
 
 If you prefer to throttle or distribute the workers, you can do this using the [environment variables](/install/environment-variables) to specify which container should pick up which tasks.

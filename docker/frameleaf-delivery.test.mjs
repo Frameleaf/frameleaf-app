@@ -87,6 +87,23 @@ for (const [filename, project, rootless] of [
   });
 }
 
+// FL-291: the server stops gracefully within 9 s (5 s for running jobs and requests, then hand-back
+// and teardown); Docker must not kill it before. Engines differ in their default stop timeout.
+test("every server service gives the graceful stop its 10 s", () => {
+  for (const filename of [
+    "docker-compose.yml",
+    "docker-compose.rootless.yml",
+    "docker-compose.prod.yml",
+    "docker-compose.dev.yml",
+  ]) {
+    assert.equal(
+      compose(`docker/${filename}`).services["immich-server"].stop_grace_period,
+      "10s",
+      filename,
+    );
+  }
+});
+
 test("local builds retain projects/storage and build ordinary ML from the prod stage", () => {
   for (const [filename, project, cache] of [
     ["docker-compose.prod.yml", "immich-prod", "model-cache"],

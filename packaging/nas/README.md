@@ -20,6 +20,10 @@ Copy the rendered `truenas/ix-dev/community/frameleaf` directory to a current fo
 
 The generated XML files belong on a versioned `nas-catalog` branch of `Frameleaf/frameleaf-app`, with `ca_profile.xml`. Create a user-defined `frameleaf` Docker network. Install compatible PostgreSQL 14 and Valkey containers on that network using the manifest's pinned images, then install Frameleaf Server and optionally Frameleaf Machine Learning. Use separate persistent paths for `/data`, PostgreSQL data, and ML cache; enter the same generated database password in both containers. Only port 2283 needs a host mapping. Validate and scan the repository in the Community Apps submission portal after publishing the XML. Digest pins mean an update requires a new reviewed catalog commit.
 
+## Stop timeout
+
+Every package gives the server container a 10 s stop timeout: `stop_grace_period: 10s` in the Synology Compose project, `set_grace_period(10)` in the TrueNAS template and `--stop-timeout=10` in the Unraid template's extra parameters. The server stops gracefully within 9 s (running jobs finish or go back to waiting), and the docker-compose files under `docker/` use the same value.
+
 ## Migration and rollback
 
 Migration is opt-in and only from versions in the release manifest's explicit allowlist. The first intended Immich source is exact v3.1.0 after external production-shaped qualification; later Frameleaf sources require their own recorded compatibility result. Refuse all other source versions, PostgreSQL major versions, schema ledgers, or extension sets until tested; direct PostgreSQL 18 to 14 volume reuse is forbidden.
