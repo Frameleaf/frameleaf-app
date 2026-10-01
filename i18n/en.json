@@ -8285,7 +8285,7 @@
   "frameleaf_setup_choice_local_note": "You'll create the admin with a name, email and password.",
   "frameleaf_setup_choice_local_stored": "Stored only on this server",
   "frameleaf_setup_claim_code": "Setup code",
-  "frameleaf_setup_claim_code_note": "Shown on the server's console and in its log when it starts (with Docker: docker compose logs immich-server). It changes every time the server starts.",
+  "frameleaf_setup_claim_code_note": "Shown on the server's console and in its log when it starts, and printed again by the server command frameleaf-admin setup-code. It changes every time the server starts.",
   "frameleaf_setup_cloud_backup_body": "An encrypted copy of your originals in Frameleaf Cloud. Turn it on and choose how the key is kept in Settings › Frameleaf Cloud.",
   "frameleaf_setup_cloud_backup_link": "Open Frameleaf Cloud settings",
   "frameleaf_setup_cloud_backup_needs_account": "Cloud backup needs a Frameleaf account. Link one later from Settings › Frameleaf Cloud.",
