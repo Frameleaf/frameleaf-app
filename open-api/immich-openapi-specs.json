@@ -46424,6 +46424,13 @@
             "maxLength": 100,
             "type": "string"
           },
+          "invitedStorageQuota": {
+            "description": "Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null is unlimited. Applied when the account is created; existing accounts keep their quota.",
+            "maximum": 1000000,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "showOnLocalLogin": {
             "description": "Show Sign in with Frameleaf on the local sign-in page too",
             "type": "boolean"
@@ -46431,6 +46438,7 @@
         },
         "required": [
           "buttonText",
+          "invitedStorageQuota",
           "showOnLocalLogin"
         ],
         "type": "object"
@@ -58988,6 +58996,13 @@
             "minLength": 1,
             "type": "string"
           },
+          "invitedStorageQuota": {
+            "description": "Storage quota in GiB for accounts created through a Frameleaf invitation from now on; null is unlimited",
+            "maximum": 1000000,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "showOnLocalLogin": {
             "description": "Offer Sign in with Frameleaf on the login page at home",
             "type": "boolean"
@@ -59172,6 +59187,13 @@
             "nullable": true,
             "type": "string"
           },
+          "signInInvitedStorageQuota": {
+            "description": "Storage quota in GiB for accounts created through a Frameleaf invitation; null is unlimited",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
           "signInIssuer": {
             "nullable": true,
             "type": "string"
@@ -59217,6 +59239,7 @@
           "revoked",
           "signInButtonText",
           "signInClientId",
+          "signInInvitedStorageQuota",
           "signInIssuer",
           "signInLinkedAccounts",
           "signInShowOnLocalLogin",

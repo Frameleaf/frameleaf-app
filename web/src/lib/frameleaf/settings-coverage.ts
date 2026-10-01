@@ -255,6 +255,12 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'setShowOnLocalLogin',
   },
   {
+    pattern: 'frameleafCloud.signIn.invitedStorageQuota',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/cloud/FrameleafSignInSection.svelte',
+    evidence: 'setInvitedStorageQuota',
+  },
+  {
     pattern: 'libraryCare.checksumScan',
     kind: 'control',
     file: 'src/lib/frameleaf/library-care-settings.ts',

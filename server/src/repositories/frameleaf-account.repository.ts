@@ -88,15 +88,6 @@ export class FrameleafAccountRepository {
     return result.rows[0];
   }
 
-  /** FL-235: the `frameleaf_access` recorded for a local account (`GET /users/me`). */
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async getAccess(userId: string): Promise<FrameleafAccess | undefined> {
-    const result = await sql<{ access: FrameleafAccess | null }>`
-      SELECT access FROM immich_fork.frameleaf_account_link WHERE "userId" = ${userId}::uuid
-    `.execute(this.db);
-    return result.rows[0]?.access ?? undefined;
-  }
-
   @GenerateSql()
   async countLinks(): Promise<number> {
     const result = await sql<{ count: string }>`
@@ -142,7 +133,7 @@ export class FrameleafAccountRepository {
       await sql`
         UPDATE immich_fork.frameleaf_account_link
         SET email = ${update.email}, "emailVerified" = ${update.emailVerified}, role = ${update.role},
-            access = ${update.access ?? null}, "lastSignInAt" = clock_timestamp()
+            access = COALESCE(${update.access ?? null}, access), "lastSignInAt" = clock_timestamp()
         WHERE "userId" = ${userId}::uuid
       `.execute(trx);
     });

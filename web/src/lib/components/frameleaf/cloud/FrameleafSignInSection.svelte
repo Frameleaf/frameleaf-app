@@ -5,6 +5,10 @@
    * `admin/cloud/status`. Remote access always requires a Frameleaf sign-in; the administrator only
    * chooses whether the button is also offered at home, once the server is linked. The client proves
    * itself with this server's key only, so there is no client secret to manage (FL-177).
+   *
+   * FL-235 (owner decision, 2026-10-01): a person invited through Frameleaf gets their own account
+   * here. The administrator chooses the storage quota such accounts start with; empty is unlimited,
+   * and each account's quota can still be changed afterwards under Users.
    */
   import './cloud-account.css';
   import { goto } from '$app/navigation';
@@ -51,6 +55,15 @@
   );
   const saveButtonText = () => save(() => cloudManager.setButtonText(buttonText.trim()));
   const buttonTextId = $props.id();
+
+  // FL-235: the quota (GiB) new invited accounts start with; empty means unlimited.
+  const savedQuota = $derived(status?.signInInvitedStorageQuota ?? null);
+  let quotaText = $derived(savedQuota === null ? '' : String(savedQuota));
+  const quotaValue = $derived(quotaText.trim() === '' ? null : Number(quotaText.trim()));
+  const quotaValid = $derived(quotaValue === null || (Number.isSafeInteger(quotaValue) && quotaValue >= 0));
+  const quotaChanged = $derived(!!status && quotaValid && quotaValue !== savedQuota);
+  const saveQuota = () => save(() => cloudManager.setInvitedStorageQuota(quotaValue));
+  const quotaId = `${buttonTextId}-quota`;
 </script>
 
 <div class="frameleaf-cloud" data-section="frameleaf-signin">
@@ -98,6 +111,27 @@
       <div class="fc-inline">
         <input id={buttonTextId} class="fc-input" type="text" maxlength="100" bind:value={buttonText} disabled={busy} />
         <Button disabled={busy || !buttonTextChanged} onclick={() => void saveButtonText()}>{$t('save')}</Button>
+      </div>
+    </div>
+    <div class="fc-field" data-field="invited-storage-quota">
+      <div>
+        <label class="fc-field-label" for={quotaId}>{$t('frameleaf_signin_invited_quota')}</label>
+        <p>{$t('frameleaf_signin_invited_quota_help')}</p>
+      </div>
+      <div class="fc-inline">
+        <input
+          id={quotaId}
+          class="fc-input"
+          type="text"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          placeholder={$t('frameleaf_signin_invited_quota_unlimited')}
+          aria-invalid={!quotaValid}
+          bind:value={quotaText}
+          disabled={busy}
+        />
+        <span>{$t('frameleaf_signin_invited_quota_unit')}</span>
+        <Button disabled={busy || !quotaChanged} onclick={() => void saveQuota()}>{$t('save')}</Button>
       </div>
     </div>
     {#if failure}

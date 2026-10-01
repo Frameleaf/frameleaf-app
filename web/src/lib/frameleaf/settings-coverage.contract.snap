@@ -353,6 +353,12 @@
   "frameleafCloud.signIn.buttonText": {
     "type": "string"
   },
+  "frameleafCloud.signIn.invitedStorageQuota": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 1000000,
+    "nullable": true
+  },
   "frameleafCloud.signIn.showOnLocalLogin": {
     "type": "boolean"
   },

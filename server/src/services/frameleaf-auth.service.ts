@@ -26,6 +26,7 @@ import { AdminAuditAction, DatabaseLock, ImmichCookie } from 'src/enum.js';
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE, emailVerificationProblem } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { HumanReadableSize } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
@@ -303,10 +304,15 @@ export class FrameleafAuthService extends BaseService {
     if (!user) {
       // Frameleaf Cloud authorized this person for this server: it is the access authority
       this.logger.log(`Creating the account ${email} for a Frameleaf sign-in`);
+      // FL-235: a person invited to this server gets their own account, with the quota the
+      // administrator chose for invited accounts (unlimited by default); the server's owner never
+      const { frameleafCloud } = await this.getConfig({ withCache: false });
+      const quota = access === 'owner' ? null : (frameleafCloud.signIn?.invitedStorageQuota ?? null);
       user = await this.createUser({
         name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
         email,
         isAdmin: role === 'admin',
+        quotaSizeInBytes: quota === null ? null : quota * HumanReadableSize.GiB,
       });
       await this.frameleafAccountRepository.upsertLink({
         userId: user.id,

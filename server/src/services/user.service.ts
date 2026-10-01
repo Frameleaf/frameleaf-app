@@ -43,6 +43,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
 import { CONFIG_HISTORY_LIMITS, describeObjectChanges } from 'src/utils/config-history.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { isLockedAsset } from 'src/utils/locked-state.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -112,7 +113,12 @@ export class UserService extends BaseService {
     }
 
     // FL-235: the role here, so an app can label the server and show backup only where it may upload
-    const serverRole = getServerRole(user.isAdmin, await this.frameleafAccountRepository.getAccess(user.id));
+    const link = await this.frameleafAccountRepository.getLinkByUser(user.id);
+    const { link: cloudLink, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    const serverRole = getServerRole(user.isAdmin, link, linked ? cloudLink?.accountId : undefined);
     return { ...mapUserAdmin(user), serverRole, canUpload: canUploadWith(auth.apiKey?.permissions) };
   }
 

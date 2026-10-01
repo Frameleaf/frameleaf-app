@@ -188,7 +188,9 @@ const CLOUD_ROUTED_WORKLOADS = ['descriptions', 'upscale', 'restoration', 'studi
 const frameleafCloudDefaults = {
   // FL-158: Sign in with Frameleaf. Off at home until an administrator shows it. The client
   // authenticates with this server's key only (private_key_jwt); there is no client secret (FL-177).
-  signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
+  // FL-235: the storage quota (GiB) of an account created by a Frameleaf invitation's first sign-in;
+  // null is unlimited, so backup works out of the box (owner decision, 2026-10-01).
+  signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, invitedStorageQuota: null as number | null },
   // FL-161: what remote access may carry. Remote visitors always sign in with Frameleaf; originals,
   // archives and database backups stay off the relay, and passwords are refused away from home,
   // unless an administrator turns these on.
@@ -541,6 +543,14 @@ const AdminConfigFrameleafCloudSchema = z
         showOnLocalLogin: configBool
           .describe('Show Sign in with Frameleaf on the local sign-in page too')
           .meta({ visibility: Public }),
+        invitedStorageQuota: z
+          .int()
+          .min(0)
+          .max(1_000_000)
+          .nullable()
+          .describe(
+            'Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null is unlimited. Applied when the account is created; existing accounts keep their quota.',
+          ),
       })
       .default(frameleafCloudDefaults.signIn)
       .meta({ id: 'AdminConfigFrameleafSignInDto' }),

@@ -13,6 +13,7 @@ import {
   JobName,
   Permission,
   ServerRole,
+  SystemMetadataKey,
   UserMetadataKey,
   UserStatus,
 } from 'src/enum.js';
@@ -112,19 +113,47 @@ describe(UserService.name, () => {
     });
 
     describe('role on this server (FL-235)', () => {
-      it.each([
-        [authStub.admin, 'owner', ServerRole.Owner, true],
-        [authStub.admin, null, ServerRole.Admin, true],
-        [authStub.user1, null, ServerRole.User, true],
-        [authStub.user1, 'editor', ServerRole.User, true],
-        // owner decision (2026-10-01): an invited viewer has its own account and library
-        [authStub.user1, 'viewer', ServerRole.User, true],
-      ] as const)('reports %#: access %s as %s, upload %s', async (auth, access, serverRole, canUpload) => {
-        mocks.frameleafAccount.getAccess.mockResolvedValue(access ?? undefined);
+      const linkTo = (accountId: string | undefined) => {
+        const baseEnv = mocks.config.getEnv();
+        mocks.config.getEnv.mockReturnValue({
+          ...baseEnv,
+          frameleafCloud: { ...baseEnv.frameleafCloud, url: 'https://cloud.example.test' },
+        } as never);
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(
+            (key === SystemMetadataKey.FrameleafCloudLink
+              ? { status: 'linked', cloudUrl: 'https://cloud.example.test', instanceId: 'instance-1', accountId }
+              : null) as never,
+          ),
+        );
+      };
 
-        await expect(sut.getMe(auth)).resolves.toMatchObject({ id: auth.user.id, serverRole, canUpload });
-        expect(mocks.frameleafAccount.getAccess).toHaveBeenCalledWith(auth.user.id);
-      });
+      it.each([
+        // the administrator whose Frameleaf account owns the server's cloud link
+        [authStub.admin, 'owner-account', 'owner', 'owner-account', ServerRole.Owner],
+        // a stale owner access after an ownership transfer is not the owner any more
+        [authStub.admin, 'previous-owner', 'owner', 'owner-account', ServerRole.Admin],
+        // without the link's account, the access recorded at sign-in decides
+        [authStub.admin, 'owner-account', 'owner', undefined, ServerRole.Owner],
+        [authStub.admin, undefined, undefined, 'owner-account', ServerRole.Admin],
+        [authStub.user1, undefined, undefined, 'owner-account', ServerRole.User],
+        // the cloud owner is never more than their role here says
+        [authStub.user1, 'owner-account', 'owner', 'owner-account', ServerRole.User],
+        // owner decision (2026-10-01): an invited viewer or editor has their own account and library
+        [authStub.user1, 'invited', 'viewer', 'owner-account', ServerRole.User],
+        [authStub.user1, 'invited', 'editor', 'owner-account', ServerRole.User],
+      ] as const)(
+        'reports %#: link %s with access %s, cloud owner %s, as %s',
+        async (auth, sub, access, owner, role) => {
+          linkTo(owner);
+          mocks.frameleafAccount.getLinkByUser.mockResolvedValue(
+            (sub ? { userId: auth.user.id, sub, access } : undefined) as never,
+          );
+
+          await expect(sut.getMe(auth)).resolves.toMatchObject({ id: auth.user.id, serverRole: role, canUpload: true });
+          expect(mocks.frameleafAccount.getLinkByUser).toHaveBeenCalledWith(auth.user.id);
+        },
+      );
 
       it('hides backup from an API key that may not upload', async () => {
         const auth = AuthFactory.from(authStub.user1.user)

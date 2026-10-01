@@ -4,14 +4,21 @@ import { isGranted } from 'src/utils/access.js';
 
 /**
  * FL-235 (NAPI-011): a person's role on this server, for an app to label it. The server owner is the
- * administrator whose Frameleaf account owns the server's Frameleaf Cloud link; `frameleaf_access`
- * grants nothing else (an invited person is an ordinary user with their own library).
+ * administrator whose Frameleaf account owns the server's Frameleaf Cloud link: the link's
+ * `accountId` (the account's OpenID `sub`) when the server knows it, else the `frameleaf_access`
+ * `owner` recorded at their last sign-in. `frameleaf_access` grants nothing else (an invited person
+ * is an ordinary user with their own library).
  */
-export const getServerRole = (isAdmin: boolean, access: FrameleafAccess | null | undefined): ServerRole => {
-  if (isAdmin) {
-    return access === 'owner' ? ServerRole.Owner : ServerRole.Admin;
+export const getServerRole = (
+  isAdmin: boolean,
+  link: { sub: string; access: FrameleafAccess | null } | undefined,
+  ownerAccountId: string | undefined,
+): ServerRole => {
+  if (!isAdmin) {
+    return ServerRole.User;
   }
-  return ServerRole.User;
+  const isOwner = link ? (ownerAccountId ? link.sub === ownerAccountId : link.access === 'owner') : false;
+  return isOwner ? ServerRole.Owner : ServerRole.Admin;
 };
 
 /**

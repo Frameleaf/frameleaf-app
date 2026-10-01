@@ -414,6 +414,8 @@ export type CloudStatusResponseDto = {
     signInButtonText: string;
     /** The OpenID client ID for Sign in with Frameleaf */
     signInClientId: string | null;
+    /** Storage quota in GiB for accounts created through a Frameleaf invitation; null is unlimited */
+    signInInvitedStorageQuota: number | null;
     signInIssuer: string | null;
     /** Accounts here linked to a Frameleaf account */
     signInLinkedAccounts: number;
@@ -857,6 +859,8 @@ export type RemoteAccessUsageResponseDto = {
 export type CloudSignInUpdateDto = {
     /** The Sign in with Frameleaf button text */
     buttonText?: string;
+    /** Storage quota in GiB for accounts created through a Frameleaf invitation from now on; null is unlimited */
+    invitedStorageQuota?: number | null;
     /** Offer Sign in with Frameleaf on the login page at home */
     showOnLocalLogin?: boolean;
 };
@@ -1050,6 +1054,8 @@ export type AdminConfigFrameleafRemoteAccessDto = {
 export type AdminConfigFrameleafSignInDto = {
     /** Sign in with Frameleaf button text */
     buttonText: string;
+    /** Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null is unlimited. Applied when the account is created; existing accounts keep their quota. */
+    invitedStorageQuota: number | null;
     /** Show Sign in with Frameleaf on the local sign-in page too */
     showOnLocalLogin: boolean;
 };

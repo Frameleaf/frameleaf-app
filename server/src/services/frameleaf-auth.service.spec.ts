@@ -438,6 +438,58 @@ describe(FrameleafAuthService.name, () => {
       );
     });
 
+    describe('storage quota for invited accounts (FL-235)', () => {
+      const GiB = 1024 ** 3;
+      const setQuota = (invitedStorageQuota: number | null) => {
+        metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { signIn: { invitedStorageQuota } } });
+        clearConfigCache();
+      };
+      const newAccount = () => {
+        const created = UserFactory.create({ email: 'remote@example.test' });
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+        mocks.user.getByEmail.mockResolvedValue(void 0);
+        mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+        mocks.clusterGroup.create.mockResolvedValue({ id: 'group-1' } as never);
+        mocks.user.create.mockResolvedValue(created as never);
+        return created;
+      };
+
+      it('is unlimited by default, so backup works out of the box', async () => {
+        newAccount();
+        await sut.exchangeToken({ token: await mint() }, loginDetails);
+        expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: null }));
+      });
+
+      it('gives a new invited account the quota the administrator set', async () => {
+        setQuota(5);
+        newAccount();
+        await sut.exchangeToken({ token: await mint() }, loginDetails);
+        expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: 5 * GiB }));
+      });
+
+      it('never caps the server owner', async () => {
+        setQuota(5);
+        newAccount();
+        const token = await mint({ claims: { frameleaf_role: 'admin', frameleaf_access: 'owner' } });
+        await sut.exchangeToken({ token }, loginDetails);
+        expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ quotaSizeInBytes: null }));
+      });
+
+      it('leaves existing accounts unchanged', async () => {
+        setQuota(5);
+        const existing = UserFactory.create({ email: 'remote@example.test' });
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+        mocks.user.getByEmail.mockResolvedValue(existing as never);
+        mocks.frameleafAccount.getLinkByUser.mockResolvedValue(void 0);
+        await sut.exchangeToken({ token: await mint() }, loginDetails);
+        expect(mocks.user.create).not.toHaveBeenCalled();
+        expect(mocks.user.update).not.toHaveBeenCalledWith(
+          existing.id,
+          expect.objectContaining({ quotaSizeInBytes: expect.anything() }),
+        );
+      });
+    });
+
     it('accepts an EdDSA-signed token and links an existing account by its verified email', async () => {
       const existing = UserFactory.create({ email: 'remote@example.test' });
       mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);

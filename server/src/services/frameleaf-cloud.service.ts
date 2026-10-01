@@ -168,6 +168,7 @@ export class FrameleafCloudService extends BaseService {
       signInLinkedAccounts: await this.frameleafAccountRepository.countLinks(),
       signInShowOnLocalLogin: !!config.frameleafCloud.signIn?.showOnLocalLogin,
       signInButtonText: config.frameleafCloud.signIn?.buttonText ?? '',
+      signInInvitedStorageQuota: config.frameleafCloud.signIn?.invitedStorageQuota ?? null,
       allowOriginalsOverRelay: !!config.frameleafCloud.remoteAccess?.allowOriginalsOverRelay,
       allowPasswordOverRelay: !!config.frameleafCloud.remoteAccess?.allowPasswordOverRelay,
     };
@@ -183,6 +184,7 @@ export class FrameleafCloudService extends BaseService {
     | 'signInLinkedAccounts'
     | 'signInShowOnLocalLogin'
     | 'signInButtonText'
+    | 'signInInvitedStorageQuota'
     | 'allowOriginalsOverRelay'
     | 'allowPasswordOverRelay'
   > {
@@ -703,6 +705,7 @@ export class FrameleafCloudService extends BaseService {
           ...config.frameleafCloud.signIn,
           ...(dto.showOnLocalLogin !== undefined && { showOnLocalLogin: dto.showOnLocalLogin }),
           ...(dto.buttonText !== undefined && { buttonText: dto.buttonText }),
+          ...(dto.invitedStorageQuota !== undefined && { invitedStorageQuota: dto.invitedStorageQuota }),
         };
       },
       { source: 'frameleaf-cloud', auth },

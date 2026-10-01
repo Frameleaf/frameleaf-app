@@ -122,14 +122,15 @@ it('records the access Frameleaf Cloud gives each account on this server (FL-235
 
   await sut.upsertLink({ ...link(owner.id, `sub-${newUuid()}`), access: 'owner' });
   await sut.upsertLink({ ...link(invited.id, `sub-${newUuid()}`), access: 'viewer' });
-  await expect(sut.getAccess(owner.id)).resolves.toBe('owner');
-  await expect(sut.getAccess(invited.id)).resolves.toBe('viewer');
-  await expect(sut.getAccess(newUuid())).resolves.toBeUndefined();
+  await expect(sut.getLinkByUser(owner.id)).resolves.toMatchObject({ access: 'owner' });
   await expect(sut.getLinkByUser(invited.id)).resolves.toMatchObject({ access: 'viewer' });
 
   // every sign-in records the latest access
   await sut.touchLink(invited.id, { email: 'v@example.test', emailVerified: true, role: 'user', access: 'editor' });
-  await expect(sut.getAccess(invited.id)).resolves.toBe('editor');
+  await expect(sut.getLinkByUser(invited.id)).resolves.toMatchObject({ access: 'editor' });
+  // a sign-in without the claim keeps the recorded access
+  await sut.touchLink(invited.id, { email: 'v@example.test', emailVerified: true, role: 'user', access: null });
+  await expect(sut.getLinkByUser(invited.id)).resolves.toMatchObject({ access: 'editor' });
   await expect(sut.upsertLink({ ...link(newUuid(), `sub-${newUuid()}`), access: 'root' as never })).rejects.toThrow(
     /frameleaf_account_link_access_check/,
   );
