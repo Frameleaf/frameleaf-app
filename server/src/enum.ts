@@ -1949,6 +1949,13 @@ export enum ImmichWorker {
    * entitled and remote access is on.
    */
   Edge = 'edge',
+  /**
+   * FL-295: the "Getting Ready…" worker. On the first start on a library the official server created it
+   * serves the web UI's "Getting Ready…" screen (every other route answers 503) while it takes the
+   * safety copy of the database, then hands over to the configured workers. Started by the supervisor
+   * only, never through FRAMELEAF_WORKERS_INCLUDE.
+   */
+  FirstLaunch = 'first-launch',
 }
 
 export enum ImmichTelemetry {
@@ -2477,6 +2484,8 @@ export const PhysicalDeduplicationPlanModeSchema = z
 
 export enum ExitCode {
   AppRestart = 7,
+  /** FL-295: the "Getting Ready…" worker finished (or skipped) the safety copy; normal startup follows. */
+  FirstLaunchReady = 8,
 }
 
 export enum SyncRequestType {

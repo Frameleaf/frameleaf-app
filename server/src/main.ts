@@ -10,6 +10,7 @@ import { ConfigRepository, warnDeprecatedEnv } from 'src/repositories/config.rep
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { chooseBootWorkers, isFirstLaunchHandover } from 'src/utils/first-launch.js';
 import { SupervisorStop, WORKER_STOP_MESSAGE } from 'src/utils/shutdown.js';
 
 /**
@@ -51,6 +52,12 @@ class Workers {
    */
   restarting = false;
 
+  /**
+   * FL-295: the "Getting Ready…" worker handed over (the safety copy is done or not needed); the next
+   * bootstrap starts the configured workers without checking again. Used up by that bootstrap.
+   */
+  firstLaunchPrepared = false;
+
   /** FL-165: the edge worker was asked to stop for a restart. */
   stoppingEdge = false;
 
@@ -86,7 +93,16 @@ class Workers {
         return;
       }
 
-      for (const worker of workers) {
+      // FL-295: the first start on a library the official server created serves "Getting Ready…" and
+      // takes the safety copy before any worker that migrates starts
+      const prepared = this.firstLaunchPrepared;
+      this.firstLaunchPrepared = false;
+      const toStart = await chooseBootWorkers({ workers, prepared, isFirstLaunch: () => this.isFirstLaunch() });
+      if (this.stopper.stopping) {
+        return;
+      }
+
+      for (const worker of toStart) {
         this.startWorker(worker);
       }
     }
@@ -130,6 +146,22 @@ class Workers {
       }
 
       throw error;
+    } finally {
+      await kysely.destroy();
+    }
+  }
+
+  /** FL-295: the first start on a library the official server created (see DatabaseRepository). */
+  private async isFirstLaunch(): Promise<boolean> {
+    const { database } = new ConfigRepository().getEnv();
+    const { log: _, ...kyselyConfig } = getKyselyConfig(database.config);
+    const kysely = new Kysely<DB>(kyselyConfig);
+    try {
+      // imported lazily, like the admin module: the supervisor does not load the migration code otherwise
+      const { DatabaseRepository } = await import('./repositories/database.repository.js');
+      const { LoggingRepository } = await import('./repositories/logging.repository.js');
+      const repository = new DatabaseRepository(kysely, LoggingRepository.create('Supervisor'), new ConfigRepository());
+      return await repository.isFirstLaunchOnOfficialLibrary();
     } finally {
       await kysely.destroy();
     }
@@ -219,6 +251,15 @@ class Workers {
       console.info(`${name} worker stopped`);
       delete this.workers[name];
       this.stopper.workerExited(Object.keys(this.workers).length);
+      return;
+    }
+
+    // FL-295: the safety copy is done (or not needed); start the configured workers, which migrate
+    if (isFirstLaunchHandover(name, exitCode) && !this.restarting) {
+      console.info('The safety copy is ready; starting the server normally');
+      delete this.workers[name];
+      this.firstLaunchPrepared = true;
+      void this.bootstrap();
       return;
     }
 

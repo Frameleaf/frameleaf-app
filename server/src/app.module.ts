@@ -9,6 +9,7 @@ import { commandsAndQuestions } from 'src/commands/index.js';
 import { IWorker } from 'src/constants.js';
 import { controllers } from 'src/controllers/index.js';
 import { ImmichWorker } from 'src/enum.js';
+import { FirstLaunchWorkerService } from 'src/maintenance/first-launch-worker.service.js';
 import { MaintenanceAuthGuard } from 'src/maintenance/maintenance-auth.guard.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { MaintenanceWebsocketRepository } from 'src/maintenance/maintenance-websocket.repository.js';
@@ -142,6 +143,42 @@ export class MaintenanceModule {
 
   async onModuleInit() {
     await this.maintenanceWorkerService.init();
+  }
+}
+
+/**
+ * FL-295: the "Getting Ready…" worker: no controllers, no queues and nothing that writes to the
+ * database. It only takes the safety copy and serves the "Getting Ready…" screen.
+ */
+@Module({
+  imports: [...commonImports],
+  providers: [
+    ConfigRepository,
+    LoggingRepository,
+    StorageRepository,
+    ProcessRepository,
+    DatabaseRepository,
+    UserRepository,
+    SystemMetadataRepository,
+    AppRepository,
+    DatabaseBackupService,
+    FirstLaunchWorkerService,
+    ...commonMiddleware,
+    { provide: IWorker, useValue: ImmichWorker.FirstLaunch },
+  ],
+})
+export class FirstLaunchModule {
+  constructor(
+    @Inject(IWorker) private worker: ImmichWorker,
+    logger: LoggingRepository,
+    private firstLaunchWorkerService: FirstLaunchWorkerService,
+  ) {
+    logger.setAppName(this.worker);
+  }
+
+  onModuleInit() {
+    // not awaited: the screen is served while the copy is made
+    void this.firstLaunchWorkerService.prepare();
   }
 }
 

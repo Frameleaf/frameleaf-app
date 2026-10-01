@@ -169,7 +169,10 @@ export interface EnvData {
   deprecatedEnv: Array<Pick<EnvAlias, 'legacy' | 'current'>>;
 }
 
-const WORKER_TYPES = new Set(Object.values(ImmichWorker));
+// FL-295: the "Getting Ready…" worker is the supervisor's to start, never a configured one
+const WORKER_TYPES = new Set<ImmichWorker>(
+  Object.values(ImmichWorker).filter((worker) => worker !== ImmichWorker.FirstLaunch),
+);
 
 const asSet = <T>(value: string | undefined, defaults: T[]) => {
   const values = (value || '').replaceAll(/\s/g, '').split(',').filter(Boolean);
