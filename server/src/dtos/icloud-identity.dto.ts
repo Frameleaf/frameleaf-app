@@ -33,7 +33,7 @@ const ItemFields = {
   uti: z.string().min(1).max(256).optional(),
   pixelWidth: z.int().min(1).max(1_000_000).optional(),
   pixelHeight: z.int().min(1).max(1_000_000).optional(),
-  creationDate: DateTime.optional(),
+  creationDate: z.iso.datetime({ offset: true }).optional(),
 };
 
 export const ICloudCoverageSchema = z
@@ -79,7 +79,12 @@ const CoverageConnection = z
   .meta({ id: 'ICloudCoverageConnectionDto' });
 
 export const ICloudCoverageResponseSchema = z
-  .object({ connections: z.array(CoverageConnection) })
+  .object({
+    identityMatching: z
+      .boolean()
+      .describe('False when identity matching is switched off: no connection can then be shown to cover the library'),
+    connections: z.array(CoverageConnection),
+  })
   .meta({ id: 'ICloudCoverageResponseDto' });
 export class ICloudCoverageResponseDto extends createZodDto(ICloudCoverageResponseSchema) {}
 
