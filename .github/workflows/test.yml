@@ -313,8 +313,8 @@ jobs:
           cache-dependency-path: '**/pnpm-lock.yaml'
       - name: Setup packages
         run:
-          pnpm --filter @immich/sdk --filter @immich/cli install --frozen-lockfile && pnpm --filter @immich/sdk --filter
-          @immich/cli build
+          pnpm --filter @immich/sdk --filter @immich/cli --filter @immich/plugin-sdk install --frozen-lockfile && pnpm
+          --filter @immich/sdk --filter @immich/cli --filter @immich/plugin-sdk build
       - name: Run setup web
         run: pnpm install --frozen-lockfile && pnpm exec svelte-kit sync
         working-directory: ./web
