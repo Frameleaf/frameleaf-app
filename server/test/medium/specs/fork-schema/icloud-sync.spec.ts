@@ -5,6 +5,7 @@ import { getCatalogEvidence, getCatalogTableLocks } from 'src/fork-schema/catalo
 import { assertICloudReferences, reconcileICloudReferences } from 'src/fork-schema/icloud-reconciliation.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
+import * as identity from 'src/fork-schema/migrations/0000000000213-ICloudSourceIdentity.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -46,7 +47,10 @@ describe('fork-owned iCloud state', () => {
     migrator = new Migrator({
       db,
       migrationTableSchema: 'immich_fork',
-      provider: { getMigrations: () => Promise.resolve({ '0000000000090-ICloudSync': migration }) },
+      provider: {
+        getMigrations: () =>
+          Promise.resolve({ '0000000000090-ICloudSync': migration, '0000000000213-ICloudSourceIdentity': identity }),
+      },
     });
   });
 
@@ -97,7 +101,8 @@ describe('fork-owned iCloud state', () => {
     for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
       expect(cloud(actual[kind])).toEqual(cloud(manifest[kind]));
     }
-    expect(getCatalogTableLocks(manifest).filter((table) => table.startsWith('immich_fork.icloud_'))).toHaveLength(7);
+    // the seven sync tables, and the source identities and claims (FL-296)
+    expect(getCatalogTableLocks(manifest).filter((table) => table.startsWith('immich_fork.icloud_'))).toHaveLength(9);
     const crossSchema = await sql`
       SELECT 1 FROM pg_constraint constraint_record
       JOIN pg_class source ON source.oid = constraint_record.conrelid
@@ -106,8 +111,10 @@ describe('fork-owned iCloud state', () => {
         AND source.relnamespace <> target.relnamespace
     `.execute(db);
     expect(crossSchema.rows).toEqual([]);
-    const result4 = await migrator.migrateDown();
-    expect(result4.error).toBeUndefined();
+    for (let step = 0; step < 2; step++) {
+      const result4 = await migrator.migrateDown();
+      expect(result4.error).toBeUndefined();
+    }
     const after = await getCatalogEvidence(db, { includeForkLedger: false });
     expect(after.tables.filter(({ identity }) => identity.startsWith('immich_fork.icloud_'))).toEqual([]);
     for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {

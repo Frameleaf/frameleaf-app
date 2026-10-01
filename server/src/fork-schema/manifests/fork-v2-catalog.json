@@ -1077,6 +1077,34 @@
       "identity": "immich_fork.icloud_checkpoint.updatedAt"
     },
     {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_claim.cplAssetRecordName"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.icloud_claim.createdAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "immich_fork.icloud_claim.expiresAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_claim.holder"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_claim.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_claim.ownerId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_connection.accountHint"
+    },
+    {
       "definition": "integer|not null|0||",
       "identity": "immich_fork.icloud_connection.authAttempts"
     },
@@ -1119,6 +1147,10 @@
     {
       "definition": "text|not null|'paused'::text||",
       "identity": "immich_fork.icloud_connection.state"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_connection.unhealthySince"
     },
     {
       "definition": "timestamp with time zone|not null|now()||",
@@ -1343,6 +1375,78 @@
     {
       "definition": "text|not null|'queued'::text||",
       "identity": "immich_fork.icloud_run.status"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.appleFingerprint"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_source_identity.assetId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.cloudChecksum"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.cloudIdentifier"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_source_identity.cplAssetRecordName"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.cplMasterRecordName"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.icloud_source_identity.deliveredAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_source_identity.deliveredBy"
+    },
+    {
+      "definition": "text|not null|''::text||",
+      "identity": "immich_fork.icloud_source_identity.editVersion"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_source_identity.id"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.lastAuditResult"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.lastVerifiedAt"
+    },
+    {
+      "definition": "jsonb|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.library"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.libraryKey"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_source_identity.matchStrength"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_source_identity.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_source_identity.role"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.icloud_source_identity.sha256"
     },
     {
       "definition": "uuid[]|nullable|||",
@@ -8147,6 +8251,18 @@
       "identity": "immich_fork.icloud_checkpoint.icloud_checkpoint_pkey"
     },
     {
+      "definition": "CHECK (holder ~ '^(icloud-sync|device):.+$'::text)",
+      "identity": "immich_fork.icloud_claim.icloud_claim_holder_check"
+    },
+    {
+      "definition": "UNIQUE (id)",
+      "identity": "immich_fork.icloud_claim.icloud_claim_id_key"
+    },
+    {
+      "definition": "PRIMARY KEY (\"ownerId\", \"cplAssetRecordName\")",
+      "identity": "immich_fork.icloud_claim.icloud_claim_pkey"
+    },
+    {
       "definition": "CHECK (\"authAttempts\" >= 0)",
       "identity": "immich_fork.icloud_connection.icloud_connection_authAttempts_check"
     },
@@ -8245,6 +8361,38 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.icloud_run.icloud_run_pkey"
+    },
+    {
+      "definition": "CHECK (\"lastAuditResult\" = ANY (ARRAY['match'::text, 'mismatch'::text]))",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_audit_check"
+    },
+    {
+      "definition": "CHECK (\"deliveredBy\" ~ '^(icloud-sync|device):.+$'::text)",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_delivered_check"
+    },
+    {
+      "definition": "CHECK ((role = 'edit-render'::text) = (\"editVersion\" <> ''::text))",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_edit_check"
+    },
+    {
+      "definition": "UNIQUE (\"ownerId\", \"cplAssetRecordName\", role, \"editVersion\", \"assetId\")",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_key"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_pkey"
+    },
+    {
+      "definition": "CHECK (role = ANY (ARRAY['original'::text, 'live-motion'::text, 'raw-alternate'::text, 'edit-render'::text]))",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_role_check"
+    },
+    {
+      "definition": "CHECK (octet_length(sha256) = 32)",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_sha256_check"
+    },
+    {
+      "definition": "CHECK (\"matchStrength\" = ANY (ARRAY['exact'::text, 'corroborated'::text, 'hint'::text]))",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_strength_check"
     },
     {
       "definition": "PRIMARY KEY (\"memoryId\")",
@@ -10333,9 +10481,14 @@
     "0000000000209-StudioHdrIntermediates",
     "0000000000210-FrameleafTokenExchange",
     "0000000000211-FrameleafAccountAccess",
-    "0000000000212-AssetDevelopArtifacts"
+    "0000000000212-AssetDevelopArtifacts",
+    "0000000000213-ICloudSourceIdentity"
   ],
   "functions": [
+    {
+      "definition": "CREATE OR REPLACE FUNCTION immich_fork.icloud_connection_unhealthy_since()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF NEW.state = 'connected' THEN\n        NEW.\"unhealthySince\" := NULL;\n      ELSIF NEW.\"unhealthySince\" IS NULL THEN\n        NEW.\"unhealthySince\" := now();\n      END IF;\n      RETURN NEW;\n    END\n    $function$",
+      "identity": "immich_fork.icloud_connection_unhealthy_since()"
+    },
     {
       "definition": "CREATE OR REPLACE FUNCTION immich_fork.prevent_cutover_verification_identity_change()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF TG_OP = 'TRUNCATE' THEN\n        IF TG_TABLE_NAME = 'cutover_verification_run' AND EXISTS (\n          SELECT 1 FROM immich_fork.cutover_verification_run WHERE status = 'completed'\n        ) THEN\n          RAISE EXCEPTION 'completed cutover verification run evidence is immutable';\n        END IF;\n        IF TG_TABLE_NAME = 'cutover_verification_asset' AND EXISTS (\n          SELECT 1 FROM immich_fork.cutover_verification_asset WHERE status = 'verified'\n        ) THEN\n          RAISE EXCEPTION 'completed cutover verification asset evidence is immutable';\n        END IF;\n        RETURN NULL;\n      END IF;\n      IF TG_OP = 'DELETE' THEN\n        IF TG_TABLE_NAME = 'cutover_verification_run' AND OLD.status = 'completed' THEN\n          RAISE EXCEPTION 'completed cutover verification run evidence is immutable';\n        END IF;\n        IF TG_TABLE_NAME = 'cutover_verification_asset' AND OLD.status = 'verified' THEN\n          RAISE EXCEPTION 'completed cutover verification asset evidence is immutable';\n        END IF;\n        RETURN OLD;\n      END IF;\n      IF TG_OP = 'INSERT' THEN\n        IF TG_TABLE_NAME = 'cutover_verification_asset' AND EXISTS (\n          SELECT 1\n          FROM immich_fork.cutover_verification_run\n          WHERE id = NEW.\"runId\" AND status = 'completed'\n        ) THEN\n          RAISE EXCEPTION 'completed cutover verification asset evidence is immutable';\n        END IF;\n        RETURN NEW;\n      END IF;\n      IF TG_TABLE_NAME = 'cutover_verification_run' AND\n         jsonb_build_array(to_jsonb(NEW)->'id', to_jsonb(NEW)->'databaseBackupId', to_jsonb(NEW)->'snapshotId',\n           to_jsonb(NEW)->'applicableAssetCount', to_jsonb(NEW)->'createdAt')\n         IS DISTINCT FROM\n         jsonb_build_array(to_jsonb(OLD)->'id', to_jsonb(OLD)->'databaseBackupId', to_jsonb(OLD)->'snapshotId',\n           to_jsonb(OLD)->'applicableAssetCount', to_jsonb(OLD)->'createdAt') THEN\n        RAISE EXCEPTION 'cutover verification run identity is immutable';\n      END IF;\n      IF TG_TABLE_NAME = 'cutover_verification_run' AND OLD.status = 'completed' AND\n         to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN\n        RAISE EXCEPTION 'completed cutover verification run evidence is immutable';\n      END IF;\n      IF TG_TABLE_NAME = 'cutover_verification_asset' AND\n         jsonb_build_array(to_jsonb(NEW)->'runId', to_jsonb(NEW)->'assetId', to_jsonb(NEW)->'path',\n           to_jsonb(NEW)->'approvedRoots', to_jsonb(NEW)->'expectedSize', to_jsonb(NEW)->'expectedSha1',\n           to_jsonb(NEW)->'expectedSha256')\n         IS DISTINCT FROM\n         jsonb_build_array(to_jsonb(OLD)->'runId', to_jsonb(OLD)->'assetId', to_jsonb(OLD)->'path',\n           to_jsonb(OLD)->'approvedRoots', to_jsonb(OLD)->'expectedSize', to_jsonb(OLD)->'expectedSha1',\n           to_jsonb(OLD)->'expectedSha256') THEN\n        RAISE EXCEPTION 'cutover verification asset identity is immutable';\n      END IF;\n      IF TG_TABLE_NAME = 'cutover_verification_asset' AND OLD.status = 'verified' AND\n         to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN\n        RAISE EXCEPTION 'completed cutover verification asset evidence is immutable';\n      END IF;\n      RETURN NEW;\n    END\n    $function$",
       "identity": "immich_fork.prevent_cutover_verification_identity_change()"
@@ -11755,6 +11908,14 @@
       "identity": "immich_fork.icloud_checkpoint.icloud_checkpoint_pkey"
     },
     {
+      "definition": "CREATE UNIQUE INDEX icloud_claim_id_key ON immich_fork.icloud_claim USING btree (id)",
+      "identity": "immich_fork.icloud_claim.icloud_claim_id_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_claim_pkey ON immich_fork.icloud_claim USING btree (\"ownerId\", \"cplAssetRecordName\")",
+      "identity": "immich_fork.icloud_claim.icloud_claim_pkey"
+    },
+    {
       "definition": "CREATE INDEX icloud_connection_due_idx ON immich_fork.icloud_connection USING btree (\"nextRunAt\") WHERE (\"nextRunAt\" IS NOT NULL)",
       "identity": "immich_fork.icloud_connection.icloud_connection_due_idx"
     },
@@ -11781,6 +11942,10 @@
     {
       "definition": "CREATE INDEX icloud_membership_snapshot_idx ON immich_fork.icloud_membership USING btree (\"connectionId\", \"libraryKey\", \"sourceAlbumId\", \"snapshotId\") WHERE \"sourcePresent\"",
       "identity": "immich_fork.icloud_membership.icloud_membership_snapshot_idx"
+    },
+    {
+      "definition": "CREATE INDEX icloud_record_asset_name_idx ON immich_fork.icloud_record USING btree (\"connectionId\", upper(\"recordId\")) WHERE ((\"recordType\" = 'CPLAsset'::text) AND (NOT deleted))",
+      "identity": "immich_fork.icloud_record.icloud_record_asset_name_idx"
     },
     {
       "definition": "CREATE INDEX icloud_record_master_idx ON immich_fork.icloud_record USING btree (\"connectionId\", \"libraryKey\", \"masterId\") WHERE (\"masterId\" IS NOT NULL)",
@@ -11829,6 +11994,22 @@
     {
       "definition": "CREATE UNIQUE INDEX icloud_run_pkey ON immich_fork.icloud_run USING btree (id)",
       "identity": "immich_fork.icloud_run.icloud_run_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_source_identity_asset_idx ON immich_fork.icloud_source_identity USING btree (\"assetId\")",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_asset_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_source_identity_key ON immich_fork.icloud_source_identity USING btree (\"ownerId\", \"cplAssetRecordName\", role, \"editVersion\", \"assetId\")",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_source_identity_pkey ON immich_fork.icloud_source_identity USING btree (id)",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_source_identity_sha256_idx ON immich_fork.icloud_source_identity USING btree (\"ownerId\", sha256)",
+      "identity": "immich_fork.icloud_source_identity.icloud_source_identity_sha256_idx"
     },
     {
       "definition": "CREATE INDEX memory_curation_owner_idx ON immich_fork.memory_curation USING btree (\"ownerId\")",
@@ -14619,6 +14800,10 @@
     },
     {
       "definition": "table",
+      "identity": "immich_fork.icloud_claim"
+    },
+    {
+      "definition": "table",
       "identity": "immich_fork.icloud_connection"
     },
     {
@@ -14636,6 +14821,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.icloud_run"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_source_identity"
     },
     {
       "definition": "table",
@@ -15378,6 +15567,10 @@
     {
       "definition": "CREATE TRIGGER cutover_verification_run_truncate_immutable BEFORE TRUNCATE ON immich_fork.cutover_verification_run FOR EACH STATEMENT EXECUTE FUNCTION immich_fork.prevent_cutover_verification_identity_change()",
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_truncate_immutable"
+    },
+    {
+      "definition": "CREATE TRIGGER icloud_connection_unhealthy_since BEFORE INSERT OR UPDATE OF state ON immich_fork.icloud_connection FOR EACH ROW EXECUTE FUNCTION immich_fork.icloud_connection_unhealthy_since()",
+      "identity": "immich_fork.icloud_connection.icloud_connection_unhealthy_since"
     },
     {
       "definition": "CREATE TRIGGER \"activity_updatedAt\" BEFORE UPDATE ON activity FOR EACH ROW EXECUTE FUNCTION updated_at()",

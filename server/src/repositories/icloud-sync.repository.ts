@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { MediaOperationDestination, MediaOperationKind, NotificationLevel, NotificationType } from 'src/enum.js';
+import { recordSyncIdentity } from 'src/repositories/icloud-identity.repository.js';
 import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
@@ -23,6 +24,8 @@ export type ICloudConnection = {
   encryptedSession: string | null;
   lastError: string | null;
   nextRunAt: Date | null;
+  /** FL-296: the Apple Account, masked, from the last sign-in. */
+  accountHint?: string | null;
 };
 export type ICloudResource = {
   id: string;
@@ -167,7 +170,10 @@ export class ICloudSyncRepository {
     id: string,
     ownerId: string,
     update: Partial<
-      Pick<ICloudConnection, 'label' | 'state' | 'config' | 'lastError' | 'nextRunAt' | 'encryptedSession'>
+      Pick<
+        ICloudConnection,
+        'label' | 'state' | 'config' | 'lastError' | 'nextRunAt' | 'encryptedSession' | 'accountHint'
+      >
     >,
   ): Promise<void> {
     const entries = Object.entries(update).filter(([, value]) => value !== undefined);
@@ -1026,6 +1032,8 @@ export class ICloudSyncRepository {
       await cleanup();
       await sql`UPDATE immich_fork.icloud_resource SET status='finalized',"reservedBytes"=0,"leaseToken"=NULL,
         "leaseExpiresAt"=NULL,"lastError"=NULL,"updatedAt"=now() WHERE id=${resource.id}::uuid`.execute(db);
+      // FL-296: the item's source identity, so a device knows the server has it
+      await recordSyncIdentity(db, resource.id);
       return true;
     });
   }
