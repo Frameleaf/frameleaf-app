@@ -750,6 +750,15 @@ export class AssetDevelopService {
         width: normalized.width,
         height: normalized.height,
       });
+      // a deletion queued by an earlier release may have run between finding the file and recording
+      // it; the recorded row now protects the path, so write the file again if it went
+      if (!(await this.storageRepository.checkFileExists(target))) {
+        await this.storageRepository.createFile(target, normalized.data).catch((error: any) => {
+          if (error?.code !== 'EEXIST') {
+            throw error;
+          }
+        });
+      }
       return { id, kind: dto.kind, width: normalized.width, height: normalized.height };
     } finally {
       await this.discard([file.path]);
