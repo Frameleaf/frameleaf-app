@@ -346,13 +346,8 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     await page.locator('.pin-input').first().focus();
     await page.keyboard.type(PIN);
     await expect.poll(() => isElevated(user)).toBe(true);
-    await page.waitForURL((url) => url.pathname === '/user-settings');
-    // The prompt continues to the Command Center path only (the connection page passes
-    // `page.url.pathname`, without `?area=utilities&section=icloud`), so the owner opens iCloud
-    // Photos again; the panel then restores the saved draft once.
-    if (new URL(page.url()).searchParams.get('section') !== 'icloud') {
-      await openICloud(page);
-    }
+    // FL-290: the prompt returns to the iCloud Photos section itself, query string included.
+    await page.waitForURL((url) => url.pathname === '/user-settings' && url.searchParams.get('section') === 'icloud');
     // Back on the connection, the preferences come back and are saved.
     await expect(notice(page)).toContainText('Unlocked. Your sync preferences are back; save them to finish.');
     await expect(page.getByLabel('Hidden photos')).toBeChecked();

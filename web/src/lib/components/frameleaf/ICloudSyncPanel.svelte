@@ -371,7 +371,7 @@
           } catch {
             // Without storage the draft is typed again after unlocking; nothing else depends on it.
           }
-          await goto(Route.pinPrompt({ continue: page.url.pathname }));
+          await goto(Route.pinPrompt({ continue: page.url.pathname + page.url.search }));
           return;
         }
       }
