@@ -181,19 +181,22 @@ const expectSharedOriginal = async (state: ChainState) => {
 type QueueCounts = { active: number; delayed: number; waiting: number };
 
 /*
- * The lane stops each server with `docker compose stop`, and the server does not close its BullMQ
- * workers on SIGTERM, so a job running at that moment stays "active" in Redis with no worker. Only
- * BullMQ's stalled-job check gives it back: the check runs at most once per 30 s stalled interval
- * across all workers (the previous container's run throttles the new one's first), it only marks the
- * active jobs it finds, and a later check moves the marked ones whose 30 s lock has lapsed. A job
- * orphaned after the previous container's last check therefore waits up to about two intervals plus
- * the boot, then reruns. CI saw exactly that: thumbnail and background jobs the post-migrator left
- * behind were recovered 64 s after the next boot, past the earlier 60 s window.
+ * The lane stops each server with `docker compose stop`. A Frameleaf server stops gracefully (FL-291):
+ * its workers let running jobs finish or hand them back to waiting before it exits, so the next boot
+ * finds no orphaned job and the queues settle as soon as the work in hand is done.
+ *
+ * The official Immich server does not close its BullMQ workers on SIGTERM, so a job running when it
+ * stops stays "active" in Redis with no worker. Only BullMQ's stalled-job check gives it back: the
+ * check runs at most once per 30 s stalled interval across all workers (the previous container's run
+ * throttles the new one's first), it only marks the active jobs it finds, and a later check moves the
+ * marked ones whose 30 s lock has lapsed. A job orphaned after the official server's last check
+ * therefore waits up to about two intervals plus the boot, then reruns. CI saw 64 s.
  */
-const QUIESCENCE_TIMEOUT_MS = 150_000;
+const QUIESCENCE_TIMEOUT_MS = 60_000;
+const QUIESCENCE_AFTER_OFFICIAL_TIMEOUT_MS = 150_000;
 
-const waitForQuiescence = async (token: string) => {
-  const deadline = Date.now() + QUIESCENCE_TIMEOUT_MS;
+const waitForQuiescence = async (token: string, timeoutMs = QUIESCENCE_TIMEOUT_MS) => {
+  const deadline = Date.now() + timeoutMs;
   let stable = 0;
   let busyQueues: Record<string, QueueCounts> = {};
   while (stable < 5 && Date.now() < deadline) {
@@ -346,8 +349,9 @@ describe.runIf(phase === 'chain-fork-seed')(`${lane}: fork leg seeds Frameleaf r
       studioLease: { leaseHolderId: origin.admin.userId, leaseClientId: 'chained-tab' },
     });
     await saveState(lane, state);
+    // the server before this one was a Frameleaf server, stopped gracefully
     await waitForQuiescence(adminToken);
-  }, 240_000);
+  }, 180_000);
 });
 
 describe.runIf(phase === 'chain-fork-handed-over')(`${lane}: fork leg after the locked cutover`, () => {
@@ -467,7 +471,8 @@ describe.runIf(phase === 'chain-canonical-delete')(`${lane}: shared original aft
       (count) => count === 0,
       120_000,
     );
-    await waitForQuiescence(state.adminToken);
+    // the official leg ran before this return and may have left jobs active
+    await waitForQuiescence(state.adminToken, QUIESCENCE_AFTER_OFFICIAL_TIMEOUT_MS);
     // FL-97: the asset's removal took its Studio HDR intermediate row
     await expect(hdrIntermediates([state.retainedAssetId])).resolves.toEqual([]);
     await saveState('chain-canonical-delete', { before, deletedPath });

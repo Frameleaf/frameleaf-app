@@ -5,17 +5,36 @@ import { Server as SocketIO } from 'socket.io';
 import { ExitCode } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { AppRestartEvent } from 'src/repositories/event.repository.js';
+import { SHUTDOWN_WORKER_DEADLINE_MS } from 'src/utils/shutdown.js';
 
 @Injectable()
 export class AppRepository {
   private closeFn?: () => Promise<void>;
+  private stopping?: boolean;
 
+  /** Restart: the worker stops like it does on SIGTERM and the supervisor starts it again. */
   exitApp() {
-    /* eslint-disable unicorn/no-process-exit */
-    void this.closeFn?.().finally(() => process.exit(ExitCode.AppRestart));
+    this.stop(ExitCode.AppRestart);
+  }
 
+  /**
+   * FL-291: stop this worker gracefully (`closeFn`: in-flight requests and running jobs get the grace
+   * period, then the application closes) and exit with `exitCode`. Exits at the worker deadline
+   * whatever the teardown is still doing.
+   */
+  stop(exitCode: number = 0) {
+    if (this.stopping) {
+      return;
+    }
+    this.stopping = true;
+
+    /* eslint-disable unicorn/no-process-exit */
     // in exceptional circumstance, the application may hang
-    setTimeout(() => process.exit(ExitCode.AppRestart), 2000);
+    setTimeout(() => process.exit(exitCode), SHUTDOWN_WORKER_DEADLINE_MS);
+
+    void Promise.try(() => this.closeFn?.())
+      .catch((error) => console.error(`Unable to stop gracefully: ${error}`))
+      .finally(() => process.exit(exitCode));
     /* eslint-enable unicorn/no-process-exit */
   }
 

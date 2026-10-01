@@ -1,7 +1,7 @@
 import { getQueueToken } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { Job, JobsOptions, Queue, Worker, type WorkerOptions } from 'bullmq';
+import { Job, JobsOptions, Queue, WaitingError, Worker, type WorkerOptions } from 'bullmq';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Redis } from 'ioredis';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
@@ -124,9 +124,21 @@ end
 return {processed - base, startedAt}
 `;
 
+/** A job this process is running (FL-291): what is needed to hand it back if the server stops. */
+type RunningJob = {
+  queueName: QueueName;
+  job: Job;
+  token?: string;
+  finished: Promise<unknown>;
+  /** Ends the processor with a WaitingError, so BullMQ leaves the handed-back job alone. */
+  release: () => void;
+};
+
 @Injectable()
 export class JobRepository {
   private workers: Partial<Record<QueueName, Worker>> = {};
+  private running = new Set<RunningJob>();
+  private stopping?: Promise<void>;
   private handlers: Partial<Record<JobName, JobMapItem>> = {};
   private workerWatcher?: ReturnType<typeof setInterval>;
   private microservicesPresent = true;
@@ -213,7 +225,7 @@ export class JobRepository {
       this.logger.debug(`Starting worker for queue: ${queueName}`);
       this.workers[queueName] = new Worker(
         queueName,
-        (job) => this.processJob(queueName, job),
+        (job, token) => this.processJob(queueName, job, token),
         this.getWorkerOptions(queueName, bull.config as WorkerOptions),
       );
       this.registerWorkerEvents(queueName, this.workers[queueName]);
@@ -231,12 +243,90 @@ export class JobRepository {
     return workerOptions;
   }
 
-  private async processJob(queueName: QueueName, job: Job): Promise<void> {
+  private async processJob(queueName: QueueName, job: Job, token?: string): Promise<void> {
+    if (this.stopping) {
+      // FL-291: fetched while the workers were being paused; it goes back untouched
+      await job.moveToWait(token);
+      throw new WaitingError();
+    }
+
+    let release!: () => void;
+    const released = new Promise<never>((_, reject) => (release = () => reject(new WaitingError())));
+    const finished = this.eventRepository.emit('JobRun', queueName, job as JobItem);
+    const entry: RunningJob = { queueName, job, token, finished, release };
+    this.running.add(entry);
+
     try {
-      await this.eventRepository.emit('JobRun', queueName, job as JobItem);
+      await Promise.race([finished, released]);
     } catch (error: any) {
-      this.logger.error(`Unable to process job ${job.name} in queue ${queueName}: ${error}`, error?.stack);
+      if (!(error instanceof WaitingError)) {
+        this.logger.error(`Unable to process job ${job.name} in queue ${queueName}: ${error}`, error?.stack);
+      }
       throw error;
+    } finally {
+      this.running.delete(entry);
+    }
+  }
+
+  /**
+   * FL-291: stop this process's workers for a server stop. No worker takes a new job; running jobs get
+   * `graceMs` to finish. A job still running then goes back to waiting at once, so the next boot runs
+   * it without waiting for BullMQ's stalled-job check — except a job that is unsafe to run again
+   * (JOBS_NOT_RETRIED: it may already have sent its mail, notice or push, or made its partial
+   * records), which is recorded as failed instead, as a failed handler would have left it. Then the
+   * workers close. The handler of a job handed back may still be running; the process exits shortly
+   * after and its result is ignored.
+   */
+  stopWorkers(graceMs: number): Promise<void> {
+    this.stopping ??= this.stopWorkersOnce(graceMs);
+    return this.stopping;
+  }
+
+  private async stopWorkersOnce(graceMs: number) {
+    const workers = Object.values(this.workers);
+    if (workers.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      workers.map((worker) =>
+        worker.pause(true).catch((error) => this.logger.warn(`Unable to pause worker ${worker.name}: ${error}`)),
+      ),
+    );
+
+    if (this.running.size > 0) {
+      this.logger.log(`Waiting up to ${graceMs / 1000} s for ${this.running.size} running job(s) to finish`);
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        Promise.allSettled([...this.running].map(({ finished }) => finished)),
+        new Promise((resolve) => (timer = setTimeout(resolve, graceMs))),
+      ]);
+      clearTimeout(timer);
+    }
+
+    await Promise.all([...this.running].map((entry) => this.handBack(entry)));
+
+    await Promise.all(
+      workers.map((worker) =>
+        worker.close().catch((error) => this.logger.warn(`Unable to close worker ${worker.name}: ${error}`)),
+      ),
+    );
+  }
+
+  private async handBack({ queueName, job, token, release }: RunningJob) {
+    const label = `${job.name} (${job.id}) in queue ${queueName}`;
+    try {
+      if (JOBS_NOT_RETRIED.has(job.name as JobName)) {
+        await job.moveToFailed(new Error('The server stopped while the job was running'), token as string, false);
+        this.logger.warn(`Job ${label} was still running when the server stopped; not run again`);
+      } else {
+        await job.moveToWait(token);
+        this.logger.log(`Job ${label} was still running when the server stopped; handed back to waiting`);
+      }
+    } catch (error: any) {
+      this.logger.error(`Unable to hand back job ${label}: ${error}`, error?.stack);
+    } finally {
+      release();
     }
   }
 
