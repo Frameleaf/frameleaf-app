@@ -12,8 +12,8 @@ model probes like any other endpoint:
   is unavailable, plus the measured throughput its qualification recorded.
 * ``POST /restoration/restore`` — one inference; see ``schemas.py`` for the contract.
 
-Bearer authentication uses the same ``IMMICH_ML_AUTH_TOKEN`` variable as the predict
-container so a LAN destination's stored token works unchanged.
+Bearer authentication uses the same ``FRAMELEAF_ML_AUTH_TOKEN`` variable (or its deprecated alias
+``IMMICH_ML_AUTH_TOKEN``) as the predict container so a LAN destination's stored token works unchanged.
 """
 
 import base64
@@ -36,6 +36,7 @@ from starlette.background import BackgroundTask
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.types import ASGIApp
 
+from ..env_aliases import read_env
 from .models import RestorationFailure, RestorationRegistry, adapter_for
 from .pipeline import AdapterFactory, restore
 from .schemas import (
@@ -88,7 +89,7 @@ class WorkerSettings:
                 env.get("FRAMELEAF_RESTORATION_QUALIFICATION", "/restoration/config/qualification.json")
             ),
             work_root=Path(env.get("FRAMELEAF_RESTORATION_WORKDIR", tempfile.gettempdir())),
-            auth_token=env.get("IMMICH_ML_AUTH_TOKEN", "").strip() or None,
+            auth_token=read_env(env, "FRAMELEAF_ML_AUTH_TOKEN").strip() or None,
             image_revision=env.get("FRAMELEAF_RESTORATION_IMAGE_REVISION", "").strip() or None,
             host=env.get("FRAMELEAF_RESTORATION_HOST", "0.0.0.0"),
             port=_int_env(env, "FRAMELEAF_RESTORATION_PORT", 3004),
