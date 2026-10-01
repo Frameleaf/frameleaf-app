@@ -167,6 +167,8 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
     "e2e/docker-compose-logs.txt",
     "e2e/docker-diagnostics-after-api-tests.txt",
     "e2e/docker-diagnostics-after-maintenance-tests.txt",
+    "e2e/docker-upload-transport-logs.txt",
+    "e2e/docker-cloud-accounting-logs.txt",
   ]);
 });
 
