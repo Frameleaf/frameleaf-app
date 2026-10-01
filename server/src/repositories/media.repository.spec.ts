@@ -7,6 +7,7 @@ import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { Colorspace, ImageFormat } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
+import { orientedToOriginal } from 'src/utils/develop-cleanup.js';
 import { AudioChannelPolicy, findAudioLayoutMismatch, findAvAlignmentMismatch } from 'src/utils/media-policy.js';
 import {
   audioReattachOffsetSeconds,
@@ -346,6 +347,82 @@ describe(MediaRepository.name, () => {
 
       expect(await getPixelColor(buffer, 10, 10)).toEqual({ r: 255, g: 0, b: 0 });
       expect(await getPixelColor(buffer, 990, 10)).toEqual({ r: 0, g: 0, b: 255 });
+    });
+  });
+
+  describe('renderDevelopGeometry (FL-113, FL-233)', () => {
+    it('turns, then mirrors the turned frame, exactly as brush and bitmap masks map back to the original', async () => {
+      const width = 5;
+      const height = 3;
+      // every pixel's red channel is its index in the original
+      const input = Buffer.alloc(width * height * 3);
+      for (let index = 0; index < width * height; index += 1) {
+        input[index * 3] = index * 10;
+      }
+      for (const rotation of [0, 90, 180, 270] as const) {
+        for (const flipHorizontal of [false, true]) {
+          for (const flipVertical of [false, true]) {
+            const oriented = rotation % 180 === 0 ? { width, height } : { width: height, height: width };
+            const { data, info } = await sut.renderDevelopGeometry(
+              input,
+              { width, height, channels: 3 },
+              {
+                rotation,
+                flipHorizontal,
+                flipVertical,
+                oriented,
+                straighten: 0,
+                extract: { left: 0, top: 0, ...oriented },
+                output: oriented,
+              },
+            );
+            expect({ width: info.width, height: info.height }).toEqual(oriented);
+            const mapping = { oriented, rotation, flipHorizontal, flipVertical };
+            for (let oy = 0; oy < oriented.height; oy += 1) {
+              for (let ox = 0; ox < oriented.width; ox += 1) {
+                const point = orientedToOriginal(ox + 0.5, oy + 0.5, mapping);
+                const source = Math.floor(point.y) * width + Math.floor(point.x);
+                expect({
+                  rotation,
+                  flipHorizontal,
+                  flipVertical,
+                  ox,
+                  oy,
+                  value: data[(oy * info.width + ox) * info.channels],
+                }).toEqual({
+                  rotation,
+                  flipHorizontal,
+                  flipVertical,
+                  ox,
+                  oy,
+                  value: source * 10,
+                });
+              }
+            }
+          }
+        }
+      }
+    });
+
+    it('mirrors the turned frame: a quarter turn then a left-right mirror', async () => {
+      // [[0, 1, 2], [3, 4, 5]] turned clockwise is [[3, 0], [4, 1], [5, 2]], mirrored [[0, 3], [1, 4], [2, 5]]
+      const input = Buffer.from([0, 1, 2, 3, 4, 5].flatMap((value) => [value * 40, 0, 0]));
+      const oriented = { width: 2, height: 3 };
+      const { data, info } = await sut.renderDevelopGeometry(
+        input,
+        { width: 3, height: 2, channels: 3 },
+        {
+          rotation: 90,
+          flipHorizontal: true,
+          flipVertical: false,
+          oriented,
+          straighten: 0,
+          extract: { left: 0, top: 0, ...oriented },
+          output: oriented,
+        },
+      );
+      const red = Array.from({ length: 6 }, (_, index) => data[index * info.channels] / 40);
+      expect(red).toEqual([0, 3, 1, 4, 2, 5]);
     });
   });
 
