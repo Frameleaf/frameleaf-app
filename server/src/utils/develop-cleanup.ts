@@ -27,6 +27,7 @@ export type DevelopBitmap = { data: Uint8Array; width: number; height: number; c
 export type DevelopStroke = { points: [number, number][]; radius: number; erase: boolean };
 
 type Size = { width: number; height: number };
+type Box = { left: number; top: number; right: number; bottom: number };
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const finite = (value: unknown, fallback = 0) =>
@@ -129,7 +130,11 @@ const segmentDistance = (px: number, py: number, ax: number, ay: number, bx: num
   const vy = by - ay;
   const length2 = vx * vx + vy * vy;
   const t = length2 === 0 ? 0 : clamp(((px - ax) * vx + (py - ay) * vy) / length2, 0, 1);
-  return Math.hypot(px - (ax + t * vx), py - (ay + t * vy));
+  // sqrt rather than hypot: hypot is implementation-approximated, and every renderer must agree
+  const dx = px - (ax + t * vx);
+  const dy = py - (ay + t * vy);
+  // eslint-disable-next-line unicorn/prefer-modern-math-apis -- see above: an exact, shared definition
+  return Math.sqrt(dx * dx + dy * dy);
 };
 
 /** The soft edge shared by strokes and regions: 1 inside `inner`, 0 beyond 1, smoothstep between. */
@@ -171,6 +176,138 @@ export function strokeCoverage(
   }
   return edge(distance / radiusPx, feather);
 }
+
+/** FL-233: the longest side of the grid a brush mask is drawn into before it is sampled. */
+export const BRUSH_GRID_MAX_SIDE = 2048;
+
+/**
+ * Stroke coverage drawn into a grid once, then sampled: `data[gy * width + gx]` is the coverage at
+ * the original-image point (`left` + (gx + 0.5) / `scale`, `top` + (gy + 0.5) / `scale`).
+ */
+export type DevelopCoverage = {
+  data: Float32Array;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  scale: number;
+};
+
+/**
+ * Draw strokes into a coverage grid over `bounds` (original pixels) at `scale` grid cells per
+ * original pixel, in order: a painting stroke takes the maximum, an erasing one multiplies by
+ * (1 − its coverage). Each segment only visits the cells within its radius, so the cost follows the
+ * painted area, not the image size times the number of points.
+ */
+export function rasterizeStrokes(
+  strokes: DevelopStroke[],
+  original: Size,
+  feather: number,
+  bounds: Box,
+  scale: number,
+): DevelopCoverage {
+  const width = Math.max(0, Math.ceil((bounds.right - bounds.left) * scale));
+  const height = Math.max(0, Math.ceil((bounds.bottom - bounds.top) * scale));
+  const data = new Float32Array(width * height);
+  const unit = Math.min(original.width, original.height);
+  for (const stroke of strokes) {
+    const radius = stroke.radius * unit;
+    if (!(radius > 0) || width === 0 || height === 0) {
+      continue;
+    }
+    const points = stroke.points.map(([x, y]) => [x * original.width, y * original.height] as const);
+    // the stroke's own cells, then merged in order
+    let gx0 = width;
+    let gy0 = height;
+    let gx1 = 0;
+    let gy1 = 0;
+    for (const [x, y] of points) {
+      gx0 = Math.min(gx0, Math.floor((x - radius - bounds.left) * scale));
+      gy0 = Math.min(gy0, Math.floor((y - radius - bounds.top) * scale));
+      gx1 = Math.max(gx1, Math.ceil((x + radius - bounds.left) * scale));
+      gy1 = Math.max(gy1, Math.ceil((y + radius - bounds.top) * scale));
+    }
+    gx0 = clamp(gx0, 0, width);
+    gy0 = clamp(gy0, 0, height);
+    gx1 = clamp(gx1, 0, width);
+    gy1 = clamp(gy1, 0, height);
+    if (gx1 <= gx0 || gy1 <= gy0) {
+      continue;
+    }
+    const sw = gx1 - gx0;
+    const own = new Float32Array(sw * (gy1 - gy0));
+    for (let index = 0; index < points.length; index += 1) {
+      const [ax, ay] = points[index];
+      const [bx, by] = points[Math.min(index + 1, points.length - 1)];
+      const sx0 = clamp(Math.floor((Math.min(ax, bx) - radius - bounds.left) * scale), gx0, gx1);
+      const sy0 = clamp(Math.floor((Math.min(ay, by) - radius - bounds.top) * scale), gy0, gy1);
+      const sx1 = clamp(Math.ceil((Math.max(ax, bx) + radius - bounds.left) * scale), gx0, gx1);
+      const sy1 = clamp(Math.ceil((Math.max(ay, by) + radius - bounds.top) * scale), gy0, gy1);
+      for (let gy = sy0; gy < sy1; gy += 1) {
+        const uy = bounds.top + (gy + 0.5) / scale;
+        for (let gx = sx0; gx < sx1; gx += 1) {
+          const ux = bounds.left + (gx + 0.5) / scale;
+          const value = edge(segmentDistance(ux, uy, ax, ay, bx, by) / radius, feather);
+          const at = (gy - gy0) * sw + (gx - gx0);
+          if (value > own[at]) {
+            own[at] = value;
+          }
+        }
+      }
+    }
+    for (let gy = gy0; gy < gy1; gy += 1) {
+      for (let gx = gx0; gx < gx1; gx += 1) {
+        const value = own[(gy - gy0) * sw + (gx - gx0)];
+        const at = gy * width + gx;
+        data[at] = stroke.erase ? data[at] * (1 - value) : Math.max(data[at], value);
+      }
+    }
+  }
+  return { data, left: bounds.left, top: bounds.top, width, height, scale };
+}
+
+/** Bilinear sample of a coverage grid at an original-image point; 0 outside it. */
+export function sampleCoverage(coverage: DevelopCoverage, ux: number, uy: number): number {
+  if (coverage.width === 0 || coverage.height === 0) {
+    return 0;
+  }
+  const x = (ux - coverage.left) * coverage.scale - 0.5;
+  const y = (uy - coverage.top) * coverage.scale - 0.5;
+  if (x < -0.5 || y < -0.5 || x > coverage.width - 0.5 || y > coverage.height - 0.5) {
+    return 0;
+  }
+  const cx = clamp(x, 0, coverage.width - 1);
+  const cy = clamp(y, 0, coverage.height - 1);
+  const x0 = Math.floor(cx);
+  const y0 = Math.floor(cy);
+  const x1 = Math.min(x0 + 1, coverage.width - 1);
+  const y1 = Math.min(y0 + 1, coverage.height - 1);
+  const fx = cx - x0;
+  const fy = cy - y0;
+  const at = (px: number, py: number) => coverage.data[py * coverage.width + px];
+  const top = at(x0, y0) + (at(x1, y0) - at(x0, y0)) * fx;
+  const bottom = at(x0, y1) + (at(x1, y1) - at(x0, y1)) * fx;
+  return top + (bottom - top) * fy;
+}
+
+/** Grid cells across the smallest stroke radius: finer adds no visible detail to a soft edge. */
+export const STROKE_GRID_CELLS_PER_RADIUS = 12;
+
+/** Grid cells per original pixel for these strokes: at most one, and at least 12 across a radius. */
+export const strokeGridScale = (strokes: DevelopStroke[], original: Size) => {
+  const unit = Math.min(original.width, original.height);
+  const smallest = Math.min(...strokes.map((stroke) => stroke.radius * unit));
+  return Number.isFinite(smallest) && smallest > 0 ? Math.min(1, STROKE_GRID_CELLS_PER_RADIUS / smallest) : 1;
+};
+
+/** The grid a brush mask over this original is drawn into: the whole original, at most 2048 a side. */
+export const brushGrid = (original: Size, strokes: DevelopStroke[] = []): { bounds: Box; scale: number } => ({
+  bounds: { left: 0, top: 0, right: original.width, bottom: original.height },
+  scale: Math.min(
+    BRUSH_GRID_MAX_SIDE / Math.max(1, original.width, original.height),
+    strokeGridScale(strokes, original),
+  ),
+});
 
 /**
  * Bilinear sample of one channel of a bitmap stretched over the whole original, at fractions `u`,
@@ -233,8 +370,6 @@ export function orientedToOriginal(
   }
   return { x, y, original };
 }
-
-type Box = { left: number; top: number; right: number; bottom: number };
 
 /** The pixel rectangle an operation can touch in an original of this size. */
 function operationBox(op: AssetDevelopCleanup, size: Size): Box {
@@ -329,14 +464,34 @@ export function applyDevelopCleanup(
     if (box.right <= box.left || box.bottom <= box.top) {
       continue;
     }
-    const before = [...data];
     const at = (x: number, y: number) => (y * info.width + x) * channels;
-    const coverage = (x: number, y: number) => cleanupCoverage(op, x + 0.5, y + 0.5, size);
+    // The rows this operation reads, copied once (a typed copy of only those rows, never the frame
+    // as a JavaScript array): the area, its clone/heal source, or the whole blocks it pixelates.
+    const stride = info.width * channels;
+    const block = Math.max(1, Math.round(op.blockSize * Math.min(info.width, info.height)));
+    const dy = Math.round((op.source?.dy ?? 0) * info.height);
+    let rowStart = box.top;
+    let rowEnd = box.bottom;
+    if (op.method === AssetDevelopCleanupMethod.Pixelate) {
+      rowStart = Math.floor(box.top / block) * block;
+      rowEnd = Math.min(info.height, Math.ceil(box.bottom / block) * block);
+    } else if (op.method === AssetDevelopCleanupMethod.Clone || op.method === AssetDevelopCleanupMethod.Heal) {
+      rowStart = Math.min(rowStart, clamp(box.top + dy, 0, info.height - 1));
+      rowEnd = Math.max(rowEnd, clamp(box.bottom - 1 + dy, 0, info.height - 1) + 1);
+    }
+    const before = new Uint8Array(data.subarray(rowStart * stride, rowEnd * stride));
+    const prior = (index: number) => before[index - rowStart * stride];
+    // strokes are drawn once over the area at full resolution; a region is measured directly
+    const drawn = op.strokes
+      ? rasterizeStrokes(op.strokes, size, op.feather, box, strokeGridScale(op.strokes, size))
+      : undefined;
+    const coverage = drawn
+      ? (x: number, y: number) => sampleCoverage(drawn, x + 0.5, y + 0.5)
+      : (x: number, y: number) => cleanupCoverage(op, x + 0.5, y + 0.5, size);
 
     let produce: (x: number, y: number, channel: number) => number;
     switch (op.method) {
       case AssetDevelopCleanupMethod.Pixelate: {
-        const block = Math.max(1, Math.round(op.blockSize * Math.min(info.width, info.height)));
         const means = new Map<number, number[]>();
         const blockMean = (bx: number, by: number) => {
           const key = by * Math.ceil(info.width / block) + bx;
@@ -347,7 +502,7 @@ export function applyDevelopCleanup(
             for (let y = by * block; y < Math.min(info.height, (by + 1) * block); y += 1) {
               for (let x = bx * block; x < Math.min(info.width, (bx + 1) * block); x += 1) {
                 for (let c = 0; c < colours; c += 1) {
-                  sums[c] += before[at(x, y) + c];
+                  sums[c] += prior(at(x, y) + c);
                 }
                 count += 1;
               }
@@ -363,7 +518,6 @@ export function applyDevelopCleanup(
       case AssetDevelopCleanupMethod.Clone:
       case AssetDevelopCleanupMethod.Heal: {
         const dx = Math.round((op.source?.dx ?? 0) * info.width);
-        const dy = Math.round((op.source?.dy ?? 0) * info.height);
         const sourceAt = (x: number, y: number) =>
           at(clamp(x + dx, 0, info.width - 1), clamp(y + dy, 0, info.height - 1));
         let shift = Array.from({ length: colours }, () => 0);
@@ -378,15 +532,15 @@ export function applyDevelopCleanup(
                 continue;
               }
               for (let c = 0; c < colours; c += 1) {
-                area[c] += before[at(x, y) + c] * weight;
-                source[c] += before[sourceAt(x, y) + c] * weight;
+                area[c] += prior(at(x, y) + c) * weight;
+                source[c] += prior(sourceAt(x, y) + c) * weight;
               }
               total += weight;
             }
           }
           shift = area.map((sum, c) => (total > 0 ? (sum - source[c]) / total : 0));
         }
-        produce = (x, y, c) => before[sourceAt(x, y) + c] + shift[c];
+        produce = (x, y, c) => prior(sourceAt(x, y) + c) + shift[c];
         break;
       }
       case AssetDevelopCleanupMethod.Remove: {
@@ -406,7 +560,7 @@ export function applyDevelopCleanup(
               : 0.2126 * sampleBitmap(fill, u, v, 0) +
                 0.7152 * sampleBitmap(fill, u, v, 1) +
                 0.0722 * sampleBitmap(fill, u, v, 2);
-          return before[at(x, y) + c] + (value - before[at(x, y) + c]) * alpha;
+          return prior(at(x, y) + c) + (value - prior(at(x, y) + c)) * alpha;
         };
         break;
       }
@@ -424,7 +578,7 @@ export function applyDevelopCleanup(
         const index = at(x, y);
         for (let c = 0; c < colours; c += 1) {
           const value = produce(x, y, c);
-          data[index + c] = Math.round(clamp(before[index + c] + (value - before[index + c]) * weight, 0, 255));
+          data[index + c] = Math.round(clamp(prior(index + c) + (value - prior(index + c)) * weight, 0, 255));
         }
       }
     }

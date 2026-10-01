@@ -130,6 +130,23 @@ export const ASSET_DEVELOP_MAX_STROKES = 64;
 export const ASSET_DEVELOP_MAX_STROKE_POINTS = 512;
 /** FL-233: the most Clean Up operations one recipe may carry. */
 export const ASSET_DEVELOP_MAX_CLEANUP = 32;
+/** FL-233: the most stroke points one recipe may carry in all (brush masks and Clean Up together). */
+export const ASSET_DEVELOP_MAX_RECIPE_POINTS = 4096;
+
+/** FL-233: how many stroke points a recipe's masks and Clean Up carry together. */
+export const recipeStrokePoints = (value: { masks?: unknown; cleanup?: unknown }) => {
+  let total = 0;
+  for (const list of [value.masks, value.cleanup]) {
+    for (const item of Array.isArray(list) ? list : []) {
+      const strokes = item && typeof item === 'object' ? (item as { strokes?: unknown }).strokes : undefined;
+      for (const stroke of Array.isArray(strokes) ? strokes : []) {
+        const points = stroke && typeof stroke === 'object' ? (stroke as { points?: unknown }).points : undefined;
+        total += Array.isArray(points) ? points.length : 0;
+      }
+    }
+  }
+  return total;
+};
 
 /** FL-233: a stored develop artifact (mask bitmap or generated fill): the SHA-256 of its PNG bytes. */
 export const AssetDevelopArtifactIdSchema = z
@@ -346,79 +363,83 @@ export const AssetDevelopMaskSchema = z
   )
   .meta({ id: 'AssetDevelopMask' });
 
-export const KnownAssetDevelopRecipeSchema = z
-  .object({
-    version: z.literal(ASSET_DEVELOP_RECIPE_VERSION).meta({ format: 'double' }).describe('Recipe contract version'),
-    exposure: z
-      .number()
-      .meta({ format: 'double' })
-      .min(-2)
-      .max(2)
-      .default(0)
-      .describe('Exposure in EV; each whole stop doubles the light'),
-    contrast: bipolar('Contrast around middle grey'),
-    brilliance: bipolar(
-      'FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol',
-    ),
-    highlights: bipolar('Highlight recovery (negative) or lift (positive)'),
-    shadows: bipolar('Shadow lift (positive) or deepening (negative)'),
-    whites: bipolar('White point'),
-    blacks: bipolar('Black point'),
-    temperature: bipolar('Warm (positive) or cool (negative) white balance shift'),
-    tint: bipolar('Magenta (positive) or green (negative) tint'),
-    vibrance: bipolar('Saturation weighted towards muted colours'),
-    saturation: bipolar('Global saturation'),
-    clarity: bipolar('Local contrast in the midtones'),
-    dehaze: bipolar('Haze removal (positive) or addition (negative)'),
-    vignette: bipolar('Darkened (positive) or lightened (negative) edges'),
-    grain: unipolar('Film grain amount'),
-    sharpen: unipolar('Detail sharpening amount'),
-    noiseReduction: unipolar('Luminance noise reduction amount'),
-    crop: AssetDevelopCropSchema.default({ x: 0, y: 0, w: 1, h: 1 }),
-    straighten: z
-      .number()
-      .meta({ format: 'double' })
-      .min(-45)
-      .max(45)
-      .default(0)
-      .describe('Straighten angle in degrees, applied before the crop'),
-    rotation: z
-      .int()
-      .min(0)
-      .max(270)
-      .default(0)
-      .refine((value) => [0, 90, 180, 270].includes(value), {
-        error: 'Rotation must be one of the following values: 0, 90, 180, 270',
-      })
-      .describe('Quarter-turn rotation in degrees, clockwise'),
-    flipHorizontal: z.boolean().default(false).describe('Mirror left to right'),
-    flipVertical: z.boolean().default(false).describe('Mirror top to bottom'),
-    preset: AssetDevelopPresetSchema.default(AssetDevelopPreset.Original),
-    presetStrength: z.int().min(0).max(100).default(100).describe('How much of the preset is applied, as a percentage'),
-    masks: z
-      .array(AssetDevelopMaskSchema)
-      .max(ASSET_DEVELOP_MAX_MASKS)
-      .default([])
-      .refine((masks) => new Set(masks.map((mask) => mask.id)).size === masks.length, {
-        error: 'Mask identifiers must be unique',
-      })
-      .describe('Selective adjustments, applied in order after the global develop'),
-    cleanup: z
-      .array(AssetDevelopCleanupSchema)
-      .max(ASSET_DEVELOP_MAX_CLEANUP)
-      .default([])
-      .refine((ops) => new Set(ops.map((op) => op.id)).size === ops.length, {
-        error: 'Clean Up identifiers must be unique',
-      })
-      .describe('FL-233: Clean Up operations, applied in order to the original before every other step'),
-  })
-  .meta({ id: 'KnownAssetDevelopRecipe' });
+/** The recipe fields without the whole-recipe checks, for `.pick` and the envelope's shape. */
+export const KnownAssetDevelopRecipeFields = z.object({
+  version: z.literal(ASSET_DEVELOP_RECIPE_VERSION).meta({ format: 'double' }).describe('Recipe contract version'),
+  exposure: z
+    .number()
+    .meta({ format: 'double' })
+    .min(-2)
+    .max(2)
+    .default(0)
+    .describe('Exposure in EV; each whole stop doubles the light'),
+  contrast: bipolar('Contrast around middle grey'),
+  brilliance: bipolar(
+    'FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol',
+  ),
+  highlights: bipolar('Highlight recovery (negative) or lift (positive)'),
+  shadows: bipolar('Shadow lift (positive) or deepening (negative)'),
+  whites: bipolar('White point'),
+  blacks: bipolar('Black point'),
+  temperature: bipolar('Warm (positive) or cool (negative) white balance shift'),
+  tint: bipolar('Magenta (positive) or green (negative) tint'),
+  vibrance: bipolar('Saturation weighted towards muted colours'),
+  saturation: bipolar('Global saturation'),
+  clarity: bipolar('Local contrast in the midtones'),
+  dehaze: bipolar('Haze removal (positive) or addition (negative)'),
+  vignette: bipolar('Darkened (positive) or lightened (negative) edges'),
+  grain: unipolar('Film grain amount'),
+  sharpen: unipolar('Detail sharpening amount'),
+  noiseReduction: unipolar('Luminance noise reduction amount'),
+  crop: AssetDevelopCropSchema.default({ x: 0, y: 0, w: 1, h: 1 }),
+  straighten: z
+    .number()
+    .meta({ format: 'double' })
+    .min(-45)
+    .max(45)
+    .default(0)
+    .describe('Straighten angle in degrees, applied before the crop'),
+  rotation: z
+    .int()
+    .min(0)
+    .max(270)
+    .default(0)
+    .refine((value) => [0, 90, 180, 270].includes(value), {
+      error: 'Rotation must be one of the following values: 0, 90, 180, 270',
+    })
+    .describe('Quarter-turn rotation in degrees, clockwise'),
+  flipHorizontal: z.boolean().default(false).describe('Mirror left to right'),
+  flipVertical: z.boolean().default(false).describe('Mirror top to bottom'),
+  preset: AssetDevelopPresetSchema.default(AssetDevelopPreset.Original),
+  presetStrength: z.int().min(0).max(100).default(100).describe('How much of the preset is applied, as a percentage'),
+  masks: z
+    .array(AssetDevelopMaskSchema)
+    .max(ASSET_DEVELOP_MAX_MASKS)
+    .default([])
+    .refine((masks) => new Set(masks.map((mask) => mask.id)).size === masks.length, {
+      error: 'Mask identifiers must be unique',
+    })
+    .describe('Selective adjustments, applied in order after the global develop'),
+  cleanup: z
+    .array(AssetDevelopCleanupSchema)
+    .max(ASSET_DEVELOP_MAX_CLEANUP)
+    .default([])
+    .refine((ops) => new Set(ops.map((op) => op.id)).size === ops.length, {
+      error: 'Clean Up identifiers must be unique',
+    })
+    .describe('FL-233: Clean Up operations, applied in order to the original before every other step'),
+});
+
+export const KnownAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.refine(
+  (recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS,
+  { error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all` },
+).meta({ id: 'KnownAssetDevelopRecipe' });
 
 /** Stored/wire envelope. Opaque JSON is retained; it is never a render instruction. */
 const VersionOneEnvelopeSchema = z
   .object({
     ...Object.fromEntries(
-      Object.entries(KnownAssetDevelopRecipeSchema.shape).map(([key, schema]) => [
+      Object.entries(KnownAssetDevelopRecipeFields.shape).map(([key, schema]) => [
         key,
         (schema instanceof z.ZodDefault ? schema.unwrap() : schema).optional(),
       ]),

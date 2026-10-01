@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { KnownAssetDevelopRecipeSchema } from 'src/dtos/asset-develop.dto.js';
+import { KnownAssetDevelopRecipeFields } from 'src/dtos/asset-develop.dto.js';
 import { ApiCustomExtension } from 'src/enum.js';
 
 /**
@@ -12,13 +12,15 @@ import { ApiCustomExtension } from 'src/enum.js';
 export const DEVELOP_PRESET_MAX = 200;
 
 /**
- * What a preset applies: every develop slider, the look and its strength, and the selective
- * masks. Geometry (crop, straighten, turns, flips) is never part of a preset, exactly like Copy
- * and Paste adjustments, so applying one never reframes a photo.
+ * What a preset applies: every develop slider (Brilliance included, FL-233), the look and its
+ * strength, and the radial and linear masks. Geometry (crop, straighten, turns, flips) is never part
+ * of a preset, exactly like Copy and Paste adjustments, so applying one never reframes a photo; nor
+ * are brush and subject/sky/background masks or Clean Up, which belong to one photo's content.
  */
-export const DevelopPresetSettingsSchema = KnownAssetDevelopRecipeSchema.pick({
+export const DevelopPresetSettingsSchema = KnownAssetDevelopRecipeFields.pick({
   exposure: true,
   contrast: true,
+  brilliance: true,
   highlights: true,
   shadows: true,
   whites: true,

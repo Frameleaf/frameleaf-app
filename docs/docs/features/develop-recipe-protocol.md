@@ -57,12 +57,15 @@ A positive value opens the shadows and holds the highlights back. Black, middle 
 
 Brush, subject, sky and background masks use the existing mask adjustments, `amount`, `enabled` and `invert`.
 
-- **`brush`** — `strokes` (at most 64, each with up to 512 points) is a list of `{ points, radius, erase }`. Strokes are painted in order. At each pixel, a stroke covers `1` within `(1 − feather/100) · radius` of its polyline. Coverage falls to `0` at `radius` along a smoothstep. A painting stroke sets the weight to `max(weight, coverage)`. An erasing stroke sets it to `weight · (1 − coverage)`.
+- **`brush`** — `strokes` (at most 64, each with up to 512 points) is a list of `{ points, radius, erase }`. A recipe carries at most 4,096 stroke points in all, counting masks and Clean Up together. Strokes are painted in order:
+  - A stroke covers `1` within `(1 − feather/100) · radius` of its polyline. Coverage falls to `0` at `radius` along a smoothstep. Distances use `sqrt`, never `hypot`.
+  - A painting stroke sets the weight to `max(weight, coverage)`. An erasing stroke sets it to `weight · (1 − coverage)`.
+  - The weights are computed once, on a grid over the original. The grid has `min(1, 2048 / longest side, 12 / smallest stroke radius in pixels)` cells per original pixel, and each cell is evaluated at its centre. The grid is then sampled bilinearly at every pixel, which keeps the cost proportional to the painted area.
 - **`subject`, `sky`, `background`** — `artifact` is the id of a greyscale bitmap uploaded for this photo. The bitmap is stretched over the whole original and sampled bilinearly; 255 means fully selected. `detector` is an opaque descriptor a client can use to detect the mask again. The server never runs a detector. A bitmap mask without an `artifact` is kept in the recipe but does not render.
 
 ### Clean Up
 
-`cleanup` holds at most 32 operations: `{ id, method, enabled, region | strokes, feather, source, fill, blockSize }`. Each operation has exactly one area: a `region` rectangle, or `strokes` (which never erase). Coverage of a region uses its `feather` (percent of half its size on each axis). Strokes are covered as in a brush mask. Every result is blended in by that coverage. Each operation reads the result of the one before it.
+`cleanup` holds at most 32 operations: `{ id, method, enabled, region | strokes, feather, source, fill, blockSize }`. Each operation has exactly one area: a `region` rectangle, or `strokes` (which never erase). Coverage of a region uses its `feather` (percent of half its size on each axis). Strokes are covered as in a brush mask, on a grid over the operation's bounding box with `min(1, 12 / smallest stroke radius in pixels)` cells per pixel. Every result is blended in by that coverage. Each operation reads the result of the one before it.
 
 - **`pixelate`** — blocks of `blockSize` × the shorter side, aligned to the image's top-left corner. Each block is replaced by its mean colour over the whole block.
 - **`clone`** — the pixel `source` (`dx`, `dy`, fractions of the width and height) away. The offset is rounded to whole pixels and clamped to the image.
@@ -78,7 +81,10 @@ A future Clean Up method stays opaque in the envelope, exactly like a future mas
 - **Normalization:** EXIF orientation is applied, metadata is dropped, and the bitmap is stored as an 8-bit PNG (greyscale for a mask, RGBA for a fill).
 - **Id:** the returned `id` is the SHA-256 of that PNG, so uploading the same bitmap again returns the same id.
 - **Limits:** at most 64 MiB, 16,384 pixels per side and 150 megapixels.
-- **Storage:** artifacts are kept beside the photo's rendered versions, named by the photo and the id (never a path a client chose), and are released when the photo is deleted.
+- **Limits:** a mask is never larger than the original. A fill is at most 4,096 pixels a side and 16 megapixels. A photo keeps at most 64 artifacts. Artifacts count against the owner's storage quota when an upload is checked.
+- **Storage:** artifacts are kept in the thumbnails folder beside the photo's rendered versions (`<thumbs>/<owner>/…/<asset>_develop_artifact_<id>.png`) and recorded in the `immich_fork.asset_develop_artifact` table. The name comes from the photo and the id, never from a path a client chose.
+- **Backups:** unlike thumbnails, artifacts **cannot be regenerated**: a client computed them. Back them up with the rest of the thumbnails folder. The integrity check never reports them as untracked.
+- **Release:** artifacts are released when the photo is deleted. An artifact that no saved version of its photo references is released after seven days.
 
 Saving with `render: true`, rendering, or previewing a recipe that references an artifact this photo does not have returns HTTP 400 with `code: develop_artifact_missing` before anything is written. A recipe saved with `render: false` keeps the reference and renders once the artifact is uploaded.
 
