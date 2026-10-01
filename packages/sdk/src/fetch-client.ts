@@ -9664,6 +9664,8 @@ export type SharedLinkResponseDto = {
     /** Custom URL slug */
     slug: string | null;
     "type": SharedLinkType;
+    /** The link's public address: the server's external domain, then /s/<slug> (URL-encoded) or /share/<key>. Null when no external domain is set; a client then puts the same path after the address it uses. */
+    url: string | null;
     /** Owner user ID */
     userId: string;
 };

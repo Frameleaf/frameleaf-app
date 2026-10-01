@@ -105,6 +105,12 @@ const SharedLinkResponseSchema = z
     allowDownload: z.boolean().describe('Allow downloads'),
     showMetadata: z.boolean().describe('Show metadata'),
     slug: z.string().nullable().describe('Custom URL slug'),
+    url: z
+      .string()
+      .nullable()
+      .describe(
+        "The link's public address: the server's external domain, then /s/<slug> (URL-encoded) or /share/<key>. Null when no external domain is set; a client then puts the same path after the address it uses.",
+      ),
     owner: SharedLinkOwnerResponseSchema.optional().describe(
       'Display name of the user who created the link, for "Shared by" on the public page',
     ),
@@ -124,7 +130,28 @@ export class SharedLinkResponseDto extends createZodDto(SharedLinkResponseSchema
  */
 export const SHARED_LINK_PASSWORD_MASK = '********';
 
-export function mapSharedLink(sharedLink: SharedLink, options: { stripAssetMetadata: boolean }): SharedLinkResponseDto {
+/**
+ * FL-305: a link's public address, as the web shows it. Only the configured external domain makes it
+ * absolute: an address from the request (its Host header) could be spoofed or name an internal host.
+ */
+export const sharedLinkUrl = (
+  sharedLink: Pick<SharedLink, 'key' | 'slug'>,
+  externalDomain: string | undefined,
+): string | null => {
+  const base = externalDomain?.trim().replace(/\/+$/, '');
+  if (!base) {
+    return null;
+  }
+  const path = sharedLink.slug
+    ? `/s/${encodeURIComponent(sharedLink.slug)}`
+    : `/share/${sharedLink.key.toString('base64url')}`;
+  return `${base}${path}`;
+};
+
+export function mapSharedLink(
+  sharedLink: SharedLink,
+  options: { stripAssetMetadata: boolean; externalDomain?: string },
+): SharedLinkResponseDto {
   const assets = sharedLink.assets || [];
 
   const response = {
@@ -142,6 +169,7 @@ export function mapSharedLink(sharedLink: SharedLink, options: { stripAssetMetad
     allowDownload: sharedLink.allowDownload,
     showMetadata: sharedLink.showExif,
     slug: sharedLink.slug,
+    url: sharedLinkUrl(sharedLink, options.externalDomain),
     // pick the name explicitly so nothing else about the owner can ride along
     owner: sharedLink.owner ? { name: sharedLink.owner.name } : undefined,
   };
