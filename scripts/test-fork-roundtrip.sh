@@ -594,6 +594,9 @@ official_core_digest="$(node -e "const fs=require('node:fs'),crypto=require('nod
   exit 1
 }
 docker cp "$STATE_DIR/immich-plugin-core-v3.1.0.wasm" "$(compose ps -q database):/tmp/immich-plugin-core-v3.1.0.wasm"
+# FL-292: a new fork server is claimed with the setup code it shows; read it as an operator would
+FORK_ROUNDTRIP_SETUP_CODE="$(admin setup-code --plain || true)"
+export FORK_ROUNDTRIP_SETUP_CODE
 phase current-fork-seed src/specs/server/fork-schema-current-fork-cutover.e2e-spec.ts
 stop_fork
 export FORK_WORKERS_INCLUDE=api,microservices

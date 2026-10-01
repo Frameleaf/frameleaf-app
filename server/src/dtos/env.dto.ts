@@ -128,6 +128,17 @@ export const EnvSchema = z
       .string()
       .regex(/^fll_[A-Za-z0-9_-]{8,512}$/)
       .optional(),
+    /**
+     * FL-292: pins the setup code a new server asks for (8 characters of
+     * ABCDEFGHJKMNPQRSTUVWXYZ23456789, the dash optional), for automated installs and tests. Whoever
+     * sets it already controls the host. A pinned code is not replaced after wrong tries; it locks
+     * until the next start instead.
+     */
+    FRAMELEAF_SETUP_CODE: z
+      .string()
+      .transform((value) => value.toUpperCase().replaceAll('-', ''))
+      .pipe(z.string().regex(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/))
+      .optional(),
     /** FL-154: the edge worker's direct HTTPS port (default 2443) and bind address. */
     FRAMELEAF_EDGE_PORT: z.coerce.number().int().min(1).max(65_535).optional(),
     FRAMELEAF_EDGE_BIND: z.string().min(1).optional(),
