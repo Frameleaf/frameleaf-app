@@ -5,6 +5,7 @@ import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { typ
 import * as artifacts from 'src/fork-schema/migrations/0000000000212-AssetDevelopArtifacts.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
@@ -93,6 +94,75 @@ it('records an artifact once, counts it, and releases unreferenced and removed o
   // a removed photo takes its artifacts with it
   await sql`DELETE FROM public.asset WHERE id = ${asset.id}::uuid`.execute(db);
   await expect(sut.releaseArtifacts(queue, { assetId: asset.id })).resolves.toEqual([row(sha('a')).path]);
+});
+
+it('keeps a file recorded again before its queued deletion runs, and restarts the grace period on use', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: user.id });
+  const artifact = {
+    assetId: asset.id,
+    id: sha('e'),
+    ownerId: user.id,
+    kind: 'fill' as const,
+    path: `/thumbs/${asset.id}_develop_artifact_${sha('e')}.png`,
+    bytes: 10,
+    width: 1,
+    height: 1,
+  };
+  await sut.addArtifact(artifact);
+  const age = async () =>
+    (
+      await sql<{
+        createdAt: Date;
+      }>`SELECT "createdAt" FROM immich_fork.asset_develop_artifact WHERE id = ${sha('e')}`.execute(db)
+    ).rows[0]?.createdAt;
+  await sql`UPDATE immich_fork.asset_develop_artifact SET "createdAt" = now() - interval '30 days' WHERE id = ${sha('e')}`.execute(
+    db,
+  );
+  // uploading it again restarts its grace period
+  await expect(sut.addArtifact(artifact)).resolves.toBe(false);
+  expect((await age())!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+
+  // saving a version that uses it does too, and a render needs it
+  await sql`UPDATE immich_fork.asset_develop_artifact SET "createdAt" = now() - interval '30 days' WHERE id = ${sha('e')}`.execute(
+    db,
+  );
+  const recipe = {
+    ...defaultDevelopRecipe(),
+    cleanup: [{ id: 'x', method: 'remove', region: { x: 0, y: 0, w: 0.5, h: 0.5 }, fill: sha('e') }],
+  } as never;
+  await sut.create({
+    assetId: asset.id,
+    ownerId: user.id,
+    recipe,
+    recipeVersion: 1,
+    label: null,
+    status: AssetDevelopRevisionStatus.Saved,
+  });
+  expect((await age())!.getTime()).toBeGreaterThan(Date.now() - 60_000);
+  await expect(
+    sut.create({
+      assetId: asset.id,
+      ownerId: user.id,
+      recipe: { ...defaultDevelopRecipe(), masks: [{ id: 's', kind: 'sky', artifact: sha('f') }] } as never,
+      recipeVersion: 1,
+      requireRenderable: true,
+      label: null,
+      status: AssetDevelopRevisionStatus.Saved,
+    }),
+  ).rejects.toThrow('not uploaded for this photo');
+
+  // released, then recorded again before the queued deletion runs: the file stays
+  await sql`DELETE FROM immich_fork.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid`.execute(db);
+  const queue = vi.fn().mockResolvedValue(undefined);
+  await sut.releaseArtifacts(queue, { unreferencedBefore: new Date(Date.now() + 60_000) });
+  expect(queue).toHaveBeenCalledWith([artifact.path]);
+  await sut.addArtifact(artifact);
+  const unlink = vi.fn().mockResolvedValue(undefined);
+  const physical = new PhysicalFileRepository(db);
+  await expect(physical.deleteUnreferencedPath(artifact.path, unlink)).resolves.toMatchObject({ deleted: false });
+  expect(unlink).not.toHaveBeenCalled();
 });
 
 it('refuses writes while the server is being handed over', async () => {
