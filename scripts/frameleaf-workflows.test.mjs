@@ -166,6 +166,7 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
   assert.deepEqual(artifact.with.path.trim().split("\n"), [
     "e2e/docker-compose-logs.txt",
     "e2e/docker-diagnostics-after-api-tests.txt",
+    "e2e/docker-diagnostics-after-maintenance-tests.txt",
   ]);
 });
 
