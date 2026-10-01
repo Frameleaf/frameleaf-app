@@ -130,3 +130,70 @@ test("wrong final content-edge pixel is refused by the unchanged actual delta1 g
     /independent actual preview pixel delta 2/,
   );
 });
+
+// Execute the fixture's actual navigation/readiness flow, without a browser or engine claim.
+test("native Position navigation acknowledges 30 then 0 and refuses non-singleton selection", async () => {
+  const start = source.indexOf("  const acknowledge = async (frame, index) => {");
+  const end = source.indexOf("  const seek = async (frame, n) => {", start);
+  assert.ok(start > 0 && end > start);
+  async function run(extraSelection = false) {
+    let current = 0,
+      selected;
+    const calls = [];
+    const dom = {
+      querySelector: () => ({ checkVisibility: () => true, disabled: false }),
+      querySelectorAll: (selector) =>
+        selector === "button"
+          ? [
+              {
+                checkVisibility: () => true,
+                textContent: `00:${String(Math.floor(current / 30)).padStart(2, "0")}:${String(current % 30).padStart(2, "0")} / 00:01:29`,
+              },
+            ]
+          : [selected, ...(extraSelection ? ["opacity"] : [])].filter(Boolean).map((id) => ({
+              dataset: { motionKeyframeId: id },
+              querySelector: () => ({}),
+            })),
+    };
+    const frame = {
+      async click(selector) {
+        calls.push(selector);
+        if (selector.includes("Next Position")) {
+          current = 30;
+          selected = "k30";
+        }
+        if (selector.includes("Previous Position")) {
+          current = 0;
+          selected = "k0";
+        }
+      },
+      async evaluate(fn, arg) {
+        if (arg !== undefined) calls.push(`ack:${arg}`);
+        return runInNewContext(`(${fn.toString()})(arg)`, { document: dom, arg });
+      },
+      async waitForFunction(fn) {
+        assert.equal(await this.evaluate(fn), true, "actual readiness must hold");
+      },
+    };
+    const select = runInNewContext(
+      `(() => { ${source.slice(start, end)}; return selectInline; })()`,
+      {
+        assert,
+        Date,
+        Set,
+        setTimeout,
+        button: (label) => `button[aria-label=${JSON.stringify(label)}]`,
+      },
+    );
+    await select(frame);
+    return calls;
+  }
+  assert.deepEqual(await run(), [
+    '[data-item-id="still"]',
+    'button[aria-label="Next Position keyframe"]',
+    "ack:00:01:00 / 00:01:29",
+    'button[aria-label="Previous Position keyframe"]',
+    "ack:00:00:00 / 00:01:29",
+  ]);
+  await assert.rejects(run(true), /actual readiness must hold/);
+});
