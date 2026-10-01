@@ -70,7 +70,7 @@ export class FrameleafServerSetupService extends BaseService {
 
   /** `POST server/setup/admin`: the app's optional password administrator, with a setup ticket. */
   claimWithPassword(dto: FrameleafSetupAdminDto, client: SetupClient): Promise<UserAdminResponseDto> {
-    return withSetupProof(this.setupGate, { ticket: dto.ticket }, client, async () => {
+    return withSetupProof(this.setupGate, { ticket: dto.ticket, ticketOnly: true }, client, async () => {
       const admin = await this.createUser({
         isAdmin: true,
         email: dto.email,

@@ -154,6 +154,13 @@ describe(FrameleafServerSetupService.name, () => {
     await expect(sut.claimWithPassword(dto, { ...phone, ip: '192.168.1.41' })).rejects.toEqual(
       refusal('setup_ticket_invalid'),
     );
+    // the app's routes take only the ticket: none, or the code in its place, is refused
+    for (const notATicket of ['', state()!.code]) {
+      await expect(sut.claimWithPassword({ ...dto, ticket: notATicket }, phone)).rejects.toEqual(
+        refusal('setup_ticket_invalid'),
+      );
+    }
+    expect(mocks.user.create).not.toHaveBeenCalled();
     // a refused claim (an email already taken) leaves the ticket for another try
     mocks.user.getByEmail.mockResolvedValueOnce(UserFactory.create() as never);
     await expect(sut.claimWithPassword(dto, phone)).rejects.toThrow('Email is not available');

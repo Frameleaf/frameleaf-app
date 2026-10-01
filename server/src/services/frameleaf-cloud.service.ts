@@ -102,6 +102,9 @@ import { edgeStateCurrent, heartbeatEndpoints } from 'src/utils/frameleaf-remote
 import { type SetupClient, setupRefusal, withSetupProof } from 'src/utils/frameleaf-setup-gate.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
+/** FL-292: the single-use link token the Frameleaf app hands a new server (as FRAMELEAF_LINK_TOKEN takes). */
+const SETUP_LINK_TOKEN = /^fll_[A-Za-z0-9_-]{8,512}$/;
+
 /**
  * Capabilities this build announces when it registers (instance contract step 4). `dpop` (FC-50,
  * CLD-201): every call this server makes to Frameleaf Cloud carries a DPoP proof by its instance key
@@ -473,6 +476,8 @@ export class FrameleafCloudService extends BaseService {
         emailVerified: true,
         role: 'admin',
         autoRegistered: false,
+        // FL-235: the account that approved the link owns the server
+        access: 'owner',
       });
       await this.recordAdminEvents([
         {
@@ -497,10 +502,13 @@ export class FrameleafCloudService extends BaseService {
    */
   async claimNewServer(dto: FrameleafSetupLinkDto, client: SetupClient): Promise<FrameleafSetupLinkResponseDto> {
     const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
-    return withSetupProof(this.setupGate, { ticket: dto.ticket }, client, () =>
+    return withSetupProof(this.setupGate, { ticket: dto.ticket, ticketOnly: true }, client, () =>
       this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
         if (!cloudUrl) {
           throw setupRefusal(FrameleafSetupErrorCode.CloudUnavailable);
+        }
+        if (!SETUP_LINK_TOKEN.test(dto.linkToken)) {
+          throw setupRefusal(FrameleafSetupErrorCode.LinkTokenInvalid);
         }
         const current = await this.readLink(cloudUrl);
         if (current?.status === 'linked') {

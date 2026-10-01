@@ -744,7 +744,24 @@ describe(FrameleafCloudService.name, () => {
         emailVerified: true,
         role: 'admin',
         autoRegistered: false,
+        access: 'owner',
       });
+    });
+
+    it('refuses a missing ticket and a malformed link token with their own codes', async () => {
+      withTicket();
+      await expect(sut.claimNewServer({ ticket: '', linkToken: 'fll_app_token_123' }, phone)).rejects.toEqual(
+        refusal('setup_ticket_invalid'),
+      );
+      for (const linkToken of ['not-a-link-token', 'fll_short', 'fll_has spaces in it']) {
+        withTicket();
+        await expect(sut.claimNewServer({ ticket: TICKET, linkToken }, phone)).rejects.toEqual(
+          refusal('setup_link_token_invalid'),
+        );
+      }
+      expect(cloud.requests.filter(({ path }) => path === '/api/v1/instances')).toHaveLength(0);
+      // a refused token leaves the ticket usable
+      expect((metadata.get(SystemMetadataKey.FrameleafSetupCode) as { ticket?: unknown }).ticket).toBeDefined();
     });
   });
 

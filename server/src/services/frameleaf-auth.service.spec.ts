@@ -483,6 +483,42 @@ describe(FrameleafAuthService.name, () => {
       );
     });
 
+    describe('a server set up from the Frameleaf app (FL-292)', () => {
+      beforeEach(() => {
+        mocks.user.getAdmin.mockResolvedValue(void 0);
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+        mocks.user.getByEmail.mockResolvedValue(void 0);
+        mocks.clusterGroup.create.mockResolvedValue({ id: 'group-1' } as never);
+        mocks.user.create.mockResolvedValue(UserFactory.create({ isAdmin: true }) as never);
+      });
+
+      it('gives the owner who claims it by token exchange no invited-account quota (FL-230, FL-235)', async () => {
+        metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { signIn: { invitedStorageQuota: 5 } } });
+        clearConfigCache();
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'fl-sub' });
+        const token = await mint({ claims: { frameleaf_role: 'admin', frameleaf_access: 'owner' } });
+        await sut.exchangeToken({ token }, loginDetails);
+        expect(mocks.user.create).toHaveBeenCalledWith(
+          expect.objectContaining({ isAdmin: true, quotaSizeInBytes: null }),
+        );
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
+          expect.objectContaining({ sub: 'fl-sub', access: 'owner', autoRegistered: true }),
+        );
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ action: AdminAuditAction.AccountCreated, detail: 'server-claimed:app-frameleaf' }),
+        ]);
+      });
+
+      it('refuses anyone else by token exchange with no_access', async () => {
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'someone-else' });
+        const token = await mint({ claims: { frameleaf_role: 'admin', frameleaf_access: 'admin' } });
+        await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toMatchObject({
+          response: expect.objectContaining({ code: 'frameleaf_exchange_no_access' }),
+        });
+        expect(mocks.user.create).not.toHaveBeenCalled();
+      });
+    });
+
     describe('storage quota for invited accounts (FL-235)', () => {
       const GiB = 1024 ** 3;
       const setQuota = (invitedStorageQuota: number | null) => {
