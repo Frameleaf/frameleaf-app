@@ -100,6 +100,10 @@ const CloudStatusResponseSchema = z
     signInLinkedAccounts: z.int().describe('Accounts here linked to a Frameleaf account'),
     signInShowOnLocalLogin: z.boolean().describe('Sign in with Frameleaf is offered at home too'),
     signInButtonText: z.string().describe('The Sign in with Frameleaf button text'),
+    signInInvitedStorageQuota: z
+      .int()
+      .nullable()
+      .describe('Storage quota in GiB for accounts created through a Frameleaf invitation; null is unlimited'),
     allowOriginalsOverRelay: z
       .boolean()
       .describe('Originals, archives and database backups may be downloaded through the relay'),
@@ -114,6 +118,15 @@ const CloudSignInUpdateSchema = z
   .object({
     showOnLocalLogin: z.boolean().optional().describe('Offer Sign in with Frameleaf on the login page at home'),
     buttonText: z.string().trim().min(1).max(100).optional().describe('The Sign in with Frameleaf button text'),
+    invitedStorageQuota: z
+      .int()
+      .min(0)
+      .max(1_000_000)
+      .nullable()
+      .optional()
+      .describe(
+        'Storage quota in GiB for accounts created through a Frameleaf invitation from now on; null is unlimited',
+      ),
   })
   .meta({ id: 'CloudSignInUpdateDto' });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FRAMELEAF_APP_CALLBACK,
+  frameleafAccess,
   frameleafCallbackUrl,
   frameleafLogoutUrl,
   frameleafRedirectUri,
@@ -12,6 +13,15 @@ import {
 const secret = 'edge-secret-0123456789';
 
 describe('Sign in with Frameleaf helpers (FL-158)', () => {
+  it('reads the frameleaf_access claim the cloud sends for this server (FL-235)', () => {
+    for (const access of ['owner', 'admin', 'editor', 'viewer'] as const) {
+      expect(frameleafAccess({ sub: 's', frameleaf_access: access } as never)).toBe(access);
+    }
+    expect(frameleafAccess({ sub: 's' } as never)).toBeNull();
+    expect(frameleafAccess({ sub: 's', frameleaf_access: 'VIEWER' } as never)).toBeNull();
+    expect(frameleafAccess({ sub: 's', frameleaf_access: ['viewer'] } as never)).toBeNull();
+  });
+
   it('trusts X-Frameleaf-Via only with the edge worker secret', () => {
     expect(frameleafVia({ 'x-frameleaf-via': 'relay', 'x-frameleaf-via-auth': secret }, secret)).toBe('relay');
     expect(frameleafVia({ 'x-frameleaf-via': 'relay', 'x-frameleaf-via-auth': 'guess' }, secret)).toBeNull();

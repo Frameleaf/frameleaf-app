@@ -140,6 +140,9 @@ export class CloudManager {
   setShowOnLocalLogin = (showOnLocalLogin: boolean) =>
     this.#run(() => updateCloudSignIn({ cloudSignInUpdateDto: { showOnLocalLogin } }));
   setButtonText = (buttonText: string) => this.#run(() => updateCloudSignIn({ cloudSignInUpdateDto: { buttonText } }));
+  /** FL-235: the storage quota (GiB) new invited accounts start with; null is unlimited. */
+  setInvitedStorageQuota = (invitedStorageQuota: number | null) =>
+    this.#run(() => updateCloudSignIn({ cloudSignInUpdateDto: { invitedStorageQuota } }));
   /** FL-161: whether originals may go through the relay, and whether passwords work away from home. */
   setRemoteAccess = (dto: CloudRemoteAccessUpdateDto) =>
     this.#run(() => updateCloudRemoteAccess({ cloudRemoteAccessUpdateDto: dto }));
