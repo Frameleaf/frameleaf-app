@@ -1178,7 +1178,10 @@ async function createBundle(
     let body = await fs.readFile(path.join(root, "docker", name), "utf8");
     if (name === "example.env") {
       assert(/^FRAMELEAF_VERSION=.+$/m.test(body), "Missing version setting");
-      body = body.replace(/^FRAMELEAF_VERSION=.+$/m, `FRAMELEAF_VERSION=${tag}`);
+      body = body.replace(
+        /^FRAMELEAF_VERSION=.+$/m,
+        `FRAMELEAF_VERSION=${tag}`,
+      );
     } else if (name.startsWith("docker-compose")) {
       assert(
         body.includes("${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}"),

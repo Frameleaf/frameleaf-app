@@ -91,7 +91,9 @@ async function verifyBundle(
   const env = await fs.readFile(path.join(directory, "example.env"), "utf8");
   assert.deepEqual(
     // FL-294: FRAMELEAF_VERSION only; a leftover IMMICH_VERSION line would be a second, ignored setting
-    env.match(/^[ \t]*(?:export[ \t]+)?(?:FRAMELEAF|IMMICH)_VERSION[ \t]*(?:=|:).*$/gm),
+    env.match(
+      /^[ \t]*(?:export[ \t]+)?(?:FRAMELEAF|IMMICH)_VERSION[ \t]*(?:=|:).*$/gm,
+    ),
     [`FRAMELEAF_VERSION=${expectedTag}`],
     "Environment version differs",
   );
