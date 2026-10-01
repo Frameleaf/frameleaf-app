@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import {
-  PhotographyWorkspaceSaveDto,
   PhotographyRatingDto,
+  PhotographyWorkspaceSaveDto,
   type StoredShoot,
 } from 'src/dtos/photography-workspace.dto.js';
 import { AlbumKind, AssetVisibility } from 'src/enum.js';
@@ -9,8 +9,8 @@ import { PhotographyWorkspaceRepository } from 'src/repositories/photography-wor
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
-import { SearchService } from 'src/services/search.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
+import { SearchService } from 'src/services/search.service.js';
 import { factory, newUuid } from 'test/small.factory.js';
 
 const setup = () => {
