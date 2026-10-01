@@ -19,11 +19,68 @@ Already shipped clients that omit fields and do not name a source cannot be retr
 
 ## Render policy
 
-The known version1 projection fills the same defaults and uses the same `frameleaf-develop/2` renderer. Recipes containing only existing supported fields retain their render behavior, including zero adjustments and empty masks. There is no new rendering algorithm in this prerequisite packet.
+The known version 1 projection fills the same defaults and renders with `frameleaf-develop/3`. Recipes containing only the fields `frameleaf-develop/2` supported render to the same bytes, including zero adjustments and empty masks.
 
 Any unsupported version, field, operation, mask kind or nested render property refuses preview and explicit/immediate rendering. Unknown data is never silently passed through radial/linear fallback or ignored as a successful rendition. Startup recovery refuses untracked unsupported recipes, and already-delivered/tracked jobs fail permanently without image decoding, publication or automatic retry. Externally developed revisions still use their already-imported file pipeline rather than interpreting a recipe.
 
-Brilliance, subject/sky/background/brush masks and ordered Clean Up fills are not implemented by this protocol. Their documented algorithms, original-coordinate mapping, revision artifact ownership, golden renders and consent/destination worker contracts remain subsequent FL233 acceptance packets. Native adoption and parity remain separate gates.
+Brilliance, brush and bitmap masks, and Clean Up are part of version 1 from renderer `frameleaf-develop/3`, defined below. A recipe that uses none of them renders to the same bytes as under `frameleaf-develop/2`. Native adoption and parity remain separate gates.
+
+## Renderer v3 (`frameleaf-develop/3`)
+
+The server renderer and both native renderers implement these definitions. The server's golden renders are in `server/src/utils/develop-cleanup.spec.ts`.
+
+### Order of operations
+
+1. Decode the original (EXIF orientation applied). The preview decodes a smaller original; every coordinate below is a fraction of the original, so the same content is affected.
+2. Apply the Clean Up operations, in order, to the original.
+3. Apply the geometry: quarter turns, flips, straighten, crop.
+4. Apply the global tone pass, which now includes Brilliance.
+5. Apply the masks, in order.
+6. Apply the detail stages (noise reduction, sharpening, clarity).
+
+### Original-image coordinates
+
+Brush strokes, Clean Up areas and bitmap masks use **original-image coordinates**: `[x, y]` fractions of the decoded original, before the recipe's rotation, flips, straighten or crop. Radial and linear masks keep using oriented-frame coordinates. To map an oriented-frame pixel back to the original, undo the flips first, then the clockwise quarter turn (90°: `(X, Y) → (Y, h₀ − X)`; 180°: `(w₀ − X, h₀ − Y)`; 270°: `(w₀ − Y, X)`). Distances are measured in original pixels. A stroke `radius` and a pixelate `blockSize` are fractions of the original's shorter side.
+
+### Brilliance
+
+`brilliance` runs from −100 to 100. With `k = brilliance / 100`, it applies to display-referred RGB in `[0, 1]` after the global tone lookup and before highlights and shadows:
+
+- `L = 0.2126 R + 0.7152 G + 0.0722 B`
+- `L' = clamp(L + 1.2 k · L (1 − L)(1 − 2L), 0, 1)`
+- every channel is multiplied by `L' / L`; when `L = 0`, `L' − L` is added instead
+- chroma around `L'` is multiplied by `1 + 0.12 k`
+
+A positive value opens the shadows and holds the highlights back. Black, middle grey and white are unchanged. A negative value does the reverse. Brilliance is a still-image control: video and copied presets do not carry it.
+
+### Masks
+
+Brush, subject, sky and background masks use the existing mask adjustments, `amount`, `enabled` and `invert`.
+
+- **`brush`** — `strokes` (at most 64, each with up to 512 points) is a list of `{ points, radius, erase }`. Strokes are painted in order. At each pixel, a stroke covers `1` within `(1 − feather/100) · radius` of its polyline. Coverage falls to `0` at `radius` along a smoothstep. A painting stroke sets the weight to `max(weight, coverage)`. An erasing stroke sets it to `weight · (1 − coverage)`.
+- **`subject`, `sky`, `background`** — `artifact` is the id of a greyscale bitmap uploaded for this photo. The bitmap is stretched over the whole original and sampled bilinearly; 255 means fully selected. `detector` is an opaque descriptor a client can use to detect the mask again. The server never runs a detector. A bitmap mask without an `artifact` is kept in the recipe but does not render.
+
+### Clean Up
+
+`cleanup` holds at most 32 operations: `{ id, method, enabled, region | strokes, feather, source, fill, blockSize }`. Each operation has exactly one area: a `region` rectangle, or `strokes` (which never erase). Coverage of a region uses its `feather` (percent of half its size on each axis). Strokes are covered as in a brush mask. Every result is blended in by that coverage. Each operation reads the result of the one before it.
+
+- **`pixelate`** — blocks of `blockSize` × the shorter side, aligned to the image's top-left corner. Each block is replaced by its mean colour over the whole block.
+- **`clone`** — the pixel `source` (`dx`, `dy`, fractions of the width and height) away. The offset is rounded to whole pixels and clamped to the image.
+- **`heal`** — the clone, shifted per channel by the difference between the area's coverage-weighted mean colour and the mean colour of its source.
+- **`remove`** — `fill` is the id of an RGBA bitmap uploaded for this photo, stretched over the area's bounding box and composited by its alpha. The fill is generated by the client or by a worker it chose. Generative fills follow the existing ML consent and destination rules (FL-201): the server never sends a photo anywhere to make one.
+
+A future Clean Up method stays opaque in the envelope, exactly like a future mask kind.
+
+### Develop artifacts
+
+`POST /assets/{id}/develop/artifacts` (multipart: `kind` = `mask` or `fill`, and `file`) needs the same asset-edit permission as saving a recipe. It stores a bitmap a client computed for this photo:
+
+- **Normalization:** EXIF orientation is applied, metadata is dropped, and the bitmap is stored as an 8-bit PNG (greyscale for a mask, RGBA for a fill).
+- **Id:** the returned `id` is the SHA-256 of that PNG, so uploading the same bitmap again returns the same id.
+- **Limits:** at most 64 MiB, 16,384 pixels per side and 150 megapixels.
+- **Storage:** artifacts are kept beside the photo's rendered versions, named by the photo and the id (never a path a client chose), and are released when the photo is deleted.
+
+Saving with `render: true`, rendering, or previewing a recipe that references an artifact this photo does not have returns HTTP 400 with `code: develop_artifact_missing` before anything is written. A recipe saved with `render: false` keeps the reference and renders once the artifact is uploaded.
 
 ### Saving from the current editor
 
