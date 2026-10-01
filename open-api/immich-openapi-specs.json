@@ -26451,6 +26451,213 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/photography/shoots/branding": {
+      "get": {
+        "operationId": "getPhotographyBrand",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyBrandDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read your private studio branding",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "operationId": "savePhotographyBrand",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhotographyBrandSaveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyBrandDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save private studio branding with the workspace revision",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/photography/shoots/branding/logos": {
+      "get": {
+        "operationId": "getPhotographyLogos",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 500,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotographyLogoCandidatesDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your eligible unlocked studio logo images",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/photography/shoots/branding/logos/{id}/thumbnail": {
+      "get": {
+        "operationId": "getPhotographyLogoThumbnail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "View an eligible owned logo thumbnail without original metadata",
+        "tags": [
+          "Studio projects"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/photography/shoots/{id}/photos": {
       "get": {
         "operationId": "getPhotographyPhotos",
@@ -71809,6 +72016,283 @@
             "$ref": "#/components/schemas/PetSpecies"
           }
         },
+        "type": "object"
+      },
+      "PhotographyBrandDto": {
+        "properties": {
+          "brand": {
+            "additionalProperties": false,
+            "properties": {
+              "background": {
+                "pattern": "^#[\\da-fA-F]{6}$",
+                "type": "string"
+              },
+              "color": {
+                "pattern": "^#[\\da-fA-F]{6}$",
+                "type": "string"
+              },
+              "email": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      ""
+                    ]
+                  }
+                ]
+              },
+              "font": {
+                "enum": [
+                  "editorial",
+                  "modern",
+                  "classic"
+                ],
+                "type": "string"
+              },
+              "logoAssetId": {
+                "format": "uuid",
+                "nullable": true,
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "logoInitials": {
+                "maxLength": 12,
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "phone": {
+                "maxLength": 100,
+                "type": "string"
+              },
+              "tagline": {
+                "maxLength": 300,
+                "type": "string"
+              },
+              "textColor": {
+                "pattern": "^#[\\da-fA-F]{6}$",
+                "type": "string"
+              },
+              "watermarkColor": {
+                "pattern": "^#[\\da-fA-F]{6}$",
+                "type": "string"
+              },
+              "watermarkOpacity": {
+                "maximum": 100,
+                "minimum": 10,
+                "type": "integer"
+              },
+              "watermarkPosition": {
+                "enum": [
+                  "bottom-right",
+                  "bottom-left",
+                  "center",
+                  "top-right"
+                ],
+                "type": "string"
+              },
+              "watermarkSize": {
+                "maximum": 12,
+                "minimum": 3,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "tagline",
+              "email",
+              "phone",
+              "logoInitials",
+              "logoAssetId",
+              "color",
+              "background",
+              "textColor",
+              "font",
+              "watermarkColor",
+              "watermarkOpacity",
+              "watermarkPosition",
+              "watermarkSize"
+            ],
+            "type": "object"
+          },
+          "logoUnavailable": {
+            "description": "Stored logo is no longer eligible; its identity is redacted",
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "brand",
+          "logoUnavailable",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "PhotographyBrandSaveDto": {
+        "additionalProperties": false,
+        "properties": {
+          "brand": {
+            "additionalProperties": false,
+            "properties": {
+              "background": {
+                "pattern": "^#[\\da-fA-F]{6}$",
+                "type": "string"
+              },
+              "color": {
+                "pattern": "^#[\\da-fA-F]{6}$",
+                "type": "string"
+              },
+              "email": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      ""
+                    ]
+                  }
+                ]
+              },
+              "font": {
+                "enum": [
+                  "editorial",
+                  "modern",
+                  "classic"
+                ],
+                "type": "string"
+              },
+              "logoAssetId": {
+                "description": "Omit to retain the existing logo reference; null explicitly selects initials",
+                "format": "uuid",
+                "nullable": true,
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                "type": "string"
+              },
+              "logoInitials": {
+                "maxLength": 12,
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "phone": {
+                "maxLength": 100,
+                "type": "string"
+              },
+              "tagline": {
+                "maxLength": 300,
+                "type": "string"
+              },
+              "textColor": {
+                "pattern": "^#[\\da-fA-F]{6}$",
+                "type": "string"
+              },
+              "watermarkColor": {
+                "pattern": "^#[\\da-fA-F]{6}$",
+                "type": "string"
+              },
+              "watermarkOpacity": {
+                "maximum": 100,
+                "minimum": 10,
+                "type": "integer"
+              },
+              "watermarkPosition": {
+                "enum": [
+                  "bottom-right",
+                  "bottom-left",
+                  "center",
+                  "top-right"
+                ],
+                "type": "string"
+              },
+              "watermarkSize": {
+                "maximum": 12,
+                "minimum": 3,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "tagline",
+              "email",
+              "phone",
+              "logoInitials",
+              "color",
+              "background",
+              "textColor",
+              "font",
+              "watermarkColor",
+              "watermarkOpacity",
+              "watermarkPosition",
+              "watermarkSize"
+            ],
+            "type": "object"
+          },
+          "expectedRevision": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "brand",
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
+      "PhotographyLogoCandidatesDto": {
+        "properties": {
+          "logos": {
+            "items": {
+              "properties": {
+                "fileName": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "fileName"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "logos",
+          "nextCursor"
+        ],
         "type": "object"
       },
       "PhotographyPhotosDto": {
