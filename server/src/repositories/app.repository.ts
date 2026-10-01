@@ -19,7 +19,7 @@ export class AppRepository {
   /**
    * FL-291: stop this worker gracefully (`closeFn`: in-flight requests and running jobs get the grace
    * period, then the application closes) and exit with `exitCode`. Exits at the worker deadline
-   * (derived from IMMICH_SHUTDOWN_*) whatever the teardown is still doing.
+   * (derived from FRAMELEAF_SHUTDOWN_*) whatever the teardown is still doing.
    */
   stop(exitCode: number = 0) {
     if (this.stopping) {
