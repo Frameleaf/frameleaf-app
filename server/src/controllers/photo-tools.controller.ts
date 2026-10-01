@@ -18,7 +18,11 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { AssetDevelopRevisionResponseDto } from 'src/dtos/asset-develop.dto.js';
+import {
+  AssetDevelopArtifactResponseDto,
+  AssetDevelopArtifactUploadDto,
+  AssetDevelopRevisionResponseDto,
+} from 'src/dtos/asset-develop.dto.js';
 import {
   AssetDevelopImportDto,
   DevelopExportResponseDto,
@@ -30,6 +34,7 @@ import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, AuthRequest, Authenticated } from 'src/middleware/auth.guard.js';
 import {
   AssetDevelopService,
+  DEVELOP_ARTIFACT_MAX_BYTES,
   DEVELOP_IMPORT_MAX_BYTES,
   developImportStagingFolder,
 } from 'src/services/asset-develop.service.js';
@@ -167,5 +172,27 @@ export class PhotoToolsController {
     @UploadedFile() file: Express.Multer.File | undefined,
   ): Promise<AssetDevelopRevisionResponseDto> {
     return this.developService.importRendition(auth, id, dto, file);
+  }
+
+  @Post(`${RouteKey.Asset}/:id/develop/artifacts`)
+  @Authenticated({ permission: Permission.AssetEditCreate })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ description: 'A mask bitmap or a generated fill for this photo', type: AssetDevelopArtifactUploadDto })
+  @UseInterceptors(
+    FileInterceptor('file', { storage: importStorage, limits: { files: 1, fileSize: DEVELOP_ARTIFACT_MAX_BYTES } }),
+  )
+  @Endpoint({
+    summary: 'Upload a develop artifact',
+    description:
+      'FL-233: keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.',
+    history: history(),
+  })
+  uploadAssetDevelopArtifact(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AssetDevelopArtifactUploadDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<AssetDevelopArtifactResponseDto> {
+    return this.developService.uploadArtifact(auth, id, dto, file);
   }
 }
