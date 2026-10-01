@@ -68,7 +68,10 @@ describe(AuthController.name, () => {
         .post('/auth/admin-sign-up')
         .send({ name: 'admin', password: 'password', email: 'aDmIn@ExAmPlE.CoM' });
       expect(status).toEqual(201);
-      expect(service.adminSignUp).toHaveBeenCalledWith(expect.objectContaining({ email: 'admin@example.com' }));
+      expect(service.adminSignUp).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'admin@example.com' }),
+        expect.objectContaining({ ip: expect.any(String) }),
+      );
     });
 
     it('should accept an email with a local domain', async () => {
