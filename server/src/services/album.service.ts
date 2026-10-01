@@ -25,7 +25,7 @@ import {
 } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
-import { AlbumKind, AlbumUserRole, Permission, SharedSpaceEventType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, Permission, PushEventType, SharedSpaceEventType } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { albumOrderGroup, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
@@ -809,6 +809,14 @@ export class AlbumService extends BaseService {
 
     await this.albumUserRepository.update({ albumId: id, userId }, { role: dto.role });
     this.sendAccessChange(album, userId, dto.role);
+    // FL-228: the member's access changed
+    await this.eventRepository.emit('PushNotify', {
+      type: PushEventType.AccessChanged,
+      userIds: [userId],
+      title: 'Access changed',
+      body: `Your role in ${album.albumName} is now ${dto.role}`,
+      data: { albumId: id, change: 'role', role: dto.role },
+    });
 
     if (space) {
       // Only a member's actual role change is news; a changed offer to somebody

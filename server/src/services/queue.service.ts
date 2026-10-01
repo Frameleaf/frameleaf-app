@@ -511,6 +511,9 @@ export class QueueService extends BaseService {
       jobs.push({ name: JobName.AnalyticsCollect });
     }
 
+    // FL-228: wake devices whose phone backup went stale; does nothing unless the server is linked
+    jobs.push({ name: JobName.PushBackupStaleCheck });
+
     await this.jobRepository.queueAll(jobs);
   }
 }

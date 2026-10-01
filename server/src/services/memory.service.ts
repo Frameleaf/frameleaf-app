@@ -35,6 +35,7 @@ import {
   MemoryShowLessKind,
   MemoryType,
   Permission,
+  PushEventType,
   QueueName,
   StorageFolder,
   SystemMetadataKey,
@@ -194,6 +195,35 @@ export class MemoryService extends BaseService {
       await this.createPetStories(users);
       await this.createPersonRecaps(users);
     });
+
+    await this.announceNewMemories();
+  }
+
+  /**
+   * FL-228: one push per owner whose memories became visible since the last nightly run. Their items
+   * are offered as the preview; the push service drops Locked and sensitive ones. Never fails the run.
+   */
+  private async announceNewMemories() {
+    const now = new Date();
+    try {
+      const summaries = await this.memoryRepository.getNewlyVisibleSummaries(
+        new Date(now.getTime() - 24 * 60 * 60 * 1000),
+        now,
+      );
+      for (const { ownerId, count, assetIds } of summaries) {
+        await this.eventRepository.emit('PushNotify', {
+          type: PushEventType.Memories,
+          userIds: [ownerId],
+          title: 'Memories',
+          body: count === 1 ? 'A new memory is ready' : `${count} new memories are ready`,
+          data: { count },
+          assetIds,
+          dedupeKey: `memories/${ownerId}/${now.toISOString().slice(0, 10)}`,
+        });
+      }
+    } catch (error) {
+      this.logger.warn(`Could not announce new memories: ${error}`);
+    }
   }
 
   /**
