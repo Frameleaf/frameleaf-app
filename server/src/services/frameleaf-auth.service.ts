@@ -151,7 +151,7 @@ export class FrameleafAuthService extends BaseService {
    *
    * - verified like a Sign in with Frameleaf ID token: the linked issuer's JWKS and advertised
    *   algorithms, `iss`, `aud` = this server's client id, `exp`; plus `typ` `frameleaf-exchange+jwt`,
-   *   at most five minutes old, a `jti` and the instance-access claims;
+   *   at most two minutes old, a `jti` and the instance-access claims;
    * - used once (`jti`), and refused when minted before Frameleaf Cloud ended this account's or
    *   Frameleaf session's sign-ins (back-channel logout);
    * - the browser flow's account matching and linking, role, and a session tagged as a Frameleaf
@@ -220,8 +220,24 @@ export class FrameleafAuthService extends BaseService {
       throw exchangeRefusal(FrameleafTokenExchangeErrorCode.Replayed);
     }
 
-    return this.signIn(claims as OAuthProfile, loginDetails, { sid: sid ?? undefined }, (refusal) =>
-      exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal]),
+    return this.signIn(
+      claims as OAuthProfile,
+      loginDetails,
+      { sid: sid ?? undefined },
+      (refusal) => exchangeRefusal(SIGN_IN_REFUSAL_CODES[refusal]),
+      async (sessionId) => {
+        // A back-channel logout records the revocation before it looks for tagged sessions, so a
+        // logout that raced this sign-in either finds this session or is seen here.
+        const revoked = await this.frameleafAccountRepository.isSignInRevoked({
+          sub,
+          sid,
+          issuedAt: new Date((iat - tolerance) * 1000),
+        });
+        if (revoked) {
+          await this.endSessions([sessionId]);
+          throw exchangeRefusal(FrameleafTokenExchangeErrorCode.NoAccess);
+        }
+      },
     );
   }
 
@@ -236,6 +252,7 @@ export class FrameleafAuthService extends BaseService {
     oauth: { sid?: string; bearerToken?: string },
     refuse: (refusal: SignInRefusal, message: string) => Error = (_refusal, message) =>
       new BadRequestException(message),
+    afterTag?: (sessionId: string) => Promise<void>,
   ) {
     const { sid } = oauth;
     const email = profile.email?.trim().toLowerCase();
@@ -313,6 +330,7 @@ export class FrameleafAuthService extends BaseService {
       sub: profile.sub,
       authTime: typeof profile.auth_time === 'number' ? new Date(profile.auth_time * 1000) : null,
     });
+    await afterTag?.(session.id);
     return response;
   }
 

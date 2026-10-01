@@ -463,11 +463,11 @@ describe(FrameleafAuthService.name, () => {
       expect(mocks.session.create).not.toHaveBeenCalled();
     });
 
-    it('refuses an expired token, and one minted more than five minutes ago', async () => {
+    it('refuses an expired token, and one minted more than two minutes ago', async () => {
       const now = Math.floor(Date.now() / 1000);
       for (const token of [
         await mint({ issuedAt: now - 200, lifetimeSeconds: 60 }),
-        await mint({ issuedAt: now - 10 * 60, lifetimeSeconds: 3600 }),
+        await mint({ issuedAt: now - 3 * 60, lifetimeSeconds: 3600 }),
       ]) {
         await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toEqual(
           refusal(FrameleafTokenExchangeErrorCode.Expired, 401),
@@ -498,7 +498,7 @@ describe(FrameleafAuthService.name, () => {
       expect(mocks.session.create).toHaveBeenCalledTimes(1);
       // the replay store keeps a token only as long as it could be accepted
       const [{ expiresAt }] = mocks.frameleafAccount.redeemExchangeToken.mock.calls[0];
-      expect(expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 6 * 60 * 1000);
+      expect(expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 3 * 60 * 1000);
     });
 
     it('refuses when the server is not linked, without reaching Frameleaf Cloud', async () => {
@@ -551,6 +551,27 @@ describe(FrameleafAuthService.name, () => {
         expect.objectContaining({ sub: 'fl-sub', sid: 'fl-app-sid', issuedAt: expect.any(Date) }),
       );
       expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('ends the session when Frameleaf Cloud ended the sign-ins while it was being created', async () => {
+      const user = UserFactory.create();
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: user.id, sub: 'fl-sub' } as never);
+      mocks.user.get.mockResolvedValue(user as never);
+      mocks.frameleafAccount.isSignInRevoked.mockResolvedValue(true);
+      mocks.session.delete.mockResolvedValue();
+
+      await expect(sut.exchangeToken({ token: await mint() }, loginDetails)).rejects.toEqual(
+        refusal(FrameleafTokenExchangeErrorCode.NoAccess, 403),
+      );
+      expect(mocks.frameleafAccount.isSignInRevoked).toHaveBeenCalledWith(
+        expect.objectContaining({ sub: 'fl-sub', sid: 'fl-app-sid', issuedAt: expect.any(Date) }),
+      );
+      expect(mocks.frameleafAccount.tagSession.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.frameleafAccount.isSignInRevoked.mock.invocationCallOrder[0],
+      );
+      expect(mocks.session.delete).toHaveBeenCalledWith('session-1');
+      expect(mocks.event.emit).toHaveBeenCalledWith('SessionDelete', { sessionId: 'session-1' });
+      expect(mocks.frameleafAccount.deleteSessions).toHaveBeenCalledWith(['session-1']);
     });
 
     it('refuses an ordinary ID token, a token without jti, another issuer and another key', async () => {

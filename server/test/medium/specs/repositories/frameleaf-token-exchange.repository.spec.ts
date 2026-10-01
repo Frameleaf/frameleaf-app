@@ -99,6 +99,18 @@ it('refuses tokens minted before a sign-out of their account or Frameleaf sessio
   await expect(sut.revokeSignIns({}, new Date())).resolves.toBeUndefined();
 });
 
+it('tells whether a sign-in was ended after a token was minted', async () => {
+  const { sut } = setup();
+  const sub = `sub-${newUuid()}`;
+  const sid = `sid-${newUuid()}`;
+  const before = new Date(Date.now() - 1000);
+  await expect(sut.isSignInRevoked({ sub, sid, issuedAt: before })).resolves.toBe(false);
+  await sut.revokeSignIns({ sid }, new Date(Date.now() + 60_000));
+  await expect(sut.isSignInRevoked({ sub, sid, issuedAt: before })).resolves.toBe(true);
+  await expect(sut.isSignInRevoked({ sub, sid: null, issuedAt: before })).resolves.toBe(false);
+  await expect(sut.isSignInRevoked({ sub, sid, issuedAt: new Date(Date.now() + 1000) })).resolves.toBe(false);
+});
+
 it('refuses writes while the server is being handed over', async () => {
   const { sut } = setup();
   await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
