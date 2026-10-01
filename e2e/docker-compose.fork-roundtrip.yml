@@ -31,7 +31,7 @@ services:
       timeout: 5s
       retries: 60
     ports:
-      - '5437:5432'
+      - '${FORK_ROUNDTRIP_DB_PORT:-5437}:5432'
     shm_size: 128mb
     volumes:
       - database-data:/var/lib/postgresql/data
@@ -61,7 +61,7 @@ services:
       retries: 90
       start_period: 15s
     ports:
-      - '2287:2283'
+      - '${FORK_ROUNDTRIP_API_PORT:-2287}:2283'
     volumes:
       - upload-data:/data
 
@@ -103,7 +103,7 @@ services:
       retries: 90
       start_period: 15s
     ports:
-      - '2287:2283'
+      - '${FORK_ROUNDTRIP_API_PORT:-2287}:2283'
     tmpfs:
       - /usr/src/open-api
     volumes:
