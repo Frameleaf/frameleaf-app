@@ -206,6 +206,24 @@ Override the default notifications text with notification templates. More inform
 
 The address this server puts in shared links, emails, maintenance login links and sign-in callbacks is set in **Frameleaf Cloud → Remote access → Public server URL**. It is saved with your other settings changes, needs no cloud link, and should not include a trailing slash. Without a public URL, emails are sent without links (see [email notifications](./email-notification.mdx#links-in-emails)).
 
+### Local network discovery
+
+**Local network discovery** lets the Frameleaf apps find this server on the same Wi-Fi without typing an address. It is on by default. Turn it off here to stop advertising; direct connections and sign-in requirements don't change.
+
+While it is on, the server advertises one DNS-SD (Bonjour/mDNS) service on the LAN:
+
+| Field        | Value                                                                                          |
+| ------------ | ---------------------------------------------------------------------------------------------- |
+| Service type | `_frameleaf._tcp`                                                                              |
+| Port         | the server's HTTP port (`IMMICH_PORT`, 2283 by default)                                        |
+| Service name | the server's display name, or `Frameleaf server` when none is set                              |
+| TXT `id`     | the Frameleaf Cloud instance id while the server is linked, otherwise a stable local server id |
+| TXT `name`   | the same display name                                                                          |
+
+`id` and `name` are the same identity that the unauthenticated `GET /api/server/ping` returns (alongside `linked`), so an app can confirm it reached the server it expects on every route.
+
+The server only advertises when it can see a LAN interface. Inside a container on a bridge network it usually can't, so nothing is advertised; use host networking if you want discovery from a container. Anyone on the network can see the display name, so choose one that doesn't reveal a person's name. A rename is advertised again straight away.
+
 ### Welcome Message
 
 The administrator can set a custom message on the login screen (the message will be displayed to all users).
