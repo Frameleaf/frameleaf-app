@@ -178,22 +178,38 @@ const expectSharedOriginal = async (state: ChainState) => {
   expect(digest(copy)).toBe(state.originalDigest);
 };
 
+type QueueCounts = { active: number; delayed: number; waiting: number };
+
+/*
+ * The lane stops each server with `docker compose stop`, and the server does not close its BullMQ
+ * workers on SIGTERM, so a job running at that moment stays "active" in Redis with no worker. Only
+ * BullMQ's stalled-job check gives it back: the check runs at most once per 30 s stalled interval
+ * across all workers (the previous container's run throttles the new one's first), it only marks the
+ * active jobs it finds, and a later check moves the marked ones whose 30 s lock has lapsed. A job
+ * orphaned after the previous container's last check therefore waits up to about two intervals plus
+ * the boot, then reruns. CI saw exactly that: thumbnail and background jobs the post-migrator left
+ * behind were recovered 64 s after the next boot, past the earlier 60 s window.
+ */
+const QUIESCENCE_TIMEOUT_MS = 150_000;
+
 const waitForQuiescence = async (token: string) => {
+  const deadline = Date.now() + QUIESCENCE_TIMEOUT_MS;
   let stable = 0;
-  for (let attempt = 0; attempt < 600 && stable < 5; attempt++) {
-    const queues = await api<Record<string, { jobCounts: { active: number; delayed: number; waiting: number } }>>(
-      '/jobs',
-      { headers: authHeaders(token) },
+  let busyQueues: Record<string, QueueCounts> = {};
+  while (stable < 5 && Date.now() < deadline) {
+    const queues = await api<Record<string, { jobCounts: QueueCounts }>>('/jobs', { headers: authHeaders(token) });
+    busyQueues = Object.fromEntries(
+      Object.entries(queues)
+        .filter(([, { jobCounts }]) => jobCounts.active > 0 || jobCounts.delayed > 0 || jobCounts.waiting > 0)
+        .map(([name, { jobCounts }]) => [name, jobCounts]),
     );
-    const busy = Object.values(queues).some(
-      ({ jobCounts }) => jobCounts.active > 0 || jobCounts.delayed > 0 || jobCounts.waiting > 0,
-    );
-    stable = busy ? 0 : stable + 1;
+    stable = Object.keys(busyQueues).length > 0 ? 0 : stable + 1;
     if (stable < 5) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
-  expect(stable).toBe(5);
+  // name the queues that never drained, so a failure says which jobs kept the server busy
+  expect({ stable, busyQueues }).toEqual({ stable: 5, busyQueues: {} });
 };
 
 describe.runIf(phase === 'chain-fork-seed')(`${lane}: fork leg seeds Frameleaf rows`, () => {
@@ -331,7 +347,7 @@ describe.runIf(phase === 'chain-fork-seed')(`${lane}: fork leg seeds Frameleaf r
     });
     await saveState(lane, state);
     await waitForQuiescence(adminToken);
-  }, 180_000);
+  }, 240_000);
 });
 
 describe.runIf(phase === 'chain-fork-handed-over')(`${lane}: fork leg after the locked cutover`, () => {
@@ -455,7 +471,7 @@ describe.runIf(phase === 'chain-canonical-delete')(`${lane}: shared original aft
     // FL-97: the asset's removal took its Studio HDR intermediate row
     await expect(hdrIntermediates([state.retainedAssetId])).resolves.toEqual([]);
     await saveState('chain-canonical-delete', { before, deletedPath });
-  }, 180_000);
+  }, 300_000);
 });
 
 describe.runIf(phase === 'chain-survivor-check')(`${lane}: other owner after file cleanup`, () => {
