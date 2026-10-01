@@ -20,7 +20,11 @@ export class ProcessRepository {
     let isClosed = false;
     // the child closed its stdin while input remained (EPIPE); the rest is dropped and the stream fails
     let isInputLost = false;
-    let drainCallback: undefined | (() => void);
+    // every input chunk was handed over and stdin is being ended; a clean exit before this lost input
+    let isInputEnded = false;
+    // something writes to this stream (it is piped into, or written to); output-only use has no input to lose
+    let hasInput = false;
+    let drainCallback: undefined | ((error?: Error | null) => void);
     let stderr = '';
 
     const process = this.spawn(command, args, options);
@@ -36,6 +40,7 @@ export class ProcessRepository {
     const duplex = new Duplex({
       // duplex -> stdin
       write(chunk, encoding, callback) {
+        hasInput = true;
         if (isClosed) {
           // the child is gone and there is more input: whatever it produced is incomplete
           return callback(lostInputError());
@@ -60,6 +65,7 @@ export class ProcessRepository {
       },
 
       final(callback) {
+        isInputEnded = true;
         if (isClosed || isInputLost) {
           callback();
         } else {
@@ -90,6 +96,7 @@ export class ProcessRepository {
     });
 
     duplex.on('resume', () => process.stdout.resume());
+    duplex.on('pipe', () => (hasInput = true));
 
     // error handling
     process.on('error', fail);
@@ -110,13 +117,28 @@ export class ProcessRepository {
       isClosed = true;
       console.info(`${command} exited (${code ?? signal})`);
 
+      // FL-298: a write still waiting for 'drain' never gets one now; on Linux a child that exits before
+      // reading can leave it waiting without any EPIPE, so input it never read must count as lost
+      const pendingWrite = drainCallback;
+      drainCallback = undefined;
+      process.stdin.off('drain', releaseWrite);
+      const isInputUnread = isInputLost || pendingWrite !== undefined || (hasInput && !isInputEnded);
+
+      let error: Error | undefined;
       if (signal) {
-        fail(new Error(`${command} was stopped by signal ${signal}\n${stderr}`));
+        error = new Error(`${command} was stopped by signal ${signal}\n${stderr}`);
       } else if (code !== 0) {
-        fail(new Error(`${command} non-zero exit code (${code})\n${stderr}`));
-      } else if (isInputLost) {
-        fail(lostInputError());
+        error = new Error(`${command} non-zero exit code (${code})\n${stderr}`);
+      } else if (isInputUnread) {
+        error = lostInputError();
+      }
+
+      if (error) {
+        // release the waiting write with the failure, so the pipeline rejects instead of hanging
+        pendingWrite?.(error);
+        fail(error);
       } else {
+        pendingWrite?.();
         duplex.push(null);
       }
     });
