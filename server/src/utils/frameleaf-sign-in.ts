@@ -25,6 +25,30 @@ export const FRAMELEAF_SCOPE = 'openid email profile';
 /** The Frameleaf app's callback (instance contract step 5). */
 export const FRAMELEAF_APP_CALLBACK = 'frameleaf-auth:///oauth-callback';
 
+/**
+ * FL-230 (NAPI-006): the JWT `typ` of a server-audience token minted by the identity provider's
+ * token exchange (explicit typing, RFC 8725 section 3.11). An ordinary ID token, which a browser
+ * sign-in hands out and which can be presented again, never carries it.
+ */
+export const FRAMELEAF_EXCHANGE_TOKEN_TYPE = 'frameleaf-exchange+jwt';
+/** How long after it was minted an exchange token can be presented (`iat` + this). */
+export const FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS = 5 * 60;
+/** The clock difference allowed between this server and the identity provider. */
+export const FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS = 5;
+/** The instance-access result (`frameleaf_access`) of an account that may use this server. */
+const FRAMELEAF_ACCESS_VALUES = new Set(['owner', 'admin', 'editor', 'viewer']);
+
+/**
+ * FL-230: whether a verified token carries the instance-access claims (the provider's
+ * `instance-access` check passed): `frameleaf_role` is `admin` or `user`, and `frameleaf_access` one
+ * of the access levels. `frameleaf_access` grants nothing here (as-built decision #32); it only proves
+ * the check ran.
+ */
+export const hasInstanceAccess = (claims: Record<string, unknown>): boolean =>
+  (claims[FRAMELEAF_ROLE_CLAIM] === 'admin' || claims[FRAMELEAF_ROLE_CLAIM] === 'user') &&
+  typeof claims.frameleaf_access === 'string' &&
+  FRAMELEAF_ACCESS_VALUES.has(claims.frameleaf_access);
+
 /** Callbacks registered for this server (instance contract step 5), by path. */
 const WEB_CALLBACK_PATHS = new Set(['/auth/login', '/user-settings', '/link', '/api/oauth/mobile-redirect']);
 const APP_CALLBACKS = new Set([FRAMELEAF_APP_CALLBACK, 'app.immich:///oauth-callback', 'app.immich:/oauth-callback']);

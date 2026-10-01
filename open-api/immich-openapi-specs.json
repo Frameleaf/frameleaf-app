@@ -23682,6 +23682,80 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/oauth/frameleaf/exchange": {
+      "post": {
+        "description": "For the Frameleaf apps: exchanges a token the Frameleaf identity provider minted for this server (OAuth token exchange) for a session here, without a browser. The token is verified like a Sign in with Frameleaf ID token (the linked issuer, this server as its audience, the signature, its expiry and the instance-access claims), can be used once, and is at most five minutes old. The account is matched, linked or created as in Sign in with Frameleaf, and the session is a Sign in with Frameleaf session: a back-channel logout, unlinking the Frameleaf account or Frameleaf Cloud removing access ends it. Every refusal carries a FrameleafTokenExchangeErrorCode in `code`.",
+        "operationId": "exchangeFrameleafToken",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameleafTokenExchangeDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafTokenExchangeErrorDto"
+                }
+              }
+            },
+            "description": "frameleaf_exchange_not_linked, frameleaf_exchange_sign_in_off, frameleaf_exchange_email_unverified, frameleaf_exchange_account_removed or frameleaf_exchange_account_conflict"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafTokenExchangeErrorDto"
+                }
+              }
+            },
+            "description": "frameleaf_exchange_invalid, frameleaf_exchange_wrong_audience, frameleaf_exchange_expired or frameleaf_exchange_replayed"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FrameleafTokenExchangeErrorDto"
+                }
+              }
+            },
+            "description": "frameleaf_exchange_no_access: the account has no access to this server, or it was removed"
+          }
+        },
+        "summary": "Sign in with a Frameleaf account token",
+        "tags": [
+          "Authentication"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/oauth/frameleaf/handoff": {
       "post": {
         "description": "A single-use code, valid for a minute, that signs you in on another address of this server (for example your home address). Only a Sign in with Frameleaf session can be handed over, and only to a home address this server published.",
@@ -61953,6 +62027,64 @@
         },
         "required": [
           "progress"
+        ],
+        "type": "object"
+      },
+      "FrameleafTokenExchangeDto": {
+        "properties": {
+          "rememberMe": {
+            "type": "boolean"
+          },
+          "token": {
+            "description": "A server-audience token from the Frameleaf identity provider (OAuth token exchange), signed by the issuer this server is linked to, with header typ \"frameleaf-exchange+jwt\", aud this server's client id, iat, exp, a single-use jti and the Sign in with Frameleaf claims",
+            "maxLength": 16384,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "FrameleafTokenExchangeErrorCode": {
+        "description": "Why the token was refused",
+        "enum": [
+          "frameleaf_exchange_not_linked",
+          "frameleaf_exchange_sign_in_off",
+          "frameleaf_exchange_no_access",
+          "frameleaf_exchange_wrong_audience",
+          "frameleaf_exchange_expired",
+          "frameleaf_exchange_replayed",
+          "frameleaf_exchange_invalid",
+          "frameleaf_exchange_email_unverified",
+          "frameleaf_exchange_account_removed",
+          "frameleaf_exchange_account_conflict"
+        ],
+        "type": "string"
+      },
+      "FrameleafTokenExchangeErrorDto": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/FrameleafTokenExchangeErrorCode"
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "statusCode": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "error",
+          "message",
+          "statusCode"
         ],
         "type": "object"
       },

@@ -30,7 +30,8 @@ export type FrameleafSessionRow = {
 /**
  * Sign in with Frameleaf (FL-158): the Frameleaf account linked to each local account
  * (`immich_fork.frameleaf_account_link`, fork migration 0000000000202) and the sessions a Frameleaf
- * sign-in created (`immich_fork.frameleaf_session`, 0000000000203). Writes are refused while the
+ * sign-in created (`immich_fork.frameleaf_session`, 0000000000203), and (FL-230, 0000000000210) the
+ * exchange tokens already used and the sign-ins Frameleaf Cloud ended. Writes are refused while the
  * server is being handed over, like every fork table.
  */
 @Injectable()
@@ -205,6 +206,72 @@ export class FrameleafAccountRepository {
         RETURNING old.*
       `.execute(trx);
       return result.rows[0];
+    });
+  }
+
+  // ------------------------------------------------------------------ token exchange (FL-230)
+
+  /**
+   * Take an exchange token once. `revoked` when Frameleaf Cloud ended this account's or Frameleaf
+   * session's sign-ins at or after the token was minted (`issuedAt`), `replayed` when its `jti` was
+   * presented before, else it is recorded until `expiresAt` and `ok`. One transaction, so two copies
+   * presented at once never both pass.
+   */
+  async redeemExchangeToken(token: {
+    jti: string;
+    sub: string;
+    sid: string | null;
+    issuedAt: Date;
+    expiresAt: Date;
+  }): Promise<'ok' | 'replayed' | 'revoked'> {
+    return this.write('A sign-in cannot be recorded while the server is being handed over', async (trx) => {
+      await sql`DELETE FROM immich_fork.frameleaf_exchange_token WHERE "expiresAt" < clock_timestamp()`.execute(trx);
+      const revoked = await sql<{ kind: string }>`
+        SELECT kind FROM immich_fork.frameleaf_sign_in_revocation
+        WHERE "expiresAt" >= clock_timestamp()
+          AND "revokedAt" >= ${token.issuedAt}
+          AND ((kind = 'sub' AND value = ${token.sub})
+            OR (${token.sid}::text IS NOT NULL AND kind = 'sid' AND value = ${token.sid}))
+        LIMIT 1
+      `.execute(trx);
+      if (revoked.rows.length > 0) {
+        return 'revoked';
+      }
+      const inserted = await sql<{ jti: string }>`
+        INSERT INTO immich_fork.frameleaf_exchange_token (jti, sub, "expiresAt")
+        VALUES (${token.jti}, ${token.sub}, ${token.expiresAt})
+        ON CONFLICT (jti) DO NOTHING
+        RETURNING jti
+      `.execute(trx);
+      return inserted.rows.length > 0 ? 'ok' : 'replayed';
+    });
+  }
+
+  /**
+   * Frameleaf Cloud ended the sign-ins of an account (`sub`) or a Frameleaf session (`sid`): exchange
+   * tokens minted until now are refused until `expiresAt`.
+   */
+  async revokeSignIns(filter: { sid?: string; sub?: string }, expiresAt: Date) {
+    const entries = [
+      ...(filter.sub ? [['sub', filter.sub]] : []),
+      ...(filter.sid ? [['sid', filter.sid]] : []),
+    ] as const;
+    if (entries.length === 0) {
+      return;
+    }
+    return this.write('A sign-out cannot be recorded while the server is being handed over', async (trx) => {
+      await sql`
+        DELETE FROM immich_fork.frameleaf_sign_in_revocation WHERE "expiresAt" < clock_timestamp()
+      `.execute(trx);
+      for (const [kind, value] of entries) {
+        await sql`
+          INSERT INTO immich_fork.frameleaf_sign_in_revocation (kind, value, "expiresAt")
+          VALUES (${kind}, ${value}, ${expiresAt})
+          ON CONFLICT (kind, value) DO UPDATE SET
+            "revokedAt" = clock_timestamp(),
+            "expiresAt" = GREATEST(immich_fork.frameleaf_sign_in_revocation."expiresAt", excluded."expiresAt")
+        `.execute(trx);
+      }
     });
   }
 }

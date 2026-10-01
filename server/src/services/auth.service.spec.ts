@@ -406,6 +406,22 @@ describe(AuthService.name, () => {
         expect(mocks.session.invalidateOAuth).not.toHaveBeenCalled();
       });
 
+      it('refuses, for a while, exchange tokens minted before the logout (FL-230)', async () => {
+        mocks.oauth.validateLogoutToken.mockResolvedValue({ sub: 'fl-sub' });
+        mocks.frameleafAccount.findSessions.mockResolvedValue([]);
+
+        await sut.backchannelLogout({ logout_token: token('instance-1') });
+
+        expect(mocks.frameleafAccount.revokeSignIns).toHaveBeenCalledWith(
+          { sid: undefined, sub: 'fl-sub' },
+          expect.any(Date),
+        );
+        const [, until] = mocks.frameleafAccount.revokeSignIns.mock.calls[0];
+        // as long as an exchange token minted before now could still be accepted
+        expect(until.getTime()).toBeGreaterThanOrEqual(Date.now() + 5 * 60 * 1000);
+        expect(until.getTime()).toBeLessThanOrEqual(Date.now() + 6 * 60 * 1000);
+      });
+
       it('leaves a token for another audience to the administrator’s own provider', async () => {
         await expect(sut.backchannelLogout({ logout_token: token('someone-else') })).rejects.toThrow(
           'Received backchannel logout request but OAuth is not enabled',

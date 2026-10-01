@@ -161,6 +161,7 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST oauth/link': RATE_LIMITS.oauthCallback,
   'POST oauth/frameleaf/authorize': RATE_LIMITS.frameleafSignIn,
   'POST oauth/frameleaf/callback': RATE_LIMITS.frameleafSignIn,
+  'POST oauth/frameleaf/exchange': RATE_LIMITS.frameleafSignIn,
   'POST oauth/frameleaf/handoff': RATE_LIMITS.frameleafSignIn,
   'POST oauth/frameleaf/handoff/redeem': RATE_LIMITS.frameleafSignIn,
   'GET oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
