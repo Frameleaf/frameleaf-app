@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { Mock } from 'vitest';
 import {
+  AssetDevelopArtifactKind,
   AssetDevelopFileKind,
   AssetDevelopMaskKind,
   AssetDevelopPreset,
@@ -10,7 +11,11 @@ import {
 import { AssetType, AssetVisibility, ChecksumAlgorithm, JobName, JobStatus } from 'src/enum.js';
 import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositories/asset-develop.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
-import { AssetDevelopService, DEVELOP_RENDER_LEASE_MS } from 'src/services/asset-develop.service.js';
+import {
+  AssetDevelopService,
+  DEVELOP_RENDER_LEASE_MS,
+  developArtifactPath,
+} from 'src/services/asset-develop.service.js';
 import { DARKTABLE_RENDERER_VERSION, renderDarktable } from 'src/utils/darktable-renderer.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
@@ -103,6 +108,10 @@ describe(AssetDevelopService.name, () => {
       isCancelRequested: vi.fn().mockResolvedValue(false),
       releaseRemovedAssetRevisions: vi.fn().mockResolvedValue([]),
       listUnfinished: vi.fn().mockResolvedValue([]),
+      getArtifacts: vi.fn().mockResolvedValue([]),
+      getArtifactUsage: vi.fn().mockResolvedValue({ assetCount: 0, ownerBytes: 0 }),
+      addArtifact: vi.fn().mockResolvedValue(true),
+      releaseArtifacts: vi.fn().mockResolvedValue([]),
       beginAttempt: vi.fn().mockImplementation((id: string) =>
         developRepository.get(id).then((row: AssetDevelopRevision) => ({
           ...row,
@@ -150,6 +159,7 @@ describe(AssetDevelopService.name, () => {
       mocks.storage as never,
       mocks.systemMetadata as never,
       mocks.mediaOperation as never,
+      mocks.user as never,
     );
     mocks.mediaOperation.getTrackedRevisionIds.mockResolvedValue(new Set());
     mocks.mediaOperation.listActiveEditsOfRevision.mockResolvedValue([]);
@@ -219,6 +229,203 @@ describe(AssetDevelopService.name, () => {
     );
   });
 
+  describe('develop artifacts (FL-233)', () => {
+    const artifact = 'c'.repeat(64);
+    const staged = { path: '/upload/exports/develop-imports/staged.partial', size: 1024, originalname: 'mask.png' };
+    const stored = (kind: 'mask' | 'fill' = 'mask') => ({
+      assetId: asset.id,
+      id: artifact,
+      ownerId: asset.ownerId,
+      kind,
+      path: developArtifactPath(asset, artifact),
+      bytes: 3,
+      width: 400,
+      height: 300,
+      createdAt: new Date(),
+    });
+    const subject = {
+      ...defaultDevelopRecipe(),
+      masks: [
+        {
+          id: 's',
+          kind: AssetDevelopMaskKind.Subject,
+          x: 0.5,
+          y: 0.5,
+          artifact,
+          adjustments: { ...noAdjustments, exposure: 1 },
+        },
+      ],
+    };
+
+    beforeEach(() => {
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 400, height: 300, isTransparent: false });
+      mocks.media.normalizeDevelopArtifact.mockResolvedValue({ data: Buffer.from('png'), width: 400, height: 300 });
+      mocks.crypto.hashSha256.mockReturnValue(Buffer.from(artifact, 'hex'));
+      mocks.storage.createFile.mockResolvedValue(void 0);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      mocks.user.get.mockResolvedValue({ id: asset.ownerId, quotaSizeInBytes: null, quotaUsageInBytes: 0 } as never);
+      mocks.asset.getById.mockResolvedValue({
+        ...asset,
+        exifInfo: { ...asset.exifInfo, exifImageWidth: 4000, exifImageHeight: 3000 },
+      } as never);
+    });
+
+    it('stores a normalized bitmap beside the versions, records it, and discards the upload', async () => {
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged),
+      ).resolves.toEqual({ id: artifact, kind: AssetDevelopArtifactKind.Mask, width: 400, height: 300 });
+      expect(mocks.media.normalizeDevelopArtifact).toHaveBeenCalledWith(staged.path, AssetDevelopArtifactKind.Mask);
+      const [target, bytes] = mocks.storage.createFile.mock.calls[0];
+      expect(target).toBe(developArtifactPath(asset, artifact));
+      expect(target).toContain(`${asset.id}_develop_artifact_${artifact}.png`);
+      expect(bytes).toEqual(Buffer.from('png'));
+      expect(developRepository.addArtifact).toHaveBeenCalledWith(
+        expect.objectContaining({ assetId: asset.id, id: artifact, kind: 'mask', path: target, bytes: 3 }),
+      );
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(staged.path);
+
+      // a file deleted by an earlier release just before it was recorded again is written again
+      mocks.storage.checkFileExists.mockResolvedValueOnce(false);
+      await sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged);
+      expect(mocks.storage.createFile).toHaveBeenCalledTimes(3);
+      mocks.storage.createFile.mockClear();
+
+      // the same bitmap again returns the stored one, records it again (restarting its grace
+      // period) and skips the limits, without writing the file that is still there
+      developRepository.getArtifacts.mockResolvedValue([stored()]);
+      developRepository.addArtifact.mockClear();
+      developRepository.getArtifactUsage.mockClear();
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged),
+      ).resolves.toEqual({ id: artifact, kind: AssetDevelopArtifactKind.Mask, width: 400, height: 300 });
+      expect(developRepository.addArtifact).toHaveBeenCalledWith(expect.objectContaining({ id: artifact }));
+      expect(developRepository.getArtifactUsage).not.toHaveBeenCalled();
+      expect(mocks.storage.createFile).not.toHaveBeenCalled();
+
+      // ... and writes it again if a release took the file after it was found
+      mocks.storage.checkFileExists.mockResolvedValueOnce(false);
+      await sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(developArtifactPath(asset, artifact), Buffer.from('png'));
+    });
+
+    it('refuses someone else’s photo, an unreadable or oversized bitmap, and keeps nothing', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Fill }, staged),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 5000, height: 10, isTransparent: false });
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Fill }, staged),
+      ).rejects.toThrow('at most 4096 pixels');
+      // a mask is never larger than the original
+      mocks.asset.getById.mockResolvedValue({
+        ...asset,
+        exifInfo: { ...asset.exifInfo, exifImageWidth: 300, exifImageHeight: 200 },
+      } as never);
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 400, height: 300, isTransparent: false });
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged),
+      ).rejects.toThrow('no larger than the original');
+      expect(mocks.storage.createFile).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledTimes(3);
+    });
+
+    it('refuses an upload over the per-photo limit or the owner’s quota', async () => {
+      developRepository.getArtifactUsage.mockResolvedValue({ assetCount: 64, ownerBytes: 0 });
+      const limit = await sut
+        .uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged)
+        .catch((error: BadRequestException) => error);
+      expect((limit as BadRequestException).getResponse()).toMatchObject({ code: 'develop_artifact_limit' });
+
+      developRepository.getArtifactUsage.mockResolvedValue({ assetCount: 0, ownerBytes: 9 });
+      mocks.user.get.mockResolvedValue({ id: asset.ownerId, quotaSizeInBytes: 10, quotaUsageInBytes: 0 } as never);
+      const quota = await sut
+        .uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged)
+        .catch((error: BadRequestException) => error);
+      expect((quota as BadRequestException).getResponse()).toMatchObject({ code: 'develop_artifact_quota' });
+      expect(mocks.storage.createFile).not.toHaveBeenCalled();
+    });
+
+    it('refuses to render a recipe whose artifact this photo does not have, before saving', async () => {
+      const error = await sut
+        .save(authStub.user1, asset.id, { recipe: subject, render: true })
+        .catch((error: BadRequestException) => error);
+      expect((error as BadRequestException).getResponse()).toMatchObject({ code: 'develop_artifact_missing' });
+      expect(developRepository.create).not.toHaveBeenCalled();
+
+      // saved without rendering it is kept, and renders once the artifact is uploaded
+      developRepository.create.mockResolvedValue(revisionStub({ assetId: asset.id, recipe: subject }));
+      await expect(sut.save(authStub.user1, asset.id, { recipe: subject, render: false })).resolves.toBeDefined();
+      // a fill never stands in for a mask bitmap
+      developRepository.getArtifacts.mockResolvedValue([stored('fill')]);
+      await expect(sut.save(authStub.user1, asset.id, { recipe: subject, render: true })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      developRepository.getArtifacts.mockResolvedValue([stored()]);
+      await sut.save(authStub.user1, asset.id, { recipe: subject, render: true });
+      expect(mocks.job.queue).toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetDevelopRender }));
+    });
+
+    it('requires only the artifacts a render reads: a disabled mask or Clean Up keeps its reference', async () => {
+      developRepository.create.mockResolvedValue(revisionStub({ assetId: asset.id }));
+      const recipe = {
+        ...subject,
+        masks: [{ ...subject.masks[0], enabled: false }],
+        cleanup: [
+          { id: 'x', method: 'remove', enabled: false, region: { x: 0, y: 0, w: 0.5, h: 0.5 }, fill: 'e'.repeat(64) },
+        ],
+      };
+      await expect(sut.save(authStub.user1, asset.id, { recipe, render: true })).resolves.toBeDefined();
+      expect(developRepository.getArtifacts).toHaveBeenCalledWith(asset.id, []);
+    });
+
+    it('renders brilliance, a bitmap mask and Clean Up in the preview from the stored artifacts', async () => {
+      developRepository.getArtifacts.mockImplementation((_assetId: string, ids: string[]) =>
+        Promise.resolve(ids.map(() => stored())),
+      );
+      const fillId = 'd'.repeat(64);
+      developRepository.getArtifacts.mockImplementation((_assetId: string, ids: string[]) =>
+        Promise.resolve(ids.map((id) => ({ ...stored(id === fillId ? 'fill' : 'mask'), id }))),
+      );
+      mocks.media.decodeDevelopArtifact.mockImplementation((_file: string, kind: 'mask' | 'fill') =>
+        Promise.resolve(
+          kind === 'mask'
+            ? { data: Buffer.alloc(4, 255), width: 2, height: 2, channels: 1 }
+            : { data: Buffer.from([0, 0, 0, 255]), width: 1, height: 1, channels: 4 },
+        ),
+      );
+      const recipe = {
+        ...subject,
+        brilliance: 30,
+        cleanup: [{ id: 'x', method: 'remove', region: { x: 0, y: 0, w: 0.5, h: 0.5 }, fill: fillId }],
+      };
+      await sut.preview(authStub.user1, asset.id, { recipe, size: 256 });
+      expect(mocks.media.decodeDevelopArtifact).toHaveBeenCalledWith(developArtifactPath(asset, artifact), 'fill');
+      expect(mocks.media.decodeDevelopArtifact).toHaveBeenCalledWith(developArtifactPath(asset, artifact), 'mask');
+      const [pixels] = mocks.media.encodeDevelopOutput.mock.calls[0];
+      // the removed top-left quarter took the black fill; the rest was brightened by the subject mask
+      expect(pixels[0]).toBeLessThan(40);
+      expect(pixels.at(-1)).toBeGreaterThan(128);
+
+      // a mask artifact never stands in for a fill
+      developRepository.getArtifacts.mockImplementation((_assetId: string, ids: string[]) =>
+        Promise.resolve(ids.map((id) => ({ ...stored('mask'), id }))),
+      );
+      await expect(sut.preview(authStub.user1, asset.id, { recipe, size: 256 })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('releases the photo’s artifacts when it is deleted, and unused ones nightly', async () => {
+      await sut.onAssetDelete({ assetId: asset.id, userId: asset.ownerId });
+      expect(developRepository.releaseArtifacts).toHaveBeenCalledWith(expect.any(Function), { assetId: asset.id });
+      await sut.onNightlyDatabaseCleanup();
+      const [, options] = developRepository.releaseArtifacts.mock.calls[1];
+      expect(options.unreferencedBefore.getTime()).toBeLessThan(Date.now() - 6 * 24 * 60 * 60 * 1000);
+    });
+  });
+
   describe('access', () => {
     it('refuses every operation on an asset the user cannot edit', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
@@ -236,6 +443,20 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('save', () => {
+    it('saves and queues an explicit version 2 native recipe (FL-233 artifact checks are for version 1)', async () => {
+      const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 };
+      const created = revisionStub({ assetId: asset.id, recipe, status: AssetDevelopRevisionStatus.Saved });
+      developRepository.create.mockResolvedValue(created);
+      await expect(sut.save(authStub.user1, asset.id, { recipe, render: true })).resolves.toMatchObject({
+        status: AssetDevelopRevisionStatus.Queued,
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetDevelopRender, data: { id: created.id } });
+
+      developRepository.get.mockResolvedValue(created);
+      await expect(sut.render(authStub.user1, asset.id, created.id)).resolves.toBeDefined();
+      expect(developRepository.getArtifacts).not.toHaveBeenCalled();
+    });
+
     it('stores a valid recipe as the next revision and queues the render', async () => {
       const created = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Saved });
       developRepository.create.mockResolvedValue(created);

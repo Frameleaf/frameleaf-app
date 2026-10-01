@@ -73,4 +73,11 @@ describe('MaskPanel', () => {
     expect(screen.getByRole('button', { name: 'frameleaf_editor_mask_add_radial' })).toBeDisabled();
     expect(screen.getByText('frameleaf_editor_masks_limit')).toBeInTheDocument();
   });
+
+  it('counts the masks it carries without showing towards the limit (FL-233)', () => {
+    const masks = [createMask(AssetDevelopMaskKind.Radial)];
+    render(MaskPanel, { masks, carried: MAX_MASKS - 1, onChange: vi.fn() });
+    expect(screen.getByRole('button', { name: 'frameleaf_editor_mask_add_linear' })).toBeDisabled();
+    expect(screen.getByText('frameleaf_editor_masks_limit')).toBeInTheDocument();
+  });
 });

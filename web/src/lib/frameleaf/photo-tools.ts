@@ -34,7 +34,10 @@ export const MASK_KEYS = [
 ] as const satisfies readonly DevelopKey[];
 export type MaskKey = (typeof MASK_KEYS)[number];
 
-export type EditorMask = Required<Omit<AssetDevelopMask, 'adjustments' | 'name'>> & {
+/** A radial or linear mask as the web editor edits it (brush and bitmap fields stay in the opaque recipe). */
+export type EditorMask = Required<
+  Omit<AssetDevelopMask, 'adjustments' | 'name' | 'strokes' | 'artifact' | 'detector'>
+> & {
   name: string | null;
   adjustments: Record<MaskKey, number>;
 };
@@ -49,6 +52,33 @@ const whole = (value: unknown, fallback: number) =>
 export const emptyMaskAdjustments = (): Record<MaskKey, number> =>
   Object.fromEntries(MASK_KEYS.map((key) => [key, 0])) as Record<MaskKey, number>;
 
+/**
+ * FL-233: the mask kinds this editor draws and edits. Brush and bitmap masks (subject, sky,
+ * background) come from the native apps; the web carries them untouched in the opaque recipe.
+ */
+export const WEB_MASK_KINDS: readonly AssetDevelopMaskKind[] = [
+  AssetDevelopMaskKind.Radial,
+  AssetDevelopMaskKind.Linear,
+];
+
+/**
+ * FL-233: how many masks of a stored recipe this editor carries without showing (brush, subject,
+ * sky, background and future kinds). They count towards `MAX_MASKS`, so the editor never lets a
+ * person add a mask the server would refuse to save.
+ */
+export function carriedMaskCount(recipe: unknown): number {
+  const masks = recipe && typeof recipe === 'object' ? (recipe as { masks?: unknown }).masks : undefined;
+  if (!Array.isArray(masks)) {
+    return 0;
+  }
+  return masks.filter(
+    (item) =>
+      item &&
+      typeof item === 'object' &&
+      !WEB_MASK_KINDS.includes((item as { kind?: unknown }).kind as AssetDevelopMaskKind),
+  ).length;
+}
+
 /** Clamped, defaults filled, malformed and duplicate masks dropped, at most `MAX_MASKS`. */
 export function normalizeMasks(candidate: unknown): EditorMask[] {
   if (!Array.isArray(candidate)) {
@@ -61,7 +91,7 @@ export function normalizeMasks(candidate: unknown): EditorMask[] {
       continue;
     }
     const id = typeof item.id === 'string' ? item.id.trim().slice(0, 40) : '';
-    const kind = Object.values(AssetDevelopMaskKind).includes(item.kind as AssetDevelopMaskKind)
+    const kind = WEB_MASK_KINDS.includes(item.kind as AssetDevelopMaskKind)
       ? (item.kind as AssetDevelopMaskKind)
       : undefined;
     if (!id || !kind || seen.has(id)) {
@@ -205,6 +235,13 @@ export function presetSettingsFrom(source: Partial<PresetSettings> | DevelopPres
 }
 
 /** True when the draft already carries exactly the preset's settings (so the preset shows as applied). */
+/**
+ * FL-233: the wire shape of a preset. Its masks are the radial and linear kinds this editor draws,
+ * which the API names `DevelopPresetMaskKind` (the same values as `AssetDevelopMaskKind`).
+ */
+export const toPresetDto = (settings: PresetSettings): DevelopPresetSettingsDto =>
+  settings as unknown as DevelopPresetSettingsDto;
+
 export const presetMatches = (settings: PresetSettings, current: PresetSettings) =>
   JSON.stringify(settings) === JSON.stringify(current);
 

@@ -25,7 +25,7 @@ import {
   type AspectId,
   type DevelopValues,
 } from '$lib/frameleaf/develop';
-import { normalizeMasks, type EditorMask } from '$lib/frameleaf/photo-tools';
+import { normalizeMasks, WEB_MASK_KINDS, type EditorMask } from '$lib/frameleaf/photo-tools';
 
 export const RECIPE_VERSION = 1 as const;
 
@@ -127,7 +127,8 @@ export function toServerRecipe(recipe: EditorRecipe): AssetDevelopRecipeDto {
     const id = typeof item.id === 'string' ? item.id.trim() : '';
     const mask = known.get(id);
     if (!mask) {
-      return Object.values(AssetDevelopMaskKind).includes(item.kind as AssetDevelopMaskKind) ? [] : [item];
+      // a mask this editor shows and the person removed goes; one it only carries (FL-233) stays
+      return WEB_MASK_KINDS.includes(item.kind as AssetDevelopMaskKind) ? [] : [item];
     }
     known.delete(id);
     return [{ ...item, ...mask, adjustments: { ...(item.adjustments as object), ...mask.adjustments } }];
