@@ -13,7 +13,7 @@ const PushPublicKeySchema = z
   .min(1)
   .max(64)
   .describe(
-    "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1).",
+    "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1).",
   );
 
 const PushPreferencesSchema = z
