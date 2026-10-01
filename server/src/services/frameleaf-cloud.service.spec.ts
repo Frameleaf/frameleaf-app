@@ -1068,7 +1068,8 @@ describe(FrameleafCloudService.name, () => {
         expect(pushes()[2]).toMatchObject({ userIds: [admin.id], data: { status: 'accepted' } });
       });
 
-      it('sends no tier details anywhere when the owner is not signed in here', async () => {
+      it('sends no tier details anywhere until the owner signs in, then tells the owner', async () => {
+        const owner = mocks.frameleafAccount.getLinkBySub.getMockImplementation()!;
         mocks.frameleafAccount.getLinkBySub.mockResolvedValue(undefined);
         const answer = cloudContractFixture('instance/heartbeat-response-backup-plan.json');
         await checkIn(answer);
@@ -1078,6 +1079,20 @@ describe(FrameleafCloudService.name, () => {
             data: expect.objectContaining({ reason: 'plan-full' }),
           }),
         ]);
+
+        mocks.frameleafAccount.getLinkBySub.mockImplementation(owner);
+        await checkIn(answer);
+        expect(pushes()).toHaveLength(2);
+        expect(pushes()[1]).toMatchObject({ userIds: [admin.id], data: { reason: 'tier-overflow' } });
+      });
+
+      it('never fails the check-in when it cannot tell who hears it, and tries again next time', async () => {
+        mocks.user.getAdmins.mockRejectedValueOnce(new Error('database down'));
+        const answer = cloudContractFixture('instance/heartbeat-response-backup-plan.json');
+        await checkIn(answer);
+        expect(pushes()).toEqual([]);
+        await checkIn(answer);
+        expect(pushes()).toHaveLength(2);
       });
 
       it("pushes a family member's full plan in the cloud's words, again only after the cloud says it cleared", async () => {
