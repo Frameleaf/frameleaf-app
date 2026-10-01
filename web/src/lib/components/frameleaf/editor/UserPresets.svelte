@@ -4,7 +4,7 @@
    * sliders, look, strength and masks, never the crop — under a name, and applies them to any
    * photo in one click. Presets belong to the signed-in account.
    */
-  import { presetMatches, presetSettingsFrom, type PresetSettings } from '$lib/frameleaf/photo-tools';
+  import { presetMatches, presetSettingsFrom, toPresetDto, type PresetSettings } from '$lib/frameleaf/photo-tools';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import {
     createDevelopPreset,
@@ -55,7 +55,9 @@
     saving = true;
     saveError = null;
     try {
-      const created = await createDevelopPreset({ developPresetCreateDto: { name: trimmed, settings: current } });
+      const created = await createDevelopPreset({
+        developPresetCreateDto: { name: trimmed, settings: toPresetDto(current) },
+      });
       presets = sorted([...presets, created]);
       name = '';
       toastManager.primary($t('frameleaf_editor_preset_saved', { values: { name: created.name } }));
@@ -73,7 +75,10 @@
 
   const overwrite = async (preset: DevelopPresetResponseDto) => {
     try {
-      const updated = await updateDevelopPreset({ id: preset.id, developPresetUpdateDto: { settings: current } });
+      const updated = await updateDevelopPreset({
+        id: preset.id,
+        developPresetUpdateDto: { settings: toPresetDto(current) },
+      });
       presets = presets.map((item) => (item.id === updated.id ? updated : item));
       toastManager.primary($t('frameleaf_editor_preset_updated', { values: { name: updated.name } }));
     } catch (error) {

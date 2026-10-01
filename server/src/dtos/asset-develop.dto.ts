@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { ExtraModel } from 'src/decorators.js';
 import { ApiCustomExtension } from 'src/enum.js';
 
 /**
@@ -94,7 +95,8 @@ export const AssetDevelopCropSchema = z
   .refine((rect) => rect.x + rect.w <= 1.00001 && rect.y + rect.h <= 1.00001, {
     error: 'Crop must stay inside the frame',
   })
-  .meta({ id: 'AssetDevelopCrop' });
+  // the envelope's own (loose) crop is published as AssetDevelopCrop
+  .meta({ id: 'KnownAssetDevelopCrop' });
 
 export enum AssetDevelopMaskKind {
   /** An ellipse: full effect inside, fading out across the feathered edge. */
@@ -285,73 +287,71 @@ export const AssetDevelopMaskAdjustmentsSchema = z
  * from (`x`, `y`), where the effect is full, to (`endX`, `endY`), where it has faded out; the
  * radius fields are ignored for it and the end fields for a radial mask.
  */
-export const AssetDevelopMaskSchema = z
-  .object({
-    id: z.string().trim().min(1).max(40).describe('Client-chosen identifier, unique within the recipe'),
-    name: z.string().trim().min(1).max(60).nullable().default(null).describe('Optional name shown in the editor'),
-    kind: AssetDevelopMaskKindSchema,
-    enabled: z.boolean().default(true).describe('A disabled mask is kept but not rendered'),
-    invert: z.boolean().default(false).describe('Apply the adjustment outside the shape instead of inside'),
-    x: unit('Centre (radial) or start (linear) across the oriented frame; unused by brush and bitmap masks').default(
-      0.5,
+/** The mask fields without the cross-field checks (FL-233: presets narrow `kind`). */
+export const AssetDevelopMaskFields = z.object({
+  id: z.string().trim().min(1).max(40).describe('Client-chosen identifier, unique within the recipe'),
+  name: z.string().trim().min(1).max(60).nullable().default(null).describe('Optional name shown in the editor'),
+  kind: AssetDevelopMaskKindSchema,
+  enabled: z.boolean().default(true).describe('A disabled mask is kept but not rendered'),
+  invert: z.boolean().default(false).describe('Apply the adjustment outside the shape instead of inside'),
+  x: unit('Centre (radial) or start (linear) across the oriented frame; any value for brush and bitmap masks'),
+  y: unit('Centre (radial) or start (linear) down the oriented frame; any value for brush and bitmap masks'),
+  radiusX: z
+    .number()
+    .meta({ format: 'double' })
+    .min(0.01)
+    .max(1)
+    .default(0.25)
+    .describe('Horizontal radius of a radial mask as a fraction of the frame width'),
+  radiusY: z
+    .number()
+    .meta({ format: 'double' })
+    .min(0.01)
+    .max(1)
+    .default(0.25)
+    .describe('Vertical radius of a radial mask as a fraction of the frame height'),
+  endX: unit('Where a linear mask has faded out, across the frame').default(0.5),
+  endY: unit('Where a linear mask has faded out, down the frame').default(1),
+  feather: z
+    .int()
+    .min(0)
+    .max(100)
+    .default(50)
+    .describe('Softness of a radial edge as a percentage of the radius, or of a brush stroke as one of its radius'),
+  strokes: z
+    .array(AssetDevelopStrokeSchema)
+    .max(ASSET_DEVELOP_MAX_STROKES)
+    .optional()
+    .describe('Brush masks: the painted strokes, in order'),
+  artifact: AssetDevelopArtifactIdSchema.nullable()
+    .optional()
+    .describe('Subject, sky and background masks: the stored greyscale mask bitmap, covering the whole original image'),
+  detector: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      'Subject, sky and background masks: an opaque descriptor that lets a client detect the mask again; the server never runs it',
     ),
-    y: unit('Centre (radial) or start (linear) down the oriented frame; unused by brush and bitmap masks').default(0.5),
-    radiusX: z
-      .number()
-      .meta({ format: 'double' })
-      .min(0.01)
-      .max(1)
-      .default(0.25)
-      .describe('Horizontal radius of a radial mask as a fraction of the frame width'),
-    radiusY: z
-      .number()
-      .meta({ format: 'double' })
-      .min(0.01)
-      .max(1)
-      .default(0.25)
-      .describe('Vertical radius of a radial mask as a fraction of the frame height'),
-    endX: unit('Where a linear mask has faded out, across the frame').default(0.5),
-    endY: unit('Where a linear mask has faded out, down the frame').default(1),
-    feather: z
-      .int()
-      .min(0)
-      .max(100)
-      .default(50)
-      .describe('Softness of a radial edge as a percentage of the radius, or of a brush stroke as one of its radius'),
-    strokes: z
-      .array(AssetDevelopStrokeSchema)
-      .max(ASSET_DEVELOP_MAX_STROKES)
-      .optional()
-      .describe('Brush masks: the painted strokes, in order'),
-    artifact: AssetDevelopArtifactIdSchema.nullable()
-      .optional()
-      .describe(
-        'Subject, sky and background masks: the stored greyscale mask bitmap, covering the whole original image',
-      ),
-    detector: z
-      .record(z.string(), z.unknown())
-      .optional()
-      .describe(
-        'Subject, sky and background masks: an opaque descriptor that lets a client detect the mask again; the server never runs it',
-      ),
-    amount: z.int().min(0).max(100).default(100).describe('How much of the adjustment is applied, as a percentage'),
-    adjustments: AssetDevelopMaskAdjustmentsSchema.default({
-      exposure: 0,
-      contrast: 0,
-      highlights: 0,
-      shadows: 0,
-      whites: 0,
-      blacks: 0,
-      temperature: 0,
-      tint: 0,
-      vibrance: 0,
-      saturation: 0,
-      dehaze: 0,
-    }),
-  })
-  .refine((mask) => mask.kind !== AssetDevelopMaskKind.Linear || mask.x !== mask.endX || mask.y !== mask.endY, {
-    error: 'A linear mask needs different start and end points',
-  })
+  amount: z.int().min(0).max(100).default(100).describe('How much of the adjustment is applied, as a percentage'),
+  adjustments: AssetDevelopMaskAdjustmentsSchema.default({
+    exposure: 0,
+    contrast: 0,
+    highlights: 0,
+    shadows: 0,
+    whites: 0,
+    blacks: 0,
+    temperature: 0,
+    tint: 0,
+    vibrance: 0,
+    saturation: 0,
+    dehaze: 0,
+  }),
+});
+
+export const AssetDevelopMaskSchema = AssetDevelopMaskFields.refine(
+  (mask) => mask.kind !== AssetDevelopMaskKind.Linear || mask.x !== mask.endX || mask.y !== mask.endY,
+  { error: 'A linear mask needs different start and end points' },
+)
   .refine((mask) => mask.kind === AssetDevelopMaskKind.Brush || mask.strokes === undefined, {
     error: 'Only a brush mask has strokes',
   })
@@ -665,6 +665,13 @@ const AssetDevelopArtifactResponseSchema = z
 export class AssetDevelopArtifactUploadDto extends createZodDto(AssetDevelopArtifactUploadSchema) {}
 export class AssetDevelopArtifactResponseDto extends createZodDto(AssetDevelopArtifactResponseSchema) {}
 export class AssetDevelopRecipeDto extends createZodDto(AssetDevelopRecipeSchema) {}
+
+/**
+ * FL-233: the renderable version 1 recipe, field by field, published in the OpenAPI document for the
+ * native apps (routes take and return the opaque envelope, `AssetDevelopRecipeDto`).
+ */
+@ExtraModel()
+export class KnownAssetDevelopRecipeDto extends createZodDto(KnownAssetDevelopRecipeSchema) {}
 export class AssetDevelopSaveDto extends createZodDto(AssetDevelopSaveSchema) {}
 export class AssetDevelopPreviewDto extends createZodDto(AssetDevelopPreviewSchema) {}
 export class AssetDevelopRevertDto extends createZodDto(AssetDevelopRevertSchema) {}
