@@ -24,6 +24,7 @@ import {
   AssetUploadResourceRepository,
 } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
@@ -31,11 +32,13 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { requireAccess, requireUploadAccess } from 'src/utils/access.js';
 import {
+  UploadSourceIdentity,
   assembleAssetUploadParts,
   parseAssetUploadHeaders,
   writeAssetUploadPart,
 } from 'src/utils/asset-upload-resource.js';
 import { getFilenameExtension } from 'src/utils/file.js';
+import { parseCloudIdentifier } from 'src/utils/icloud-identity.js';
 
 export type NativeAssetUploadResult = { id: string; status: AssetMediaStatus; sha256: string };
 
@@ -53,6 +56,7 @@ export class AssetUploadResourceService {
     private physical: PhysicalFileRepository,
     private logger: LoggingRepository,
     private rateLimits: RateLimitRepository,
+    private identities: ICloudIdentityRepository,
   ) {}
 
   private folder(id: string) {
@@ -111,6 +115,7 @@ export class AssetUploadResourceService {
       },
       body: { ...parsed.metadata },
     });
+    await this.refuseClaimedItem(ownerId, parsed.metadata.sourceIdentity);
     // The committed resource exists before its URI is sent, including on an interrupted POST.
     const resource = await this.uploads.create(id, ownerId, parsed);
     resume(resource);
@@ -408,11 +413,57 @@ export class AssetUploadResourceService {
     }
     const current = await this.uploads.get(id, auth.user.id);
     if (current.state === 'published' && current.ingested) {
+      await this.recordSourceIdentity(auth.user.id, current);
       // Acknowledged parts and duplicate candidates are no longer needed; live asset references stay.
       await check();
       await this.sweepFolder(id, check);
     }
     return current;
+  }
+
+  /**
+   * FL-296: an upload naming an iCloud item that another path (the sync, or another device) holds the
+   * claim on is refused before any bytes are accepted; one carrying the claim goes ahead.
+   */
+  private async refuseClaimedItem(ownerId: string, source: UploadSourceIdentity | undefined) {
+    if (!source) {
+      return;
+    }
+    const parsed = parseCloudIdentifier(source.cloudIdentifier);
+    if (!parsed) {
+      throw new BadRequestException('Invalid iCloud identifier');
+    }
+    const [claim] = await this.identities.claims(ownerId, [parsed.cplAssetRecordName]);
+    if (claim && claim.id !== source.claimId) {
+      throw new ConflictException('icloud_claimed');
+    }
+  }
+
+  /**
+   * FL-296: once the digest checked out and the asset exists, record which iCloud item it is and give
+   * the claim back. Idempotent, so a repeated result request changes nothing.
+   */
+  private async recordSourceIdentity(ownerId: string, row: AssetUploadResource) {
+    const source = row.metadata.sourceIdentity;
+    const parsed = source && parseCloudIdentifier(source.cloudIdentifier);
+    if (!source || !parsed || !row.resultAssetId || !row.verifiedChecksum) {
+      return;
+    }
+    await this.identities.recordDevice({
+      ownerId,
+      assetId: row.resultAssetId,
+      parsed,
+      cloudIdentifier: source.cloudIdentifier,
+      role: source.role,
+      editVersion: source.editVersion ?? '',
+      sha256: row.verifiedChecksum,
+      claimId: source.claimId ?? null,
+      deviceKey: source.deviceKey ?? null,
+      metadata: {
+        originalFilename: row.metadata.filename,
+        creationDate: new Date(row.metadata.fileCreatedAt).toISOString(),
+      },
+    });
   }
 
   private async ingest(auth: AuthDto, row: AssetUploadResource) {

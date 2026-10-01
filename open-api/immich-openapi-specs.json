@@ -17797,6 +17797,174 @@
         "x-immich-state": "Stable"
       }
     },
+    "/icloud-sync/claims": {
+      "post": {
+        "description": "Up to 500 items. A claim covers the whole item (still, Live Photo motion, RAW and the current edit) for 10 minutes, renewable to 4 hours. An item a healthy sync connection covers is the sync's to fetch; one an unhealthy connection covers is the device's after 72 hours, or at once with takeOver. An upload naming an item someone else claimed is refused with 409 icloud_claimed. The device key must be one of the caller's backup devices.",
+        "operationId": "claimICloudItems",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudClaimDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudClaimResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Claim iCloud items for this device to fetch and upload",
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/claims/release": {
+      "post": {
+        "description": "Gives the items back, for example when the device stops before uploading them.",
+        "operationId": "releaseICloudClaims",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudClaimReleaseDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudClaimReleaseResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Release iCloud claims this device holds",
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/claims/renew": {
+      "post": {
+        "description": "Extends live claims, never past 4 hours from when each was taken; a claim missing from the answer is lost.",
+        "operationId": "renewICloudClaims",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudClaimRenewDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudClaimRenewResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Renew iCloud claims this device holds",
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/icloud-sync/connections": {
       "get": {
         "operationId": "listICloudConnections",
@@ -64020,6 +64188,272 @@
         ],
         "type": "object"
       },
+      "ICloudClaimAnswerDto": {
+        "properties": {
+          "claimId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "connectionId": {
+            "description": "sync-covers: the connection that covers it",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "cplAssetRecordName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "holder": {
+            "description": "held: who holds it",
+            "enum": [
+              "device",
+              "icloud-sync",
+              null
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ICloudClaimState"
+          },
+          "takeOverAt": {
+            "description": "sync-covers on an unhealthy connection: when this device may take over without asking (72 hours after it became unhealthy)",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimId",
+          "connectionId",
+          "cplAssetRecordName",
+          "expiresAt",
+          "holder",
+          "id",
+          "state",
+          "takeOverAt"
+        ],
+        "type": "object"
+      },
+      "ICloudClaimDto": {
+        "properties": {
+          "deviceKey": {
+            "description": "This device's backup identity (the backup device registry's deviceKey)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudClaimItemDto"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          },
+          "takeOver": {
+            "description": "The person chose \"Back them up from this iPhone\": claim items an unhealthy sync connection covers without waiting 72 hours",
+            "type": "boolean"
+          },
+          "ttlSec": {
+            "description": "Seconds the claim lives before it must be renewed (default and most: 10 minutes)",
+            "maximum": 600,
+            "minimum": 60,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deviceKey",
+          "items"
+        ],
+        "type": "object"
+      },
+      "ICloudClaimItemDto": {
+        "properties": {
+          "cloudIdentifier": {
+            "description": "PHCloudIdentifier.stringValue, as the device reports it",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "creationDate": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "originalFilename": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pixelHeight": {
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pixelWidth": {
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "uti": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "cloudIdentifier",
+          "id"
+        ],
+        "type": "object"
+      },
+      "ICloudClaimReleaseDto": {
+        "properties": {
+          "claimIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          },
+          "deviceKey": {
+            "description": "This device's backup identity (the backup device registry's deviceKey)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimIds",
+          "deviceKey"
+        ],
+        "type": "object"
+      },
+      "ICloudClaimReleaseResponseDto": {
+        "properties": {
+          "released": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "released"
+        ],
+        "type": "object"
+      },
+      "ICloudClaimRenewDto": {
+        "properties": {
+          "claimIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          },
+          "deviceKey": {
+            "description": "This device's backup identity (the backup device registry's deviceKey)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "ttlSec": {
+            "description": "Seconds the claim lives before it must be renewed (default and most: 10 minutes)",
+            "maximum": 600,
+            "minimum": 60,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "claimIds",
+          "deviceKey"
+        ],
+        "type": "object"
+      },
+      "ICloudClaimRenewResponseDto": {
+        "description": "Only the claims still held; a missing one expired or was taken over",
+        "properties": {
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudClaimRenewedDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "claims"
+        ],
+        "type": "object"
+      },
+      "ICloudClaimRenewedDto": {
+        "properties": {
+          "claimId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimId",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "ICloudClaimResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudClaimAnswerDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ICloudClaimState": {
+        "description": "granted: this device holds the claim; held: another device or a sync run does; sync-covers: a healthy sync connection covers the item, so the server fetches it; invalid: the identifier is not an iCloud item identifier",
+        "enum": [
+          "granted",
+          "held",
+          "sync-covers",
+          "invalid"
+        ],
+        "type": "string"
+      },
       "ICloudConnectionCreateDto": {
         "additionalProperties": false,
         "properties": {
@@ -64846,6 +65280,21 @@
             "nullable": true,
             "type": "string"
           },
+          "claimExpiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "claimedBy": {
+            "description": "claimed: who is fetching it",
+            "enum": [
+              "device",
+              "icloud-sync",
+              null
+            ],
+            "nullable": true,
+            "type": "string"
+          },
           "connectionId": {
             "format": "uuid",
             "nullable": true,
@@ -64895,6 +65344,8 @@
         "required": [
           "assetId",
           "auditVerifiedAt",
+          "claimExpiresAt",
+          "claimedBy",
           "connectionId",
           "deliveredBy",
           "expectedBy",

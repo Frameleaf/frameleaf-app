@@ -5763,6 +5763,63 @@ export type FaceDto = {
     /** Face ID */
     id: string;
 };
+export type ICloudClaimItemDto = {
+    /** PHCloudIdentifier.stringValue, as the device reports it */
+    cloudIdentifier: string;
+    creationDate?: string;
+    id: string;
+    originalFilename?: string;
+    pixelHeight?: number;
+    pixelWidth?: number;
+    uti?: string;
+};
+export type ICloudClaimDto = {
+    /** This device's backup identity (the backup device registry's deviceKey) */
+    deviceKey: string;
+    items: ICloudClaimItemDto[];
+    /** The person chose "Back them up from this iPhone": claim items an unhealthy sync connection covers without waiting 72 hours */
+    takeOver?: boolean;
+    /** Seconds the claim lives before it must be renewed (default and most: 10 minutes) */
+    ttlSec?: number;
+};
+export type ICloudClaimAnswerDto = {
+    claimId: string | null;
+    /** sync-covers: the connection that covers it */
+    connectionId: string | null;
+    cplAssetRecordName: string | null;
+    expiresAt: string | null;
+    /** held: who holds it */
+    holder: Holder | null;
+    id: string;
+    state: ICloudClaimState;
+    /** sync-covers on an unhealthy connection: when this device may take over without asking (72 hours after it became unhealthy) */
+    takeOverAt: string | null;
+};
+export type ICloudClaimResponseDto = {
+    items: ICloudClaimAnswerDto[];
+};
+export type ICloudClaimReleaseDto = {
+    claimIds: string[];
+    /** This device's backup identity (the backup device registry's deviceKey) */
+    deviceKey: string;
+};
+export type ICloudClaimReleaseResponseDto = {
+    released: string[];
+};
+export type ICloudClaimRenewDto = {
+    claimIds: string[];
+    /** This device's backup identity (the backup device registry's deviceKey) */
+    deviceKey: string;
+    /** Seconds the claim lives before it must be renewed (default and most: 10 minutes) */
+    ttlSec?: number;
+};
+export type ICloudClaimRenewedDto = {
+    claimId: string;
+    expiresAt: string;
+};
+export type ICloudClaimRenewResponseDto = {
+    claims: ICloudClaimRenewedDto[];
+};
 export type ICloudSyncRunDto = {
     createdAt: string;
     /** Stable failure code, translated by the client */
@@ -5946,6 +6003,9 @@ export type ICloudLookupRoleDto = {
     assetId: string | null;
     /** When an audit download proved an identity reuse; Free Up Space needs it */
     auditVerifiedAt: string | null;
+    claimExpiresAt: string | null;
+    /** claimed: who is fetching it */
+    claimedBy: ClaimedBy | null;
     connectionId: string | null;
     /** icloud-sync:<connectionId> or device:<deviceKey> */
     deliveredBy: string | null;
@@ -16635,6 +16695,51 @@ export function reassignFacesById({ id, faceDto }: {
         body: faceDto
     })));
 }
+/**
+ * Claim iCloud items for this device to fetch and upload
+ */
+export function claimICloudItems({ iCloudClaimDto }: {
+    iCloudClaimDto: ICloudClaimDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudClaimResponseDto;
+    }>("/icloud-sync/claims", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudClaimDto
+    })));
+}
+/**
+ * Release iCloud claims this device holds
+ */
+export function releaseICloudClaims({ iCloudClaimReleaseDto }: {
+    iCloudClaimReleaseDto: ICloudClaimReleaseDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudClaimReleaseResponseDto;
+    }>("/icloud-sync/claims/release", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudClaimReleaseDto
+    })));
+}
+/**
+ * Renew iCloud claims this device holds
+ */
+export function renewICloudClaims({ iCloudClaimRenewDto }: {
+    iCloudClaimRenewDto: ICloudClaimRenewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudClaimRenewResponseDto;
+    }>("/icloud-sync/claims/renew", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudClaimRenewDto
+    })));
+}
 export function listICloudConnections(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
@@ -24610,6 +24715,17 @@ export enum SourceType {
     Exif = "exif",
     Manual = "manual"
 }
+export enum Holder {
+    Device = "device",
+    IcloudSync = "icloud-sync",
+    Null
+}
+export enum ICloudClaimState {
+    Granted = "granted",
+    Held = "held",
+    SyncCovers = "sync-covers",
+    Invalid = "invalid"
+}
 export enum ICloudAuthAction {
     Login = "login",
     TwoFactor = "two-factor",
@@ -24656,6 +24772,11 @@ export enum ICloudIdentityRole {
 export enum ICloudEditOwnerKind {
     IcloudSync = "icloud-sync",
     Device = "device"
+}
+export enum ClaimedBy {
+    Device = "device",
+    IcloudSync = "icloud-sync",
+    Null
 }
 export enum ICloudMatchStrength {
     Exact = "exact",

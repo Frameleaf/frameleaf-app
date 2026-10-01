@@ -100,4 +100,28 @@ describe('native upload headers', () => {
     ).toString('base64url');
     expect(() => parseAssetUploadHeaders({ ...headers, 'asset-metadata': unknown })).toThrow();
   });
+  it('carries an iCloud source identity, strictly typed (FL-296)', () => {
+    const encode = (sourceIdentity: unknown) =>
+      Buffer.from(
+        JSON.stringify({ ...JSON.parse(Buffer.from(metadata, 'base64url').toString()), sourceIdentity }),
+      ).toString('base64url');
+    const cloudIdentifier = '32A01DD9-75DF-41B2-8773-80C153D73A5A:001:AQohY6yKZR0+tXlMi9FUQ82zySGo';
+    const source = { kind: 'icloud', cloudIdentifier, role: 'original' };
+    expect(parseAssetUploadHeaders({ ...headers, 'asset-metadata': encode(source) }).metadata.sourceIdentity).toEqual(
+      source,
+    );
+    const edit = { ...source, role: 'edit-render', editVersion: 'v1' };
+    expect(parseAssetUploadHeaders({ ...headers, 'asset-metadata': encode(edit) }).metadata.sourceIdentity).toEqual(
+      edit,
+    );
+    for (const invalid of [
+      { ...source, role: 'edit-render' },
+      { ...source, editVersion: 'v1' },
+      { ...source, kind: 'google' },
+      { ...source, title: 'x' },
+      { ...source, claimId: 'not-a-uuid' },
+    ]) {
+      expect(() => parseAssetUploadHeaders({ ...headers, 'asset-metadata': encode(invalid) })).toThrow();
+    }
+  });
 });

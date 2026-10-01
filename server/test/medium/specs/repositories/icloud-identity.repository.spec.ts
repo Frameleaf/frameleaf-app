@@ -3,7 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import * as icloud from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
 import * as identity from 'src/fork-schema/migrations/0000000000213-ICloudSourceIdentity.js';
-import { ICloudIdentityRepository, recordSyncIdentity } from 'src/repositories/icloud-identity.repository.js';
+import {
+  ICloudIdentityRepository,
+  recordSyncIdentity,
+  releaseSyncClaim,
+} from 'src/repositories/icloud-identity.repository.js';
 import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -62,6 +66,7 @@ describe(ICloudIdentityRepository.name, () => {
     await sql`INSERT INTO immich_fork.state VALUES (1,'active')`.execute(db);
     await sql`CREATE TABLE immich_fork.migration_audit (name text,status text)`.execute(db);
     await sql`CREATE TABLE asset (id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
+    await sql`CREATE TABLE backup_device ("ownerId" uuid,"deviceKey" uuid,"deletedAt" timestamptz)`.execute(db);
     await icloud.up(db);
     await identity.up(db);
     sync = new ICloudSyncRepository(db);
@@ -71,7 +76,8 @@ describe(ICloudIdentityRepository.name, () => {
     await db.destroy();
   });
   beforeEach(async () => {
-    await sql`TRUNCATE immich_fork.icloud_connection, immich_fork.icloud_source_identity, asset CASCADE`.execute(db);
+    await sql`TRUNCATE immich_fork.icloud_connection, immich_fork.icloud_source_identity, immich_fork.icloud_claim,
+      asset, backup_device CASCADE`.execute(db);
     connection = (await sync.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({})))!;
     await sync.update(connection.id, connection.ownerId, { state: 'connected', accountHint: 'a•••@icloud.com' });
     connection.state = 'connected';
@@ -185,5 +191,105 @@ describe(ICloudIdentityRepository.name, () => {
     await recordSyncIdentity(db, await commit('original', original, Buffer.alloc(32, 1)));
     await sql`DELETE FROM asset WHERE id = ${original}::uuid`.execute(db);
     await expect(sut.removeOrphans()).resolves.toBe(1);
+  });
+
+  describe('claims', () => {
+    const device = (key: string) => `device:${key}`;
+
+    it("grants a free item, keeps a holder's own claim, and refuses another holder until it runs out", async () => {
+      const [first] = await sut.claim(connection.ownerId, [ASSET], device('a'), 600);
+      expect(first).toMatchObject({ cplAssetRecordName: ASSET, holder: device('a') });
+      const [again] = await sut.claim(connection.ownerId, [ASSET], device('a'), 600);
+      expect(again.id).toBe(first.id);
+      const [other] = await sut.claim(connection.ownerId, [ASSET], device('b'), 600);
+      expect(other).toMatchObject({ id: first.id, holder: device('a') });
+      // another owner's claim on the same item is theirs alone
+      const [elsewhere] = await sut.claim(randomUUID(), [ASSET], device('b'), 600);
+      expect(elsewhere.holder).toBe(device('b'));
+
+      await sql`UPDATE immich_fork.icloud_claim SET "expiresAt" = now() - interval '1 second'`.execute(db);
+      const [taken] = await sut.claim(connection.ownerId, [ASSET], device('b'), 600);
+      expect(taken.holder).toBe(device('b'));
+      expect(taken.id).not.toBe(first.id);
+      await expect(sut.claims(connection.ownerId, [ASSET])).resolves.toEqual([
+        expect.objectContaining({ id: taken.id }),
+      ]);
+    });
+
+    it("renews up to four hours from the first claim, and releases only the holder's own", async () => {
+      const [claim] = await sut.claim(connection.ownerId, [ASSET], device('a'), 600);
+      await sql`UPDATE immich_fork.icloud_claim SET "createdAt" = now() - interval '3 hours 59 minutes'`.execute(db);
+      const [renewed] = await sut.renew(connection.ownerId, [claim.id], device('a'), 600);
+      expect(renewed.expiresAt.getTime() - Date.now()).toBeLessThan(120_000);
+      await expect(sut.renew(connection.ownerId, [claim.id], device('b'), 600)).resolves.toEqual([]);
+      await expect(sut.release(connection.ownerId, [claim.id], device('b'))).resolves.toEqual([]);
+      await expect(sut.release(connection.ownerId, [claim.id], device('a'))).resolves.toEqual([claim.id]);
+    });
+
+    it("makes the sync wait for a device, and lets its own claim go with the item's last resource", async () => {
+      await sut.claim(connection.ownerId, [ASSET], device('a'), 600);
+      await expect(sut.claimForSync(connection.ownerId, ASSET.toLowerCase(), connection.id)).resolves.toBeInstanceOf(
+        Date,
+      );
+      await sql`DELETE FROM immich_fork.icloud_claim`.execute(db);
+      await expect(sut.claimForSync(connection.ownerId, ASSET, connection.id)).resolves.toBeNull();
+
+      // the item has an original, a Live Photo motion and an edit: the claim stays until all three are done
+      const resourceId = await commit('original', randomUUID(), Buffer.alloc(32, 1));
+      await releaseSyncClaim(db, resourceId);
+      await expect(sut.claims(connection.ownerId, [ASSET])).resolves.toHaveLength(1);
+      await sql`UPDATE immich_fork.icloud_resource SET status = 'finalized' WHERE "connectionId" = ${connection.id}::uuid`.execute(
+        db,
+      );
+      await releaseSyncClaim(db, resourceId);
+      await expect(sut.claims(connection.ownerId, [ASSET])).resolves.toEqual([]);
+    });
+
+    it('parks a resource the device holds without counting an attempt', async () => {
+      const { rows } = await sql<{ id: string }>`
+        UPDATE immich_fork.icloud_resource SET status = 'staging', "leaseToken" = gen_random_uuid(),
+          "leaseExpiresAt" = now() + interval '1 minute' WHERE role = 'original' RETURNING id
+      `.execute(db);
+      const resource = (await sync.resource(rows[0].id))!;
+      const until = new Date(Date.now() + 600_000);
+      await sync.waitForClaim(resource, until);
+      expect(await sync.resource(rows[0].id)).toMatchObject({
+        status: 'pending',
+        attempts: resource.attempts,
+        leaseToken: null,
+        lastError: 'icloud_claimed',
+      });
+    });
+
+    it('records a device upload delivered under its claim, and gives the claim back', async () => {
+      const [claim] = await sut.claim(connection.ownerId, [ASSET], device('a'), 600);
+      const assetId = randomUUID();
+      await sql`INSERT INTO asset (id, "ownerId") VALUES (${assetId}::uuid, ${connection.ownerId}::uuid)`.execute(db);
+      const input = {
+        ownerId: connection.ownerId,
+        assetId,
+        parsed: { cplAssetRecordName: ASSET, cplMasterRecordName: MASTER },
+        cloudIdentifier: `${ASSET}:001:${MASTER}`,
+        role: 'original' as const,
+        editVersion: '',
+        sha256: Buffer.alloc(32, 3),
+        claimId: claim.id,
+        deviceKey: null,
+        metadata: { originalFilename: 'IMG_0001.HEIC', creationDate: '2026-06-01T10:00:00.000Z' },
+      };
+      await sut.recordDevice(input);
+      await sut.recordDevice(input);
+      await expect(sut.identities(connection.ownerId, [ASSET])).resolves.toEqual([
+        expect.objectContaining({ assetId, deliveredBy: device('a'), matchStrength: 'corroborated' }),
+      ]);
+      await expect(sut.claims(connection.ownerId, [ASSET])).resolves.toEqual([]);
+    });
+
+    it("knows the owner's backup devices", async () => {
+      const key = randomUUID();
+      await sql`INSERT INTO backup_device VALUES (${connection.ownerId}::uuid, ${key}::uuid, NULL)`.execute(db);
+      await expect(sut.ownsDevice(connection.ownerId, key)).resolves.toBe(true);
+      await expect(sut.ownsDevice(randomUUID(), key)).resolves.toBe(false);
+    });
   });
 });
