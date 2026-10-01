@@ -8,7 +8,14 @@ const RAW_RENDER_TIMEOUT_MS = 120_000;
 const RAW_RENDER_MAX_BYTES = 256 * 1024 * 1024;
 
 export type RawRenderFailure =
-  'dependency_missing' | 'timeout' | 'unsupported' | 'damaged' | 'resource_limit' | 'io' | 'decode_failed';
+  | 'dependency_missing'
+  | 'timeout'
+  | 'cancelled'
+  | 'unsupported'
+  | 'damaged'
+  | 'resource_limit'
+  | 'io'
+  | 'decode_failed';
 
 export class RawRenderError extends Error {
   constructor(
@@ -22,8 +29,11 @@ export class RawRenderError extends Error {
 }
 
 /** Sensor render, never an embedded preview. LibRaw applies orientation and embeds the sRGB output profile. */
-export async function renderRawWithLibRaw(input: string): Promise<Buffer> {
+export async function renderRawWithLibRaw(input: string, signal?: AbortSignal): Promise<Buffer> {
   try {
+    if (signal?.aborted) {
+      throw new RawRenderError('cancelled', 'ABORT_ERR', signal.reason);
+    }
     // The absolute binary is built from the same pinned source as the server's LibRaw library.
     // stdout avoids temporary files and any derivative beside the immutable original.
     const { stdout, stderr } = await execFile(
@@ -33,10 +43,14 @@ export async function renderRawWithLibRaw(input: string): Promise<Buffer> {
         encoding: 'buffer',
         timeout: RAW_RENDER_TIMEOUT_MS,
         killSignal: 'SIGKILL',
+        signal,
         maxBuffer: RAW_RENDER_MAX_BYTES,
         env: { ...process.env, LC_ALL: 'C', OMP_NUM_THREADS: '1' },
       },
     );
+    if (signal?.aborted) {
+      throw new RawRenderError('cancelled', 'ABORT_ERR', signal.reason);
+    }
     if (/corrupt|unexpected (?:end|eof)|data error/i.test(stderr.toString().replaceAll(resolve(input), ''))) {
       throw new RawRenderError('damaged', 'ERR_RAW_DAMAGED');
     }
@@ -55,6 +69,9 @@ export async function renderRawWithLibRaw(input: string): Promise<Buffer> {
       signal?: string;
       stderr?: Buffer;
     };
+    if (signal?.aborted || details.code === 'ABORT_ERR') {
+      throw new RawRenderError('cancelled', 'ABORT_ERR', error);
+    }
     const diagnostic = (details.stderr?.toString() ?? '').replaceAll(resolve(input), '');
     if (details.code === 'ENOENT' || /error while loading shared libraries/i.test(diagnostic)) {
       throw new RawRenderError('dependency_missing', 'ENOENT', error);
