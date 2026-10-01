@@ -2,8 +2,8 @@
 set -o nounset
 set -o pipefail
 
-create_immich_directory() {
-  local -r Tgt='./immich-app'
+create_frameleaf_directory() {
+  local -r Tgt='./frameleaf-app'
   echo "Creating Frameleaf directory..."
   if [[ -e $Tgt ]]; then
     echo "Found existing directory $Tgt, will overwrite YAML files"
@@ -61,11 +61,11 @@ You can access the website or the mobile app at http://$ip_address:2283
 ---------------------------------------------------
 If you want to configure custom information of the server, including the database, Redis information, or the backup (or upload) location, etc.
 
-  1. First bring down the containers with the command 'docker compose down' in the immich-app directory,
+  1. First bring down the containers with the command 'docker compose down' in the frameleaf-app directory,
 
   2. Then change the information that fits your needs in the '.env' file,
 
-  3. Finally, bring the containers back up with the command 'docker compose up --remove-orphans -d' in the immich-app directory
+  3. Finally, bring the containers back up with the command 'docker compose up --remove-orphans -d' in the frameleaf-app directory
 EOF
 }
 
@@ -81,7 +81,7 @@ main() {
     return 14
   fi
 
-  create_immich_directory || {
+  create_frameleaf_directory || {
     echo 'error creating Frameleaf directory'
     return 10
   }

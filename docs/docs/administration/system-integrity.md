@@ -70,5 +70,5 @@ The checks are designed to catch common problems that we have seen users have in
 :::
 
 ```
-IMMICH_IGNORE_MOUNT_CHECK_ERRORS=true
+FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS=true
 ```

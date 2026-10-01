@@ -215,7 +215,7 @@ While it is on, the server advertises one DNS-SD (Bonjour/mDNS) service on the L
 | Field        | Value                                                                                          |
 | ------------ | ---------------------------------------------------------------------------------------------- |
 | Service type | `_frameleaf._tcp`                                                                              |
-| Port         | the server's HTTP port (`IMMICH_PORT`, 2283 by default)                                        |
+| Port         | the server's HTTP port (`FRAMELEAF_PORT`, 2283 by default)                                     |
 | Service name | the server's display name, or `Frameleaf server` when none is set                              |
 | TXT `id`     | the Frameleaf Cloud instance id while the server is linked, otherwise a stable local server id |
 | TXT `name`   | the same display name                                                                          |

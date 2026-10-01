@@ -176,7 +176,7 @@ You can add this to the `immich-machine-learning` service instead of extending f
 immich-machine-learning:
   container_name: frameleaf_machine_learning
   # Note the `-cuda` at the end
-  image: ghcr.io/frameleaf/frameleaf-machine-learning:${IMMICH_VERSION:-release}-cuda
+  image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}-cuda
   # Note the lack of an `extends` section
   deploy:
     resources:

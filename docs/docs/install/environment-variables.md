@@ -17,36 +17,38 @@ If this does not work, try running `docker compose up -d --force-recreate`.
 
 ## Docker Compose
 
-| Variable           | Description                     | Default | Containers               |
-| :----------------- | :------------------------------ | :-----: | :----------------------- |
-| `IMMICH_VERSION`   | Image tags                      |  `v3`   | server, machine learning |
-| `UPLOAD_LOCATION`  | Host path for uploads           |         | server                   |
-| `DB_DATA_LOCATION` | Host path for Postgres database |         | database                 |
+| Variable                          | Description                     |  Default  | Containers               |
+| :-------------------------------- | :------------------------------ | :-------: | :----------------------- |
+| `FRAMELEAF_VERSION`<sup>\*1</sup> | Image tags                      | `release` | server, machine learning |
+| `UPLOAD_LOCATION`                 | Host path for uploads           |           | server                   |
+| `DB_DATA_LOCATION`                | Host path for Postgres database |           | database                 |
 
 :::tip
 These environment variables are used by the `docker-compose.yml` file and do **NOT** affect the containers directly.
 :::
 
+\*1: The Compose files use `${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}`, so an existing `IMMICH_VERSION` in your `.env` still selects the image tag when `FRAMELEAF_VERSION` is not set.
+
 ## General
 
-| Variable                            | Description                                                                                                                                                          |           Default            | Containers               | Workers            |
-| :---------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------: | :----------------------- | :----------------- |
-| `TZ`                                | Timezone                                                                                                                                                             |        <sup>\*1</sup>        | server                   | microservices      |
-| `IMMICH_ENV`                        | Environment (production, development)                                                                                                                                |         `production`         | server, machine learning | api, microservices |
-| `IMMICH_LOG_LEVEL`                  | Log level (verbose, debug, log, warn, error)                                                                                                                         |            `log`             | server, machine learning | api, microservices |
-| `IMMICH_LOG_FORMAT`                 | Log output format (`console`, `json`)                                                                                                                                |          `console`           | server                   | api, microservices |
-| `IMMICH_MEDIA_LOCATION`             | Media location inside the container ⚠️**You probably shouldn't set this**<sup>\*2</sup>⚠️                                                                            |           `/data`            | server                   | api, microservices |
-| `IMMICH_CONFIG_FILE`                | Path to config file                                                                                                                                                  |                              | server                   | api, microservices |
-| `IMMICH_HELMET_FILE`                | Path to a json file with [helmet](https://www.npmjs.com/package/helmet) options. Set to `false` to disable. Set to `true` to use `server/helmet.json`<sup>\*3</sup>. |           `false`            | server                   | api                |
-| `NO_COLOR`                          | Set to `true` to disable color-coded log output                                                                                                                      |           `false`            | server, machine learning |                    |
-| `CPU_CORES`                         | Number of cores available to the Frameleaf server                                                                                                                    | auto-detected CPU core count | server                   |                    |
-| `IMMICH_API_METRICS_PORT`           | Unused: metrics are permanently disabled                                                                                                                             |            `8081`            | server                   | api                |
-| `IMMICH_MICROSERVICES_METRICS_PORT` | Unused: metrics are permanently disabled                                                                                                                             |            `8082`            | server                   | microservices      |
-| `IMMICH_PROCESS_INVALID_IMAGES`     | When `true`, generate thumbnails for invalid images                                                                                                                  |                              | server                   | microservices      |
-| `IMMICH_TRUSTED_PROXIES`            | List of comma-separated IPs set as trusted proxies                                                                                                                   |                              | server                   | api                |
-| `IMMICH_IGNORE_MOUNT_CHECK_ERRORS`  | See [System Integrity](/administration/system-integrity)                                                                                                             |                              | server                   | api, microservices |
-| `IMMICH_IMPORT_ROOTS`               | Comma-separated absolute paths administrators may select Google Photos Takeout folders from                                                                          |                              | server                   | api, microservices |
-| `IMMICH_ALLOW_SETUP`                | When `false` disables the `/auth/admin-sign-up` and `/admin/database-backups/start-restore` endpoints                                                                |            `true`            | server                   | api                |
+| Variable                              | Description                                                                                                                                                          |           Default            | Containers               | Workers            |
+| :------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------: | :----------------------- | :----------------- |
+| `TZ`                                  | Timezone                                                                                                                                                             |        <sup>\*1</sup>        | server                   | microservices      |
+| `FRAMELEAF_ENV`                       | Environment (production, development)                                                                                                                                |         `production`         | server, machine learning | api, microservices |
+| `FRAMELEAF_LOG_LEVEL`                 | Log level (verbose, debug, log, warn, error)                                                                                                                         |            `log`             | server, machine learning | api, microservices |
+| `FRAMELEAF_LOG_FORMAT`                | Log output format (`console`, `json`)                                                                                                                                |          `console`           | server                   | api, microservices |
+| `FRAMELEAF_MEDIA_LOCATION`            | Media location inside the container ⚠️**You probably shouldn't set this**<sup>\*2</sup>⚠️                                                                            |           `/data`            | server                   | api, microservices |
+| `FRAMELEAF_CONFIG_FILE`               | Path to config file                                                                                                                                                  |                              | server                   | api, microservices |
+| `FRAMELEAF_HELMET_FILE`               | Path to a json file with [helmet](https://www.npmjs.com/package/helmet) options. Set to `false` to disable. Set to `true` to use `server/helmet.json`<sup>\*3</sup>. |           `false`            | server                   | api                |
+| `NO_COLOR`                            | Set to `true` to disable color-coded log output                                                                                                                      |           `false`            | server, machine learning |                    |
+| `CPU_CORES`                           | Number of cores available to the Frameleaf server                                                                                                                    | auto-detected CPU core count | server                   |                    |
+| `IMMICH_API_METRICS_PORT`             | Unused: metrics are permanently disabled                                                                                                                             |            `8081`            | server                   | api                |
+| `IMMICH_MICROSERVICES_METRICS_PORT`   | Unused: metrics are permanently disabled                                                                                                                             |            `8082`            | server                   | microservices      |
+| `FRAMELEAF_PROCESS_INVALID_IMAGES`    | When `true`, generate thumbnails for invalid images                                                                                                                  |                              | server                   | microservices      |
+| `FRAMELEAF_TRUSTED_PROXIES`           | List of comma-separated IPs set as trusted proxies                                                                                                                   |                              | server                   | api                |
+| `FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS` | See [System Integrity](/administration/system-integrity)                                                                                                             |                              | server                   | api, microservices |
+| `FRAMELEAF_IMPORT_ROOTS`              | Comma-separated absolute paths administrators may select Google Photos Takeout folders from                                                                          |                              | server                   | api, microservices |
+| `FRAMELEAF_ALLOW_SETUP`               | When `false` disables the `/auth/admin-sign-up` and `/admin/database-backups/start-restore` endpoints                                                                |            `true`            | server                   | api                |
 
 \*1: `TZ` should be set to a `TZ identifier` from [this list][tz-list]. For example, `TZ="Etc/UTC"`.
 `TZ` is used by `exiftool` as a fallback in case the timezone cannot be determined from the image metadata. It is also used for logfile timestamps and cron job execution.
@@ -108,10 +110,10 @@ These environment variables are used by the `docker-compose.yml` file and do **N
 
 ## Workers
 
-| Variable                 | Description                                                                                          | Default | Containers |
-| :----------------------- | :--------------------------------------------------------------------------------------------------- | :-----: | :--------- |
-| `IMMICH_WORKERS_INCLUDE` | Only run these workers.                                                                              |         | server     |
-| `IMMICH_WORKERS_EXCLUDE` | Do not run these workers. Matches against default workers, or `IMMICH_WORKERS_INCLUDE` if specified. |         | server     |
+| Variable                    | Description                                                                                             | Default | Containers |
+| :-------------------------- | :------------------------------------------------------------------------------------------------------ | :-----: | :--------- |
+| `FRAMELEAF_WORKERS_INCLUDE` | Only run these workers.                                                                                 |         | server     |
+| `FRAMELEAF_WORKERS_EXCLUDE` | Do not run these workers. Matches against default workers, or `FRAMELEAF_WORKERS_INCLUDE` if specified. |         | server     |
 
 :::info
 Information on the current workers can be found [here](/administration/jobs-workers).
@@ -128,10 +130,10 @@ Both must be positive numbers, and the grace period must end before the deadline
 
 ## Ports
 
-| Variable      | Description    |                  Default                   | Containers               |
-| :------------ | :------------- | :----------------------------------------: | :----------------------- |
-| `IMMICH_HOST` | Listening host |                 `0.0.0.0`                  | server, machine learning |
-| `IMMICH_PORT` | Listening port | `2283` (server), `3003` (machine learning) | server, machine learning |
+| Variable         | Description    |                  Default                   | Containers               |
+| :--------------- | :------------- | :----------------------------------------: | :----------------------- |
+| `FRAMELEAF_HOST` | Listening host |                 `0.0.0.0`                  | server, machine learning |
+| `FRAMELEAF_PORT` | Listening port | `2283` (server), `3003` (machine learning) | server, machine learning |
 
 ## Database
 
@@ -158,7 +160,7 @@ Both must be positive numbers, and the grace period must end before the deadline
 
 All `DB_` variables must be provided to all Frameleaf workers, including `api` and `microservices`.
 
-`DB_URL` must be in the format `postgresql://immichdbusername:immichdbpassword@postgreshost:postgresport/immichdatabasename`.
+`DB_URL` must be in the format `postgresql://dbusername:dbpassword@postgreshost:postgresport/databasename`.
 You can require SSL by adding `?sslmode=require` to the end of the `DB_URL` string, or require SSL and skip certificate verification by adding `?sslmode=require&uselibpqcompat=true`. This allows both Frameleaf and `pg_dumpall` (the utility used for database backups) to [properly connect](https://github.com/brianc/node-postgres/tree/master/packages/pg-connection-string#tcp-connections) to your database.
 
 When `DB_URL` is defined, the `DB_HOSTNAME`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` and `DB_DATABASE_NAME` database variables are ignored.
@@ -272,6 +274,61 @@ Telemetry and metrics export are permanently disabled in Frameleaf.
 `IMMICH_MICROSERVICES_METRICS_PORT` are accepted for compatibility but do not enable
 collection, open a listener, or configure an exporter. `OTEL_*` variables cannot
 activate the removed OpenTelemetry SDK.
+
+## Deprecated names
+
+Every `IMMICH_` variable in the table below still works as a deprecated alias of its `FRAMELEAF_` name, so an `.env` written for the upstream server keeps working unchanged after you switch the image.
+
+- If both names of a pair are set to different values, the server (and the machine learning service, and the CLI) refuses to start and names the pair.
+- At startup, a single warning lists the old names in use together with their new names.
+- An empty value counts as unset.
+
+| Deprecated name                      | Name to use                             | Read by                  |
+| :----------------------------------- | :-------------------------------------- | :----------------------- |
+| `IMMICH_VERSION`                     | `FRAMELEAF_VERSION`                     | Compose files            |
+| `IMMICH_ENV`                         | `FRAMELEAF_ENV`                         | server                   |
+| `IMMICH_LOG_LEVEL`                   | `FRAMELEAF_LOG_LEVEL`                   | server, machine learning |
+| `IMMICH_LOG_FORMAT`                  | `FRAMELEAF_LOG_FORMAT`                  | server                   |
+| `IMMICH_MEDIA_LOCATION`              | `FRAMELEAF_MEDIA_LOCATION`              | server                   |
+| `IMMICH_CONFIG_FILE`                 | `FRAMELEAF_CONFIG_FILE`                 | server                   |
+| `IMMICH_HELMET_FILE`                 | `FRAMELEAF_HELMET_FILE`                 | server                   |
+| `IMMICH_TRUSTED_PROXIES`             | `FRAMELEAF_TRUSTED_PROXIES`             | server                   |
+| `IMMICH_IGNORE_MOUNT_CHECK_ERRORS`   | `FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS`   | server                   |
+| `IMMICH_PROCESS_INVALID_IMAGES`      | `FRAMELEAF_PROCESS_INVALID_IMAGES`      | server                   |
+| `IMMICH_ALLOW_SETUP`                 | `FRAMELEAF_ALLOW_SETUP`                 | server                   |
+| `IMMICH_WORKERS_INCLUDE`             | `FRAMELEAF_WORKERS_INCLUDE`             | server                   |
+| `IMMICH_WORKERS_EXCLUDE`             | `FRAMELEAF_WORKERS_EXCLUDE`             | server                   |
+| `IMMICH_HOST`                        | `FRAMELEAF_HOST`                        | server, machine learning |
+| `IMMICH_PORT`                        | `FRAMELEAF_PORT`                        | server, machine learning |
+| `IMMICH_IMPORT_ROOTS`                | `FRAMELEAF_IMPORT_ROOTS`                | server                   |
+| `IMMICH_ALLOW_EXTERNAL_PLUGINS`      | `FRAMELEAF_ALLOW_EXTERNAL_PLUGINS`      | server                   |
+| `IMMICH_PLUGINS_INSTALL_FOLDER`      | `FRAMELEAF_PLUGINS_INSTALL_FOLDER`      | server                   |
+| `IMMICH_BUILD`                       | `FRAMELEAF_BUILD`                       | server                   |
+| `IMMICH_BUILD_URL`                   | `FRAMELEAF_BUILD_URL`                   | server                   |
+| `IMMICH_BUILD_IMAGE`                 | `FRAMELEAF_BUILD_IMAGE`                 | server                   |
+| `IMMICH_BUILD_IMAGE_URL`             | `FRAMELEAF_BUILD_IMAGE_URL`             | server                   |
+| `IMMICH_BUILD_DATA`                  | `FRAMELEAF_BUILD_DATA`                  | server                   |
+| `IMMICH_REPOSITORY`                  | `FRAMELEAF_REPOSITORY`                  | server                   |
+| `IMMICH_REPOSITORY_URL`              | `FRAMELEAF_REPOSITORY_URL`              | server                   |
+| `IMMICH_SOURCE_REF`                  | `FRAMELEAF_SOURCE_REF`                  | server                   |
+| `IMMICH_SOURCE_COMMIT`               | `FRAMELEAF_SOURCE_COMMIT`               | server                   |
+| `IMMICH_SOURCE_URL`                  | `FRAMELEAF_SOURCE_COMMIT_URL`           | server                   |
+| `IMMICH_MACHINE_LEARNING_ENABLED`    | `FRAMELEAF_MACHINE_LEARNING_ENABLED`    | server                   |
+| `IMMICH_MACHINE_LEARNING_URL`        | `FRAMELEAF_MACHINE_LEARNING_URL`        | server                   |
+| `IMMICH_MEDIA_VALIDATION_TIMEOUT_MS` | `FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS` | server                   |
+| `IMMICH_ICLOUD_BRIDGE_URL`           | `FRAMELEAF_ICLOUD_BRIDGE_URL`           | server                   |
+| `IMMICH_ICLOUD_BRIDGE_TOKEN_FILE`    | `FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE`    | server                   |
+| `IMMICH_ICLOUD_KEY_FILE`             | `FRAMELEAF_ICLOUD_KEY_FILE`             | server                   |
+| `IMMICH_ICLOUD_CA_FILE`              | `FRAMELEAF_ICLOUD_CA_FILE`              | server                   |
+| `IMMICH_ICLOUD_STAGING_PATH`         | `FRAMELEAF_ICLOUD_STAGING_PATH`         | server                   |
+| `IMMICH_ICLOUD_FREE_SPACE_BYTES`     | `FRAMELEAF_ICLOUD_FREE_SPACE_BYTES`     | server                   |
+| `IMMICH_ICLOUD_MAX_CONCURRENCY`      | `FRAMELEAF_ICLOUD_MAX_CONCURRENCY`      | server                   |
+| `IMMICH_ICLOUD_MAX_STAGING_BYTES`    | `FRAMELEAF_ICLOUD_MAX_STAGING_BYTES`    | server                   |
+| `IMMICH_ML_AUTH_TOKEN`               | `FRAMELEAF_ML_AUTH_TOKEN`               | machine learning         |
+
+`FRAMELEAF_SOURCE_URL` is not the new name of `IMMICH_SOURCE_URL`: it is the [help link](#help-links) to the source code. The CLI's variables are listed under [deprecated variable names](/features/command-line-interface#deprecated-variable-names) on the CLI page.
+
+`IMMICH_TELEMETRY_INCLUDE`, `IMMICH_TELEMETRY_EXCLUDE`, `IMMICH_API_METRICS_PORT` and `IMMICH_MICROSERVICES_METRICS_PORT` keep their names because they have no effect (see [Prometheus](#prometheus)). The `IMMICH_THIRD_PARTY_*` help-link names keep working as described under [Help links](#help-links).
 
 ## Secrets
 

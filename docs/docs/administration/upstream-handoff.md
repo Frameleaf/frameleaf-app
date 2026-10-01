@@ -59,7 +59,7 @@ server can still start on the library with no handoff. Stop the other server; ad
 tried again at every start.
 
 Once the library is adopted, the API server starts the compatibility backfill, which runs
-in the background. `immich-admin fork-schema status` shows where it is.
+in the background. `frameleaf-admin fork-schema status` shows where it is.
 
 You can still adopt by hand, for example before the first start. The manual command also
 requires maintenance mode, because it cannot tell an idle server that connects from its
@@ -68,10 +68,10 @@ container) from its own connections. Stop every server container, then run these
 commands from one-shot admin processes that use the Frameleaf image:
 
 ```bash
-immich-admin enable-maintenance-mode
-immich-admin fork-schema adopt
-immich-admin fork-schema status
-immich-admin disable-maintenance-mode
+frameleaf-admin enable-maintenance-mode
+frameleaf-admin fork-schema adopt
+frameleaf-admin fork-schema status
+frameleaf-admin disable-maintenance-mode
 ```
 
 Adoption runs in one transaction. It applies the upstream migrations newer than the
@@ -148,15 +148,15 @@ Restarting the server during the backfill is safe and needs no command: every st
 queues the backfill again. A batch that was running when the server stopped is taken
 over once its 15-minute claim expires.
 
-`pause` and `resume` are optional operator controls. `immich-admin fork-schema pause`
+`pause` and `resume` are optional operator controls. `frameleaf-admin fork-schema pause`
 returns the library to `legacy` after the running batches finish, and later starts leave
-it paused. Pausing before the backfill has started also holds it. `immich-admin
+it paused. Pausing before the backfill has started also holds it. `frameleaf-admin
 fork-schema resume` (or `start`) continues it. `start` and `resume` on a library whose
 backfill is already `ready` (or `active`) only print the status, so existing scripts keep
 working.
 
 A kind whose last batch failed is not retried automatically. Startup logs the kind and
-the error; fix the cause and run `immich-admin fork-schema resume` to retry it.
+the error; fix the cause and run `frameleaf-admin fork-schema resume` to retry it.
 
 ## Checkpoints and destructive boundary
 
@@ -181,32 +181,32 @@ your checkpoint system.
 export DATABASE_BACKUP_ID='backup-immutable-id'
 export MEDIA_SNAPSHOT_ID='media-snapshot-immutable-id'
 
-immich-admin fork-schema status
+frameleaf-admin fork-schema status
 # The backfill started by itself; on a ready library these two only print the status.
-immich-admin fork-schema start
+frameleaf-admin fork-schema start
 # Interrupt the worker once, restart it, and then:
-immich-admin fork-schema resume
-immich-admin fork-schema verify
+frameleaf-admin fork-schema resume
+frameleaf-admin fork-schema verify
 
-immich-admin fork-schema-cutover verify-storage start \
+frameleaf-admin fork-schema-cutover verify-storage start \
   --database-backup-id "$DATABASE_BACKUP_ID" \
   --media-snapshot-id "$MEDIA_SNAPSHOT_ID"
 # Interrupt verification once, restart it, and then:
-immich-admin fork-schema-cutover verify-storage resume \
+frameleaf-admin fork-schema-cutover verify-storage resume \
   --database-backup-id "$DATABASE_BACKUP_ID" \
   --media-snapshot-id "$MEDIA_SNAPSHOT_ID"
 
-REPORT_DIGEST="$(immich-admin fork-schema-cutover preflight \
+REPORT_DIGEST="$(frameleaf-admin fork-schema-cutover preflight \
   --database-backup-id "$DATABASE_BACKUP_ID" \
   --media-snapshot-id "$MEDIA_SNAPSHOT_ID" \
   --format digest)"
 
-immich-admin fork-schema-cutover apply \
+frameleaf-admin fork-schema-cutover apply \
   --database-backup-id "$DATABASE_BACKUP_ID" \
   --media-snapshot-id "$MEDIA_SNAPSHOT_ID" \
   --report-digest "$REPORT_DIGEST"
 
-immich-admin fork-handoff prepare-official
+frameleaf-admin fork-handoff prepare-official
 ```
 
 `prepare-official` first counts the password-protected shared links, inside the
@@ -215,7 +215,7 @@ passwords as bcrypt hashes, which the official server cannot check, so each of
 those links stays locked on the official server (it never opens without a
 password) until you set its password again in the official app. With any such
 link, `prepare-official` stops and says how many; run it again as
-`immich-admin fork-handoff prepare-official --acknowledge-shared-link-passwords`
+`frameleaf-admin fork-handoff prepare-official --acknowledge-shared-link-passwords`
 once you have planned to reset those passwords. It then prints the number on
 standard error. Links whose password was set on the official server and not yet
 used in Frameleaf still hold that password as it was typed; they keep working
@@ -226,7 +226,7 @@ use.
 Save the canonical JSON printed by `prepare-official`. It names exact image
 `ghcr.io/immich-app/immich-server:v3.1.0`. Keep maintenance enabled while
 capturing that checkpoint, then stop the fork server. From a one-shot admin
-process using the same fork image, run `immich-admin disable-maintenance-mode`
+process using the same fork image, run `frameleaf-admin disable-maintenance-mode`
 and immediately start the exact official image without changing the tag. This
 normal official boot applies every pending certified migration; verify the
 public ledger is the full `v3.1.0` manifest before API operations. Upstream
@@ -246,12 +246,12 @@ manifest. Fork startup validates this official ledger before it runs the normal
 official provider and then the isolated fork provider.
 
 ```bash
-immich-admin fork-handoff prepare-fork --batch-size 100
+frameleaf-admin fork-handoff prepare-fork --batch-size 100
 # Stop the maintenance-only fork process. From a one-shot admin process using
 # the same compatible fork image, leave maintenance mode:
-immich-admin disable-maintenance-mode
+frameleaf-admin disable-maintenance-mode
 # Start the compatible fork normally with API and microservices workers, then:
-immich-admin fork-schema status
+frameleaf-admin fork-schema status
 ```
 
 Return reconciliation archives and removes only orphaned non-workflow
