@@ -330,10 +330,15 @@ export class MediaRepository {
     raw: RawImageInfo,
     plan: DevelopGeometryPlan,
   ): Promise<{ data: Buffer; info: RawImageInfo }> {
+    // The recipe turns first and mirrors the turned frame (the editor's preview, the protocol and the
+    // mask mapping all do). sharp mirrors before it rotates, whatever the call order, so after a
+    // quarter turn the mirror axes swap: mirroring the turned frame left to right is mirroring the
+    // original top to bottom.
+    const quarter = plan.rotation === 90 || plan.rotation === 270;
     let current = await sharp(input, { raw, limitInputPixels: false, unlimited: true })
       .rotate(plan.rotation)
-      .flop(plan.flipHorizontal)
-      .flip(plan.flipVertical)
+      .flop(quarter ? plan.flipVertical : plan.flipHorizontal)
+      .flip(quarter ? plan.flipHorizontal : plan.flipVertical)
       .raw()
       .toBuffer({ resolveWithObject: true });
 
