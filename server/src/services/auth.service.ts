@@ -325,21 +325,30 @@ export class AuthService extends BaseService {
       throw new BadRequestException('Invalid logout token: it must contain either a sub or a sid claim');
     }
 
-    const tagged = await this.frameleafAccountRepository.findSessions({ sid: claims.sid, sub: claims.sub });
-    for (const { sessionId } of tagged) {
-      await this.sessionRepository.delete(sessionId);
-      await this.eventRepository.emit('SessionDelete', { sessionId });
-    }
-    await this.frameleafAccountRepository.deleteSessions(tagged.map(({ sessionId }) => sessionId));
-    // FL-230: an exchange token minted before this logout is refused for as long as it could be accepted
+    // FL-230: an exchange token minted before this logout is refused for as long as it could be
+    // accepted. Recorded first: an exchange that tags its session after the lookup below sees this
+    // record and ends that session. When it cannot be recorded the sessions still end, and the logout
+    // then fails so Frameleaf Cloud delivers it again.
+    const seconds = FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS + 2 * FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS;
+    let revocationError: unknown;
     try {
-      const seconds = FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS + 2 * FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS;
       await this.frameleafAccountRepository.revokeSignIns(
         { sid: claims.sid, sub: claims.sub },
         new Date(Date.now() + seconds * 1000),
       );
     } catch (error) {
       this.logger.error(`Could not record a Frameleaf back-channel logout for token exchange: ${error}`);
+      revocationError = error;
+    }
+
+    const tagged = await this.frameleafAccountRepository.findSessions({ sid: claims.sid, sub: claims.sub });
+    for (const { sessionId } of tagged) {
+      await this.sessionRepository.delete(sessionId);
+      await this.eventRepository.emit('SessionDelete', { sessionId });
+    }
+    await this.frameleafAccountRepository.deleteSessions(tagged.map(({ sessionId }) => sessionId));
+    if (revocationError) {
+      throw revocationError;
     }
     return true;
   }

@@ -31,8 +31,11 @@ export const FRAMELEAF_APP_CALLBACK = 'frameleaf-auth:///oauth-callback';
  * sign-in hands out and which can be presented again, never carries it.
  */
 export const FRAMELEAF_EXCHANGE_TOKEN_TYPE = 'frameleaf-exchange+jwt';
-/** How long after it was minted an exchange token can be presented (`iat` + this). */
-export const FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS = 5 * 60;
+/**
+ * How long after it was minted an exchange token can be presented (`iat` + this): the identity
+ * provider's token-exchange grant mints tokens that live at most two minutes (FC-86, IDN-005).
+ */
+export const FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS = 2 * 60;
 /** The clock difference allowed between this server and the identity provider. */
 export const FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS = 5;
 /** The instance-access result (`frameleaf_access`) of an account that may use this server. */

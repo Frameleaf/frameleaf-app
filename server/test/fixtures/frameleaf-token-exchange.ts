@@ -6,15 +6,14 @@ import { FRAMELEAF_EXCHANGE_TOKEN_TYPE } from 'src/utils/frameleaf-sign-in.js';
  * FL-230 (NAPI-006): the server-audience token a native app gets from the Frameleaf identity provider
  * (RFC 8693 token exchange, Frameleaf Cloud's C2) and presents at `POST /oauth/frameleaf/exchange`.
  *
- * The cloud has not published this grant or its golden fixtures yet, so these are the app side of the
- * contract, signed with a test key exactly like the Sign in with Frameleaf ID tokens in
- * `frameleaf-auth.service.spec.ts`. When the cloud publishes fixtures, copy them under
- * `frameleaf-cloud-contracts/identity/` and build these from them.
+ * Minted here with a test key so every claim can be varied; the cloud's own FC-86 golden tokens
+ * (`frameleaf-cloud-contracts/identity/exchange/`) are verified as published in
+ * `frameleaf-auth.service.spec.ts` as well.
  *
  * - header `typ` = `frameleaf-exchange+jwt` (explicit typing, RFC 8725 section 3.11), so an ordinary,
  *   reusable ID token is never accepted in its place;
  * - `iss` = the link's issuer, `aud` = this server's client id (its instance id);
- * - `iat`, `exp` (at most five minutes later) and a unique `jti` (one use);
+ * - `iat`, `exp` (at most two minutes later) and a unique `jti` (one use);
  * - the claims a Sign in with Frameleaf ID token carries (`identity/instance-claims.json`), including
  *   the instance-access result `frameleaf_role` and `frameleaf_access`.
  */
