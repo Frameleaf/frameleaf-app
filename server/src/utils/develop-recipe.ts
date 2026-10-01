@@ -1,6 +1,7 @@
 import {
   ASSET_DEVELOP_BITMAP_MASK_KINDS,
   ASSET_DEVELOP_MAX_MASKS,
+  ASSET_DEVELOP_MAX_RECIPE_POINTS,
   ASSET_DEVELOP_RECIPE_VERSION,
   type AssetDevelopCrop,
   type AssetDevelopMask,
@@ -12,11 +13,14 @@ import {
 import {
   ARTIFACT_ID,
   type DevelopBitmap,
+  type DevelopCoverage,
+  brushGrid,
   normalizeDevelopCleanup,
   normalizeStrokes,
   orientedToOriginal,
+  rasterizeStrokes,
   sampleBitmap,
-  strokeCoverage,
+  sampleCoverage,
 } from 'src/utils/develop-cleanup.js';
 
 /**
@@ -196,6 +200,25 @@ export function normalizeDevelopRecipe(candidate: Partial<AssetDevelopRecipe> | 
   recipe.presetStrength = Math.round(clamp(finite(value.presetStrength, 100), 0, 100));
   recipe.masks = normalizeDevelopMasks(value.masks);
   recipe.cleanup = normalizeDevelopCleanup(value.cleanup);
+  // FL-233: at most ASSET_DEVELOP_MAX_RECIPE_POINTS stroke points in all, masks first
+  let budget = ASSET_DEVELOP_MAX_RECIPE_POINTS;
+  const within = <T extends { strokes?: { points: [number, number][] }[] }>(item: T): T => {
+    if (!item.strokes) {
+      return item;
+    }
+    const strokes = [];
+    for (const stroke of item.strokes) {
+      if (budget <= 0) {
+        break;
+      }
+      const points = stroke.points.slice(0, budget);
+      budget -= points.length;
+      strokes.push({ ...stroke, points });
+    }
+    return { ...item, strokes };
+  };
+  recipe.masks = recipe.masks.map((mask) => within(mask));
+  recipe.cleanup = recipe.cleanup.map((op) => within(op)).filter((op) => !op.strokes || op.strokes.length > 0);
   return recipe;
 }
 
@@ -325,13 +348,9 @@ export function originalMaskWeight(
   original: { width: number; height: number },
   bitmaps: ReadonlyMap<string, DevelopBitmap> = new Map(),
 ): number {
-  let weight = 0;
+  let weight: number;
   if (mask.kind === AssetDevelopMaskKind.Brush) {
-    const scale = Math.min(original.width, original.height);
-    for (const stroke of mask.strokes ?? []) {
-      const coverage = strokeCoverage(stroke, ux, uy, original, scale * stroke.radius, mask.feather);
-      weight = stroke.erase ? weight * (1 - coverage) : Math.max(weight, coverage);
-    }
+    weight = sampleCoverage(brushCoverage(mask, original), ux, uy);
   } else if (ASSET_DEVELOP_BITMAP_MASK_KINDS.includes(mask.kind)) {
     const bitmap = mask.artifact ? bitmaps.get(mask.artifact) : undefined;
     weight = bitmap ? sampleBitmap(bitmap, ux / original.width, uy / original.height, 0) / 255 : 0;
@@ -339,6 +358,23 @@ export function originalMaskWeight(
     return 0;
   }
   return mask.invert ? 1 - weight : weight;
+}
+
+/**
+ * A brush mask's strokes drawn once per original size (`brushGrid`), then sampled for every pixel:
+ * the cost follows the painted area, never pixels × points.
+ */
+const brushCoverages = new WeakMap<AssetDevelopMask, { key: string; coverage: DevelopCoverage }>();
+function brushCoverage(mask: AssetDevelopMask, original: { width: number; height: number }): DevelopCoverage {
+  const key = `${original.width}x${original.height}`;
+  const cached = brushCoverages.get(mask);
+  if (cached?.key === key) {
+    return cached.coverage;
+  }
+  const { bounds, scale } = brushGrid(original, mask.strokes ?? []);
+  const coverage = rasterizeStrokes(mask.strokes ?? [], original, mask.feather, bounds, scale);
+  brushCoverages.set(mask, { key, coverage });
+  return coverage;
 }
 
 /**

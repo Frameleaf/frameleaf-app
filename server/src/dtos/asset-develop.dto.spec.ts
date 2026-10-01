@@ -140,6 +140,16 @@ it('accepts brilliance, brush and bitmap masks and Clean Up, and refuses malform
     }),
   ).toBe(false);
 
+  // at most 4096 stroke points in a recipe
+  const long = { points: Array.from({ length: 512 }, () => [0.5, 0.5]), radius: 0.02 };
+  const brush = (id: string) => ({
+    id,
+    kind: AssetDevelopMaskKind.Brush,
+    strokes: Array.from({ length: 4 }, () => long),
+  });
+  expect(invalid({ masks: ['a', 'b'].map((id) => brush(id)) })).toBe(true);
+  expect(invalid({ masks: ['a', 'b', 'c'].map((id) => brush(id)) })).toBe(false);
+
   // a future Clean Up method is kept opaque by the envelope, exactly like a future mask kind
   const future = { version: 1, cleanup: [{ id: 'g', method: 'generative-expand', prompt: 'opaque' }] };
   expect(AssetDevelopRecipeSchema.parse(future)).toEqual(future);

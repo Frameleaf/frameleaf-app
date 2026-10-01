@@ -239,6 +239,7 @@ for more information see [Storage template](/administration/storage-template).
 - **Thumbs Images:**
   - Preview images (small thumbnails and large previews) for each asset and thumbnails for recognized faces.
   - Stored in `UPLOAD_LOCATION/thumbs/<userID>`.
+  - Also holds edited versions and **develop artifacts** (`*_develop_artifact_*.png`: the edit masks and Clean Up fills the Frameleaf apps upload). Thumbnails can be regenerated, but edited versions and develop artifacts cannot, so back up the whole `thumbs` folder.
 - **Encoded Assets:**
   - Videos that have been re-encoded from the original for wider compatibility. The original is not removed.
   - Stored in `UPLOAD_LOCATION/encoded-video/<userID>`.
@@ -278,6 +279,7 @@ When you turn off the storage template engine, it will leave the assets in `UPLO
 - **Thumbs Images:**
   - Preview images (blurred, small, large) for each asset and thumbnails for recognized faces.
   - Stored in `UPLOAD_LOCATION/thumbs/<userID>`.
+  - Also holds edited versions and **develop artifacts** (`*_develop_artifact_*.png`: the edit masks and Clean Up fills the Frameleaf apps upload). Thumbnails can be regenerated, but edited versions and develop artifacts cannot, so back up the whole `thumbs` folder.
 - **Encoded Assets:**
   - Videos that have been re-encoded from the original for wider compatibility. The original is not removed.
   - Stored in `UPLOAD_LOCATION/encoded-video/<userID>`.
