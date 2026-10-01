@@ -89,14 +89,15 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 153 public tables (among them the workflow run steps, FL-179, the Frameleaf Cloud model choices,
-    // FL-186, and the cloud backup index, manifests and manifest entries, FL-160) and the fork tables,
+    // 155 public tables (among them the workflow run steps, FL-179, the Frameleaf Cloud model choices,
+    // FL-186, the cloud backup index, manifests and manifest entries, FL-160, and the push device
+    // registry, FL-228) and the fork tables,
     // among them the supporter keys (FL-156), Frameleaf account links and Sign in with Frameleaf
     // sessions (FL-158), the album covers that follow the newest item (FL-83) and items shared with a
     // person (FL-83 AL-30b), generated Studio resources (FL-111) and Studio project imports (FL-103,
     // FL-105), Studio HDR intermediates (FL-97), and persisted safety proof facts (FL-226),
     // in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(212);
+    expect(getCatalogTableLocks(fork)).toHaveLength(214);
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
         'public.pet_audit',
@@ -110,6 +111,8 @@ describe('catalog manifests', () => {
         'public.asset_upload_part',
         'public.backup_device',
         'public.backup_reconciliation',
+        'public.push_device',
+        'public.push_device_activity',
         'public.cloud_backup_manifest_original',
         'public.cloud_backup_object_verification',
         'immich_fork.video_edit_version',

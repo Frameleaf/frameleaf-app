@@ -28237,6 +28237,373 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/push/devices": {
+      "get": {
+        "description": "The devices registered for push on this account. Push tokens are never returned.",
+        "operationId": "listPushDevices",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushDeviceListResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List own push devices",
+        "tags": [
+          "Push"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "session.read"
+      }
+    },
+    "/push/devices/current": {
+      "delete": {
+        "description": "Removes the calling session’s push registration and its Live Activity tokens.",
+        "operationId": "unregisterPushDevice",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Unregister this device from push",
+        "tags": [
+          "Push"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "session.delete"
+      },
+      "patch": {
+        "description": "Changes a rotated token, the key, the linked backup device or preferences; omitted fields stay.",
+        "operationId": "updatePushDevice",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushDeviceUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushDeviceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Update this device’s push registration",
+        "tags": [
+          "Push"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "session.update"
+      },
+      "put": {
+        "description": "Registers or replaces the push registration of the calling session: platform, APNs or FCM token, the ActivityKit push-to-start token (iOS), the device's X25519 public key and notification preferences. Registering again rotates the tokens and key. Every payload is encrypted to the key; the Frameleaf push gateway receives only the target and the encrypted blob. Needs a signed-in device session (not an API key).",
+        "operationId": "registerPushDevice",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushDeviceRegisterDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushDeviceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Register this device for push",
+        "tags": [
+          "Push"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "session.update"
+      }
+    },
+    "/push/devices/current/activities/{activityId}": {
+      "delete": {
+        "description": "The activity ended on the device.",
+        "operationId": "removePushActivityToken",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "The Live Activity id on the device (ActivityKit `Activity.id`)",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[\\w.-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a Live Activity push token",
+        "tags": [
+          "Push"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "session.update"
+      },
+      "put": {
+        "description": "iOS only: the ActivityKit update token of one Live Activity (the Cloud Backup activation), replaced when ActivityKit rotates it.",
+        "operationId": "setPushActivityToken",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "The Live Activity id on the device (ActivityKit `Activity.id`)",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[\\w.-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushActivityTokenDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushDeviceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Set a Live Activity push token",
+        "tags": [
+          "Push"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "session.update"
+      }
+    },
+    "/push/devices/{id}": {
+      "delete": {
+        "operationId": "removePushDevice",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove an own push device",
+        "tags": [
+          "Push"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "session.delete"
+      }
+    },
+    "/push/status": {
+      "get": {
+        "description": "Whether this server delivers push notifications. Push needs a server linked to Frameleaf Cloud; an unlinked server answers available: false with the reason, so the app can say so. Also names the payload encryption and the events, and whether the calling session registered its device.",
+        "operationId": "getPushStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Push availability",
+        "tags": [
+          "Push"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "session.read"
+      }
+    },
     "/queues": {
       "get": {
         "description": "Retrieves a list of queues.",
@@ -44672,6 +45039,10 @@
     {
       "name": "Preservation",
       "description": "A preservation package is an independent copy of selected originals with checksums, metadata sidecars, album structure, people, tags, Locked records and edit recipes. Packages are written, verified, reviewed and restored by durable media operations; a restoration never overwrites an existing original and never creates a duplicate."
+    },
+    {
+      "name": "Push",
+      "description": "Push notifications for the native apps (FL-228). A device registers its push token and a per-device public key; the server encrypts each notification to that key and hands only the target and the encrypted blob to the Frameleaf push gateway, so it never holds APNs or FCM keys. Push works only on a server linked to Frameleaf Cloud."
     },
     {
       "name": "Queues",
@@ -63642,6 +64013,8 @@
           "CloudMlDescriptionBatch",
           "CloudBackupSchedule",
           "CloudBackupVerify",
+          "PushDeliver",
+          "PushBackupStaleCheck",
           "OcrQueueAll",
           "Ocr",
           "ImageDescriptionQueueAll",
@@ -75080,6 +75453,367 @@
           }
         },
         "type": "object"
+      },
+      "PushActivityTokenDto": {
+        "properties": {
+          "kind": {
+            "description": "The Live Activity type",
+            "enum": [
+              "cloud-backup-activation"
+            ],
+            "type": "string"
+          },
+          "token": {
+            "description": "The ActivityKit push token of this activity",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "token"
+        ],
+        "type": "object"
+      },
+      "PushDeviceActivityDto": {
+        "properties": {
+          "activityId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activityId",
+          "kind",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PushDeviceListResponseDto": {
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/PushDeviceResponseDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "devices"
+        ],
+        "type": "object"
+      },
+      "PushDeviceRegisterDto": {
+        "properties": {
+          "backupDeviceKey": {
+            "description": "This device's phone backup identity (the backup device registry's deviceKey), for stale-backup wake-ups",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/PushPlatform"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/PushPreferencesDto"
+          },
+          "publicKey": {
+            "description": "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1).",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pushToStartToken": {
+            "description": "iOS only: the ActivityKit push-to-start token",
+            "maxLength": 4096,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "pushToken": {
+            "description": "The APNs device token or FCM registration token",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "publicKey",
+          "pushToken"
+        ],
+        "type": "object"
+      },
+      "PushDeviceResponseDto": {
+        "description": "A registered push device. Push tokens are never returned.",
+        "properties": {
+          "activities": {
+            "items": {
+              "$ref": "#/components/schemas/PushDeviceActivityDto"
+            },
+            "type": "array"
+          },
+          "backupDeviceKey": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "current": {
+            "description": "Whether this is the device of the session asking",
+            "type": "boolean"
+          },
+          "hasPushToStartToken": {
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "lastDeliveredAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/PushPlatform"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/PushPreferencesResponseDto"
+          },
+          "publicKeyFingerprint": {
+            "description": "A short fingerprint of the registered public key; never the token",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activities",
+          "backupDeviceKey",
+          "createdAt",
+          "current",
+          "hasPushToStartToken",
+          "id",
+          "lastDeliveredAt",
+          "platform",
+          "preferences",
+          "publicKeyFingerprint",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PushDeviceUpdateDto": {
+        "properties": {
+          "backupDeviceKey": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/PushPreferencesDto"
+          },
+          "publicKey": {
+            "description": "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1).",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pushToStartToken": {
+            "description": "iOS only: a rotated ActivityKit push-to-start token, or null",
+            "maxLength": 4096,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string"
+          },
+          "pushToken": {
+            "description": "A rotated APNs or FCM token",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PushEventType": {
+        "description": "FL-228: an event this server delivers as a push notification",
+        "enum": [
+          "backup-needs-attention",
+          "backup-stale",
+          "cloud-backup-activation",
+          "shared-activity",
+          "memories",
+          "render-finished",
+          "access-changed"
+        ],
+        "type": "string"
+      },
+      "PushPlatform": {
+        "description": "FL-228: the push service a device receives notifications through",
+        "enum": [
+          "ios",
+          "android"
+        ],
+        "type": "string"
+      },
+      "PushPreferencesDto": {
+        "description": "Which events this device is told about; an omitted event keeps its current setting (on by default)",
+        "properties": {
+          "accessChanged": {
+            "type": "boolean"
+          },
+          "backupNeedsAttention": {
+            "type": "boolean"
+          },
+          "backupStale": {
+            "type": "boolean"
+          },
+          "cloudBackupActivation": {
+            "type": "boolean"
+          },
+          "memories": {
+            "type": "boolean"
+          },
+          "renderFinished": {
+            "type": "boolean"
+          },
+          "sharedActivity": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "PushPreferencesResponseDto": {
+        "properties": {
+          "accessChanged": {
+            "type": "boolean"
+          },
+          "backupNeedsAttention": {
+            "type": "boolean"
+          },
+          "backupStale": {
+            "type": "boolean"
+          },
+          "cloudBackupActivation": {
+            "type": "boolean"
+          },
+          "memories": {
+            "type": "boolean"
+          },
+          "renderFinished": {
+            "type": "boolean"
+          },
+          "sharedActivity": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accessChanged",
+          "backupNeedsAttention",
+          "backupStale",
+          "cloudBackupActivation",
+          "memories",
+          "renderFinished",
+          "sharedActivity"
+        ],
+        "type": "object"
+      },
+      "PushStatusResponseDto": {
+        "properties": {
+          "available": {
+            "description": "Whether this server delivers push notifications now (it must be linked)",
+            "type": "boolean"
+          },
+          "encryption": {
+            "description": "How payloads are encrypted to the device key",
+            "properties": {
+              "cipher": {
+                "enum": [
+                  "AES-256-GCM"
+                ],
+                "type": "string"
+              },
+              "kdf": {
+                "enum": [
+                  "HKDF-SHA256"
+                ],
+                "type": "string"
+              },
+              "keyAgreement": {
+                "enum": [
+                  "X25519"
+                ],
+                "type": "string"
+              },
+              "scheme": {
+                "enum": [
+                  "frameleaf-push-v1"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "scheme",
+              "keyAgreement",
+              "kdf",
+              "cipher"
+            ],
+            "type": "object"
+          },
+          "events": {
+            "description": "The events this server can deliver",
+            "items": {
+              "$ref": "#/components/schemas/PushEventType"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PushUnavailableReason"
+              }
+            ],
+            "description": "Why push is unavailable; null when available",
+            "nullable": true
+          },
+          "registered": {
+            "description": "Whether the session asking has registered its device",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available",
+          "encryption",
+          "events",
+          "reason",
+          "registered"
+        ],
+        "type": "object"
+      },
+      "PushUnavailableReason": {
+        "description": "FL-228: why push notifications are unavailable on this server",
+        "enum": [
+          "not-configured",
+          "not-linked",
+          "clone-suspected"
+        ],
+        "type": "string"
       },
       "QueueCommand": {
         "description": "Queue command to execute",

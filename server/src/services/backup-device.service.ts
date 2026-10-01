@@ -12,7 +12,9 @@ import {
   ReconciliationResultDto,
   ReconciliationStartDto,
 } from 'src/dtos/backup-device.dto.js';
+import { PushEventType } from 'src/enum.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { requireReconciliationScope } from 'src/utils/backup-reconciliation.js';
 
 const mapDevice = (row: Selectable<BackupDeviceTable>): BackupDeviceDto => ({
@@ -46,7 +48,10 @@ const mapRun = (row: Selectable<BackupReconciliationTable>, missingHashes: strin
 
 @Injectable()
 export class BackupDeviceService {
-  constructor(private repository: BackupDeviceRepository) {}
+  constructor(
+    private repository: BackupDeviceRepository,
+    private events: EventRepository,
+  ) {}
   private owner(auth: AuthDto) {
     if (auth.sharedLink) throw new ForbiddenException('Backup devices require an owner session');
   }
@@ -71,7 +76,9 @@ export class BackupDeviceService {
   }
   async start(auth: AuthDto, id: string, dto: ReconciliationStartDto): Promise<ReconciliationResultDto> {
     requireReconciliationScope(auth);
-    return mapRun(await this.repository.start(auth, id, dto));
+    const run = await this.repository.start(auth, id, dto);
+    await this.announceMissing(run);
+    return mapRun(run);
   }
   async submit(
     auth: AuthDto,
@@ -81,7 +88,27 @@ export class BackupDeviceService {
   ): Promise<ReconciliationResultDto> {
     requireReconciliationScope(auth);
     const result = await this.repository.submit(auth, id, runId, dto);
+    await this.announceMissing(result.run);
     return mapRun(result.run, result.missingHashes);
+  }
+  /**
+   * FL-228: a finished reconciliation that found items missing from the server needs the owner. A
+   * replayed bucket returns the same finished run; the dedupe key keeps that to one notice.
+   */
+  private async announceMissing(run: Selectable<BackupReconciliationTable>) {
+    if (!run.completedAt || run.itemsMissing <= 0) return;
+    await this.events.emit('PushNotify', {
+      type: PushEventType.BackupNeedsAttention,
+      userIds: [run.ownerId],
+      title: 'Backup needs attention',
+      body:
+        run.itemsMissing === 1
+          ? 'One item on this device is not on your server yet'
+          : `${run.itemsMissing} items on this device are not on your server yet`,
+      data: { deviceId: run.deviceId, itemsMissing: run.itemsMissing, reason: 'reconciliation-missing' },
+      dedupeKey: `backup-attention/${run.id}`,
+      delayMs: 30_000,
+    });
   }
   async history(auth: AuthDto, id: string, page: BackupDevicePageDto): Promise<ReconciliationHistoryDto> {
     requireReconciliationScope(auth);

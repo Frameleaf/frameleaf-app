@@ -42,6 +42,7 @@ import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
+import { FrameleafCloudPushRepository } from 'src/repositories/frameleaf-cloud-push.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
@@ -81,6 +82,7 @@ import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
+import { PushDeviceRepository } from 'src/repositories/push-device.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
@@ -113,6 +115,8 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 export const repositories = [
   AssetUploadResourceRepository,
   BackupDeviceRepository,
+  PushDeviceRepository,
+  FrameleafCloudPushRepository,
   ICloudMetadataRepository,
   ICloudRelationsRepository,
   ICloudAlbumRepository,

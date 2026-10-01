@@ -59,6 +59,7 @@ describe(QueueService.name, () => {
         { name: JobName.AssetGenerateThumbnailsQueueAll, data: { force: false } },
         { name: JobName.FacialRecognitionQueueAll, data: { force: false, nightly: true } },
         { name: JobName.AnalyticsCollect },
+        { name: JobName.PushBackupStaleCheck },
       ]);
     });
 

@@ -64,6 +64,7 @@ import {
   MlAdmissionRefusal,
   NotificationLevel,
   NotificationType,
+  PushEventType,
   QueueName,
   StorageFolder,
   SystemMetadataKey,
@@ -181,6 +182,11 @@ import {
   readCloudLink,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError, errorEnvelopeSchema, pausedException } from 'src/utils/frameleaf-cloud.js';
+import {
+  CloudBackupActivationProgress,
+  activationLine,
+  cloudBackupActivationProgress,
+} from 'src/utils/frameleaf-push.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -458,6 +464,11 @@ export class CloudBackupService {
     if (auth.sharedLink || !auth.user.isAdmin) {
       throw new ForbiddenException('Only the server owner can read the cloud backup setup');
     }
+    return this.ownerSetupState();
+  }
+
+  /** The owner setup state behind `getOwnerSetup`, for the server's own use (FL-228 activation pushes). */
+  private async ownerSetupState(): Promise<CloudBackupOwnerSetupResponseDto> {
     const [config, metadata, active, link] = await Promise.all([
       this.readSettings(),
       this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup),
@@ -642,6 +653,10 @@ export class CloudBackupService {
 
     const key = this.parseKey(dto.key);
     const fingerprint = keyFingerprint(key);
+    if (dto.target === 'managed') {
+      // FL-228: the plan is active and the server has it; storage is being prepared (step 3 of 4)
+      await this.announceActivation({ preparing: true });
+    }
     const managed = dto.target === 'managed' ? await this.managedGrantForSetup() : null;
     const connection = managed ? managed.connection : await this.connectionFor(dto.s3!);
     const identity = await loadInstanceIdentity(this.gatewayDeps());
@@ -748,6 +763,44 @@ export class CloudBackupService {
     this.logger.log(
       `Cloud backup set up by ${auth.user.id}: ${dto.target === 'managed' ? 'Frameleaf-managed' : 'own'} bucket ${connection.bucket} ${claim.existing ? 'reclaimed' : 'claimed'}, key ${fingerprint} (${dto.keyMode})`,
     );
+    // FL-228: storage is ready; the activation chain moves on to the first backup
+    if (!sameBucket || !previous?.lastSuccessAt) {
+      await this.announceActivation();
+    }
+  }
+
+  /**
+   * FL-228: the Cloud Backup activation chain for the owner's devices (the Live Activity on iOS, a
+   * progress notification on Android). Only Frameleaf-managed storage has the chain, and once the first
+   * backup is done it is over: `completed` says that this call reports that very backup. Never fails the
+   * caller.
+   */
+  private async announceActivation({ completed = false, preparing = false } = {}) {
+    try {
+      const progress: CloudBackupActivationProgress | null = preparing
+        ? {
+            step: 3,
+            total: 4,
+            stage: 'preparing-storage',
+            state: 'active',
+            firstRun: 'not-started',
+            nextRunAt: null,
+          }
+        : cloudBackupActivationProgress(await this.ownerSetupState());
+      if (!progress || (progress.state === 'complete' && !completed)) {
+        return;
+      }
+      await this.eventRepository.emit('PushNotify', {
+        type: PushEventType.CloudBackupActivation,
+        admins: true,
+        title: 'Cloud Backup setup',
+        body: activationLine(progress),
+        data: { step: progress.step, total: progress.total, stage: progress.stage, state: progress.state },
+        activation: progress,
+      });
+    } catch (error) {
+      this.logger.warn(`Could not announce the cloud backup activation: ${errorMessage(error)}`);
+    }
   }
 
   /** FL-164: remove a key copy Frameleaf Cloud may hold for an earlier key; a failure is only logged. */
@@ -2072,6 +2125,7 @@ export class CloudBackupService {
     }
     // The manifest is in the bucket: the backup is complete, even when a cancel arrived after it.
     const finishedAt = new Date().toISOString();
+    const firstBackup = !run.metadata.lastSuccessAt;
     await this.recordRun(operation, result, 'completed');
     await this.updateMetadata((current) => ({
       ...current,
@@ -2088,6 +2142,9 @@ export class CloudBackupService {
     this.logger.log(
       `Cloud backup run ${id} finished: ${result.uploaded} uploaded, ${result.skipped} already backed up, ${result.missing} missing`,
     );
+    if (firstBackup) {
+      await this.announceActivation({ completed: true });
+    }
     await this.reportManagedRun(operation, result, 'succeeded');
     // FL-164: a scheduled run is followed by the clean-up of runs past retention, once it has finished
     if ((operation.snapshot as { scheduled?: boolean }).scheduled) {
@@ -2156,6 +2213,10 @@ export class CloudBackupService {
     error?: string,
   ) {
     const finished = (['completed', 'failed', 'cancelled'] as FrameleafCloudBackupRun['status'][]).includes(status);
+    const before = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    // FL-228: a first backup that starts or fails moves the activation chain; a claim resumed is no news
+    const changed = before?.lastRun?.operationId !== operation.id || before.lastRun.status !== status;
+    const announce = changed && !before?.lastSuccessAt && (status === 'running' || status === 'failed');
     await this.updateMetadata((current) => ({
       ...current,
       lastRun: {
@@ -2171,6 +2232,9 @@ export class CloudBackupService {
         ...(error && { error }),
       },
     }));
+    if (announce) {
+      await this.announceActivation();
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -3530,6 +3594,17 @@ export class CloudBackupService {
     this.eventRepository
       .emit('AdminNotify', { type: NotificationType.BackupFailed, ...notice })
       .catch((error) => this.logger.warn(`Could not notify administrators: ${errorMessage(error)}`));
+    // FL-228: every such notice means cloud backup needs the owner; their devices hear it too
+    this.eventRepository
+      .emit('PushNotify', {
+        type: PushEventType.BackupNeedsAttention,
+        admins: true,
+        title: notice.title,
+        body: notice.description,
+        data: { reason: notice.dedupeKey },
+        dedupeKey: `cloud-backup-attention/${notice.dedupeKey}`,
+      })
+      .catch((error) => this.logger.warn(`Could not notify administrators' devices: ${errorMessage(error)}`));
   }
 
   /* ------------------------------------------------------------------ */

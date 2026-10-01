@@ -5353,6 +5353,82 @@
       "identity": "public.preservation_restore.updateId"
     },
     {
+      "definition": "text|not null|||",
+      "identity": "public.push_device_activity.activityId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.push_device_activity.deviceId"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.push_device_activity.id"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.push_device_activity.kind"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.push_device_activity.token"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.push_device_activity.updatedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.push_device.backupDeviceKey"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.push_device.createdAt"
+    },
+    {
+      "definition": "text[]|not null|'{}'::text[]||",
+      "identity": "public.push_device.disabledEvents"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.push_device.id"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.push_device.lastDeliveredAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.push_device.lastStaleWakeAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.push_device.platform"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.push_device.publicKey"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.push_device.pushToken"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.push_device.pushToStartToken"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.push_device.sessionId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.push_device.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.push_device.userId"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "public.render_worker_audit.actorId"
     },
@@ -9227,6 +9303,34 @@
       "identity": "public.preservation_restore.preservation_restore_pkey"
     },
     {
+      "definition": "UNIQUE (\"deviceId\", \"activityId\")",
+      "identity": "public.push_device_activity.push_device_activity_deviceId_activityId_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"deviceId\") REFERENCES push_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.push_device_activity.push_device_activity_deviceId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.push_device_activity.push_device_activity_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.push_device.push_device_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.push_device.push_device_sessionId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"sessionId\")",
+      "identity": "public.push_device.push_device_sessionId_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.push_device.push_device_userId_fkey"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.render_worker_audit.render_worker_audit_pkey"
     },
@@ -13080,6 +13184,34 @@
       "identity": "public.preservation_restore.preservation_restore_pkey"
     },
     {
+      "definition": "CREATE UNIQUE INDEX \"push_device_activity_deviceId_activityId_uq\" ON public.push_device_activity USING btree (\"deviceId\", \"activityId\")",
+      "identity": "public.push_device_activity.push_device_activity_deviceId_activityId_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"push_device_activity_deviceId_idx\" ON public.push_device_activity USING btree (\"deviceId\")",
+      "identity": "public.push_device_activity.push_device_activity_deviceId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX push_device_activity_pkey ON public.push_device_activity USING btree (id)",
+      "identity": "public.push_device_activity.push_device_activity_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX push_device_pkey ON public.push_device USING btree (id)",
+      "identity": "public.push_device.push_device_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"push_device_sessionId_idx\" ON public.push_device USING btree (\"sessionId\")",
+      "identity": "public.push_device.push_device_sessionId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"push_device_sessionId_uq\" ON public.push_device USING btree (\"sessionId\")",
+      "identity": "public.push_device.push_device_sessionId_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"push_device_userId_idx\" ON public.push_device USING btree (\"userId\")",
+      "identity": "public.push_device.push_device_userId_idx"
+    },
+    {
       "definition": "CREATE INDEX \"render_worker_audit_operationId_idx\" ON public.render_worker_audit USING btree (\"operationId\")",
       "identity": "public.render_worker_audit.render_worker_audit_operationId_idx"
     },
@@ -14805,6 +14937,14 @@
     {
       "definition": "table",
       "identity": "public.preservation_restore_item"
+    },
+    {
+      "definition": "table",
+      "identity": "public.push_device"
+    },
+    {
+      "definition": "table",
+      "identity": "public.push_device_activity"
     },
     {
       "definition": "table",
