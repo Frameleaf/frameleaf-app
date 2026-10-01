@@ -261,7 +261,7 @@ describe('develop recipe', () => {
         { id: 'a', kind: AssetDevelopMaskKind.Radial, x: 4, radiusX: 0, adjustments: { exposure: 9 } },
         { id: 'a', kind: AssetDevelopMaskKind.Linear, x: 0, y: 0 },
         { id: '', kind: AssetDevelopMaskKind.Radial },
-        { id: 'b', kind: 'brush' },
+        { id: 'b', kind: 'depth' },
         null,
         ...Array.from({ length: 10 }, (_, i) => ({ id: `n${i}`, kind: AssetDevelopMaskKind.Linear })),
       ]);
