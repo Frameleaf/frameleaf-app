@@ -6,7 +6,15 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
-import { AdminAuditAction, DatabaseLock, JobName, JobStatus, NotificationLevel, SystemMetadataKey } from 'src/enum.js';
+import {
+  AdminAuditAction,
+  DatabaseLock,
+  JobName,
+  JobStatus,
+  NotificationLevel,
+  PushEventType,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import {
   CANDIDATE_KEY_FILE,
@@ -404,8 +412,8 @@ describe(FrameleafCloudService.name, () => {
         jwk: { kty: 'OKP', crv: 'Ed25519', kid: expect.any(String) },
         bootId: expect.any(String),
         // FC-50 (CLD-201): this build proofs every call, so it declares `dpop` beside the golden set, and
-        // FC-61: it runs the `entitlements.refresh` command
-        capabilities: [...golden.capabilities, 'dpop', 'entitlements.refresh'],
+        // FC-61: it runs the `entitlements.refresh` command; FL-301 (FC-91): it reads `backupPlan`
+        capabilities: [...golden.capabilities, 'dpop', 'entitlements.refresh', 'backup.plan'],
         permissions: golden.permissions,
       });
       expect(body.instanceId).toMatch(/^[\da-f]{8}-[\da-f]{4}-7[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
@@ -1005,6 +1013,75 @@ describe(FrameleafCloudService.name, () => {
       expect(golden.capabilities).toEqual(['dpop', 'entitlements.refresh']);
       expect(sent.capabilities).toEqual(expect.arrayContaining(golden.capabilities));
       expect(sent.capabilities).toEqual([...INSTANCE_CAPABILITIES]);
+    });
+
+    it('pushes the backup plan to the owner once per case and status (FL-301, FC-91)', async () => {
+      const answer = cloudContractFixture('instance/heartbeat-response-backup-plan.json');
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: answer }));
+      const pushes = () =>
+        mocks.event.emit.mock.calls.filter(([name]) => name === 'PushNotify').map(([, notice]) => notice);
+
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(pushes()).toEqual([
+        expect.objectContaining({
+          type: PushEventType.BackupNeedsAttention,
+          admins: true,
+          title: 'Backups are paused: plan full',
+          data: expect.objectContaining({
+            reason: 'tier-overflow',
+            caseId: answer.backupPlan.tierOverflow.id,
+            status: 'declined',
+            suggestedTier: '2tb',
+          }),
+        }),
+      ]);
+
+      // the same case and status on the next check-in: nothing new
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(pushes()).toHaveLength(1);
+
+      // the owner accepts: one more push
+      answer.backupPlan.tierOverflow.status = 'accepted';
+      answer.backupPlan.planFull = null;
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(pushes()).toHaveLength(2);
+      expect(pushes()[1]).toMatchObject({ title: 'Your Frameleaf plan was upgraded', data: { status: 'accepted' } });
+    });
+
+    it("pushes a family member's full plan with the cloud's ask-organiser wording, again after it clears (FL-301)", async () => {
+      const answer = cloudContractFixture('instance/heartbeat-response-backup-plan-family.json');
+      const message = answer.backupPlan.planFull.message;
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: answer }));
+      const pushes = () =>
+        mocks.event.emit.mock.calls.filter(([name]) => name === 'PushNotify').map(([, notice]) => notice);
+
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(pushes()).toEqual([
+        expect.objectContaining({ body: message, data: expect.objectContaining({ action: 'ask-organiser' }) }),
+      ]);
+
+      answer.backupPlan.planFull = null;
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      answer.backupPlan.planFull = { reason: 'plan-full', action: 'ask-organiser', suggestedTier: null, message };
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(pushes()).toHaveLength(2);
+    });
+
+    it('ignores a backup plan signal it cannot read, without failing the check-in (FL-301)', async () => {
+      const answer = cloudContractFixture('instance/heartbeat-response-backup-plan.json');
+      answer.backupPlan.tierOverflow.status = 'something-new';
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: answer }));
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('PushNotify', expect.anything());
     });
 
     it('asks for a new link when every instance route answers key_retired, without revoking (FC-19)', async () => {
