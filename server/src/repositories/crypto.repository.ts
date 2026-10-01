@@ -138,7 +138,7 @@ export class CryptoRepository {
     return compareSync(data, encrypted);
   }
 
-  hashSha256(value: string) {
+  hashSha256(value: string | Buffer) {
     return createHash('sha256').update(value).digest();
   }
 

@@ -31,5 +31,7 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
       .fn()
       .mockImplementation((data: Buffer, info: unknown) => Promise.resolve({ data, info })),
     encodeDevelopOutput: vitest.fn().mockResolvedValue(Buffer.from('')),
+    normalizeDevelopArtifact: vitest.fn(),
+    decodeDevelopArtifact: vitest.fn(),
   };
 };

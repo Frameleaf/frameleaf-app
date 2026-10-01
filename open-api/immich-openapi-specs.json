@@ -10713,6 +10713,74 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assets/{id}/develop/artifacts": {
+      "post": {
+        "description": "FL-233: keeps a subject, sky or background mask bitmap (greyscale, covering the whole original) or a Clean Up fill (RGBA, covering its area) that a client computed for this photo. Recipes reference it by the returned id, the SHA-256 of the stored PNG, so every client and the server render the same result. Uploading the same bitmap again returns the same id. A recipe that references an artifact this photo does not have is refused with `develop_artifact_missing`.",
+        "operationId": "uploadAssetDevelopArtifact",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDevelopArtifactUploadDto"
+              }
+            }
+          },
+          "description": "A mask bitmap or a generated fill for this photo",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDevelopArtifactResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Upload a develop artifact",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/{id}/develop/exports": {
       "get": {
         "description": "Every recorded export of the original, newest first, and whether the original still matches it.",
@@ -51519,6 +51587,62 @@
         ],
         "type": "object"
       },
+      "AssetDevelopArtifactKind": {
+        "description": "What a develop artifact is used for",
+        "enum": [
+          "mask",
+          "fill"
+        ],
+        "type": "string"
+      },
+      "AssetDevelopArtifactResponseDto": {
+        "properties": {
+          "height": {
+            "description": "Height of the stored bitmap in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "id": {
+            "description": "A develop artifact uploaded for this asset: the lowercase hex SHA-256 of its stored PNG",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AssetDevelopArtifactKind"
+          },
+          "width": {
+            "description": "Width of the stored bitmap in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "height",
+          "id",
+          "kind",
+          "width"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopArtifactUploadDto": {
+        "properties": {
+          "file": {
+            "description": "A PNG (or another still image the server can read): greyscale for a mask, with alpha for a fill",
+            "format": "binary",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AssetDevelopArtifactKind"
+          }
+        },
+        "required": [
+          "file",
+          "kind"
+        ],
+        "type": "object"
+      },
       "AssetDevelopCrop": {
         "additionalProperties": {},
         "properties": {
@@ -51633,6 +51757,17 @@
             "minimum": 0,
             "type": "integer"
           },
+          "artifact": {
+            "description": "Subject, sky and background masks: the stored greyscale mask bitmap, covering the whole original image",
+            "nullable": true,
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "detector": {
+            "additionalProperties": {},
+            "description": "Subject, sky and background masks: an opaque descriptor that lets a client detect the mask again; the server never runs it",
+            "type": "object"
+          },
           "enabled": {
             "default": true,
             "description": "A disabled mask is kept but not rendered",
@@ -51656,7 +51791,7 @@
           },
           "feather": {
             "default": 50,
-            "description": "Softness of a radial edge as a percentage of the radius",
+            "description": "Softness of a radial edge as a percentage of the radius, or of a brush stroke as one of its radius",
             "maximum": 100,
             "minimum": 0,
             "type": "integer"
@@ -51699,15 +51834,25 @@
             "minimum": 0.01,
             "type": "number"
           },
+          "strokes": {
+            "description": "Brush masks: the painted strokes, in order",
+            "items": {
+              "$ref": "#/components/schemas/AssetDevelopStroke"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
           "x": {
-            "description": "Centre (radial) or start (linear) across the oriented frame",
+            "default": 0.5,
+            "description": "Centre (radial) or start (linear) across the oriented frame; unused by brush and bitmap masks",
             "format": "double",
             "maximum": 1,
             "minimum": 0,
             "type": "number"
           },
           "y": {
-            "description": "Centre (radial) or start (linear) down the oriented frame",
+            "default": 0.5,
+            "description": "Centre (radial) or start (linear) down the oriented frame; unused by brush and bitmap masks",
             "format": "double",
             "maximum": 1,
             "minimum": 0,
@@ -51716,9 +51861,7 @@
         },
         "required": [
           "id",
-          "kind",
-          "x",
-          "y"
+          "kind"
         ],
         "type": "object"
       },
@@ -51819,7 +51962,11 @@
         "description": "Shape of a selective adjustment mask",
         "enum": [
           "radial",
-          "linear"
+          "linear",
+          "brush",
+          "subject",
+          "sky",
+          "background"
         ],
         "type": "string"
       },
@@ -51874,6 +52021,12 @@
                 "format": "double"
               },
               "contrast": {
+                "type": "number",
+                "minimum": -100,
+                "maximum": 100,
+                "format": "double"
+              },
+              "brilliance": {
                 "type": "number",
                 "minimum": -100,
                 "maximum": 100,
@@ -51992,6 +52145,13 @@
                 "maximum": 100
               },
               "masks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              },
+              "cleanup": {
                 "type": "array",
                 "items": {
                   "type": "object",
@@ -52264,6 +52424,50 @@
         },
         "required": [
           "recipe"
+        ],
+        "type": "object"
+      },
+      "AssetDevelopStroke": {
+        "properties": {
+          "erase": {
+            "default": false,
+            "description": "Erase from the mask instead of painting it (brush masks only)",
+            "type": "boolean"
+          },
+          "points": {
+            "items": {
+              "description": "A point as [x, y] fractions of the original image (before rotation, flips and crop)",
+              "prefixItems": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "format": "double"
+                },
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "format": "double"
+                }
+              ],
+              "type": "array"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "type": "array"
+          },
+          "radius": {
+            "description": "Stroke radius as a fraction of the original image's shorter side",
+            "format": "double",
+            "maximum": 0.5,
+            "minimum": 0.001,
+            "type": "number"
+          }
+        },
+        "required": [
+          "points",
+          "radius"
         ],
         "type": "object"
       },

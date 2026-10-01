@@ -34,7 +34,10 @@ export const MASK_KEYS = [
 ] as const satisfies readonly DevelopKey[];
 export type MaskKey = (typeof MASK_KEYS)[number];
 
-export type EditorMask = Required<Omit<AssetDevelopMask, 'adjustments' | 'name'>> & {
+/** A radial or linear mask as the web editor edits it (brush and bitmap fields stay in the opaque recipe). */
+export type EditorMask = Required<
+  Omit<AssetDevelopMask, 'adjustments' | 'name' | 'strokes' | 'artifact' | 'detector'>
+> & {
   name: string | null;
   adjustments: Record<MaskKey, number>;
 };
@@ -49,6 +52,15 @@ const whole = (value: unknown, fallback: number) =>
 export const emptyMaskAdjustments = (): Record<MaskKey, number> =>
   Object.fromEntries(MASK_KEYS.map((key) => [key, 0])) as Record<MaskKey, number>;
 
+/**
+ * FL-233: the mask kinds this editor draws and edits. Brush and bitmap masks (subject, sky,
+ * background) come from the native apps; the web carries them untouched in the opaque recipe.
+ */
+export const WEB_MASK_KINDS: readonly AssetDevelopMaskKind[] = [
+  AssetDevelopMaskKind.Radial,
+  AssetDevelopMaskKind.Linear,
+];
+
 /** Clamped, defaults filled, malformed and duplicate masks dropped, at most `MAX_MASKS`. */
 export function normalizeMasks(candidate: unknown): EditorMask[] {
   if (!Array.isArray(candidate)) {
@@ -61,7 +73,7 @@ export function normalizeMasks(candidate: unknown): EditorMask[] {
       continue;
     }
     const id = typeof item.id === 'string' ? item.id.trim().slice(0, 40) : '';
-    const kind = Object.values(AssetDevelopMaskKind).includes(item.kind as AssetDevelopMaskKind)
+    const kind = WEB_MASK_KINDS.includes(item.kind as AssetDevelopMaskKind)
       ? (item.kind as AssetDevelopMaskKind)
       : undefined;
     if (!id || !kind || seen.has(id)) {

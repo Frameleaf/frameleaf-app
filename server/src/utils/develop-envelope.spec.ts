@@ -17,7 +17,7 @@ describe('develop recipe envelope', () => {
   it('routes explicit native recipes while retaining unknown content without silently rendering it', () => {
     const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 };
     expect(assertRenderableDevelopRecipe(recipe)).toEqual(recipe);
-    const extended = { ...recipe, masks: [{ kind: 'subject' }] };
+    const extended = { ...recipe, masks: [{ kind: 'depth' }] };
     expect(developEnvelope(extended)).toEqual(extended);
     expect(() => assertRenderableDevelopRecipe(extended)).toThrow(BadRequestException);
     expect(assertRenderableDevelopRecipe({ version: 1 })).toEqual(defaultDevelopRecipe());
@@ -51,7 +51,7 @@ describe('develop recipe envelope', () => {
     { future: 'new operation' },
     { crop: { x: 0, y: 0, w: 1, h: 1, future: true } },
     { masks: [{ id: 'a', kind: 'radial', x: 0.5, y: 0.5, adjustments: { future: 12 } }] },
-    { masks: [{ id: 'a', kind: 'subject', bitmap: 'opaque' }] },
+    { masks: [{ id: 'a', kind: 'depth', bitmap: 'opaque' }] },
     { cleanUp: [] },
     { masks: [{ id: 'a', kind: 'radial', x: 0.5, y: 0.5, maskWeight: 'future' }] },
   ])('retains but never renders unknown semantics %j', (extension) => {
@@ -113,7 +113,7 @@ it('preserves omitted unsupported masks but removes omitted known masks and merg
     masks: [
       { id: ' a ', kind: 'radial', x: 0.5, y: 0.5, future: 'opaque' },
       { id: 'b', kind: 'radial', x: 0.5, y: 0.5 },
-      { id: 'subject', kind: 'subject', bitmap: 'opaque' },
+      { id: 'subject', kind: 'depth', bitmap: 'opaque' },
     ],
   });
   const result = preserveDevelopEnvelope(
@@ -122,12 +122,42 @@ it('preserves omitted unsupported masks but removes omitted known masks and merg
   );
   expect(result.masks).toEqual([
     { id: 'a', kind: 'radial', x: 0.5, y: 0.5, future: 'opaque' },
-    { id: 'subject', kind: 'subject', bitmap: 'opaque' },
+    { id: 'subject', kind: 'depth', bitmap: 'opaque' },
   ]);
   expect(() =>
     preserveDevelopEnvelope(
-      developEnvelope({ version: 1, masks: [{ kind: 'subject' }] }),
+      developEnvelope({ version: 1, masks: [{ kind: 'depth' }] }),
       developEnvelope({ version: 1, masks: [] }),
     ),
   ).toThrow(BadRequestException);
+});
+
+it('keeps Brilliance, brush strokes and Clean Up through a save from a client that does not know them (FL-233)', () => {
+  const source = developEnvelope({
+    version: 1,
+    exposure: 0.5,
+    brilliance: 35,
+    masks: [
+      {
+        id: 'b',
+        kind: 'brush',
+        x: 0.5,
+        y: 0.5,
+        strokes: [{ points: [[0.2, 0.2]], radius: 0.05 }],
+        adjustments: { exposure: 1 },
+      },
+    ],
+    cleanup: [{ id: 'p', method: 'pixelate', region: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } }],
+  });
+  // an older client names the source and sends only what it knows: the exposure, and the mask by id
+  const older = developEnvelope({ version: 1, exposure: 1, masks: [{ id: 'b', kind: 'brush', amount: 50 }] });
+  const saved = preserveDevelopEnvelope(source, older);
+  expect(saved).toMatchObject({
+    exposure: 1,
+    brilliance: 35,
+    masks: [{ id: 'b', amount: 50, strokes: [{ points: [[0.2, 0.2]], radius: 0.05 }] }],
+    cleanup: [{ id: 'p', method: 'pixelate' }],
+  });
+  // and the renderer v3 projection renders all of it
+  expect(renderDevelopProjection(saved)).toMatchObject({ brilliance: 35, cleanup: [{ id: 'p' }] });
 });

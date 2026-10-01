@@ -202,3 +202,13 @@ it('explicit new-original reset removes inherited opaque data and undo restores 
   expect(toServerRecipe(reset.recipe)).not.toHaveProperty('future');
   expect(toServerRecipe(undoDraft(reset).recipe)).toHaveProperty('future');
 });
+
+it('carries native Brilliance, brush and bitmap masks and Clean Up through a web edit (FL-233)', () => {
+  const brush = { id: 'b', kind: 'brush', strokes: [{ points: [[0.2, 0.3]], radius: 0.05, erase: false }] };
+  const sky = { id: 's', kind: 'sky', artifact: 'a'.repeat(64), adjustments: { exposure: -0.5 } };
+  const cleanup = [{ id: 'p', method: 'pixelate', region: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } }];
+  const recipe = { version: 1, brilliance: 40, masks: [brush, sky], cleanup };
+  const saved = toServerRecipe(changeDraft(createDraft(recipe), { contrast: 10 }).recipe);
+  expect(saved).toMatchObject({ contrast: 10, brilliance: 40, cleanup });
+  expect(saved.masks).toEqual(expect.arrayContaining([brush, sky]));
+});

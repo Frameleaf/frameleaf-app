@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import path from 'node:path';
 import type { Mock } from 'vitest';
 import {
+  AssetDevelopArtifactKind,
   AssetDevelopFileKind,
   AssetDevelopMaskKind,
   AssetDevelopPreset,
@@ -10,7 +12,11 @@ import {
 import { AssetType, AssetVisibility, ChecksumAlgorithm, JobName, JobStatus } from 'src/enum.js';
 import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositories/asset-develop.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
-import { AssetDevelopService, DEVELOP_RENDER_LEASE_MS } from 'src/services/asset-develop.service.js';
+import {
+  AssetDevelopService,
+  DEVELOP_RENDER_LEASE_MS,
+  developArtifactPath,
+} from 'src/services/asset-develop.service.js';
 import { DARKTABLE_RENDERER_VERSION, renderDarktable } from 'src/utils/darktable-renderer.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
@@ -217,6 +223,123 @@ describe(AssetDevelopService.name, () => {
       expect.any(String),
       expect.objectContaining({ status: AssetDevelopRevisionStatus.Failed }),
     );
+  });
+
+  describe('develop artifacts (FL-233)', () => {
+    const artifact = 'c'.repeat(64);
+    const staged = { path: '/upload/exports/develop-imports/staged.partial', size: 1024, originalname: 'mask.png' };
+    const subject = {
+      ...defaultDevelopRecipe(),
+      masks: [
+        {
+          id: 's',
+          kind: AssetDevelopMaskKind.Subject,
+          x: 0.5,
+          y: 0.5,
+          artifact,
+          adjustments: { ...noAdjustments, exposure: 1 },
+        },
+      ],
+    };
+
+    beforeEach(() => {
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 400, height: 300, isTransparent: false });
+      mocks.media.normalizeDevelopArtifact.mockResolvedValue({ data: Buffer.from('png'), width: 400, height: 300 });
+      mocks.crypto.hashSha256.mockReturnValue(Buffer.from(artifact, 'hex'));
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      mocks.storage.createFile.mockResolvedValue(void 0);
+    });
+
+    it('stores a normalized bitmap beside the versions, named by its SHA-256, and discards the upload', async () => {
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged),
+      ).resolves.toEqual({ id: artifact, kind: AssetDevelopArtifactKind.Mask, width: 400, height: 300 });
+      expect(mocks.media.normalizeDevelopArtifact).toHaveBeenCalledWith(staged.path, AssetDevelopArtifactKind.Mask);
+      const [target, bytes] = mocks.storage.createFile.mock.calls[0];
+      expect(target).toBe(developArtifactPath(asset, artifact));
+      expect(target).toContain(`${asset.id}_develop_artifact_${artifact}.png`);
+      expect(bytes).toEqual(Buffer.from('png'));
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(staged.path);
+
+      // the same bitmap again keeps the stored one
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      await sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged);
+      expect(mocks.storage.createFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses someone else’s photo, an unreadable or oversized bitmap, and keeps nothing', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Fill }, staged),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 20_000, height: 10, isTransparent: false });
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Fill }, staged),
+      ).rejects.toThrow('size a develop artifact may have');
+      expect(mocks.storage.createFile).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses to render a recipe whose artifact this photo does not have, before saving', async () => {
+      const error = await sut
+        .save(authStub.user1, asset.id, { recipe: subject, render: true })
+        .catch((error: BadRequestException) => error);
+      expect((error as BadRequestException).getResponse()).toMatchObject({ code: 'develop_artifact_missing' });
+      expect(developRepository.create).not.toHaveBeenCalled();
+
+      // saved without rendering it is kept, and renders once the artifact is uploaded
+      developRepository.create.mockResolvedValue(revisionStub({ assetId: asset.id, recipe: subject }));
+      await expect(sut.save(authStub.user1, asset.id, { recipe: subject, render: false })).resolves.toBeDefined();
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      await sut.save(authStub.user1, asset.id, { recipe: subject, render: true });
+      expect(mocks.job.queue).toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetDevelopRender }));
+    });
+
+    it('renders brilliance, a bitmap mask and Clean Up in the preview from the stored artifacts', async () => {
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      mocks.media.decodeDevelopArtifact.mockImplementation((_file: string, kind: 'mask' | 'fill') =>
+        Promise.resolve(
+          kind === AssetDevelopArtifactKind.Mask
+            ? { data: Buffer.alloc(4, 255), width: 2, height: 2, channels: 1 }
+            : { data: Buffer.from([0, 0, 0, 255]), width: 1, height: 1, channels: 4 },
+        ),
+      );
+      const recipe = {
+        ...subject,
+        brilliance: 30,
+        cleanup: [{ id: 'x', method: 'remove', region: { x: 0, y: 0, w: 0.5, h: 0.5 }, fill: artifact }],
+      };
+      await sut.preview(authStub.user1, asset.id, { recipe, size: 256 });
+      expect(mocks.media.decodeDevelopArtifact).toHaveBeenCalledWith(
+        developArtifactPath(asset, artifact),
+        AssetDevelopArtifactKind.Fill,
+      );
+      expect(mocks.media.decodeDevelopArtifact).toHaveBeenCalledWith(
+        developArtifactPath(asset, artifact),
+        AssetDevelopArtifactKind.Mask,
+      );
+      const [pixels] = mocks.media.encodeDevelopOutput.mock.calls[0];
+      // the removed top-left quarter took the black fill; the rest was brightened by the subject mask
+      expect(pixels[0]).toBeLessThan(40);
+      expect(pixels.at(-1)).toBeGreaterThan(128);
+    });
+
+    it('releases the photo’s artifacts when it is deleted', async () => {
+      const folder = path.dirname(developArtifactPath({ id: asset.id, ownerId: asset.ownerId }, artifact));
+      mocks.storage.existsSync.mockReturnValue(true);
+      mocks.storage.walkFiles.mockImplementation(async function* () {
+        await Promise.resolve();
+        yield path.join(folder, `${asset.id}_develop_artifact_${artifact}.png`);
+        yield path.join(folder, `${asset.id}_preview.webp`);
+        yield path.join(folder, `another_develop_artifact_${artifact}.png`);
+      });
+      await sut.onAssetDelete({ assetId: asset.id, userId: asset.ownerId });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [path.join(folder, `${asset.id}_develop_artifact_${artifact}.png`)] },
+      });
+    });
   });
 
   describe('access', () => {
