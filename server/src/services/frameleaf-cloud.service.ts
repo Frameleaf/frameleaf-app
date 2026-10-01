@@ -46,6 +46,7 @@ import {
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   type BackupPlanNotice,
+  type BackupPlanSignal,
   CloudCommand,
   CloudCommandType,
   DEVICE_CODE_GRANT,
@@ -1209,7 +1210,9 @@ export class FrameleafCloudService extends BaseService {
     if (backupPlan === null) {
       this.logger.warn('Frameleaf Cloud sent a backup plan signal this server cannot read; it is ignored');
     }
-    const planNotices = backupPlanNotices(backupPlan ?? undefined);
+    // a notice that has nobody to go to yet (no owner signed in, or the lookup failed) is not remembered,
+    // so it goes out on the first check-in that can deliver it
+    const planNotices = await this.addressBackupPlan(next, backupPlanNotices(backupPlan ?? undefined), backupPlan);
     const remembered = rememberNotices(
       forgetClearedPlanFull(link.heartbeat?.shownNotices ?? {}, backupPlan),
       [...response.notices.map((notice) => keyOf(notice)), ...planNotices.map(({ key }) => key)],
@@ -1217,11 +1220,11 @@ export class FrameleafCloudService extends BaseService {
     );
     next = { ...next, heartbeat: { ...next.heartbeat!, shownNotices: remembered.shown } };
     const fresh = new Set(remembered.fresh);
-    await this.notifyBackupPlan(
-      next,
-      planNotices.filter(({ key }) => fresh.has(key)),
-      !!backupPlan?.tierOverflow,
-    );
+    for (const notice of planNotices) {
+      if (fresh.has(notice.key)) {
+        this.notifyBackupPlan(notice);
+      }
+    }
     for (const notice of response.notices) {
       if (!fresh.has(keyOf(notice))) {
         continue;
@@ -1931,42 +1934,47 @@ export class FrameleafCloudService extends BaseService {
   }
 
   /**
-   * FL-301: the backup plan changed. A tier-overflow case goes to the server owner's devices only (the
-   * administrator signed in with the Frameleaf account the server is linked to); a full plan to every
-   * administrator and the web notices, except the owner while their own case already says so.
+   * FL-301: who hears each backup plan notice. A tier-overflow case goes to the server owner's devices
+   * only (the administrator signed in with the Frameleaf account the server is linked to); a full plan to
+   * every administrator, except the owner while their own case already says so. Notices nobody can get
+   * yet are dropped; a failed lookup drops them all and never fails the check-in.
    */
-  private async notifyBackupPlan(link: FrameleafCloudLink, notices: BackupPlanNotice[], ownerHasCase: boolean) {
+  private async addressBackupPlan(
+    link: FrameleafCloudLink,
+    notices: BackupPlanNotice[],
+    signal: BackupPlanSignal | null | undefined,
+  ): Promise<Array<BackupPlanNotice & { userIds: string[] }>> {
     if (notices.length === 0) {
-      return;
+      return [];
     }
-    const admins = await this.userRepository.getAdmins();
-    const ownerLink = link.accountId ? await this.frameleafAccountRepository.getLinkBySub(link.accountId) : undefined;
-    const ownerId = admins.find(({ id }) => id === ownerLink?.userId)?.id;
-    for (const { key, audience, title, body, data } of notices) {
-      const userIds =
-        audience === 'owner'
-          ? ownerId
-            ? [ownerId]
-            : []
-          : admins.map(({ id }) => id).filter((id) => !(ownerHasCase && id === ownerId));
-      if (audience === 'admins') {
-        this.notify({
-          level: NotificationLevel.Warning,
-          title,
-          description: body,
-          dedupeKey: `frameleaf-cloud:${key}`,
-        });
-      }
-      if (userIds.length === 0) {
-        this.logger.warn(
-          `No device to tell about the Frameleaf backup plan (${data.reason}): the owner is not signed in here`,
-        );
-        continue;
-      }
-      this.eventRepository
-        .emit('PushNotify', { type: PushEventType.BackupNeedsAttention, userIds, title, body, data, dedupeKey: key })
-        .catch((error) => this.logger.warn(`Could not notify administrators' devices: ${error}`));
+    try {
+      const admins = await this.userRepository.getAdmins();
+      const ownerLink = link.accountId ? await this.frameleafAccountRepository.getLinkBySub(link.accountId) : undefined;
+      const ownerId = admins.find(({ id }) => id === ownerLink?.userId)?.id;
+      return notices
+        .map((notice) => ({
+          ...notice,
+          userIds:
+            notice.audience === 'owner'
+              ? ownerId
+                ? [ownerId]
+                : []
+              : admins.map(({ id }) => id).filter((id) => !(signal?.tierOverflow && id === ownerId)),
+        }))
+        .filter(({ userIds }) => userIds.length > 0);
+    } catch (error) {
+      this.logger.warn(`Could not tell who hears about the Frameleaf backup plan: ${error}`);
+      return [];
     }
+  }
+
+  private notifyBackupPlan({ key, audience, title, body, data, userIds }: BackupPlanNotice & { userIds: string[] }) {
+    if (audience === 'admins') {
+      this.notify({ level: NotificationLevel.Warning, title, description: body, dedupeKey: `frameleaf-cloud:${key}` });
+    }
+    this.eventRepository
+      .emit('PushNotify', { type: PushEventType.BackupNeedsAttention, userIds, title, body, data, dedupeKey: key })
+      .catch((error) => this.logger.warn(`Could not notify administrators' devices: ${error}`));
   }
 
   private notify(notice: {
