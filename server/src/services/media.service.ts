@@ -55,6 +55,7 @@ import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { straightenScale } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import {
   type DecodeQualification,
   DecodeSupport,
@@ -440,7 +441,7 @@ export class MediaService extends BaseService {
     const colorspace = this.isSRGB(exifInfo) ? Colorspace.Srgb : image.colorspace;
     const decodeOptions: DecodeToBufferOptions = {
       colorspace,
-      processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+      processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
       size: targetSize,
       orientation: exifInfo.orientation ? Number(exifInfo.orientation) : undefined,
     };
@@ -626,7 +627,7 @@ export class MediaService extends BaseService {
 
     const { data: decodedImage, info } = await this.mediaRepository.decodeImage(inputImage, {
       colorspace: image.colorspace,
-      processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+      processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
       // if this is an extracted image, it may not have orientation metadata
       orientation: Buffer.isBuffer(inputImage) && exifOrientation ? Number(exifOrientation) : undefined,
     });
@@ -894,7 +895,7 @@ export class MediaService extends BaseService {
 
     const thumbhash = await this.mediaRepository.generateThumbhash(previewFile.path, {
       colorspace: image.colorspace,
-      processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+      processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
     });
 
     return {
@@ -1441,7 +1442,7 @@ export class MediaService extends BaseService {
           thumbhash: originalPreview
             ? await this.mediaRepository.generateThumbhash(originalPreview.path, {
                 colorspace: config.image.colorspace,
-                processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+                processInvalidImages: readAliasedEnv('FRAMELEAF_PROCESS_INVALID_IMAGES') === 'true',
               })
             : null,
           ...this.getVideoEditDimensions([], videoStream),

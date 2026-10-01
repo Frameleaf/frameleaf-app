@@ -256,7 +256,7 @@ export class MaintenanceWorkerService {
     const url = await createMaintenanceLoginUrl(
       baseUrl,
       {
-        username: 'immich-admin',
+        username: 'frameleaf-admin',
       },
       this.secret,
     );

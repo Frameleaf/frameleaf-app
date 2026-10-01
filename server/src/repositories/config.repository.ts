@@ -22,6 +22,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { AppReleaseConfig, parseAppReleases, parseHelpLinks } from 'src/utils/app-releases.js';
+import { EnvAlias, deprecatedEnvWarning, describeEnvName, resolveEnvAliases } from 'src/utils/env-aliases.js';
 import { parseTrustedLanCidrs } from 'src/utils/frameleaf-cloud.js';
 import { FRAMELEAF_RELEASES_API, FRAMELEAF_RELEASE_FEED } from 'src/utils/frameleaf-release.js';
 import { RecoveryRootConfig, parseRecoveryRoots } from 'src/utils/media-health-roots.js';
@@ -163,6 +164,9 @@ export interface EnvData {
 
   noColor: boolean;
   nodeVersion?: string;
+
+  /** FL-294: deprecated IMMICH_ names this environment uses, each with its FRAMELEAF_ name. */
+  deprecatedEnv: Array<Pick<EnvAlias, 'legacy' | 'current'>>;
 }
 
 const WORKER_TYPES = new Set(Object.values(ImmichWorker));
@@ -188,11 +192,14 @@ const resolveHelmetFile = (helmetFile: 'true' | 'false' | string | undefined) =>
 };
 
 const getEnv = (): EnvData => {
-  const parseResult = EnvSchema.safeParse(process.env);
+  // FL-294: deprecated IMMICH_ names are resolved to their FRAMELEAF_ names before validation, and a
+  // pair set to two different values refuses to start
+  const { env: resolvedEnv, deprecated: deprecatedEnv } = resolveEnvAliases(process.env);
+  const parseResult = EnvSchema.safeParse(resolvedEnv);
   if (!parseResult.success) {
     const messages = ['Invalid environment variables: '];
     for (const issue of parseResult.error.issues) {
-      const path = issue.path.join('.');
+      const path = describeEnvName(issue.path.join('.'), deprecatedEnv);
       messages.push(`  - [${path}] ${issue.message}`);
     }
     throw new Error(messages.join('\n'));
@@ -202,16 +209,16 @@ const getEnv = (): EnvData => {
 
   // FL-165: the edge worker runs by default; it stays idle (no listener, no network call) until
   // remote access is on for a linked, entitled server
-  const includedWorkers = asSet(dto.IMMICH_WORKERS_INCLUDE, [
+  const includedWorkers = asSet(dto.FRAMELEAF_WORKERS_INCLUDE, [
     ImmichWorker.Api,
     ImmichWorker.Microservices,
     ImmichWorker.Edge,
   ]);
-  const excludedWorkers = asSet(dto.IMMICH_WORKERS_EXCLUDE, []);
+  const excludedWorkers = asSet(dto.FRAMELEAF_WORKERS_EXCLUDE, []);
   let workers = [...setDifference(includedWorkers, excludedWorkers)];
   // FL-165: by default the edge worker runs where the API does; a container without the API (for
-  // example one that only runs jobs) runs it only when IMMICH_WORKERS_INCLUDE names it
-  if (!dto.IMMICH_WORKERS_INCLUDE && !workers.includes(ImmichWorker.Api)) {
+  // example one that only runs jobs) runs it only when FRAMELEAF_WORKERS_INCLUDE names it
+  if (!dto.FRAMELEAF_WORKERS_INCLUDE && !workers.includes(ImmichWorker.Api)) {
     workers = workers.filter((worker) => worker !== ImmichWorker.Edge);
   }
   for (const worker of workers) {
@@ -220,8 +227,8 @@ const getEnv = (): EnvData => {
     }
   }
 
-  const environment = dto.IMMICH_ENV || ImmichEnvironment.Production;
-  const buildFolder = dto.IMMICH_BUILD_DATA || '/build';
+  const environment = dto.FRAMELEAF_ENV || ImmichEnvironment.Production;
+  const buildFolder = dto.FRAMELEAF_BUILD_DATA || '/build';
   const folders = {
     geodata: join(buildFolder, 'geodata'),
     web: join(buildFolder, 'www'),
@@ -275,28 +282,28 @@ const getEnv = (): EnvData => {
   const shutdownDeadlineMs = (dto.FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS ?? DEFAULT_SHUTDOWN_DEADLINE_SECONDS) * 1000;
 
   return {
-    host: dto.IMMICH_HOST,
-    port: dto.IMMICH_PORT || 2283,
+    host: dto.FRAMELEAF_HOST,
+    port: dto.FRAMELEAF_PORT || 2283,
     shutdown: {
       graceMs: shutdownGraceMs,
       deadlineMs: shutdownDeadlineMs,
       workerDeadlineMs: getWorkerDeadlineMs(shutdownGraceMs, shutdownDeadlineMs),
     },
     environment,
-    configFile: dto.IMMICH_CONFIG_FILE,
-    logLevel: dto.IMMICH_LOG_LEVEL,
-    logFormat: dto.IMMICH_LOG_FORMAT || LogFormat.Console,
+    configFile: dto.FRAMELEAF_CONFIG_FILE,
+    logLevel: dto.FRAMELEAF_LOG_LEVEL,
+    logFormat: dto.FRAMELEAF_LOG_FORMAT || LogFormat.Console,
 
     buildMetadata: {
-      build: dto.IMMICH_BUILD,
-      buildUrl: dto.IMMICH_BUILD_URL,
-      buildImage: dto.IMMICH_BUILD_IMAGE,
-      buildImageUrl: dto.IMMICH_BUILD_IMAGE_URL,
-      repository: dto.IMMICH_REPOSITORY,
-      repositoryUrl: dto.IMMICH_REPOSITORY_URL,
-      sourceRef: dto.IMMICH_SOURCE_REF,
-      sourceCommit: dto.IMMICH_SOURCE_COMMIT,
-      sourceUrl: dto.IMMICH_SOURCE_URL,
+      build: dto.FRAMELEAF_BUILD,
+      buildUrl: dto.FRAMELEAF_BUILD_URL,
+      buildImage: dto.FRAMELEAF_BUILD_IMAGE,
+      buildImageUrl: dto.FRAMELEAF_BUILD_IMAGE_URL,
+      repository: dto.FRAMELEAF_REPOSITORY,
+      repositoryUrl: dto.FRAMELEAF_REPOSITORY_URL,
+      sourceRef: dto.FRAMELEAF_SOURCE_REF,
+      sourceCommit: dto.FRAMELEAF_SOURCE_COMMIT,
+      sourceUrl: dto.FRAMELEAF_SOURCE_COMMIT_URL,
       // FL-135: validated https help destinations, `FRAMELEAF_*` first (see `parseHelpLinks`)
       thirdPartySourceUrl: helpLinks.sourceUrl,
       thirdPartyBugFeatureUrl: helpLinks.bugFeatureUrl,
@@ -340,7 +347,7 @@ const getEnv = (): EnvData => {
     },
 
     helmet: {
-      config: resolveHelmetFile(dto.IMMICH_HELMET_FILE),
+      config: resolveHelmetFile(dto.FRAMELEAF_HELMET_FILE),
     },
 
     versionCheck: {
@@ -350,7 +357,7 @@ const getEnv = (): EnvData => {
     },
 
     network: {
-      trustedProxies: dto.IMMICH_TRUSTED_PROXIES ?? ['linklocal', 'uniquelocal'],
+      trustedProxies: dto.FRAMELEAF_TRUSTED_PROXIES ?? ['linklocal', 'uniquelocal'],
     },
 
     redis: redisConfig,
@@ -372,7 +379,7 @@ const getEnv = (): EnvData => {
     },
 
     setup: {
-      allow: dto.IMMICH_ALLOW_SETUP ?? true,
+      allow: dto.FRAMELEAF_ALLOW_SETUP ?? true,
     },
 
     appReleases: parseAppReleases(dto),
@@ -393,9 +400,9 @@ const getEnv = (): EnvData => {
     },
 
     storage: {
-      ignoreMountCheckErrors: !!dto.IMMICH_IGNORE_MOUNT_CHECK_ERRORS,
-      mediaLocation: dto.IMMICH_MEDIA_LOCATION,
-      importRoots: dto.IMMICH_IMPORT_ROOTS,
+      ignoreMountCheckErrors: !!dto.FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS,
+      mediaLocation: dto.FRAMELEAF_MEDIA_LOCATION,
+      importRoots: dto.FRAMELEAF_IMPORT_ROOTS,
       recoveryRoots: parseRecoveryRoots(dto.FRAMELEAF_RECOVERY_ROOTS),
     },
 
@@ -410,12 +417,14 @@ const getEnv = (): EnvData => {
 
     plugins: {
       external: {
-        allow: dto.IMMICH_ALLOW_EXTERNAL_PLUGINS ?? false,
-        installFolder: dto.IMMICH_PLUGINS_INSTALL_FOLDER,
+        allow: dto.FRAMELEAF_ALLOW_EXTERNAL_PLUGINS ?? false,
+        installFolder: dto.FRAMELEAF_PLUGINS_INSTALL_FOLDER,
       },
     },
 
     noColor: !!dto.NO_COLOR,
+
+    deprecatedEnv,
   };
 };
 
@@ -447,3 +456,14 @@ export class ConfigRepository {
 }
 
 export const clearEnvCache = () => (cached = undefined);
+
+/**
+ * FL-294: the one startup warning naming the deprecated IMMICH_ variables in use and their FRAMELEAF_
+ * names. The supervisor calls it once; its workers resolve the same environment without repeating it.
+ */
+export const warnDeprecatedEnv = (warn: (message: string) => void = console.warn) => {
+  const warning = deprecatedEnvWarning(new ConfigRepository().getEnv().deprecatedEnv);
+  if (warning) {
+    warn(warning);
+  }
+};

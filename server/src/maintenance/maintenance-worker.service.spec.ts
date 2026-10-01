@@ -250,7 +250,7 @@ describe(MaintenanceWorkerService.name, () => {
 
       await expect(sut.login(token)).resolves.toEqual(
         expect.objectContaining({
-          username: 'immich-admin',
+          username: 'frameleaf-admin',
         }),
       );
     });

@@ -82,7 +82,7 @@ describe(ICloudSyncRepository.name, () => {
     });
   });
   it.each(
-    ['IMMICH_ICLOUD_MAX_CONCURRENCY', 'IMMICH_ICLOUD_MAX_STAGING_BYTES'].flatMap((name) =>
+    ['FRAMELEAF_ICLOUD_MAX_CONCURRENCY', 'FRAMELEAF_ICLOUD_MAX_STAGING_BYTES'].flatMap((name) =>
       ['garbage', 'NaN', 'Infinity', '-1', '0', '1.5', '9007199254740992', ''].map((value) => ({ name, value })),
     ),
   )('refuses new admission with invalid $name=$value', async ({ name, value }) => {
@@ -103,8 +103,8 @@ describe(ICloudSyncRepository.name, () => {
     await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
     await repository.materialize(connection, 'library', library);
     await sql`UPDATE immich_fork.icloud_resource SET status='committed'`.execute(db);
-    vi.stubEnv('IMMICH_ICLOUD_MAX_CONCURRENCY', 'NaN');
-    vi.stubEnv('IMMICH_ICLOUD_MAX_STAGING_BYTES', 'NaN');
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY', 'NaN');
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', 'NaN');
     expect(await repository.claim(connection.id, 1000)).toMatchObject({ status: 'committed' });
   });
   it('roundtrips typed JSON, keeps split-page master joins and opaque checkpoints, and materializes idempotently', async () => {

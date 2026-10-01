@@ -6,6 +6,7 @@ import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { MediaOperationDestination, MediaOperationKind, NotificationLevel, NotificationType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 
@@ -462,8 +463,8 @@ export class ICloudSyncRepository {
           .execute(db)
           .then(({ rows }) => rows[0]);
       }
-      const maxConcurrency = Number(process.env.IMMICH_ICLOUD_MAX_CONCURRENCY ?? 4);
-      const maxStagingBytes = Number(process.env.IMMICH_ICLOUD_MAX_STAGING_BYTES ?? 100 * 1024 ** 3);
+      const maxConcurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? 4);
+      const maxStagingBytes = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES') ?? 100 * 1024 ** 3);
       // Match service configuration validation: malformed administrator limits deny
       // new admission. Already committed cleanup above must remain recoverable.
       if (

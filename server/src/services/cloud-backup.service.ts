@@ -227,7 +227,7 @@ const PRUNE_PREVIEW_VALID_MS = 24 * 60 * 60_000;
 /** FL-164: items a restore list reads the library state of per query. */
 const LIBRARY_STATE_BATCH = 5000;
 
-/** FL-164: what `immich-admin cloud-backup restore` restores from, and how much of it. */
+/** FL-164: what `frameleaf-admin cloud-backup restore` restores from, and how much of it. */
 export type CloudBackupBareMetalRestore = {
   s3: CloudBackupS3;
   /** The key file's content, the base64 key, or the recovery code. Never logged. */
@@ -3396,7 +3396,7 @@ export class CloudBackupService {
   }
 
   /**
-   * FL-164: `immich-admin cloud-backup restore`, for disaster recovery on a server whose web app is not
+   * FL-164: `frameleaf-admin cloud-backup restore`, for disaster recovery on a server whose web app is not
    * running (or whose database is empty): everything comes from the bucket and the key alone. The key
    * must open the bucket's claim; the newest manifest (or the one named) is read, its files are
    * restored in place under the media folder and its database dump into `<media>/backups`, each checked
@@ -3727,7 +3727,7 @@ export class CloudBackupService {
   /** Setup and turning off change the settings, which a configuration file holds instead when one is in use. */
   private requireEditableConfig() {
     if (this.configRepository.getEnv().configFile) {
-      throw new BadRequestException('Cannot update configuration while IMMICH_CONFIG_FILE is in use');
+      throw new BadRequestException('Cannot update configuration while FRAMELEAF_CONFIG_FILE is in use');
     }
   }
 

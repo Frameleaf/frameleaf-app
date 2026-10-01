@@ -181,7 +181,7 @@ describe(MediaIntegrityService.name, () => {
     ['999999999', 86_400_000],
     ['invalid', 120_000],
   ])('bounds configured validation deadline %s', async (setting, deadline) => {
-    vi.stubEnv('IMMICH_MEDIA_VALIDATION_TIMEOUT_MS', setting);
+    vi.stubEnv('FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS', setting);
     vi.useFakeTimers();
     const storage = new StorageRepository(mocks.logger as never);
     vi.spyOn(storage, 'stat').mockImplementation(() => new Promise(() => {}));

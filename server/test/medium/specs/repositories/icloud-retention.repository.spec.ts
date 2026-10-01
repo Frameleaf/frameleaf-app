@@ -136,7 +136,7 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
   });
 
   it('reuses an existing reservation above a reduced global budget and leases committed cleanup without byte admission', async () => {
-    vi.stubEnv('IMMICH_ICLOUD_MAX_STAGING_BYTES', '1');
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', '1');
     const staged = await resource('staged', { status: 'validated', reserved: 10, staged: true });
     expect(await repository.claim(connection.id, 1)).toMatchObject({ id: staged.id });
     const committed = await resource('committed', { status: 'committed', current: false, reserved: 100, staged: true });
@@ -155,7 +155,7 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
     connection = (await repository.create(randomUUID(), 'Other photos', ICloudConfigSchema.parse({})))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
     await resource('new', { role: 'original' });
-    vi.stubEnv('IMMICH_ICLOUD_MAX_STAGING_BYTES', '95');
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', '95');
     expect(await repository.claim(connection.id, 1000)).toBeUndefined();
     expect(await repository.get(connection.id)).toMatchObject({
       state: 'error',

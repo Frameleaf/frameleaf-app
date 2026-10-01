@@ -8,7 +8,7 @@ import { isStartUpError } from 'src/utils/misc.js';
 import { HttpRequestTracker, closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
 async function bootstrap() {
-  process.title = 'immich-maintenance';
+  process.title = 'frameleaf-maintenance';
 
   // FL-291: the supervisor's stop message drains the requests in flight before the thread exits
   // eslint-disable-next-line unicorn/no-process-exit

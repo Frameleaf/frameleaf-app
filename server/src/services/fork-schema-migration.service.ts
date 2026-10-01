@@ -158,7 +158,7 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
     }
 
     if (outcome === 'paused') {
-      this.logger.log('The Frameleaf backfill is paused; run `immich-admin fork-schema resume` to continue it');
+      this.logger.log('The Frameleaf backfill is paused; run `frameleaf-admin fork-schema resume` to continue it');
       return;
     }
     const restarted = outcome === 'started' || outcome === 'resumed';
@@ -174,7 +174,7 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
       const failed = (await this.forkSchemaRepository.getProgress()).filter(({ lastError }) => lastError !== null);
       for (const { kind, lastError } of failed) {
         this.logger.warn(
-          `The Frameleaf backfill of ${kind} stopped after a failed batch (${lastError}); run \`immich-admin fork-schema resume\` to retry it`,
+          `The Frameleaf backfill of ${kind} stopped after a failed batch (${lastError}); run \`frameleaf-admin fork-schema resume\` to retry it`,
         );
       }
       kinds = kinds.filter((kind) => failed.every((item) => item.kind !== kind));

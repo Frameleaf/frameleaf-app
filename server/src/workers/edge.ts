@@ -8,7 +8,7 @@ import { isStartUpError } from 'src/utils/misc.js';
  * has no HTTP server of its own for the API: it proxies to it over loopback.
  */
 async function bootstrap() {
-  process.title = 'immich-edge';
+  process.title = 'frameleaf-edge';
 
   const app = await NestFactory.createApplicationContext(EdgeModule, { bufferLogs: true });
   // a stop request (restart, shutdown) runs the module's teardown: every socket closes within 5 s

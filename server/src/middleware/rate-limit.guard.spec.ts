@@ -300,12 +300,12 @@ describe(RateLimitGuard.name, () => {
     );
   });
 
-  it('counts a home request as not testing: the unit tests run with IMMICH_ENV unset', () => {
+  it('counts a home request as not testing: the unit tests run with FRAMELEAF_ENV unset', () => {
     expect(configRepository.getEnv().environment).not.toBe(ImmichEnvironment.Testing);
-    expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('IMMICH_ENV=testing'));
+    expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('FRAMELEAF_ENV=testing'));
   });
 
-  it('skips the route limits, but not the ceiling, when IMMICH_ENV is testing, and says so at start', async () => {
+  it('skips the route limits, but not the ceiling, when FRAMELEAF_ENV is testing, and says so at start', async () => {
     configRepository.getEnv.mockReturnValue(
       mockEnvData({
         environment: ImmichEnvironment.Testing,
@@ -313,7 +313,7 @@ describe(RateLimitGuard.name, () => {
       }),
     );
     sut = create();
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('IMMICH_ENV=testing'));
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('FRAMELEAF_ENV=testing'));
 
     await sut.canActivate(contextFor(TestController.prototype.login, makeRequest()));
     expect(store.hit).not.toHaveBeenCalled();

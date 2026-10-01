@@ -6,6 +6,7 @@ import { AssetType, Colorspace, MediaHealthStatus } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -13,7 +14,7 @@ import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 const execFile = promisify(execFileCallback);
 // Admin override for full decoding of long videos. Native operations retain their concurrency slot after timeout.
 const validationTimeout = () => {
-  const value = Number(process.env.IMMICH_MEDIA_VALIDATION_TIMEOUT_MS ?? 120_000);
+  const value = Number(readAliasedEnv('FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS') ?? 120_000);
   return Number.isFinite(value) ? Math.min(86_400_000, Math.max(10_000, Math.trunc(value))) : 120_000;
 };
 export type MediaIntegrityIdentity = Pick<Stats, 'dev' | 'ino' | 'size' | 'mtimeMs' | 'ctimeMs'>;

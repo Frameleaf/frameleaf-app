@@ -147,7 +147,7 @@ export class DatabaseService extends BaseService {
         if (drift.items.length === 0) {
           this.logger.log('No schema drift detected');
         } else {
-          this.logger.warn(`${ErrorMessages.SchemaDrift} or run \`immich-admin schema-check\``);
+          this.logger.warn(`${ErrorMessages.SchemaDrift} or run \`frameleaf-admin schema-check\``);
           for (const warning of drift.asHuman()) {
             this.logger.warn(`  - ${warning}`);
           }
@@ -189,7 +189,7 @@ export class DatabaseService extends BaseService {
     switch (skipped) {
       case 'awaiting-return': {
         this.logger.log(
-          `${pending.length} newer Frameleaf migration(s) wait for the return from the official server (immich-admin fork-handoff prepare-fork)`,
+          `${pending.length} newer Frameleaf migration(s) wait for the return from the official server (frameleaf-admin fork-handoff prepare-fork)`,
         );
         break;
       }
@@ -201,7 +201,7 @@ export class DatabaseService extends BaseService {
       }
       case 'unexpected-phase': {
         this.logger.warn(
-          `${pending.length} newer Frameleaf migration(s) were not applied because the library is in an unexpected handoff phase; check immich-admin fork-schema status`,
+          `${pending.length} newer Frameleaf migration(s) were not applied because the library is in an unexpected handoff phase; check frameleaf-admin fork-schema status`,
         );
         break;
       }
