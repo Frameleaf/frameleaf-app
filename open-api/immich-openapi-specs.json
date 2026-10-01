@@ -64378,12 +64378,7 @@
                 "type": "array"
               },
               "kind": {
-                "description": "Whole libraries, or only some albums",
-                "enum": [
-                  "libraries",
-                  "albums"
-                ],
-                "type": "string"
+                "$ref": "#/components/schemas/ICloudCoverageScopeKind"
               },
               "libraries": {
                 "description": "Library zones; empty means every supported library",
@@ -64506,6 +64501,21 @@
           "cloudIdentifier"
         ],
         "type": "object"
+      },
+      "ICloudCoverageScopeKind": {
+        "description": "Whole libraries, or only some albums",
+        "enum": [
+          "libraries",
+          "albums"
+        ],
+        "type": "string"
+      },
+      "ICloudEditOwnerKind": {
+        "enum": [
+          "icloud-sync",
+          "device"
+        ],
+        "type": "string"
       },
       "ICloudIdentityRole": {
         "description": "original: the photo or video as taken; live-motion: a Live Photo video; raw-alternate: the RAW of a RAW + JPEG pair; edit-render: an edited version",
@@ -64691,11 +64701,7 @@
                 "type": "string"
               },
               "kind": {
-                "enum": [
-                  "icloud-sync",
-                  "device"
-                ],
-                "type": "string"
+                "$ref": "#/components/schemas/ICloudEditOwnerKind"
               }
             },
             "required": [
