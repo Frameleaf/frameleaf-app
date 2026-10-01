@@ -6,6 +6,7 @@ import { HistoryBuilder } from 'src/decorators.js';
 import { pinCodeRegex } from 'src/dtos/auth.dto.js';
 import {
   AdminAuditActionSchema,
+  ServerRole,
   UserAvatarColor,
   UserAvatarColorSchema,
   UserMetadataKey,
@@ -224,6 +225,25 @@ const UserAdminResponseSchema = UserResponseSchema.extend({
 }).meta({ id: 'UserAdminResponseDto' });
 
 export class UserAdminResponseDto extends createZodDto(UserAdminResponseSchema) {}
+
+const ServerRoleSchema = z
+  .enum(ServerRole)
+  .describe(
+    'Your role on this server. `owner` (the administrator whose Frameleaf account owns this server) and `admin` administer it; `user` has their own library, as does everyone Frameleaf Cloud invited to this server. What others share with you (items, albums, spaces) appears under Spaces.',
+  )
+  .meta({ id: 'ServerRole' });
+
+const UserMeResponseSchema = UserAdminResponseSchema.extend({
+  serverRole: ServerRoleSchema.meta(new HistoryBuilder().added('v3').getExtensions()),
+  canUpload: z
+    .boolean()
+    .describe(
+      'Whether you may upload to this server, so an app shows backup ("this phone backs up here") only where it is true: false only for an API key without asset.upload',
+    )
+    .meta(new HistoryBuilder().added('v3').getExtensions()),
+}).meta({ id: 'UserMeResponseDto' });
+
+export class UserMeResponseDto extends createZodDto(UserMeResponseSchema) {}
 
 export function mapUserAdmin(entity: UserAdmin): UserAdminResponseDto {
   const metadata = entity.metadata || [];

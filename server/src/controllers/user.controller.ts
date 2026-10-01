@@ -31,7 +31,7 @@ import {
   UserPreferencesUpdateDto,
 } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
-import { UserAdminResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos/user.dto.js';
+import { UserAdminResponseDto, UserMeResponseDto, UserResponseDto, UserUpdateMeDto } from 'src/dtos/user.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
@@ -97,10 +97,11 @@ export class UserController {
   @Authenticated({ permission: Permission.UserRead })
   @Endpoint({
     summary: 'Get current user',
-    description: 'Retrieve information about the user making the API request.',
+    description:
+      'Retrieve information about the user making the API request, with their role on this server (`serverRole`) and whether they may upload here (`canUpload`), so an app can label the server and show backup only where it is allowed. `owner` (the administrator whose Frameleaf account owns this server) and `admin` administer it; `user` has their own library, as does everyone Frameleaf Cloud invited to this server.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getMyUser(@Auth() auth: AuthDto): Promise<UserAdminResponseDto> {
+  getMyUser(@Auth() auth: AuthDto): Promise<UserMeResponseDto> {
     return this.service.getMe(auth);
   }
 
