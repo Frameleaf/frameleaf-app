@@ -41,6 +41,25 @@ describe(SharedLinkService.name, () => {
     });
   });
 
+  describe('public address (FL-305)', () => {
+    it("carries each link's public address on the external domain, by slug or by key", async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ server: { externalDomain: 'https://photos.example.com/' } });
+      const byKey = SharedLinkFactory.create();
+      const bySlug = SharedLinkFactory.create({ slug: 'summer trip/2026' });
+      mocks.sharedLink.getAll.mockResolvedValue([getForSharedLink(byKey), getForSharedLink(bySlug)]);
+      const [first, second] = await sut.getAll(authStub.user1, {});
+      expect(first.url).toBe(`https://photos.example.com/share/${first.key}`);
+      expect(second.url).toBe('https://photos.example.com/s/summer%20trip%2F2026');
+    });
+
+    it('has no address without an external domain', async () => {
+      const link = SharedLinkFactory.create();
+      mocks.sharedLink.getAll.mockResolvedValue([getForSharedLink(link)]);
+      const [response] = await sut.getAll(authStub.user1, {});
+      expect(response.url).toBeNull();
+    });
+  });
+
   describe('getMine', () => {
     it('should only work for a public user', async () => {
       await expect(sut.getMine(authStub.admin, [])).rejects.toBeInstanceOf(ForbiddenException);
