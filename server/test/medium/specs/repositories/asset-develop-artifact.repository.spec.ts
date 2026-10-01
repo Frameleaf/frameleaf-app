@@ -144,20 +144,35 @@ it('keeps a file recorded again before its queued deletion runs, and restarts th
     status: AssetDevelopRevisionStatus.Saved,
   });
   expect((await age())!.getTime()).toBeGreaterThan(Date.now() - 60_000);
-  await expect(
+  const renderable = (extra: object) =>
     sut.create({
       assetId: asset.id,
       ownerId: user.id,
-      recipe: {
-        ...defaultDevelopRecipe(),
-        masks: [{ id: 's', kind: 'sky', x: 0.5, y: 0.5, artifact: sha('f') }],
-      } as never,
+      recipe: { ...defaultDevelopRecipe(), ...extra } as never,
       recipeVersion: 1,
       requireRenderable: true,
       label: null,
       status: AssetDevelopRevisionStatus.Saved,
+    });
+  const sky = (artifact: string, enabled = true) => ({
+    id: 's',
+    kind: 'sky',
+    x: 0.5,
+    y: 0.5,
+    enabled,
+    artifact,
+    adjustments: { exposure: 1 },
+  });
+  await expect(renderable({ masks: [sky(sha('f'))] })).rejects.toThrow('not uploaded for this photo');
+  // a fill never stands in for a mask bitmap
+  await expect(renderable({ masks: [sky(sha('e'))] })).rejects.toThrow('not uploaded for this photo');
+  // what a render never reads is kept without being required: a disabled mask or Clean Up
+  await expect(
+    renderable({
+      masks: [sky(sha('f'), false)],
+      cleanup: [{ id: 'y', method: 'remove', enabled: false, region: { x: 0, y: 0, w: 0.5, h: 0.5 }, fill: sha('9') }],
     }),
-  ).rejects.toThrow('not uploaded for this photo');
+  ).resolves.toMatchObject({ assetId: asset.id });
 
   // released, then recorded again before the queued deletion runs: the file stays
   await sql`DELETE FROM immich_fork.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid`.execute(db);
