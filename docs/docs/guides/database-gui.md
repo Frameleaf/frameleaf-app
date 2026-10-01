@@ -28,7 +28,7 @@ volumes:
 
 Change the values of `PGADMIN_DEFAULT_EMAIL` and `PGADMIN_DEFAULT_PASSWORD` in this file.
 
-Run `docker compose -f docker-compose.yml -f docker-compose-pgadmin.yml up` to start immich along with `pgAdmin`.
+Run `docker compose -f docker-compose.yml -f docker-compose-pgadmin.yml up` to start Frameleaf along with `pgAdmin`.
 
 ## 2. Add a Server
 
@@ -40,12 +40,12 @@ Right click on `Servers` and click on `Register >> Server..` then enter the valu
 The parameters used here match those specified in the example `.env` file. If you have changed your `.env` file, you'll need to adjust accordingly.
 :::
 
-| Name                 | Value             |
-| -------------------- | ----------------- |
-| Host name/address    | `immich_postgres` |
-| Port                 | `5432`            |
-| Maintenance database | `immich`          |
-| Username             | `postgres`        |
-| Password             | `postgres`        |
+| Name                 | Value                |
+| -------------------- | -------------------- |
+| Host name/address    | `frameleaf_postgres` |
+| Port                 | `5432`               |
+| Maintenance database | `immich`             |
+| Username             | `postgres`           |
+| Password             | `postgres`           |
 
 Click on "Save" to connect to the Frameleaf database.

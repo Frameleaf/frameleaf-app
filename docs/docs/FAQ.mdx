@@ -12,11 +12,11 @@ Frameleaf is available as open source under the terms of the GNU AGPL v3 License
 
 ### How can I reset the admin password?
 
-The admin password can be reset by running the [reset-admin-password](/administration/server-commands.md) command on the immich-server.
+The admin password can be reset by running the [reset-admin-password](/administration/server-commands.md) command on the server.
 
 ### How can I see a list of all users in Frameleaf?
 
-You can see the list of all users by running [list-users](/administration/server-commands.md) command on the immich-server.
+You can see the list of all users by running [list-users](/administration/server-commands.md) command on the server.
 
 ### How can I change my profile picture?
 
@@ -468,7 +468,7 @@ A result of `on` means that checksums are enabled.
 <summary>Check if checksums are enabled</summary>
 
 ```bash
-docker exec -it immich_postgres psql --dbname=postgres --username=<DB_USERNAME> --command="show data_checksums"
+docker exec -it frameleaf_postgres psql --dbname=postgres --username=<DB_USERNAME> --command="show data_checksums"
  data_checksums
 ----------------
  on
@@ -483,7 +483,7 @@ If checksums are enabled, you can check the status of the database with the foll
 <summary>Check for database corruption</summary>
 
 ```bash
-docker exec -it immich_postgres psql --dbname=postgres --username=<DB_USERNAME> --command="SELECT datname, checksum_failures, checksum_last_failure FROM pg_stat_database WHERE datname IS NOT NULL"
+docker exec -it frameleaf_postgres psql --dbname=postgres --username=<DB_USERNAME> --command="SELECT datname, checksum_failures, checksum_last_failure FROM pg_stat_database WHERE datname IS NOT NULL"
   datname  | checksum_failures | checksum_last_failure
 -----------+-------------------+-----------------------
  postgres  |                 0 |
@@ -500,7 +500,7 @@ You can also scan the Postgres database file structure for errors:
 <details>
 <summary>Scan for file structure errors</summary>
 ```bash
-docker exec -it immich_postgres pg_amcheck --username=<DB_USERNAME> --heapallindexed --parent-check --rootdescend --progress --all --install-missing
+docker exec -it frameleaf_postgres pg_amcheck --username=<DB_USERNAME> --heapallindexed --parent-check --rootdescend --progress --all --install-missing
 ```
 
 A normal result will end something like this and return with an exit code of `0`:

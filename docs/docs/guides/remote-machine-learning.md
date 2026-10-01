@@ -20,14 +20,14 @@ If using hardware acceleration, the [hwaccel.ml.yml](https://github.com/Framelea
 :::
 
 ```yaml
-name: immich_remote_ml
+name: frameleaf_remote_ml
 
 services:
   immich-machine-learning:
-    container_name: immich_machine_learning
+    container_name: frameleaf_machine_learning
     # For hardware acceleration, add one of -[armnn, cuda, rocm, openvino, rknn] to the image tag.
-    # Example tag: ${IMMICH_VERSION:-release}-cuda
-    image: ghcr.io/frameleaf/frameleaf-machine-learning:${IMMICH_VERSION:-release}
+    # Example tag: ${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}-cuda
+    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
     # extends:
     #   file: hwaccel.ml.yml
     #   service: # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference - use the `-wsl` version for WSL2 where applicable
