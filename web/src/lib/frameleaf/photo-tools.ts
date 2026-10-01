@@ -61,6 +61,24 @@ export const WEB_MASK_KINDS: readonly AssetDevelopMaskKind[] = [
   AssetDevelopMaskKind.Linear,
 ];
 
+/**
+ * FL-233: how many masks of a stored recipe this editor carries without showing (brush, subject,
+ * sky, background and future kinds). They count towards `MAX_MASKS`, so the editor never lets a
+ * person add a mask the server would refuse to save.
+ */
+export function carriedMaskCount(recipe: unknown): number {
+  const masks = recipe && typeof recipe === 'object' ? (recipe as { masks?: unknown }).masks : undefined;
+  if (!Array.isArray(masks)) {
+    return 0;
+  }
+  return masks.filter(
+    (item) =>
+      item &&
+      typeof item === 'object' &&
+      !WEB_MASK_KINDS.includes((item as { kind?: unknown }).kind as AssetDevelopMaskKind),
+  ).length;
+}
+
 /** Clamped, defaults filled, malformed and duplicate masks dropped, at most `MAX_MASKS`. */
 export function normalizeMasks(candidate: unknown): EditorMask[] {
   if (!Array.isArray(candidate)) {

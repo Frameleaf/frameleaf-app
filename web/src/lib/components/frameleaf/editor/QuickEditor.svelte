@@ -90,6 +90,7 @@
     type EditorRecipe,
   } from '$lib/frameleaf/editor-draft';
   import {
+    carriedMaskCount,
     flipMask,
     maskIsActive,
     presetSettingsFrom,
@@ -1419,7 +1420,12 @@
               <Icon icon={mdiChevronLeft} size="18" />
               {$t('frameleaf_editor_masks_back')}
             </button>
-            <MaskPanel masks={recipe.masks} bind:selectedId={selectedMaskId} onChange={(masks) => change({ masks })} />
+            <MaskPanel
+              masks={recipe.masks}
+              carried={carriedMaskCount(recipe.opaqueRecipe)}
+              bind:selectedId={selectedMaskId}
+              onChange={(masks) => change({ masks })}
+            />
           {:else if tool === 'enhance'}
             <RestorationPanel
               title={$t('frameleaf_editor_tool_enhance')}
