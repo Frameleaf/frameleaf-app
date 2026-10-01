@@ -19,6 +19,7 @@
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { isPreUpgradeBackup } from '$lib/frameleaf/getting-ready';
   import { backupVersionCompatibility } from '$lib/frameleaf/maintenance-page';
   import { restoreDatabaseBackup } from '$lib/services/database-backups.service';
   import { t } from 'svelte-i18n';
@@ -57,10 +58,13 @@
     if (!date || !size) {
       return null;
     }
-    return filename.startsWith('restore-point-')
-      ? $t('admin.frameleaf_maintenance_restore_summary', {
-          values: { kind: $t('admin.frameleaf_maintenance_restore_kind_pre_restore'), date, size },
-        })
+    const kind = filename.startsWith('restore-point-')
+      ? $t('admin.frameleaf_maintenance_restore_kind_pre_restore')
+      : isPreUpgradeBackup(filename)
+        ? $t('admin.frameleaf_maintenance_restore_kind_pre_upgrade')
+        : null;
+    return kind
+      ? $t('admin.frameleaf_maintenance_restore_summary', { values: { kind, date, size } })
       : $t('admin.frameleaf_maintenance_restore_summary_plain', { values: { date, size } });
   });
 
