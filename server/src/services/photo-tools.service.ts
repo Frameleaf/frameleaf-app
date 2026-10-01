@@ -61,7 +61,7 @@ export class PhotoToolsService {
     try {
       const updated = await this.photoToolsRepository.updatePreset(auth.user.id, id, {
         name: dto.name,
-        settings: dto.settings ? normalizePresetSettings(dto.settings) : undefined,
+        settings: dto.settings ? mergePresetSettings(existing.settings, dto.settings) : undefined,
       });
       if (!updated) {
         throw new NotFoundException('Preset not found');
@@ -119,4 +119,24 @@ export function normalizePresetSettings(settings: Partial<DevelopPresetSettings>
       ) as DevelopPresetSettings['masks'],
   };
   return picked;
+}
+
+/**
+ * FL-303: an update's settings over the stored ones. Only what the request sends changes; every
+ * other stored setting is kept as it was, including Brilliance from a client without that control
+ * and any setting this server does not know yet. Known settings are normalized as on create.
+ */
+export function mergePresetSettings(
+  stored: Record<string, unknown> | null | undefined,
+  patch: Partial<DevelopPresetSettings>,
+): Record<string, unknown> {
+  const base = stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  const sent = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+  const known = normalizePresetSettings({ ...base, ...sent } as Partial<DevelopPresetSettings>);
+  return {
+    ...base,
+    ...known,
+    // masks left out stay exactly as stored, nested properties a newer client wrote included
+    ...(sent.masks === undefined && Array.isArray(base.masks) && { masks: base.masks }),
+  };
 }
