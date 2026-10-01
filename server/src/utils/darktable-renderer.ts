@@ -22,12 +22,22 @@ let nativeRenderActive = false;
 
 /** An aborted execFile promise can reject before close; keep admission until the child is actually gone. */
 async function runDarktable(args: string[], signal: AbortSignal) {
+  signal.throwIfAborted();
   const execution = execFile('darktable-cli', args, { signal, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
   const closed = new Promise<void>((resolve) => execution.child.once('close', () => resolve()));
+  // Node 24 execFile does not forward killSignal to spawn's AbortSignal handler.
+  const abort = () => {
+    execution.child.kill('SIGKILL');
+  };
+  signal.addEventListener('abort', abort, { once: true });
+  if (signal.aborted) {
+    abort();
+  }
   try {
     return await execution;
   } finally {
     await closed;
+    signal.removeEventListener('abort', abort);
   }
 }
 
