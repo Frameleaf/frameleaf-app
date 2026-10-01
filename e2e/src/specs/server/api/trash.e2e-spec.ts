@@ -31,9 +31,14 @@ describe('/trash', () => {
   const lock = (ids: string[]) =>
     request(app).post('/assets/lock').set('Authorization', bearer()).send({ ids }).expect(204);
   /** Start from an empty visible trash, so whole-trash reviews see only this test's items. */
-  const emptyVisibleTrash = () => request(app).post('/trash/empty').set('Authorization', bearer()).expect(200);
+  const emptyVisibleTrash = async () => {
+    // an asset's upload jobs must finish before it is permanently deleted, or they fail on the missing asset
+    await utils.waitForAllQueuesFinish(admin.accessToken);
+    return request(app).post('/trash/empty').set('Authorization', bearer()).expect(200);
+  };
   const trashed = async () => {
     const { id } = await utils.createAsset(admin.accessToken);
+    await utils.waitForAllQueuesFinish(admin.accessToken);
     await utils.deleteAssets(admin.accessToken, [id]);
     return id;
   };
@@ -41,6 +46,7 @@ describe('/trash', () => {
   describe('POST /trash/empty', () => {
     it('should empty the trash', async () => {
       const { id: assetId } = await utils.createAsset(admin.accessToken);
+      await utils.waitForAllQueuesFinish(admin.accessToken);
       await utils.deleteAssets(admin.accessToken, [assetId]);
 
       const before = await getAssetInfo({ id: assetId }, { headers: asBearerAuth(admin.accessToken) });
@@ -62,6 +68,7 @@ describe('/trash', () => {
 
     it('should empty the trash with archived assets', async () => {
       const { id: assetId } = await utils.createAsset(admin.accessToken);
+      await utils.waitForAllQueuesFinish(admin.accessToken);
       await utils.archiveAssets(admin.accessToken, [assetId]);
       await utils.deleteAssets(admin.accessToken, [assetId]);
 

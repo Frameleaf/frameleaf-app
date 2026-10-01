@@ -609,6 +609,7 @@ describe('/asset', () => {
 
       const trashed = await utils.getAssetInfo(admin.accessToken, assetId);
       expect(trashed.isTrashed).toBe(true);
+      await utils.waitForAllQueuesFinish(admin.accessToken);
 
       {
         const { status } = await request(app)
@@ -639,6 +640,7 @@ describe('/asset', () => {
 
       const asset = await utils.getAssetInfo(admin.accessToken, photoId);
       expect(asset.livePhotoVideoId).toBe(motionId);
+      await utils.waitForAllQueuesFinish(admin.accessToken);
 
       const { status } = await request(app)
         .delete('/assets')
@@ -663,6 +665,7 @@ describe('/asset', () => {
 
       const asset = await utils.getAssetInfo(admin.accessToken, asset1);
       expect(asset.livePhotoVideoId).toBe(motionId);
+      await utils.waitForAllQueuesFinish(admin.accessToken);
 
       const { status } = await request(app)
         .delete('/assets')
