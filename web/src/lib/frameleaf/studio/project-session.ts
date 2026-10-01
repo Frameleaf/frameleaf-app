@@ -212,7 +212,8 @@ export interface StudioProjectApi {
   save(id: string, dto: StudioProjectSaveDto): Promise<StudioProjectSaveResponseDto>;
   restore(id: string, dto: StudioProjectRestoreDto): Promise<StudioProjectSaveResponseDto>;
   acquireLease(id: string, dto: StudioProjectLeaseRequestDto): Promise<StudioProjectLeaseDto>;
-  releaseLease(id: string, dto: StudioProjectLeaseRequestDto): Promise<unknown>;
+  /** `keepalive` lets the request outlive the page that sends it (a reload or tab close). */
+  releaseLease(id: string, dto: StudioProjectLeaseRequestDto, options: { keepalive: boolean }): Promise<unknown>;
   history(id: string, page: { skip: number; take: number }): Promise<StudioProjectHistoryResponseDto>;
   comments(id: string, page: { skip: number; take: number }): Promise<StudioCommentListResponseDto>;
   addComment(id: string, dto: StudioCommentCreateDto): Promise<StudioCommentDto>;
@@ -227,7 +228,8 @@ export const studioProjectSdkApi: StudioProjectApi = {
   save: (id, studioProjectSaveDto) => saveStudioProjectRevision({ id, studioProjectSaveDto }),
   restore: (id, studioProjectRestoreDto) => restoreStudioProjectRevision({ id, studioProjectRestoreDto }),
   acquireLease: (id, studioProjectLeaseRequestDto) => acquireStudioProjectLease({ id, studioProjectLeaseRequestDto }),
-  releaseLease: (id, studioProjectLeaseRequestDto) => releaseStudioProjectLease({ id, studioProjectLeaseRequestDto }),
+  releaseLease: (id, studioProjectLeaseRequestDto, options) =>
+    releaseStudioProjectLease({ id, studioProjectLeaseRequestDto }, options),
   history: (id, { skip, take }) => getStudioProjectHistory({ id, skip, take }),
   comments: (id, { skip, take }) => getStudioProjectComments({ id, skip, take }),
   addComment: (id, studioCommentCreateDto) => addStudioProjectComment({ id, studioCommentCreateDto }),
@@ -310,7 +312,7 @@ export interface StudioProjectSession {
   updateComment(commentId: string, dto: StudioCommentUpdateDto): Promise<StudioCommentDto>;
   setOnline(online: boolean): void;
   /** Release the lease, cancel timers and ignore every response still in flight. */
-  dispose(): Promise<void>;
+  dispose(options?: { keepalive: boolean }): Promise<void>;
 }
 
 type Draft = {
@@ -1147,7 +1149,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       }
     },
 
-    async dispose() {
+    async dispose(options) {
       if (disposed) {
         return;
       }
@@ -1159,7 +1161,7 @@ export const createStudioProjectSession = (options: StudioProjectSessionOptions)
       draft = null;
       if (heldId) {
         try {
-          await api.releaseLease(heldId, { clientId });
+          await api.releaseLease(heldId, { clientId }, { keepalive: options?.keepalive ?? false });
         } catch {
           // The lease lapses on its own; nothing else to do on the way out.
         }

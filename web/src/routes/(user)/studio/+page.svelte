@@ -900,7 +900,20 @@
       SessionLocked: lost,
     });
 
-    return () => unsubscribe();
+    // A reload or tab close never reaches onDestroy, so give the lease back as the document goes:
+    // otherwise the reloaded page (a new client) opens read-only behind its own old lease. A page
+    // kept in the back/forward cache may come back alive, so it keeps its session.
+    const leave = (event: PageTransitionEvent) => {
+      if (!event.persisted) {
+        void session.dispose({ keepalive: true });
+      }
+    };
+    addEventListener('pagehide', leave);
+
+    return () => {
+      unsubscribe();
+      removeEventListener('pagehide', leave);
+    };
   });
 
   onDestroy(() => {
