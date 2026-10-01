@@ -21,6 +21,11 @@ import {
   CloudStatusResponseDto,
 } from 'src/dtos/frameleaf-cloud.dto.js';
 import {
+  FrameleafSetupErrorCode,
+  FrameleafSetupLinkDto,
+  FrameleafSetupLinkResponseDto,
+} from 'src/dtos/frameleaf-server-setup.dto.js';
+import {
   AdminAuditAction,
   DatabaseLock,
   ImmichWorker,
@@ -94,6 +99,7 @@ import {
 import { BoundTokenRefusedError, USE_DPOP_NONCE } from 'src/utils/frameleaf-dpop.js';
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import { edgeStateCurrent, heartbeatEndpoints } from 'src/utils/frameleaf-remote-access.js';
+import { type SetupClient, setupRefusal, withSetupProof } from 'src/utils/frameleaf-setup-gate.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 
 /**
@@ -439,6 +445,114 @@ export class FrameleafCloudService extends BaseService {
     );
   }
 
+  /**
+   * FL-292: the administrator who linked this server (from the web or the Frameleaf app) is
+   * connected to the Frameleaf account that approved it (the existing Sign in with Frameleaf link),
+   * so their next sign-in needs no server password. Nothing changes when either side is already
+   * linked to someone else.
+   */
+  private async connectLinkingAdministrator(link: FrameleafCloudLink, actorId: string | undefined, email?: string) {
+    if (!actorId || !link.accountId) {
+      return;
+    }
+    try {
+      const [actor, existing, owner] = await Promise.all([
+        this.userRepository.get(actorId, { withDeleted: false }),
+        this.frameleafAccountRepository.getLinkByUser(actorId),
+        this.frameleafAccountRepository.getLinkBySub(link.accountId),
+      ]);
+      if (!actor?.isAdmin || existing || owner) {
+        return;
+      }
+      await this.frameleafAccountRepository.upsertLink({
+        userId: actor.id,
+        sub: link.accountId,
+        email: (email ?? actor.email).trim().toLowerCase(),
+        emailVerified: true,
+        role: 'admin',
+        autoRegistered: false,
+      });
+      await this.recordAdminEvents([
+        {
+          userId: actor.id,
+          actorId: actor.id,
+          action: AdminAuditAction.FrameleafAccountLinked,
+          subject: actor.name,
+          detail: link.accountLabel ?? null,
+        },
+      ]);
+      this.logger.log(`Connected ${actor.email} to the Frameleaf account that linked this server`);
+    } catch (error) {
+      this.logger.warn(`Could not connect the linking administrator to their Frameleaf account: ${error}`);
+    }
+  }
+
+  /**
+   * FL-292: `POST server/setup/link`. The Frameleaf app, on the home network, with the setup ticket
+   * it got for the code and a single-use link token (`fll_…`) Frameleaf Cloud minted with its
+   * account, links this new server exactly as `FRAMELEAF_LINK_TOKEN` does. The account that minted
+   * the token owns the server; its first Sign in with Frameleaf creates the administrator.
+   */
+  async claimNewServer(dto: FrameleafSetupLinkDto, client: SetupClient): Promise<FrameleafSetupLinkResponseDto> {
+    const cloudUrl = this.configRepository.getEnv().frameleafCloud.url;
+    return withSetupProof(this.setupGate, { ticket: dto.ticket }, client, () =>
+      this.databaseRepository.withLock(DatabaseLock.FrameleafHeartbeat, async () => {
+        if (!cloudUrl) {
+          throw setupRefusal(FrameleafSetupErrorCode.CloudUnavailable);
+        }
+        const current = await this.readLink(cloudUrl);
+        if (current?.status === 'linked') {
+          throw setupRefusal(FrameleafSetupErrorCode.AlreadyLinked);
+        }
+        const hash = sha256(dto.linkToken);
+        if (current?.usedLinkTokens?.includes(hash)) {
+          throw setupRefusal(FrameleafSetupErrorCode.LinkTokenUsed);
+        }
+        if (dto.serverName) {
+          // the name the person chose: the server is linked, and shows up in the app, under it
+          const serverName = dto.serverName;
+          const { oldConfig, newConfig } = await this.updateConfigExclusively(
+            (config) => {
+              config.server.name = serverName;
+            },
+            { source: 'frameleaf-cloud' },
+          );
+          await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+        }
+        await this.saveLink(
+          {
+            ...(current ?? emptyLink(cloudUrl)),
+            usedLinkTokens: [...(current?.usedLinkTokens ?? []), hash].slice(-20),
+          },
+          null,
+        );
+        let link: FrameleafCloudLink;
+        try {
+          link = await this.completeLink(cloudUrl, { headlessToken: dto.linkToken });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`The Frameleaf app's link token did not link this server: ${message}`);
+          if (error instanceof FrameleafCloudError && error.status === 401) {
+            throw setupRefusal(FrameleafSetupErrorCode.LinkTokenUsed);
+          }
+          // not answered, a region mismatch or another refusal: the token may still be usable
+          const after = (await this.readLink(cloudUrl)) ?? emptyLink(cloudUrl);
+          await this.saveLink(
+            { ...after, usedLinkTokens: after.usedLinkTokens?.filter((used) => used !== hash), lastError: message },
+            'link',
+          );
+          throw setupRefusal(FrameleafSetupErrorCode.LinkFailed, {
+            message: `Frameleaf Cloud did not link this server: ${message}`,
+          });
+        }
+        this.logger.log(
+          `This server was set up from the Frameleaf app (${client.ip}) and linked to ${link.accountLabel ?? 'a Frameleaf account'}; that account's first Sign in with Frameleaf creates the administrator`,
+        );
+        return { instanceId: link.instanceId as string, account: link.accountLabel ?? null };
+      }),
+    );
+  }
+
   /** One poll of the device-code grant (RFC 8628 section 3.4). */
   async pollDeviceCode(cloudUrl: string, link: FrameleafCloudLink, now = Date.now()): Promise<void> {
     const pending = link.pending;
@@ -631,6 +745,7 @@ export class FrameleafCloudService extends BaseService {
 
     const actor = 'actorId' in source ? source.actorId : undefined;
     await this.audit(AdminAuditAction.CloudLinked, link.accountLabel ?? null, actor);
+    await this.connectLinkingAdministrator(link, actor, registration.owner.email);
     this.notify({
       level: NotificationLevel.Info,
       title: 'Server linked to Frameleaf',

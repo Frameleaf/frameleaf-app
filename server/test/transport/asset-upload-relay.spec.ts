@@ -182,7 +182,9 @@ describe('FL-225 actual API over relay and 1xx-stripping proxy', () => {
     db = postgres(pgUrl, { max: 2 });
     const password = 'FL225-relay-fixture-password-24!';
     const account = { email: 'relay-owner@example.test', password, name: 'Relay Upload Owner' };
-    expect((await direct('/auth/admin-sign-up', 'POST', undefined, account)).status).toBe(201);
+    // FL-292: the e2e server pins its setup code
+    const setupCode = process.env.FRAMELEAF_SETUP_CODE ?? 'E2ESETUP';
+    expect((await direct('/auth/admin-sign-up', 'POST', undefined, { ...account, setupCode })).status).toBe(201);
     const login = await direct('/auth/login', 'POST', undefined, { email: account.email, password });
     expect(login.status).toBe(201);
     ownerToken = login.data.accessToken as string;
