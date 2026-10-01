@@ -1,7 +1,9 @@
 import { AssetMediaResponseDto, LoginResponseDto } from '@immich/sdk';
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Socket } from 'socket.io-client';
-import { utils } from 'src/utils.js';
+import { testAssetDir, utils } from 'src/utils.js';
 
 test.describe('Photo Viewer', () => {
   let admin: LoginResponseDto;
@@ -14,7 +16,14 @@ test.describe('Photo Viewer', () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup();
     asset = await utils.createAsset(admin.accessToken);
-    rawAsset = await utils.createAsset(admin.accessToken, { assetData: { filename: 'test.arw' } });
+    // FL-281 renders RAW from the sensor, so this must be a real camera file, not a JPEG renamed to .arw.
+    rawAsset = await utils.createAsset(admin.accessToken, {
+      assetData: {
+        filename: 'glarus.nef',
+        bytes: await readFile(join(testAssetDir, 'formats/raw/Nikon/D80/glarus.nef')),
+      },
+    });
+    await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
     websocket = await utils.connectWebsocket(admin.accessToken);
   });
 

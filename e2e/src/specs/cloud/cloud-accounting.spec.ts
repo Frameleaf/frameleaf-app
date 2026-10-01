@@ -36,6 +36,9 @@ const providerState = async (): Promise<ProviderState> => {
   return response.json() as Promise<ProviderState>;
 };
 
+// The ML health check pings the gateway on its own schedule; only account-scoped calls show spend.
+const accountScoped = ({ requests }: ProviderState) => requests.filter((line) => line !== 'GET /ping');
+
 describe('FL-159 approved description job → App accounting', () => {
   let admin: LoginResponseDto;
   let destinationId: string;
@@ -241,7 +244,7 @@ describe('FL-159 approved description job → App accounting', () => {
     const beforeDenied = await providerState();
     await request(app).post('/admin/cloud/ml/usage').set(asKeyAuth(secret)).expect(403);
     const afterDenied = await providerState();
-    expect(afterDenied.requests).toEqual(beforeDenied.requests);
+    expect(accountScoped(afterDenied)).toEqual(accountScoped(beforeDenied));
     const afterKey = await readRows();
     expect(afterKey.rows).toEqual(rows.rows);
     // The origin must have observed only the approved description job, never a pending workload.

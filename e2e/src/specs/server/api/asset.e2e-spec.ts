@@ -1050,22 +1050,27 @@ describe('/asset', () => {
       },
     ];
 
-    it.each(tests)(`should upload and generate a thumbnail for different file types`, async ({ input, expected }) => {
-      const filepath = join(testAssetDir, input);
-      const response = await utils.createAsset(admin.accessToken, {
-        assetData: { bytes: await readFile(filepath), filename: basename(filepath) },
-      });
+    it.each(tests)(
+      `should upload and generate a thumbnail for different file types`,
+      async ({ input, expected }) => {
+        const filepath = join(testAssetDir, input);
+        const response = await utils.createAsset(admin.accessToken, {
+          assetData: { bytes: await readFile(filepath), filename: basename(filepath) },
+        });
 
-      expect(response.status).toBe(AssetMediaStatus.Created);
-      const id = response.id;
-      // longer timeout as the thumbnail generation from full-size raw files can take a while
-      await utils.waitForWebsocketEvent({ event: 'assetUpload', id });
+        expect(response.status).toBe(AssetMediaStatus.Created);
+        const id = response.id;
+        // FL-281 renders RAW thumbnails from the sensor (single-threaded LibRaw, capped at 120s); a 26MP
+        // compressed X-Trans file takes ~15s locally.
+        await utils.waitForWebsocketEvent({ event: 'assetUpload', id, timeout: 60_000 });
 
-      const asset = await utils.getAssetInfo(admin.accessToken, id);
-      expect(asset.exifInfo).toBeDefined();
-      expect(asset.exifInfo).toMatchObject(expected.exifInfo);
-      expect(asset).toMatchObject(expected);
-    });
+        const asset = await utils.getAssetInfo(admin.accessToken, id);
+        expect(asset.exifInfo).toBeDefined();
+        expect(asset.exifInfo).toMatchObject(expected.exifInfo);
+        expect(asset).toMatchObject(expected);
+      },
+      90_000,
+    );
 
     it('should handle a duplicate', async () => {
       const filepath = 'formats/jpeg/el_torcal_rocks.jpeg';
