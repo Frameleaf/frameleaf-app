@@ -675,6 +675,33 @@ export class MediaRepository {
     });
   }
 
+  /**
+   * FL-233: a develop artifact stored the same way every time: EXIF orientation applied, metadata
+   * dropped, 8-bit PNG, greyscale for a mask and RGBA for a fill. The PNG's SHA-256 is its id.
+   */
+  async normalizeDevelopArtifact(
+    input: string,
+    kind: 'mask' | 'fill',
+  ): Promise<{ data: Buffer; width: number; height: number }> {
+    let pipeline = sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 }).rotate();
+    pipeline = kind === 'mask' ? pipeline.greyscale().removeAlpha().toColourspace('b-w') : pipeline.ensureAlpha();
+    const { data, info } = await pipeline
+      .png({ compressionLevel: 9, adaptiveFiltering: false, palette: false })
+      .toBuffer({ resolveWithObject: true });
+    return { data, width: info.width, height: info.height };
+  }
+
+  /** FL-233: a stored develop artifact as raw pixels: 1 channel for a mask, 4 for a fill. */
+  async decodeDevelopArtifact(
+    input: string,
+    kind: 'mask' | 'fill',
+  ): Promise<{ data: Buffer; width: number; height: number; channels: 1 | 4 }> {
+    let pipeline = sharp(input, { failOn: 'error', limitInputPixels: 200_000_000 });
+    pipeline = kind === 'mask' ? pipeline.extractChannel(0) : pipeline.ensureAlpha();
+    const { data, info } = await pipeline.raw().toBuffer({ resolveWithObject: true });
+    return { data, width: info.width, height: info.height, channels: kind === 'mask' ? 1 : 4 };
+  }
+
   async getImageMetadata(input: string | Buffer): Promise<ImageDimensions & { isTransparent: boolean }> {
     const { width = 0, height = 0, hasAlpha = false } = await sharp(input, { unlimited: true }).metadata();
     return { width, height, isTransparent: hasAlpha };
