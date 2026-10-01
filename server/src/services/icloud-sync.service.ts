@@ -51,6 +51,7 @@ import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { checkAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
+import { maskAppleAccount } from 'src/utils/icloud-identity.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
 
 /** How often an idle worker looks for queued runs. A control also nudges it through the job queue. */
@@ -327,7 +328,12 @@ export class ICloudSyncService {
           encryptedSession: await this.transport.encodeSession(id, result.session),
         };
       });
-      await this.repository.update(id, auth.user.id, { lastError: null, nextRunAt: null });
+      await this.repository.update(id, auth.user.id, {
+        lastError: null,
+        nextRunAt: null,
+        // FL-296: the account, masked, so the app can show which one a connection syncs
+        ...(dto.action === 'login' && dto.appleId && { accountHint: maskAppleAccount(dto.appleId) }),
+      });
       const connection = await this.repository.get(id, auth.user.id);
       if (connection?.state === 'connected') {
         // Signing in is the owner asking for a sync; an unfinished run simply carries on.
