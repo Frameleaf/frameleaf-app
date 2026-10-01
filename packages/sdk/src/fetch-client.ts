@@ -3867,6 +3867,7 @@ export type AssetDevelopRecipeDto = {
     version: Version;
     exposure?: number;
     contrast?: number;
+    brilliance?: number;
     highlights?: number;
     shadows?: number;
     whites?: number;
@@ -3889,6 +3890,9 @@ export type AssetDevelopRecipeDto = {
     preset?: AssetDevelopPreset;
     presetStrength?: number;
     masks?: {
+        [key: string]: any;
+    }[];
+    cleanup?: {
         [key: string]: any;
     }[];
     [key: string]: any;
@@ -3961,6 +3965,20 @@ export type AssetDevelopSaveDto = {
     replaceRecipe?: boolean;
     /** Immutable revision of this owned asset whose omitted fields are preserved; never the implicit current revision */
     sourceRevisionId?: string;
+};
+export type AssetDevelopArtifactUploadDto = {
+    /** A PNG (or another still image the server can read): greyscale for a mask, with alpha for a fill */
+    file: Blob;
+    kind: AssetDevelopArtifactKind;
+};
+export type AssetDevelopArtifactResponseDto = {
+    /** Height of the stored bitmap in pixels */
+    height: number;
+    /** A develop artifact uploaded for this asset: the lowercase hex SHA-256 of its stored PNG */
+    id: string;
+    kind: AssetDevelopArtifactKind;
+    /** Width of the stored bitmap in pixels */
+    width: number;
 };
 export type DevelopExportResponseDto = {
     /** Asset whose original was exported */
@@ -5088,17 +5106,33 @@ export type AssetDevelopMaskAdjustments = {
     /** White point inside the mask */
     whites?: number;
 };
+export type AssetDevelopStroke = {
+    /** Erase from the mask instead of painting it (brush masks only) */
+    erase?: boolean;
+    points: [
+        number,
+        number
+    ][];
+    /** Stroke radius as a fraction of the original image's shorter side */
+    radius: number;
+};
 export type AssetDevelopMask = {
     adjustments?: AssetDevelopMaskAdjustments;
     /** How much of the adjustment is applied, as a percentage */
     amount?: number;
+    /** Subject, sky and background masks: the stored greyscale mask bitmap, covering the whole original image */
+    artifact?: string | null;
+    /** Subject, sky and background masks: an opaque descriptor that lets a client detect the mask again; the server never runs it */
+    detector?: {
+        [key: string]: any;
+    };
     /** A disabled mask is kept but not rendered */
     enabled?: boolean;
     /** Where a linear mask has faded out, across the frame */
     endX?: number;
     /** Where a linear mask has faded out, down the frame */
     endY?: number;
-    /** Softness of a radial edge as a percentage of the radius */
+    /** Softness of a radial edge as a percentage of the radius, or of a brush stroke as one of its radius */
     feather?: number;
     /** Client-chosen identifier, unique within the recipe */
     id: string;
@@ -5111,10 +5145,12 @@ export type AssetDevelopMask = {
     radiusX?: number;
     /** Vertical radius of a radial mask as a fraction of the frame height */
     radiusY?: number;
-    /** Centre (radial) or start (linear) across the oriented frame */
-    x: number;
-    /** Centre (radial) or start (linear) down the oriented frame */
-    y: number;
+    /** Brush masks: the painted strokes, in order */
+    strokes?: AssetDevelopStroke[];
+    /** Centre (radial) or start (linear) across the oriented frame; unused by brush and bitmap masks */
+    x?: number;
+    /** Centre (radial) or start (linear) down the oriented frame; unused by brush and bitmap masks */
+    y?: number;
 };
 export type DevelopPresetSettingsDto = {
     /** Black point */
@@ -14611,6 +14647,22 @@ export function saveAssetDevelop({ id, assetDevelopSaveDto }: {
     })));
 }
 /**
+ * Upload a develop artifact
+ */
+export function uploadAssetDevelopArtifact({ id, assetDevelopArtifactUploadDto }: {
+    id: string;
+    assetDevelopArtifactUploadDto: AssetDevelopArtifactUploadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetDevelopArtifactResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/artifacts`, oazapfts.multipart({
+        ...opts,
+        method: "POST",
+        body: assetDevelopArtifactUploadDto
+    })));
+}
+/**
  * List exports of an original for editing elsewhere
  */
 export function getAssetDevelopExports({ id }: {
@@ -23885,6 +23937,10 @@ export enum AssetDevelopRevisionStatus {
     Failed = "failed",
     Cancelled = "cancelled"
 }
+export enum AssetDevelopArtifactKind {
+    Mask = "mask",
+    Fill = "fill"
+}
 export enum AssetDevelopFileKind {
     Master = "master",
     Preview = "preview"
@@ -24057,7 +24113,11 @@ export enum Unit {
 }
 export enum AssetDevelopMaskKind {
     Radial = "radial",
-    Linear = "linear"
+    Linear = "linear",
+    Brush = "brush",
+    Subject = "subject",
+    Sky = "sky",
+    Background = "background"
 }
 export enum DocumentField {
     Date = "date",
