@@ -1,23 +1,23 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Put, Query, Res, Next } from '@nestjs/common';
-import type { Response, NextFunction } from 'express';
+import { Body, Controller, Get, HttpCode, HttpStatus, Next, Param, Patch, Put, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   PhotographyBrandDto,
   PhotographyBrandSaveDto,
   PhotographyLogoCandidatesDto,
-  PhotographyPhotosDto,
   PhotographyPhotoQueryDto,
+  PhotographyPhotosDto,
   PhotographyRatingDto,
   PhotographyWorkspaceDto,
   PhotographyWorkspaceSaveDto,
 } from 'src/dtos/photography-workspace.dto.js';
 import { ApiTag } from 'src/enum.js';
-import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { sendFile } from 'src/utils/file.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
+import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.StudioProjects)
