@@ -231,17 +231,43 @@ jobs:
         working-directory: server
         run: |
           node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
           import { exiftool } from 'exiftool-vendored';
           import { spawnSync } from 'node:child_process';
           import { resolve } from 'node:path';
+          // Expected active dimensions come from pinned LibRaw e419de08 identify.cpp
+          // EOS70D row/lines1016 and Nikon D80 lines1980, and tiff.cpp ActiveArea.
+          // EXIF image dimensions describe the camera JPEG/default crop instead.
+          function rawFixtureDimensions(model, tags) {
+            if (/EOS\s*70D\b/i.test(model)) return [5568 - 72, 3708 - 38];
+            const groups = Object.entries(tags).filter(([key, value]) => key.endsWith(':PhotometricInterpretation') && Number(value) === 32803).map(([key]) => key.slice(0, key.lastIndexOf(':')));
+            assert.equal(groups.length, 1, 'Expected one unambiguous CFA raw IFD');
+            const group = groups[0];
+            const width = Number(tags[group + ':ImageWidth']), height = Number(tags[group + ':ImageHeight']);
+            if (/\bD80\b/i.test(model)) return [width - 4, height - 3];
+            assert.match(model, /GR\s*III|GR\s*3/i);
+            const active = tags[group + ':ActiveArea'];
+            if (active === undefined) return [width, height];
+            const area = (Array.isArray(active) ? active : String(active).trim().split(/[ ,]+/)).map(Number);
+            assert.equal(area.length, 4);
+            assert.ok(area.every(value => Number.isSafeInteger(value) && value >= 0));
+            assert.ok(area[2] <= height && area[3] <= width && area[2] > area[0] && area[3] > area[1]);
+            return [area[3] - area[1], area[2] - area[0]];
+          }
+          assert.deepEqual(rawFixtureDimensions('Canon EOS 70D', {}), [5496, 3670]);
+          assert.deepEqual(rawFixtureDimensions('NIKON D80', { 'SubIFD:PhotometricInterpretation': 32803, 'SubIFD:ImageWidth': 3900, 'SubIFD:ImageHeight': 2600 }), [3896, 2597]);
+          assert.deepEqual(rawFixtureDimensions('RICOH GR III', { 'IFD0:PhotometricInterpretation': 32803, 'IFD0:ImageWidth': 6048, 'IFD0:ImageHeight': 4024, 'IFD0:ActiveArea': '12 24 4012 6024' }), [6000, 4000]);
+          assert.throws(() => rawFixtureDimensions('RICOH GR III', {}));
           const fixtures = ['Canon/EOS_70D.CR2', 'Ricoh/GR3/Ricoh_GR3-450.DNG', 'Nikon/D80/glarus.nef'];
           try {
             for (const name of fixtures) {
               const file = resolve('../e2e/test-assets/formats/raw', name);
               const tags = await exiftool.read(file);
-              let width = Number(tags.ImageWidth), height = Number(tags.ImageHeight);
-              if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1000 || height < 1000) throw new Error('Missing full-frame fixture dimensions');
+              const rawTags = await exiftool.readRaw(file, { readArgs: ['-a', '-G1', '-n'] });
+              let [width, height] = rawFixtureDimensions(String(tags.Model), rawTags);
+              if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1000 || height < 1000) throw new Error('Missing qualified active sensor dimensions');
               if ([5, 6, 7, 8].includes(Number(tags.Orientation)) || /90|270/.test(String(tags.Orientation))) [width, height] = [height, width];
+              console.log({ fixture: name, camera: tags.Model, activeSensor: [width, height], cameraImage: [tags.ImageWidth, tags.ImageHeight] });
               const result = spawnSync(process.execPath, ['--experimental-transform-types', 'base-image/verify-raw.mjs', file, String(width), String(height), 'src/utils/raw-renderer.ts'], { stdio: 'inherit' });
               if (result.error || result.status !== 0) throw result.error ?? new Error('Native RAW qualification failed: ' + name);
             }
