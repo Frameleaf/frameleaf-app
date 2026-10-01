@@ -30,6 +30,8 @@ services:
       - redis
       - database
     restart: always
+    # running jobs finish or go back to waiting before the server exits (9 s at most)
+    stop_grace_period: 10s
     healthcheck:
       disable: false
 

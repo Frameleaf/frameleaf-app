@@ -140,6 +140,9 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     const read = (name) => fs.readFileSync(path.join(output, name), 'utf8');
     const unraidServer = read('unraid/templates/frameleaf-server.xml');
     assert(unraidServer.includes(nas.images.server));
+    // FL-291: Docker must not kill the server during its graceful stop (9 s at most)
+    assert(unraidServer.includes('<ExtraParams>--stop-timeout=10</ExtraParams>'));
+    assert(read('truenas/ix-dev/community/frameleaf/templates/docker-compose.yaml').includes('server_container.set_grace_period(10)'));
     assert.match(unraidServer, /<Config Name="Machine learning" Target="IMMICH_MACHINE_LEARNING_ENABLED" Default=""[^>]*><\/Config>/);
     assert(read('unraid/templates/frameleaf-ml.xml').includes(nas.images.machineLearning));
     const values = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');
@@ -247,6 +250,7 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     fs.mkdirSync(state);
     const effective = JSON.parse(execFileSync('docker', ['compose', '-f', path.join(target, 'project/compose.yaml'), 'config', '--format', 'json'], { env }).toString());
     assert.equal(effective.services.server.ports[0].published, '3456');
+    assert.equal(effective.services.server.stop_grace_period, '10s');
     assert.equal(effective.services.server.environment.IMMICH_MACHINE_LEARNING_ENABLED, 'false');
     assert.equal(effective.services.database.image, nas.images.postgres);
     assert(!effective.services['machine-learning']);
