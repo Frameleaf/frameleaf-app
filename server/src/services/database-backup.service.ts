@@ -68,6 +68,18 @@ export const restoreVerificationDue = (
   return { dueAt: dueAt.toISOString(), overdue: dueAt.getTime() <= now.getTime() };
 };
 
+/** FL-295: the last line `pg_dump` writes (`pg_dumpall`: "cluster dump complete"), only once the dump finished. */
+const DUMP_COMPLETE = /-- PostgreSQL database (?:cluster )?dump complete/;
+/** Newer `pg_dump` versions write an `unrestrict` meta-command line after it; this much of the end is checked. */
+const DUMP_TAIL_BYTES = 4096;
+
+export class DatabaseBackupVerificationError extends Error {
+  constructor(reason: string) {
+    super(`The backup is not a complete dump: ${reason}`);
+    this.name = 'DatabaseBackupVerificationError';
+  }
+}
+
 @Injectable()
 export class DatabaseBackupService {
   constructor(
@@ -260,7 +272,15 @@ export class DatabaseBackupService {
     };
   }
 
-  async createDatabaseBackup(filenamePrefix: string = ''): Promise<string> {
+  /**
+   * A full `pg_dump` of the database, gzipped into `<media>/backups`, written to a `.tmp` file and renamed
+   * once complete. FL-295: `label` goes between the timestamp and the version (the pre-upgrade copy), and
+   * `verify` checks the temporary file is a complete dump before it is renamed.
+   */
+  async createDatabaseBackup(
+    filenamePrefix: string = '',
+    { label, verify = false }: { label?: string; verify?: boolean } = {},
+  ): Promise<string> {
     this.logger.debug(`Database Backup Started`);
 
     const { bin, args, databasePassword, databaseVersion, databaseMajorVersion } =
@@ -268,7 +288,8 @@ export class DatabaseBackupService {
 
     this.logger.log(`Database Backup Starting. Database Version: ${databaseMajorVersion}`);
 
-    const filename = `${filenamePrefix}immich-db-backup-${DateTime.now().toFormat("yyyyLLdd'T'HHmmss")}-v${serverVersion.toString()}-pg${databaseVersion.split(' ', 1)[0]}.sql.gz`;
+    const timestamp = DateTime.now().toFormat("yyyyLLdd'T'HHmmss");
+    const filename = `${filenamePrefix}immich-db-backup-${timestamp}${label ? `-${label}` : ''}-v${serverVersion.toString()}-pg${databaseVersion.split(' ', 1)[0]}.sql.gz`;
     const backupFilePath = path.join(StorageCore.getBaseFolder(StorageFolder.Backups), filename);
     const temporaryFilePath = `${backupFilePath}.tmp`;
 
@@ -287,6 +308,9 @@ export class DatabaseBackupService {
       const fileStream = this.storageRepository.createWriteStream(temporaryFilePath);
 
       await pipeline(pgdump, gzip, fileStream);
+      if (verify) {
+        await this.verifyDatabaseBackup(temporaryFilePath);
+      }
       await this.storageRepository.rename(temporaryFilePath, backupFilePath);
     } catch (error) {
       this.logger.error(`Database Backup Failure: ${error}`);
@@ -301,6 +325,44 @@ export class DatabaseBackupService {
 
     this.logger.log(`Database Backup Success`);
     return backupFilePath;
+  }
+
+  /**
+   * FL-295: whether a gzipped dump is complete: not empty, a valid gzip stream to its end, and SQL that
+   * ends with the line `pg_dump` (or `pg_dumpall`) writes once it has finished. Throws
+   * {@link DatabaseBackupVerificationError} saying what is wrong.
+   */
+  async verifyDatabaseBackup(filePath: string): Promise<void> {
+    const { size } = await this.storageRepository.stat(filePath);
+    if (!size) {
+      throw new DatabaseBackupVerificationError(`${basename(filePath)} is empty`);
+    }
+
+    let bytes = 0;
+    let tail = '';
+    try {
+      await pipeline(
+        this.storageRepository.createPlainReadStream(filePath),
+        this.storageRepository.createGunzip(),
+        new Writable({
+          write(chunk: Buffer, _encoding, callback) {
+            bytes += chunk.length;
+            tail = (tail + chunk.toString('latin1')).slice(-DUMP_TAIL_BYTES);
+            callback();
+          },
+        }),
+      );
+    } catch (error) {
+      throw new DatabaseBackupVerificationError(`${basename(filePath)} is not a complete gzip file (${error})`);
+    }
+
+    if (bytes === 0) {
+      throw new DatabaseBackupVerificationError(`${basename(filePath)} is empty once uncompressed`);
+    }
+
+    if (!DUMP_COMPLETE.test(tail)) {
+      throw new DatabaseBackupVerificationError(`${basename(filePath)} does not finish like a complete dump`);
+    }
   }
 
   async uploadBackup(file: Express.Multer.File): Promise<void> {
