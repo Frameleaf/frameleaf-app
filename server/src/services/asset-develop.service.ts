@@ -51,6 +51,7 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
 import { DARKTABLE_RENDERER_VERSION, renderDarktable } from 'src/utils/darktable-renderer.js';
@@ -96,10 +97,18 @@ export const DEVELOP_IMPORT_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.tif
  */
 export const DEVELOP_RENDER_LEASE_MS = 10 * 60 * 1000;
 
-/** FL-233: the largest develop artifact upload, and the largest bitmap it may decode to. */
+/**
+ * FL-233: develop artifact bounds. A mask covers the whole original, so it is never larger than the
+ * original (nor than `MASK_MAX_SIDE` when the original's size is unknown); a fill covers one Clean Up
+ * area. A photo keeps at most `PER_ASSET` artifacts; one no saved version references is released
+ * after `UNREFERENCED_GRACE_MS`.
+ */
 export const DEVELOP_ARTIFACT_MAX_BYTES = 64 * 1024 ** 2;
-export const DEVELOP_ARTIFACT_MAX_SIDE = 16_384;
-export const DEVELOP_ARTIFACT_MAX_PIXELS = 150_000_000;
+export const DEVELOP_ARTIFACT_MASK_MAX_SIDE = 8192;
+export const DEVELOP_ARTIFACT_FILL_MAX_SIDE = 4096;
+export const DEVELOP_ARTIFACT_FILL_MAX_PIXELS = 16_000_000;
+export const DEVELOP_ARTIFACT_PER_ASSET = 64;
+export const DEVELOP_ARTIFACT_UNREFERENCED_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * FL-233: where a develop artifact of an asset is kept: beside its rendered versions, named by the
@@ -160,6 +169,7 @@ export class AssetDevelopService {
     private storageRepository: StorageRepository,
     private systemMetadataRepository: SystemMetadataRepository,
     private mediaOperationRepository: MediaOperationRepository,
+    private userRepository: UserRepository,
   ) {
     this.logger.setContext(AssetDevelopService.name);
     this.editOperations = new EditOperationTracker(mediaOperationRepository, jobRepository, logger);
@@ -663,26 +673,10 @@ export class AssetDevelopService {
    * (a handoff or return reconciliation running), and the nightly sweep below releases them later.
    */
   @OnEvent({ name: 'AssetDelete' })
-  async onAssetDelete({ assetId, userId }: ArgOf<'AssetDelete'>) {
+  async onAssetDelete({ assetId }: ArgOf<'AssetDelete'>) {
     await this.assetDevelopRepository.releaseRemovedAssetRevisions((files) => this.queueFileDelete(files), assetId);
     // FL-233: the asset's develop artifacts go with it
-    try {
-      const folder = path.dirname(developArtifactPath({ id: assetId, ownerId: userId }, '0'.repeat(64)));
-      const prefix = `${assetId}_develop_artifact_`;
-      const files: string[] = [];
-      if (this.storageRepository.existsSync(folder)) {
-        for await (const file of this.storageRepository.walkFiles(folder)) {
-          if (path.basename(file).startsWith(prefix)) {
-            files.push(file);
-          }
-        }
-      }
-      if (files.length > 0) {
-        await this.queueFileDelete(files);
-      }
-    } catch (error) {
-      this.logger.warn(`Could not release the develop artifacts of asset ${assetId}: ${error}`);
-    }
+    await this.assetDevelopRepository.releaseArtifacts((files) => this.queueFileDelete(files), { assetId });
   }
 
   /**
@@ -707,33 +701,77 @@ export class AssetDevelopService {
         throw new BadRequestException('The bitmap is empty or larger than a develop artifact may be');
       }
       const probe = await this.mediaRepository.getImageMetadata(file.path).catch(() => null);
-      if (
-        !probe ||
-        !(probe.width > 0 && probe.height > 0) ||
-        probe.width > DEVELOP_ARTIFACT_MAX_SIDE ||
-        probe.height > DEVELOP_ARTIFACT_MAX_SIDE ||
-        probe.width * probe.height > DEVELOP_ARTIFACT_MAX_PIXELS
-      ) {
-        throw new BadRequestException('The file is not a readable bitmap of a size a develop artifact may have');
+      if (!probe || !(probe.width > 0 && probe.height > 0) || !this.artifactSizeAllowed(asset, dto.kind, probe)) {
+        throw new BadRequestException(
+          dto.kind === AssetDevelopArtifactKind.Mask
+            ? 'A mask must be a readable bitmap no larger than the original'
+            : `A fill must be a readable bitmap of at most ${DEVELOP_ARTIFACT_FILL_MAX_SIDE} pixels a side`,
+        );
       }
       const normalized = await this.mediaRepository.normalizeDevelopArtifact(file.path, dto.kind);
       const id = this.cryptoRepository.hashSha256(normalized.data).toString('hex');
+      const [existing] = await this.assetDevelopRepository.getArtifacts(asset.id, [id]);
+      if (existing) {
+        return { id, kind: existing.kind as AssetDevelopArtifactKind, width: existing.width, height: existing.height };
+      }
+      const usage = await this.assetDevelopRepository.getArtifactUsage(asset.id, asset.ownerId);
+      if (usage.assetCount >= DEVELOP_ARTIFACT_PER_ASSET) {
+        throw new BadRequestException({
+          message: 'This photo has as many edit masks and fills as it may keep; save the edit to release unused ones',
+          code: 'develop_artifact_limit',
+        });
+      }
+      const owner = await this.userRepository.get(asset.ownerId, {});
+      if (
+        owner?.quotaSizeInBytes !== null &&
+        owner?.quotaSizeInBytes !== undefined &&
+        Number(owner.quotaUsageInBytes) + usage.ownerBytes + normalized.data.length > Number(owner.quotaSizeInBytes)
+      ) {
+        throw new BadRequestException({ message: 'Your storage is full', code: 'develop_artifact_quota' });
+      }
       const target = developArtifactPath(asset, id);
-      if (!(await this.storageRepository.checkFileExists(target))) {
-        this.storageRepository.mkdirSync(path.dirname(target));
-        try {
-          await this.storageRepository.createFile(target, normalized.data);
-        } catch (error: any) {
-          // the same bitmap uploaded twice at once: the first one is kept
-          if (error?.code !== 'EEXIST') {
-            throw error;
-          }
+      this.storageRepository.mkdirSync(path.dirname(target));
+      try {
+        await this.storageRepository.createFile(target, normalized.data);
+      } catch (error: any) {
+        // the same bitmap uploaded twice at once: the first one is kept
+        if (error?.code !== 'EEXIST') {
+          throw error;
         }
       }
+      await this.assetDevelopRepository.addArtifact({
+        assetId: asset.id,
+        id,
+        ownerId: asset.ownerId,
+        kind: dto.kind,
+        path: target,
+        bytes: normalized.data.length,
+        width: normalized.width,
+        height: normalized.height,
+      });
       return { id, kind: dto.kind, width: normalized.width, height: normalized.height };
     } finally {
       await this.discard([file.path]);
     }
+  }
+
+  /** FL-233: a mask no larger than the original (either way round), a fill within the fill bounds. */
+  private artifactSizeAllowed(
+    asset: { exifInfo?: { exifImageWidth?: number | null; exifImageHeight?: number | null } | null },
+    kind: AssetDevelopArtifactKind,
+    size: { width: number; height: number },
+  ) {
+    const long = Math.max(size.width, size.height);
+    const short = Math.min(size.width, size.height);
+    if (kind === AssetDevelopArtifactKind.Fill) {
+      return long <= DEVELOP_ARTIFACT_FILL_MAX_SIDE && size.width * size.height <= DEVELOP_ARTIFACT_FILL_MAX_PIXELS;
+    }
+    const width = asset.exifInfo?.exifImageWidth ?? 0;
+    const height = asset.exifInfo?.exifImageHeight ?? 0;
+    if (width > 0 && height > 0) {
+      return long <= Math.max(width, height) && short <= Math.min(width, height);
+    }
+    return long <= DEVELOP_ARTIFACT_MASK_MAX_SIDE;
   }
 
   /** FL-233: refuse a recipe whose masks or Clean Up reference an artifact this photo does not have. */
@@ -746,10 +784,10 @@ export class AssetDevelopService {
       ...developMaskArtifacts(projection.masks),
       ...developCleanupArtifacts((projection.cleanup ?? []).filter((op) => op.enabled)),
     ];
-    for (const id of new Set(ids)) {
-      if (!(await this.storageRepository.checkFileExists(developArtifactPath(asset, id)))) {
-        throw missingArtifact();
-      }
+    const wanted = [...new Set(ids)];
+    const stored = await this.assetDevelopRepository.getArtifacts(asset.id, wanted);
+    if (stored.length !== wanted.length) {
+      throw missingArtifact();
     }
   }
 
@@ -760,12 +798,13 @@ export class AssetDevelopService {
     kind: AssetDevelopArtifactKind,
   ): Promise<Map<string, DevelopBitmap>> {
     const bitmaps = new Map<string, DevelopBitmap>();
-    for (const id of new Set(ids)) {
-      const file = developArtifactPath(asset, id);
-      if (!(await this.storageRepository.checkFileExists(file))) {
-        throw missingArtifact();
-      }
-      bitmaps.set(id, await this.mediaRepository.decodeDevelopArtifact(file, kind));
+    const wanted = [...new Set(ids)];
+    const stored = await this.assetDevelopRepository.getArtifacts(asset.id, wanted);
+    if (stored.length !== wanted.length || stored.some((artifact) => artifact.kind !== kind)) {
+      throw missingArtifact();
+    }
+    for (const artifact of stored) {
+      bitmaps.set(artifact.id, await this.mediaRepository.decodeDevelopArtifact(artifact.path, kind));
     }
     return bitmaps;
   }
@@ -777,6 +816,14 @@ export class AssetDevelopService {
       await this.assetDevelopRepository.releaseRemovedAssetRevisions((files) => this.queueFileDelete(files));
     } catch (error: any) {
       this.logger.warn(`Develop revision cleanup deferred: ${error}`);
+    }
+    // FL-233: artifacts of removed photos, and those no saved version used for a week
+    try {
+      await this.assetDevelopRepository.releaseArtifacts((files) => this.queueFileDelete(files), {
+        unreferencedBefore: new Date(Date.now() - DEVELOP_ARTIFACT_UNREFERENCED_GRACE_MS),
+      });
+    } catch (error: any) {
+      this.logger.warn(`Develop artifact cleanup deferred: ${error}`);
     }
   }
 

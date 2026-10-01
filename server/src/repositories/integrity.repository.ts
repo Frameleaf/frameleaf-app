@@ -201,7 +201,8 @@ export class IntegrityRepository {
    * asset's thumbnails but are tracked by their develop version, not `asset_file`. Retained video
    * versions (FL-39) own their master, its lineage sidecar, proxy and thumbnails the same way, and an
    * edited master in `asset_file` owns its lineage sidecar, and a Studio HDR intermediate (FL-97)
-   * is owned by its fork row. Without this
+   * is owned by its fork row, as is a develop artifact (FL-233: a client's mask or generated fill,
+   * which cannot be regenerated). Without this
    * the untracked-file check would report — and offer to delete — a person's saved edits.
    */
   async getDevelopRevisionPathsByPaths(paths: string[]): Promise<{ path: string }[]> {
@@ -227,6 +228,8 @@ export class IntegrityRepository {
       WHERE "isEdited" AND type = 'encoded_video' AND path || '.lineage.json' IN (${sql.join(paths)})
       UNION
       SELECT path FROM immich_fork.studio_hdr_intermediate WHERE path IN (${sql.join(paths)})
+      UNION
+      SELECT path FROM immich_fork.asset_develop_artifact WHERE path IN (${sql.join(paths)})
     `.execute(this.db);
     return rows;
   }

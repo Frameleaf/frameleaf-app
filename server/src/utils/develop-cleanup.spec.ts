@@ -270,3 +270,54 @@ describe('Clean Up (FL-233)', () => {
     );
   });
 });
+
+describe('worst-case cost (FL-233)', () => {
+  it('renders the largest brush and Clean Up recipe on a 3 MP image in bounded time', () => {
+    const width = 2000;
+    const height = 1500;
+    const image = new Uint8Array(width * height * 3).fill(120);
+    const wiggle = (seed: number, count: number) =>
+      Array.from({ length: count }, (_, index) => [
+        (Math.sin(seed + index * 0.37) + 1) / 2,
+        (Math.cos(seed * 1.7 + index * 0.21) + 1) / 2,
+      ]);
+    // 8 brush masks of 4 strokes x 96 points, and 4 Clean Up strokes of 128 points: 4096 points
+    const recipe = normalizeDevelopRecipe({
+      masks: Array.from({ length: 8 }, (_, mask) => ({
+        id: `b${mask}`,
+        kind: AssetDevelopMaskKind.Brush,
+        adjustments: maskAdjustments(0.5),
+        strokes: Array.from({ length: 4 }, (_, stroke) => ({ points: wiggle(mask * 4 + stroke, 96), radius: 0.08 })),
+      })),
+      cleanup: [
+        {
+          id: 'h',
+          method: AssetDevelopCleanupMethod.Heal,
+          source: { dx: 0.05, dy: 0.05 },
+          strokes: Array.from({ length: 4 }, (_, stroke) => ({ points: wiggle(100 + stroke, 128), radius: 0.08 })),
+        },
+      ],
+    } as never);
+    expect(recipe.masks.flatMap((mask) => mask.strokes ?? []).flatMap((stroke) => stroke.points)).toHaveLength(3072);
+    const started = performance.now();
+    applyDevelopCleanup(image, { width, height, channels: 3 }, recipe.cleanup);
+    applyDevelopMasks(image, { width, height, channels: 3 }, recipe.masks, identityMaskMapping(width, height));
+    const elapsed = performance.now() - started;
+    // a few seconds on a laptop (before FL-233 review: minutes); the bound leaves room for a slow runner
+    expect(elapsed).toBeLessThan(15_000);
+  }, 30_000);
+
+  it('keeps at most 4096 stroke points in a recipe', () => {
+    const recipe = normalizeDevelopRecipe({
+      masks: Array.from({ length: 8 }, (_, mask) => ({
+        id: `b${mask}`,
+        kind: AssetDevelopMaskKind.Brush,
+        strokes: Array.from({ length: 64 }, () => ({
+          points: Array.from({ length: 512 }, () => [0.5, 0.5]),
+          radius: 0.1,
+        })),
+      })),
+    } as never);
+    expect(recipe.masks.flatMap((mask) => mask.strokes ?? []).flatMap((stroke) => stroke.points)).toHaveLength(4096);
+  });
+});
