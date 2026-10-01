@@ -166,6 +166,7 @@ export type CloudBackupManagedDto = {
     quotaBytes: number;
     /** Uploads are stopped; restores keep working */
     readOnly: boolean;
+    /** Why uploads are stopped, as Frameleaf Cloud says: purge_hold, entitlement, unlinked, suspended, purging or plan_full (the plan is full; new items wait until it is upgraded). Open-ended: show an unknown value generically. */
     readOnlyReason: string | null;
     /** Why Frameleaf Cloud last refused backup storage */
     refusal: string | null;
