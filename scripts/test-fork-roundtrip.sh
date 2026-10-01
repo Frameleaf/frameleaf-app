@@ -8,8 +8,12 @@ STATE_DIR="${FORK_ROUNDTRIP_STATE_DIR:-$ROOT/.cache/fork-roundtrip}"
 # candidate and official images the proof ran against.
 EVIDENCE_DIR="${FORK_ROUNDTRIP_EVIDENCE_DIR:-$ROOT/.cache/fork-roundtrip-evidence}"
 CANDIDATE_IMAGE='immich-fork-roundtrip:local'
-DATABASE_URL='postgres://postgres:postgres@127.0.0.1:5437/immich'
-API_URL='http://127.0.0.1:2287/api'
+# The project name (COMPOSE_PROJECT_NAME) and these ports can be changed so a run never touches
+# another stack on this machine.
+export FORK_ROUNDTRIP_DB_PORT="${FORK_ROUNDTRIP_DB_PORT:-5437}"
+export FORK_ROUNDTRIP_API_PORT="${FORK_ROUNDTRIP_API_PORT:-2287}"
+DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$FORK_ROUNDTRIP_DB_PORT/immich"
+API_URL="http://127.0.0.1:$FORK_ROUNDTRIP_API_PORT/api"
 BACKUP_ID='fork-roundtrip-db-v3.1.0'
 SNAPSHOT_ID='fork-roundtrip-media-v3.1.0'
 
@@ -126,6 +130,84 @@ interrupt_fork() {
   docker wait "$id" >/dev/null
 }
 psql_sql() { compose exec -T database psql -v ON_ERROR_STOP=1 -U postgres -d immich "$@"; }
+
+# FL-295: what the server answers while it starts on a library the official server created: the
+# "Getting Ready…" screen, its status and the 503 refusals. One JSON line every 0.25 s until the
+# normal API answers the ping (or five minutes pass).
+watch_getting_ready() {
+  local out="$1" base="${API_URL%/api}" ping page status redirect
+  : >"$out"
+  for _ in $(seq 1 1200); do
+    ping="$(curl -s -o /dev/null --max-time 2 -w '%{http_code} %header{retry-after}' "$API_URL/server/ping" || true)"
+    redirect="$(curl -s -o /dev/null --max-time 2 -w '%{http_code} %{redirect_url}' "$base/photos" || true)"
+    page="$(curl -s --max-time 2 "$base/getting-ready" | grep -c '<html' || true)"
+    status="$(curl -s --max-time 2 "$API_URL/server/getting-ready" || true)"
+    jq -cn --arg ping "$ping" --arg redirect "$redirect" --arg page "$page" --arg status "$status" \
+      '{ping: $ping, redirect: $redirect, page: ($page | tonumber? // 0),
+        status: (($status | fromjson? // null) | if type == "object" and has("state") then . else null end)}' >>"$out"
+    [[ "$ping" == 200* ]] && return 0
+    sleep 0.25
+  done
+}
+# FL-295: the fork's first start on the official library, watched; then the backups folder, the
+# pre-upgrade copy's contents and the log, recorded for the origin-pre-migrator phase. `expected` is
+# `taken` (no recent backup) or `skipped` (an official backup taken just before).
+start_fork_first_launch() {
+  local expected="$1" watch="$STATE_DIR/getting-ready.jsonl" watcher id copy complete fork_schema skip_logged
+  watch_getting_ready "$watch" &
+  watcher=$!
+  start_fork
+  wait "$watcher" || true
+  id="$(compose ps -q fork-server)"
+  compose exec -T fork-server sh -c 'ls -1 /data/backups' >"$STATE_DIR/backups.txt"
+  copy="$(grep -E '^immich-db-backup-[0-9]{8}T[0-9]{6}-pre-upgrade-v.*\.sql\.gz$' "$STATE_DIR/backups.txt" || true)"
+  complete=false
+  fork_schema=null
+  if [[ -n "$copy" ]]; then
+    if compose exec -T fork-server sh -c "gunzip -t '/data/backups/$copy' && gunzip -c '/data/backups/$copy' | tail -c 4096 | grep -q 'PostgreSQL database dump complete'"; then
+      complete=true
+    fi
+    fork_schema="$(compose exec -T fork-server sh -c "gunzip -c '/data/backups/$copy' | grep -c 'CREATE SCHEMA immich_fork' || true")"
+  fi
+  skip_logged=false
+  docker logs "$id" 2>&1 | grep -Fq 'so no safety copy is needed before upgrading' && skip_logged=true
+  jq -n \
+    --arg expected "$expected" \
+    --arg copy "$copy" \
+    --argjson complete "$complete" \
+    --argjson forkSchema "$fork_schema" \
+    --argjson skipLogged "$skip_logged" \
+    --rawfile backups "$STATE_DIR/backups.txt" \
+    --slurpfile observations "$watch" \
+    '{
+      expected: $expected,
+      copy: (if $copy == "" then null else {filename: $copy, complete: $complete, forkSchemaStatements: $forkSchema} end),
+      backups: ($backups | split("\n") | map(select(length > 0))),
+      skipLogged: $skipLogged,
+      observations: $observations
+    }' >"$STATE_DIR/first-launch.json"
+  echo "First launch ($expected): copy=${copy:-none}, complete=$complete; $(wc -l <"$watch" | tr -d ' ') observations"
+}
+# FL-295: the official server's own database backup, through its API, as an administrator would
+# take one just before swapping the image.
+official_backup() {
+  local token_state="$1" token before
+  token="$(jq -r '.admin.accessToken' "$token_state")"
+  before="$(compose exec -T official-server sh -c 'ls -1 /data/backups 2>/dev/null | grep -c "^immich-db-backup-.*\.sql\.gz$" || true')"
+  curl --fail --silent --show-error \
+    --request POST \
+    --header "Authorization: Bearer $token" \
+    --header 'Content-Type: application/json' \
+    --data '{"name":"backup-database"}' \
+    "$API_URL/jobs"
+  for _ in {1..120}; do
+    count="$(compose exec -T official-server sh -c 'ls -1 /data/backups 2>/dev/null | grep -c "^immich-db-backup-.*\.sql\.gz$" || true')"
+    [[ "$count" -gt "$before" ]] && return 0
+    sleep 1
+  done
+  echo 'The official server did not write a database backup' >&2
+  return 1
+}
 admin() { compose exec -T fork-server immich-admin "$@"; }
 
 # FL-44 (FN-304): the proof is tied to the exact candidate commit. A tree with uncommitted changes
@@ -432,8 +514,9 @@ stop_official
 # Run the real fork providers but keep plugin import stopped. FL-289: swapping the image is the
 # upgrade, so this first boot sets up the isolated fork schema and adopts the official library by
 # itself (no maintenance mode, no admin command); the phase below proves the official data survived.
+# FL-295: before that, it shows "Getting Ready…" and takes the safety copy (no recent backup here).
 export FORK_DB_SKIP_MIGRATIONS=false FORK_WORKERS_INCLUDE=api
-start_fork
+start_fork_first_launch taken
 phase origin-pre-migrator src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
 stop_fork
 export FORK_DB_SKIP_MIGRATIONS=false FORK_WORKERS_INCLUDE=api,microservices
@@ -619,9 +702,12 @@ reset_lane
 export FORK_ROUNDTRIP_LOG_LEVEL=debug
 start_official
 phase origin-seed src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
+# FL-295: a database backup the official server took just before the swap makes the safety copy
+# unnecessary: the first start shows which backup it relies on and copies nothing.
+official_backup "$STATE_DIR/origin-v3.1.0-to-fork.json"
 stop_official
 export FORK_DB_SKIP_MIGRATIONS=false FORK_IMMICH_ENV=production FORK_WORKERS_INCLUDE=api
-start_fork
+start_fork_first_launch skipped
 phase origin-pre-migrator src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
 stop_fork
 export FORK_WORKERS_INCLUDE=api,microservices
