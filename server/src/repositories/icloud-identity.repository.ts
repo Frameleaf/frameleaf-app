@@ -45,10 +45,22 @@ export type ICloudInventoryItem = {
   masterFields: Record<string, unknown> | null;
   /** The sync selected it (it has resources); otherwise it is outside the connection's selection. */
   inScope: boolean;
-  /** Its resources not yet imported, and since when. */
-  pending: boolean;
+  /**
+   * The roles (as identity roles) the sync is still bringing: resources queued or in progress and
+   * current. A failed, unsupported or superseded resource is not pending, so the device keeps it.
+   */
+  pendingRoles: ICloudIdentityRole[];
+  /** Since when the oldest of those has waited. */
   pendingSince: Date | null;
 };
+
+/** The sync's resource role, as an identity role (`r` is an `icloud_resource`). */
+const identityRoleSql = sql`CASE r.role WHEN 'original' THEN 'original' WHEN 'motion' THEN 'live-motion'
+  WHEN 'raw' THEN 'raw-alternate' ELSE 'edit-render' END`;
+
+/** A resource the sync will still import: the same rule as the worker's own `hasPending`. */
+const pendingResourceSql = sql`r.status IN ('pending', 'retry', 'staging', 'validated', 'promoted', 'committed')
+  AND (r.status = 'committed' OR coalesce((r.source->>'current')::boolean, true))`;
 
 /**
  * The sync's resources, as identities: `icloud-sync:<connection>` delivered them, the record names
@@ -59,13 +71,12 @@ const syncIdentities = (where: ReturnType<typeof sql>) => sql`
   INSERT INTO immich_fork.icloud_source_identity ("ownerId", "assetId", "libraryKey", library, "cplAssetRecordName",
     "cplMasterRecordName", role, "editVersion", sha256, "cloudChecksum", "deliveredBy", "matchStrength")
   SELECT r."ownerId", r."assetId", r."libraryKey", r.library, upper(r."sourceAssetId"), r.source->>'sourceMasterId',
-    CASE r.role WHEN 'original' THEN 'original' WHEN 'motion' THEN 'live-motion' WHEN 'raw' THEN 'raw-alternate'
-      ELSE 'edit-render' END,
+    ${identityRoleSql},
     CASE WHEN r.role IN ('edited-image', 'edited-video')
       THEN coalesce(r.source->'assetFields'->'adjustmentTimestamp'->>'value', '') || ':' || r.fingerprint ELSE '' END,
     r.sha256, r.source->'resource'->>'fileChecksum', 'icloud-sync:' || r."connectionId", 'exact'
   FROM immich_fork.icloud_resource r
-  WHERE r."assetId" IS NOT NULL AND r.sha256 IS NOT NULL AND r.status IN ('committed', 'finalized')
+  WHERE r."assetId" IS NOT NULL AND r.sha256 IS NOT NULL AND r.status IN ('committed', 'finalized', 'reused')
     AND r.role IN ('original', 'motion', 'raw', 'edited-image', 'edited-video') AND ${where}
   ON CONFLICT ("ownerId", "cplAssetRecordName", role, "editVersion", "assetId") DO UPDATE
     SET sha256 = excluded.sha256, "libraryKey" = excluded."libraryKey", library = excluded.library,
@@ -89,7 +100,9 @@ export class ICloudIdentityRepository {
     return this.db.transaction().execute(async (tx) => {
       await lockForkWrites(tx, 'iCloud identities cannot be recorded while the server is being handed over');
       const result = await syncIdentities(
-        sql`NOT EXISTS (SELECT 1 FROM immich_fork.icloud_source_identity i WHERE i."assetId" = r."assetId")`,
+        // per asset and Apple item: one asset reused by two Apple items (duplicates in iCloud) needs both
+        sql`NOT EXISTS (SELECT 1 FROM immich_fork.icloud_source_identity i
+          WHERE i."assetId" = r."assetId" AND i."cplAssetRecordName" = upper(r."sourceAssetId"))`,
       ).execute(tx);
       return Number(result.numAffectedRows ?? 0);
     });
@@ -135,12 +148,12 @@ export class ICloudIdentityRepository {
         a.fields AS "assetFields", m.fields AS "masterFields",
         EXISTS (SELECT 1 FROM immich_fork.icloud_resource r WHERE r."connectionId" = a."connectionId"
           AND r."libraryKey" = a."libraryKey" AND r."sourceAssetId" = a."recordId") AS "inScope",
-        EXISTS (SELECT 1 FROM immich_fork.icloud_resource r WHERE r."connectionId" = a."connectionId"
-          AND r."libraryKey" = a."libraryKey" AND r."sourceAssetId" = a."recordId"
-          AND r.status NOT IN ('committed', 'finalized', 'removed', 'unsupported')) AS pending,
+        coalesce((SELECT array_agg(DISTINCT ${identityRoleSql}) FROM immich_fork.icloud_resource r
+          WHERE r."connectionId" = a."connectionId" AND r."libraryKey" = a."libraryKey"
+            AND r."sourceAssetId" = a."recordId" AND ${pendingResourceSql}), '{}') AS "pendingRoles",
         (SELECT min(r."createdAt") FROM immich_fork.icloud_resource r WHERE r."connectionId" = a."connectionId"
           AND r."libraryKey" = a."libraryKey" AND r."sourceAssetId" = a."recordId"
-          AND r.status NOT IN ('committed', 'finalized', 'removed', 'unsupported')) AS "pendingSince"
+          AND ${pendingResourceSql}) AS "pendingSince"
       FROM immich_fork.icloud_record a
       JOIN immich_fork.icloud_connection c ON c.id = a."connectionId" AND c."ownerId" = ${ownerId}::uuid
         AND c.state <> 'disconnected'
