@@ -5493,6 +5493,10 @@
       "identity": "public.preservation_restore.updateId"
     },
     {
+      "definition": "text|nullable|||",
+      "identity": "public.push_device.apnsEnvironment"
+    },
+    {
       "definition": "text|not null|||",
       "identity": "public.push_device_activity.activityId"
     },

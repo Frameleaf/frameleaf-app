@@ -5,7 +5,7 @@ import { SessionTable } from 'src/schema/tables/session.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
- * FL-228: a device that receives push notifications. Mirrors migration 2100000000727-PushDevices.
+ * FL-228: a device that receives push notifications. Mirrors migrations 2100000000727-PushDevices and 2100000000728-PushDeviceApnsEnvironment.
  *
  * One registration per signed-in device session: logging out, revoking the session or removing the
  * account deletes the row (and its Live Activity tokens) through the foreign keys, so no token outlives
@@ -21,6 +21,8 @@ export class PushDeviceTable {
   @Column({ type: 'text' }) platform!: PushPlatform;
   /** The APNs device token or FCM registration token. */
   @Column({ type: 'text' }) pushToken!: string;
+  /** FL-302, iOS: `sandbox` for a development build's tokens (APNs sandbox); null is production. */
+  @Column({ type: 'text', nullable: true }) apnsEnvironment!: 'production' | 'sandbox' | null;
   /** iOS: the ActivityKit push-to-start token. */
   @Column({ type: 'text', nullable: true }) pushToStartToken!: string | null;
   /** The device's X25519 public key (raw 32 bytes, base64url); every payload is encrypted to it. */
