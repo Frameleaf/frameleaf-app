@@ -96,6 +96,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000209-StudioHdrIntermediates' },
       { name: '0000000000210-FrameleafTokenExchange' },
       { name: '0000000000211-FrameleafAccountAccess' },
+      { name: '0000000000212-AssetDevelopArtifacts' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',
