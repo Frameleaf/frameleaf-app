@@ -56,7 +56,7 @@ const run = (command: string, args: string[], input?: string) =>
   new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, { stdio: [input ? 'pipe' : 'ignore', 'ignore', 'pipe'] });
     let stderr = '';
-    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.stderr?.on('data', (chunk) => (stderr += chunk));
     child.on('error', reject);
     child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`${command} exited ${code}: ${stderr}`))));
     if (input) {
