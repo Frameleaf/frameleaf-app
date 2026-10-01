@@ -136,8 +136,19 @@ export class ServerService extends BaseService {
    */
   async ping(): Promise<ServerPingResponse> {
     const deps = { configRepository: this.configRepository, systemMetadataRepository: this.systemMetadataRepository };
-    const [{ id, linked }, config] = await Promise.all([serverIdentity(deps), this.getConfig({ withCache: true })]);
-    return { res: 'pong', id, linked, name: config.server.name?.trim() || 'Frameleaf server' };
+    const [{ id, linked }, config, admin] = await Promise.all([
+      serverIdentity(deps),
+      this.getConfig({ withCache: true }),
+      this.userRepository.getAdmin(),
+    ]);
+    return {
+      res: 'pong',
+      id,
+      linked,
+      name: config.server.name?.trim() || 'Frameleaf server',
+      setup: admin ? 'complete' : 'needed',
+      cloud: this.configRepository.getEnv().frameleafCloud.url ? 'available' : 'unavailable',
+    };
   }
 
   async getFeatures(): Promise<ServerFeaturesDto> {

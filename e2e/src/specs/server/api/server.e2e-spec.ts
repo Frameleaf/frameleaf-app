@@ -78,6 +78,9 @@ describe('/server', () => {
         id: expect.any(String),
         linked: false,
         name: expect.any(String),
+        // FL-292: the e2e server has its administrator; whether Frameleaf Cloud is configured varies
+        setup: 'complete',
+        cloud: expect.stringMatching(/^(available|unavailable)$/),
       });
     });
 

@@ -2,6 +2,7 @@ import type { FrameleafLicense, FrameleafLicenseClaims } from 'src/types.js';
 import { SystemMetadataKey } from 'src/enum.js';
 import { ServerService } from 'src/services/server.service.js';
 import * as frameleafRemoteAccess from 'src/utils/frameleaf-remote-access.js';
+import { UserFactory } from 'test/factories/user.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -369,9 +370,19 @@ describe(ServerService.name, () => {
       });
     };
 
+    it('reports whether the server still needs setting up and can link, never the setup code (FL-292)', async () => {
+      setupPing({ linked: false });
+      mocks.user.getAdmin.mockResolvedValue(void 0);
+      const needed = await sut.ping();
+      expect(needed).toMatchObject({ setup: 'needed', cloud: expect.stringMatching(/^(available|unavailable)$/) });
+      expect(JSON.stringify(needed)).not.toMatch(/code/i);
+      mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }) as never);
+      await expect(sut.ping()).resolves.toMatchObject({ setup: 'complete' });
+    });
+
     it('returns the Frameleaf Cloud instance id, marked linked, while linked', async () => {
       setupPing({ linked: true, instanceId: 'instance-1', serverName: 'My Home Server' });
-      await expect(sut.ping()).resolves.toEqual({
+      await expect(sut.ping()).resolves.toMatchObject({
         res: 'pong',
         id: 'instance-1',
         linked: true,
@@ -394,7 +405,7 @@ describe(ServerService.name, () => {
 
     it('reuses the stored local id on later pings, never regenerating it', async () => {
       setupPing({ linked: false, storedServerId: { id: 'stored-id-1', createdAt: '2026-01-01T00:00:00.000Z' } });
-      await expect(sut.ping()).resolves.toEqual({
+      await expect(sut.ping()).resolves.toMatchObject({
         res: 'pong',
         id: 'stored-id-1',
         linked: false,

@@ -51,12 +51,14 @@ const DELETED_ACCOUNT_MESSAGE =
   'The account this Frameleaf account is linked to is being removed from this server. Ask an administrator to restore it.';
 
 /** Why a person Frameleaf vouched for cannot be signed in (the account rules of every Frameleaf sign-in). */
-type SignInRefusal = 'email' | 'removed' | 'conflict';
+type SignInRefusal = 'email' | 'removed' | 'conflict' | 'setup';
 
 const SIGN_IN_REFUSAL_CODES: Record<SignInRefusal, FrameleafTokenExchangeErrorCode> = {
   email: FrameleafTokenExchangeErrorCode.EmailUnverified,
   removed: FrameleafTokenExchangeErrorCode.AccountRemoved,
   conflict: FrameleafTokenExchangeErrorCode.AccountConflict,
+  // FL-292: only the owner may become a new server's first administrator
+  setup: FrameleafTokenExchangeErrorCode.NoAccess,
 };
 
 const EXCHANGE_REFUSALS: Record<
@@ -270,6 +272,18 @@ export class FrameleafAuthService extends BaseService {
     }
     const role = frameleafRole(profile);
     const access = frameleafAccess(profile);
+    // FL-292: a server nobody administers yet (set up from the Frameleaf app) gets its first
+    // administrator only from the Frameleaf account that owns it, never by creation or promotion
+    const firstAdministrator = !(await this.userRepository.getAdmin());
+    if (firstAdministrator) {
+      const { link: cloudLink } = await readCloudLink({
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      if (role !== 'admin' || !cloudLink?.accountId || cloudLink.accountId !== profile.sub) {
+        throw refuse('setup', 'This server is not set up yet: the Frameleaf account that owns it signs in first');
+      }
+    }
 
     let user: UserAdmin | undefined;
     const link = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
@@ -315,12 +329,34 @@ export class FrameleafAuthService extends BaseService {
       const ownerAccountId = linked ? cloudLink?.accountId : undefined;
       const isOwner = ownerAccountId ? profile.sub === ownerAccountId : access === 'owner';
       const quota = isOwner ? null : (frameleafCloud.signIn?.invitedStorageQuota ?? null);
-      user = await this.createUser({
-        name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
-        email,
-        isAdmin: role === 'admin',
-        quotaSizeInBytes: quota === null ? null : quota * HumanReadableSize.GiB,
-      });
+      const create = () =>
+        this.createUser({
+          name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
+          email,
+          isAdmin: role === 'admin',
+          quotaSizeInBytes: quota === null ? null : quota * HumanReadableSize.GiB,
+        });
+      // FL-292: while nobody administers the server (set up from the Frameleaf app), only the account
+      // that owns it may become its first administrator, one claim at a time with the other setup paths
+      user = firstAdministrator
+        ? await this.databaseRepository.withLock(DatabaseLock.FrameleafServerClaim, async () => {
+            if (await this.userRepository.getAdmin()) {
+              return create();
+            }
+            const created = await create();
+            await this.recordAdminEvents([
+              {
+                userId: created.id,
+                actorId: created.id,
+                action: AdminAuditAction.AccountCreated,
+                subject: created.name,
+                detail: 'server-claimed:app-frameleaf',
+              },
+            ]);
+            this.logger.log(`This server's owner ${email} signed in with Frameleaf and administers it`);
+            return created;
+          })
+        : await create();
       await this.frameleafAccountRepository.upsertLink({
         userId: user.id,
         sub: profile.sub,

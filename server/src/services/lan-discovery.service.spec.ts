@@ -7,10 +7,12 @@ import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const publish = vi.fn();
 const stop = vi.fn();
+const unpublishAll = vi.fn();
+const destroy = vi.fn();
 
 vi.mock('bonjour-service', () => ({
   default: vi.fn().mockImplementation(function BonjourMock() {
-    return { publish };
+    return { publish, unpublishAll, destroy };
   }),
 }));
 
@@ -22,6 +24,8 @@ describe(LanDiscoveryService.name, () => {
     ({ sut, mocks } = newTestService(LanDiscoveryService));
     publish.mockReset().mockReturnValue({ stop });
     stop.mockReset();
+    unpublishAll.mockReset().mockImplementation((done: () => void) => done());
+    destroy.mockReset().mockImplementation((done: () => void) => done());
 
     const env = mockEnvData({});
     mocks.config.getEnv.mockReturnValue({ ...env, port: 2283 });
@@ -49,8 +53,19 @@ describe(LanDiscoveryService.name, () => {
         type: 'frameleaf',
         protocol: 'tcp',
         port: 2283,
-        txt: { id: 'server-1', name: 'My Server' },
+        txt: { id: 'server-1', name: 'My Server', setup: 'needed', linked: 'false', cloud: 'unavailable' },
       });
+    });
+
+    it('says when setup is complete, and publishes again once the first administrator exists (FL-292)', async () => {
+      await sut.onBootstrap();
+      expect(publish.mock.calls[0][0].txt).toMatchObject({ setup: 'needed' });
+      expect(JSON.stringify(publish.mock.calls[0][0].txt)).not.toMatch(/code/i);
+
+      mocks.user.getAdmin.mockResolvedValue({ id: 'admin' } as never);
+      await sut.onUserCreate({ isAdmin: true } as never);
+      expect(stop).toHaveBeenCalled();
+      expect(publish.mock.calls.at(-1)?.[0].txt).toMatchObject({ setup: 'complete' });
     });
 
     it('does not publish when lanDiscovery is disabled', async () => {
@@ -72,6 +87,38 @@ describe(LanDiscoveryService.name, () => {
       await sut.onBootstrap();
 
       expect(publish).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('onShutdown (FL-291)', () => {
+    it('says goodbye before closing the socket, and publishes nothing afterwards', async () => {
+      await sut.onBootstrap();
+      await sut.onShutdown();
+
+      expect(unpublishAll).toHaveBeenCalledTimes(1);
+      expect(destroy).toHaveBeenCalledTimes(1);
+      expect(unpublishAll.mock.invocationCallOrder[0]).toBeLessThan(destroy.mock.invocationCallOrder[0]);
+
+      publish.mockClear();
+      await sut.onConfigUpdate({ newConfig: { server: { lanDiscovery: true } } } as never);
+      await sut.onUserCreate({ isAdmin: true } as never);
+      expect(publish).not.toHaveBeenCalled();
+    });
+
+    it('does not wait on a socket that never answers', async () => {
+      vi.useFakeTimers();
+      onTestFinished(() => void vi.useRealTimers());
+      unpublishAll.mockImplementation(() => {});
+      destroy.mockImplementation(() => {});
+      await sut.onBootstrap();
+      const done = sut.onShutdown();
+      await vi.advanceTimersByTimeAsync(2000);
+      await expect(done).resolves.toBeUndefined();
+    });
+
+    it('is a no-op when nothing was published', async () => {
+      await expect(sut.onShutdown()).resolves.toBeUndefined();
+      expect(destroy).not.toHaveBeenCalled();
     });
   });
 
