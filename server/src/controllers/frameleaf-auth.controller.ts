@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { LoginDetails } from 'src/services/auth.service.js';
@@ -10,6 +10,8 @@ import {
   FrameleafHandoffCreateDto,
   FrameleafHandoffRedeemDto,
   FrameleafHandoffResponseDto,
+  FrameleafTokenExchangeDto,
+  FrameleafTokenExchangeErrorDto,
 } from 'src/dtos/frameleaf-auth.dto.js';
 import { UserAdminResponseDto } from 'src/dtos/user.dto.js';
 import { ApiTag, AuthType, ImmichCookie, Permission } from 'src/enum.js';
@@ -75,6 +77,42 @@ export class FrameleafAuthController {
     const body = await this.service.callback(dto, request.headers, loginDetails);
     res.clearCookie(ImmichCookie.OAuthState);
     res.clearCookie(ImmichCookie.OAuthCodeVerifier);
+    return this.signedIn(res, body, loginDetails, dto.rememberMe);
+  }
+
+  @Post('exchange')
+  @Authenticated({ public: true })
+  @RateLimited(RATE_LIMITS.frameleafSignIn)
+  @Endpoint({
+    operationId: 'exchangeFrameleafToken',
+    summary: 'Sign in with a Frameleaf account token',
+    description:
+      'For the Frameleaf apps: exchanges a token the Frameleaf identity provider minted for this server (OAuth token exchange) for a session here, without a browser. The token is verified like a Sign in with Frameleaf ID token (the linked issuer, this server as its audience, the signature, its expiry and the instance-access claims), can be used once, and is at most five minutes old. The account is matched, linked or created as in Sign in with Frameleaf, and the session is a Sign in with Frameleaf session: a back-channel logout, unlinking the Frameleaf account or Frameleaf Cloud removing access ends it. Every refusal carries a FrameleafTokenExchangeErrorCode in `code`.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  @ApiResponse({
+    status: 400,
+    type: FrameleafTokenExchangeErrorDto,
+    description:
+      'frameleaf_exchange_not_linked, frameleaf_exchange_sign_in_off, frameleaf_exchange_email_unverified, frameleaf_exchange_account_removed or frameleaf_exchange_account_conflict',
+  })
+  @ApiResponse({
+    status: 401,
+    type: FrameleafTokenExchangeErrorDto,
+    description:
+      'frameleaf_exchange_invalid, frameleaf_exchange_wrong_audience, frameleaf_exchange_expired or frameleaf_exchange_replayed',
+  })
+  @ApiResponse({
+    status: 403,
+    type: FrameleafTokenExchangeErrorDto,
+    description: 'frameleaf_exchange_no_access: the account has no access to this server, or it was removed',
+  })
+  async exchange(
+    @Res({ passthrough: true }) res: Response,
+    @Body() dto: FrameleafTokenExchangeDto,
+    @GetLoginDetails() loginDetails: LoginDetails,
+  ): Promise<LoginResponseDto> {
+    const body = await this.service.exchangeToken(dto, loginDetails);
     return this.signedIn(res, body, loginDetails, dto.rememberMe);
   }
 

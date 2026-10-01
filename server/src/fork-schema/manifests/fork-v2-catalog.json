@@ -985,6 +985,38 @@
       "identity": "immich_fork.frameleaf_user_license.userId"
     },
     {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "immich_fork.frameleaf_exchange_token.expiresAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_exchange_token.jti"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_exchange_token.sub"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.frameleaf_exchange_token.usedAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.expiresAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.kind"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.revokedAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.value"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "immich_fork.icloud_album.albumId"
     },
@@ -7963,6 +7995,18 @@
       "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_pkey"
     },
     {
+      "definition": "PRIMARY KEY (jti)",
+      "identity": "immich_fork.frameleaf_exchange_token.frameleaf_exchange_token_pkey"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['sid'::text, 'sub'::text]))",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.frameleaf_sign_in_revocation_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (kind, value)",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.frameleaf_sign_in_revocation_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"connectionId\") REFERENCES immich_fork.icloud_connection(id) ON DELETE CASCADE",
       "identity": "immich_fork.icloud_album.icloud_album_connectionId_fkey"
     },
@@ -10126,7 +10170,8 @@
     "0000000000206-AssetUserShares",
     "0000000000207-StudioGeneratedResources",
     "0000000000208-StudioProjectImports",
-    "0000000000209-StudioHdrIntermediates"
+    "0000000000209-StudioHdrIntermediates",
+    "0000000000210-FrameleafTokenExchange"
   ],
   "functions": [
     {
@@ -11514,6 +11559,22 @@
     {
       "definition": "CREATE UNIQUE INDEX frameleaf_user_license_pkey ON immich_fork.frameleaf_user_license USING btree (\"userId\")",
       "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_pkey"
+    },
+    {
+      "definition": "CREATE INDEX frameleaf_exchange_token_expires_idx ON immich_fork.frameleaf_exchange_token USING btree (\"expiresAt\")",
+      "identity": "immich_fork.frameleaf_exchange_token.frameleaf_exchange_token_expires_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_exchange_token_pkey ON immich_fork.frameleaf_exchange_token USING btree (jti)",
+      "identity": "immich_fork.frameleaf_exchange_token.frameleaf_exchange_token_pkey"
+    },
+    {
+      "definition": "CREATE INDEX frameleaf_sign_in_revocation_expires_idx ON immich_fork.frameleaf_sign_in_revocation USING btree (\"expiresAt\")",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.frameleaf_sign_in_revocation_expires_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_sign_in_revocation_pkey ON immich_fork.frameleaf_sign_in_revocation USING btree (kind, value)",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.frameleaf_sign_in_revocation_pkey"
     },
     {
       "definition": "CREATE INDEX icloud_album_mapping_idx ON immich_fork.icloud_album USING btree (\"albumId\") WHERE (\"albumId\" IS NOT NULL)",
@@ -14337,6 +14398,14 @@
     {
       "definition": "table",
       "identity": "immich_fork.frameleaf_user_license"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.frameleaf_exchange_token"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.frameleaf_sign_in_revocation"
     },
     {
       "definition": "table",

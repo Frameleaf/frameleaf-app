@@ -7051,6 +7051,17 @@ export type OAuthCallbackDto = {
     /** OAuth callback URL */
     url: string;
 };
+export type FrameleafTokenExchangeDto = {
+    rememberMe?: boolean;
+    /** A server-audience token from the Frameleaf identity provider (OAuth token exchange), signed by the issuer this server is linked to, with header typ "frameleaf-exchange+jwt", aud this server's client id, iat, exp, a single-use jti and the Sign in with Frameleaf claims */
+    token: string;
+};
+export type FrameleafTokenExchangeErrorDto = {
+    code: FrameleafTokenExchangeErrorCode;
+    error: string;
+    message: string;
+    statusCode: number;
+};
 export type FrameleafHandoffCreateDto = {
     /** The home address to sign in on; only an address this server published for its home network */
     returnTo?: string;
@@ -17552,6 +17563,30 @@ export function finishFrameleafSignIn({ oAuthCallbackDto }: {
     })));
 }
 /**
+ * Sign in with a Frameleaf account token
+ */
+export function exchangeFrameleafToken({ frameleafTokenExchangeDto }: {
+    frameleafTokenExchangeDto: FrameleafTokenExchangeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LoginResponseDto;
+    } | {
+        status: 400;
+        data: FrameleafTokenExchangeErrorDto;
+    } | {
+        status: 401;
+        data: FrameleafTokenExchangeErrorDto;
+    } | {
+        status: 403;
+        data: FrameleafTokenExchangeErrorDto;
+    }>("/oauth/frameleaf/exchange", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: frameleafTokenExchangeDto
+    })));
+}
+/**
  * Hand a Sign in with Frameleaf session to another address
  */
 export function createFrameleafHandoff({ frameleafHandoffCreateDto }: {
@@ -24135,6 +24170,18 @@ export enum RestorationModelState {
     NoGpu = "no-gpu",
     GpuUnqualified = "gpu-unqualified",
     InsufficientVram = "insufficient-vram"
+}
+export enum FrameleafTokenExchangeErrorCode {
+    FrameleafExchangeNotLinked = "frameleaf_exchange_not_linked",
+    FrameleafExchangeSignInOff = "frameleaf_exchange_sign_in_off",
+    FrameleafExchangeNoAccess = "frameleaf_exchange_no_access",
+    FrameleafExchangeWrongAudience = "frameleaf_exchange_wrong_audience",
+    FrameleafExchangeExpired = "frameleaf_exchange_expired",
+    FrameleafExchangeReplayed = "frameleaf_exchange_replayed",
+    FrameleafExchangeInvalid = "frameleaf_exchange_invalid",
+    FrameleafExchangeEmailUnverified = "frameleaf_exchange_email_unverified",
+    FrameleafExchangeAccountRemoved = "frameleaf_exchange_account_removed",
+    FrameleafExchangeAccountConflict = "frameleaf_exchange_account_conflict"
 }
 export enum PartnerDirection {
     SharedBy = "shared-by",

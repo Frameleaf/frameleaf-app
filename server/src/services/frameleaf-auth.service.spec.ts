@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FrameleafInstanceIdentity } from 'src/types.js';
+import { FrameleafTokenExchangeErrorCode } from 'src/dtos/frameleaf-auth.dto.js';
 import { AdminAuditAction, DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
@@ -15,6 +16,7 @@ import { clearConfigCache } from 'src/utils/config.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { FakeCloud, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
+import { type ExchangeTokenOptions, mintExchangeToken } from 'test/fixtures/frameleaf-token-exchange.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const loginDetails = { isSecure: true, clientIp: '127.0.0.1', deviceOS: '', deviceType: '', appVersion: null };
@@ -375,6 +377,219 @@ describe(FrameleafAuthService.name, () => {
     it('does not finish when the cloud refuses the client assertion', async () => {
       cloud.on('POST /id/token', () => ({ status: 401, body: { error: 'invalid_client' } }));
       await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('did not finish');
+    });
+  });
+
+  describe('token exchange (FL-230)', () => {
+    const mint = (options: Partial<ExchangeTokenOptions> = {}) =>
+      mintExchangeToken({
+        key: issuerKey,
+        kid: 'issuer-1',
+        alg: 'RS256',
+        issuer: issuer(),
+        audience: INSTANCE,
+        ...options,
+      });
+    const refusal = (code: FrameleafTokenExchangeErrorCode, status: number) =>
+      expect.objectContaining({ status, response: expect.objectContaining({ code }) });
+
+    beforeEach(() => {
+      mocks.frameleafAccount.redeemExchangeToken.mockResolvedValue('ok');
+    });
+
+    it('signs in with a valid token, without a browser or a token request, and tags the session', async () => {
+      const created = UserFactory.create({ email: 'remote@example.test', name: 'Remote Person' });
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+      mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+      mocks.clusterGroup.create.mockResolvedValue({ id: 'group-1' } as never);
+      mocks.user.create.mockResolvedValue(created as never);
+      const token = await mint({ jti: 'jti-valid' });
+
+      const response = await sut.exchangeToken({ token }, loginDetails);
+
+      expect(response.userId).toBe(created.id);
+      expect(cloud.requests.some(({ path }) => path === '/id/token')).toBe(false);
+      expect(mocks.frameleafAccount.redeemExchangeToken).toHaveBeenCalledWith(
+        expect.objectContaining({ jti: 'jti-valid', sub: 'fl-sub', sid: 'fl-app-sid' }),
+      );
+      // the same account rules as the browser flow: Frameleaf Cloud authorized this person
+      expect(mocks.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'remote@example.test', name: 'Remote Person', isAdmin: false }),
+      );
+      expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: created.id, sub: 'fl-sub', autoRegistered: true, role: 'user' }),
+      );
+      expect(mocks.frameleafAccount.tagSession).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'session-1', userId: created.id, sid: 'fl-app-sid', sub: 'fl-sub' }),
+      );
+      expect(mocks.frameleafAccount.touchLink).toHaveBeenCalledWith(
+        created.id,
+        expect.objectContaining({ role: 'user' }),
+      );
+    });
+
+    it('accepts an EdDSA-signed token and links an existing account by its verified email', async () => {
+      const existing = UserFactory.create({ email: 'remote@example.test' });
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+      mocks.user.getByEmail.mockResolvedValue(existing as never);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue(void 0);
+      const token = await mint({ key: edKey, kid: 'issuer-ed', alg: 'EdDSA' });
+
+      await expect(sut.exchangeToken({ token }, loginDetails)).resolves.toMatchObject({ userId: existing.id });
+      expect(mocks.user.create).not.toHaveBeenCalled();
+      expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: existing.id, autoRegistered: false }),
+      );
+    });
+
+    it('signs in to the account the Frameleaf account is already linked to and applies frameleaf_role', async () => {
+      const user = UserFactory.create({ isAdmin: false });
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: user.id, sub: 'fl-sub' } as never);
+      mocks.user.get.mockResolvedValue(user as never);
+      mocks.user.update.mockImplementation((id, change) => Promise.resolve({ ...user, ...change, id } as never));
+      const token = await mint({ claims: { frameleaf_role: 'admin', frameleaf_access: 'admin' } });
+
+      await expect(sut.exchangeToken({ token }, loginDetails)).resolves.toMatchObject({ userId: user.id });
+      expect(mocks.user.update).toHaveBeenCalledWith(user.id, { isAdmin: true });
+    });
+
+    it('refuses a token for another server (wrong audience)', async () => {
+      const token = await mint({ audience: 'another-instance' });
+      await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toEqual(
+        refusal(FrameleafTokenExchangeErrorCode.WrongAudience, 401),
+      );
+      expect(mocks.frameleafAccount.redeemExchangeToken).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an expired token, and one minted more than five minutes ago', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      for (const token of [
+        await mint({ issuedAt: now - 200, lifetimeSeconds: 60 }),
+        await mint({ issuedAt: now - 10 * 60, lifetimeSeconds: 3600 }),
+      ]) {
+        await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toEqual(
+          refusal(FrameleafTokenExchangeErrorCode.Expired, 401),
+        );
+      }
+      expect(mocks.frameleafAccount.redeemExchangeToken).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a replayed token: each one signs in once', async () => {
+      const used = new Set<string>();
+      mocks.frameleafAccount.redeemExchangeToken.mockImplementation(({ jti }) => {
+        if (used.has(jti)) {
+          return Promise.resolve('replayed');
+        }
+        used.add(jti);
+        return Promise.resolve('ok');
+      });
+      const user = UserFactory.create();
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: user.id, sub: 'fl-sub' } as never);
+      mocks.user.get.mockResolvedValue(user as never);
+      const token = await mint();
+
+      await expect(sut.exchangeToken({ token }, loginDetails)).resolves.toMatchObject({ userId: user.id });
+      await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toEqual(
+        refusal(FrameleafTokenExchangeErrorCode.Replayed, 401),
+      );
+      expect(mocks.session.create).toHaveBeenCalledTimes(1);
+      // the replay store keeps a token only as long as it could be accepted
+      const [{ expiresAt }] = mocks.frameleafAccount.redeemExchangeToken.mock.calls[0];
+      expect(expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 6 * 60 * 1000);
+    });
+
+    it('refuses when the server is not linked, without reaching Frameleaf Cloud', async () => {
+      const token = await mint();
+      metadata.delete(SystemMetadataKey.FrameleafCloudLink);
+      await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toEqual(
+        refusal(FrameleafTokenExchangeErrorCode.NotLinked, 400),
+      );
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), status: 'revoked' });
+      await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toEqual(
+        refusal(FrameleafTokenExchangeErrorCode.NotLinked, 400),
+      );
+      expect(cloud.requests).toHaveLength(0);
+    });
+
+    it('refuses when Sign in with Frameleaf is off for this linked server', async () => {
+      const token = await mint();
+      for (const oidc of [undefined, { ...linkRecord().oidc, issuer: 'https://id.elsewhere.test' }]) {
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), oidc });
+        await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toEqual(
+          refusal(FrameleafTokenExchangeErrorCode.SignInOff, 400),
+        );
+      }
+      expect(cloud.requests).toHaveLength(0);
+    });
+
+    it('refuses a token without the instance-access claims (no access)', async () => {
+      for (const claims of [
+        { frameleaf_access: undefined },
+        { frameleaf_access: 'none' },
+        { frameleaf_role: undefined },
+        { frameleaf_role: 'owner' },
+      ]) {
+        const token = await mint({ claims });
+        await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toEqual(
+          refusal(FrameleafTokenExchangeErrorCode.NoAccess, 403),
+        );
+      }
+      expect(mocks.frameleafAccount.redeemExchangeToken).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a token minted before Frameleaf Cloud removed the access (revoked access)', async () => {
+      mocks.frameleafAccount.redeemExchangeToken.mockResolvedValue('revoked');
+      const token = await mint();
+      await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toEqual(
+        refusal(FrameleafTokenExchangeErrorCode.NoAccess, 403),
+      );
+      expect(mocks.frameleafAccount.redeemExchangeToken).toHaveBeenCalledWith(
+        expect.objectContaining({ sub: 'fl-sub', sid: 'fl-app-sid', issuedAt: expect.any(Date) }),
+      );
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an ordinary ID token, a token without jti, another issuer and another key', async () => {
+      const other = await generateKeyPair('RS256');
+      for (const token of [
+        await mint({ typ: null }),
+        await mint({ typ: 'JWT' }),
+        await mint({ jti: null }),
+        await mint({ issuer: 'https://id.elsewhere.test' }),
+        await mint({ key: other.privateKey }),
+        'not-a-token',
+      ]) {
+        await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toEqual(
+          refusal(FrameleafTokenExchangeErrorCode.Invalid, 401),
+        );
+      }
+      expect(mocks.frameleafAccount.redeemExchangeToken).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+
+    it('applies the browser flow’s account refusals, each with its own code', async () => {
+      await expect(
+        sut.exchangeToken({ token: await mint({ claims: { email_verified: false } }) }, loginDetails),
+      ).rejects.toEqual(refusal(FrameleafTokenExchangeErrorCode.EmailUnverified, 400));
+
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: 'deleted-user', sub: 'fl-sub' } as never);
+      mocks.user.get.mockResolvedValue(void 0);
+      await expect(sut.exchangeToken({ token: await mint() }, loginDetails)).rejects.toEqual(
+        refusal(FrameleafTokenExchangeErrorCode.AccountRemoved, 400),
+      );
+
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+      mocks.user.getByEmail.mockResolvedValue(UserFactory.create({ email: 'remote@example.test' }) as never);
+      mocks.frameleafAccount.getLinkByUser.mockResolvedValue({ sub: 'someone-else' } as never);
+      await expect(sut.exchangeToken({ token: await mint() }, loginDetails)).rejects.toEqual(
+        refusal(FrameleafTokenExchangeErrorCode.AccountConflict, 400),
+      );
+      expect(mocks.user.create).not.toHaveBeenCalled();
+      expect(mocks.session.create).not.toHaveBeenCalled();
     });
   });
 
