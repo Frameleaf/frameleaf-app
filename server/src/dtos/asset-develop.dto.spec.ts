@@ -1,4 +1,5 @@
 import {
+  AssetDevelopCleanupMethod,
   AssetDevelopMaskKind,
   AssetDevelopPreset,
   AssetDevelopPreviewDto,
@@ -64,7 +65,7 @@ describe('AssetDevelopRecipeDto', () => {
 
     const radial = { id: 'a', kind: AssetDevelopMaskKind.Radial, x: 0.5, y: 0.5 };
     expect(KnownAssetDevelopRecipeSchema.safeParse({ version: 1, masks: [radial, radial] }).success).toBe(false);
-    expect(KnownAssetDevelopRecipeSchema.safeParse({ version: 1, masks: [{ ...radial, kind: 'brush' }] }).success).toBe(
+    expect(KnownAssetDevelopRecipeSchema.safeParse({ version: 1, masks: [{ ...radial, kind: 'depth' }] }).success).toBe(
       false,
     );
     expect(
@@ -86,11 +87,69 @@ describe('AssetDevelopRecipeDto', () => {
   });
 });
 
+it('accepts brilliance, brush and bitmap masks and Clean Up, and refuses malformed ones (FL-233)', () => {
+  const stroke = {
+    points: [
+      [0.1, 0.2],
+      [0.3, 0.4],
+    ],
+    radius: 0.02,
+  };
+  const artifact = 'a'.repeat(64);
+  const parsed = KnownAssetDevelopRecipeSchema.safeParse({
+    version: 1,
+    brilliance: 40,
+    masks: [
+      { id: 'b', kind: AssetDevelopMaskKind.Brush, x: 0.5, y: 0.5, strokes: [stroke, { ...stroke, erase: true }] },
+      { id: 's', kind: AssetDevelopMaskKind.Sky, x: 0.5, y: 0.5, artifact, detector: { model: 'vision/sky' } },
+    ],
+    cleanup: [
+      { id: 'p', method: AssetDevelopCleanupMethod.Pixelate, region: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } },
+      { id: 'c', method: AssetDevelopCleanupMethod.Clone, strokes: [stroke], source: { dx: 0.1, dy: 0 } },
+      { id: 'r', method: AssetDevelopCleanupMethod.Remove, region: { x: 0, y: 0, w: 0.5, h: 0.5 }, fill: artifact },
+    ],
+  });
+  expect(parsed.success).toBe(true);
+  expect(parsed.data?.brilliance).toBe(40);
+  expect(parsed.data?.cleanup[0]).toMatchObject({ enabled: true, feather: 0, blockSize: 0.02 });
+  expect(parsed.data?.masks[0].strokes?.[0]).toMatchObject({ erase: false });
+
+  const invalid = (extra: object) => KnownAssetDevelopRecipeSchema.safeParse({ version: 1, ...extra }).success;
+  expect(invalid({ brilliance: 101 })).toBe(false);
+  // strokes only on a brush mask, artifacts only on bitmap masks, artifact ids are SHA-256 hex
+  expect(invalid({ masks: [{ id: 'r', kind: AssetDevelopMaskKind.Radial, x: 0.5, y: 0.5, strokes: [stroke] }] })).toBe(
+    false,
+  );
+  expect(invalid({ masks: [{ id: 'r', kind: AssetDevelopMaskKind.Radial, x: 0.5, y: 0.5, artifact }] })).toBe(false);
+  expect(invalid({ masks: [{ id: 's', kind: AssetDevelopMaskKind.Subject, x: 0.5, y: 0.5, artifact: '../x' }] })).toBe(
+    false,
+  );
+  // exactly one area; heal and clone need a source; remove needs a fill
+  const region = { x: 0.1, y: 0.1, w: 0.2, h: 0.2 };
+  expect(invalid({ cleanup: [{ id: 'p', method: 'pixelate' }] })).toBe(false);
+  expect(invalid({ cleanup: [{ id: 'p', method: 'pixelate', region, strokes: [stroke] }] })).toBe(false);
+  expect(invalid({ cleanup: [{ id: 'h', method: 'heal', region }] })).toBe(false);
+  expect(invalid({ cleanup: [{ id: 'x', method: 'remove', region }] })).toBe(false);
+  expect(invalid({ cleanup: [{ id: 'x', method: 'pixelate', region: { x: 0.9, y: 0, w: 0.2, h: 0.1 } }] })).toBe(false);
+  expect(
+    invalid({
+      cleanup: [
+        { id: 'p', method: 'pixelate', region },
+        { id: 'p', method: 'pixelate', region },
+      ],
+    }),
+  ).toBe(false);
+
+  // a future Clean Up method is kept opaque by the envelope, exactly like a future mask kind
+  const future = { version: 1, cleanup: [{ id: 'g', method: 'generative-expand', prompt: 'opaque' }] };
+  expect(AssetDevelopRecipeSchema.parse(future)).toEqual(future);
+});
+
 it('retains a future recipe envelope and nested unknown data for save-only roundtrip (FL-233)', () => {
   const recipe = {
     version: 2,
     brilliance: 18,
-    masks: [{ id: 'subject', kind: 'subject', bitmap: { revision: 'opaque', hash: 'abc' } }],
+    masks: [{ id: 'subject', kind: 'depth', bitmap: { revision: 'opaque', hash: 'abc' } }],
   };
   expect(AssetDevelopRecipeSchema.parse(recipe)).toEqual(recipe);
 });
