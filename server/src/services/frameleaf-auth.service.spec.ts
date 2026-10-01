@@ -1,8 +1,8 @@
-import { type JWK, SignJWT, exportJWK, generateKeyPair, importJWK, jwtVerify } from 'jose';
+import { type JWK, SignJWT, createLocalJWKSet, exportJWK, generateKeyPair, importJWK, jwtVerify } from 'jose';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafInstanceIdentity } from 'src/types.js';
 import { FrameleafTokenExchangeErrorCode } from 'src/dtos/frameleaf-auth.dto.js';
 import { AdminAuditAction, DatabaseLock, SystemMetadataKey } from 'src/enum.js';
@@ -16,6 +16,7 @@ import { clearConfigCache } from 'src/utils/config.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { FakeCloud, startFakeCloud } from 'test/fake-frameleaf-cloud.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { type ExchangeTokenOptions, mintExchangeToken } from 'test/fixtures/frameleaf-token-exchange.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -611,6 +612,101 @@ describe(FrameleafAuthService.name, () => {
       );
       expect(mocks.user.create).not.toHaveBeenCalled();
       expect(mocks.session.create).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * FL-230 against Frameleaf Cloud's own FC-86 contract fixtures
+   * (`packages/contracts/fixtures/identity/exchange/`, see `frameleaf-cloud-contracts/SOURCE.md`): the
+   * tokens the cloud's token-exchange grant mints, verified at the instant each fixture names, with the
+   * fixture issuer's JWKS standing in for the linked issuer's.
+   */
+  describe('token exchange against the cloud contract fixtures (FC-86)', () => {
+    type ExchangeFixture = { token: string; now: number; issuer: string; audience: string; expect: string };
+    const fixture = (name: string) => cloudContractFixture<ExchangeFixture>(`identity/exchange/${name}.json`);
+    const jwks = cloudContractFixture('identity/exchange/jwks.json');
+    const codes: Record<string, FrameleafTokenExchangeErrorCode> = {
+      wrong_audience: FrameleafTokenExchangeErrorCode.WrongAudience,
+      expired: FrameleafTokenExchangeErrorCode.Expired,
+      replayed: FrameleafTokenExchangeErrorCode.Replayed,
+      invalid: FrameleafTokenExchangeErrorCode.Invalid,
+    };
+
+    const verifyAs = (at: ExchangeFixture) => {
+      vi.setSystemTime(at.now * 1000);
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+        ...linkRecord(),
+        oidc: { ...linkRecord().oidc, clientId: at.audience },
+      });
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.spyOn(
+        OAuthRepository.prototype as unknown as { getVerification: () => Promise<unknown> },
+        'getVerification',
+      ).mockResolvedValue({
+        issuer: fixture('valid').issuer,
+        key: createLocalJWKSet(jwks),
+        algorithms: ['RS256'],
+      } as never);
+      const used = new Set<string>();
+      mocks.frameleafAccount.redeemExchangeToken.mockImplementation(({ jti }) => {
+        const outcome = used.has(jti) ? 'replayed' : 'ok';
+        used.add(jti);
+        return Promise.resolve(outcome);
+      });
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+      mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+      mocks.clusterGroup.create.mockResolvedValue({ id: 'group-1' } as never);
+      mocks.user.create.mockResolvedValue(UserFactory.create({ email: 'owner@example.com', isAdmin: true }) as never);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('signs in with the valid token, once', async () => {
+      const valid = fixture('valid');
+      expect(valid.expect).toBe('ok');
+      verifyAs(valid);
+      await expect(sut.exchangeToken({ token: valid.token }, loginDetails)).resolves.toMatchObject({
+        userEmail: 'owner@example.com',
+      });
+      expect(mocks.frameleafAccount.tagSession).toHaveBeenCalledWith(
+        expect.objectContaining({ sub: '0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b', sid: expect.any(String) }),
+      );
+
+      const replayed = fixture('replayed');
+      verifyAs(replayed);
+      await expect(sut.exchangeToken({ token: replayed.token }, loginDetails)).rejects.toEqual(
+        expect.objectContaining({ response: expect.objectContaining({ code: codes[replayed.expect] }) }),
+      );
+    });
+
+    it.each(['wrong-audience', 'expired', 'plain-id-token'])(
+      'refuses %s with the code the cloud expects',
+      async (name) => {
+        const at = fixture(name);
+        verifyAs(at);
+        await expect(sut.exchangeToken({ token: at.token }, loginDetails)).rejects.toEqual(
+          expect.objectContaining({ response: expect.objectContaining({ code: codes[at.expect] }) }),
+        );
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('accepts the logout token that ends the exchanged session', async () => {
+      const logout = cloudContractFixture<ExchangeFixture & { ends: { sub: string; sid: string } }>(
+        'identity/exchange/logout-token.json',
+      );
+      vi.setSystemTime(logout.now * 1000);
+      const oauth = new OAuthRepository(LoggingRepository.create());
+      await expect(oauth.validateLogoutToken({ clientId: logout.audience } as never, logout.token)).resolves.toEqual(
+        logout.ends,
+      );
     });
   });
 
