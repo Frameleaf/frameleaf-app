@@ -1,3 +1,4 @@
+import { PhotographyWorkspaceController } from 'src/controllers/photography-workspace.controller.js';
 import { ActivityController } from 'src/controllers/activity.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
 import { AnalyticsController } from 'src/controllers/analytics.controller.js';
@@ -88,6 +89,7 @@ import { WorkerInventoryController } from 'src/controllers/worker-inventory.cont
 import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
+  PhotographyWorkspaceController,
   AssetUploadResourceController,
   BackupDeviceAdminController,
   BackupDeviceController,
