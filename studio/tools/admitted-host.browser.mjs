@@ -12,6 +12,7 @@ assert.ok(["track", "auto-key", "ease-out"].includes(scenario));
 const dependencyRoot = process.env.STUDIO_DEPENDENCY_ROOT ?? root;
 const require = createRequire(dependencyRoot + "/studio/engine/package.json");
 const { chromium } = require("playwright");
+const { expect } = require("playwright/test");
 const sharp = require("sharp");
 const base = process.env.HOST_ORIGIN;
 assert.ok(base);
@@ -107,22 +108,25 @@ try {
   const capabilities = await api("/ml-destinations/capabilities");
   assert.equal(capabilities.studio.gpuWorker, true);
   assert.equal(capabilities.studio.renderWorker, true);
-  const bytes = await sharp({
-    create: { width: 1280, height: 720, channels: 3, background: "#cc4422" },
-  })
-    .png()
-    .toBuffer();
-  const form = new FormData();
-  form.append("assetData", new Blob([bytes], { type: "image/png" }), "host-immutable.png");
-  form.append("fileCreatedAt", new Date().toISOString());
-  form.append("fileModifiedAt", new Date().toISOString());
-  const ur = await fetch(base + "/api/assets", {
-    method: "POST",
-    headers: { authorization: "Bearer " + auth.accessToken },
-    body: form,
-  });
-  assert.ok(ur.ok);
-  const asset = await ur.json();
+  let asset;
+  if (scenario !== "ease-out") {
+    const bytes = await sharp({
+      create: { width: 1280, height: 720, channels: 3, background: "#cc4422" },
+    })
+      .png()
+      .toBuffer();
+    const form = new FormData();
+    form.append("assetData", new Blob([bytes], { type: "image/png" }), "host-immutable.png");
+    form.append("fileCreatedAt", new Date().toISOString());
+    form.append("fileModifiedAt", new Date().toISOString());
+    const ur = await fetch(base + "/api/assets", {
+      method: "POST",
+      headers: { authorization: "Bearer " + auth.accessToken },
+      body: form,
+    });
+    assert.ok(ur.ok);
+    asset = await ur.json();
+  }
   const clientId = randomUUID();
   const graph = {
     schemaVersion: 15,
@@ -151,7 +155,7 @@ try {
         {
           id: "still",
           type: "image",
-          mediaId: asset.id,
+          mediaId: scenario === "ease-out" ? undefined : asset.id,
           trackId: "v1",
           from: 0,
           durationInFrames: 24,
@@ -162,6 +166,11 @@ try {
     },
   };
   if (scenario !== "track") {
+    graph.timeline.tracks[0].height = 100;
+    graph.timeline.tracks[0].items = [];
+    graph.timeline.tracks[0].syncLock = true;
+    graph.timeline.tracks[0].volume = 0;
+    graph.timeline.items[0].label = "Host still";
     graph.duration = 2;
     graph.metadata.fps = 30;
     graph.timeline.items[0].durationInFrames = 60;
@@ -244,8 +253,43 @@ try {
   }
   async function nativeFrame15(frame) {
     await frame.getByRole("button", { name: "Go To Start", exact: true }).click();
-    for (let i = 0; i < 15; i++)
+    await expect(
+      frame.getByRole("button", { name: "00:00:00 / 00:01:29", exact: true }),
+    ).toBeVisible();
+    for (let i = 1; i <= 15; i++) {
       await frame.getByRole("button", { name: "Next Frame", exact: true }).click();
+      await expect(
+        frame.getByRole("button", {
+          name: `00:00:${String(i).padStart(2, "0")} / 00:01:29`,
+          exact: true,
+        }),
+      ).toBeVisible();
+    }
+  }
+  async function deselectPreview(frame, viewport) {
+    const background = frame.getByLabel("Video Preview", { exact: true });
+    await expect(background).toHaveCount(1);
+    await expect(background).toBeVisible();
+    const backgroundBounds = await background.boundingBox();
+    const viewportBounds = await viewport.boundingBox();
+    assert.ok(backgroundBounds && viewportBounds);
+    const point = { x: backgroundBounds.x + 5, y: backgroundBounds.y + 5 };
+    assert.ok(
+      point.x < viewportBounds.x ||
+        point.x >= viewportBounds.x + viewportBounds.width ||
+        point.y < viewportBounds.y ||
+        point.y >= viewportBounds.y + viewportBounds.height,
+      "native background click must be outside the rendered viewport",
+    );
+    await background.click({ position: { x: 5, y: 5 } });
+    await expect(
+      frame.getByRole("button", { name: "Move selected element", exact: true }),
+    ).toHaveCount(0);
+    await expect(frame.getByTestId("motion-path-overlay")).toHaveCount(0);
+    await expect(
+      frame.getByRole("button", { name: "00:00:15 / 00:01:29", exact: true }),
+    ).toBeVisible();
+    return { backgroundBounds, viewportBounds, point };
   }
   const project = await api("/studio/projects", {
     body: {
@@ -393,7 +437,10 @@ try {
     const frame = page.frameLocator("[data-testid=studio-editor-frame]");
     if (scenario === "auto-key") {
       await frame.locator('[data-item-id="still"]').click();
-      await frame.getByRole("tab", { name: "Motion", exact: true }).click();
+      await frame
+        .getByRole("toolbar", { name: "Controls", exact: true })
+        .getByRole("button", { name: "Show keyframe panel", exact: true })
+        .click();
       await nativeFrame15(frame);
       const sheet = frame.getByTestId("dopesheet-scroll-area");
       await sheet
@@ -505,20 +552,36 @@ try {
       })),
     );
     await writeFile(new URL("canvases.json", dir), JSON.stringify(canvases, null, 2));
-    const preview = canvases
-      .filter(
-        (c) =>
-          c.visible &&
-          c.rect.width > 200 &&
-          c.rect.height > 100 &&
-          Math.abs(c.rect.width / c.rect.height - 16 / 9) < 0.1,
-      )
-      .sort((a, b) => b.rect.width * b.rect.height - a.rect.width * a.rect.height)[0];
-    assert.ok(preview, "actual displayed render surface");
-    await renderFrame
-      .locator("canvas,img,video")
-      .nth(preview.index)
-      .screenshot({ path: new URL("render-before.png", dir).pathname });
+    const preview = renderFrame.locator("[data-player-container]:has([data-player-container])");
+    await expect(preview).toHaveCount(1);
+    await expect(preview).toBeVisible();
+    const deselectionBefore =
+      scenario === "auto-key" ? await deselectPreview(renderFrame, preview) : null;
+    await writeFile(
+      new URL("viewport-before.json", dir),
+      JSON.stringify(
+        {
+          deselection: deselectionBefore,
+          bounds: await preview.boundingBox(),
+          children: await preview.locator("canvas,img,video").evaluateAll((es) =>
+            es.map((e) => ({
+              tag: e.tagName,
+              width: e.width,
+              height: e.height,
+              visible: e.checkVisibility({
+                checkOpacity: true,
+                checkVisibilityCSS: true,
+              }),
+            })),
+          ),
+        },
+        null,
+        2,
+      ),
+    );
+    await preview.screenshot({
+      path: new URL("render-before.png", dir).pathname,
+    });
     console.log(
       scenario === "auto-key"
         ? "PASS native auto-key stored in real revision"
@@ -532,15 +595,14 @@ try {
       const f = page.frameLocator("[data-testid=studio-editor-frame]");
       await f.locator("[data-item-id=still]").waitFor({ timeout: 30000 });
       await f.locator("[data-item-id=still]").click();
-      await f.getByRole("tab", { name: "Motion", exact: true }).click();
+      await f
+        .getByRole("toolbar", { name: "Controls", exact: true })
+        .getByRole("button", { name: "Show keyframe panel", exact: true })
+        .click();
       await nativeFrame15(f);
-      assert.equal(
-        await f
-          .getByTestId("dopesheet-scroll-area")
-          .getByLabel("Position X", { exact: true })
-          .inputValue(),
-        "12",
-      );
+      await expect(
+        f.getByTestId("dopesheet-scroll-area").getByLabel("Position X", { exact: true }),
+      ).toHaveValue("12");
     } else {
       await page
         .frameLocator("[data-testid=studio-editor-frame]")
@@ -549,10 +611,38 @@ try {
     }
     await page.waitForTimeout(2500);
     const reloadFrame = page.frames().find((f) => f !== page.mainFrame());
-    await reloadFrame
-      .locator("canvas,img,video")
-      .nth(preview.index)
-      .screenshot({ path: new URL("render-after.png", dir).pathname });
+    const reopenedPreview = reloadFrame.locator(
+      "[data-player-container]:has([data-player-container])",
+    );
+    await expect(reopenedPreview).toHaveCount(1);
+    await expect(reopenedPreview).toBeVisible();
+    const deselectionAfter =
+      scenario === "auto-key" ? await deselectPreview(reloadFrame, reopenedPreview) : null;
+    await writeFile(
+      new URL("viewport-after.json", dir),
+      JSON.stringify(
+        {
+          deselection: deselectionAfter,
+          bounds: await reopenedPreview.boundingBox(),
+          children: await reopenedPreview.locator("canvas,img,video").evaluateAll((es) =>
+            es.map((e) => ({
+              tag: e.tagName,
+              width: e.width,
+              height: e.height,
+              visible: e.checkVisibility({
+                checkOpacity: true,
+                checkVisibilityCSS: true,
+              }),
+            })),
+          ),
+        },
+        null,
+        2,
+      ),
+    );
+    await reopenedPreview.screenshot({
+      path: new URL("render-after.png", dir).pathname,
+    });
     const beforePixels = await sharp(new URL("render-before.png", dir).pathname)
       .raw()
       .toBuffer({ resolveWithObject: true });
@@ -764,15 +854,45 @@ async function runEaseOutHost(project, graph) {
     await frame.click('[data-testid="row-keyframe-x-k0"]');
   };
   const seek = async (frame, n) => {
+    // Same native timecode acknowledgement as the owner runner; the portable driver reads
+    // the unique visible button via W3C rather than Playwright expect. Never add seek clicks.
+    const acknowledge = async (index) => {
+      const timecode = `00:${String(Math.floor(index / 30)).padStart(2, "0")}:${String(index % 30).padStart(2, "0")} / 00:01:29`;
+      const deadline = Date.now() + 30000;
+      for (;;) {
+        const count = await frame.evaluate(
+          (expected) =>
+            [...document.querySelectorAll("button")].filter(
+              (button) => button.checkVisibility() && button.textContent.trim() === expected,
+            ).length,
+          timecode,
+        );
+        if (count === 1) return;
+        assert.ok(
+          Date.now() < deadline,
+          `native timecode acknowledgement ${timecode}: ${count} visible buttons`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    };
     await frame.click(button("Go To Start"));
-    for (let i = 0; i < n; i++) await frame.click(button("Next Frame"));
+    await acknowledge(0);
+    for (let i = 1; i <= n; i++) {
+      await frame.click(button("Next Frame"));
+      await acknowledge(i);
+    }
   };
   const pixelRead = async (frame, x, label) => {
     const deadline = Date.now() + 30000;
     let result;
     while (Date.now() < deadline) {
       result = await frame.evaluate(async (expected) => {
-        const canvases = [...document.querySelectorAll("canvas")].filter(
+        const viewports = [
+          ...document.querySelectorAll("[data-player-container]:has([data-player-container])"),
+        ].filter((viewport) => viewport.checkVisibility());
+        if (viewports.length !== 1)
+          return { error: `expected one visible native viewport; got${viewports.length}` };
+        const canvases = [...viewports[0].querySelectorAll("canvas")].filter(
           (c) => c.width === 128 && c.height === 96 && c.checkVisibility(),
         );
         if (canvases.length !== 1)
@@ -822,10 +942,6 @@ async function runEaseOutHost(project, graph) {
       `${label}: independent actual preview pixel delta ${result.maxDelta}`,
     );
     renders[label] = result;
-    await writeFile(
-      new URL(`${browserName}-${label}.png`, dir),
-      Buffer.from(result.png.split(",")[1], "base64"),
-    );
     return result;
   };
   try {
