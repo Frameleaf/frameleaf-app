@@ -31,13 +31,18 @@
 
   let {
     masks,
+    carried = 0,
     selectedId = $bindable(null),
     onChange,
   }: {
     masks: EditorMask[];
+    /** FL-233: masks of the recipe this editor keeps but does not show; they count towards the limit. */
+    carried?: number;
     selectedId?: string | null;
     onChange: (masks: EditorMask[]) => void;
   } = $props();
+
+  const full = $derived(masks.length + carried >= MAX_MASKS);
 
   const selected = $derived(masks.find((mask) => mask.id === selectedId) ?? null);
   const kindLabel = (kind: AssetDevelopMaskKind) =>
@@ -95,26 +100,16 @@
   </div>
   <p>{$t('frameleaf_editor_masks_help')}</p>
   <div class="ed-grid-2">
-    <button
-      type="button"
-      class="ed-button"
-      disabled={masks.length >= MAX_MASKS}
-      onclick={() => add(AssetDevelopMaskKind.Radial)}
-    >
+    <button type="button" class="ed-button" disabled={full} onclick={() => add(AssetDevelopMaskKind.Radial)}>
       <Icon icon={mdiVectorEllipse} size="18" />
       {$t('frameleaf_editor_mask_add_radial')}
     </button>
-    <button
-      type="button"
-      class="ed-button"
-      disabled={masks.length >= MAX_MASKS}
-      onclick={() => add(AssetDevelopMaskKind.Linear)}
-    >
+    <button type="button" class="ed-button" disabled={full} onclick={() => add(AssetDevelopMaskKind.Linear)}>
       <Icon icon={mdiGradientVertical} size="18" />
       {$t('frameleaf_editor_mask_add_linear')}
     </button>
   </div>
-  {#if masks.length >= MAX_MASKS}
+  {#if full}
     <p class="ed-note">{$t('frameleaf_editor_masks_limit', { values: { count: MAX_MASKS } })}</p>
   {/if}
 
