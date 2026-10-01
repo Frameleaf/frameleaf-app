@@ -41,7 +41,10 @@ class Workers {
     {};
 
   /** FL-291: a SIGTERM or SIGINT asked the server to stop; nothing starts again from here on. */
-  private stopper = new SupervisorStop();
+  private stopper = new SupervisorStop({
+    exit: (code) => process.exit(code),
+    deadlineMs: new ConfigRepository().getEnv().shutdown.deadlineMs,
+  });
 
   /**
    * Fail-safe in case anything dies during restart

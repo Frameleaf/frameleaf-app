@@ -11,8 +11,8 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { QueueService } from 'src/services/queue.service.js';
-import { SHUTDOWN_GRACE_MS } from 'src/utils/shutdown.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
+import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { factory } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -33,11 +33,14 @@ describe(QueueService.name, () => {
   describe('onShutdown (FL-291)', () => {
     it('stops the workers, handing back what is still running, whoever closes the app', async () => {
       mocks.job.stopWorkers.mockResolvedValue();
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ shutdown: { graceMs: 12_000, deadlineMs: 20_000, workerDeadlineMs: 19_000 } }),
+      );
 
       await sut.onShutdown();
 
       expect(mocks.job.teardown).toHaveBeenCalledOnce();
-      expect(mocks.job.stopWorkers).toHaveBeenCalledWith(SHUTDOWN_GRACE_MS);
+      expect(mocks.job.stopWorkers).toHaveBeenCalledWith(12_000);
     });
   });
 

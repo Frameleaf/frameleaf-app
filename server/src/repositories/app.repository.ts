@@ -5,7 +5,6 @@ import { Server as SocketIO } from 'socket.io';
 import { ExitCode } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { AppRestartEvent } from 'src/repositories/event.repository.js';
-import { SHUTDOWN_WORKER_DEADLINE_MS } from 'src/utils/shutdown.js';
 
 @Injectable()
 export class AppRepository {
@@ -20,7 +19,7 @@ export class AppRepository {
   /**
    * FL-291: stop this worker gracefully (`closeFn`: in-flight requests and running jobs get the grace
    * period, then the application closes) and exit with `exitCode`. Exits at the worker deadline
-   * whatever the teardown is still doing.
+   * (derived from IMMICH_SHUTDOWN_*) whatever the teardown is still doing.
    */
   stop(exitCode: number = 0) {
     if (this.stopping) {
@@ -30,7 +29,8 @@ export class AppRepository {
 
     /* eslint-disable unicorn/no-process-exit */
     // in exceptional circumstance, the application may hang
-    setTimeout(() => process.exit(exitCode), SHUTDOWN_WORKER_DEADLINE_MS);
+    const { shutdown } = new ConfigRepository().getEnv();
+    setTimeout(() => process.exit(exitCode), shutdown.workerDeadlineMs);
 
     void Promise.try(() => this.closeFn?.())
       .catch((error) => console.error(`Unable to stop gracefully: ${error}`))

@@ -1,6 +1,7 @@
 import { ModuleRef } from '@nestjs/core';
 import { JobsOptions, WaitingError } from 'bullmq';
 import type { Mock } from 'vitest';
+import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP } from 'src/constants.js';
 import { JobName, QueueJobStatus, QueueName } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -367,6 +368,15 @@ describe(JobRepository.name, () => {
   });
 
   describe('stopWorkers (FL-291)', () => {
+    it('guards a subset of the jobs that are never retried', () => {
+      for (const name of JOBS_UNSAFE_TO_RERUN_AFTER_STOP) {
+        expect(JOBS_NOT_RETRIED.has(name)).toBe(true);
+      }
+      expect(JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(JobName.WorkflowAssetTrigger)).toBe(false);
+      expect(JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(JobName.StorageTemplateMigrationSingle)).toBe(false);
+      expect(JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(JobName.SendMail)).toBe(true);
+    });
+
     type FakeWorker = {
       queueName: QueueName;
       processor: (job: unknown, token?: string) => Promise<void>;
@@ -503,6 +513,40 @@ describe(JobRepository.name, () => {
       expect(job.moveToFailed).toHaveBeenCalledWith(expect.any(Error), 'token-1', false);
       expect(await outcome).toBeInstanceOf(WaitingError);
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('mail-1'));
+    });
+
+    it.each([JobName.WorkflowAssetTrigger, JobName.StorageTemplateMigrationSingle])(
+      'hands back %s, which is never retried but is safe to rerun after a stop',
+      async (name) => {
+        holdHandler();
+        const job = fakeJob(name, 'safe-1');
+        const outcome = workerFor(QueueName.BackgroundTask)
+          .processor(job, 'token-1')
+          .catch((error: unknown) => error);
+
+        const stopping = repository.stopWorkers(5000);
+        await vi.advanceTimersByTimeAsync(5000);
+        await stopping;
+
+        expect(job.moveToWait).toHaveBeenCalledWith('token-1');
+        expect(job.moveToFailed).not.toHaveBeenCalled();
+        expect(await outcome).toBeInstanceOf(WaitingError);
+      },
+    );
+
+    it.each([...JOBS_UNSAFE_TO_RERUN_AFTER_STOP])('records %s as failed instead of handing it back', async (name) => {
+      holdHandler();
+      const job = fakeJob(name, 'unsafe-1');
+      void workerFor(QueueName.BackgroundTask)
+        .processor(job, 'token-1')
+        .catch(() => {});
+
+      const stopping = repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+      await stopping;
+
+      expect(job.moveToWait).not.toHaveBeenCalled();
+      expect(job.moveToFailed).toHaveBeenCalledWith(expect.any(Error), 'token-1', false);
     });
 
     it('puts a job picked up after the stop began straight back without running it', async () => {

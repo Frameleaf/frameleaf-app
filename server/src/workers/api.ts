@@ -3,6 +3,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { configureExpress } from 'src/app.common.js';
 import { ApiModule } from 'src/app.module.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { ApiService } from 'src/services/api.service.js';
 import { isStartUpError } from 'src/utils/misc.js';
 import { HttpRequestTracker, closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
@@ -22,7 +23,8 @@ async function bootstrap() {
   });
   const http = new HttpRequestTracker(app.getHttpServer());
   const appRepository = app.get(AppRepository);
-  appRepository.setCloseFn(() => closeGracefully({ http, close: () => app.close() }));
+  const { graceMs } = app.get(ConfigRepository).getEnv().shutdown;
+  appRepository.setCloseFn(() => closeGracefully({ http, close: () => app.close(), graceMs }));
   stop = () => appRepository.stop(0);
 
   void configureExpress(app, {

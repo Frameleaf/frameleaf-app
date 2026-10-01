@@ -1,5 +1,6 @@
 import z from 'zod';
 import { ImmichEnvironmentSchema, LogFormatSchema, LogLevelSchema } from 'src/enum.js';
+import { DEFAULT_SHUTDOWN_DEADLINE_SECONDS, DEFAULT_SHUTDOWN_GRACE_SECONDS } from 'src/utils/shutdown.js';
 import { IsIPRange } from 'src/validation.js';
 
 // TODO import from sql-tools once the swagger plugin supports external enums
@@ -71,6 +72,10 @@ export const EnvSchema = z
     IMMICH_PLUGINS_INSTALL_FOLDER: absolutePath,
     IMMICH_PORT: z.coerce.number().int().optional(),
     IMMICH_REPOSITORY: z.string().optional(),
+    /** FL-291: how long running jobs and in-flight requests get to finish when the server stops. */
+    IMMICH_SHUTDOWN_GRACE_SECONDS: z.coerce.number().positive().optional(),
+    /** FL-291: when the server has exited after a stop, whatever is still running. */
+    IMMICH_SHUTDOWN_DEADLINE_SECONDS: z.coerce.number().positive().optional(),
     IMMICH_REPOSITORY_URL: z.string().optional(),
     IMMICH_SOURCE_REF: z.string().optional(),
     IMMICH_SOURCE_COMMIT: z.string().optional(),
@@ -154,5 +159,17 @@ export const EnvSchema = z
     REDIS_PASSWORD: z.string().optional(),
     REDIS_SOCKET: z.string().optional(),
     REDIS_URL: z.string().optional(),
+  })
+  .superRefine((env, context) => {
+    // FL-291: running work must be handed back before the deadline ends the server
+    const grace = env.IMMICH_SHUTDOWN_GRACE_SECONDS ?? DEFAULT_SHUTDOWN_GRACE_SECONDS;
+    const deadline = env.IMMICH_SHUTDOWN_DEADLINE_SECONDS ?? DEFAULT_SHUTDOWN_DEADLINE_SECONDS;
+    if (grace >= deadline) {
+      context.addIssue({
+        code: 'custom',
+        path: ['IMMICH_SHUTDOWN_GRACE_SECONDS'],
+        message: `Must be less than IMMICH_SHUTDOWN_DEADLINE_SECONDS (${deadline})`,
+      });
+    }
   })
   .meta({ id: 'EnvDto' });

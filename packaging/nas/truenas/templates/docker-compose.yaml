@@ -34,7 +34,7 @@
 {% set server_container = tpl.add_container(values.consts.server_container_name, "image") %}
 {% do server_container.add_network(immich_net) %}
 {% do server_container.set_user(values.run_as.user, values.run_as.group) %}
-{# FL-291: running jobs finish or go back to waiting before the server exits (9 s at most) #}
+{# FL-291: must exceed IMMICH_SHUTDOWN_DEADLINE_SECONDS (9 s by default); running jobs finish or go back to waiting first #}
 {% do server_container.set_grace_period(10) %}
 {% do server_container.healthcheck.set_custom_test(["CMD", "immich-healthcheck"]) %}
 {% do server_container.depends.add_dependency(values.consts.pgvecto_container_name, "service_healthy") %}

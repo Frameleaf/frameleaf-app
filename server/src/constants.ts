@@ -50,6 +50,31 @@ export const JOBS_NOT_RETRIED: ReadonlySet<JobName> = new Set([
   JobName.PushDeliver,
 ]);
 
+/**
+ * FL-291: jobs that a server stop does not hand back to waiting when they are still running at the end
+ * of the grace period; they are recorded as failed instead (and kept or removed per their failure
+ * policy). This cannot be JOBS_NOT_RETRIED itself: that set governs failed records and "Retry failed",
+ * which is a different question from whether the same job may simply start again seconds later. Two of
+ * its members are safe to rerun after a stop, so they are handed back:
+ *
+ * - WorkflowAssetTrigger: a replay of an interrupted run skips the steps it completed, which are kept
+ *   well past a restart (it is never retried because a later "Retry failed" could outlive them).
+ * - StorageTemplateMigrationSingle: StorageCore.moveFile records each move and a rerun finishes the
+ *   recorded one (checking which copy exists and verifying it) or does nothing when the file is already
+ *   in place (it is never retried because a kept failed record would hold its fixed jobId).
+ *
+ * Every other never-retried job may already have made its side effect (a mail, notice or push sent, a
+ * person or group created, reports trashed, files imported) and is guarded. A job added to
+ * JOBS_NOT_RETRIED is guarded here too unless it is listed as safe below.
+ */
+const JOBS_SAFE_TO_RERUN_AFTER_STOP: ReadonlySet<JobName> = new Set([
+  JobName.WorkflowAssetTrigger,
+  JobName.StorageTemplateMigrationSingle,
+]);
+
+export const JOBS_UNSAFE_TO_RERUN_AFTER_STOP: ReadonlySet<JobName> =
+  JOBS_NOT_RETRIED.difference(JOBS_SAFE_TO_RERUN_AFTER_STOP);
+
 export const ErrorMessages = {
   InconsistentMediaLocation:
     'Detected an inconsistent media location. For more information, see https://help.frameleaf.app/administration/system-integrity',
