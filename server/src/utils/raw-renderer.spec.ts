@@ -38,6 +38,8 @@ describe('renderRawWithLibRaw', () => {
     [{ killed: true, code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, 'resource_limit', 'ERR_RAW_RESOURCE_LIMIT'],
     [{ signal: 'SIGKILL' }, 'resource_limit', 'ERR_RAW_RESOURCE_LIMIT'],
     [{ stderr: Buffer.from('Insufficient memory') }, 'resource_limit', 'ERR_RAW_RESOURCE_LIMIT'],
+    [{ stderr: Buffer.from('Unsufficient memory') }, 'resource_limit', 'ERR_RAW_RESOURCE_LIMIT'],
+    [{ stderr: Buffer.from('Libraw internal mempool overflowed') }, 'resource_limit', 'ERR_RAW_RESOURCE_LIMIT'],
     [{ stderr: Buffer.from('No space left on device') }, 'resource_limit', 'ERR_RAW_RESOURCE_LIMIT'],
     [{ stderr: Buffer.from('Unsupported file format or not RAW file') }, 'unsupported', 'ERR_RAW_UNSUPPORTED'],
     [{ stderr: Buffer.from('Corrupted data or unexpected EOF') }, 'damaged', 'ERR_RAW_DAMAGED'],

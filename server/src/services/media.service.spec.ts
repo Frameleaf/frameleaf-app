@@ -25,7 +25,7 @@ import {
 import { MediaService } from 'src/services/media.service.js';
 import { AudioStreamInfo, JobCounts, RawImageInfo, VideoFormat, VideoStreamInfo } from 'src/types.js';
 import { EDITED_MASTER_MAX_CRF, FRAMELEAF_RENDERER, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { AssetFaceFactory } from 'test/factories/asset-face.factory.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { PersonFactory } from 'test/factories/person.factory.js';
@@ -42,7 +42,8 @@ const extractedBuffer = Buffer.from('embedded image file');
 const renderedRawBuffer = Buffer.from('rendered raw image');
 const getFilterOption = (outputOptions: string[], option = '-vf') => outputOptions[outputOptions.indexOf(option) + 1];
 
-vi.mock('src/utils/raw-renderer.js', () => ({
+vi.mock('src/utils/raw-renderer.js', async (original) => ({
+  ...(await original<typeof import('src/utils/raw-renderer.js')>()),
   renderRawWithLibRaw: vi.fn(),
 }));
 
@@ -1402,6 +1403,42 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
 
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('skips classified unsupported RAW with enhanced rendering %s', async (enabled) => {
+      const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
+      const failure = new RawRenderError('unsupported', 'ERR_RAW_UNSUPPORTED');
+      mocks.systemMetadata.get.mockResolvedValue({ image: { extractEmbedded: false, enhancedRaw: { enabled } } });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.decodeImage.mockRejectedValue(failure);
+      vi.mocked(renderRawWithLibRaw).mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
+      if (enabled) {
+        expect(renderRawWithLibRaw).toHaveBeenCalledWith(asset.originalPath);
+      } else {
+        expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+      }
+    });
+
+    it.each([
+      new RawRenderError('dependency_missing', 'ENOENT'),
+      new RawRenderError('timeout', 'ETIMEDOUT'),
+      new RawRenderError('resource_limit', 'ERR_RAW_RESOURCE_LIMIT'),
+      new RawRenderError('io', 'EIO'),
+      new RawRenderError('damaged', 'ERR_RAW_DAMAGED'),
+      new RawRenderError('decode_failed', 'ERR_RAW_DECODE'),
+    ])('propagates classified RAW failure for retry or diagnosis: %s', async (failure) => {
+      const asset = AssetFactory.from({ originalFileName: 'file.cr2' }).exif().build();
+      mocks.systemMetadata.get.mockResolvedValue({
+        image: { extractEmbedded: false, enhancedRaw: { enabled: false } },
+      });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(getForGenerateThumbnail(asset));
+      mocks.media.decodeImage.mockRejectedValue(failure);
+
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toBe(failure);
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
     });
 
