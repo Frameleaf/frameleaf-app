@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -10,10 +11,38 @@ import {
   verifyDarktableVersion,
 } from 'src/utils/darktable-renderer.js';
 
-const mocks = vi.hoisted(() => ({ exec: vi.fn(), metadata: vi.fn(), stats: vi.fn() }));
-vi.mock('node:child_process', () => ({
-  execFile: Object.assign(vi.fn(), { [Symbol.for('nodejs.util.promisify.custom')]: mocks.exec }),
+const mocks = vi.hoisted(() => ({
+  exec: vi.fn(),
+  metadata: vi.fn(),
+  stats: vi.fn(),
+  autoClose: true,
+  children: [] as Array<{ emit: (event: string) => boolean }>,
 }));
+vi.mock('node:child_process', async () => {
+  const { EventEmitter } = await import('node:events');
+  return {
+    execFile: Object.assign(vi.fn(), {
+      [Symbol.for('nodejs.util.promisify.custom')]: (...args: unknown[]) => {
+        const child = new EventEmitter();
+        mocks.children.push(child);
+        const execution = Promise.resolve().then(() => mocks.exec(...args));
+        void execution.then(
+          () => {
+            if (mocks.autoClose) {
+              child.emit('close');
+            }
+          },
+          () => {
+            if (mocks.autoClose) {
+              child.emit('close');
+            }
+          },
+        );
+        return Object.assign(execution, { child });
+      },
+    }),
+  };
+});
 vi.mock('sharp', () => ({ default: () => ({ metadata: mocks.metadata, stats: mocks.stats }) }));
 
 const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 };
@@ -36,6 +65,8 @@ describe('pinned darktable adapter', () => {
 
   beforeEach(async () => {
     vi.resetAllMocks();
+    mocks.autoClose = true;
+    mocks.children.length = 0;
     directory = await mkdtemp(join(tmpdir(), 'darktable-test-'));
     input = join(directory, 'source.CR2');
     await writeFile(input, 'unit-test original');
@@ -170,5 +201,78 @@ describe('pinned darktable adapter', () => {
     } finally {
       timeout.mockRestore();
     }
+  });
+
+  it('refuses overlapping renders before another process starts and admits work after completion', async () => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<{ stdout: string }>();
+    mocks.exec.mockImplementationOnce(() => {
+      started.resolve();
+      return release.promise;
+    });
+    const first = renderDarktable(input, recipe);
+    await started.promise;
+    try {
+      await expect(renderDarktable(input, recipe)).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await expect(renderDarktable(input, recipe)).rejects.toBeInstanceOf(ServiceUnavailableException);
+      const cancelled = new AbortController();
+      cancelled.abort(new Error('already cancelled'));
+      await expect(renderDarktable(input, recipe, cancelled.signal)).rejects.toThrow('already cancelled');
+      expect(mocks.exec).toHaveBeenCalledOnce();
+    } finally {
+      release.resolve({ stdout: 'darktable 5.6.1\n' });
+      await first;
+    }
+    await expect(renderDarktable(input, recipe)).resolves.toBeInstanceOf(Buffer);
+  });
+
+  it('recovers admission after native failure and cleanup', async () => {
+    mocks.exec.mockRejectedValueOnce(new Error('spawn failed'));
+    await expect(renderDarktable(input, recipe)).rejects.toThrow('spawn failed');
+    mocks.stats.mockRejectedValueOnce(new Error('invalid native output'));
+    await expect(renderDarktable(input, recipe)).rejects.toThrow('invalid native output');
+    await expect(readFile(join(nativeDirectory!, 'developed.png'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(renderDarktable(input, recipe)).resolves.toBeInstanceOf(Buffer);
+  });
+
+  it('holds admission after cancellation until the child closes, then cleans up and admits work', async () => {
+    const controller = new AbortController();
+    const started = Promise.withResolvers<void>();
+    const aborted = Promise.withResolvers<void>();
+    const execute = mocks.exec.getMockImplementation()!;
+    mocks.exec.mockImplementation((command, args, options) => {
+      if (args[0] === '--version') {
+        return execute(command, args, options);
+      }
+      nativeDirectory = dirname(args[0]);
+      mocks.autoClose = false;
+      started.resolve();
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener(
+          'abort',
+          () => {
+            reject(options.signal.reason);
+            aborted.resolve();
+          },
+          { once: true },
+        );
+      });
+    });
+    const first = renderDarktable(input, recipe, controller.signal);
+    const failure = expect(first).rejects.toThrow('cancelled');
+    await started.promise;
+    controller.abort(new Error('cancelled'));
+    await aborted.promise;
+    try {
+      await expect(renderDarktable(input, recipe)).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(mocks.exec).toHaveBeenCalledTimes(2);
+    } finally {
+      mocks.children.at(-1)!.emit('close');
+      await failure;
+      mocks.autoClose = true;
+      mocks.exec.mockImplementation(execute);
+    }
+    await expect(readFile(join(nativeDirectory!, 'original.CR2'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(renderDarktable(input, recipe)).resolves.toBeInstanceOf(Buffer);
   });
 });

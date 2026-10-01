@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { execFile as execFileCallback } from 'node:child_process';
 import { constants } from 'node:fs';
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
@@ -16,6 +17,19 @@ export const DARKTABLE_RENDERER_VERSION =
   'frameleaf-darktable/1;darktable/5.6.1;03179f8e080aa9cedebfe14b098b7ba88940a292';
 export const DARKTABLE_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 1024 ** 3;
+// ponytail: one native render per worker process; use shared admission if the deployment needs a global ceiling.
+let nativeRenderActive = false;
+
+/** An aborted execFile promise can reject before close; keep admission until the child is actually gone. */
+async function runDarktable(args: string[], signal: AbortSignal) {
+  const execution = execFile('darktable-cli', args, { signal, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
+  const closed = new Promise<void>((resolve) => execution.child.once('close', () => resolve()));
+  try {
+    return await execution;
+  } finally {
+    await closed;
+  }
+}
 
 /** Only accepts the pinned release banner, never development builds or another patch release. */
 export function verifyDarktableVersion(stdout: string): void {
@@ -85,13 +99,17 @@ export function prepareNativeHistory(library: string, exposureEV: number): void 
 export async function renderDarktable(input: string, value: unknown, signal?: AbortSignal): Promise<Buffer> {
   const recipe = DarktableDevelopRecipeSchema.parse(value); // Reject unknown controls before touching a file/process.
   signal?.throwIfAborted();
-  const deadline = AbortSignal.timeout(DARKTABLE_TIMEOUT_MS);
-  const abort = signal ? AbortSignal.any([signal, deadline]) : deadline;
-  const options = { signal: abort, killSignal: 'SIGKILL' as const, maxBuffer: 1024 * 1024 };
-  const { stdout } = await execFile('darktable-cli', ['--version'], options);
-  verifyDarktableVersion(stdout);
-  const directory = await mkdtemp(join(tmpdir(), 'frameleaf-darktable-'));
+  if (nativeRenderActive) {
+    throw new ServiceUnavailableException('Native development is busy; try again shortly');
+  }
+  nativeRenderActive = true;
+  let directory: string | undefined;
   try {
+    const deadline = AbortSignal.timeout(DARKTABLE_TIMEOUT_MS);
+    const abort = signal ? AbortSignal.any([signal, deadline]) : deadline;
+    const { stdout } = await runDarktable(['--version'], abort);
+    verifyDarktableVersion(stdout);
+    directory = await mkdtemp(join(tmpdir(), 'frameleaf-darktable-'));
     // A private copy also excludes adjacent imported sidecars and makes original writes impossible.
     const source = join(directory, `original${extname(input)}`);
     const library = join(directory, 'library.db');
@@ -130,14 +148,10 @@ export async function renderDarktable(input: string, value: unknown, signal?: Ab
       'plugins/imageio/format/png/bpp=16',
     ];
     // Exporting once initializes native defaults from the copied original's camera metadata.
-    await execFile(
-      'darktable-cli',
-      [source, join(directory, 'bootstrap.png'), '--width', '1', '--height', '1', ...common],
-      options,
-    );
+    await runDarktable([source, join(directory, 'bootstrap.png'), '--width', '1', '--height', '1', ...common], abort);
     abort.throwIfAborted();
     prepareNativeHistory(library, recipe.exposureEV);
-    await execFile('darktable-cli', [source, output, ...common], options);
+    await runDarktable([source, output, ...common], abort);
     abort.throwIfAborted();
     const file = await stat(output);
     if (!file.isFile() || file.size === 0 || file.size > MAX_OUTPUT_BYTES) {
@@ -159,6 +173,12 @@ export async function renderDarktable(input: string, value: unknown, signal?: Ab
     abort.throwIfAborted();
     return buffer;
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    try {
+      if (directory) {
+        await rm(directory, { recursive: true, force: true });
+      }
+    } finally {
+      nativeRenderActive = false;
+    }
   }
 }
