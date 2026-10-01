@@ -51,9 +51,18 @@ described below. Adoption also changes existing official data, as listed below.
 Before that first start changes anything, Frameleaf makes a safety copy of the library
 database. While it does, the web address shows a **Getting Ready…** screen that explains
 what is happening. Every other page shows the same screen, and API requests (including
-the mobile apps and `/api/server/ping`, so the container reports unhealthy for this short
-time) get `503 Service Unavailable` with a `Retry-After` header. When the copy is saved,
-Frameleaf starts normally, and the screen moves on to sign-in by itself.
+the mobile apps and `/api/server/ping`) get `503 Service Unavailable` with a `Retry-After`
+header. When the copy is saved, Frameleaf starts normally, and the screen moves on to
+sign-in by itself.
+
+The container's health check (`frameleaf-healthcheck`, or its old name
+`immich-healthcheck`) reports **healthy** for the whole of this step, however long the
+copy takes on a large library, so Docker, Kubernetes liveness probes and NAS app
+supervisors do not restart the container in the middle of it. It also reports healthy
+when the copy failed and the error screen is showing: restarting only tries the copy
+again, and the database is not touched either way. Anything that needs the API itself
+should wait for `/api/server/ping` to answer, which it does only once Frameleaf has
+started normally.
 
 - **What it is.** A full `pg_dump` of the database, made the same way as the scheduled
   database backups. It is written to a temporary `.tmp` file, checked (not empty, a
