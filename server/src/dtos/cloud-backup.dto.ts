@@ -289,7 +289,12 @@ const CloudBackupLastPruneSchema = z
 const CloudBackupManagedSchema = z
   .object({
     readOnly: z.boolean().describe('Uploads are stopped; restores keep working'),
-    readOnlyReason: z.string().nullable(),
+    readOnlyReason: z
+      .string()
+      .nullable()
+      .describe(
+        'Why uploads are stopped, as Frameleaf Cloud says: purge_hold, entitlement, unlinked, suspended, purging or plan_full (the plan is full; new items wait until it is upgraded). Open-ended: show an unknown value generically.',
+      ),
     quotaBytes: z.int().describe('Storage included with the plan; more is added in 1 TB blocks'),
     usedBytes: z.int().nullable(),
     objects: z.int().nullable(),

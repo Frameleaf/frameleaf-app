@@ -1,0 +1,13 @@
+{
+  "measuredAt": "2026-10-01T12:00:00.000Z",
+  "bytesCurrent": 1012000000000,
+  "bytesNoncurrent": 4000000000,
+  "objects": 291804,
+  "includedBytes": 1000000000000,
+  "accountBytesCurrent": 1012000000000,
+  "extraBlocks": 1,
+  "allowanceBytes": 2000000000000,
+  "blockBytes": 1000000000000,
+  "readOnly": true,
+  "readOnlyReason": "plan_full"
+}
