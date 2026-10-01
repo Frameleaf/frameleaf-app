@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
+import * as identity from 'src/fork-schema/migrations/0000000000213-ICloudSourceIdentity.js';
 import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -41,6 +42,8 @@ describe(ICloudSyncRepository.name, () => {
     // the library side `counts` reads to tell a disappeared source from a deleted asset
     await sql`CREATE TABLE asset (id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
     await migration.up(db);
+    // FL-296: finalize records the source identity
+    await identity.up(db);
     repository = new ICloudSyncRepository(db);
   });
   afterAll(async () => {
