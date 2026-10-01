@@ -810,7 +810,12 @@ async function runEaseOutHost(project, graph) {
       lane.keyframes,
       graph.timeline.keyframes[0].vectorProperties[0].keyframes.map((k, i) => ({
         ...k,
-        ...(i === 0 ? { easing } : {}),
+        ...(i === 0
+          ? {
+              easing,
+              easingConfig: { type: "cubic-bezier", bezier: { x1: 0, y1: 0, x2: 0.58, y2: 1 } },
+            }
+          : {}),
       })),
     );
     assert.deepEqual(stored.timeline.tracks, graph.timeline.tracks);
@@ -930,11 +935,47 @@ async function runEaseOutHost(project, graph) {
           .filter((marker) => marker.querySelector("span.border-blue-100"))
           .map((marker) => marker.dataset.motionKeyframeId),
       );
-      const easeOut = document.querySelector('button[aria-label="Set interpolation to Ease Out"]');
+      const segment = document.querySelector('[data-testid="segment-easing-x-k0"]');
       return (
-        selected.size === 1 && selected.has("k0") && easeOut?.checkVisibility() && !easeOut.disabled
+        selected.size === 1 && selected.has("k0") && segment?.checkVisibility() && !segment.disabled
       );
     });
+  };
+  const nativeSegmentEasing = async (frame, name, choose = false) => {
+    const trigger = '[data-testid="segment-easing-x-k0"]';
+    await frame.click(trigger);
+    await frame.waitForFunction(() => {
+      const choices = [...document.querySelectorAll('button[title="Out"]')].filter(
+        (choice) => choice.checkVisibility() && !choice.disabled,
+      );
+      return choices.length === 1;
+    });
+    if (choose) await frame.click(`button[title=${JSON.stringify(name)}]`);
+    const deadline = Date.now() + 30000;
+    for (;;) {
+      const ready = await frame.evaluate((expected) => {
+        const choices = [...document.querySelectorAll("button[title]")].filter(
+          (choice) => choice.title === expected && choice.checkVisibility(),
+        );
+        const trigger = document.querySelector('[data-testid="segment-easing-x-k0"]');
+        return (
+          choices.length === 1 &&
+          !choices[0].disabled &&
+          choices[0].parentElement.classList.contains("border-blue-500/70") &&
+          trigger?.textContent.trim() === (expected === "Out" ? "cubic-bezier" : "linear")
+        );
+      }, name);
+      if (ready) break;
+      assert.ok(Date.now() < deadline, `native segment preset ${name} did not settle`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await frame.click(trigger);
+    await frame.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="segment-easing-x-k0"]')
+          ?.getAttribute("data-state") === "closed",
+    );
   };
   const seek = async (frame, n) => {
     // Same native timecode acknowledgement as the owner runner; the portable driver reads
@@ -1118,31 +1159,15 @@ async function runEaseOutHost(project, graph) {
       await selectInline(frame);
       await seek(frame, 15);
       const baseline = await pixelRead(frame, 0, "baseline");
-      await frame.click(button("Set interpolation to Ease Out"));
-      await frame.waitForFunction(
-        () =>
-          document
-            .querySelector('button[aria-label="Set interpolation to Ease Out"]')
-            ?.getAttribute("aria-pressed") === "true",
-      );
+      await nativeSegmentEasing(frame, "Out", true);
       const oracle = process.env.FL112_HOST_COUNTERFACTUAL === "linear-ease-out" ? 0 : expectedX;
       const changed = await pixelRead(frame, oracle, "ease-out");
       assert.notEqual(changed.digest, baseline.digest);
       await frame.shortcut("z");
-      await frame.waitForFunction(
-        () =>
-          document
-            .querySelector('button[aria-label="Set interpolation to Linear"]')
-            ?.getAttribute("aria-pressed") === "true",
-      );
+      await nativeSegmentEasing(frame, "Linear");
       assert.equal((await pixelRead(frame, 0, "undo")).digest, baseline.digest);
       await frame.shortcut("z", true);
-      await frame.waitForFunction(
-        () =>
-          document
-            .querySelector('button[aria-label="Set interpolation to Ease Out"]')
-            ?.getAttribute("aria-pressed") === "true",
-      );
+      await nativeSegmentEasing(frame, "Out");
       assert.equal((await pixelRead(frame, expectedX, "redo")).digest, changed.digest);
       await seek(frame, 0);
       await pixelRead(frame, -24, "start");
@@ -1151,7 +1176,7 @@ async function runEaseOutHost(project, graph) {
       // Save remains the actual editor control; no API graph writes after initial seed.
       await frame.click(button("Save project"));
     });
-    const saved = await readRevision("ease-out");
+    const saved = await readRevision("cubic-bezier");
     assert.ok(saved.revision >= 2);
     const statuses = await host.evaluate(() => window.__fl112Responses);
     assert.ok(
@@ -1176,12 +1201,7 @@ async function runEaseOutHost(project, graph) {
     await host.goto(base + "/studio?project=" + project.id);
     await host.inFrame('[data-testid="studio-editor-frame"]', async (frame) => {
       await selectInline(frame);
-      await frame.waitForFunction(
-        () =>
-          document
-            .querySelector('button[aria-label="Set interpolation to Ease Out"]')
-            ?.getAttribute("aria-pressed") === "true",
-      );
+      await nativeSegmentEasing(frame, "Out");
       await seek(frame, 15);
       assert.equal(
         (await pixelRead(frame, expectedX, "reopen")).digest,
