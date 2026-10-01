@@ -50,6 +50,11 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE INDEX icloud_source_identity_sha256_idx ON immich_fork.icloud_source_identity ("ownerId", sha256)`.execute(
     db,
   );
+  // the app looks items up by their CPLAsset record name, whatever its case
+  await sql`
+    CREATE INDEX icloud_record_asset_name_idx ON immich_fork.icloud_record ("connectionId", upper("recordId"))
+    WHERE "recordType" = 'CPLAsset' AND NOT deleted
+  `.execute(db);
   await sql`
     CREATE TABLE immich_fork.icloud_claim (
       id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -92,5 +97,6 @@ export async function down(db: Kysely<any>): Promise<void> {
   await sql`DROP FUNCTION immich_fork.icloud_connection_unhealthy_since()`.execute(db);
   await sql`ALTER TABLE immich_fork.icloud_connection DROP COLUMN "unhealthySince", DROP COLUMN "accountHint"`.execute(db);
   await sql`DROP TABLE immich_fork.icloud_claim`.execute(db);
+  await sql`DROP INDEX immich_fork.icloud_record_asset_name_idx`.execute(db);
   await sql`DROP TABLE immich_fork.icloud_source_identity`.execute(db);
 }

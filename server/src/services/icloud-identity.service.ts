@@ -117,7 +117,9 @@ export class ICloudIdentityService {
   }
 
   async coverage(auth: AuthDto, dto: ICloudCoverageDto): Promise<ICloudCoverageResponseDto> {
-    const samples = dto.samples.flatMap((sample) => {
+    // with matching switched off, nothing is proven from the identifiers (owner decision 7)
+    const matching = identityMatchingEnabled();
+    const samples = (matching ? dto.samples : []).flatMap((sample) => {
       const parsed = parseCloudIdentifier(sample.cloudIdentifier);
       return parsed ? [{ sample, parsed }] : [];
     });
@@ -127,6 +129,7 @@ export class ICloudIdentityService {
       samples.map(({ parsed }) => parsed.cplAssetRecordName),
     );
     return {
+      identityMatching: matching,
       connections: connections.map((connection) => {
         const completeAt = connection.lastCompleteInventoryAt ? new Date(connection.lastCompleteInventoryAt) : null;
         const records = new Map(
@@ -137,7 +140,7 @@ export class ICloudIdentityService {
         // only what existed before the last complete inventory can be expected in it
         const sampled = completeAt
           ? samples.filter(
-              ({ sample }) => !sample.creationDate || Date.parse(sample.creationDate) < completeAt.getTime(),
+              ({ sample }) => !!sample.creationDate && Date.parse(sample.creationDate) < completeAt.getTime(),
             )
           : [];
         const matched = sampled.filter(({ sample, parsed }) => {
@@ -192,6 +195,13 @@ export class ICloudIdentityService {
                 isActionable(inventoryStrength(parsed, item, record)),
             )
           : [];
+        const inventoryHint =
+          !!parsed &&
+          inventory.some(
+            (record) =>
+              record.cplAssetRecordName === parsed.cplAssetRecordName &&
+              !isActionable(inventoryStrength(parsed, item, record)),
+          );
         const covering = records.find((record) => {
           const connection = byConnection.get(record.connectionId);
           return record.inScope && connection && connectionHealth(connection) === 'healthy';
@@ -232,12 +242,16 @@ export class ICloudIdentityService {
               return { ...empty, state: 'review' as const };
             }
             const row = rows.at(-1);
+            // a hint is reported (so its rate can be measured) but never acted on
+            let hinted = inventoryHint;
             if (row && parsed) {
               const strength = this.strength(row, parsed, item, device, inventory);
               if (isActionable(strength)) {
                 return { ...empty, ...this.onServer(row), matchStrength: strength, state: 'on-server' as const };
               }
+              hinted = true;
             }
+            const unknown = { ...empty, matchStrength: hinted ? ('hint' as const) : null, state: 'unknown' as const };
 
             // 2. the same bytes, whoever delivered them
             const byHash = device ? visible.byHash.get(device) : undefined;
@@ -264,13 +278,13 @@ export class ICloudIdentityService {
                     pendingSince: iso(covering.pendingSince),
                     state: 'sync-pending' as const,
                   }
-                : { ...empty, connectionId: connection.id, state: 'unknown' as const };
+                : { ...unknown, connectionId: connection.id };
             }
             const outside = records.find((record) => !record.inScope);
             if (outside) {
               return { ...empty, connectionId: outside.connectionId, state: 'out-of-scope' as const };
             }
-            return { ...empty, state: 'unknown' as const };
+            return unknown;
           }),
         };
       }),
