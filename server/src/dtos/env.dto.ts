@@ -35,24 +35,29 @@ const trustedProxiesSchema = z
 
   .pipe(z.union([z.undefined(), IsIPRange({ requireCIDR: false })]));
 
+/**
+ * Every variable is validated under its FRAMELEAF_ name. Deprecated IMMICH_ names are resolved to these
+ * first (FL-294, `src/utils/env-aliases.ts`), in ConfigRepository.getEnv.
+ */
 export const EnvSchema = z
   .object({
+    /** FL-294: inert (no metrics are served or collected), so accepted under the old name only. */
     IMMICH_API_METRICS_PORT: z.coerce.number().int().optional(),
-    IMMICH_BUILD_DATA: z.string().optional(),
-    IMMICH_BUILD: z.string().optional(),
-    IMMICH_BUILD_URL: z.string().optional(),
-    IMMICH_BUILD_IMAGE: z.string().optional(),
-    IMMICH_BUILD_IMAGE_URL: z.string().optional(),
-    IMMICH_CONFIG_FILE: z.string().optional(),
-    IMMICH_HELMET_FILE: z.string().optional(),
-    IMMICH_ENV: ImmichEnvironmentSchema.optional(),
-    IMMICH_HOST: z.string().optional(),
-    IMMICH_IGNORE_MOUNT_CHECK_ERRORS: stringBool.optional(),
+    FRAMELEAF_BUILD_DATA: z.string().optional(),
+    FRAMELEAF_BUILD: z.string().optional(),
+    FRAMELEAF_BUILD_URL: z.string().optional(),
+    FRAMELEAF_BUILD_IMAGE: z.string().optional(),
+    FRAMELEAF_BUILD_IMAGE_URL: z.string().optional(),
+    FRAMELEAF_CONFIG_FILE: z.string().optional(),
+    FRAMELEAF_HELMET_FILE: z.string().optional(),
+    FRAMELEAF_ENV: ImmichEnvironmentSchema.optional(),
+    FRAMELEAF_HOST: z.string().optional(),
+    FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS: stringBool.optional(),
     /**
      * Directories an administrator permits Google Photos imports to read from (FL-65), comma
      * separated, each an absolute path. Only directories under one of these can be selected.
      */
-    IMMICH_IMPORT_ROOTS: z
+    FRAMELEAF_IMPORT_ROOTS: z
       .string()
       .optional()
       .transform((value) =>
@@ -64,32 +69,38 @@ export const EnvSchema = z
           : [],
       )
       .pipe(z.array(z.string().regex(/^\//, 'Every import root must be an absolute path'))),
-    IMMICH_LOG_LEVEL: LogLevelSchema.optional(),
-    IMMICH_LOG_FORMAT: LogFormatSchema.optional(),
-    IMMICH_MEDIA_LOCATION: absolutePath,
+    FRAMELEAF_LOG_LEVEL: LogLevelSchema.optional(),
+    FRAMELEAF_LOG_FORMAT: LogFormatSchema.optional(),
+    FRAMELEAF_MEDIA_LOCATION: absolutePath,
     IMMICH_MICROSERVICES_METRICS_PORT: z.coerce.number().int().optional(),
-    IMMICH_ALLOW_EXTERNAL_PLUGINS: stringBool.optional(),
-    IMMICH_PLUGINS_INSTALL_FOLDER: absolutePath,
-    IMMICH_PORT: z.coerce.number().int().optional(),
-    IMMICH_REPOSITORY: z.string().optional(),
+    FRAMELEAF_ALLOW_EXTERNAL_PLUGINS: stringBool.optional(),
+    FRAMELEAF_PLUGINS_INSTALL_FOLDER: absolutePath,
+    FRAMELEAF_PORT: z.coerce.number().int().optional(),
+    FRAMELEAF_REPOSITORY: z.string().optional(),
     /** FL-291: how long running jobs and in-flight requests get to finish when the server stops. */
     FRAMELEAF_SHUTDOWN_GRACE_SECONDS: z.coerce.number().positive().optional(),
     /** FL-291: when the server has exited after a stop, whatever is still running. */
     FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS: z.coerce.number().positive().optional(),
-    IMMICH_REPOSITORY_URL: z.string().optional(),
-    IMMICH_SOURCE_REF: z.string().optional(),
-    IMMICH_SOURCE_COMMIT: z.string().optional(),
-    IMMICH_SOURCE_URL: z.string().optional(),
+    FRAMELEAF_REPOSITORY_URL: z.string().optional(),
+    FRAMELEAF_SOURCE_REF: z.string().optional(),
+    FRAMELEAF_SOURCE_COMMIT: z.string().optional(),
+    FRAMELEAF_SOURCE_COMMIT_URL: z.string().optional(),
+    /** FL-294: inert (telemetry cannot be enabled in this fork), so accepted under the old name only. */
     IMMICH_TELEMETRY_INCLUDE: z.string().optional(),
     IMMICH_TELEMETRY_EXCLUDE: z.string().optional(),
+    /**
+     * FL-294: deprecated aliases of FRAMELEAF_SOURCE_URL, FRAMELEAF_BUG_FEATURE_URL, FRAMELEAF_DOCS_URL and
+     * FRAMELEAF_SUPPORT_URL. They keep their own fields because an invalid legacy value is ignored rather
+     * than refused (`parseHelpLinks`); every other IMMICH_ name is resolved before validation.
+     */
     IMMICH_THIRD_PARTY_SOURCE_URL: z.string().optional(),
     IMMICH_THIRD_PARTY_BUG_FEATURE_URL: z.string().optional(),
     IMMICH_THIRD_PARTY_DOCUMENTATION_URL: z.string().optional(),
     IMMICH_THIRD_PARTY_SUPPORT_URL: z.string().optional(),
-    IMMICH_ALLOW_SETUP: stringBool.optional(),
-    IMMICH_TRUSTED_PROXIES: trustedProxiesSchema,
-    IMMICH_WORKERS_INCLUDE: z.string().optional(),
-    IMMICH_WORKERS_EXCLUDE: z.string().optional(),
+    FRAMELEAF_ALLOW_SETUP: stringBool.optional(),
+    FRAMELEAF_TRUSTED_PROXIES: trustedProxiesSchema,
+    FRAMELEAF_WORKERS_INCLUDE: z.string().optional(),
+    FRAMELEAF_WORKERS_EXCLUDE: z.string().optional(),
     /** Library Care recovery locations (FL-69): `Label=/path;Label=/path`, read only, never linked in place. */
     FRAMELEAF_RECOVERY_ROOTS: z.string().optional(),
     /** Signed app release destinations (FL-82); see `src/utils/app-releases.ts`. */

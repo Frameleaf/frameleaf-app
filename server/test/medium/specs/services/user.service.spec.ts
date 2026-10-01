@@ -21,7 +21,7 @@ import { getKyselyDB } from 'test/utils.js';
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  process.env.IMMICH_ENV = ImmichEnvironment.Testing;
+  process.env.FRAMELEAF_ENV = ImmichEnvironment.Testing;
 
   return newMediumService(UserService, {
     database: db || defaultDatabase,

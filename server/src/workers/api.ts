@@ -9,7 +9,7 @@ import { isStartUpError } from 'src/utils/misc.js';
 import { HttpRequestTracker, closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
 async function bootstrap() {
-  process.title = 'immich-api';
+  process.title = 'frameleaf-api';
 
   // FL-291: SIGTERM stops taking connections and drains the requests in flight before exiting
   // eslint-disable-next-line unicorn/no-process-exit

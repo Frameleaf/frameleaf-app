@@ -23,7 +23,7 @@ type RestoreOptions = {
 const SCOPES = new Set<CloudBackupBareMetalRestore['scope']>(['library', 'files', 'database']);
 
 /**
- * `immich-admin cloud-backup restore` (FL-164): bring a server back from its cloud backup bucket on bare
+ * `frameleaf-admin cloud-backup restore` (FL-164): bring a server back from its cloud backup bucket on bare
  * metal, without the web app. The bucket key comes from the key file (or a file holding the recovery
  * code), or from an escrow copy downloaded from the Frameleaf account and its passphrase.
  */

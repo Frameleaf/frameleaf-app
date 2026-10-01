@@ -50,6 +50,7 @@ import { ICloudRelationsService } from 'src/services/icloud-relations.service.js
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { checkAccess, requireElevatedPermission } from 'src/utils/access.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
 
 /** How often an idle worker looks for queued runs. A control also nudges it through the job queue. */
@@ -269,8 +270,8 @@ export class ICloudSyncService {
   }
 
   private checkLimits(config: ICloudConnection['config']) {
-    const limit = Number(process.env.IMMICH_ICLOUD_MAX_STAGING_BYTES ?? 100 * 1024 ** 3);
-    const concurrency = Number(process.env.IMMICH_ICLOUD_MAX_CONCURRENCY ?? 4);
+    const limit = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES') ?? 100 * 1024 ** 3);
+    const concurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? 4);
     if (
       !Number.isSafeInteger(limit) ||
       limit < config.stagingBytes ||

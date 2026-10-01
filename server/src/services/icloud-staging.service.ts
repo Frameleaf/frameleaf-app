@@ -8,6 +8,7 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudConnection, ICloudResource, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { isWithinDirectory } from 'src/utils/icloud-sync.js';
 
 @Injectable()
@@ -19,7 +20,7 @@ export class ICloudStagingService {
   ) {}
 
   async root(): Promise<string> {
-    const configured = process.env.IMMICH_ICLOUD_STAGING_PATH;
+    const configured = readAliasedEnv('FRAMELEAF_ICLOUD_STAGING_PATH');
     if (!configured) {
       throw new Error('staging_not_configured');
     }
@@ -80,7 +81,7 @@ export class ICloudStagingService {
       return target;
     }
     const free = await statfs(directory, { bigint: true });
-    const watermark = BigInt(process.env.IMMICH_ICLOUD_FREE_SPACE_BYTES ?? 1024 ** 3);
+    const watermark = BigInt(readAliasedEnv('FRAMELEAF_ICLOUD_FREE_SPACE_BYTES') ?? 1024 ** 3);
     if (free.bavail * free.bsize < BigInt(resource.expectedSize) + watermark) {
       throw new Error('staging_disk_full');
     }

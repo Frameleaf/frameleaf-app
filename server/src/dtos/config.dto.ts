@@ -45,6 +45,7 @@ import {
   VideoContainer,
   VideoContainerSchema,
 } from 'src/enum.js';
+import { readAliasedEnv } from 'src/utils/env-aliases.js';
 
 const { Admin, User, Public } = ConfigVisibility;
 
@@ -1481,8 +1482,8 @@ export const defaults = Object.freeze<SystemConfig>({
     level: LogLevel.Log,
   },
   machineLearning: {
-    enabled: process.env.IMMICH_MACHINE_LEARNING_ENABLED !== 'false',
-    urls: [process.env.IMMICH_MACHINE_LEARNING_URL || 'http://immich-machine-learning:3003'],
+    enabled: readAliasedEnv('FRAMELEAF_MACHINE_LEARNING_ENABLED') !== 'false',
+    urls: [readAliasedEnv('FRAMELEAF_MACHINE_LEARNING_URL') || 'http://immich-machine-learning:3003'],
     availabilityChecks: {
       enabled: true,
       timeout: 2000,
