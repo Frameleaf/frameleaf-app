@@ -99,6 +99,8 @@ type GettingReadyObservation = {
   ping: string;
   redirect: string;
   page: number;
+  /** The container health check's exit code, run while the status answered (null otherwise). */
+  healthcheck: number | null;
   status: { state: string; copy?: string; backup?: { filename: string } } | null;
 };
 
@@ -133,6 +135,8 @@ describe.runIf(phase === 'origin-pre-migrator')(`${lane}: compatible fork pre-mi
     expect(
       preparing.some(({ ping, redirect, page }) => ping === '503 5' && gettingReady.test(redirect) && page === 1),
     ).toBe(true);
+    // the container reported healthy while it got ready, so no orchestrator restarts it mid-copy
+    expect(preparing.some(({ healthcheck }) => healthcheck === 0)).toBe(true);
     expect(evidence.observations.at(-1)?.ping).toMatch(/^200/);
 
     const states = new Set(preparing.map(({ status }) => status!.state));

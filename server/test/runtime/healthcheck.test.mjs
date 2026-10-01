@@ -94,3 +94,65 @@ test('the deprecated immich-healthcheck name and IMMICH_* variables still work',
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+// FL-295: while the first start on an official library takes its safety copy, ping answers 503 (the
+// API is not ready). The container still reports healthy, so an orchestrator that restarts unhealthy
+// containers never interrupts the copy. Only the "Getting Ready…" worker answers that status.
+test('the container stays healthy while the first start gets ready, under either name', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'frameleaf-healthcheck-'));
+  const scripts = {
+    frameleaf: ['bash', fileURLToPath(new URL('../../bin/frameleaf-healthcheck', import.meta.url))],
+    immich: ['sh', fileURLToPath(new URL('../../bin/immich-healthcheck', import.meta.url))],
+  };
+  try {
+    // curl -f: ping is refused with 503 (exit 22); the status answers as the test says
+    writeFileSync(
+      join(directory, 'curl'),
+      [
+        '#!/usr/bin/env bash',
+        'url="${@: -1}"',
+        'case "$url" in',
+        '  */api/server/ping) printf \'{"statusCode":503}\'; exit 22 ;;',
+        '  */api/server/getting-ready) printf "%s" "$STATUS_BODY"; exit "$STATUS_EXIT" ;;',
+        'esac',
+        'exit 7',
+        '',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+    const run = ([shell, script], body, exit = 0) =>
+      spawnSync(shell, [script], {
+        encoding: 'utf8',
+        env: {
+          PATH: `${directory}:${process.env.PATH}`,
+          STATUS_BODY: body,
+          STATUS_EXIT: String(exit),
+        },
+      });
+
+    for (const script of Object.values(scripts)) {
+      for (const state of ['checking', 'backing-up', 'skipped', 'done', 'ready', 'failed']) {
+        const result = run(script, JSON.stringify({ state, copy: 'taken' }));
+        assert.equal(result.status, 0, `${script[1]} ${state}: ${result.stdout}${result.stderr}`);
+        assert.match(result.stdout, new RegExp(`getting ready \\(${state}\\)`));
+      }
+    }
+
+    for (const [body, exit] of [
+      // the normal server answers 404 there (curl -f exits 22): a failed ping stays a failure
+      ['{"message":"Cannot GET /api/server/getting-ready","statusCode":404}', 22],
+      // nothing answers
+      ['', 7],
+      ['{"state":"something-else"}', 0],
+      ['not JSON', 0],
+      ['{"state":"--eval=process.exit(0)"}', 0],
+    ]) {
+      for (const script of Object.values(scripts)) {
+        const result = run(script, body, exit);
+        assert.equal(result.status, 1, `${script[1]} ${body}: ${result.stdout}${result.stderr}`);
+      }
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
