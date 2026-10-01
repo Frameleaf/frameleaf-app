@@ -25,8 +25,12 @@ type JobMapItem = {
   label: string;
 };
 
-export const getForkSchemaBackfillJobOptions = (kind: JobOf<JobName.ForkSchemaBackfill>['kind']): JobsOptions => ({
+export const getForkSchemaBackfillJobOptions = (
+  kind: JobOf<JobName.ForkSchemaBackfill>['kind'],
+  delay?: number,
+): JobsOptions => ({
   deduplication: { id: `${JobName.ForkSchemaBackfill}:${kind}`, keepLastIfActive: true },
+  ...(delay && { delay }),
 });
 
 const DATABASE_BACKUP_LOCK_DURATION = 30 * 60_000;
@@ -626,7 +630,7 @@ export class JobRepository {
         return { deduplication: { id: JobName.ImageDescriptionQueueAll } };
       }
       case JobName.ForkSchemaBackfill: {
-        return getForkSchemaBackfillJobOptions(item.data.kind);
+        return getForkSchemaBackfillJobOptions(item.data.kind, item.data.delay);
       }
       case JobName.SmartAlbumReevaluateAll: {
         // Kind-scoped dispatches get their own dedup namespace so they don't

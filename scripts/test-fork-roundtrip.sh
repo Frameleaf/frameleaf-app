@@ -629,7 +629,8 @@ start_fork
 phase origin-post-migrator src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts
 # FL-289: the first Frameleaf boot adopted the official library by itself (FL-44 adoption, inside
 # the boot migration lock) and the API worker started the backfill. Let it finish before stopping
-# the server: a batch killed mid-claim keeps its 15-minute lease, and no queued job takes it over.
+# the server only to keep this lane short: a batch killed mid-claim is taken over automatically, but
+# only once its 15-minute lease expires (covered by test/medium/specs/fork-schema/backfill-restart.spec.ts).
 for _ in {1..600}; do
   status="$(admin fork-schema verify)"
   grep -q 'Verified: yes' <<<"$status" && break
