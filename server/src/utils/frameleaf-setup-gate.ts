@@ -246,17 +246,19 @@ export const issueSetupTicket = (deps: SetupGateDeps, typed: string, client: Set
  */
 export const withSetupProof = <T>(
   deps: SetupGateDeps,
-  proof: { code?: string; ticket?: string },
+  /** `ticketOnly`: the app's routes, which take the ticket and never the code itself. */
+  proof: { code?: string; ticket?: string; ticketOnly?: boolean },
   client: SetupClient,
   claim: () => Promise<T>,
 ): Promise<T> =>
   deps.databaseRepository.withLock(DatabaseLock.FrameleafServerClaim, async () => {
     await requireClaimable(deps, client);
-    if (proof.ticket) {
+    if (proof.ticket || proof.ticketOnly) {
       const state = await readState(deps);
-      const hash = deps.cryptoRepository.hashSha256(proof.ticket).toString('hex');
+      const hash = deps.cryptoRepository.hashSha256(proof.ticket ?? '').toString('hex');
       const ticket = state?.ticket;
       const valid =
+        !!proof.ticket &&
         !!ticket &&
         hash.length === ticket.hash.length &&
         timingSafeEqual(Buffer.from(hash), Buffer.from(ticket.hash)) &&
