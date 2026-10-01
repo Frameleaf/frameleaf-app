@@ -48,6 +48,8 @@ jobs:
         run: |
           node studio/tools/conformance.mjs
           node --test studio/tools/conformance.test.mjs
+      - name: Validate the Studio graph protocol fixtures (FL-306)
+        run: node --test studio/tools/graph-protocol.test.mjs
     timeout-minutes: 60
   server-unit-tests:
     name: Test & Lint Server
