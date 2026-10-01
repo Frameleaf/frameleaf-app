@@ -1054,8 +1054,8 @@ export type AdminConfigFrameleafRemoteAccessDto = {
 export type AdminConfigFrameleafSignInDto = {
     /** Sign in with Frameleaf button text */
     buttonText: string;
-    /** Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null is unlimited. Applied when the account is created; existing accounts keep their quota. */
-    invitedStorageQuota: number | null;
+    /** Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota. */
+    invitedStorageQuota?: number | null;
     /** Show Sign in with Frameleaf on the local sign-in page too */
     showOnLocalLogin: boolean;
 };

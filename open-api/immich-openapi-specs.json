@@ -46425,7 +46425,7 @@
             "type": "string"
           },
           "invitedStorageQuota": {
-            "description": "Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null is unlimited. Applied when the account is created; existing accounts keep their quota.",
+            "description": "Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota.",
             "maximum": 1000000,
             "minimum": 0,
             "nullable": true,
@@ -46438,7 +46438,6 @@
         },
         "required": [
           "buttonText",
-          "invitedStorageQuota",
           "showOnLocalLogin"
         ],
         "type": "object"
