@@ -167,6 +167,7 @@ describe('automatic official-origin adoption at boot (FL-289)', () => {
     // The backfill ran a batch (which records progress), then the operator paused it.
     await forkSchema.claimBatch('privacy', 1);
     await expect(forkSchema.transitionPhase('dual-write', 'legacy')).resolves.toBe(true);
+    await forkSchema.recordBackfillPause();
 
     await expect(forkSchema.beginInitialBackfill()).resolves.toEqual({ outcome: 'paused', phase: 'legacy' });
     await expect(forkState(db)).resolves.toEqual({ phase: 'legacy', schemaVersion: '1' });

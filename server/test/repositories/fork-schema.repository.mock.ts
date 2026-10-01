@@ -18,6 +18,8 @@ export const newForkSchemaRepositoryMock = (): Mocked<RepositoryInterface<ForkSc
   transitionPhase: vitest.fn(),
   beginInitialBackfill: vitest.fn(),
   recordBackfillPause: vitest.fn(),
+  recordBackfillResume: vitest.fn(),
+  getLiveClaimDelay: vitest.fn(),
   claimBatch: vitest.fn(),
   claimReturnBatch: vitest.fn(),
   claimOfficialHandoffBatch: vitest.fn(),

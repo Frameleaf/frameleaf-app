@@ -2,9 +2,9 @@ import { Queue, Worker } from 'bullmq';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { getForkSchemaBackfillJobOptions } from 'src/repositories/job.repository.js';
 
-const waitFor = async (condition: () => boolean, timeout = 5000): Promise<void> => {
+const waitFor = async (condition: () => boolean | Promise<boolean>, timeout = 5000): Promise<void> => {
   const deadline = Date.now() + timeout;
-  while (!condition()) {
+  while (!(await condition())) {
     if (Date.now() >= deadline) {
       throw new Error('Timed out waiting for BullMQ lifecycle');
     }
@@ -98,4 +98,42 @@ describe('fork schema BullMQ lifecycle', () => {
       await queue.close();
     }
   });
+
+  // FL-289: a batch that finds an orphaned live claim re-queues its kind with a delay until the lease
+  // expires. That add happens while the batch itself is active and holds the dedup id.
+  it('keeps the delayed successor queued by an active batch, and runs it once after the delay', async () => {
+    const queueName = `fork-schema-delayed-${crypto.randomUUID()}`;
+    const queue = new Queue(queueName, { connection });
+    const runs: Array<{ generation: number; at: number }> = [];
+    const worker = new Worker<{ generation: number }>(
+      queueName,
+      async (job) => {
+        runs.push({ generation: job.data.generation, at: Date.now() });
+        if (job.data.generation === 1) {
+          await queue.add('ForkSchemaBackfill', { generation: 2 }, getForkSchemaBackfillJobOptions('storage', 700));
+        }
+      },
+      { connection },
+    );
+
+    try {
+      await worker.waitUntilReady();
+      await queue.add('ForkSchemaBackfill', { generation: 1 }, getForkSchemaBackfillJobOptions('storage'));
+      await waitFor(() => runs.length === 1);
+      await waitFor(async () => (await queue.getDelayedCount()) === 1);
+      // A boot re-seed while the delayed successor waits is deduplicated into it.
+      await queue.add('ForkSchemaBackfill', { generation: 3 }, getForkSchemaBackfillJobOptions('storage'));
+
+      await waitFor(() => runs.length === 2, 5000);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(runs.map(({ generation }) => generation)).toEqual([1, 2]);
+      expect(runs[1]!.at - runs[0]!.at).toBeGreaterThanOrEqual(600);
+      await expect(queue.getWaitingCount()).resolves.toBe(0);
+      await expect(queue.getDelayedCount()).resolves.toBe(0);
+    } finally {
+      await worker.close();
+      await queue.close();
+    }
+  }, 15_000);
 });

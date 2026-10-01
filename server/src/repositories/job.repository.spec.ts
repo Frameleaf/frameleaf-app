@@ -230,6 +230,13 @@ describe(JobRepository.name, () => {
     expect(getForkSchemaBackfillJobOptions('privacy')).toEqual({
       deduplication: { id: `${JobName.ForkSchemaBackfill}:privacy`, keepLastIfActive: true },
     });
+    // FL-289: a re-queue that waits out an orphaned claim keeps the per-kind dedup id.
+    expect(
+      getJobOptions({ name: JobName.ForkSchemaBackfill, data: { kind: 'storage', batchSize: 32, delay: 5000 } }),
+    ).toEqual({
+      deduplication: { id: `${JobName.ForkSchemaBackfill}:storage`, keepLastIfActive: true },
+      delay: 5000,
+    });
   });
 
   describe('jobs that are never retried (FL-71)', () => {
