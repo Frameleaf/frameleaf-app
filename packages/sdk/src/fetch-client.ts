@@ -7506,6 +7506,54 @@ export type PhotographyWorkspaceSaveDto = {
         "type": Type;
     }[];
 };
+export type PhotographyBrandDto = {
+    brand: {
+        background: string;
+        color: string;
+        email: string | "";
+        font: Font;
+        logoAssetId: string | null;
+        logoInitials: string;
+        name: string;
+        phone: string;
+        tagline: string;
+        textColor: string;
+        watermarkColor: string;
+        watermarkOpacity: number;
+        watermarkPosition: WatermarkPosition;
+        watermarkSize: number;
+    };
+    /** Stored logo is no longer eligible; its identity is redacted */
+    logoUnavailable: boolean;
+    revision: string | null;
+};
+export type PhotographyBrandSaveDto = {
+    brand: {
+        background: string;
+        color: string;
+        email: string | "";
+        font: Font;
+        /** Omit to retain the existing logo reference; null explicitly selects initials */
+        logoAssetId?: string | null;
+        logoInitials: string;
+        name: string;
+        phone: string;
+        tagline: string;
+        textColor: string;
+        watermarkColor: string;
+        watermarkOpacity: number;
+        watermarkPosition: WatermarkPosition;
+        watermarkSize: number;
+    };
+    expectedRevision: string | null;
+};
+export type PhotographyLogoCandidatesDto = {
+    logos: {
+        fileName: string;
+        id: string;
+    }[];
+    nextCursor: string | null;
+};
 export type PhotographyPhotosDto = {
     nextCursor: string | null;
     photos: {
@@ -18175,6 +18223,60 @@ export function savePhotographyWorkspace({ photographyWorkspaceSaveDto }: {
     })));
 }
 /**
+ * Read your private studio branding
+ */
+export function getPhotographyBrand(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyBrandDto;
+    }>("/photography/shoots/branding", {
+        ...opts
+    }));
+}
+/**
+ * Save private studio branding with the workspace revision
+ */
+export function savePhotographyBrand({ photographyBrandSaveDto }: {
+    photographyBrandSaveDto: PhotographyBrandSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyBrandDto;
+    }>("/photography/shoots/branding", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographyBrandSaveDto
+    })));
+}
+/**
+ * List your eligible unlocked studio logo images
+ */
+export function getPhotographyLogos({ cursor }: {
+    cursor?: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyLogoCandidatesDto;
+    }>(`/photography/shoots/branding/logos${QS.query(QS.explode({
+        cursor
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * View an eligible owned logo thumbnail without original metadata
+ */
+export function getPhotographyLogoThumbnail({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/shoots/branding/logos/${encodeURIComponent(id)}/thumbnail`, {
+        ...opts
+    }));
+}
+/**
  * Read a page of unlocked shoot photos
  */
 export function getPhotographyPhotos({ cursor, id }: {
@@ -24115,6 +24217,17 @@ export enum Type {
     Commercial = "Commercial",
     Event = "Event",
     Personal = "Personal"
+}
+export enum Font {
+    Editorial = "editorial",
+    Modern = "modern",
+    Classic = "classic"
+}
+export enum WatermarkPosition {
+    BottomRight = "bottom-right",
+    BottomLeft = "bottom-left",
+    Center = "center",
+    TopRight = "top-right"
 }
 export enum WorkflowType {
     AssetV1 = "AssetV1"
