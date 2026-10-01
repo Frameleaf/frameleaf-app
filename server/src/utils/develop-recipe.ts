@@ -3,6 +3,7 @@ import {
   ASSET_DEVELOP_MAX_MASKS,
   ASSET_DEVELOP_MAX_RECIPE_POINTS,
   ASSET_DEVELOP_RECIPE_VERSION,
+  type AssetDevelopCleanup,
   type AssetDevelopCrop,
   type AssetDevelopMask,
   type AssetDevelopMaskAdjustments,
@@ -15,6 +16,7 @@ import {
   type DevelopBitmap,
   type DevelopCoverage,
   brushGrid,
+  developCleanupArtifacts,
   normalizeDevelopCleanup,
   normalizeStrokes,
   orientedToOriginal,
@@ -73,8 +75,8 @@ export const DEVELOP_SLIDER_KEYS = [
 ] as const;
 
 /**
- * FL-233: the still renderer's sliders. Brilliance is a still-only control (the video renderer and
- * copied presets keep `DEVELOP_SLIDER_KEYS`).
+ * FL-233: the still renderer's sliders, which saved develop presets also carry. Brilliance is a
+ * still-only control: the video renderer keeps `DEVELOP_SLIDER_KEYS`.
  */
 export const STILL_SLIDER_KEYS = [...DEVELOP_SLIDER_KEYS, 'brilliance'] as const;
 
@@ -304,6 +306,18 @@ export const isActiveMask = (mask: AssetDevelopMask) =>
 /** FL-233: the artifacts (mask bitmaps) the active masks of a recipe need to render. */
 export const developMaskArtifacts = (masks: AssetDevelopMask[]) =>
   masks.filter((mask) => isActiveMask(mask) && mask.artifact).map((mask) => mask.artifact as string);
+
+/**
+ * FL-233: the artifacts a render of this recipe reads, by kind: the bitmaps of its active masks and
+ * the fills of its enabled Remove operations. Anything else a recipe names is kept, never required.
+ */
+export const developRenderArtifacts = (recipe: {
+  masks?: AssetDevelopMask[];
+  cleanup?: AssetDevelopCleanup[];
+}): { mask: string[]; fill: string[] } => ({
+  mask: [...new Set(developMaskArtifacts(recipe.masks ?? []))],
+  fill: [...new Set(developCleanupArtifacts(recipe.cleanup ?? []))],
+});
 
 /**
  * How strongly a mask applies at a point of the oriented frame, 0 to 1 (before `amount`).
