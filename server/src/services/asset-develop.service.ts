@@ -65,6 +65,7 @@ import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { MEDIA_OPERATION_AUTO_RETRIES, MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
 /** The edited master keeps the source resolution and is encoded well above the playback previews. */
 const MASTER_MIN_QUALITY = 92;
@@ -712,17 +713,13 @@ export class AssetDevelopService {
   }
 
   private async decodeSource(source: DevelopSource, image: SystemConfig['image'], size?: number) {
-    const isRaw = mimeTypes.isRaw(source.originalFileName);
-    const extracted = isRaw && image.extractEmbedded ? await this.mediaRepository.extract(source.originalPath) : null;
+    const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
     const colorspace = this.isSRGB(source.exifInfo) ? Colorspace.Srgb : image.colorspace;
-    const input = extracted ? extracted.buffer : source.originalPath;
-    // An embedded preview carries no EXIF orientation of its own, so it takes the asset's;
-    // the original file is auto-oriented from its own EXIF and must not be rotated twice.
-    const orientation = extracted && source.exifInfo.orientation ? Number(source.exifInfo.orientation) : undefined;
+    // Camera JPEGs are preview evidence, never develop source. LibRaw applies orientation once.
+    const input = isRaw ? await renderRawWithLibRaw(source.originalPath) : source.originalPath;
     const { data, info } = await this.mediaRepository.decodeImage(input, {
       colorspace,
       processInvalidImages: false,
-      orientation,
       size,
     });
     return { data, info: info as RawImageInfo, colorspace };

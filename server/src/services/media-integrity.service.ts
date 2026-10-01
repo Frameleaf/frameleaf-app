@@ -8,7 +8,7 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 
 const execFile = promisify(execFileCallback);
 // Admin override for full decoding of long videos. Native operations retain their concurrency slot after timeout.
@@ -33,7 +33,14 @@ export type MediaIntegrityResult =
   | { status: 'timeout'; reason: 'validation_timeout' | 'decode_timeout' }
   | {
       status: 'transient';
-      reason: 'io_failed' | 'file_changed' | 'decoder_unavailable' | 'decode_unverified' | 'validation_busy';
+      reason:
+        | 'io_failed'
+        | 'file_changed'
+        | 'decoder_unavailable'
+        | 'decoder_resource_limit'
+        | 'raw_decode_damaged'
+        | 'decode_unverified'
+        | 'validation_busy';
     };
 export type MediaIntegrityInput = {
   path: string;
@@ -135,7 +142,7 @@ export class MediaIntegrityService {
     input: MediaIntegrityInput,
     signal: AbortSignal,
   ): Promise<Exclude<MediaIntegrityResult, { status: 'healthy' }> | undefined> {
-    const isRaw = mimeTypes.isRaw(input.originalFileName);
+    const isRaw = mimeTypes.isRaw(input.originalFileName) && !input.originalFileName.toLowerCase().endsWith('.psd');
     try {
       if (input.type === AssetType.Video) {
         await execFile(
@@ -145,7 +152,7 @@ export class MediaIntegrityService {
         );
       } else if (input.type === AssetType.Image) {
         // RAW previews do not prove the original sensor data can be decoded.
-        const source = isRaw ? await renderRawWithLibRaw(input.path) : input.path;
+        const source = isRaw ? await renderRawWithLibRaw(input.path, signal) : input.path;
         if (signal.aborted) {
           return { status: 'timeout', reason: 'validation_timeout' };
         }
@@ -154,12 +161,34 @@ export class MediaIntegrityService {
         return { status: 'unsupported', reason: 'media_type_unsupported' };
       }
     } catch (error) {
+      if (signal.aborted) {
+        return { status: 'timeout', reason: 'validation_timeout' };
+      }
+      if (error instanceof RawRenderError) {
+        switch (error.reason) {
+          case 'cancelled':
+            return { status: 'timeout', reason: 'validation_timeout' };
+          case 'timeout':
+            return { status: 'timeout', reason: 'decode_timeout' };
+          case 'dependency_missing':
+            return { status: 'transient', reason: 'decoder_unavailable' };
+          case 'resource_limit':
+            return { status: 'transient', reason: 'decoder_resource_limit' };
+          case 'damaged':
+            // A decoder report alone cannot confirm damage or make a RAW eligible for trash.
+            return { status: 'transient', reason: 'raw_decode_damaged' };
+          case 'io':
+            return error.code === 'EACCES' || error.code === 'EPERM'
+              ? { status: 'unreadable', reason: 'access_denied' }
+              : { status: 'transient', reason: 'io_failed' };
+          case 'unsupported':
+            return { status: 'unsupported', reason: 'raw_decode_unsupported' };
+          case 'decode_failed':
+            return { status: 'transient', reason: 'decode_unverified' };
+        }
+      }
       const details = error && typeof error === 'object' ? error : {};
-      if (
-        signal.aborted ||
-        ('killed' in details && details.killed) ||
-        ('code' in details && details.code === 'ETIMEDOUT')
-      ) {
+      if (('killed' in details && details.killed) || ('code' in details && details.code === 'ETIMEDOUT')) {
         return { status: 'timeout', reason: 'decode_timeout' };
       }
       if ('code' in details && (details.code === 'EACCES' || details.code === 'EPERM')) {

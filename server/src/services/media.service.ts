@@ -95,7 +95,7 @@ import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
 import { videoDevelopFilters } from 'src/utils/video-develop.js';
@@ -431,13 +431,8 @@ export class MediaService extends BaseService {
     return extracted;
   }
 
-  private async renderRawImage(originalPath: string, minSize: number) {
-    const buffer = await renderRawWithLibRaw(originalPath);
-    if (!(await this.shouldUseExtractedImage(buffer, minSize))) {
-      return null;
-    }
-
-    return { buffer, format: RawExtractedFormat.Tiff };
+  private async renderRawImage(originalPath: string) {
+    return { buffer: await renderRawWithLibRaw(originalPath), format: RawExtractedFormat.Tiff };
   }
 
   private async decodeImage(thumbSource: string | Buffer, exifInfo: ThumbnailAsset['exifInfo'], targetSize?: number) {
@@ -455,6 +450,9 @@ export class MediaService extends BaseService {
   }
 
   private shouldSkipThumbnailDecodeError(error: unknown, fileName: string) {
+    if (error instanceof RawRenderError) {
+      return error.reason === 'unsupported';
+    }
     const message = error instanceof Error ? error.message : String(error);
     return (
       isUnsupportedRawDecodeError(error) ||
@@ -467,84 +465,56 @@ export class MediaService extends BaseService {
   }
 
   private async extractOriginalImage(asset: ThumbnailAsset, image: SystemConfig['image'], useEdits = false) {
-    const isRaw = mimeTypes.isRaw(asset.originalFileName);
-    const extractEmbedded = image.extractEmbedded && isRaw;
-    const enhancedRawEnabled = image.enhancedRaw?.enabled;
-    let extracted = extractEmbedded ? await this.extractImage(asset.originalPath, image.preview.size) : null;
-    let renderedRaw = false;
-    let rawRenderError: unknown;
-
-    if (!extracted && extractEmbedded && enhancedRawEnabled) {
-      try {
-        extracted = await this.renderRawImage(asset.originalPath, image.preview.size);
-        renderedRaw = !!extracted;
-      } catch (error) {
-        rawRenderError = error;
-        this.logger.debug(`Could not render RAW image with LibRaw for ${asset.id}: ${error}`);
-      }
-    }
-
+    // PSD is in the legacy RAW extension list, but is a layered image, not sensor data.
+    const isRaw = mimeTypes.isRaw(asset.originalFileName) && !asset.originalFileName.toLowerCase().endsWith('.psd');
     const generateFullsize =
       ((image.fullsize.enabled || asset.exifInfo.projectionType === 'EQUIRECTANGULAR') &&
         !mimeTypes.isWebSupportedImage(asset.originalPath)) ||
       useEdits;
+    // Embedded camera images are fast previews only. Fullsize and edit input always comes from the sensor.
+    let extracted =
+      isRaw && image.extractEmbedded && !generateFullsize
+        ? await this.extractImage(asset.originalPath, image.preview.size).catch(() => null)
+        : null;
+    let sensorRendered = false;
+    if (isRaw && !extracted) {
+      extracted = await this.renderRawImage(asset.originalPath);
+      sensorRendered = true;
+    }
 
-    const decodeThumbSource = () => {
-      const convertFullsize =
-        generateFullsize && (!extracted || !mimeTypes.isWebSupportedImage(` .${extracted.format}`));
-      const thumbSource = extracted ? extracted.buffer : asset.originalPath;
+    const decodeSource = () => {
+      const convertFullsize = generateFullsize && (!extracted || sensorRendered);
       return this.decodeImage(
-        thumbSource,
-        // only specify orientation to extracted images which don't have EXIF orientation data
-        // or it can double rotate the image
-        extracted ? asset.exifInfo : { ...asset.exifInfo, orientation: null },
+        extracted ? extracted.buffer : asset.originalPath,
+        // Embedded previews take the asset's orientation. LibRaw and original-file decoders already apply it.
+        extracted && !sensorRendered ? asset.exifInfo : { ...asset.exifInfo, orientation: null },
         convertFullsize ? undefined : image.preview.size,
       ).then((decoded) => ({ ...decoded, convertFullsize }));
     };
-
-    let decoded: Awaited<ReturnType<typeof decodeThumbSource>>;
+    let decoded: Awaited<ReturnType<typeof decodeSource>>;
     try {
-      decoded = await decodeThumbSource();
+      decoded = await decodeSource();
     } catch (error) {
-      if (isRaw && enhancedRawEnabled && !renderedRaw) {
-        try {
-          extracted = await this.renderRawImage(asset.originalPath, image.preview.size);
-          renderedRaw = !!extracted;
-          if (extracted) {
-            decoded = await decodeThumbSource();
-          } else {
-            throw error;
-          }
-        } catch (fallbackError) {
-          throw rawRenderError ?? fallbackError;
-        }
-      } else {
-        throw rawRenderError ?? error;
+      if (!isRaw || sensorRendered) {
+        throw error;
       }
+      // An unreadable embedded preview gets one sensor attempt, never a repeated repository/CLI fallback.
+      extracted = await this.renderRawImage(asset.originalPath);
+      sensorRendered = true;
+      decoded = await decodeSource();
     }
-
-    const { data, info, colorspace, convertFullsize } = decoded;
 
     let isTransparent = false;
     if (!extracted && mimeTypes.canBeTransparent(asset.originalPath)) {
       ({ isTransparent } = await this.mediaRepository.getImageMetadata(asset.originalPath));
     }
-
-    return {
-      extracted,
-      data,
-      info,
-      colorspace,
-      convertFullsize,
-      generateFullsize,
-      isTransparent,
-    };
+    return { ...decoded, extracted, generateFullsize, isTransparent };
   }
 
   private async generateImageThumbnails(asset: ThumbnailAsset, { image }: SystemConfig, useEdits: boolean = false) {
     // Handle embedded preview extraction for RAW files
     const extractedImage = await this.extractOriginalImage(asset, image, useEdits);
-    const { info, data, colorspace, generateFullsize, convertFullsize, extracted, isTransparent } = extractedImage;
+    const { info, data, colorspace, convertFullsize, isTransparent } = extractedImage;
 
     const previewFormat = image.preview.format;
     this.warnOnTransparencyLoss(isTransparent, previewFormat, asset.id);
@@ -603,31 +573,6 @@ export class MediaService extends BaseService {
       };
       assertOriginalPreserved({ originalPath: asset.originalPath, outputPath: fullsizeFile.path });
       promises.push(this.mediaRepository.generateThumbnail(data, fullsizeOptions, fullsizeFile.path));
-    } else if (generateFullsize && extracted && extracted.format === RawExtractedFormat.Jpeg) {
-      fullsizeFile = this.getImageFile(asset, {
-        fileType: AssetFileType.FullSize,
-        format: extracted.format,
-        isEdited: false,
-        isProgressive: !!image.fullsize.progressive && image.fullsize.format !== ImageFormat.Webp,
-        isTransparent,
-      });
-      this.storageCore.ensureFolders(fullsizeFile.path);
-
-      // Write the buffer to disk with essential EXIF data
-      await this.storageRepository.createOrOverwriteFile(fullsizeFile.path, extracted.buffer);
-      await this.mediaRepository.writeExif(
-        {
-          orientation: asset.exifInfo.orientation,
-          colorspace: asset.exifInfo.colorspace,
-        },
-        fullsizeFile.path,
-      );
-      // FL-54: the embedded preview carries the camera's GPS; a derived image never keeps it. If it cannot
-      // be removed, drop the fullsize file and let viewers fall back to the preview.
-      if (!(await this.mediaRepository.removeLocation(fullsizeFile.path))) {
-        await this.storageRepository.unlink(fullsizeFile.path);
-        fullsizeFile = undefined;
-      }
     }
 
     const outputs = await Promise.all(promises);
