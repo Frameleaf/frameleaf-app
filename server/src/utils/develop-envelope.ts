@@ -3,9 +3,26 @@ import {
   AssetDevelopMaskKind,
   type AssetDevelopRecipe,
   AssetDevelopRecipeSchema,
+  DarktableDevelopRecipeSchema,
   type KnownAssetDevelopRecipe,
   KnownAssetDevelopRecipeSchema,
 } from 'src/dtos/asset-develop.dto.js';
+
+/** Route only explicitly supported native recipes; opaque future/imported recipes remain saveable. */
+export function assertRenderableDevelopRecipe(value: unknown) {
+  const envelope = developEnvelope(value);
+  if (envelope.version !== 2) {
+    return renderDevelopProjection(envelope);
+  }
+  const parsed = DarktableDevelopRecipeSchema.safeParse(envelope);
+  if (!parsed.success) {
+    throw new BadRequestException({
+      message: 'This native recipe contains unsupported render fields',
+      code: 'develop_renderer_unsupported',
+    });
+  }
+  return parsed.data;
+}
 
 /** Validate/clone JSON before storage or response; never project away opaque content. */
 export function developEnvelope(value: unknown): AssetDevelopRecipe {

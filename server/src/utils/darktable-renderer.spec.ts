@@ -1,0 +1,174 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import {
+  DARKTABLE_TIMEOUT_MS,
+  prepareNativeHistory,
+  renderDarktable,
+  translateDarktableExposure,
+  verifyDarktableVersion,
+} from 'src/utils/darktable-renderer.js';
+
+const mocks = vi.hoisted(() => ({ exec: vi.fn(), metadata: vi.fn(), stats: vi.fn() }));
+vi.mock('node:child_process', () => ({
+  execFile: Object.assign(vi.fn(), { [Symbol.for('nodejs.util.promisify.custom')]: mocks.exec }),
+}));
+vi.mock('sharp', () => ({ default: () => ({ metadata: mocks.metadata, stats: mocks.stats }) }));
+
+const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 };
+
+/** An explicit unit-test database double, not evidence of a native camera history. */
+function historyDouble(file: string) {
+  const db = new DatabaseSync(file);
+  db.exec('CREATE TABLE images(id INTEGER, history_end INTEGER); INSERT INTO images VALUES(1, 1)');
+  db.exec(
+    'CREATE TABLE history(imgid INTEGER, num INTEGER, operation TEXT, module INTEGER, op_params BLOB, enabled INTEGER, multi_priority INTEGER)',
+  );
+  db.prepare('INSERT INTO history VALUES(1, 0, ?, 7, ?, 1, 0)').run('exposure', Buffer.alloc(28));
+  db.close();
+}
+
+describe('pinned darktable adapter', () => {
+  let directory: string;
+  let input: string;
+  let nativeDirectory: string | undefined;
+
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    directory = await mkdtemp(join(tmpdir(), 'darktable-test-'));
+    input = join(directory, 'source.CR2');
+    await writeFile(input, 'unit-test original');
+    nativeDirectory = undefined;
+    mocks.metadata.mockResolvedValue({
+      format: 'png',
+      bitsPerSample: 16,
+      width: 10,
+      height: 8,
+      icc: Buffer.from('profile'),
+    });
+    mocks.stats.mockResolvedValue({});
+    mocks.exec.mockImplementation(async (_command: string, args: string[]) => {
+      if (args[0] === '--version') {
+        return { stdout: 'darktable 5.6.1\n', stderr: '' };
+      }
+      nativeDirectory = dirname(args[0]);
+      if (args[1].endsWith('bootstrap.png')) {
+        historyDouble(args[args.indexOf('--library') + 1]);
+      }
+      await writeFile(args[1], 'unit-test output');
+      return { stdout: '', stderr: '' };
+    });
+  });
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it.each(['5.6.0', '5.6.10', '5.6.1+4', '5.8.0'])('rejects engine drift: %s', (version) => {
+    expect(() => verifyDarktableVersion(`darktable ${version}\n`)).toThrow('requires darktable 5.6.1');
+  });
+
+  it('maps EV to the verified native v7 layout without changing other native defaults', () => {
+    const params = Buffer.alloc(28);
+    params.writeFloatLE(50, 12);
+    params.writeFloatLE(-4, 16);
+    params.writeInt32LE(1, 20);
+    params.writeInt32LE(1, 24);
+    const translated = translateDarktableExposure(params, -1.25);
+    expect(translated.readFloatLE(8)).toBe(-1.25);
+    expect(translated.subarray(12, 20)).toEqual(params.subarray(12, 20));
+    expect(translated.readInt32LE(20)).toBe(0);
+    expect(translated.readInt32LE(24)).toBe(0);
+    expect(params.readFloatLE(8)).toBe(0);
+    expect(() => translateDarktableExposure(Buffer.alloc(24), 1)).toThrow();
+    expect(() => translateDarktableExposure(params, NaN)).toThrow();
+  });
+
+  it('rejects unexpected native module versions before modifying history', () => {
+    const file = join(directory, 'library.db');
+    historyDouble(file);
+    const db = new DatabaseSync(file);
+    db.exec('UPDATE history SET module = 8');
+    db.close();
+    expect(() => prepareNativeHistory(file, 1)).toThrow('Unsupported native exposure history');
+  });
+
+  it.each([{ ...recipe, contrast: 5 }, { ...recipe, exposureEV: 19 }, { ...recipe, exposureEV: NaN }, { version: 1 }])(
+    'rejects unsupported recipes before starting an engine: %j',
+    async (value) => {
+      await expect(renderDarktable(input, value)).rejects.toThrow();
+      expect(mocks.exec).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses isolated original/history, pinned color policy, and fully validates output before cleanup', async () => {
+    const result = await renderDarktable(input, recipe);
+    expect(result.toString()).toBe('unit-test output');
+    expect(await readFile(input, 'utf8')).toBe('unit-test original');
+    expect(mocks.exec).toHaveBeenCalledTimes(3);
+    const args = mocks.exec.mock.calls[2][1] as string[];
+    expect(args[0]).not.toBe(input);
+    expect(args).toEqual(
+      expect.arrayContaining(['SRGB', 'RELATIVE_COLORIMETRIC', '--disable-opencl', 'write_sidecar_files=never']),
+    );
+    expect(mocks.stats).toHaveBeenCalledOnce();
+    await expect(readFile(join(nativeDirectory!, 'developed.png'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('does not invoke native rendering after a version mismatch', async () => {
+    mocks.exec.mockResolvedValue({ stdout: 'darktable 5.4.1\n' });
+    await expect(renderDarktable(input, recipe)).rejects.toThrow('requires darktable 5.6.1');
+    expect(mocks.exec).toHaveBeenCalledOnce();
+  });
+
+  it('refuses truncated native output and cleans up', async () => {
+    mocks.stats.mockRejectedValue(new Error('truncated PNG'));
+    await expect(renderDarktable(input, recipe)).rejects.toThrow('truncated PNG');
+    await expect(readFile(join(nativeDirectory!, 'developed.png'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('passes caller cancellation and the hard deadline to native execution with SIGKILL', async () => {
+    const controller = new AbortController();
+    mocks.exec.mockImplementation((_command, _args, options) => {
+      expect(options.killSignal).toBe('SIGKILL');
+      controller.abort(new Error('cancelled'));
+      options.signal.throwIfAborted();
+    });
+    await expect(renderDarktable(input, recipe, controller.signal)).rejects.toThrow('cancelled');
+  });
+
+  it('sets one deadline for detection plus both native invocations', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      await renderDarktable(input, recipe);
+      expect(timeout).toHaveBeenCalledWith(DARKTABLE_TIMEOUT_MS);
+      const signals = mocks.exec.mock.calls.map((call) => call[2].signal);
+      expect(signals[1]).toBe(signals[0]);
+      expect(signals[2]).toBe(signals[0]);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it('propagates a deadline during native processing and removes partial output', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    mocks.exec.mockImplementation(async (_command, args, options) => {
+      if (args[0] === '--version') {
+        return { stdout: 'darktable 5.6.1\n' };
+      }
+      nativeDirectory = dirname(args[0]);
+      await writeFile(args[1], 'partial output');
+      controller.abort(new DOMException('Native deadline exceeded', 'TimeoutError'));
+      options.signal.throwIfAborted();
+    });
+    try {
+      await expect(renderDarktable(input, recipe)).rejects.toMatchObject({ name: 'TimeoutError' });
+      await expect(readFile(join(nativeDirectory!, 'bootstrap.png'))).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(mocks.exec).toHaveBeenCalledTimes(2);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+});

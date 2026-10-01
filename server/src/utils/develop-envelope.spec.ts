@@ -1,5 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
-import { developEnvelope, preserveDevelopEnvelope, renderDevelopProjection } from 'src/utils/develop-envelope.js';
+import {
+  assertRenderableDevelopRecipe,
+  developEnvelope,
+  preserveDevelopEnvelope,
+  renderDevelopProjection,
+} from 'src/utils/develop-envelope.js';
 import {
   applyDevelopMasks,
   applyDevelopTone,
@@ -9,6 +14,14 @@ import {
 } from 'src/utils/develop-recipe.js';
 
 describe('develop recipe envelope', () => {
+  it('routes explicit native recipes while retaining unknown content without silently rendering it', () => {
+    const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 };
+    expect(assertRenderableDevelopRecipe(recipe)).toEqual(recipe);
+    const extended = { ...recipe, masks: [{ kind: 'subject' }] };
+    expect(developEnvelope(extended)).toEqual(extended);
+    expect(() => assertRenderableDevelopRecipe(extended)).toThrow(BadRequestException);
+    expect(assertRenderableDevelopRecipe({ version: 1 })).toEqual(defaultDevelopRecipe());
+  });
   it('keeps arbitrary future shapes verbatim, including future meanings of current field names', () => {
     const value = { version: 2, crop: { mesh: [1, 2] }, masks: { future: true }, contrast: { curve: [0, 1] } };
     expect(developEnvelope(value)).toEqual(value);

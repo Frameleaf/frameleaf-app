@@ -11,12 +11,18 @@ import { AssetType, AssetVisibility, ChecksumAlgorithm, JobName, JobStatus } fro
 import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositories/asset-develop.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { AssetDevelopService, DEVELOP_RENDER_LEASE_MS } from 'src/services/asset-develop.service.js';
+import { DARKTABLE_RENDERER_VERSION, renderDarktable } from 'src/utils/darktable-renderer.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { getForGenerateThumbnail } from 'test/mappers.js';
 import { ServiceMocks, getMocks } from 'test/utils.js';
+
+vi.mock('src/utils/darktable-renderer.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/utils/darktable-renderer.js')>()),
+  renderDarktable: vi.fn(),
+}));
 
 const noAdjustments = {
   exposure: 0,
@@ -360,6 +366,19 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('preview', () => {
+    it('uses the full native sRGB pipeline for an explicit version 2 RAW recipe', async () => {
+      const raw = { ...getForGenerateThumbnail(asset), originalFileName: 'image.CR2' };
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(raw);
+      const native = Buffer.from('mock-native-png');
+      vi.mocked(renderDarktable).mockResolvedValue(native);
+      mocks.media.encodeDevelopOutput.mockResolvedValue(Buffer.from('jpeg'));
+      const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 };
+      await sut.preview(authStub.user1, asset.id, { recipe, size: 640 });
+      expect(renderDarktable).toHaveBeenCalledWith(raw.originalPath, recipe, expect.any(AbortSignal));
+      expect(mocks.media.extract).not.toHaveBeenCalled();
+      expect(mocks.media.decodeImage).toHaveBeenCalledWith(native, { colorspace: 'srgb', processInvalidImages: false });
+      expect(mocks.media.renderDevelopGeometry).not.toHaveBeenCalled();
+    });
     it('renders from the original and returns bytes without writing files', async () => {
       mocks.media.encodeDevelopOutput.mockResolvedValue(Buffer.from('jpeg-bytes'));
       const result = await sut.preview(authStub.user1, asset.id, {
@@ -398,6 +417,60 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('handleRender', () => {
+    it('records native provenance and derives master and preview from the same native pixels', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        originalFileName: 'image.CR2',
+      });
+      const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 };
+      const revision = revisionStub({
+        assetId: asset.id,
+        recipe,
+        recipeVersion: 2,
+        status: AssetDevelopRevisionStatus.Queued,
+      });
+      developRepository.get.mockResolvedValue(revision);
+      vi.mocked(renderDarktable).mockResolvedValue(Buffer.from('mock-native-png'));
+      await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Success);
+      expect(developRepository.beginAttempt).toHaveBeenCalledWith(
+        revision.id,
+        DARKTABLE_RENDERER_VERSION,
+        DEVELOP_RENDER_LEASE_MS / 1000,
+      );
+      const calls = mocks.media.encodeDevelopOutput.mock.calls;
+      expect(calls).toHaveLength(2);
+      expect(calls[0][0]).toBe(calls[1][0]);
+      expect(calls[0][2]).toMatchObject({ colorspace: 'srgb', detail: { median: 0 } });
+      expect(calls[1][2]).toMatchObject({ colorspace: 'srgb', detail: { median: 0 } });
+      expect(mocks.media.extract).not.toHaveBeenCalled();
+    });
+
+    it('aborts native work when cancellation arrives through the shared revision row', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        originalFileName: 'image.CR2',
+      });
+      const revision = revisionStub({
+        assetId: asset.id,
+        recipe: { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 },
+        status: AssetDevelopRevisionStatus.Queued,
+      });
+      developRepository.get.mockResolvedValue(revision);
+      developRepository.isCancelRequested.mockResolvedValueOnce(false).mockResolvedValue(true);
+      vi.mocked(renderDarktable).mockImplementation(
+        (_input, _recipe, signal) =>
+          new Promise((_resolve, reject) => {
+            signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+          }),
+      );
+      await expect(sut.handleRender({ id: revision.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+      expect(developRepository.update).toHaveBeenCalledWith(
+        revision.id,
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Cancelled }),
+      );
+    });
     it('renders into new files, publishes them atomically and makes the version current', async () => {
       const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued, revision: 3 });
       developRepository.get.mockResolvedValue(revision);

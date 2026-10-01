@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { setInterval } from 'node:timers/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SystemConfig } from 'src/dtos/config.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -17,6 +18,7 @@ import {
   AssetDevelopRevisionResponseDto,
   AssetDevelopRevisionStatus,
   AssetDevelopSaveDto,
+  type DarktableDevelopRecipe,
 } from 'src/dtos/asset-develop.dto.js';
 import { AssetDevelopImportDto, DevelopExportResponseDto } from 'src/dtos/photo-tools.dto.js';
 import {
@@ -49,7 +51,8 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
-import { developEnvelope, renderDevelopProjection } from 'src/utils/develop-envelope.js';
+import { DARKTABLE_RENDERER_VERSION, renderDarktable } from 'src/utils/darktable-renderer.js';
+import { assertRenderableDevelopRecipe, developEnvelope, renderDevelopProjection } from 'src/utils/develop-envelope.js';
 import {
   DEVELOP_RENDERER_VERSION,
   applyDevelopMasks,
@@ -140,7 +143,7 @@ export class AssetDevelopService {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
     const recipe = developEnvelope(dto.recipe);
-    if (dto.render && !dto.sourceRevisionId) renderDevelopProjection(recipe);
+    if (dto.render && !dto.sourceRevisionId) assertRenderableDevelopRecipe(recipe);
     const revision = await this.assetDevelopRepository.create({
       assetId,
       ownerId: asset.ownerId,
@@ -162,7 +165,7 @@ export class AssetDevelopService {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
     const revision = await this.requireRevision(assetId, revisionId);
-    if (revision.kind === AssetDevelopRevisionKind.Recipe) renderDevelopProjection(revision.recipe);
+    if (revision.kind === AssetDevelopRevisionKind.Recipe) assertRenderableDevelopRecipe(revision.recipe);
     if (
       revision.status === AssetDevelopRevisionStatus.Queued ||
       revision.status === AssetDevelopRevisionStatus.Rendering
@@ -226,10 +229,11 @@ export class AssetDevelopService {
       throw new BadRequestException('Only images have develop previews');
     }
     const { image } = await this.getConfig();
-    const recipe = renderDevelopProjection(dto.recipe);
-    // Decode at roughly preview scale so an interactive request never touches the full frame.
-    const decoded = await this.decodeSource(source, image, dto.size * 2);
-    const rendered = await this.renderRecipe(decoded, recipe, 0);
+    const recipe = assertRenderableDevelopRecipe(dto.recipe);
+    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe) : undefined;
+    // Legacy recipes decode at preview scale; native previews share the full-resolution final pipeline.
+    const decoded = native ?? (await this.decodeSource(source, image, dto.size * 2));
+    const rendered = native ?? (await this.renderRecipe(decoded, renderDevelopProjection(dto.recipe), 0));
     const format = image.preview.format;
     const buffer = await this.mediaRepository.encodeDevelopOutput(rendered.data, rendered.info, {
       detail: rendered.detail,
@@ -329,7 +333,9 @@ export class AssetDevelopService {
 
     const revision = await this.assetDevelopRepository.beginAttempt(
       id,
-      DEVELOP_RENDERER_VERSION,
+      existing.kind === AssetDevelopRevisionKind.Recipe && existing.recipe.version === 2
+        ? DARKTABLE_RENDERER_VERSION
+        : DEVELOP_RENDERER_VERSION,
       DEVELOP_RENDER_LEASE_MS / 1000,
     );
     if (!revision) {
@@ -461,7 +467,7 @@ export class AssetDevelopService {
       if (tracked.has(revision.id)) continue;
       if (revision.kind === AssetDevelopRevisionKind.Recipe) {
         try {
-          renderDevelopProjection(revision.recipe);
+          assertRenderableDevelopRecipe(revision.recipe);
         } catch (error) {
           if (!(error instanceof BadRequestException)) throw error;
           await this.assetDevelopRepository.update(revision.id, {
@@ -634,7 +640,7 @@ export class AssetDevelopService {
   }
 
   private async queueRender(revision: AssetDevelopRevision, label: string): Promise<AssetDevelopRevisionResponseDto> {
-    if (revision.kind === AssetDevelopRevisionKind.Recipe) renderDevelopProjection(revision.recipe);
+    if (revision.kind === AssetDevelopRevisionKind.Recipe) assertRenderableDevelopRecipe(revision.recipe);
     // A person asking for a render starts afresh: it gets its own automatic retry.
     const queued = await this.assetDevelopRepository.update(revision.id, {
       status: AssetDevelopRevisionStatus.Queued,
@@ -742,6 +748,48 @@ export class AssetDevelopService {
     return { data: shaped.data, info: shaped.info, detail };
   }
 
+  private async renderNativeRecipe(source: DevelopSource, recipe: DarktableDevelopRecipe, revisionId?: string) {
+    if (!mimeTypes.isRaw(source.originalFileName)) {
+      throw new BadRequestException('Native develop recipes require a RAW original');
+    }
+    if (revisionId) {
+      await this.progress(revisionId, 10);
+    }
+    const controller = new AbortController();
+    // Cancellation may arrive through another API worker; the shared row is authoritative.
+    const watching = (async () => {
+      if (!revisionId) {
+        return;
+      }
+      try {
+        for await (const _ of setInterval(1000, undefined, { signal: controller.signal })) {
+          await this.progress(revisionId, 10);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          controller.abort(error);
+        }
+      }
+    })();
+    try {
+      const buffer = await renderDarktable(source.originalPath, recipe, controller.signal);
+      const { data, info } = await this.mediaRepository.decodeImage(buffer, {
+        colorspace: Colorspace.Srgb,
+        processInvalidImages: false,
+      });
+      controller.signal.throwIfAborted();
+      return { data, info: info as RawImageInfo, colorspace: Colorspace.Srgb, detail: { median: 0 } };
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw controller.signal.reason;
+      }
+      throw error;
+    } finally {
+      controller.abort();
+      await watching;
+    }
+  }
+
   /** Queued, or rendering under a lease that has lapsed. */
   private isClaimable(revision: Pick<AssetDevelopRevision, 'status' | 'updatedAt'>) {
     if (revision.status === AssetDevelopRevisionStatus.Queued) {
@@ -776,11 +824,13 @@ export class AssetDevelopService {
     tmp: { master: string; preview: string },
     image: SystemConfig['image'],
   ) {
-    const recipe = renderDevelopProjection(revision.recipe);
-    const decoded = await this.decodeSource(source, image);
+    const recipe = assertRenderableDevelopRecipe(revision.recipe);
+    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, revision.id) : undefined;
+    const decoded = native ?? (await this.decodeSource(source, image));
     await this.progress(revision.id, 25);
 
-    const rendered = await this.renderRecipe(decoded, recipe, revision.revision);
+    const rendered =
+      native ?? (await this.renderRecipe(decoded, renderDevelopProjection(revision.recipe), revision.revision));
     await this.progress(revision.id, 60);
 
     this.storageRepository.mkdirSync(path.dirname(outputs.master));
