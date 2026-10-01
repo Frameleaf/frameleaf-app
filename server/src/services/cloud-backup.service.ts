@@ -13,6 +13,7 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
+  CloudBackupOwnerSetupResponseDto,
   OwnerBackupHistoryDto,
   OwnerBackupHistoryResponseDto,
   OwnerBackupPageDto,
@@ -167,7 +168,12 @@ import { compareCodeUnits } from 'src/utils/compare.js';
 import { recordConfigHistory } from 'src/utils/config-history.js';
 import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
 import { CLOUD_BACKUP_DUMP_PREFIX, isCloudBackupDumpName } from 'src/utils/database-backups.js';
-import { BackupGrantResponse, backupGrantProblem, managedBackupRefusal } from 'src/utils/frameleaf-cloud-backup.js';
+import {
+  BackupGrantResponse,
+  MANAGED_ENTITLEMENT_MISSING_REFUSAL,
+  backupGrantProblem,
+  managedBackupRefusal,
+} from 'src/utils/frameleaf-cloud-backup.js';
 import {
   CLONE_SUSPECTED_NOTICE,
   identityDirectory,
@@ -442,6 +448,61 @@ export class CloudBackupService {
         storedAt: metadata?.escrow?.storedAt ?? null,
       },
     };
+  }
+
+  /**
+   * FL-234: the activation chain for the server's owner (an administrator) to poll. Stored metadata and
+   * the active operation only: no Frameleaf Cloud call, and nothing about the bucket, key, usage or files.
+   */
+  async getOwnerSetup(auth: AuthDto): Promise<CloudBackupOwnerSetupResponseDto> {
+    if (auth.sharedLink || !auth.user.isAdmin) {
+      throw new ForbiddenException('Only the server owner can read the cloud backup setup');
+    }
+    const [config, metadata, active, link] = await Promise.all([
+      this.readSettings(),
+      this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup),
+      this.operations.getActiveOfKind(KIND),
+      readCloudLink(this.gatewayDeps()),
+    ]);
+    const settings = config.frameleafCloud.cloudBackup;
+    const target = settings.enabled ? settings.target : 'off';
+    const activeRow = active ? await this.operations.getOfKind(active.id, KIND) : undefined;
+    const activeBackup = activeRow && taskOf(activeRow) === 'backup' ? activeRow : undefined;
+
+    let entitlement: CloudBackupOwnerSetupResponseDto['entitlement'] = 'not-applicable';
+    if (target === 'managed') {
+      const refused = metadata?.managed?.refusal === MANAGED_ENTITLEMENT_MISSING_REFUSAL;
+      entitlement = link.linked && !refused ? 'seen' : 'pending';
+    }
+
+    let firstRun: CloudBackupOwnerSetupResponseDto['firstRun'] = 'not-started';
+    if (metadata?.lastSuccessAt) {
+      firstRun = 'done';
+    } else if (activeBackup) {
+      const state = runState(activeBackup.status as MediaOperationStatus, !!activeBackup.pauseRequestedAt);
+      firstRun = state === 'queued' ? 'queued' : 'running';
+    } else if (metadata?.lastRun?.status === 'failed') {
+      firstRun = 'failed';
+    }
+
+    return {
+      target,
+      entitlement,
+      bucketClaimed: !!metadata,
+      claimedAt: metadata?.claimedAt ?? null,
+      keyLoaded: metadata ? !!(await this.loadKeyOrAsk(metadata).catch(() => null)) : false,
+      firstRun,
+      nextRunAt: metadata && target !== 'off' ? this.nextScheduledRun(settings.schedule.cronExpression) : null,
+    };
+  }
+
+  /** FL-234: when the configured schedule next starts a backup, or null for an expression that never does. */
+  private nextScheduledRun(cronExpression: string): string | null {
+    try {
+      return new CronTime(cronExpression).sendAt().toUTC().toISO();
+    } catch {
+      return null;
+    }
   }
 
   /** Internal availability only: no grants, remote usage calls or admin settings in the public DTO. */

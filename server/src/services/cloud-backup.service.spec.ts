@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -2278,6 +2278,187 @@ describe(CloudBackupService.name, () => {
         sut['manifestCache'] = undefined;
         await expect(sut.listManifestAlbums({ manifestKey })).resolves.toMatchObject({ albums: [] });
       });
+    });
+  });
+
+  describe('FL-234 owner setup progress', () => {
+    const grant = cloudContractFixture('backup/grant-response.json');
+    const cloudUrl = 'https://cloud.frameleaf.test';
+    const managedRef = bucketRef(grant.endpoint, grant.bucket);
+    const managedClaim = (overrides: Record<string, unknown> = {}) =>
+      claim({ target: 'managed', bucketRef: managedRef, endpoint: grant.endpoint, bucket: grant.bucket, ...overrides });
+    const ALLOWED = ['bucketClaimed', 'claimedAt', 'entitlement', 'firstRun', 'keyLoaded', 'nextRunAt', 'target'];
+    const useManaged = ({ linked }: { linked: boolean }) => {
+      mocks.config.getEnv.mockReturnValue(
+        mockEnvData({ frameleafCloud: { ...mockEnvData({}).frameleafCloud, identityDir: '/identity', url: cloudUrl } }),
+      );
+      if (linked) {
+        metadata[SystemMetadataKey.FrameleafCloudLink] = { status: 'linked', cloudUrl, instanceId: 'instance-1' };
+      }
+      metadata[SystemMetadataKey.SystemConfig] = {
+        frameleafCloud: { cloudBackup: { enabled: true, target: 'managed', keyMode: 'server' } },
+      };
+    };
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('reports nothing started before setup', async () => {
+      const setup = await sut.getOwnerSetup(authStub.admin);
+
+      expect(setup).toEqual({
+        target: 'off',
+        entitlement: 'not-applicable',
+        bucketClaimed: false,
+        claimedAt: null,
+        keyLoaded: false,
+        firstRun: 'not-started',
+        nextRunAt: null,
+      });
+      expect(cloudBackup.usage).not.toHaveBeenCalled();
+    });
+
+    it('reports an own bucket claimed, its key loaded and a first run in progress', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      keys.read.mockResolvedValue(keyFileOf());
+      operations.getActiveOfKind.mockResolvedValue({ id: 'run-1' });
+      operations.getOfKind.mockResolvedValue(operationOf({ status: MediaOperationStatus.Rendering }));
+
+      await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({
+        target: 'byo-s3',
+        entitlement: 'not-applicable',
+        bucketClaimed: true,
+        claimedAt: '2026-09-25T00:00:00.000Z',
+        keyLoaded: true,
+        firstRun: 'running',
+      });
+    });
+
+    it('reports a queued first run as queued', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      operations.getActiveOfKind.mockResolvedValue({ id: 'run-1' });
+      operations.getOfKind.mockResolvedValue(operationOf({ status: MediaOperationStatus.Queued }));
+
+      await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({ firstRun: 'queued' });
+    });
+
+    it('keeps the entitlement pending while managed storage waits for a link', async () => {
+      useManaged({ linked: false });
+
+      await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({
+        target: 'managed',
+        entitlement: 'pending',
+        bucketClaimed: false,
+      });
+    });
+
+    it('keeps the entitlement pending when Frameleaf Cloud refused it for the plan', async () => {
+      useManaged({ linked: true });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim();
+      keys.read.mockResolvedValue(keyFileOf());
+      mocks.frameleafCloud.discovery.mockResolvedValue({ api: 'https://api.frameleaf.test' } as never);
+      mocks.frameleafCloud.accessToken.mockResolvedValue({ accessToken: 'token' } as never);
+      cloudBackup.rotate.mockRejectedValue(
+        new FrameleafCloudError(
+          MlAdmissionRefusal.CloudUnavailable,
+          403,
+          'entitlement',
+          errorEnvelopeSchema.parse(cloudContractFixture('errors/entitlement-missing.json')),
+        ),
+      );
+      await sut.run(operationOf({ snapshot: { version: 1, bucketRef: managedRef, keyFingerprint: fingerprint } }), 'c');
+
+      await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({
+        entitlement: 'pending',
+        bucketClaimed: true,
+      });
+    });
+
+    it('reports the entitlement seen once managed storage is linked and not refused, without asking Cloud', async () => {
+      useManaged({ linked: true });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({
+        managed: {
+          readOnly: false,
+          readOnlyReason: null,
+          quotaBytes: 1,
+          checkedAt: '2020-01-01T00:00:00.000Z',
+          usage: { measuredAt: null, bytesCurrent: 0, objects: 0, allowanceBytes: 1, extraBlocks: 0 },
+        },
+      });
+
+      await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({ entitlement: 'seen' });
+      expect(cloudBackup.usage).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloud.discovery).not.toHaveBeenCalled();
+    });
+
+    it('reports the first run done once any backup succeeded', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+        lastSuccessAt: '2026-09-26T04:00:00.000Z',
+        lastRun: { operationId: 'run-2', status: 'failed', startedAt: '2026-09-27T04:00:00.000Z', error: 'x' },
+      });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      operations.getActiveOfKind.mockResolvedValue({ id: 'run-3' });
+      operations.getOfKind.mockResolvedValue(operationOf({ status: MediaOperationStatus.Rendering }));
+
+      await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({ firstRun: 'done' });
+    });
+
+    it('reports a first run that failed', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+        lastRun: { operationId: 'run-1', status: 'failed', startedAt: '2026-09-26T04:00:00.000Z', error: 'IMG_1.jpg' },
+      });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+
+      await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({ firstRun: 'failed' });
+    });
+
+    it('computes the next scheduled run from the configured schedule', async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-06-15T12:00:00.000Z') });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = {
+        frameleafCloud: {
+          cloudBackup: { ...enabledConfig().frameleafCloud.cloudBackup, schedule: { cronExpression: '0 4 * * *' } },
+        },
+      };
+
+      await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({
+        nextRunAt: '2026-06-16T04:00:00.000Z',
+      });
+    });
+
+    it('has no next run while cloud backup is turned off', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+      metadata[SystemMetadataKey.SystemConfig] = {
+        frameleafCloud: { cloudBackup: { ...enabledConfig().frameleafCloud.cloudBackup, enabled: false } },
+      };
+
+      await expect(sut.getOwnerSetup(authStub.admin)).resolves.toMatchObject({ target: 'off', nextRunAt: null });
+    });
+
+    it('refuses a user who is not the server owner', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim();
+
+      await expect(sut.getOwnerSetup(authStub.user1)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.systemMetadata.get).not.toHaveBeenCalled();
+    });
+
+    it('exposes only the setup fields, never bucket, key, usage or error details', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = claim({
+        lastRun: { operationId: 'run-1', status: 'failed', startedAt: '2026-09-26T04:00:00.000Z', error: 'IMG_1.jpg' },
+      });
+      metadata[SystemMetadataKey.SystemConfig] = enabledConfig();
+      keys.read.mockResolvedValue(keyFileOf());
+
+      const setup = await sut.getOwnerSetup(authStub.admin);
+
+      expect(Object.keys(setup).sort()).toEqual(ALLOWED);
+      const text = JSON.stringify(setup);
+      for (const secret of [s3.bucket, s3.endpoint, 'eu-central-2', 'instance-1', fingerprint, 'IMG_1.jpg', 'run-1']) {
+        expect(text).not.toContain(secret);
+      }
     });
   });
 });
