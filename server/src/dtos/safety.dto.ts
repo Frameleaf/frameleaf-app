@@ -3,6 +3,17 @@ import z from 'zod';
 
 const Availability = z.enum(['off', 'not-linked', 'not-configured', 'paused-key-unloaded', 'ready']);
 const DateTime = z.string().meta({ format: 'date-time' });
+const ReadOnly = z
+  .boolean()
+  .describe(
+    'Frameleaf-managed backup storage is read-only, so new items wait to be backed up; restores keep working and nothing already backed up is touched',
+  );
+const ReadOnlyReason = z
+  .string()
+  .nullable()
+  .describe(
+    'Why the backup storage is read-only, as Frameleaf Cloud says: purge_hold, entitlement, unlinked, suspended, purging or plan_full (Backup paused: plan full). Open-ended: show an unknown value generically. Null when it is writable or no reason was given',
+  );
 export const SafetyLookupSchema = z
   .object({
     hashes: z
@@ -36,13 +47,20 @@ const AssetSafety = z
   })
   .meta({ id: 'AssetSafetyDto' });
 export const SafetyLookupResponseSchema = z
-  .object({ cloudAvailability: Availability, assets: z.array(AssetSafety) })
+  .object({
+    cloudAvailability: Availability,
+    cloudReadOnly: ReadOnly,
+    cloudReadOnlyReason: ReadOnlyReason,
+    assets: z.array(AssetSafety),
+  })
   .meta({ id: 'SafetyLookupResponseDto' });
 export class SafetyLookupResponseDto extends createZodDto(SafetyLookupResponseSchema) {}
 
 export const SafetySummarySchema = z
   .object({
     cloudAvailability: Availability,
+    cloudReadOnly: ReadOnly,
+    cloudReadOnlyReason: ReadOnlyReason,
     total: z
       .int()
       .min(0)

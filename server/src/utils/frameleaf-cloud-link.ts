@@ -338,6 +338,142 @@ const noticeSchema = z.object({
   message: z.string().min(1).max(2000),
 });
 
+// '1tb', '2tb', '3tb', '5tb' today; a tier added later is shown as the cloud names it
+const storeTierSchema = z.string().min(1).max(16);
+
+/**
+ * FL-301 (FC-91): the owner's backup plan signal, sent only because this server lists `backup.plan`.
+ * `tierOverflow.id` is stable for one case, so its push goes out once per id and status.
+ */
+export const backupPlanSignalSchema = z.object({
+  tierOverflow: z
+    .object({
+      id: z.uuid(),
+      status: z.enum(['asked', 'accepted', 'declined']),
+      currentTier: storeTierSchema,
+      suggestedTier: storeTierSchema.nullable(),
+      backupPaused: z.boolean(),
+    })
+    .nullable(),
+  planFull: z
+    .object({
+      reason: z.literal('plan-full'),
+      action: z.enum(['upgrade', 'ask-organiser']),
+      suggestedTier: storeTierSchema.nullable(),
+      message: z.string().min(1).max(2000),
+    })
+    .nullable(),
+});
+export type BackupPlanSignal = z.infer<typeof backupPlanSignalSchema>;
+
+/** The `shownNotices` key prefix of the backup plan's pushes. */
+export const BACKUP_PLAN_NOTICE_PREFIX = 'backup-plan:';
+const PLAN_FULL_NOTICE_PREFIX = `${BACKUP_PLAN_NOTICE_PREFIX}plan-full:`;
+
+const tierLabel = (tier: string | null) => (tier ? tier.replace(/^(\d+)tb$/, '$1 TB') : 'a larger plan');
+
+/** FL-301: the heartbeat's `backupPlan`: absent, read, or present but unreadable (`null`). */
+export const readBackupPlan = (value: unknown): BackupPlanSignal | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = backupPlanSignalSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+};
+
+export type BackupPlanNotice = {
+  key: string;
+  /**
+   * `owner`: only the server owner's devices, since it carries plan and usage details (FC-91 review).
+   * `admins`: every administrator, without tier details.
+   */
+  audience: 'owner' | 'admins';
+  title: string;
+  body: string;
+  data: Record<string, string | boolean | null>;
+};
+
+/**
+ * FL-301: the full plan's push text by action. `ask-organiser` is a Family Sharing member's plan: only the family
+ * organiser can change it, so no upgrade is offered (the cloud contract's generic wording).
+ */
+const PLAN_FULL_BODY: Record<NonNullable<BackupPlanSignal['planFull']>['action'], string> = {
+  upgrade:
+    'Backups no longer fit the Frameleaf plan, so new items wait until it is upgraded. Your library is untouched and restores keep working.',
+  'ask-organiser': "Your family's plan is full. Ask your family organiser to upgrade.",
+};
+
+/**
+ * FL-301: what is heard about the backup plan, each keyed so it is pushed once: the owner's tier-overflow
+ * case once per id and status, and a full plan (to the administrators, without tier details; a Family Sharing
+ * member is asked to ask their organiser) once per action until it clears.
+ */
+export const backupPlanNotices = (signal: BackupPlanSignal | undefined): BackupPlanNotice[] => {
+  const notices: BackupPlanNotice[] = [];
+  const overflow = signal?.tierOverflow;
+  if (overflow) {
+    const current = tierLabel(overflow.currentTier);
+    const suggested = tierLabel(overflow.suggestedTier);
+    const text = {
+      asked: {
+        title: 'Your backups have outgrown your plan',
+        body: `Your backups no longer fit the ${current} plan. Open the Frameleaf app to move to ${suggested}.`,
+      },
+      accepted: {
+        title: 'Your Frameleaf plan was upgraded',
+        body: `Your plan is now ${suggested}. Backups carry on with the room it gives them.`,
+      },
+      declined: overflow.backupPaused
+        ? {
+            title: 'Backups are paused: plan full',
+            body: `Your backups no longer fit the ${current} plan, so new items wait. Upgrade in the Frameleaf app to back them up.`,
+          }
+        : {
+            title: 'Your plan stays the same',
+            body: `Your plan stays at ${current}. Backups that do not fit wait until the plan is upgraded.`,
+          },
+    }[overflow.status];
+    notices.push({
+      key: `${BACKUP_PLAN_NOTICE_PREFIX}${overflow.id}:${overflow.status}`,
+      audience: 'owner',
+      ...text,
+      data: {
+        reason: 'tier-overflow',
+        screen: 'plan',
+        caseId: overflow.id,
+        status: overflow.status,
+        currentTier: overflow.currentTier,
+        suggestedTier: overflow.suggestedTier,
+        backupPaused: overflow.backupPaused,
+      },
+    });
+  }
+  const full = signal?.planFull;
+  if (full) {
+    notices.push({
+      key: `${PLAN_FULL_NOTICE_PREFIX}${full.action}`,
+      audience: 'admins',
+      title: 'Backups are paused: plan full',
+      // the server's own words, never the cloud's `message`, so nothing about the tier can reach the administrators
+      body: PLAN_FULL_BODY[full.action],
+      data: { reason: 'plan-full', screen: 'plan', action: full.action },
+    });
+  }
+  return notices;
+};
+
+/**
+ * FL-301: a full plan the cloud says cleared is forgotten, so the next time it fills it is heard again.
+ * An absent or unreadable signal says nothing, so it forgets nothing.
+ */
+export const forgetClearedPlanFull = (
+  shown: Record<string, string>,
+  signal: BackupPlanSignal | null | undefined,
+): Record<string, string> =>
+  !signal || signal.planFull
+    ? shown
+    : Object.fromEntries(Object.entries(shown).filter(([key]) => !key.startsWith(PLAN_FULL_NOTICE_PREFIX)));
+
 export const heartbeatResponseSchema = z.object({
   commands: z.array(commandSchema).max(50).default([]),
   entitlementsChanged: z.boolean().default(false),
@@ -350,6 +486,8 @@ export const heartbeatResponseSchema = z.object({
   observedIp: z.union([z.ipv4(), z.ipv6()]).nullable().optional().catch(null),
   // validated on its own by acceptPublishedPricing, so a bad value never fails the check-in
   pricing: z.unknown().optional(),
+  // FL-301: read on its own by readBackupPlan, so a signal this server cannot read never fails the check-in
+  backupPlan: z.unknown().optional(),
 });
 export type HeartbeatResponse = z.infer<typeof heartbeatResponseSchema>;
 
