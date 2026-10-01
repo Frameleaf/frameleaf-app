@@ -60,7 +60,7 @@ describe(ProcessRepository.name, () => {
       expect(output).toBe('Hello, world!');
     });
 
-    it('should drain stdin on process exit', async () => {
+    it('should fail when the child exits 0 before reading all of its input (FL-298)', async () => {
       let resolve1: () => void;
       let resolve2: () => void;
       const promise1 = new Promise<void>((r) => (resolve1 = r));
@@ -79,7 +79,67 @@ describe(ProcessRepository.name, () => {
       realProcess.on('close', () => setImmediate(() => resolve1()));
       realProcess.stdin.on('close', () => setImmediate(() => resolve2()));
 
-      await pipeline(Readable.from(data()), process);
+      await expect(pipeline(Readable.from(data()), process, sink)).rejects.toThrow(
+        'bash exited before reading all of its input',
+      );
+    });
+
+    it('should fail like a compressor that rejects its options and exits 0 (FL-298)', async () => {
+      // Apple gzip prints its usage and exits 0 on an unknown option such as --rsyncable
+      const chunk = Buffer.alloc(64 * 1024, 'x');
+      async function* dump() {
+        for (let index = 0; index < 64; index++) {
+          await new Promise((resolve) => setImmediate(resolve));
+          yield chunk;
+        }
+      }
+
+      const compressor = sut.spawnDuplexStream('bash', ['-c', 'echo "unrecognized option --rsyncable" >&2; exit 0']);
+
+      await expect(pipeline(Readable.from(dump()), compressor, sink)).rejects.toThrow(
+        /bash exited before reading all of its input\nunrecognized option --rsyncable/,
+      );
+    });
+
+    it('should fail when the child is stopped by a signal (FL-298)', async () => {
+      const process = sut.spawnDuplexStream('bash', ['-c', 'echo partial; echo "terminated" >&2; kill -TERM $$']);
+      await expect(pipeline(process, sink)).rejects.toThrow(/bash was stopped by signal SIGTERM\nterminated/);
+    });
+
+    it('should fail when the child fails after closing its output (FL-298)', async () => {
+      const process = sut.spawnDuplexStream('bash', ['-c', 'exec >&-; sleep 0.2; echo "late failure" >&2; exit 3']);
+      await expect(pipeline(process, sink)).rejects.toThrow(/bash non-zero exit code \(3\)\nlate failure/);
+    });
+
+    it('should report the exit code, not lost input, when a failing child stops reading (FL-298)', async () => {
+      const chunk = Buffer.alloc(64 * 1024, 'x');
+      async function* dump() {
+        for (let index = 0; index < 64; index++) {
+          await new Promise((resolve) => setImmediate(resolve));
+          yield chunk;
+        }
+      }
+
+      const compressor = sut.spawnDuplexStream('bash', ['-c', 'echo "bad option" >&2; exit 1']);
+
+      await expect(pipeline(Readable.from(dump()), compressor, sink)).rejects.toThrow(
+        /bash non-zero exit code \(1\)\nbad option/,
+      );
+    });
+
+    it('should pass the whole stream through a child that reads all of its input', async () => {
+      const chunk = Buffer.alloc(64 * 1024, 'x');
+      let output = 0;
+      const counter = new Writable({
+        write(data: Buffer, _encoding, callback) {
+          output += data.length;
+          callback();
+        },
+      });
+
+      await pipeline(Readable.from(Array.from({ length: 64 }, () => chunk)), sut.spawnDuplexStream('cat'), counter);
+
+      expect(output).toBe(64 * chunk.length);
     });
 
     it('should kill the child process when the stream is destroyed', async () => {
