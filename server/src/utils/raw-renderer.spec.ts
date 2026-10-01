@@ -31,6 +31,49 @@ describe('renderRawWithLibRaw', () => {
     );
   });
 
+  it('does not start a decoder for an already cancelled request', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(renderRawWithLibRaw('photo.DNG', controller.signal)).rejects.toMatchObject({
+      reason: 'cancelled',
+      code: 'ABORT_ERR',
+    });
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
+  it('forwards cancellation while retaining the fixed decoder deadline and kill signal', async () => {
+    const controller = new AbortController();
+    vi.mocked(execFile).mockResolvedValue({ stdout: tiff, stderr: Buffer.alloc(0) } as never);
+    await renderRawWithLibRaw('photo.DNG', controller.signal);
+    expect(execFile).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({
+        signal: controller.signal,
+        timeout: 120_000,
+        killSignal: 'SIGKILL',
+        maxBuffer: 256 * 1024 * 1024,
+      }),
+    );
+  });
+
+  it.each([false, true])('classifies cancellation during execution, including the success race %s', async (success) => {
+    const controller = new AbortController();
+    vi.mocked(execFile).mockImplementation(() => {
+      controller.abort();
+      return (
+        success
+          ? Promise.resolve({ stdout: tiff, stderr: Buffer.alloc(0) })
+          : Promise.reject({ code: 'ABORT_ERR', killed: true, stderr: Buffer.from('data corrupted') })
+      ) as never;
+    });
+    await expect(renderRawWithLibRaw('photo.DNG', controller.signal)).rejects.toMatchObject({
+      reason: 'cancelled',
+      code: 'ABORT_ERR',
+    });
+    expect(execFile).toHaveBeenCalledOnce();
+  });
+
   it.each([
     [{ code: 'ENOENT' }, 'dependency_missing', 'ENOENT'],
     [{ stderr: Buffer.from('error while loading shared libraries') }, 'dependency_missing', 'ENOENT'],
