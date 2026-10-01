@@ -589,7 +589,7 @@ describe('enrichment, configuration, and automation fork sidecars', () => {
             enabled: true,
             autoDescribe: expect.objectContaining({ dailyBudgetUsd: 7.5 }),
           }),
-          signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
+          signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, invitedStorageQuota: null },
           remoteAccess: defaults.frameleafCloud.remoteAccess,
           cloudBackup: defaults.frameleafCloud.cloudBackup,
         },
