@@ -3906,6 +3906,7 @@ const READ_ONLY_REASONS: Record<string, string> = {
   unlinked: ' because it was unlinked',
   suspended: ' because it is suspended',
   purging: ' because its backups are being deleted',
+  plan_full: ' because the Frameleaf plan is full: new items wait until the plan is upgraded',
 };
 
 /** FL-164: why managed storage is read-only, as a phrase, when Frameleaf Cloud said. */
