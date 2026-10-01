@@ -617,6 +617,7 @@ export enum SystemMetadataKey {
 export enum UserMetadataKey {
   Preferences = 'preferences',
   PinnedCollections = 'pinned-collections',
+  PhotographyWorkspace = 'photography-workspace',
   License = 'license',
   Onboarding = 'onboarding',
   /** FL-196: when this administrator ended the linked-server tour, and how. */

@@ -1,5 +1,6 @@
 import {
   mdiAccountOutline,
+  mdiCameraIris,
   mdiArchiveOutline,
   mdiClockOutline,
   mdiCogOutline,
@@ -197,6 +198,7 @@ export type RailDestinationId =
   | 'tags'
   | 'folders'
   | 'documents'
+  | 'photography'
   | 'workflows'
   | 'trash'
   | 'libraryCare'
@@ -320,6 +322,7 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       id: 'tools',
       labelKey: 'frameleaf_tools',
       destinations: [
+        destination('photography', 'frameleaf_photography', mdiCameraIris, Route.photography()),
         destination('workflows', 'workflows', mdiTuneVariant, Route.workflows()),
         ...keep(capabilities.trash, destination('trash', 'trash', mdiDeleteOutline, Route.trash())),
       ],

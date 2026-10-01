@@ -114,6 +114,7 @@ describe('Frameleaf rail destinations', () => {
       'places',
       'documents',
       'allAlbums',
+      'photography',
       'workflows',
       'libraryCare',
       'settings',
@@ -169,7 +170,7 @@ describe('Frameleaf rail destinations', () => {
     const tools = buildRailSections(allCapabilities()).find((section) => section.id === 'tools');
     const hrefs = flatten(allCapabilities()).map((destination) => destination.href);
 
-    expect(tools?.destinations.map((destination) => destination.id)).toEqual(['workflows', 'trash']);
+    expect(tools?.destinations.map((destination) => destination.id)).toEqual(['photography', 'workflows', 'trash']);
     expect(hrefs).not.toContain(Route.studioProjects());
     expect(hrefs).not.toContain(Route.studio());
     expect(hrefs).not.toContain(Route.activity());
