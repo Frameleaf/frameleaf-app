@@ -414,8 +414,8 @@ export class AssetUploadResourceService {
     }
     const current = await this.uploads.get(id, auth.user.id);
     if (current.state === 'published' && current.ingested) {
-      // the asset exists whatever happens here: a record that cannot be written now (a database
-      // handoff, say) is written by the next result request, and must not fail this one
+      // the asset exists whatever happens here, so a record that cannot be written now (a database
+      // handoff, say) must not fail the request; without it the lookup still finds the bytes by digest
       await this.recordSourceIdentity(auth.user.id, current).catch((error) =>
         this.logger.warn(`Upload ${id} iCloud identity was not recorded: ${String(error)}`),
       );

@@ -352,8 +352,8 @@ export class ICloudIdentityService {
       }
       for (const record of inventory) {
         const connection = byConnection.get(record.connectionId);
-        // the sync keeps an item only while it still has something of it to bring: with nothing
-        // pending or delivered (what is left failed, needs review, or is not imported) the lookup
+        // the sync keeps an item only while it still has a resource of it on the way (the lookup's
+        // sync-pending): once what is left has failed, needs review, or is not imported, the lookup
         // tells the device to deliver the missing roles, and the claim must let it
         if (
           !connection ||
