@@ -1196,7 +1196,7 @@ export class SyncService extends BaseService {
     const deletes = this.syncRepository.userMetadata.getDeletes({ ...options, ack: checkpointMap[deleteType] });
 
     for await (const { id, ...data } of deletes) {
-      if (data.key === UserMetadataKey.PinnedCollections) {
+      if (data.key === UserMetadataKey.PinnedCollections || data.key === UserMetadataKey.PhotographyWorkspace) {
         continue;
       }
       await send(response, { type: deleteType, ids: [id], data });
@@ -1207,7 +1207,7 @@ export class SyncService extends BaseService {
     const revealLockedRules = !!auth.session?.hasElevatedPermission;
 
     for await (const { updateId, ...data } of upserts) {
-      if (data.key === UserMetadataKey.PinnedCollections) {
+      if (data.key === UserMetadataKey.PinnedCollections || data.key === UserMetadataKey.PhotographyWorkspace) {
         continue;
       }
       const visible =
