@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { Duplex, PassThrough, Readable } from 'node:stream';
+import { createGunzip, gzipSync } from 'node:zlib';
+import type { Stats } from 'node:fs';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { DatabaseLock, ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
@@ -652,6 +654,120 @@ describe(DatabaseBackupService.name, () => {
         expect.objectContaining({
           path: '/data/backups/hello.sql.gz',
         }),
+      );
+    });
+  });
+
+  describe('FL-295 pre-upgrade copy and verification', () => {
+    const completeDump =
+      '--\n-- PostgreSQL database dump\n--\nCREATE TABLE a ();\n--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict abc\n';
+    const gzipped = (text: string) => Readable.from([gzipSync(Buffer.from(text))]);
+
+    beforeEach(() => {
+      mocks.storage.readdir.mockResolvedValue([]);
+      mocks.process.spawnDuplexStream.mockImplementation(() => mockDuplex()('command', 0, 'data', ''));
+      mocks.storage.rename.mockResolvedValue();
+      mocks.storage.unlink.mockResolvedValue();
+      mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
+      mocks.storage.createGunzip.mockImplementation(() => createGunzip());
+      mocks.storage.stat.mockResolvedValue({ size: 100 } as Stats);
+    });
+
+    it('names the copy pre-upgrade, in the backups folder, with the routine timestamp and versions', async () => {
+      mocks.database.getPostgresVersion.mockResolvedValue('14.19 (Debian 14.19-1.pgdg120+1)');
+      mocks.storage.createPlainReadStream.mockImplementation(() => gzipped(completeDump));
+
+      const path = await sut.createDatabaseBackup('', { label: 'pre-upgrade', verify: true });
+
+      expect(path).toMatch(
+        new RegExp(
+          String.raw`^${StorageCore.getBaseFolder(StorageFolder.Backups)}/immich-db-backup-\d{8}T\d{6}-pre-upgrade-v[\d.]+-pg14\.19\.sql\.gz$`,
+        ),
+      );
+      expect(mocks.storage.createWriteStream).toHaveBeenCalledWith(`${path}.tmp`);
+      expect(mocks.storage.rename).toHaveBeenCalledWith(`${path}.tmp`, path);
+    });
+
+    it('verifies the temporary file before renaming it', async () => {
+      const order: string[] = [];
+      mocks.storage.createPlainReadStream.mockImplementation((file: string) => {
+        order.push(`verify ${file}`);
+        return gzipped(completeDump);
+      });
+      mocks.storage.rename.mockImplementation((from: string) => {
+        order.push(`rename ${from}`);
+        return Promise.resolve();
+      });
+
+      const path = await sut.createDatabaseBackup('', { label: 'pre-upgrade', verify: true });
+
+      expect(order).toEqual([`verify ${path}.tmp`, `rename ${path}.tmp`]);
+    });
+
+    it.each([
+      ['an empty file', () => Readable.from([]), 0, 'empty'],
+      ['a file that is not gzip', () => Readable.from([Buffer.from('plain text')]), 10, 'gzip'],
+      ['a truncated gzip file', () => Readable.from([gzipSync(Buffer.from(completeDump)).subarray(0, 20)]), 20, 'gzip'],
+      [
+        'a dump that did not finish',
+        () => gzipped('--\n-- PostgreSQL database dump\n--\nCREATE TABLE a ();\n'),
+        50,
+        'finish',
+      ],
+      ['a gzip file with no SQL in it', () => gzipped(''), 20, 'empty'],
+    ])('refuses %s, removes the temporary file and keeps no copy', async (_, stream, size, reason) => {
+      mocks.storage.stat.mockResolvedValue({ size } as Stats);
+      mocks.storage.createPlainReadStream.mockImplementation(stream);
+
+      await expect(sut.createDatabaseBackup('', { label: 'pre-upgrade', verify: true })).rejects.toThrow(reason);
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/-pre-upgrade-.*\.sql\.gz\.tmp$/));
+    });
+
+    it('leaves routine backups unverified and unlabelled', async () => {
+      const path = await sut.createDatabaseBackup();
+
+      expect(path).toMatch(/\/immich-db-backup-\d{8}T\d{6}-v[\d.]+-pg/);
+      expect(mocks.storage.createPlainReadStream).not.toHaveBeenCalled();
+    });
+
+    it('accepts a complete dump in verifyDatabaseBackup, including a cluster dump', async () => {
+      mocks.storage.createPlainReadStream.mockImplementation(() => gzipped(completeDump));
+      await expect(sut.verifyDatabaseBackup('/data/backups/a.sql.gz')).resolves.toBeUndefined();
+
+      mocks.storage.createPlainReadStream.mockImplementation(() =>
+        gzipped('-- PostgreSQL database cluster dump\n\n--\n-- PostgreSQL database cluster dump complete\n--\n\n'),
+      );
+      await expect(sut.verifyDatabaseBackup('/data/backups/b.sql.gz')).resolves.toBeUndefined();
+    });
+
+    it('never rotates the pre-upgrade copy away, however many routine backups there are', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
+      mocks.storage.readdir.mockResolvedValue([
+        'immich-db-backup-20250101T000000-pre-upgrade-v3.2.0-pg14.19.sql.gz',
+        'immich-db-backup-20250725T110216-v1.234.5-pg14.5.sql.gz',
+        'immich-db-backup-20250727T110116-v1.234.5-pg14.5.sql.gz',
+        'immich-db-backup-20250729T110116-v1.234.5-pg14.5.sql.gz',
+      ]);
+
+      await sut.cleanupDatabaseBackups();
+
+      // keepLastAmount is 1: the two older routine backups go, the pre-upgrade copy stays
+      expect(mocks.storage.unlink).toHaveBeenCalledTimes(2);
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(expect.stringContaining('pre-upgrade'));
+    });
+
+    it('lists the pre-upgrade copy with the other backups', async () => {
+      mocks.storage.readdir.mockResolvedValue([
+        'immich-db-backup-20250101T000000-pre-upgrade-v3.2.0-pg14.19.sql.gz',
+        'immich-db-backup-20250725T110216-v1.234.5-pg14.5.sql.gz',
+      ]);
+
+      const { backups } = await sut.listBackups();
+
+      expect(backups.map(({ filename }) => filename)).toContain(
+        'immich-db-backup-20250101T000000-pre-upgrade-v3.2.0-pg14.19.sql.gz',
       );
     });
   });

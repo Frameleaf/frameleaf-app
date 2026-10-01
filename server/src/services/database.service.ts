@@ -3,7 +3,10 @@ import * as semver from 'semver';
 import { EXTENSION_NAMES, ErrorMessages, VECTOR_EXTENSIONS } from 'src/constants.js';
 import { OnEvent } from 'src/decorators.js';
 import { BootstrapEventPriority, DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
+import { FirstLaunchBackup } from 'src/maintenance/first-launch-backup.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { VectorExtension } from 'src/types.js';
 
 type CreateFailedArgs = { name: string; extension: string };
@@ -65,6 +68,11 @@ export class DatabaseService extends BaseService {
     }
 
     await this.databaseRepository.withLock(DatabaseLock.Migrations, async () => {
+      // FL-295: the first start on a library the official server created takes its safety copy before
+      // anything below changes the database (extensions, migrations, adoption). The "Getting Ready…"
+      // worker normally took it already, and this finds it and skips; a failure stops the start here.
+      await this.takeFirstLaunchBackup();
+
       const extension = await this.databaseRepository.getVectorExtension();
       const name = EXTENSION_NAMES[extension];
       const extensionRange = this.databaseRepository.getExtensionVersionRange(extension);
@@ -158,6 +166,43 @@ export class DatabaseService extends BaseService {
         this.databaseRepository.prewarm(VectorIndex.Face),
       ]);
     });
+  }
+
+  /** FL-295: the safety copy, from the existing database-backup path. */
+  protected firstLaunchBackup(): Pick<FirstLaunchBackup, 'run'> {
+    const backups = new DatabaseBackupService(
+      new LoggingRepository(undefined, this.configRepository),
+      this.storageRepository,
+      this.configRepository,
+      this.systemMetadataRepository,
+      this.processRepository,
+      this.databaseRepository,
+      this.userRepository,
+      // only the dump and its verification are used here: no schedule, queue or restore
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+    return new FirstLaunchBackup(
+      {
+        logger: this.logger,
+        database: this.databaseRepository,
+        storage: this.storageRepository,
+        config: this.configRepository,
+      },
+      backups,
+    );
+  }
+
+  private async takeFirstLaunchBackup() {
+    try {
+      await this.firstLaunchBackup().run();
+    } catch (error) {
+      this.logger.error(
+        `${error instanceof Error ? error.message : error}. Nothing was upgraded, so the official server can still use this library. Frameleaf tries again at the next start.`,
+      );
+      throw error;
+    }
   }
 
   private async adoptOfficialOriginAtBoot() {
