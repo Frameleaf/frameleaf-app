@@ -25,6 +25,18 @@ You can adjust the backup schedule and retention settings in **Administration > 
 Database backups do **not** contain photos or videos — only metadata. They must be used together with a copy of the files in `UPLOAD_LOCATION` as outlined below.
 :::
 
+#### Safety copy before the first upgrade {#pre-upgrade-copy}
+
+The first time Frameleaf starts on a library created by the official server, it makes a
+safety copy of the database before it upgrades anything, and shows a **Getting Ready…**
+screen meanwhile. The copy is kept in the same folder, named
+`immich-db-backup-<date>T<time>-pre-upgrade-v<version>-pg<version>.sql.gz`, and marked
+**Before upgrade** in the backups list. It does not count toward the retention limit and
+is never removed automatically; delete it yourself once you no longer need it. Restore it
+like any other backup. The step is skipped when a complete database backup less than
+24 hours old is already in the folder. See
+[Safety copy before the first start](./upstream-handoff.md#pre-upgrade-copy).
+
 #### Creating a Backup
 
 You can trigger a database backup manually:

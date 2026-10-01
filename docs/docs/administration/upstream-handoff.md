@@ -40,10 +40,51 @@ disagree. Do not repair these cases by manually editing the ledger.
 
 To move a library from the official v3.1.0 server to Frameleaf, change the server
 container image to the Frameleaf image and start it. Nothing else is needed: the first
-start adopts the library and starts the compatibility backfill by itself. Take database
-and media checkpoints before you swap the image, because adoption is one-way. Afterwards,
+start makes a [safety copy of the database](#pre-upgrade-copy), adopts the library and
+starts the compatibility backfill by itself. Still take your own database and media
+checkpoints before you swap the image, because adoption is one-way. Afterwards,
 the library can go back to the official server only through the certified handoff
 described below. Adoption also changes existing official data, as listed below.
+
+### Safety copy before the first start {#pre-upgrade-copy}
+
+Before that first start changes anything, Frameleaf makes a safety copy of the library
+database. While it does, the web address shows a **Getting Ready…** screen that explains
+what is happening. Every other page shows the same screen, and API requests (including
+the mobile apps and `/api/server/ping`, so the container reports unhealthy for this short
+time) get `503 Service Unavailable` with a `Retry-After` header. When the copy is saved,
+Frameleaf starts normally, and the screen moves on to sign-in by itself.
+
+- **What it is.** A full `pg_dump` of the database, made the same way as the scheduled
+  database backups. It is written to a temporary `.tmp` file, checked (not empty, a
+  complete gzip file, and ending the way a finished dump ends), then renamed.
+- **Where it is.** In the same backups folder as the official server's own backups,
+  `<media location>/backups` (for example `/data/backups`), named
+  `immich-db-backup-<date>T<time>-pre-upgrade-v<version>-pg<version>.sql.gz`. The name
+  keeps the shape the existing backup tools expect, so the official server and Frameleaf
+  both list it, and it can be restored from **Administration > Maintenance**
+  like any other backup (see [Restoring a Database Backup](./backup-and-restore.md#restoring-a-database-backup)).
+- **How long it is kept.** It is never removed by the backup retention setting (keep the
+  last _n_ backups), on Frameleaf or on the official server. It stays until an
+  administrator deletes it.
+- **When it is skipped.** When the newest database backup in that folder was taken less
+  than 24 hours ago and is a complete dump, Frameleaf uses it instead. The time comes
+  from the backup's name (or the file's modification time when the name has none). The
+  log names that backup, and the screen shows it for a few seconds. So if you trigger a
+  database backup on the official server just before you swap the image (**Job Queues >
+  Create job > Create Database Dump**), the first start does not copy again.
+- **When it fails.** Frameleaf first checks there is room for the copy. When there is not,
+  or the copy fails, Frameleaf does not upgrade anything: the screen says what went wrong
+  and what to do, the database stays exactly as the official server left it, and the next
+  start tries again. Free up space (or fix what the log reports) and restart the
+  container.
+- **More than one server.** Only one process makes the copy, under the startup migration
+  lock. Any other Frameleaf container started at the same time waits, then finds the
+  fresh copy and goes on. A start that is interrupted in the middle of the copy removes
+  the unfinished file next time and starts over.
+
+The copy covers the database only. Keep your own copy of the media files as well, as
+recommended above.
 
 At that first start, Frameleaf adds its `immich_fork` schema and then adopts the library
 while it holds the startup migration lock. That is before the API accepts requests and
