@@ -5565,6 +5565,8 @@
   "frameleaf_jobs_name_pet_recognition_queue_all": "Find pets in libraries",
   "frameleaf_jobs_name_physical_deduplication_migration_apply": "Apply physical deduplication",
   "frameleaf_jobs_name_physical_deduplication_migration_dry_run": "Review physical deduplication",
+  "frameleaf_jobs_name_push_backup_stale_check": "Check for phones whose backup stopped",
+  "frameleaf_jobs_name_push_deliver": "Send a phone notification",
   "frameleaf_jobs_name_send_mail": "Send an email",
   "frameleaf_jobs_name_session_cleanup": "Clean up sign-in sessions",
   "frameleaf_jobs_name_sidecar_check": "Check a metadata sidecar",
