@@ -418,6 +418,21 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml logs --no-color > docker-compose-logs.txt
         working-directory: ./e2e
+      # Preserve the consent logs above before resetting the whole stack for the accounting journey.
+      - name: Start the description accounting fixture
+        id: cloud-accounting-fixture
+        env:
+          FRAMELEAF_CLOUD_FIXTURE_MODE: description-accounting
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml up -d --no-build --force-recreate --renew-anon-volumes --remove-orphans --wait --wait-timeout 300
+          timeout 120s bash -c 'until curl --fail --silent --max-time 2 http://127.0.0.1:2285/api/server/ping > /dev/null; do sleep 2; done'
+        if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+      - name: Run e2e tests (Frameleaf Cloud description accounting)
+        run: pnpm exec vitest run --config vitest.cloud-accounting.config.ts --reporter=default --silent=false
+        if: ${{ !cancelled() && steps.cloud-accounting-fixture.outcome == 'success' }}
+      - name: Capture description accounting Docker logs
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.frameleaf-cloud-fixture.yml logs --no-color > docker-cloud-accounting-logs.txt
       - name: Archive Docker logs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
@@ -428,6 +443,7 @@ jobs:
             e2e/docker-diagnostics-after-api-tests.txt
             e2e/docker-diagnostics-after-maintenance-tests.txt
             e2e/docker-upload-transport-logs.txt
+            e2e/docker-cloud-accounting-logs.txt
     # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
     timeout-minutes: 120
   e2e-tests-web:
