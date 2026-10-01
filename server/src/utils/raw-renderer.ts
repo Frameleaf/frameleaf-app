@@ -62,7 +62,9 @@ export async function renderRawWithLibRaw(input: string): Promise<Buffer> {
     // maxBuffer also kills the child: classify it before checking killed.
     if (
       details.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ||
-      /insufficient memory|out of memory|cannot allocate|too big|no space left/i.test(diagnostic)
+      /insufficient memory|unsufficient memory|libraw internal mempool overflowed|out of memory|cannot allocate|too big|no space left/i.test(
+        diagnostic,
+      )
     ) {
       throw new RawRenderError('resource_limit', 'ERR_RAW_RESOURCE_LIMIT', error);
     }

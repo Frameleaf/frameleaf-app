@@ -95,7 +95,7 @@ import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, clamp } from 'src/utils/misc.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
 import { videoDevelopFilters } from 'src/utils/video-develop.js';
@@ -455,6 +455,9 @@ export class MediaService extends BaseService {
   }
 
   private shouldSkipThumbnailDecodeError(error: unknown, fileName: string) {
+    if (error instanceof RawRenderError) {
+      return error.reason === 'unsupported';
+    }
     const message = error instanceof Error ? error.message : String(error);
     return (
       isUnsupportedRawDecodeError(error) ||
