@@ -1,5 +1,8 @@
 name: immich-fork-roundtrip
 
+# FL-294: the official server and the Frameleaf candidate share this Immich-shaped environment on
+# purpose. The candidate must start from an unchanged Immich configuration (IMMICH_* names,
+# immich-healthcheck, immich-admin), since swapping the image is the whole upgrade.
 x-server-environment: &server-environment
   DB_HOSTNAME: database
   DB_USERNAME: postgres

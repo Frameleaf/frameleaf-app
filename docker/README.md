@@ -8,7 +8,7 @@ Install from a [published Frameleaf release](https://github.com/Frameleaf/framel
 | Machine learning | `ghcr.io/frameleaf/frameleaf-machine-learning` |
 | Database         | `ghcr.io/frameleaf/frameleaf-postgres`         |
 
-Release bundles pin `IMMICH_VERSION` to their version. The `release` and `latest` tags follow stable releases; `edge` follows development builds. Hardware variants append `-cuda`, `-openvino`, `-armnn`, `-rknn` or `-rocm` to the selected ML tag. For example, the stable CUDA image is `ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda`. Select the matching hardware configuration and platform; a tag does not prove a particular GPU or model is supported.
+Release bundles pin `FRAMELEAF_VERSION` to their version. The `release` and `latest` tags follow stable releases; `edge` follows development builds. Hardware variants append `-cuda`, `-openvino`, `-armnn`, `-rknn` or `-rocm` to the selected ML tag. For example, the stable CUDA image is `ghcr.io/frameleaf/frameleaf-machine-learning:release-cuda`. Select the matching hardware configuration and platform; a tag does not prove a particular GPU or model is supported.
 
 The release includes `docker-compose.yml`, `docker-compose.rootless.yml`, `example.env`, `hwaccel.ml.yml` and `hwaccel.transcoding.yml`. Use the regular **or** rootless Compose file. Copy `example.env` to `.env` only for a new installation. Read the [installation steps](../docs/docs/install/docker-compose.mdx) and review the release notes before starting or upgrading.
 
@@ -16,13 +16,14 @@ The release includes `docker-compose.yml`, `docker-compose.rootless.yml`, `examp
 
 Changing application images does not require moving media or recreating a database. Preserve the existing Compose project name, `.env`, upload/database paths, volume names, external-library mounts and database settings. Keep the existing stack directory: relative host paths are resolved from the Compose files. Do not start a second stack against the same PostgreSQL directory, and do not use `docker compose down --volumes` during this migration.
 
-Service keys (`immich-server`, `immich-machine-learning`, `database`, `redis`), the project name `immich`, `IMMICH_*` environment keys and the ML address `http://immich-machine-learning:3003` are retained for compatibility. Existing project overrides remain valid. Displayed container names become `frameleaf_server`, `frameleaf_machine_learning`, `frameleaf_postgres` and `frameleaf_redis`; update external scripts that address a container by its old name. Prefer service-based commands, which work across both names:
+Service keys (`immich-server`, `immich-machine-learning`, `database`, `redis`), the project name `immich` and the ML address `http://immich-machine-learning:3003` are retained for compatibility. Frameleaf's environment variables are named `FRAMELEAF_*` (for example `FRAMELEAF_VERSION` and `FRAMELEAF_LOG_LEVEL`); the `IMMICH_*` names in an existing `.env` keep working as deprecated aliases, and the server logs one warning listing them with their new names. Setting an old and a new name to different values stops the server, which names the pair. The `immich-admin` and `immich-healthcheck` commands remain as aliases of `frameleaf-admin` and `frameleaf-healthcheck`. Existing project overrides remain valid. Displayed container names become `frameleaf_server`, `frameleaf_machine_learning`, `frameleaf_postgres` and `frameleaf_redis`; update external scripts that address a container by its old name. Prefer service-based commands, which work across both names:
 
 ```sh
 docker compose config --images
 docker compose pull
 docker compose up -d
 docker compose logs immich-server
+docker compose exec immich-server frameleaf-admin list-users
 docker compose exec database pg_isready
 ```
 

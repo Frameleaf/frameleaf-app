@@ -44,11 +44,11 @@ for (const [filename, project, rootless] of [
     const ml = config.services["immich-machine-learning"];
     assert.equal(
       server.image,
-      "ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}",
+      "ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
     );
     assert.equal(
       ml.image,
-      "ghcr.io/frameleaf/frameleaf-machine-learning:${IMMICH_VERSION:-release}",
+      "ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
     );
     assert.equal(server.container_name, "frameleaf_server");
     assert.equal(ml.container_name, "frameleaf_machine_learning");
@@ -141,19 +141,24 @@ test("local builds retain projects/storage and build ordinary ML from the prod s
     }
   }
   const dev = compose("docker/docker-compose.dev.yml");
-  for (const path of [
-    ".devcontainer/server/container-compose-overrides.yml",
-  ]) {
+  for (const path of [".devcontainer/server/container-compose-overrides.yml"]) {
     assert.equal(
       compose(path).services["immich-server"].image,
       dev.services["immich-server"].image,
     );
   }
   assert.equal(
-    dev.services["immich-server"].environment.IMMICH_SOURCE_COMMIT,
+    dev.services["immich-server"].environment.FRAMELEAF_SOURCE_COMMIT,
     "",
   );
-  assert.equal(dev.services["immich-server"].environment.IMMICH_BUILD, "");
+  assert.equal(dev.services["immich-server"].environment.FRAMELEAF_BUILD, "");
+  // FL-294: the development stack uses the FRAMELEAF_* names only
+  assert.deepEqual(
+    Object.keys(dev.services["immich-server"].environment).filter((key) =>
+      key.startsWith("IMMICH_"),
+    ),
+    [],
+  );
 });
 
 test("the restoration overlay adds a separate worker and leaves library analysis alone (FL-72)", () => {
@@ -168,13 +173,11 @@ test("the restoration overlay adds a separate worker and leaves library analysis
   // Reached on the Compose network only, with its own bearer and read-only model inputs.
   assert.equal(worker.ports, undefined);
   assert.equal(
-    worker.environment.IMMICH_ML_AUTH_TOKEN,
+    worker.environment.FRAMELEAF_ML_AUTH_TOKEN,
     "${FRAMELEAF_RESTORATION_TOKEN:-}",
   );
   assert.ok(
-    worker.volumes.some((volume) =>
-      volume.endsWith(":/restoration/config:ro"),
-    ),
+    worker.volumes.some((volume) => volume.endsWith(":/restoration/config:ro")),
   );
   assert.ok(
     worker.volumes.some((volume) =>
@@ -197,7 +200,7 @@ function metadata(path, inputs) {
     const arg = line.match(/^ARG ([A-Z_]+)(?:=(.*))?$/);
     if (arg && !Object.hasOwn(variables, arg[1]))
       variables[arg[1]] = arg[2] ?? "";
-    const env = line.match(/^ENV (IMMICH_[A-Z_]+)=(.*)$/);
+    const env = line.match(/^ENV ((?:FRAMELEAF|IMMICH)_[A-Z_]+)=(.*)$/);
     if (env) result[env[1]] = expand(env[2]);
   }
   return result;
@@ -215,34 +218,39 @@ for (const [file, image] of [
       BUILD_IMAGE: `ghcr.io/frameleaf/${image}:edge`,
     };
     const values = metadata(file, inputs);
-    assert.equal(values.IMMICH_REPOSITORY, "Frameleaf/frameleaf-app");
-    assert.equal(values.IMMICH_BUILD_IMAGE, inputs.BUILD_IMAGE);
+    assert.equal(values.FRAMELEAF_REPOSITORY, "Frameleaf/frameleaf-app");
+    assert.equal(values.FRAMELEAF_BUILD_IMAGE, inputs.BUILD_IMAGE);
     assert.equal(
-      values.IMMICH_BUILD_URL,
+      values.FRAMELEAF_BUILD_URL,
       "https://github.com/Frameleaf/frameleaf-app/actions/runs/12345",
     );
     assert.equal(
-      values.IMMICH_BUILD_IMAGE_URL,
+      values.FRAMELEAF_BUILD_IMAGE_URL,
       `https://github.com/Frameleaf/frameleaf-app/pkgs/container/${image}`,
     );
     assert.equal(
-      values.IMMICH_SOURCE_URL,
+      values.FRAMELEAF_SOURCE_COMMIT_URL,
       `https://github.com/Frameleaf/frameleaf-app/commit/${inputs.BUILD_SOURCE_COMMIT}`,
     );
-    assert.equal(values.IMMICH_SOURCE_REF, "fork/main");
+    assert.equal(values.FRAMELEAF_SOURCE_REF, "fork/main");
     const custom = metadata(file, {
       ...inputs,
       BUILD_SOURCE_REPOSITORY: "Frameleaf/test-build",
       BUILD_IMAGE_NAME: "test-image",
     });
     assert.equal(
-      custom.IMMICH_BUILD_IMAGE_URL,
+      custom.FRAMELEAF_BUILD_IMAGE_URL,
       "https://github.com/Frameleaf/test-build/pkgs/container/test-image",
     );
-    assert.equal(custom.IMMICH_REPOSITORY, "Frameleaf/test-build");
+    assert.equal(custom.FRAMELEAF_REPOSITORY, "Frameleaf/test-build");
     assert.doesNotMatch(
       read(file),
-      /^ENV IMMICH_.*(?:immich-app\/immich|adamtaylor152)/m,
+      /^ENV (?:FRAMELEAF|IMMICH)_.*(?:immich-app\/immich|adamtaylor152)/m,
+    );
+    // FL-294: the image sets the FRAMELEAF_* names only
+    assert.deepEqual(
+      Object.keys(values).filter((key) => key.startsWith("IMMICH_")),
+      [],
     );
     assert.match(
       read(file),
@@ -256,7 +264,7 @@ test("pinned build dependencies, runtime identity and orphan adoption remain com
   assert.match(read("server/Dockerfile"), /^FROM base-server-dev AS builder$/m);
   assert.match(
     read("server/Dockerfile"),
-    /^HEALTHCHECK CMD immich-healthcheck$/m,
+    /^HEALTHCHECK CMD frameleaf-healthcheck$/m,
   );
   assert.match(
     read("machine-learning/Dockerfile"),
@@ -268,7 +276,20 @@ test("pinned build dependencies, runtime identity and orphan adoption remain com
       "'http://immich-machine-learning:3003'",
     ),
   );
-  assert.match(read("docker/example.env"), /^IMMICH_VERSION=release$/m);
+  assert.match(read("docker/example.env"), /^FRAMELEAF_VERSION=release$/m);
+  assert.doesNotMatch(read("docker/example.env"), /^IMMICH_/m);
+  // FL-294: both command names are on the image's PATH (server/bin), the old ones as aliases
+  for (const name of [
+    "frameleaf-admin",
+    "frameleaf-healthcheck",
+    "immich-admin",
+    "immich-healthcheck",
+  ])
+    assert.ok(existsSync(resolve(root, "server/bin", name)), name);
+  assert.match(
+    read("server/Dockerfile"),
+    /^RUN ln -s \.\.\/\.\.\/cli\/bin\/frameleaf server\/bin\/frameleaf && ln -s \.\.\/\.\.\/cli\/bin\/immich server\/bin\/immich$/m,
+  );
   assert.match(read("docker/example.env"), /^DB_DATABASE_NAME=immich$/m);
 });
 
@@ -441,6 +462,42 @@ test("Compose resolves all deployment files and hardware overlays without a daem
         .devices[0].driver,
       "nvidia",
     );
+    // FL-294: the .env above is an unchanged Immich one (IMMICH_VERSION). FRAMELEAF_VERSION is the
+    // name to use now and wins when both are set.
+    for (const [versionLines, tag] of [
+      [["FRAMELEAF_VERSION=frameleaf-v3.2.0-1"], "frameleaf-v3.2.0-1"],
+      [
+        [
+          "IMMICH_VERSION=frameleaf-v3.1.0-7",
+          "FRAMELEAF_VERSION=frameleaf-v3.2.0-1",
+        ],
+        "frameleaf-v3.2.0-1",
+      ],
+    ]) {
+      writeFileSync(
+        resolve(directory, ".env"),
+        [
+          ...env
+            .split("\n")
+            .filter((line) => !line.startsWith("IMMICH_VERSION=")),
+          ...versionLines,
+        ].join("\n"),
+      );
+      for (const filename of [
+        "docker-compose.yml",
+        "docker-compose.rootless.yml",
+      ]) {
+        const result = run([filename]);
+        assert.equal(
+          result.services["immich-server"].image,
+          `ghcr.io/frameleaf/frameleaf-server:${tag}`,
+        );
+        assert.equal(
+          result.services["immich-machine-learning"].image,
+          `ghcr.io/frameleaf/frameleaf-machine-learning:${tag}`,
+        );
+      }
+    }
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
@@ -481,11 +538,10 @@ const guardNeedleFiles = new Set([
 const historicalRecord = (file) =>
   historicalRecords.has(file) || guardNeedleFiles.has(file);
 const trackedFilesContaining = (needle) => {
-  const result = spawnSync(
-    "git",
-    ["grep", "-l", "-F", needle, "--", "."],
-    { cwd: root, encoding: "utf8" },
-  );
+  const result = spawnSync("git", ["grep", "-l", "-F", needle, "--", "."], {
+    cwd: root,
+    encoding: "utf8",
+  });
   assert.ok(
     result.status === 0 || result.status === 1,
     result.error?.message || result.stderr,
@@ -793,7 +849,7 @@ test("release Compose files pull only digest-pinned or promotion-verified images
   )) {
     for (const service of Object.values(compose(`docker/${name}`).services)) {
       const image = service.image;
-      if (image.includes("${IMMICH_VERSION")) continue;
+      if (image.includes("${FRAMELEAF_VERSION")) continue;
       const owned = image.match(/^ghcr\.io\/frameleaf\/([a-z0-9-]+)[:@]/);
       // An unpinned Frameleaf dependency is only allowed because promotion verifies that it is
       // published and pins the bundled copy to the verified digest.

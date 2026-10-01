@@ -391,7 +391,7 @@ COPY ./web ./web/
 COPY --from=studio-engine /usr/src/app/web/static/studio-engine ./web/static/studio-engine/
 
 ARG BUILD_ID
-ENV IMMICH_BUILD=${BUILD_ID}
+ENV FRAMELEAF_BUILD=${BUILD_ID}
 
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich-web build
 
@@ -457,7 +457,8 @@ COPY --from=web /usr/src/app/web/build /build/www
 COPY --from=cli /output/cli-pruned ./cli
 COPY --from=plugins /usr/src/app/packages/plugin-core/dist /build/plugins/immich-plugin-core/dist
 COPY --from=plugins /usr/src/app/packages/plugin-core/manifest.json /build/plugins/immich-plugin-core/manifest.json
-RUN ln -s ../../cli/bin/immich server/bin/immich
+# FL-294: `frameleaf` is the CLI; `immich` stays on PATH as its deprecated alias
+RUN ln -s ../../cli/bin/frameleaf server/bin/frameleaf && ln -s ../../cli/bin/immich server/bin/immich
 COPY LICENSE /licenses/LICENSE.txt
 COPY LICENSE /LICENSE
 # Third-party notices (FL-86): every acknowledgement with its licence text, and the Studio engine's
@@ -474,15 +475,15 @@ ARG BUILD_SOURCE_COMMIT
 ARG BUILD_SOURCE_REPOSITORY=Frameleaf/frameleaf-app
 ARG BUILD_IMAGE_NAME=frameleaf-server
 
-ENV IMMICH_BUILD=${BUILD_ID}
-ENV IMMICH_BUILD_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/actions/runs/${BUILD_ID}
-ENV IMMICH_BUILD_IMAGE=${BUILD_IMAGE}
-ENV IMMICH_BUILD_IMAGE_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/pkgs/container/${BUILD_IMAGE_NAME}
-ENV IMMICH_REPOSITORY=${BUILD_SOURCE_REPOSITORY}
-ENV IMMICH_REPOSITORY_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}
-ENV IMMICH_SOURCE_REF=${BUILD_SOURCE_REF}
-ENV IMMICH_SOURCE_COMMIT=${BUILD_SOURCE_COMMIT}
-ENV IMMICH_SOURCE_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/commit/${BUILD_SOURCE_COMMIT}
+ENV FRAMELEAF_BUILD=${BUILD_ID}
+ENV FRAMELEAF_BUILD_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/actions/runs/${BUILD_ID}
+ENV FRAMELEAF_BUILD_IMAGE=${BUILD_IMAGE}
+ENV FRAMELEAF_BUILD_IMAGE_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/pkgs/container/${BUILD_IMAGE_NAME}
+ENV FRAMELEAF_REPOSITORY=${BUILD_SOURCE_REPOSITORY}
+ENV FRAMELEAF_REPOSITORY_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}
+ENV FRAMELEAF_SOURCE_REF=${BUILD_SOURCE_REF}
+ENV FRAMELEAF_SOURCE_COMMIT=${BUILD_SOURCE_COMMIT}
+ENV FRAMELEAF_SOURCE_COMMIT_URL=https://github.com/${BUILD_SOURCE_REPOSITORY}/commit/${BUILD_SOURCE_COMMIT}
 
 LABEL org.opencontainers.image.source="https://github.com/${BUILD_SOURCE_REPOSITORY}" \
       org.opencontainers.image.revision="${BUILD_SOURCE_COMMIT}"
@@ -492,4 +493,4 @@ EXPOSE 2283
 ENTRYPOINT ["tini", "--", "/bin/bash", "-c"]
 CMD ["start.sh"]
 
-HEALTHCHECK CMD immich-healthcheck
+HEALTHCHECK CMD frameleaf-healthcheck

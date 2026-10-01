@@ -90,8 +90,9 @@ async function verifyBundle(
   );
   const env = await fs.readFile(path.join(directory, "example.env"), "utf8");
   assert.deepEqual(
-    env.match(/^[ \t]*(?:export[ \t]+)?IMMICH_VERSION[ \t]*(?:=|:).*$/gm),
-    [`IMMICH_VERSION=${expectedTag}`],
+    // FL-294: FRAMELEAF_VERSION only; a leftover IMMICH_VERSION line would be a second, ignored setting
+    env.match(/^[ \t]*(?:export[ \t]+)?(?:FRAMELEAF|IMMICH)_VERSION[ \t]*(?:=|:).*$/gm),
+    [`FRAMELEAF_VERSION=${expectedTag}`],
     "Environment version differs",
   );
   for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"]) {
@@ -112,7 +113,7 @@ async function verifyBundle(
     ])
       assert.equal(
         services?.[service]?.image,
-        `ghcr.io/frameleaf/${image}:\${IMMICH_VERSION:-${expectedTag}}`,
+        `ghcr.io/frameleaf/${image}:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-${expectedTag}}}`,
         `${name}: ${service} image version differs`,
       );
   }

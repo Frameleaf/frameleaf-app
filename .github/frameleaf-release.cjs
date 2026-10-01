@@ -100,7 +100,7 @@ const REQUIRED_TOOL_IMAGES = Object.freeze([
 ]);
 // Only the server and ML variants follow the release version; their candidates are verified above.
 const RELEASE_MANAGED_IMAGE =
-  /^ghcr\.io\/frameleaf\/(?:frameleaf-server|frameleaf-machine-learning):\$\{IMMICH_VERSION/;
+  /^ghcr\.io\/frameleaf\/(?:frameleaf-server|frameleaf-machine-learning):\$\{FRAMELEAF_VERSION:-\$\{IMMICH_VERSION/;
 const OWNED_IMAGE =
   /^ghcr\.io\/frameleaf\/([a-z0-9-]+)(?::([A-Za-z0-9_][A-Za-z0-9_.-]{0,127}))?(?:@(sha256:[a-f0-9]{64}))?$/;
 const hash = (bytes) =>
@@ -1177,16 +1177,16 @@ async function createBundle(
   for (const name of INSTALL_FILES) {
     let body = await fs.readFile(path.join(root, "docker", name), "utf8");
     if (name === "example.env") {
-      assert(/^IMMICH_VERSION=.+$/m.test(body), "Missing version setting");
-      body = body.replace(/^IMMICH_VERSION=.+$/m, `IMMICH_VERSION=${tag}`);
+      assert(/^FRAMELEAF_VERSION=.+$/m.test(body), "Missing version setting");
+      body = body.replace(/^FRAMELEAF_VERSION=.+$/m, `FRAMELEAF_VERSION=${tag}`);
     } else if (name.startsWith("docker-compose")) {
       assert(
-        body.includes("${IMMICH_VERSION:-release}"),
+        body.includes("${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}"),
         "Missing Compose release fallback",
       );
       body = body.replaceAll(
-        "${IMMICH_VERSION:-release}",
-        "${IMMICH_VERSION:-" + tag + "}",
+        "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+        "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-" + tag + "}}",
       );
     }
     if (name.endsWith(".yml")) {

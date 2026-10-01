@@ -30,14 +30,14 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
       await fs.writeFile(
         path.join(root, "docker", name),
         name === "example.env"
-          ? "IMMICH_VERSION=release\n"
+          ? "FRAMELEAF_VERSION=release\n"
           : name.startsWith("docker-compose")
             ? [
                 "services:",
                 "  immich-server:",
-                "    image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}",
+                "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
                 "  immich-machine-learning:",
-                "    image: ghcr.io/frameleaf/frameleaf-machine-learning:${IMMICH_VERSION:-release}",
+                "    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
                 "  database:",
                 `    image: ghcr.io/frameleaf/frameleaf-postgres:14@sha256:${"c".repeat(64)}`,
                 "  redis:",
@@ -94,10 +94,12 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
     const envFile = path.join(bundle, "example.env");
     const originalEnv = await fs.readFile(envFile, "utf8");
     for (const assignment of [
+      "FRAMELEAF_VERSION=other",
+      "FRAMELEAF_VERSION = other",
+      "FRAMELEAF_VERSION: other",
+      "export FRAMELEAF_VERSION=other",
+      // a leftover deprecated name is a second setting too
       "IMMICH_VERSION=other",
-      "IMMICH_VERSION = other",
-      "IMMICH_VERSION: other",
-      "export IMMICH_VERSION=other",
     ]) {
       await fs.writeFile(envFile, `${originalEnv}${assignment}\n`);
       await refreshSums();
@@ -116,9 +118,9 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
         await fs.writeFile(
           file,
           valid.replace(
-            `ghcr.io/frameleaf/${image}:\${IMMICH_VERSION:-${tag}}`,
+            `ghcr.io/frameleaf/${image}:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-${tag}}}`,
             `ghcr.io/frameleaf/${image}:wrong`,
-          ) + `# \${IMMICH_VERSION:-${tag}}\n`,
+          ) + `# \${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-${tag}}}\n`,
         );
         await refreshSums();
         await assert.rejects(

@@ -22,14 +22,14 @@ const sha = "a".repeat(40);
 const example = [
   "UPLOAD_LOCATION=./library",
   "DB_DATA_LOCATION=./postgres",
-  "IMMICH_VERSION=release",
+  "FRAMELEAF_VERSION=release",
   "DB_PASSWORD=postgres",
   "DB_USERNAME=postgres",
 ].join("\n");
 
 test("the test installation's .env keeps the release example and sets only test values", () => {
   const body = environmentFile(example, "A".repeat(32));
-  assert.match(body, /^IMMICH_VERSION=deploy-test$/m);
+  assert.match(body, /^FRAMELEAF_VERSION=deploy-test$/m);
   assert.match(body, /^DB_PASSWORD=A{32}$/m);
   assert.match(body, /^DB_USERNAME=postgres$/m);
   assert.throws(() => environmentFile(example, "short"));

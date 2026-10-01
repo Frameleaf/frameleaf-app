@@ -4,7 +4,7 @@
 #
 # The server gets exactly the configuration deployment/icloud-sync.compose.yml gives it: the bridge URL,
 # the bearer token, the session encryption key and the CA, all mounted read-only, and a private staging
-# directory outside every media root. IMMICH_TRUSTED_PROXIES stands in for the HTTPS reverse proxy the
+# directory outside every media root. FRAMELEAF_TRUSTED_PROXIES stands in for the HTTPS reverse proxy the
 # feature requires in front of the web app: the spec's browser sends `X-Forwarded-Proto: https`, which the
 # server only believes from these (private) addresses.
 #
@@ -42,14 +42,14 @@ services:
 
   immich-server:
     environment:
-      IMMICH_ICLOUD_BRIDGE_URL: https://icloud-bridge-fixture:9443/
-      IMMICH_ICLOUD_BRIDGE_TOKEN_FILE: /run/icloud-test-only/test-only-bridge-token
-      IMMICH_ICLOUD_KEY_FILE: /run/icloud-test-only/test-only-encryption-key
-      IMMICH_ICLOUD_CA_FILE: /run/icloud-test-only/test-only-ca.crt
-      IMMICH_ICLOUD_STAGING_PATH: /var/lib/immich-icloud-staging
+      FRAMELEAF_ICLOUD_BRIDGE_URL: https://icloud-bridge-fixture:9443/
+      FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE: /run/icloud-test-only/test-only-bridge-token
+      FRAMELEAF_ICLOUD_KEY_FILE: /run/icloud-test-only/test-only-encryption-key
+      FRAMELEAF_ICLOUD_CA_FILE: /run/icloud-test-only/test-only-ca.crt
+      FRAMELEAF_ICLOUD_STAGING_PATH: /var/lib/immich-icloud-staging
       # Docker Desktop's VM disk is small; the default 1 GiB headroom is for real libraries.
-      IMMICH_ICLOUD_FREE_SPACE_BYTES: '16777216'
-      IMMICH_TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
+      FRAMELEAF_ICLOUD_FREE_SPACE_BYTES: '16777216'
+      FRAMELEAF_TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
     # Only what the server holds in production: never the bridge's TLS private key.
     volumes:
       - ./src/fixtures/icloud-bridge/test-only-bridge-token:/run/icloud-test-only/test-only-bridge-token:ro

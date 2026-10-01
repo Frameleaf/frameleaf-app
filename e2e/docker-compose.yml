@@ -32,11 +32,11 @@ services:
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
       DB_DATABASE_NAME: immich
-      IMMICH_MACHINE_LEARNING_ENABLED: 'false'
-      IMMICH_ENV: testing
+      FRAMELEAF_MACHINE_LEARNING_ENABLED: 'false'
+      FRAMELEAF_ENV: testing
       FRAMELEAF_CLOUD_URL: https://cloud.frameleaf.test
-      IMMICH_PORT: '2285'
-      IMMICH_IGNORE_MOUNT_CHECK_ERRORS: 'true'
+      FRAMELEAF_PORT: '2285'
+      FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS: 'true'
     volumes:
       - ./test-assets:/test-assets
     depends_on:

@@ -79,20 +79,20 @@ services:
     env_file:
       - .env
     environment:
-      IMMICH_REPOSITORY: Frameleaf/frameleaf-app
-      IMMICH_REPOSITORY_URL: https://github.com/Frameleaf/frameleaf-app
-      IMMICH_SOURCE_REF: local
-      IMMICH_SOURCE_COMMIT: ""
-      IMMICH_SOURCE_URL: https://github.com/Frameleaf/frameleaf-app
-      IMMICH_BUILD: ""
-      IMMICH_BUILD_URL: https://github.com/Frameleaf/frameleaf-app/actions
-      IMMICH_BUILD_IMAGE: development
-      IMMICH_BUILD_IMAGE_URL: https://github.com/Frameleaf/frameleaf-app/pkgs/container/frameleaf-server
-      IMMICH_THIRD_PARTY_SOURCE_URL: https://github.com/Frameleaf/frameleaf-app/
-      IMMICH_THIRD_PARTY_BUG_FEATURE_URL: https://github.com/Frameleaf/frameleaf-app/issues
-      IMMICH_THIRD_PARTY_DOCUMENTATION_URL: https://github.com/Frameleaf/frameleaf-app/tree/fork/main/docs
-      IMMICH_THIRD_PARTY_SUPPORT_URL: https://github.com/Frameleaf/frameleaf-app/issues
-      IMMICH_HELMET_FILE: "true"
+      FRAMELEAF_REPOSITORY: Frameleaf/frameleaf-app
+      FRAMELEAF_REPOSITORY_URL: https://github.com/Frameleaf/frameleaf-app
+      FRAMELEAF_SOURCE_REF: local
+      FRAMELEAF_SOURCE_COMMIT: ""
+      FRAMELEAF_SOURCE_COMMIT_URL: https://github.com/Frameleaf/frameleaf-app
+      FRAMELEAF_BUILD: ""
+      FRAMELEAF_BUILD_URL: https://github.com/Frameleaf/frameleaf-app/actions
+      FRAMELEAF_BUILD_IMAGE: development
+      FRAMELEAF_BUILD_IMAGE_URL: https://github.com/Frameleaf/frameleaf-app/pkgs/container/frameleaf-server
+      FRAMELEAF_SOURCE_URL: https://github.com/Frameleaf/frameleaf-app/
+      FRAMELEAF_BUG_FEATURE_URL: https://github.com/Frameleaf/frameleaf-app/issues
+      FRAMELEAF_DOCS_URL: https://github.com/Frameleaf/frameleaf-app/tree/fork/main/docs
+      FRAMELEAF_SUPPORT_URL: https://github.com/Frameleaf/frameleaf-app/issues
+      FRAMELEAF_HELMET_FILE: "true"
     ports:
       - 9230:9230
       - 9231:9231

@@ -30,7 +30,7 @@
    * nothing about an import lives in the browser.
    *
    * With `showRoots`, an administrator also sees which server folders imports may read from. That
-   * list is the operator's `IMMICH_IMPORT_ROOTS`; it is read from the server, never typed here.
+   * list is the operator's `FRAMELEAF_IMPORT_ROOTS`; it is read from the server, never typed here.
    */
   let { showRoots = false }: { showRoots?: boolean } = $props();
 

@@ -19,7 +19,7 @@ cd "${IMMICH_WORKSPACE}/web" || (
     exit 1
 )
 
-until curl --output /dev/null --silent --head --fail "http://127.0.0.1:${IMMICH_PORT}/api/server/config"; do
+until curl --output /dev/null --silent --head --fail "http://127.0.0.1:${FRAMELEAF_PORT}/api/server/config"; do
     log "Waiting for api server..."
     sleep 1
 done
