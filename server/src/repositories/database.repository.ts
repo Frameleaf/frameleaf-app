@@ -1238,6 +1238,34 @@ export class DatabaseRepository extends ForkHandoffRepository {
   }
 
   /**
+   * FL-295: the first Frameleaf start on a library the official server created: one no Frameleaf boot
+   * has touched yet (an upstream-only ledger, no fork ledger), or one a first boot set up but has not
+   * adopted. A fresh empty install, an adopted library and a Frameleaf library are not.
+   */
+  async isFirstLaunchOnOfficialLibrary(): Promise<boolean> {
+    if ((await this.detectMigrationMode()) === 'official-origin') {
+      return true;
+    }
+    return this.isAwaitingOfficialAdoption();
+  }
+
+  /**
+   * FL-295: how much room a plain dump of this database needs before compression, as an upper bound:
+   * the size of every table (TOAST included) and materialized view. Indexes are not dumped.
+   */
+  async getDumpSizeEstimate(): Promise<number> {
+    const { rows } = await sql<{ bytes: string | null }>`
+      SELECT sum(pg_table_size(c.oid))::bigint AS bytes
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind IN ('r', 'm')
+        AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+        AND n.nspname NOT LIKE 'pg_toast%'
+    `.execute(this.db);
+    return Number(rows[0]?.bytes ?? 0);
+  }
+
+  /**
    * FL-44: make an official-origin library a full Frameleaf library (see
    * `src/fork-schema/official-adoption.ts`). One transaction: a failure leaves the library exactly as
    * the official server can still read it, and a re-run starts over. A re-run after success changes

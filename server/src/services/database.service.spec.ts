@@ -1,6 +1,7 @@
 import type { VectorExtension } from 'src/types.js';
 import { EXTENSION_NAMES } from 'src/constants.js';
 import { DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
+import { FirstLaunchBackup, FirstLaunchBackupError } from 'src/maintenance/first-launch-backup.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { envData, mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -437,6 +438,102 @@ describe(DatabaseService.name, () => {
       expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('adopted automatically (2 migrations'));
       expect(mocks.logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('fork-schema adopt'));
       expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
+    describe('first start on an official library (FL-295)', () => {
+      const officialLibrary = () => {
+        mocks.database.detectMigrationMode.mockResolvedValue('official-origin');
+        mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(true);
+        mocks.database.runForkMigrations.mockResolvedValue();
+        mocks.database.adoptOfficialOrigin.mockResolvedValue({ adopted: true, applied: ['a'] });
+        mocks.database.getExtensionVersions.mockResolvedValue([
+          { name: DatabaseExtension.VectorChord, installedVersion: minVersionInRange, availableVersion: updateInRange },
+        ]);
+      };
+      const mockFirstLaunch = (run: FirstLaunchBackup['run']) => {
+        const firstLaunch = { run: vi.fn(run) };
+        vi.spyOn(sut as unknown as { firstLaunchBackup: () => unknown }, 'firstLaunchBackup').mockReturnValue(
+          firstLaunch,
+        );
+        return firstLaunch;
+      };
+
+      it('takes the safety copy inside the boot migration lock, before any extension change, migration or adoption', async () => {
+        officialLibrary();
+        let lockHeld = false;
+        mocks.database.withLock.mockImplementation(async (_lock, fn) => {
+          lockHeld = true;
+          try {
+            return await fn();
+          } finally {
+            lockHeld = false;
+          }
+        });
+        const copiedInsideLock: boolean[] = [];
+        const firstLaunch = mockFirstLaunch(() => {
+          copiedInsideLock.push(lockHeld);
+          return Promise.resolve({
+            kind: 'created',
+            backup: { filename: 'immich-db-backup-x-pre-upgrade-v3.2.0-pg14.sql.gz', takenAt: '' },
+          });
+        });
+
+        await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+        expect(copiedInsideLock).toEqual([true]);
+        const copiedAt = firstLaunch.run.mock.invocationCallOrder[0];
+        for (const changed of [
+          mocks.database.updateVectorExtension,
+          mocks.database.reindexVectorsIfNeeded,
+          mocks.database.runOfficialMigrations,
+          mocks.database.runForkMigrations,
+          mocks.database.adoptOfficialOrigin,
+        ]) {
+          expect(changed).toHaveBeenCalled();
+          expect(changed.mock.invocationCallOrder[0]).toBeGreaterThan(copiedAt);
+        }
+      });
+
+      it('upgrades nothing when the safety copy fails, and fails the start', async () => {
+        officialLibrary();
+        mockFirstLaunch(() => Promise.reject(new FirstLaunchBackupError('backup-failed', 'The safety copy failed')));
+
+        await expect(sut.onBootstrap()).rejects.toThrow('The safety copy failed');
+
+        for (const untouched of [
+          mocks.database.createExtension,
+          mocks.database.updateVectorExtension,
+          mocks.database.reindexVectorsIfNeeded,
+          mocks.database.dropExtension,
+          mocks.database.runMigrations,
+          mocks.database.runOfficialMigrations,
+          mocks.database.runForkMigrations,
+          mocks.database.adoptOfficialOrigin,
+          mocks.database.applyIsolatedFrameleafMigrations,
+        ]) {
+          expect(untouched).not.toHaveBeenCalled();
+        }
+        expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('Nothing was upgraded'));
+      });
+
+      it('carries on when the copy is not needed or a recent backup made it unnecessary', async () => {
+        officialLibrary();
+        mockFirstLaunch(() =>
+          Promise.resolve({
+            kind: 'skipped',
+            backup: { filename: 'immich-db-backup-20261001T000000-v3.1.0-pg14.sql.gz', takenAt: '' },
+          }),
+        );
+
+        await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+        expect(mocks.database.adoptOfficialOrigin).toHaveBeenCalledOnce();
+      });
+
+      it('builds the copy from the existing database-backup path', () => {
+        const firstLaunch = (sut as unknown as { firstLaunchBackup: () => FirstLaunchBackup }).firstLaunchBackup();
+        expect(firstLaunch).toBeInstanceOf(FirstLaunchBackup);
+      });
     });
 
     it('defers a refused automatic adoption with a warning instead of failing startup (FL-289)', async () => {
