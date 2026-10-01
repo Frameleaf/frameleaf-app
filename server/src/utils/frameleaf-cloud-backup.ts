@@ -61,8 +61,12 @@ export const backupGrantProblem = (grant: BackupGrantMetadata): string | null =>
   return null;
 };
 
-export const BackupReadOnlyReasonSchema = z.enum(['purge_hold', 'entitlement', 'unlinked', 'suspended', 'purging']);
-
+/**
+ * Why Frameleaf Cloud made the storage read-only: `purge_hold`, `entitlement`, `unlinked`, `suspended`,
+ * `purging`, `plan_full` (FL-301, FC-91) so far. Open-ended: a reason this server does not know is shown
+ * generically, and `readOnly` alone decides whether backups pause.
+ */
+export const BackupReadOnlyReasonSchema = z.string().min(1).max(64);
 export const backupUsageSchema = z.strictObject({
   measuredAt: Timestamp.nullable(),
   bytesCurrent: z.int().min(0),
