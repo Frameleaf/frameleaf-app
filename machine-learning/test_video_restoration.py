@@ -653,6 +653,7 @@ class TestRuntime:
         assert argv[3] == str(source_frames)
         assert argv[5] == "--max_seq_len=30"
         assert calls[0].env["HF_HUB_OFFLINE"] == "1"
+        assert "FRAMELEAF_ML_AUTH_TOKEN" not in calls[0].env
         assert "IMMICH_ML_AUTH_TOKEN" not in calls[0].env
         assert calls[0].cwd == spec.runtime.root
 

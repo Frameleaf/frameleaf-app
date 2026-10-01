@@ -28,6 +28,7 @@ from immich_ml.models.base import InferenceModel, ModelUnavailableError
 from immich_ml.models.transforms import decode_pil
 
 from .config import PreloadModelData, log, model_source, settings
+from .env_aliases import read_env
 from .hardware_report import container_report
 from .models.cache import ModelCache
 from .schemas import (
@@ -211,7 +212,7 @@ app = FastAPI(lifespan=lifespan)
 
 # Health endpoints stay unauthenticated so reverse-proxy probes and LAN deployments
 # (the default UX) keep working unchanged. Auth only kicks in for paths that actually
-# do inference, and only when IMMICH_ML_AUTH_TOKEN is set in the environment.
+# do inference, and only when FRAMELEAF_ML_AUTH_TOKEN is set in the environment.
 # Normalised exempt paths — comparison strips trailing slash and lowercases.
 _AUTH_EXEMPT_PATHS = frozenset({"/", "/ping"})
 # Cap on the Authorization header byte length to avoid degenerate-input
@@ -238,7 +239,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         # No token configured -> auth disabled; serve every request. This is the
         # default for local / same-LAN deployments — upstream Immich ships the ML
         # service without authentication. A token is only present when something
-        # sets IMMICH_ML_AUTH_TOKEN, e.g. a LAN worker reached through a proxy,
+        # sets FRAMELEAF_ML_AUTH_TOKEN, e.g. a LAN worker reached through a proxy,
         # whose endpoint may be exposed beyond this host and must stay authenticated.
         if self._expected_bytes is None:
             return await call_next(request)
@@ -260,7 +261,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-_expected_token = os.environ.get("IMMICH_ML_AUTH_TOKEN", "").strip() or None
+_expected_token = read_env(os.environ, "FRAMELEAF_ML_AUTH_TOKEN").strip() or None
 
 # Startup banner so the auth state is visible in worker logs — a single log
 # line is easy to miss when gunicorn boots, so the banner mirrors other Immich
@@ -274,11 +275,11 @@ _auth_state = (
 )
 log.info("=" * 64)
 log.info("Frameleaf ML auth: %s", _auth_state)
-log.info("  IMMICH_ML_AUTH_TOKEN set = %s", "yes" if _expected_token else "no")
+log.info("  FRAMELEAF_ML_AUTH_TOKEN set = %s", "yes" if _expected_token else "no")
 log.info("=" * 64)
 if not _expected_token:
     log.warning(
-        "IMMICH_ML_AUTH_TOKEN is not set; /predict is unauthenticated. Treat the "
+        "FRAMELEAF_ML_AUTH_TOKEN is not set; /predict is unauthenticated. Treat the "
         "ML service URL as a trusted internal endpoint — anything able to reach "
         "this port can submit inference requests."
     )

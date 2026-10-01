@@ -193,4 +193,4 @@ upload, so a remote worker never receives more of the original than the job need
 | `FRAMELEAF_RESTORATION_IMAGE_REVISION` | set by the image build                   | Revision the qualification record must list              |
 | `FRAMELEAF_RESTORATION_HOST` / `_PORT` | `0.0.0.0` / `3004`                       | Listen address                                           |
 | `FRAMELEAF_RESTORATION_REFRESH_S`      | `300`                                    | How often the capability report is rebuilt; 0 for never  |
-| `IMMICH_ML_AUTH_TOKEN`                 | unset                                    | Bearer token, as for the predict container               |
+| `FRAMELEAF_ML_AUTH_TOKEN`              | unset                                    | Bearer token, as for the predict container               |
