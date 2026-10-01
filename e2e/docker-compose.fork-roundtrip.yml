@@ -80,6 +80,8 @@ services:
         BUILD_SOURCE_REF: fork-roundtrip
       secrets:
         - mise_github_token
+    # FL-291: the graceful stop (9 s at most) hands back running jobs; Docker must not kill it first
+    stop_grace_period: 10s
     environment:
       <<: *server-environment
       DB_SKIP_MIGRATIONS: ${FORK_DB_SKIP_MIGRATIONS:-false}
