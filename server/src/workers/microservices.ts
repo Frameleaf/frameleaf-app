@@ -5,14 +5,27 @@ import { serverVersion } from 'src/constants.js';
 import { WebSocketAdapter } from 'src/middleware/websocket.adapter.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { isStartUpError } from 'src/utils/misc.js';
+import { closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
 export async function bootstrap() {
+  // FL-291: the supervisor's stop message lets running jobs finish or hands them back before the
+  // thread exits
+
+  let stop = (): void => process.exit(0);
+  onStopRequest(() => stop());
+
   const app = await NestFactory.create(MicroservicesModule, { bufferLogs: true });
   const logger = await app.resolve(LoggingRepository);
   const configRepository = app.get(ConfigRepository);
-  app.get(AppRepository).setCloseFn(() => app.close());
+  const jobRepository = app.get(JobRepository);
+  const appRepository = app.get(AppRepository);
+  appRepository.setCloseFn(() =>
+    closeGracefully({ stopJobs: (graceMs) => jobRepository.stopWorkers(graceMs), close: () => app.close() }),
+  );
+  stop = () => appRepository.stop(0);
 
   const { environment, host } = configRepository.getEnv();
 

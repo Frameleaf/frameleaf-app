@@ -1,5 +1,6 @@
 import { ModuleRef } from '@nestjs/core';
-import { JobsOptions } from 'bullmq';
+import { JobsOptions, WaitingError } from 'bullmq';
+import type { Mock } from 'vitest';
 import { JobName, QueueJobStatus, QueueName } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -362,6 +363,201 @@ describe(JobRepository.name, () => {
 
       expect(sut.getRollingAvgMs(JobName.ImageDescription)).toBe(1000);
       expect(sut.getRollingAvgMs(JobName.Ocr)).toBe(5000);
+    });
+  });
+
+  describe('stopWorkers (FL-291)', () => {
+    type FakeWorker = {
+      queueName: QueueName;
+      processor: (job: unknown, token?: string) => Promise<void>;
+      on: ReturnType<typeof vi.fn>;
+      pause: ReturnType<typeof vi.fn>;
+      close: ReturnType<typeof vi.fn>;
+    };
+
+    let workers: FakeWorker[];
+    let emit: Mock<(...args: unknown[]) => Promise<void>>;
+    let logger: Record<string, ReturnType<typeof vi.fn>>;
+    let repository: JobRepository;
+    let order: string[];
+
+    const fakeJob = (name: JobName, id = '1') => ({
+      id,
+      name,
+      data: {},
+      moveToWait: vi.fn(() => {
+        order.push(`moveToWait:${id}`);
+        return Promise.resolve(0);
+      }),
+      moveToFailed: vi.fn(() => {
+        order.push(`moveToFailed:${id}`);
+        return Promise.resolve();
+      }),
+    });
+
+    const workerFor = (queueName: QueueName) => workers.find((worker) => worker.queueName === queueName)!;
+
+    /** A handler that runs until released, like a transcode that outlives the grace period. */
+    const holdHandler = () => {
+      let release!: () => void;
+      emit.mockImplementation(() => new Promise<void>((resolve) => (release = resolve)));
+      return () => release();
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      workers = [];
+      order = [];
+      mocks.worker.mockImplementation(function (queueName: QueueName, processor: FakeWorker['processor']) {
+        const worker: FakeWorker = {
+          queueName,
+          processor,
+          on: vi.fn(),
+          pause: vi.fn(() => {
+            order.push(`pause:${queueName}`);
+            return Promise.resolve();
+          }),
+          close: vi.fn(() => {
+            order.push(`close:${queueName}`);
+            return Promise.resolve();
+          }),
+        };
+        workers.push(worker);
+        return worker;
+      } as any);
+      emit = vi.fn<(...args: unknown[]) => Promise<void>>().mockResolvedValue(undefined);
+      logger = { debug: vi.fn(), error: vi.fn(), log: vi.fn(), setContext: vi.fn(), warn: vi.fn() };
+      repository = new JobRepository(
+        {} as ModuleRef,
+        { getEnv: () => ({ bull: { config: { connection: {}, prefix: 'immich_bull' } } }) } as ConfigRepository,
+        { emit } as unknown as EventRepository,
+        logger as unknown as LoggingRepository,
+      );
+      repository.startWorkers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      mocks.worker.mockImplementation(function () {
+        return { on: vi.fn() };
+      } as any);
+    });
+
+    it('lets a short job finish, then closes every worker without handing anything back', async () => {
+      const release = holdHandler();
+      const job = fakeJob(JobName.AssetGenerateThumbnails);
+      const running = workerFor(QueueName.ThumbnailGeneration).processor(job, 'token-1');
+
+      const stopping = repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(1000);
+      for (const worker of workers) {
+        // no new job is taken while the running one finishes
+        expect(worker.pause).toHaveBeenCalledWith(true);
+        expect(worker.close).not.toHaveBeenCalled();
+      }
+
+      release();
+      await expect(running).resolves.toBeUndefined();
+      await stopping;
+
+      expect(job.moveToWait).not.toHaveBeenCalled();
+      expect(job.moveToFailed).not.toHaveBeenCalled();
+      for (const worker of workers) {
+        expect(worker.close).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('hands a job still running at the end of the grace period back to waiting before closing', async () => {
+      holdHandler();
+      const job = fakeJob(JobName.AssetEncodeVideo, 'video-1');
+      const running = workerFor(QueueName.VideoConversion).processor(job, 'token-1');
+      const outcome = running.catch((error: unknown) => error);
+
+      const stopping = repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(job.moveToWait).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await stopping;
+
+      expect(job.moveToWait).toHaveBeenCalledWith('token-1');
+      // BullMQ leaves a job alone when its processor ends with a WaitingError
+      expect(await outcome).toBeInstanceOf(WaitingError);
+      const handedBack = order.indexOf('moveToWait:video-1');
+      expect(handedBack).toBeGreaterThan(-1);
+      expect(order.findIndex((step) => step.startsWith('close:'))).toBeGreaterThan(handedBack);
+      expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('video-1'));
+    });
+
+    it('does not hand back a job that is unsafe to run again, and records it as failed instead', async () => {
+      holdHandler();
+      const job = fakeJob(JobName.SendMail, 'mail-1');
+      const outcome = workerFor(QueueName.Notification)
+        .processor(job, 'token-1')
+        .catch((error: unknown) => error);
+
+      const stopping = repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+      await stopping;
+
+      expect(job.moveToWait).not.toHaveBeenCalled();
+      expect(job.moveToFailed).toHaveBeenCalledWith(expect.any(Error), 'token-1', false);
+      expect(await outcome).toBeInstanceOf(WaitingError);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('mail-1'));
+    });
+
+    it('puts a job picked up after the stop began straight back without running it', async () => {
+      const stopping = repository.stopWorkers(5000);
+      const job = fakeJob(JobName.AssetGenerateThumbnails, 'late-1');
+
+      const outcome = await workerFor(QueueName.ThumbnailGeneration)
+        .processor(job, 'token-9')
+        .catch((error: unknown) => error);
+      await stopping;
+
+      expect(emit).not.toHaveBeenCalled();
+      expect(job.moveToWait).toHaveBeenCalledWith('token-9');
+      expect(outcome).toBeInstanceOf(WaitingError);
+    });
+
+    it('keeps going when a hand-back fails, and still closes the workers', async () => {
+      holdHandler();
+      const job = fakeJob(JobName.AssetEncodeVideo, 'video-2');
+      job.moveToWait.mockRejectedValue(new Error('redis away'));
+      void workerFor(QueueName.VideoConversion)
+        .processor(job, 'token-1')
+        .catch(() => {});
+
+      const stopping = repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+      await stopping;
+
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('video-2'), expect.any(String));
+      for (const worker of workers) {
+        expect(worker.close).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('stops once however often it is asked', async () => {
+      const first = repository.stopWorkers(5000);
+      const second = repository.stopWorkers(5000);
+      await Promise.all([first, second]);
+
+      expect(second).toBe(first);
+      for (const worker of workers) {
+        expect(worker.pause).toHaveBeenCalledTimes(1);
+        expect(worker.close).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('has nothing to stop in a process that runs no workers (the API)', async () => {
+      const api = new JobRepository(
+        {} as ModuleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        logger as unknown as LoggingRepository,
+      );
+
+      await expect(api.stopWorkers(5000)).resolves.toBeUndefined();
     });
   });
 });

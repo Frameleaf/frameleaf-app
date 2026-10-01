@@ -10,6 +10,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { SupervisorStop, WORKER_STOP_MESSAGE } from 'src/utils/shutdown.js';
 
 /**
  * FL-161: an `FRAMELEAF_EDGE_SECRET` set in the environment, kept for installs that set one on purpose.
@@ -36,7 +37,11 @@ class Workers {
   /**
    * Currently running workers
    */
-  workers: Partial<Record<ImmichWorker, { kill: (signal: NodeJS.Signals) => Promise<void> | void }>> = {};
+  workers: Partial<Record<ImmichWorker, { kill: (signal: NodeJS.Signals) => Promise<void> | void; stop: () => void }>> =
+    {};
+
+  /** FL-291: a SIGTERM or SIGINT asked the server to stop; nothing starts again from here on. */
+  private stopper = new SupervisorStop();
 
   /**
    * Fail-safe in case anything dies during restart
@@ -66,15 +71,44 @@ class Workers {
     const isMaintenanceMode = await this.isMaintenanceMode();
     const { workers } = new ConfigRepository().getEnv();
 
+    if (this.stopper.stopping) {
+      return;
+    }
+
     if (isMaintenanceMode) {
       this.startWorker(ImmichWorker.Maintenance);
     } else {
       await this.waitForFreeLock();
+      if (this.stopper.stopping) {
+        return;
+      }
 
       for (const worker of workers) {
         this.startWorker(worker);
       }
     }
+  }
+
+  /**
+   * FL-291: stop the server gracefully. Each worker is asked to stop (SIGTERM for the forked API and
+   * edge processes, a message for the worker threads): it stops taking work, lets running jobs and
+   * requests finish within the grace period, hands back what is left and closes its connections. The
+   * supervisor exits once they all have, killing any still running at its deadline.
+   */
+  stop(signal: NodeJS.Signals) {
+    if (this.stopper.stopping) {
+      return;
+    }
+    console.log(`Received ${signal}; stopping every worker`);
+    clearTimeout(this.edgeRestartTimer);
+    clearTimeout(this.edgeKillTimer);
+    this.edgeStopRequested = true;
+    this.stopper.begin(() =>
+      Object.values(this.workers).map((worker) => ({
+        stop: () => worker.stop(),
+        kill: () => void worker.kill('SIGKILL'),
+      })),
+    );
   }
 
   private async isMaintenanceMode(): Promise<boolean> {
@@ -138,6 +172,7 @@ class Workers {
 
     let anyWorker: Worker | ChildProcess;
     let kill: (signal?: NodeJS.Signals) => Promise<void> | void;
+    let stop: () => void;
 
     // FL-165: the edge worker is a process of its own like the API: it holds the remote access
     // certificate keys and every remote socket, apart from the workers that run jobs
@@ -150,19 +185,21 @@ class Workers {
       });
 
       kill = (signal) => void worker.kill(signal);
+      stop = () => void worker.kill('SIGTERM');
       // eslint-disable-next-line unicorn/prefer-hoisting-branch-code
       anyWorker = worker;
     } else {
       const worker = new Worker(workerFile);
 
       kill = async () => void (await worker.terminate());
+      stop = () => worker.postMessage(WORKER_STOP_MESSAGE);
       anyWorker = worker;
     }
 
     anyWorker.on('error', (error) => this.onError(name, error));
     anyWorker.on('exit', (exitCode) => this.onExit(name, exitCode));
 
-    this.workers[name] = { kill };
+    this.workers[name] = { kill, stop };
     if (name === ImmichWorker.Edge) {
       this.edgeStartedAt = Date.now();
       this.edgeStopRequested = false;
@@ -174,6 +211,14 @@ class Workers {
   }
 
   onExit(name: ImmichWorker, exitCode: number | null) {
+    // FL-291: a stop in progress: no restart, no killing the others; exit once the last one has gone
+    if (this.stopper.stopping) {
+      console.info(`${name} worker stopped`);
+      delete this.workers[name];
+      this.stopper.workerExited(Object.keys(this.workers).length);
+      return;
+    }
+
     // restart immich server
     if (exitCode === ExitCode.AppRestart || this.restarting) {
       this.restarting = true;
@@ -291,7 +336,11 @@ async function main() {
   }
 
   process.title = 'immich';
-  void new Workers().bootstrap();
+  const workers = new Workers();
+  // FL-291: Docker (through tini) sends SIGTERM here only; the workers are stopped from here
+  process.on('SIGTERM', () => workers.stop('SIGTERM'));
+  process.on('SIGINT', () => workers.stop('SIGINT'));
+  void workers.bootstrap();
 }
 
 void main();
