@@ -96,9 +96,9 @@ describe('catalog manifests', () => {
     // sessions (FL-158), the album covers that follow the newest item (FL-83) and items shared with a
     // person (FL-83 AL-30b), generated Studio resources (FL-111) and Studio project imports (FL-103,
     // FL-105), Studio HDR intermediates (FL-97), persisted safety proof facts (FL-226), and the used
-    // exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230), and develop artifacts
-    // (FL-233), in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(217);
+    // exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230), develop artifacts
+    // (FL-233), and iCloud source identities and claims (FL-296), in the integrated catalog.
+    expect(getCatalogTableLocks(fork)).toHaveLength(219);
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
         'public.pet_audit',
@@ -141,12 +141,14 @@ describe('catalog manifests', () => {
         'immich_fork.frameleaf_exchange_token',
         'immich_fork.frameleaf_sign_in_revocation',
         'immich_fork.asset_develop_artifact',
+        'immich_fork.icloud_source_identity',
+        'immich_fork.icloud_claim',
         'immich_fork.album_cover_follows_newest',
         'immich_fork.asset_user_share',
       ]),
     );
     // 66 v3.1.0 public + every fork table
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(126);
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(128);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {

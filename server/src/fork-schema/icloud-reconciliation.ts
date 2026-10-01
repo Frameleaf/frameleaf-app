@@ -14,6 +14,14 @@ export async function assertICloudReferences(db: Kysely<DB>): Promise<void> {
       )) OR (NOT EXISTS (SELECT 1 FROM public.user owner WHERE owner.id = resource."ownerId")
         AND ("leaseToken" IS NOT NULL OR "pendingJobs" <> '[]'::jsonb OR status NOT IN ('blocked', 'removed')))
       UNION ALL
+      SELECT 1 FROM immich_fork.icloud_source_identity identity
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.asset asset WHERE asset.id = identity."assetId" AND asset."ownerId" = identity."ownerId"
+      )
+      UNION ALL
+      SELECT 1 FROM immich_fork.icloud_claim claim
+      WHERE NOT EXISTS (SELECT 1 FROM public.user owner WHERE owner.id = claim."ownerId")
+      UNION ALL
       SELECT 1 FROM immich_fork.icloud_album album
       JOIN immich_fork.icloud_connection connection ON connection.id = album."connectionId"
       WHERE album."albumId" IS NOT NULL AND NOT EXISTS (
@@ -79,6 +87,26 @@ export async function reconcileICloudReferences(db: Kysely<DB>): Promise<number>
     ) SELECT count(*)::int AS count FROM archived
   `.execute(db);
 
+  // FL-296: an identity names an asset the official server removed; the claim of a removed owner
+  const identityArchive = await sql<{ count: number }>`
+    WITH missing AS (
+      SELECT identity.* FROM immich_fork.icloud_source_identity identity
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.asset asset WHERE asset.id = identity."assetId" AND asset."ownerId" = identity."ownerId"
+      )
+    ), archived AS (
+      INSERT INTO immich_fork.orphaned_records ("sourceTable", "sourceKey", payload)
+      SELECT 'icloud_source_identity', id::text, to_jsonb(missing) FROM missing
+      ON CONFLICT ("sourceTable", "sourceKey") DO NOTHING RETURNING 1
+    ), removed AS (
+      DELETE FROM immich_fork.icloud_source_identity WHERE id IN (SELECT id FROM missing) RETURNING 1
+    ) SELECT count(*)::int AS count FROM archived
+  `.execute(db);
+  await sql`
+    DELETE FROM immich_fork.icloud_claim claim
+    WHERE NOT EXISTS (SELECT 1 FROM public.user owner WHERE owner.id = claim."ownerId")
+  `.execute(db);
+
   const albumArchive = await sql<{ count: number }>`
     WITH missing AS (
       SELECT album.* FROM immich_fork.icloud_album album
@@ -123,6 +151,9 @@ export async function reconcileICloudReferences(db: Kysely<DB>): Promise<number>
     ) SELECT count(*)::int AS count FROM archived
   `.execute(db);
   return (
-    (resourceArchive.rows[0]?.count ?? 0) + (albumArchive.rows[0]?.count ?? 0) + (membershipArchive.rows[0]?.count ?? 0)
+    (resourceArchive.rows[0]?.count ?? 0) +
+    (identityArchive.rows[0]?.count ?? 0) +
+    (albumArchive.rows[0]?.count ?? 0) +
+    (membershipArchive.rows[0]?.count ?? 0)
   );
 }
