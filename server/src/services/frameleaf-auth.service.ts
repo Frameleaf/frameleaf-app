@@ -329,9 +329,9 @@ export class FrameleafAuthService extends BaseService {
               {
                 userId: created.id,
                 actorId: created.id,
-                action: AdminAuditAction.ServerClaimed,
+                action: AdminAuditAction.AccountCreated,
                 subject: created.name,
-                detail: 'app-frameleaf',
+                detail: 'server-claimed:app-frameleaf',
               },
             ]);
             this.logger.log(`This server's owner ${email} signed in with Frameleaf and administers it`);

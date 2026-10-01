@@ -45688,8 +45688,7 @@
           "license-activated",
           "license-removed",
           "frameleaf-account-linked",
-          "frameleaf-account-unlinked",
-          "server-claimed"
+          "frameleaf-account-unlinked"
         ],
         "type": "string"
       },
