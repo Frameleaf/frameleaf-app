@@ -1,13 +1,13 @@
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { PhotographyBrandSaveDto, type PhotographyBrand } from 'src/dtos/photography-workspace.dto.js';
 import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
+import { type PhotographyBrand, PhotographyBrandSaveDto } from 'src/dtos/photography-workspace.dto.js';
 import { AssetType, AssetVisibility, CacheControl } from 'src/enum.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
-import { SearchService } from 'src/services/search.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
+import { SearchService } from 'src/services/search.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { factory, newUuid } from 'test/small.factory.js';
 
@@ -50,15 +50,13 @@ const setup = () => {
   };
   const search = { searchMetadata: vi.fn().mockResolvedValue({ assets: { items: [logo], nextCursor: null } }) };
   const media = {
-    viewThumbnail: vi
-      .fn()
-      .mockResolvedValue(
-        new ImmichFileResponse({
-          path: '/derived/logo.webp',
-          contentType: 'image/webp',
-          cacheControl: CacheControl.PrivateWithCache,
-        }),
-      ),
+    viewThumbnail: vi.fn().mockResolvedValue(
+      new ImmichFileResponse({
+        path: '/derived/logo.webp',
+        contentType: 'image/webp',
+        cacheControl: CacheControl.PrivateWithCache,
+      }),
+    ),
   };
   const sut = new PhotographyWorkspaceService(
     repository as unknown as PhotographyWorkspaceRepository,

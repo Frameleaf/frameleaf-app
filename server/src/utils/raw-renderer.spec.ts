@@ -72,7 +72,7 @@ describe('renderRawWithLibRaw', () => {
       const child = mockDecoder(failure, tiff, Buffer.alloc(0), true);
       const settled = vi.fn();
       const result = renderRawWithLibRaw('photo.DNG', controller.signal);
-      void result.then(settled, settled);
+      void result.then(settled).catch(settled);
       await Promise.resolve();
       controller.abort();
       await Promise.resolve();
@@ -102,7 +102,7 @@ describe('renderRawWithLibRaw', () => {
     const child = mockDecoder(failure, tiff, Buffer.alloc(0), true);
     const settled = vi.fn();
     const result = renderRawWithLibRaw('photo.DNG');
-    void result.then(settled, settled);
+    void result.then(settled).catch(settled);
     await Promise.resolve();
     expect(settled).not.toHaveBeenCalled();
     child.emit('close', failure ? -2 : 0, null);
