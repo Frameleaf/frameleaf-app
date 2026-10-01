@@ -56697,6 +56697,7 @@
             "type": "boolean"
           },
           "readOnlyReason": {
+            "description": "Why uploads are stopped, as Frameleaf Cloud says: purge_hold, entitlement, unlinked, suspended, purging or plan_full (the plan is full; new items wait until it is upgraded). Open-ended: show an unknown value generically.",
             "nullable": true,
             "type": "string"
           },
