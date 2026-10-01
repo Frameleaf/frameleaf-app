@@ -268,8 +268,18 @@ describe(FrameleafAuthService.name, () => {
         );
         expect(mocks.user.create.mock.calls[0][0]).not.toHaveProperty('password');
         expect(mocks.adminAudit.create).toHaveBeenCalledWith([
-          expect.objectContaining({ action: AdminAuditAction.ServerClaimed, detail: 'app-frameleaf' }),
+          expect.objectContaining({ action: AdminAuditAction.AccountCreated, detail: 'server-claimed:app-frameleaf' }),
         ]);
+      });
+
+      it('never promotes a linked account that does not own the server while nobody administers it', async () => {
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'the-owner' });
+        const linked = UserFactory.create({ isAdmin: false });
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: linked.id, sub: 'fl-sub' } as never);
+        mocks.user.get.mockResolvedValue(linked as never);
+        await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('signs in first');
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.session.create).not.toHaveBeenCalled();
       });
 
       it('lets nobody else become the first administrator', async () => {

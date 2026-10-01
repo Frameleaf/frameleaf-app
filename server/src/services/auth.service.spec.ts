@@ -542,7 +542,7 @@ describe(AuthService.name, () => {
 
       expect(mocks.user.create).toHaveBeenCalled();
       expect(mocks.adminAudit.create).toHaveBeenCalledWith([
-        expect.objectContaining({ action: AdminAuditAction.ServerClaimed, detail: 'web' }),
+        expect.objectContaining({ action: AdminAuditAction.AccountCreated, detail: 'server-claimed:web' }),
       ]);
     });
 

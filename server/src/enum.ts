@@ -2856,6 +2856,11 @@ export const AnalyticsStateSchema = z
  * `admin_audit_event` by the service that made the change and listed in the account's Activity tab.
  */
 export enum AdminAuditAction {
+  /**
+   * FL-292: `detail` is `server-claimed:web`, `server-claimed:app-password` or
+   * `server-claimed:app-frameleaf` when the account was the first administrator of a new server,
+   * claimed with its setup code; otherwise null.
+   */
   AccountCreated = 'account-created',
   /** Name, email, avatar colour or the require-password-change flag. */
   AccountUpdated = 'account-updated',
@@ -2907,12 +2912,6 @@ export enum AdminAuditAction {
   FrameleafAccountLinked = 'frameleaf-account-linked',
   /** FL-158: the account's Frameleaf account link was removed. */
   FrameleafAccountUnlinked = 'frameleaf-account-unlinked',
-  /**
-   * FL-292: this new server was claimed with its setup code; `detail` is how: `web` (first-run
-   * sign-up), `app-password` (the app's password administrator) or `app-frameleaf` (linked with a
-   * Frameleaf account, recorded when that account's first sign-in creates the administrator).
-   */
-  ServerClaimed = 'server-claimed',
 }
 
 export const AdminAuditActionSchema = z
