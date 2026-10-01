@@ -206,3 +206,68 @@ test("native Position navigation acknowledges 30 then 0 and refuses non-singleto
   await assert.rejects(run(false, "frame"), /native timecode acknowledgement/);
   await assert.rejects(run(false, "total"), /native timecode acknowledgement/);
 });
+
+test("actual revision assertion requires exact native CSS Out config and untouched other keys", () => {
+  const graph = {
+    metadata: { width: 128, height: 96, fps: 30 },
+    timeline: {
+      tracks: [{ id: "t", items: ["still"] }],
+      items: [{ id: "still", label: "Hero rectangle" }],
+      keyframes: [
+        {
+          itemId: "still",
+          animationVersion: 2,
+          properties: [
+            {
+              property: "opacity",
+              keyframes: [{ id: "opacity-k0", frame: 0, value: 1, easing: "linear" }],
+            },
+          ],
+          vectorProperties: [
+            {
+              property: "position",
+              keyframes: [
+                { id: "k0", frame: 0, value: { x: -24, y: 0 }, easing: "linear" },
+                { id: "k30", frame: 30, value: { x: 24, y: 0 }, easing: "linear" },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const start = source.indexOf("  const assertEasing = (stored, easing) => {");
+  const end = source.indexOf("  const readRevision =", start);
+  assert.ok(start >= 0 && end > start);
+  const check = runInNewContext(`(() => { ${source.slice(start, end)}; return assertEasing; })()`, {
+    assert: {
+      ...assert,
+      deepEqual: (a, b) =>
+        assert.deepEqual(JSON.parse(JSON.stringify(a)), JSON.parse(JSON.stringify(b))),
+    },
+    graph,
+  });
+  const stored = structuredClone(graph);
+  const key = stored.timeline.keyframes[0].vectorProperties[0].keyframes[0];
+  key.easing = "cubic-bezier";
+  key.easingConfig = { type: "cubic-bezier", bezier: { x1: 0, y1: 0, x2: 0.58, y2: 1 } };
+  check(stored, "cubic-bezier");
+  for (const mutate of [
+    (x) => {
+      x.timeline.keyframes[0].vectorProperties[0].keyframes[0].easingConfig.bezier.x2 = 0.355;
+    },
+    (x) => {
+      x.timeline.keyframes[0].vectorProperties[0].keyframes[0].easing = "ease-out";
+    },
+    (x) => {
+      x.timeline.keyframes[0].vectorProperties[0].keyframes[1].easingConfig = key.easingConfig;
+    },
+    (x) => {
+      x.timeline.keyframes[0].properties[0].keyframes[0].value = 0.5;
+    },
+  ]) {
+    const wrong = structuredClone(stored);
+    mutate(wrong);
+    assert.throws(() => check(wrong, "cubic-bezier"));
+  }
+});
