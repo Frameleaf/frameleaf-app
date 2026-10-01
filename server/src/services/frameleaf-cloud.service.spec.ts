@@ -6,7 +6,15 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
-import { AdminAuditAction, DatabaseLock, JobName, JobStatus, NotificationLevel, SystemMetadataKey } from 'src/enum.js';
+import {
+  AdminAuditAction,
+  DatabaseLock,
+  JobName,
+  JobStatus,
+  NotificationLevel,
+  PushEventType,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import {
   CANDIDATE_KEY_FILE,
@@ -404,8 +412,8 @@ describe(FrameleafCloudService.name, () => {
         jwk: { kty: 'OKP', crv: 'Ed25519', kid: expect.any(String) },
         bootId: expect.any(String),
         // FC-50 (CLD-201): this build proofs every call, so it declares `dpop` beside the golden set, and
-        // FC-61: it runs the `entitlements.refresh` command
-        capabilities: [...golden.capabilities, 'dpop', 'entitlements.refresh'],
+        // FC-61: it runs the `entitlements.refresh` command; FL-301 (FC-91): it reads `backupPlan`
+        capabilities: [...golden.capabilities, 'dpop', 'entitlements.refresh', 'backup.plan'],
         permissions: golden.permissions,
       });
       expect(body.instanceId).toMatch(/^[\da-f]{8}-[\da-f]{4}-7[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
@@ -1005,6 +1013,125 @@ describe(FrameleafCloudService.name, () => {
       expect(golden.capabilities).toEqual(['dpop', 'entitlements.refresh']);
       expect(sent.capabilities).toEqual(expect.arrayContaining(golden.capabilities));
       expect(sent.capabilities).toEqual([...INSTANCE_CAPABILITIES]);
+    });
+
+    describe('backup plan signal (FL-301, FC-91)', () => {
+      const otherAdmin = { id: 'admin-2', name: 'Other admin', isAdmin: true };
+      const pushes = () =>
+        mocks.event.emit.mock.calls.filter(([name]) => name === 'PushNotify').map(([, notice]) => notice as any);
+      const checkIn = async (body: unknown) => {
+        cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body }));
+        makeDue();
+        await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      };
+
+      beforeEach(() => {
+        mocks.user.getAdmins.mockResolvedValue([admin, otherAdmin] as never);
+        mocks.frameleafAccount.getLinkBySub.mockImplementation((sub) =>
+          Promise.resolve(sub === storedLink()?.accountId ? ({ userId: admin.id } as never) : undefined),
+        );
+      });
+
+      it('sends a tier-overflow case to the owner only, once per case and status; the full plan to the others', async () => {
+        const answer = cloudContractFixture('instance/heartbeat-response-backup-plan.json');
+        await checkIn(answer);
+        expect(pushes()).toEqual([
+          expect.objectContaining({
+            type: PushEventType.BackupNeedsAttention,
+            userIds: [admin.id],
+            title: 'Backups are paused: plan full',
+            data: expect.objectContaining({
+              reason: 'tier-overflow',
+              screen: 'plan',
+              caseId: answer.backupPlan.tierOverflow.id,
+              status: 'declined',
+              suggestedTier: '2tb',
+            }),
+          }),
+          // the owner's case already says so; no tier details for the others
+          expect.objectContaining({
+            userIds: [otherAdmin.id],
+            data: { reason: 'plan-full', screen: 'plan', action: 'upgrade' },
+          }),
+        ]);
+        expect(pushes().some((push) => push.admins)).toBe(false);
+
+        // the same case and status on the next check-in: nothing new
+        await checkIn(answer);
+        expect(pushes()).toHaveLength(2);
+
+        // the owner accepts: one more push, to the owner
+        answer.backupPlan.tierOverflow.status = 'accepted';
+        answer.backupPlan.planFull = null;
+        await checkIn(answer);
+        expect(pushes()).toHaveLength(3);
+        expect(pushes()[2]).toMatchObject({ userIds: [admin.id], data: { status: 'accepted' } });
+      });
+
+      it('sends no tier details anywhere until the owner signs in, then tells the owner', async () => {
+        const owner = mocks.frameleafAccount.getLinkBySub.getMockImplementation()!;
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(undefined);
+        const answer = cloudContractFixture('instance/heartbeat-response-backup-plan.json');
+        await checkIn(answer);
+        expect(pushes()).toEqual([
+          expect.objectContaining({
+            userIds: [admin.id, otherAdmin.id],
+            data: expect.objectContaining({ reason: 'plan-full' }),
+          }),
+        ]);
+
+        mocks.frameleafAccount.getLinkBySub.mockImplementation(owner);
+        await checkIn(answer);
+        expect(pushes()).toHaveLength(2);
+        expect(pushes()[1]).toMatchObject({ userIds: [admin.id], data: { reason: 'tier-overflow' } });
+      });
+
+      it('never fails the check-in when it cannot tell who hears it, and tries again next time', async () => {
+        mocks.user.getAdmins.mockRejectedValueOnce(new Error('database down'));
+        const answer = cloudContractFixture('instance/heartbeat-response-backup-plan.json');
+        await checkIn(answer);
+        expect(pushes()).toEqual([]);
+        await checkIn(answer);
+        expect(pushes()).toHaveLength(2);
+      });
+
+      it("pushes a family member's full plan in the cloud's words, again only after the cloud says it cleared", async () => {
+        const answer = cloudContractFixture('instance/heartbeat-response-backup-plan-family.json');
+        const planFull = answer.backupPlan.planFull;
+        await checkIn(answer);
+        await checkIn(answer);
+        expect(pushes()).toEqual([
+          expect.objectContaining({
+            userIds: [admin.id, otherAdmin.id],
+            body: planFull.message,
+            data: expect.objectContaining({ action: 'ask-organiser' }),
+          }),
+        ]);
+
+        // an answer without the field, and one the server cannot read, say nothing: no second push
+        const { backupPlan: _, ...without } = answer;
+        await checkIn(without);
+        await checkIn({ ...answer, backupPlan: { tierOverflow: 'nonsense', planFull } });
+        await checkIn(answer);
+        expect(pushes()).toHaveLength(1);
+
+        // the cloud says it cleared, then it fills again
+        await checkIn({ ...answer, backupPlan: { tierOverflow: null, planFull: null } });
+        await checkIn(answer);
+        expect(pushes()).toHaveLength(2);
+      });
+
+      it('reads a tier it does not know, and ignores a signal it cannot read without failing the check-in', async () => {
+        const answer = cloudContractFixture('instance/heartbeat-response-backup-plan.json');
+        answer.backupPlan.tierOverflow.suggestedTier = '10tb';
+        await checkIn(answer);
+        expect(pushes()[0]).toMatchObject({ body: expect.stringContaining('1 TB'), data: { suggestedTier: '10tb' } });
+
+        mocks.event.emit.mockClear();
+        answer.backupPlan.tierOverflow.status = 'something-new';
+        await checkIn(answer);
+        expect(pushes()).toEqual([]);
+      });
     });
 
     it('asks for a new link when every instance route answers key_retired, without revoking (FC-19)', async () => {
