@@ -151,7 +151,7 @@ describe(FrameleafAuthService.name, () => {
     mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
     mocks.session.create.mockImplementation((row) => Promise.resolve({ id: 'session-1', ...row } as never));
     mocks.frameleafAccount.upsertLink.mockImplementation((row) =>
-      Promise.resolve({ ...row, linkedAt: new Date(), lastSignInAt: null }),
+      Promise.resolve({ ...row, access: row.access ?? null, linkedAt: new Date(), lastSignInAt: null }),
     );
     serveIssuer();
   });
@@ -418,9 +418,17 @@ describe(FrameleafAuthService.name, () => {
       expect(mocks.user.create).toHaveBeenCalledWith(
         expect.objectContaining({ email: 'remote@example.test', name: 'Remote Person', isAdmin: false }),
       );
+      // FL-235 (owner decision, 2026-10-01): a person invited as a viewer gets their own regular account
       expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: created.id, sub: 'fl-sub', autoRegistered: true, role: 'user' }),
+        expect.objectContaining({
+          userId: created.id,
+          sub: 'fl-sub',
+          autoRegistered: true,
+          role: 'user',
+          access: 'viewer',
+        }),
       );
+      expect(mocks.partner.create).not.toHaveBeenCalled();
       expect(mocks.frameleafAccount.tagSession).toHaveBeenCalledWith(
         expect.objectContaining({ sessionId: 'session-1', userId: created.id, sid: 'fl-app-sid', sub: 'fl-sub' }),
       );
@@ -453,6 +461,11 @@ describe(FrameleafAuthService.name, () => {
 
       await expect(sut.exchangeToken({ token }, loginDetails)).resolves.toMatchObject({ userId: user.id });
       expect(mocks.user.update).toHaveBeenCalledWith(user.id, { isAdmin: true });
+      // FL-235: the latest access is recorded on every sign-in
+      expect(mocks.frameleafAccount.touchLink).toHaveBeenCalledWith(
+        user.id,
+        expect.objectContaining({ role: 'admin', access: 'admin' }),
+      );
     });
 
     it('refuses a token for another server (wrong audience)', async () => {
