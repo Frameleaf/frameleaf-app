@@ -295,7 +295,7 @@ export class ICloudIdentityRepository {
   /**
    * A device uploaded this iCloud item and its digest checked out: record which item the asset is,
    * delivered by the claim's holder (or the device), with how well the device's identifier matches
-   * what the sync knows; then give the claim back. Idempotent.
+   * what the sync knows. Idempotent.
    */
   async recordDevice(input: {
     ownerId: string;
@@ -327,11 +327,12 @@ export class ICloudIdentityRepository {
     });
     await this.db.transaction().execute(async (tx) => {
       await lockForkWrites(tx, 'iCloud identities cannot be recorded while the server is being handed over');
+      // the claim stays: it covers the whole item (its other roles may still be on the way), and the
+      // device releases it, or it runs out, when the item is done
       const { rows } = input.claimId
         ? await sql<{ holder: string }>`
-            DELETE FROM immich_fork.icloud_claim
+            SELECT holder FROM immich_fork.icloud_claim
             WHERE id = ${input.claimId}::uuid AND "ownerId" = ${input.ownerId}::uuid AND "cplAssetRecordName" = ${name}
-            RETURNING holder
           `.execute(tx)
         : { rows: [] };
       const deliveredBy = rows[0]?.holder ?? `device:${input.deviceKey ?? 'unknown'}`;
