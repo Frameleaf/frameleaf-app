@@ -833,7 +833,7 @@ async function runEaseOutHost(project, graph) {
   };
   const button = (label) => `button[aria-label=${JSON.stringify(label)}]`;
   const acknowledge = async (frame, index) => {
-    const timecode = `00:${String(Math.floor(index / 30)).padStart(2, "0")}:${String(index % 30).padStart(2, "0")} / 00:01:29`;
+    const timecode = `00:${String(Math.floor(index / 30)).padStart(2, "0")}:${String(index % 30).padStart(2, "0")}/00:01:29`;
     const deadline = Date.now() + 30000;
     for (;;) {
       const count = await frame.evaluate(
@@ -872,6 +872,52 @@ async function runEaseOutHost(project, graph) {
       );
     await frame.waitForFunction(
       () => !!document.querySelector('[data-testid="row-keyframe-x-k0"]'),
+    );
+    const geometry = await frame.evaluate(() => {
+      const marker = document.querySelector('[data-testid="row-keyframe-x-k0"]');
+      const describe = (node) => {
+        if (!node) return null;
+        const { x, y, width, height } = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return {
+          tag: node.tagName,
+          classes: node.getAttribute("class"),
+          visible: node.checkVisibility(),
+          rect: { x, y, width, height },
+          frame: node.getAttribute("data-dopesheet-frame"),
+          left: style.left,
+          marginLeft: style.marginLeft,
+          transform: style.transform,
+          overflowX: style.overflowX,
+          overflowY: style.overflowY,
+          clientWidth: node.clientWidth,
+          clientHeight: node.clientHeight,
+          scrollWidth: node.scrollWidth,
+          scrollHeight: node.scrollHeight,
+          scrollLeft: node.scrollLeft,
+          scrollTop: node.scrollTop,
+        };
+      };
+      let clip = marker.parentElement;
+      while (
+        clip &&
+        !["hidden", "clip", "auto", "scroll"].includes(getComputedStyle(clip).overflowX)
+      )
+        clip = clip.parentElement;
+      const rect = marker.getBoundingClientRect();
+      const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      return {
+        marker: describe(marker),
+        diamond: describe(marker.querySelector("span")),
+        clip: describe(clip),
+        viewport: describe(marker.closest("[data-motion-viewport-surface]")),
+        center,
+        hit: describe(document.elementFromPoint(center.x, center.y)),
+      };
+    });
+    await writeFile(
+      new URL(`${browserName}-frame0-geometry-${Date.now()}.json`, dir),
+      JSON.stringify(geometry, null, 2),
     );
     // Native navigation selects the frame-zero key without the separately recorded edge-hit defect.
     await frame.click(button("Next Position keyframe"));
