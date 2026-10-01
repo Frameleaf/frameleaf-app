@@ -4,6 +4,7 @@ import { cloneDeep } from 'lodash-es';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ClassConstructor } from 'src/types.js';
+import type { SetupGateDeps } from 'src/utils/frameleaf-setup-gate.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { UserAdmin } from 'src/database.js';
@@ -495,6 +496,18 @@ export class BaseService {
    * the service that made the change, after it succeeded. Recording never undoes or fails the change
    * it records: if the insert fails, the change stands and the failure is logged.
    */
+  /** FL-292: what the setup code gate needs (`src/utils/frameleaf-setup-gate.ts`). */
+  protected get setupGate(): SetupGateDeps {
+    return {
+      configRepository: this.configRepository,
+      cryptoRepository: this.cryptoRepository,
+      databaseRepository: this.databaseRepository,
+      logger: this.logger,
+      systemMetadataRepository: this.systemMetadataRepository,
+      userRepository: this.userRepository,
+    };
+  }
+
   protected async recordAdminEvents(events: Insertable<AdminAuditEventTable>[]): Promise<void> {
     if (events.length === 0) {
       return;

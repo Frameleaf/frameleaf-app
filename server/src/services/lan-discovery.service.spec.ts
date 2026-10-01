@@ -49,8 +49,19 @@ describe(LanDiscoveryService.name, () => {
         type: 'frameleaf',
         protocol: 'tcp',
         port: 2283,
-        txt: { id: 'server-1', name: 'My Server' },
+        txt: { id: 'server-1', name: 'My Server', setup: 'needed', linked: 'false', cloud: 'unavailable' },
       });
+    });
+
+    it('says when setup is complete, and publishes again once the first administrator exists (FL-292)', async () => {
+      await sut.onBootstrap();
+      expect(publish.mock.calls[0][0].txt).toMatchObject({ setup: 'needed' });
+      expect(JSON.stringify(publish.mock.calls[0][0].txt)).not.toMatch(/code/i);
+
+      mocks.user.getAdmin.mockResolvedValue({ id: 'admin' } as never);
+      await sut.onUserCreate({ isAdmin: true } as never);
+      expect(stop).toHaveBeenCalled();
+      expect(publish.mock.calls.at(-1)?.[0].txt).toMatchObject({ setup: 'complete' });
     });
 
     it('does not publish when lanDiscovery is disabled', async () => {

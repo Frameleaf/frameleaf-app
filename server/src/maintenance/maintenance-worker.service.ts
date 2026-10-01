@@ -137,7 +137,15 @@ export class MaintenanceWorkerService {
     // FL-229: identity during maintenance mode is intentionally static, not a real cloud/local id -
     // the database this worker's normal identity would come from may itself be mid-restore, so
     // nothing here claims a persisted identity it cannot safely read.
-    return { res: 'pong', id: 'maintenance', linked: false, name: 'Frameleaf server (maintenance mode)' };
+    // FL-292: a server in maintenance cannot be set up or linked from the app
+    return {
+      res: 'pong',
+      id: 'maintenance',
+      linked: false,
+      name: 'Frameleaf server (maintenance mode)',
+      setup: 'complete',
+      cloud: 'unavailable',
+    };
   }
 
   /**

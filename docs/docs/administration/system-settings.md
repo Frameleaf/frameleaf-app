@@ -219,8 +219,32 @@ While it is on, the server advertises one DNS-SD (Bonjour/mDNS) service on the L
 | Service name | the server's display name, or `Frameleaf server` when none is set                              |
 | TXT `id`     | the Frameleaf Cloud instance id while the server is linked, otherwise a stable local server id |
 | TXT `name`   | the same display name                                                                          |
+| TXT `setup`  | `needed` while the server has no administrator, otherwise `complete`                           |
+| TXT `linked` | `true` while the server is linked to Frameleaf Cloud, otherwise `false`                        |
+| TXT `cloud`  | `available` when `FRAMELEAF_CLOUD_URL` is set (the server can link), otherwise `unavailable`   |
 
-`id` and `name` are the same identity that the unauthenticated `GET /api/server/ping` returns (alongside `linked`), so an app can confirm it reached the server it expects on every route.
+`id` and `name` are the same identity that the unauthenticated `GET /api/server/ping` returns, so an app can confirm it reached the server it expects on every route. `setup`, `linked` and `cloud` are also in the ping response, so the Frameleaf app can offer to set up a new server it finds. Neither carries anything about users or content, nor the setup code. The record is published again when that state changes.
+
+## Setting up a new server
+
+A new server has no administrator. Until it has one, it shows a **setup code** (eight letters and digits, shown as `XXXX-XXXX`) on its console and in its log every time it starts, with a QR code of the same value for the Frameleaf app to scan. The code is the proof that you control the server. Whoever reaches the server first can't claim it without the code, from the app or from the web page.
+
+- **Where to find it:**
+  - With Docker Compose: `docker compose logs immich-server`, or print it again with `docker compose exec immich-server frameleaf-admin setup-code`.
+  - On Unraid, TrueNAS or Synology: the container's log.
+- **When it changes:** a new code is made every time the server starts. After five wrong tries a new code is shown and the old one stops working.
+- **Pinning the code:** for automated installs and tests, set `FRAMELEAF_SETUP_CODE`. A pinned code is not replaced after wrong tries; it locks until the next start instead, so anyone on the network can lock it. Don't pin it on a server people use.
+- **Where it works:** only from the home network, never over remote access. A request counts as home when it comes from a private address, or through a trusted local reverse proxy that passes the visitor's address in `X-Forwarded-For`. Tries are limited per address. The code stops working once an administrator exists.
+- **Keeping it private:** the code is only as private as the server's console and log. It is printed to the console whatever the log level. Once the server is set up it is worthless.
+- **Onboarding:** whether the first-run onboarding is finished is reported by `GET /api/server/config` (`isOnboarded`), so the app can say so.
+
+There are three ways to claim a new server, and each needs the code:
+
+- **Web page:** the first-run page asks for the code together with the administrator's name, email and password.
+- **Frameleaf app, with a Frameleaf account:** the app checks the code and gets a short-lived, single-use setup ticket. With the ticket it hands the server a single-use link token (`fll_…`) and the name you chose, and the server links itself exactly as with `FRAMELEAF_LINK_TOKEN`. The Frameleaf account that made the token owns the server. That account's first Sign in with Frameleaf creates the administrator, with no server password. Only that account can become the first administrator.
+- **Frameleaf app, with a password:** the app can instead create the administrator with an email and password, for a server without Frameleaf Cloud.
+
+`FRAMELEAF_LINK_TOKEN` itself needs no code, because whoever sets it already controls the host. Linking a server that is already set up is done by an administrator (in Settings, or from the app), and needs no code either. Once it is linked, that administrator's account is connected to the Frameleaf account that approved the link.
 
 The server only advertises when it can see a LAN interface. Inside a container on a bridge network it usually can't, so nothing is advertised; use host networking if you want discovery from a container. Anyone on the network can see the display name, so choose one that doesn't reveal a person's name. A rename is advertised again straight away.
 

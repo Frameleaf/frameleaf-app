@@ -534,6 +534,12 @@ export enum SystemMetadataKey {
    * before it is ever linked.
    */
   FrameleafServerId = 'frameleaf-server-id',
+  /**
+   * FL-292: the setup code of a server without an administrator, its wrong tries and the one setup
+   * ticket it handed out (hashed). Replaced at every start and cleared once an administrator exists;
+   * never returned by any API.
+   */
+  FrameleafSetupCode = 'frameleaf-setup-code',
   /** FL-159: the cached Frameleaf Cloud service discovery document. */
   FrameleafServiceDiscovery = 'frameleaf-service-discovery',
   /** FL-159: the last AI Wallet balance read from Frameleaf Cloud (USD display). */
@@ -2450,6 +2456,8 @@ export enum DatabaseLock {
   FrameleafEdge = 963,
   /** FL-162: the kept Frameleaf Cloud job estimates change one at a time, so a confirmation is taken once. */
   FrameleafCloudMlJobEstimates = 970,
+  /** FL-292: setup code checks, tickets and the claim of a new server happen one at a time. */
+  FrameleafServerClaim = 971,
 }
 
 export enum MaintenanceAction {
@@ -2848,6 +2856,11 @@ export const AnalyticsStateSchema = z
  * `admin_audit_event` by the service that made the change and listed in the account's Activity tab.
  */
 export enum AdminAuditAction {
+  /**
+   * FL-292: `detail` is `server-claimed:web`, `server-claimed:app-password` or
+   * `server-claimed:app-frameleaf` when the account was the first administrator of a new server,
+   * claimed with its setup code; otherwise null.
+   */
   AccountCreated = 'account-created',
   /** Name, email, avatar colour or the require-password-change flag. */
   AccountUpdated = 'account-updated',

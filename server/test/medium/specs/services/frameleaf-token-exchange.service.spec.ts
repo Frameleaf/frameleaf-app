@@ -111,13 +111,16 @@ const setup = <S extends typeof BaseService>(Service: S) => {
   return { sut, ctx: ctx as MediumTestContext };
 };
 
-const link = async (ctx: MediumTestContext) =>
-  ctx.get(SystemMetadataRepository).set(SystemMetadataKey.FrameleafCloudLink, {
+const link = async (ctx: MediumTestContext) => {
+  // FL-292: a server that is already set up (it has an administrator), so sign-ins are not claims
+  await ctx.newUser({ isAdmin: true });
+  await ctx.get(SystemMetadataRepository).set(SystemMetadataKey.FrameleafCloudLink, {
     status: 'linked',
     cloudUrl: cloud.url,
     instanceId: INSTANCE,
     oidc: { issuer: issuer(), clientId: INSTANCE, scope: 'openid email profile', roleClaim: 'frameleaf_role' },
   } as never);
+};
 
 /** A person here with a Frameleaf account, and tokens the identity provider mints for them. */
 const person = async (ctx: MediumTestContext) => {
