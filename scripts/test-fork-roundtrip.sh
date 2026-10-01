@@ -153,7 +153,7 @@ watch_getting_ready() {
 # pre-upgrade copy's contents and the log, recorded for the origin-pre-migrator phase. `expected` is
 # `taken` (no recent backup) or `skipped` (an official backup taken just before).
 start_fork_first_launch() {
-  local expected="$1" watch="$STATE_DIR/getting-ready.jsonl" watcher id copy complete fork_schema skip_logged
+  local expected="$1" watch="$STATE_DIR/getting-ready.jsonl" watcher id copy complete fork_schema skipped_for
   watch_getting_ready "$watch" &
   watcher=$!
   start_fork
@@ -169,23 +169,25 @@ start_fork_first_launch() {
     fi
     fork_schema="$(compose exec -T fork-server sh -c "gunzip -c '/data/backups/$copy' | grep -c 'CREATE SCHEMA immich_fork' || true")"
   fi
-  skip_logged=false
-  # read the log in full first: `grep -q` stopping early would fail the pipeline (pipefail)
+  # The backups each skip names: the "Getting Ready…" worker's, and the boot's own check before it
+  # migrates (which finds the copy just taken). Read in full first: `grep -q` stopping early would
+  # fail the pipeline (pipefail).
   docker logs "$id" >"$STATE_DIR/first-launch.log" 2>&1
-  grep -Fq 'so no safety copy is needed before upgrading' "$STATE_DIR/first-launch.log" && skip_logged=true
+  skipped_for="$(grep -F 'so no safety copy is needed before upgrading' "$STATE_DIR/first-launch.log" \
+    | grep -oE 'The database backup [^ ]+' | cut -d' ' -f4 | jq -Rsc 'split("\n") | map(select(length > 0))' || true)"
   jq -n \
     --arg expected "$expected" \
     --arg copy "$copy" \
     --argjson complete "$complete" \
     --argjson forkSchema "$fork_schema" \
-    --argjson skipLogged "$skip_logged" \
+    --argjson skippedFor "${skipped_for:-[]}" \
     --rawfile backups "$STATE_DIR/backups.txt" \
     --slurpfile observations "$watch" \
     '{
       expected: $expected,
       copy: (if $copy == "" then null else {filename: $copy, complete: $complete, forkSchemaStatements: $forkSchema} end),
       backups: ($backups | split("\n") | map(select(length > 0))),
-      skipLogged: $skipLogged,
+      skippedFor: $skippedFor,
       observations: $observations
     }' >"$STATE_DIR/first-launch.json"
   echo "First launch ($expected): copy=${copy:-none}, complete=$complete; $(wc -l <"$watch" | tr -d ' ') observations"
