@@ -61,7 +61,15 @@ export const backupGrantProblem = (grant: BackupGrantMetadata): string | null =>
   return null;
 };
 
-export const BackupReadOnlyReasonSchema = z.enum(['purge_hold', 'entitlement', 'unlinked', 'suspended', 'purging']);
+export const BackupReadOnlyReasonSchema = z.enum([
+  'purge_hold',
+  'entitlement',
+  'unlinked',
+  'suspended',
+  'purging',
+  // FL-301 (FC-91): the owner's plan is full; new items wait until it is upgraded
+  'plan_full',
+]);
 
 export const backupUsageSchema = z.strictObject({
   measuredAt: Timestamp.nullable(),

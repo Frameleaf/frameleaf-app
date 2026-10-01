@@ -29,6 +29,7 @@ import {
   MlDestinationKind,
   NotificationLevel,
   NotificationType,
+  PushEventType,
   QueueName,
   SystemMetadataKey,
 } from 'src/enum.js';
@@ -44,6 +45,7 @@ import {
   recordMlSuspension,
 } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
+  type BackupPlanNotice,
   CloudCommand,
   CloudCommandType,
   DEVICE_CODE_GRANT,
@@ -57,9 +59,11 @@ import {
   LINK_REFUSAL_MESSAGES,
   SLOW_DOWN_SECONDS,
   accountLabelOf,
+  backupPlanNotices,
   buildHeartbeat,
   commandPermission,
   deviceAuthorizationSchema,
+  forgetClearedPlanFull,
   heartbeatResponseSchema,
   instanceRegistrationSchema,
   instanceServicesSchema,
@@ -110,6 +114,8 @@ export const INSTANCE_CAPABILITIES: readonly string[] = [
   'dpop',
   // FC-61: this server runs the `entitlements.refresh` command, which the cloud sends only when listed
   'entitlements.refresh',
+  // FL-301 (FC-91): this server reads the heartbeat's `backupPlan` and pushes it to the owner's devices
+  'backup.plan',
 ];
 
 /**
@@ -1197,13 +1203,20 @@ export class FrameleafCloudService extends BaseService {
     // FC-62: dedupe by the exact id, remembered for the life of a notice; the notification's own
     // 30-day dedupe key stays as a second guard (two check-ins at once)
     const keyOf = (notice: HeartbeatResponse['notices'][number]) => notice.id ?? sha256(notice.message);
+    // FL-301: the backup plan's pushes are remembered the same way, once per case and status
+    const planNotices = backupPlanNotices(response.backupPlan);
     const remembered = rememberNotices(
-      link.heartbeat?.shownNotices,
-      response.notices.map((notice) => keyOf(notice)),
+      forgetClearedPlanFull(link.heartbeat?.shownNotices ?? {}, response.backupPlan),
+      [...response.notices.map((notice) => keyOf(notice)), ...planNotices.map(({ key }) => key)],
       now,
     );
     next = { ...next, heartbeat: { ...next.heartbeat!, shownNotices: remembered.shown } };
     const fresh = new Set(remembered.fresh);
+    for (const notice of planNotices) {
+      if (fresh.has(notice.key)) {
+        this.notifyBackupPlan(notice);
+      }
+    }
     for (const notice of response.notices) {
       if (!fresh.has(keyOf(notice))) {
         continue;
@@ -1910,6 +1923,21 @@ export class FrameleafCloudService extends BaseService {
     } catch (error) {
       this.logger.warn(`Could not tell administrators about a Frameleaf Cloud change: ${error}`);
     }
+  }
+
+  /** FL-301: the owner's backup plan changed; the web notice and the owner's devices both hear it. */
+  private notifyBackupPlan({ key, title, body, data }: BackupPlanNotice) {
+    this.notify({ level: NotificationLevel.Warning, title, description: body, dedupeKey: `frameleaf-cloud:${key}` });
+    this.eventRepository
+      .emit('PushNotify', {
+        type: PushEventType.BackupNeedsAttention,
+        admins: true,
+        title,
+        body,
+        data,
+        dedupeKey: key,
+      })
+      .catch((error) => this.logger.warn(`Could not notify administrators' devices: ${error}`));
   }
 
   private notify(notice: {
