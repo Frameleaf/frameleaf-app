@@ -17,7 +17,7 @@ assert.ok(refusalStart > end);
 const refusalEnd = source.indexOf("\n    );", refusalStart);
 const refusal = source.slice(refusalStart, refusalEnd + 7);
 
-async function readback(width, height, wrongEdge = false) {
+async function readback(width, height, wrongEdge = false, visibleStates = [true]) {
   const backing = new Uint8ClampedArray(Math.max(1, width * height * 4)).fill(240);
   const p = (width - 128) / 2;
   if (Number.isInteger(p) && p >= 0 && height === 96 + 2 * p) {
@@ -33,11 +33,25 @@ async function readback(width, height, wrongEdge = false) {
     toDataURL: () => "data:image/png;base64,cmF3LXBhZGRlZA==",
     getBoundingClientRect: () => ({ x: 0, y: 0, width: 256, height: 192 }),
   };
+  const canvases = visibleStates.map((visible, index) => ({
+    ...canvas,
+    id: `native-${index}`,
+    parentElement: null,
+    checkVisibility: (options) => {
+      if (options) {
+        assert.equal(options.visibilityProperty, true);
+        assert.equal(options.opacityProperty, true);
+      }
+      return !options || visible;
+    },
+    style: { visibility: visible ? "visible" : "hidden", opacity: "1", display: "block" },
+  }));
   const viewport = {
     checkVisibility: () => true,
-    querySelectorAll: () => [canvas],
+    querySelectorAll: () => canvases,
     getBoundingClientRect: () => ({ x: 0, y: 0, width: 256, height: 192 }),
   };
+  for (const canvas of canvases) canvas.parentElement = viewport;
   class Canvas {
     constructor(w, h) {
       this.width = w;
@@ -88,6 +102,9 @@ async function readback(width, height, wrongEdge = false) {
   const fn = runInNewContext(`(${callback})`, {
     document: { querySelectorAll: () => [viewport] },
     window: { devicePixelRatio: 1 },
+    getComputedStyle: (element) =>
+      element.style ?? { visibility: "visible", opacity: "1", display: "block" },
+    atob,
     Image,
     OffscreenCanvas: Canvas,
     FileReader,
@@ -129,6 +146,34 @@ test("wrong final content-edge pixel is refused by the unchanged actual delta1 g
     () => runInNewContext(refusal, { assert, result, label: "wrong content edge" }),
     /independent actual preview pixel delta 2/,
   );
+});
+
+test("actual canvas selector excludes CSS-hidden surfaces and accepts the one visible surface", async () => {
+  const { result } = await readback(130, 98, false, [false, true]);
+  assert.equal(result.error, undefined);
+  assert.equal(result.maxDelta, 0);
+  assert.equal(result.nativeCanvases.length, 2);
+  assert.equal(result.nativeCanvases[0].defaultVisible, true);
+  assert.equal(result.nativeCanvases[0].strictVisible, false);
+  assert.equal(result.nativeCanvases[1].strictVisible, true);
+});
+test("actual canvas cardinality refusal retains every raw image and ancestor diagnostic", async () => {
+  for (const states of [
+    [false, false],
+    [true, true],
+  ]) {
+    const { result } = await readback(130, 98, false, states);
+    assert.match(result.error, /native preview; got[02]/);
+    assert.equal(result.nativeCanvases.length, 2);
+    for (const canvas of result.nativeCanvases) {
+      assert.equal(canvas.rawPng, "data:image/png;base64,cmF3LXBhZGRlZA==");
+      assert.match(canvas.rawPngDigest, /^[a-f0-9]{64}$/);
+      assert.deepEqual(canvas.backing, { width: 130, height: 98 });
+      assert.equal(canvas.computed.visibility, states[canvas.index] ? "visible" : "hidden");
+      assert.equal(canvas.ancestors.length, 1);
+      assert.equal(canvas.ancestors[0].computed.opacity, "1");
+    }
+  }
 });
 
 // Execute the fixture's actual navigation/readiness flow, without a browser or engine claim.

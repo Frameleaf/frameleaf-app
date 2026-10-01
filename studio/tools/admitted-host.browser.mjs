@@ -997,34 +997,88 @@ async function runEaseOutHost(project, graph) {
         ].filter((viewport) => viewport.checkVisibility());
         if (viewports.length !== 1)
           return { error: `expected one visible native viewport; got${viewports.length}` };
-        const canvases = [...viewports[0].querySelectorAll("canvas")].filter((c) =>
-          c.checkVisibility(),
-        );
-        if (canvases.length !== 1)
-          return { error: `expected one visible native preview; got${canvases.length}` };
-        const canvas = canvases[0];
-        const rawPng = canvas.toDataURL("image/png");
         const bounds = (element) => {
           const { x, y, width, height } = element.getBoundingClientRect();
           return { x, y, width, height };
         };
+        const hash = async (bytes) =>
+          [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+            .map((v) => v.toString(16).padStart(2, "0"))
+            .join("");
+        const describe = (element) => {
+          const style = getComputedStyle(element);
+          return {
+            tag: element.tagName,
+            id: element.id,
+            className: element.className,
+            rect: bounds(element),
+            computed: {
+              visibility: style.visibility,
+              opacity: style.opacity,
+              display: style.display,
+              contentVisibility: style.contentVisibility,
+            },
+            defaultVisible: element.checkVisibility(),
+            strictVisible: element.checkVisibility({
+              visibilityProperty: true,
+              opacityProperty: true,
+            }),
+          };
+        };
+        const allCanvases = [...viewports[0].querySelectorAll("canvas")];
+        const nativeCanvases = await Promise.all(
+          allCanvases.map(async (canvas, index) => {
+            const diagnostic = {
+              index,
+              ...describe(canvas),
+              backing: { width: canvas.width, height: canvas.height },
+              ancestors: [],
+            };
+            for (let ancestor = canvas.parentElement; ancestor; ancestor = ancestor.parentElement) {
+              diagnostic.ancestors.push(describe(ancestor));
+              if (ancestor === viewports[0]) break;
+            }
+            try {
+              diagnostic.rawPng = canvas.toDataURL("image/png");
+              diagnostic.rawPngDigest = await hash(
+                Uint8Array.from(atob(diagnostic.rawPng.split(",")[1]), (char) =>
+                  char.charCodeAt(0),
+                ),
+              );
+            } catch (error) {
+              diagnostic.rawError = String(error);
+            }
+            return diagnostic;
+          }),
+        );
+        const canvases = allCanvases.filter((canvas) =>
+          canvas.checkVisibility({ visibilityProperty: true, opacityProperty: true }),
+        );
         const evidence = {
-          rawPng,
-          backing: { width: canvas.width, height: canvas.height },
-          canvasCss: bounds(canvas),
+          nativeCanvases,
           viewportCss: bounds(viewports[0]),
           dpr: window.devicePixelRatio,
         };
+        if (canvases.length !== 1)
+          return {
+            ...evidence,
+            error: `expected one visible native preview; got${canvases.length}`,
+          };
+        const canvas = canvases[0];
+        const selected = nativeCanvases[allCanvases.indexOf(canvas)];
+        if (selected.rawError) return { ...evidence, error: selected.rawError };
+        const rawPng = selected.rawPng;
+        Object.assign(evidence, {
+          rawPng,
+          backing: { width: canvas.width, height: canvas.height },
+          canvasCss: bounds(canvas),
+        });
         const image = new Image();
         image.src = rawPng;
         await image.decode();
         const raw = new OffscreenCanvas(canvas.width, canvas.height);
         const rawContext = raw.getContext("2d");
         rawContext.drawImage(image, 0, 0);
-        const hash = async (bytes) =>
-          [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
-            .map((v) => v.toString(16).padStart(2, "0"))
-            .join("");
         evidence.rawDigest = await hash(
           rawContext.getImageData(0, 0, canvas.width, canvas.height).data,
         );
@@ -1077,6 +1131,12 @@ async function runEaseOutHost(project, graph) {
       new URL(`${browserName}-${label}-measurement.json`, dir),
       JSON.stringify(result, null, 2),
     );
+    for (const canvas of result.nativeCanvases ?? [])
+      if (canvas.rawPng)
+        await writeFile(
+          new URL(`${browserName}-${label}-native-${canvas.index}-raw.png`, dir),
+          Buffer.from(canvas.rawPng.split(",")[1], "base64"),
+        );
     if (result.rawPng)
       await writeFile(
         new URL(`${browserName}-${label}-padded-raw.png`, dir),
