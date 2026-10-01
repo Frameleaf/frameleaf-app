@@ -371,6 +371,18 @@ jobs:
           VITEST_DISABLE_DOCKER_SETUP: true
         run: pnpm test:maintenance
         if: ${{ !cancelled() && steps.server-ready.outcome == 'success' }}
+      # The next fixture recreates these containers, so retain maintenance restart failures first.
+      - name: Capture server diagnostics after maintenance tests
+        if: always()
+        run: |
+          {
+            date --utc --iso-8601=seconds
+            while IFS= read -r container_id; do
+              [ -n "$container_id" ] || continue
+              docker inspect --format '{{json .Name}} {{json .State}} {{json .RestartCount}}' "$container_id" || true
+            done < <(docker compose ps --all --quiet)
+            docker compose logs --no-color --timestamps || true
+          } > docker-diagnostics-after-maintenance-tests.txt 2>&1
       - name: Start the upload transport fixture
         id: upload-fixture
         run: |
@@ -414,6 +426,7 @@ jobs:
           path: |
             e2e/docker-compose-logs.txt
             e2e/docker-diagnostics-after-api-tests.txt
+            e2e/docker-diagnostics-after-maintenance-tests.txt
             e2e/docker-upload-transport-logs.txt
     # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
     timeout-minutes: 120
