@@ -84557,6 +84557,11 @@
           "type": {
             "$ref": "#/components/schemas/SharedLinkType"
           },
+          "url": {
+            "description": "The link's public address: the server's external domain, then /s/<slug> (URL-encoded) or /share/<key>. Null when no external domain is set; a client then puts the same path after the address it uses.",
+            "nullable": true,
+            "type": "string"
+          },
           "userId": {
             "description": "Owner user ID",
             "format": "uuid",
@@ -84577,6 +84582,7 @@
           "showMetadata",
           "slug",
           "type",
+          "url",
           "userId"
         ],
         "type": "object"
