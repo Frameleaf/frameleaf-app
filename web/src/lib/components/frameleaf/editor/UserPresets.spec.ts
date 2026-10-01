@@ -1,6 +1,6 @@
 import { AssetDevelopPreset, createDevelopPreset, getDevelopPresets, updateDevelopPreset } from '@immich/sdk';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
-import { presetSettingsFrom } from '$lib/frameleaf/photo-tools';
+import { presetSettingsFrom, toPresetDto } from '$lib/frameleaf/photo-tools';
 import UserPresets from './UserPresets.svelte';
 
 vi.mock('@immich/sdk', async () => {
@@ -31,7 +31,7 @@ describe('UserPresets', () => {
   const stored = {
     id: '5b1f0c3e-7a2d-4c11-8e0f-2b3c4d5e6f70',
     name: 'Golden hour',
-    settings: warm,
+    settings: toPresetDto(warm),
     createdAt: '2026-09-23T08:00:00.000Z',
     updatedAt: '2026-09-23T08:00:00.000Z',
   };
@@ -51,7 +51,7 @@ describe('UserPresets', () => {
 
     await waitFor(() =>
       expect(createDevelopPreset).toHaveBeenCalledWith({
-        developPresetCreateDto: { name: 'Golden hour', settings: warm },
+        developPresetCreateDto: { name: 'Golden hour', settings: toPresetDto(warm) },
       }),
     );
     expect(await screen.findByRole('button', { name: 'Golden hour' })).toHaveAttribute('aria-pressed', 'true');
@@ -71,12 +71,15 @@ describe('UserPresets', () => {
   it('replaces a preset with the current settings', async () => {
     vi.mocked(getDevelopPresets).mockResolvedValue([stored]);
     const cooler = presetSettingsFrom({ temperature: -20 });
-    vi.mocked(updateDevelopPreset).mockResolvedValue({ ...stored, settings: cooler });
+    vi.mocked(updateDevelopPreset).mockResolvedValue({ ...stored, settings: toPresetDto(cooler) });
     render(UserPresets, { current: cooler, onApply: vi.fn() });
 
     await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_editor_preset_update' }));
     await waitFor(() =>
-      expect(updateDevelopPreset).toHaveBeenCalledWith({ id: stored.id, developPresetUpdateDto: { settings: cooler } }),
+      expect(updateDevelopPreset).toHaveBeenCalledWith({
+        id: stored.id,
+        developPresetUpdateDto: { settings: toPresetDto(cooler) },
+      }),
     );
   });
 

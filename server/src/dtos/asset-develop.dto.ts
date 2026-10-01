@@ -1,5 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { ExtraModel } from 'src/decorators.js';
+import { ApiCustomExtension } from 'src/enum.js';
 
 /**
  * The still-image edit recipe (FL-113). A recipe is the complete, versioned description of a
@@ -93,14 +95,30 @@ export const AssetDevelopCropSchema = z
   .refine((rect) => rect.x + rect.w <= 1.00001 && rect.y + rect.h <= 1.00001, {
     error: 'Crop must stay inside the frame',
   })
-  .meta({ id: 'AssetDevelopCrop' });
+  // the envelope's own (loose) crop is published as AssetDevelopCrop
+  .meta({ id: 'KnownAssetDevelopCrop' });
 
 export enum AssetDevelopMaskKind {
   /** An ellipse: full effect inside, fading out across the feathered edge. */
   Radial = 'radial',
   /** A graduated filter: full effect at the start line, none at the end line. */
   Linear = 'linear',
+  /** FL-233: painted strokes in original-image coordinates (`strokes`). */
+  Brush = 'brush',
+  /** FL-233: the main subject, from a stored mask bitmap (`artifact`). */
+  Subject = 'subject',
+  /** FL-233: the sky, from a stored mask bitmap (`artifact`). */
+  Sky = 'sky',
+  /** FL-233: everything behind the subject, from a stored mask bitmap (`artifact`). */
+  Background = 'background',
 }
+
+/** FL-233: mask kinds drawn from a stored bitmap the client computed (or a detector descriptor). */
+export const ASSET_DEVELOP_BITMAP_MASK_KINDS: readonly AssetDevelopMaskKind[] = [
+  AssetDevelopMaskKind.Subject,
+  AssetDevelopMaskKind.Sky,
+  AssetDevelopMaskKind.Background,
+];
 
 export const AssetDevelopMaskKindSchema = z
   .enum(AssetDevelopMaskKind)
@@ -109,6 +127,129 @@ export const AssetDevelopMaskKindSchema = z
 
 /** The most selective adjustments one recipe may carry (FL-64). */
 export const ASSET_DEVELOP_MAX_MASKS = 8;
+/** FL-233: the most strokes one brush mask or Clean Up operation may carry, and points per stroke. */
+export const ASSET_DEVELOP_MAX_STROKES = 64;
+export const ASSET_DEVELOP_MAX_STROKE_POINTS = 512;
+/** FL-233: the most Clean Up operations one recipe may carry. */
+export const ASSET_DEVELOP_MAX_CLEANUP = 32;
+/** FL-233: the most stroke points one recipe may carry in all (brush masks and Clean Up together). */
+export const ASSET_DEVELOP_MAX_RECIPE_POINTS = 4096;
+
+/** FL-233: how many stroke points a recipe's masks and Clean Up carry together. */
+export const recipeStrokePoints = (value: { masks?: unknown; cleanup?: unknown }) => {
+  let total = 0;
+  for (const list of [value.masks, value.cleanup]) {
+    for (const item of Array.isArray(list) ? list : []) {
+      const strokes = item && typeof item === 'object' ? (item as { strokes?: unknown }).strokes : undefined;
+      for (const stroke of Array.isArray(strokes) ? strokes : []) {
+        const points = stroke && typeof stroke === 'object' ? (stroke as { points?: unknown }).points : undefined;
+        total += Array.isArray(points) ? points.length : 0;
+      }
+    }
+  }
+  return total;
+};
+
+/** FL-233: a stored develop artifact (mask bitmap or generated fill): the SHA-256 of its PNG bytes. */
+export const AssetDevelopArtifactIdSchema = z
+  .string()
+  .regex(/^[0-9a-f]{64}$/)
+  .describe('A develop artifact uploaded for this asset: the lowercase hex SHA-256 of its stored PNG');
+
+const OriginalPointSchema = z
+  .tuple([z.number().meta({ format: 'double' }).min(0).max(1), z.number().meta({ format: 'double' }).min(0).max(1)])
+  .describe('A point as [x, y] fractions of the original image (before rotation, flips and crop)');
+
+/**
+ * FL-233: one painted stroke, a polyline in original-image coordinates (fractions of the original's
+ * width and height, before any rotation, flip, straighten or crop). `radius` is a fraction of the
+ * original's shorter side.
+ */
+export const AssetDevelopStrokeSchema = z
+  .object({
+    points: z.array(OriginalPointSchema).min(1).max(ASSET_DEVELOP_MAX_STROKE_POINTS),
+    radius: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0.001)
+      .max(0.5)
+      .describe("Stroke radius as a fraction of the original image's shorter side"),
+    erase: z.boolean().default(false).describe('Erase from the mask instead of painting it (brush masks only)'),
+  })
+  .meta({ id: 'AssetDevelopStroke' });
+
+/** FL-233: a rectangle in original-image coordinates. */
+export const AssetDevelopRegionSchema = z
+  .object({
+    x: unit('Left edge as a fraction of the original image width'),
+    y: unit('Top edge as a fraction of the original image height'),
+    w: z.number().meta({ format: 'double' }).min(0.001).max(1).describe('Width as a fraction of the original'),
+    h: z.number().meta({ format: 'double' }).min(0.001).max(1).describe('Height as a fraction of the original'),
+  })
+  .refine((rect) => rect.x + rect.w <= 1.00001 && rect.y + rect.h <= 1.00001, {
+    error: 'A region must stay inside the image',
+  })
+  .meta({ id: 'AssetDevelopRegion' });
+
+export enum AssetDevelopCleanupMethod {
+  /** Copy from `source`, blended to the colour around the area. */
+  Heal = 'heal',
+  /** Copy from `source` unchanged. */
+  Clone = 'clone',
+  /** Replace with a generated fill (`fill`, a stored artifact). */
+  Remove = 'remove',
+  /** Mosaic of `blockSize` blocks. */
+  Pixelate = 'pixelate',
+}
+
+export const AssetDevelopCleanupMethodSchema = z
+  .enum(AssetDevelopCleanupMethod)
+  .describe('How a Clean Up operation changes its area')
+  .meta({ id: 'AssetDevelopCleanupMethod' });
+
+/**
+ * FL-233: one Clean Up operation. Operations apply in order to the original image, before any other
+ * develop step, over the area of `region` or `strokes` (exactly one of them).
+ */
+export const AssetDevelopCleanupSchema = z
+  .object({
+    id: z.string().trim().min(1).max(40).describe('Client-chosen identifier, unique within the recipe'),
+    method: AssetDevelopCleanupMethodSchema,
+    enabled: z.boolean().default(true).describe('A disabled operation is kept but not rendered'),
+    region: AssetDevelopRegionSchema.optional(),
+    strokes: z.array(AssetDevelopStrokeSchema).min(1).max(ASSET_DEVELOP_MAX_STROKES).optional(),
+    feather: z.int().min(0).max(100).default(0).describe("Softness of the area's edge, as a percentage"),
+    source: z
+      .object({
+        dx: z.number().meta({ format: 'double' }).min(-1).max(1).describe('Horizontal offset, fraction of the width'),
+        dy: z.number().meta({ format: 'double' }).min(-1).max(1).describe('Vertical offset, fraction of the height'),
+      })
+      .optional()
+      .describe('Heal and clone: where the pixels come from, relative to the area, in original-image fractions'),
+    fill: AssetDevelopArtifactIdSchema.optional().describe(
+      'Remove: the generated fill, an RGBA artifact covering the bounding box of the area',
+    ),
+    blockSize: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0.002)
+      .max(0.2)
+      .default(0.02)
+      .describe("Pixelate: block size as a fraction of the original image's shorter side"),
+  })
+  .refine((op) => (op.region === undefined) !== (op.strokes === undefined), {
+    error: 'A Clean Up operation needs exactly one of region or strokes',
+  })
+  .refine(
+    (op) =>
+      (op.method !== AssetDevelopCleanupMethod.Heal && op.method !== AssetDevelopCleanupMethod.Clone) ||
+      (op.source !== undefined && (op.source.dx !== 0 || op.source.dy !== 0)),
+    { error: 'Heal and clone need a source offset' },
+  )
+  .refine((op) => op.method !== AssetDevelopCleanupMethod.Remove || op.fill !== undefined, {
+    error: 'Remove needs a generated fill',
+  })
+  .meta({ id: 'AssetDevelopCleanup' });
 
 /**
  * What a selective adjustment changes inside its mask (FL-64). Only the per-pixel tone and colour
@@ -146,114 +287,159 @@ export const AssetDevelopMaskAdjustmentsSchema = z
  * from (`x`, `y`), where the effect is full, to (`endX`, `endY`), where it has faded out; the
  * radius fields are ignored for it and the end fields for a radial mask.
  */
-export const AssetDevelopMaskSchema = z
-  .object({
-    id: z.string().trim().min(1).max(40).describe('Client-chosen identifier, unique within the recipe'),
-    name: z.string().trim().min(1).max(60).nullable().default(null).describe('Optional name shown in the editor'),
-    kind: AssetDevelopMaskKindSchema,
-    enabled: z.boolean().default(true).describe('A disabled mask is kept but not rendered'),
-    invert: z.boolean().default(false).describe('Apply the adjustment outside the shape instead of inside'),
-    x: unit('Centre (radial) or start (linear) across the oriented frame'),
-    y: unit('Centre (radial) or start (linear) down the oriented frame'),
-    radiusX: z
-      .number()
-      .meta({ format: 'double' })
-      .min(0.01)
-      .max(1)
-      .default(0.25)
-      .describe('Horizontal radius of a radial mask as a fraction of the frame width'),
-    radiusY: z
-      .number()
-      .meta({ format: 'double' })
-      .min(0.01)
-      .max(1)
-      .default(0.25)
-      .describe('Vertical radius of a radial mask as a fraction of the frame height'),
-    endX: unit('Where a linear mask has faded out, across the frame').default(0.5),
-    endY: unit('Where a linear mask has faded out, down the frame').default(1),
-    feather: z.int().min(0).max(100).default(50).describe('Softness of a radial edge as a percentage of the radius'),
-    amount: z.int().min(0).max(100).default(100).describe('How much of the adjustment is applied, as a percentage'),
-    adjustments: AssetDevelopMaskAdjustmentsSchema.default({
-      exposure: 0,
-      contrast: 0,
-      highlights: 0,
-      shadows: 0,
-      whites: 0,
-      blacks: 0,
-      temperature: 0,
-      tint: 0,
-      vibrance: 0,
-      saturation: 0,
-      dehaze: 0,
-    }),
+/** The mask fields without the cross-field checks (FL-233: presets narrow `kind`). */
+export const AssetDevelopMaskFields = z.object({
+  id: z.string().trim().min(1).max(40).describe('Client-chosen identifier, unique within the recipe'),
+  name: z.string().trim().min(1).max(60).nullable().default(null).describe('Optional name shown in the editor'),
+  kind: AssetDevelopMaskKindSchema,
+  enabled: z.boolean().default(true).describe('A disabled mask is kept but not rendered'),
+  invert: z.boolean().default(false).describe('Apply the adjustment outside the shape instead of inside'),
+  x: unit('Centre (radial) or start (linear) across the oriented frame; any value for brush and bitmap masks'),
+  y: unit('Centre (radial) or start (linear) down the oriented frame; any value for brush and bitmap masks'),
+  radiusX: z
+    .number()
+    .meta({ format: 'double' })
+    .min(0.01)
+    .max(1)
+    .default(0.25)
+    .describe('Horizontal radius of a radial mask as a fraction of the frame width'),
+  radiusY: z
+    .number()
+    .meta({ format: 'double' })
+    .min(0.01)
+    .max(1)
+    .default(0.25)
+    .describe('Vertical radius of a radial mask as a fraction of the frame height'),
+  endX: unit('Where a linear mask has faded out, across the frame').default(0.5),
+  endY: unit('Where a linear mask has faded out, down the frame').default(1),
+  feather: z
+    .int()
+    .min(0)
+    .max(100)
+    .default(50)
+    .describe('Softness of a radial edge as a percentage of the radius, or of a brush stroke as one of its radius'),
+  strokes: z
+    .array(AssetDevelopStrokeSchema)
+    .max(ASSET_DEVELOP_MAX_STROKES)
+    .optional()
+    .describe('Brush masks: the painted strokes, in order'),
+  artifact: AssetDevelopArtifactIdSchema.nullable()
+    .optional()
+    .describe('Subject, sky and background masks: the stored greyscale mask bitmap, covering the whole original image'),
+  detector: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      'Subject, sky and background masks: an opaque descriptor that lets a client detect the mask again; the server never runs it',
+    ),
+  amount: z.int().min(0).max(100).default(100).describe('How much of the adjustment is applied, as a percentage'),
+  adjustments: AssetDevelopMaskAdjustmentsSchema.default({
+    exposure: 0,
+    contrast: 0,
+    highlights: 0,
+    shadows: 0,
+    whites: 0,
+    blacks: 0,
+    temperature: 0,
+    tint: 0,
+    vibrance: 0,
+    saturation: 0,
+    dehaze: 0,
+  }),
+});
+
+export const AssetDevelopMaskSchema = AssetDevelopMaskFields.refine(
+  (mask) => mask.kind !== AssetDevelopMaskKind.Linear || mask.x !== mask.endX || mask.y !== mask.endY,
+  { error: 'A linear mask needs different start and end points' },
+)
+  .refine((mask) => mask.kind === AssetDevelopMaskKind.Brush || mask.strokes === undefined, {
+    error: 'Only a brush mask has strokes',
   })
-  .refine((mask) => mask.kind !== AssetDevelopMaskKind.Linear || mask.x !== mask.endX || mask.y !== mask.endY, {
-    error: 'A linear mask needs different start and end points',
-  })
+  .refine(
+    (mask) =>
+      ASSET_DEVELOP_BITMAP_MASK_KINDS.includes(mask.kind) ||
+      (mask.artifact === undefined && mask.detector === undefined),
+    { error: 'Only subject, sky and background masks have an artifact or detector' },
+  )
   .meta({ id: 'AssetDevelopMask' });
 
-export const KnownAssetDevelopRecipeSchema = z
-  .object({
-    version: z.literal(ASSET_DEVELOP_RECIPE_VERSION).meta({ format: 'double' }).describe('Recipe contract version'),
-    exposure: z
-      .number()
-      .meta({ format: 'double' })
-      .min(-2)
-      .max(2)
-      .default(0)
-      .describe('Exposure in EV; each whole stop doubles the light'),
-    contrast: bipolar('Contrast around middle grey'),
-    highlights: bipolar('Highlight recovery (negative) or lift (positive)'),
-    shadows: bipolar('Shadow lift (positive) or deepening (negative)'),
-    whites: bipolar('White point'),
-    blacks: bipolar('Black point'),
-    temperature: bipolar('Warm (positive) or cool (negative) white balance shift'),
-    tint: bipolar('Magenta (positive) or green (negative) tint'),
-    vibrance: bipolar('Saturation weighted towards muted colours'),
-    saturation: bipolar('Global saturation'),
-    clarity: bipolar('Local contrast in the midtones'),
-    dehaze: bipolar('Haze removal (positive) or addition (negative)'),
-    vignette: bipolar('Darkened (positive) or lightened (negative) edges'),
-    grain: unipolar('Film grain amount'),
-    sharpen: unipolar('Detail sharpening amount'),
-    noiseReduction: unipolar('Luminance noise reduction amount'),
-    crop: AssetDevelopCropSchema.default({ x: 0, y: 0, w: 1, h: 1 }),
-    straighten: z
-      .number()
-      .meta({ format: 'double' })
-      .min(-45)
-      .max(45)
-      .default(0)
-      .describe('Straighten angle in degrees, applied before the crop'),
-    rotation: z
-      .int()
-      .min(0)
-      .max(270)
-      .default(0)
-      .refine((value) => [0, 90, 180, 270].includes(value), {
-        error: 'Rotation must be one of the following values: 0, 90, 180, 270',
-      })
-      .describe('Quarter-turn rotation in degrees, clockwise'),
-    flipHorizontal: z.boolean().default(false).describe('Mirror left to right'),
-    flipVertical: z.boolean().default(false).describe('Mirror top to bottom'),
-    preset: AssetDevelopPresetSchema.default(AssetDevelopPreset.Original),
-    presetStrength: z.int().min(0).max(100).default(100).describe('How much of the preset is applied, as a percentage'),
-    masks: z
-      .array(AssetDevelopMaskSchema)
-      .max(ASSET_DEVELOP_MAX_MASKS)
-      .default([])
-      .refine((masks) => new Set(masks.map((mask) => mask.id)).size === masks.length, {
-        error: 'Mask identifiers must be unique',
-      })
-      .describe('Selective adjustments, applied in order after the global develop'),
-  })
-  .meta({ id: 'KnownAssetDevelopRecipe' });
+/** The recipe fields without the whole-recipe checks, for `.pick` and the envelope's shape. */
+export const KnownAssetDevelopRecipeFields = z.object({
+  version: z.literal(ASSET_DEVELOP_RECIPE_VERSION).meta({ format: 'double' }).describe('Recipe contract version'),
+  exposure: z
+    .number()
+    .meta({ format: 'double' })
+    .min(-2)
+    .max(2)
+    .default(0)
+    .describe('Exposure in EV; each whole stop doubles the light'),
+  contrast: bipolar('Contrast around middle grey'),
+  brilliance: bipolar(
+    'FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol',
+  ),
+  highlights: bipolar('Highlight recovery (negative) or lift (positive)'),
+  shadows: bipolar('Shadow lift (positive) or deepening (negative)'),
+  whites: bipolar('White point'),
+  blacks: bipolar('Black point'),
+  temperature: bipolar('Warm (positive) or cool (negative) white balance shift'),
+  tint: bipolar('Magenta (positive) or green (negative) tint'),
+  vibrance: bipolar('Saturation weighted towards muted colours'),
+  saturation: bipolar('Global saturation'),
+  clarity: bipolar('Local contrast in the midtones'),
+  dehaze: bipolar('Haze removal (positive) or addition (negative)'),
+  vignette: bipolar('Darkened (positive) or lightened (negative) edges'),
+  grain: unipolar('Film grain amount'),
+  sharpen: unipolar('Detail sharpening amount'),
+  noiseReduction: unipolar('Luminance noise reduction amount'),
+  crop: AssetDevelopCropSchema.default({ x: 0, y: 0, w: 1, h: 1 }),
+  straighten: z
+    .number()
+    .meta({ format: 'double' })
+    .min(-45)
+    .max(45)
+    .default(0)
+    .describe('Straighten angle in degrees, applied before the crop'),
+  rotation: z
+    .int()
+    .min(0)
+    .max(270)
+    .default(0)
+    .refine((value) => [0, 90, 180, 270].includes(value), {
+      error: 'Rotation must be one of the following values: 0, 90, 180, 270',
+    })
+    .describe('Quarter-turn rotation in degrees, clockwise'),
+  flipHorizontal: z.boolean().default(false).describe('Mirror left to right'),
+  flipVertical: z.boolean().default(false).describe('Mirror top to bottom'),
+  preset: AssetDevelopPresetSchema.default(AssetDevelopPreset.Original),
+  presetStrength: z.int().min(0).max(100).default(100).describe('How much of the preset is applied, as a percentage'),
+  masks: z
+    .array(AssetDevelopMaskSchema)
+    .max(ASSET_DEVELOP_MAX_MASKS)
+    .default([])
+    .refine((masks) => new Set(masks.map((mask) => mask.id)).size === masks.length, {
+      error: 'Mask identifiers must be unique',
+    })
+    .describe('Selective adjustments, applied in order after the global develop'),
+  cleanup: z
+    .array(AssetDevelopCleanupSchema)
+    .max(ASSET_DEVELOP_MAX_CLEANUP)
+    .default([])
+    .refine((ops) => new Set(ops.map((op) => op.id)).size === ops.length, {
+      error: 'Clean Up identifiers must be unique',
+    })
+    .describe('FL-233: Clean Up operations, applied in order to the original before every other step'),
+});
+
+export const KnownAssetDevelopRecipeSchema = KnownAssetDevelopRecipeFields.refine(
+  (recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS,
+  { error: `A recipe may carry at most ${ASSET_DEVELOP_MAX_RECIPE_POINTS} stroke points in all` },
+).meta({ id: 'KnownAssetDevelopRecipe' });
 
 /** Stored/wire envelope. Opaque JSON is retained; it is never a render instruction. */
 const VersionOneEnvelopeSchema = z
   .object({
     ...Object.fromEntries(
-      Object.entries(KnownAssetDevelopRecipeSchema.shape).map(([key, schema]) => [
+      Object.entries(KnownAssetDevelopRecipeFields.shape).map(([key, schema]) => [
         key,
         (schema instanceof z.ZodDefault ? schema.unwrap() : schema).optional(),
       ]),
@@ -261,12 +447,23 @@ const VersionOneEnvelopeSchema = z
     version: z.literal(ASSET_DEVELOP_RECIPE_VERSION),
     crop: AssetDevelopCropSchema.loose().meta({ id: 'AssetDevelopCrop' }).optional(),
     masks: z.array(z.record(z.string(), z.unknown())).optional(),
+    cleanup: z.array(z.record(z.string(), z.unknown())).optional(),
   })
   .loose()
   .superRefine((value, ctx) => {
     const masks = value.masks;
+    const cleanup = value.cleanup;
     const known = KnownAssetDevelopRecipeSchema.safeParse({
       ...value,
+      // FL-233: a future Clean Up method stays opaque, exactly like a future mask kind
+      cleanup: Array.isArray(cleanup)
+        ? cleanup.filter(
+            (op) =>
+              op &&
+              typeof op === 'object' &&
+              Object.values(AssetDevelopCleanupMethod).includes(op.method as AssetDevelopCleanupMethod),
+          )
+        : cleanup,
       masks: Array.isArray(masks)
         ? masks.filter(
             (mask) =>
@@ -294,16 +491,25 @@ export const AssetDevelopRecipeSchema = z
   .nonoptional()
   .meta({ id: 'AssetDevelopRecipeDto' });
 
-/** Shared envelope budget: 64 KiB UTF-8, depth16, 4096 values, 128 keys/object. */
+/**
+ * Shared envelope budget. FL-233 sized it so every recipe the known schema allows fits: 4096 stroke
+ * points (three JSON values each) in up to 2560 strokes (four more each) need about 23,000 values
+ * and, with full-precision coordinates, about 330 KiB of JSON. Strings and keys stay within 64 KiB.
+ */
+export const RECIPE_JSON_MAX_VALUES = 32_768;
+export const RECIPE_JSON_MAX_BYTES = 512 * 1024;
+export const RECIPE_JSON_MAX_TEXT_BYTES = 64 * 1024;
+
+/** Envelope budget: `RECIPE_JSON_MAX_*`, depth 16, arrays of 4096, 128 keys per object. */
 export function recipeJsonError(value: unknown): string | undefined {
   let count = 0;
   let bytes = 0;
   const visit = (item: unknown, depth: number): boolean => {
-    if (++count > 4096 || depth > 16) return false;
+    if (++count > RECIPE_JSON_MAX_VALUES || depth > 16) return false;
     if (item === null || typeof item === 'boolean' || typeof item === 'string') {
-      if (typeof item === 'string' && item.length > 65_536) return false;
+      if (typeof item === 'string' && item.length > RECIPE_JSON_MAX_TEXT_BYTES) return false;
       bytes += new TextEncoder().encode(JSON.stringify(item)).length;
-      return bytes <= 65_536;
+      return bytes <= RECIPE_JSON_MAX_TEXT_BYTES;
     }
     if (typeof item === 'number') return Number.isFinite(item);
     if (Array.isArray(item)) return item.length <= 4096 && item.every((entry) => visit(entry, depth + 1));
@@ -313,7 +519,7 @@ export function recipeJsonError(value: unknown): string | undefined {
       entries.length <= 128 &&
       entries.every(
         ([key, entry]) =>
-          (bytes += new TextEncoder().encode(key).length) <= 65_536 &&
+          (bytes += new TextEncoder().encode(key).length) <= RECIPE_JSON_MAX_TEXT_BYTES &&
           key.length <= 128 &&
           !['__proto__', 'prototype', 'constructor'].includes(key) &&
           visit(entry, depth + 1),
@@ -321,7 +527,7 @@ export function recipeJsonError(value: unknown): string | undefined {
     );
   };
   if (!visit(value, 0)) return 'Recipe must be bounded plain JSON without unsafe keys';
-  if (new TextEncoder().encode(JSON.stringify(value)).length > 65_536) return 'Recipe exceeds 64 KiB';
+  if (new TextEncoder().encode(JSON.stringify(value)).length > RECIPE_JSON_MAX_BYTES) return 'Recipe exceeds 512 KiB';
 }
 
 export type KnownAssetDevelopRecipe = z.infer<typeof KnownAssetDevelopRecipeSchema>;
@@ -330,6 +536,7 @@ export type AssetDevelopRecipe = z.infer<typeof AssetDevelopRecipeSchema>;
 export type AssetDevelopCrop = z.infer<typeof AssetDevelopCropSchema>;
 export type AssetDevelopMask = z.infer<typeof AssetDevelopMaskSchema>;
 export type AssetDevelopMaskAdjustments = z.infer<typeof AssetDevelopMaskAdjustmentsSchema>;
+export type AssetDevelopCleanup = z.infer<typeof AssetDevelopCleanupSchema>;
 
 const AssetDevelopSaveSchema = z
   .object({
@@ -428,7 +635,52 @@ const AssetDevelopResponseSchema = z
   })
   .meta({ id: 'AssetDevelopResponseDto' });
 
+export enum AssetDevelopArtifactKind {
+  /** A greyscale mask bitmap covering the whole original (subject, sky and background masks). */
+  Mask = 'mask',
+  /** An RGBA generated fill for a Clean Up remove operation, covering the operation's area. */
+  Fill = 'fill',
+}
+
+export const AssetDevelopArtifactKindSchema = z
+  .enum(AssetDevelopArtifactKind)
+  .describe('What a develop artifact is used for')
+  .meta({ id: 'AssetDevelopArtifactKind' });
+
+const AssetDevelopArtifactUploadSchema = z
+  .object({
+    kind: AssetDevelopArtifactKindSchema,
+    /**
+     * Documents the multipart file part for the API docs and generated clients. File parts never
+     * reach the request body; the controller hands the uploaded file to the service.
+     */
+    file: z
+      .any()
+      .optional()
+      .describe('A PNG (or another still image the server can read): greyscale for a mask, with alpha for a fill')
+      .meta({ type: 'string', format: 'binary', [ApiCustomExtension.Required]: true }),
+  })
+  .meta({ id: 'AssetDevelopArtifactUploadDto' });
+
+const AssetDevelopArtifactResponseSchema = z
+  .object({
+    id: AssetDevelopArtifactIdSchema,
+    kind: AssetDevelopArtifactKindSchema,
+    width: z.int().min(1).describe('Width of the stored bitmap in pixels'),
+    height: z.int().min(1).describe('Height of the stored bitmap in pixels'),
+  })
+  .meta({ id: 'AssetDevelopArtifactResponseDto' });
+
+export class AssetDevelopArtifactUploadDto extends createZodDto(AssetDevelopArtifactUploadSchema) {}
+export class AssetDevelopArtifactResponseDto extends createZodDto(AssetDevelopArtifactResponseSchema) {}
 export class AssetDevelopRecipeDto extends createZodDto(AssetDevelopRecipeSchema) {}
+
+/**
+ * FL-233: the renderable version 1 recipe, field by field, published in the OpenAPI document for the
+ * native apps (routes take and return the opaque envelope, `AssetDevelopRecipeDto`).
+ */
+@ExtraModel()
+export class KnownAssetDevelopRecipeDto extends createZodDto(KnownAssetDevelopRecipeSchema) {}
 export class AssetDevelopSaveDto extends createZodDto(AssetDevelopSaveSchema) {}
 export class AssetDevelopPreviewDto extends createZodDto(AssetDevelopPreviewSchema) {}
 export class AssetDevelopRevertDto extends createZodDto(AssetDevelopRevertSchema) {}

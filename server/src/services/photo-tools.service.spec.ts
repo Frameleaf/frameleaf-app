@@ -76,6 +76,21 @@ describe(PhotoToolsService.name, () => {
     expect(result.settings.exposure).toBe(2);
   });
 
+  it('keeps Brilliance and leaves brush and bitmap masks and Clean Up out of a preset (FL-233)', () => {
+    const settings = normalizePresetSettings({
+      brilliance: 25,
+      masks: [
+        { id: 'r', kind: AssetDevelopMaskKind.Radial, x: 0.5, y: 0.5 },
+        { id: 'b', kind: AssetDevelopMaskKind.Brush, strokes: [{ points: [[0.1, 0.1]], radius: 0.05, erase: false }] },
+        { id: 's', kind: AssetDevelopMaskKind.Sky, artifact: 'a'.repeat(64) },
+      ],
+      cleanup: [{ id: 'p', method: 'pixelate', region: { x: 0, y: 0, w: 0.2, h: 0.2 } }],
+    } as never);
+    expect(settings.brilliance).toBe(25);
+    expect(settings.masks.map(({ id }) => id)).toEqual(['r']);
+    expect(settings).not.toHaveProperty('cleanup');
+  });
+
   it('refuses a duplicate name, including a race on the unique key', async () => {
     repository.getPresetByName.mockResolvedValue(presetRow());
     await expect(

@@ -335,7 +335,7 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     ).rejects.toThrow('rollback original-official lock probe');
 
     expect(observedLocks).toEqual(report.tableEvidence.map(({ table }) => table).toSorted());
-    // 66 v3.1.0 public + the 59 fork tables: the video version (FL-39), archive operation (FL-32),
+    // 66 v3.1.0 public + the 60 fork tables: the video version (FL-39), archive operation (FL-32),
     // merge verdict (FL-57), album position (FL-52), recipient group (FL-55), preference
     // history (FL-71), face correction history (FL-57), pet recognition run (FL-58), memory curation
     // and show-less (FL-62), render worker session capability (FL-95), Studio workspace layout
@@ -343,8 +343,9 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     // the supporter keys (FL-156), Frameleaf account links and Sign in with Frameleaf sessions (FL-158)
     // the album covers that follow the newest item (FL-83) and items shared with a person (FL-83 AL-30b)
     // and server-owned generated media declarations (FL-111), Studio HDR intermediates (FL-97), and the
-    // used exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230).
-    expect(observedLocks).toHaveLength(125);
+    // used exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230), and develop
+    // artifacts (FL-233).
+    expect(observedLocks).toHaveLength(126);
     expect(observedLocks).toEqual(
       expect.arrayContaining([
         'immich_fork.video_edit_version',
@@ -364,6 +365,7 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
         'immich_fork.frameleaf_session',
         'immich_fork.frameleaf_exchange_token',
         'immich_fork.frameleaf_sign_in_revocation',
+        'immich_fork.asset_develop_artifact',
         'immich_fork.render_worker_session_capability',
         'immich_fork.studio_workspace_layout',
         'immich_fork.studio_generated_resource',
