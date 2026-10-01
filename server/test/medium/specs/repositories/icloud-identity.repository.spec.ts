@@ -261,28 +261,37 @@ describe(ICloudIdentityRepository.name, () => {
       });
     });
 
-    it('records a device upload delivered under its claim, and gives the claim back', async () => {
+    it('records each role a device uploads under its claim, keeping the claim for the rest of the item', async () => {
       const [claim] = await sut.claim(connection.ownerId, [ASSET], device('a'), 600);
-      const assetId = randomUUID();
-      await sql`INSERT INTO asset (id, "ownerId") VALUES (${assetId}::uuid, ${connection.ownerId}::uuid)`.execute(db);
-      const input = {
-        ownerId: connection.ownerId,
-        assetId,
-        parsed: { cplAssetRecordName: ASSET, cplMasterRecordName: MASTER },
-        cloudIdentifier: `${ASSET}:001:${MASTER}`,
-        role: 'original' as const,
-        editVersion: '',
-        sha256: Buffer.alloc(32, 3),
-        claimId: claim.id,
-        deviceKey: null,
-        metadata: { originalFilename: 'IMG_0001.HEIC', creationDate: '2026-06-01T10:00:00.000Z' },
+      const upload = async (role: 'original' | 'raw-alternate', byte: number) => {
+        const assetId = randomUUID();
+        await sql`INSERT INTO asset (id, "ownerId") VALUES (${assetId}::uuid, ${connection.ownerId}::uuid)`.execute(db);
+        const input = {
+          ownerId: connection.ownerId,
+          assetId,
+          parsed: { cplAssetRecordName: ASSET, cplMasterRecordName: MASTER },
+          cloudIdentifier: `${ASSET}:001:${MASTER}`,
+          role,
+          editVersion: '',
+          sha256: Buffer.alloc(32, byte),
+          claimId: claim.id,
+          deviceKey: null,
+          metadata: { originalFilename: 'IMG_0001.HEIC', creationDate: '2026-06-01T10:00:00.000Z' },
+        };
+        await sut.recordDevice(input);
+        await sut.recordDevice(input);
+        return assetId;
       };
-      await sut.recordDevice(input);
-      await sut.recordDevice(input);
+      const original = await upload('original', 3);
+      // the RAW is still on the way: the sync must not take the item now
+      await expect(sut.claimForSync(connection.ownerId, ASSET, connection.id)).resolves.toBeInstanceOf(Date);
+      const raw = await upload('raw-alternate', 4);
       await expect(sut.identities(connection.ownerId, [ASSET])).resolves.toEqual([
-        expect.objectContaining({ assetId, deliveredBy: device('a'), matchStrength: 'corroborated' }),
+        expect.objectContaining({ assetId: original, deliveredBy: device('a'), matchStrength: 'corroborated' }),
+        expect.objectContaining({ assetId: raw, role: 'raw-alternate', deliveredBy: device('a') }),
       ]);
-      await expect(sut.claims(connection.ownerId, [ASSET])).resolves.toEqual([]);
+      await expect(sut.release(connection.ownerId, [claim.id], device('a'))).resolves.toEqual([claim.id]);
+      await expect(sut.claimForSync(connection.ownerId, ASSET, connection.id)).resolves.toBeNull();
     });
 
     it("knows the owner's backup devices", async () => {
