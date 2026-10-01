@@ -14,7 +14,12 @@ from rich.logging import RichHandler
 from uvicorn import Server
 from uvicorn.workers import UvicornWorker
 
+from .env_aliases import apply_env_aliases
 from .schemas import ModelPrecision
+
+# FL-294: deprecated IMMICH_* names are copied to their FRAMELEAF_* names before any setting is read;
+# a pair set to two different values stops the service here. __main__ logs the names in use once.
+DEPRECATED_ENV = apply_env_aliases(os.environ)
 
 
 class ClipSettings(BaseModel):
@@ -111,9 +116,9 @@ class Settings(BaseSettings):
 class NonPrefixedSettings(BaseSettings):
     model_config = SettingsConfigDict(case_sensitive=False)
 
-    immich_host: str = "[::]"
-    immich_port: int = 3003
-    immich_log_level: str = "info"
+    frameleaf_host: str = "[::]"
+    frameleaf_port: int = 3003
+    frameleaf_log_level: str = "info"
     no_color: bool = False
 
 
@@ -168,7 +173,7 @@ LOG_LEVELS: dict[str, int] = {
 settings = Settings()
 non_prefixed_settings = NonPrefixedSettings()
 
-LOG_LEVEL = LOG_LEVELS.get(non_prefixed_settings.immich_log_level.lower(), logging.INFO)
+LOG_LEVEL = LOG_LEVELS.get(non_prefixed_settings.frameleaf_log_level.lower(), logging.INFO)
 
 
 class CustomRichHandler(RichHandler):
