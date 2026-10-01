@@ -145,6 +145,8 @@ it('accepts brilliance, brush and bitmap masks and Clean Up, and refuses malform
   const brush = (id: string) => ({
     id,
     kind: AssetDevelopMaskKind.Brush,
+    x: 0.5,
+    y: 0.5,
     strokes: Array.from({ length: 4 }, () => long),
   });
   expect(invalid({ masks: ['a', 'b'].map((id) => brush(id)) })).toBe(true);
