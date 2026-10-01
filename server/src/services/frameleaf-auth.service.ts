@@ -305,9 +305,16 @@ export class FrameleafAuthService extends BaseService {
       // Frameleaf Cloud authorized this person for this server: it is the access authority
       this.logger.log(`Creating the account ${email} for a Frameleaf sign-in`);
       // FL-235: a person invited to this server gets their own account, with the quota the
-      // administrator chose for invited accounts (unlimited by default); the server's owner never
+      // administrator chose for invited accounts (unlimited by default); the server's owner is never
+      // capped: the owner is the link's account (its sub) when known, as GET /users/me reports it
       const { frameleafCloud } = await this.getConfig({ withCache: false });
-      const quota = access === 'owner' ? null : (frameleafCloud.signIn?.invitedStorageQuota ?? null);
+      const { link: cloudLink, linked } = await readCloudLink({
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      const ownerAccountId = linked ? cloudLink?.accountId : undefined;
+      const isOwner = ownerAccountId ? profile.sub === ownerAccountId : access === 'owner';
+      const quota = isOwner ? null : (frameleafCloud.signIn?.invitedStorageQuota ?? null);
       user = await this.createUser({
         name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
         email,
