@@ -150,7 +150,11 @@ it('keeps Brilliance, brush strokes and Clean Up through a save from a client th
     cleanup: [{ id: 'p', method: 'pixelate', region: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } }],
   });
   // an older client names the source and sends only what it knows: the exposure, and the mask by id
-  const older = developEnvelope({ version: 1, exposure: 1, masks: [{ id: 'b', kind: 'brush', amount: 50 }] });
+  const older = developEnvelope({
+    version: 1,
+    exposure: 1,
+    masks: [{ id: 'b', kind: 'brush', x: 0.5, y: 0.5, amount: 50 }],
+  });
   const saved = preserveDevelopEnvelope(source, older);
   expect(saved).toMatchObject({
     exposure: 1,

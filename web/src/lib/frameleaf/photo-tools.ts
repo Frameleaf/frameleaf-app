@@ -217,6 +217,13 @@ export function presetSettingsFrom(source: Partial<PresetSettings> | DevelopPres
 }
 
 /** True when the draft already carries exactly the preset's settings (so the preset shows as applied). */
+/**
+ * FL-233: the wire shape of a preset. Its masks are the radial and linear kinds this editor draws,
+ * which the API names `DevelopPresetMaskKind` (the same values as `AssetDevelopMaskKind`).
+ */
+export const toPresetDto = (settings: PresetSettings): DevelopPresetSettingsDto =>
+  settings as unknown as DevelopPresetSettingsDto;
+
 export const presetMatches = (settings: PresetSettings, current: PresetSettings) =>
   JSON.stringify(settings) === JSON.stringify(current);
 
