@@ -136,7 +136,8 @@ test("native Position navigation acknowledges 30 then 0 and refuses non-singleto
   const start = source.indexOf("  const acknowledge = async (frame, index) => {");
   const end = source.indexOf("  const seek = async (frame, n) => {", start);
   assert.ok(start > 0 && end > start);
-  async function run(extraSelection = false) {
+  async function run(extraSelection = false, wrongReadout = null) {
+    let clock = 0;
     let current = 0,
       selected;
     const calls = [];
@@ -147,7 +148,7 @@ test("native Position navigation acknowledges 30 then 0 and refuses non-singleto
           ? [
               {
                 checkVisibility: () => true,
-                textContent: `00:${String(Math.floor(current / 30)).padStart(2, "0")}:${String(current % 30).padStart(2, "0")} / 00:01:29`,
+                textContent: `00:${String(Math.floor((current + (wrongReadout === "frame" ? 1 : 0)) / 30)).padStart(2, "0")}:${String((current + (wrongReadout === "frame" ? 1 : 0)) % 30).padStart(2, "0")}/00:01:${wrongReadout === "total" ? "28" : "29"}`,
               },
             ]
           : [selected, ...(extraSelection ? ["opacity"] : [])].filter(Boolean).map((id) => ({
@@ -168,6 +169,8 @@ test("native Position navigation acknowledges 30 then 0 and refuses non-singleto
         }
       },
       async evaluate(fn, arg) {
+        if (fn.toString().includes("elementFromPoint"))
+          return { contractOnly: "geometry capture is not a browser measurement" };
         if (arg !== undefined) calls.push(`ack:${arg}`);
         return runInNewContext(`(${fn.toString()})(arg)`, { document: dom, arg });
       },
@@ -179,7 +182,11 @@ test("native Position navigation acknowledges 30 then 0 and refuses non-singleto
       `(() => { ${source.slice(start, end)}; return selectInline; })()`,
       {
         assert,
-        Date,
+        writeFile: async () => {},
+        URL,
+        browserName: "unit-contract",
+        dir: new URL("file:///unit-contract/"),
+        Date: { now: () => (clock += 31000) },
         Set,
         setTimeout,
         button: (label) => `button[aria-label=${JSON.stringify(label)}]`,
@@ -191,9 +198,11 @@ test("native Position navigation acknowledges 30 then 0 and refuses non-singleto
   assert.deepEqual(await run(), [
     '[data-item-id="still"]',
     'button[aria-label="Next Position keyframe"]',
-    "ack:00:01:00 / 00:01:29",
+    "ack:00:01:00/00:01:29",
     'button[aria-label="Previous Position keyframe"]',
-    "ack:00:00:00 / 00:01:29",
+    "ack:00:00:00/00:01:29",
   ]);
   await assert.rejects(run(true), /actual readiness must hold/);
+  await assert.rejects(run(false, "frame"), /native timecode acknowledgement/);
+  await assert.rejects(run(false, "total"), /native timecode acknowledgement/);
 });
