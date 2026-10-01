@@ -25,7 +25,7 @@ import { getKyselyConfig } from 'src/utils/database.js';
 const { cls, database } = new ConfigRepository().getEnv();
 
 /**
- * The media location, found as the storage service finds it (`IMMICH_MEDIA_LOCATION`, else the one
+ * The media location, found as the storage service finds it (`FRAMELEAF_MEDIA_LOCATION`, else the one
  * existing default folder), so the identity directory is the same one the API and jobs use.
  */
 export const detectMediaLocation = (configRepository: ConfigRepository): string => {

@@ -19,7 +19,7 @@ import { GENERIC_LEGACY_FORK_MIGRATIONS } from 'src/fork-schema/migration-manife
  * ledger. They run:
  *
  * - at startup once the library is active again after its return (`active`, schema version 2), and
- * - during the return itself (`immich-admin fork-handoff prepare-fork`), right after the
+ * - during the return itself (`frameleaf-admin fork-handoff prepare-fork`), right after the
  *   post-certified upstream residue is applied again and before any reconciliation reads or writes.
  *   The return cannot finish without them: its final activation locks every table the Frameleaf
  *   catalog manifest lists.

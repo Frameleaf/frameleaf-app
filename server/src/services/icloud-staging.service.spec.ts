@@ -21,8 +21,8 @@ describe(ICloudStagingService.name, () => {
     vi.clearAllMocks();
     directory = await realpath(await mkdtemp(join(tmpdir(), 'icloud-stage-')));
     root = join(directory, 'private-stage');
-    vi.stubEnv('IMMICH_ICLOUD_STAGING_PATH', root);
-    vi.stubEnv('IMMICH_ICLOUD_FREE_SPACE_BYTES', '0');
+    vi.stubEnv('FRAMELEAF_ICLOUD_STAGING_PATH', root);
+    vi.stubEnv('FRAMELEAF_ICLOUD_FREE_SPACE_BYTES', '0');
     StorageCore.setMediaLocation(join(directory, 'managed'));
     connection = {
       id: randomUUID(),
@@ -117,9 +117,9 @@ describe(ICloudStagingService.name, () => {
     await chmod(root, 0o755);
     await expect(sut.download(connection, resource)).rejects.toThrow('staging_permissions_invalid');
     await chmod(root, 0o700);
-    vi.stubEnv('IMMICH_ICLOUD_FREE_SPACE_BYTES', '9223372036854775807');
+    vi.stubEnv('FRAMELEAF_ICLOUD_FREE_SPACE_BYTES', '9223372036854775807');
     await expect(sut.download(connection, resource)).rejects.toThrow('staging_disk_full');
-    vi.stubEnv('IMMICH_ICLOUD_FREE_SPACE_BYTES', '0');
+    vi.stubEnv('FRAMELEAF_ICLOUD_FREE_SPACE_BYTES', '0');
     repository.progress.mockResolvedValueOnce(false);
     await expect(sut.download(connection, resource)).rejects.toThrow('lease_changed');
     expect(transport.download).not.toHaveBeenCalled();

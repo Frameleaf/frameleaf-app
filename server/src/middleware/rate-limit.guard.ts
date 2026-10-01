@@ -44,7 +44,7 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  *   instead. The edge worker must send `X-Forwarded-For`, or every remote visitor shares the loopback
  *   address's counter.
  * - The client address is Express's `request.ip`: behind a reverse proxy on an address outside the
- *   private ranges (for example a Tailscale `100.64.0.0/10` address), set `IMMICH_TRUSTED_PROXIES`,
+ *   private ranges (for example a Tailscale `100.64.0.0/10` address), set `FRAMELEAF_TRUSTED_PROXIES`,
  *   or every visitor shares the proxy's counter.
  *
  * Going over answers 429 with `Retry-After` (seconds until the window ends) and the error code
@@ -52,7 +52,7 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  * requests from the home network are let through with a warning, so a Redis outage never locks
  * anyone out at home. The 503 carries `Retry-After`. The limits are documented in `docs/docs/administration/frameleaf-cloud.md`.
  *
- * The route limits are not applied when `IMMICH_ENV=testing` (the end-to-end suites sign in hundreds
+ * The route limits are not applied when `FRAMELEAF_ENV=testing` (the end-to-end suites sign in hundreds
  * of times from one address); the remote-access ceiling always is.
  */
 
@@ -303,7 +303,7 @@ export class RateLimitGuard implements CanActivate {
     this.logger.setContext(RateLimitGuard.name);
     if (this.testing()) {
       this.logger.warn(
-        'IMMICH_ENV=testing turns off the sign-in rate limits. It is meant for the automated test suites only; unset it on a server people use.',
+        'FRAMELEAF_ENV=testing turns off the sign-in rate limits. It is meant for the automated test suites only; unset it on a server people use.',
       );
     }
   }

@@ -39,7 +39,7 @@ const HOP_BY_HOP = new Set([
 /** Forwarding headers a visitor may send; the edge worker sets its own instead. */
 const FORWARDING = new Set(['forwarded', 'x-forwarded-for', 'x-forwarded-proto', 'x-forwarded-host', 'x-real-ip']);
 
-/** The API's address on this host: `IMMICH_HOST` when it names one, else loopback. */
+/** The API's address on this host: `FRAMELEAF_HOST` when it names one, else loopback. */
 export const upstreamHost = (host: string | undefined) =>
   !host || host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host;
 

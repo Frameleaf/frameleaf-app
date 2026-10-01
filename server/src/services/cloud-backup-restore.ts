@@ -219,7 +219,7 @@ export const restorePlan = (options: {
  * partial file and moved into place only when it hashes to its name; a missing or mismatched object stops
  * the restore, names the object, and leaves everything already restored as it is. A file that is already
  * in place with the backed-up content is left alone. Used by the `cloud_restore` worker and by the
- * `immich-admin cloud-backup restore` command, which has no web app to report to.
+ * `frameleaf-admin cloud-backup restore` command, which has no web app to report to.
  */
 export class CloudBackupRestorer {
   constructor(

@@ -65,7 +65,7 @@ const CREDENTIAL_PATHS: Record<ConfigCredential, string> = {
   [ConfigCredential.CloudBackupS3SecretKey]: 'frameleafCloud.cloudBackup.s3.secretAccessKey',
 };
 
-const CONFIG_FILE_IN_USE_MESSAGE = 'Cannot update configuration while IMMICH_CONFIG_FILE is in use';
+const CONFIG_FILE_IN_USE_MESSAGE = 'Cannot update configuration while FRAMELEAF_CONFIG_FILE is in use';
 
 const readCredential = (config: SystemConfig, name: ConfigCredential): string => {
   const value: unknown = get(config, CREDENTIAL_PATHS[name]);
@@ -261,7 +261,7 @@ export class SystemConfigService extends BaseService {
     const configLevel = logging.enabled ? logging.level : false;
     const level = envLevel ?? configLevel;
     this.logger.setLogLevel(level);
-    this.logger.log(`LogLevel=${level} ${envLevel ? '(set via IMMICH_LOG_LEVEL)' : '(set via system config)'}`);
+    this.logger.log(`LogLevel=${level} ${envLevel ? '(set via FRAMELEAF_LOG_LEVEL)' : '(set via system config)'}`);
 
     this.machineLearningRepository.setup(machineLearning);
   }
@@ -276,7 +276,7 @@ export class SystemConfigService extends BaseService {
   async onConfigValidate({ newConfig, oldConfig }: ArgOf<'ConfigValidate'>) {
     const { logLevel } = this.configRepository.getEnv();
     if (logLevel && !isEqual(toPlainObject(newConfig.logging), oldConfig.logging)) {
-      throw new Error('Logging cannot be changed while the environment variable IMMICH_LOG_LEVEL is set.');
+      throw new Error('Logging cannot be changed while the environment variable FRAMELEAF_LOG_LEVEL is set.');
     }
 
     const { physicalDeduplication } = newConfig;
