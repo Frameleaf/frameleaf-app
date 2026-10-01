@@ -5836,6 +5836,100 @@ export type ICloudInventoryResponseDto = {
         role: string;
     }[];
 };
+export type ICloudCoverageSampleDto = {
+    /** PHCloudIdentifier.stringValue, as the device reports it */
+    cloudIdentifier: string;
+    creationDate?: string;
+    originalFilename?: string;
+    pixelHeight?: number;
+    pixelWidth?: number;
+    uti?: string;
+};
+export type ICloudCoverageDto = {
+    /** This device's backup identity (the backup device registry's deviceKey) */
+    deviceKey: string;
+    /** Sampled items: some old, some recent, some in albums */
+    samples: ICloudCoverageSampleDto[];
+};
+export type ICloudCoverageConnectionDto = {
+    /** The Apple Account, masked (a•••@icloud.com); null until it signs in again */
+    account: string | null;
+    connectionId: string;
+    /** At least 20 samples and 95 % of them matched: this connection covers the device library */
+    covers: boolean;
+    includeEdits: boolean;
+    label: string;
+    lastCompleteInventoryAt: string | null;
+    /** Of those, matched in the inventory as corroborated or better */
+    matched: number;
+    nextRunAt: string | null;
+    /** Samples that existed before the last complete inventory */
+    sampled: number;
+    scope: {
+        albums: string[];
+        /** Whole libraries, or only some albums */
+        kind: Kind3;
+        /** Library zones; empty means every supported library */
+        libraries: string[];
+    };
+    state: ICloudConnectionHealth;
+    unhealthySince: string | null;
+};
+export type ICloudCoverageResponseDto = {
+    connections: ICloudCoverageConnectionDto[];
+};
+export type ICloudLookupItemDto = {
+    /** PHCloudIdentifier.stringValue, as the device reports it */
+    cloudIdentifier: string;
+    creationDate?: string;
+    /** The device's edit version (SHA-256 of the adjustment data and the modification date) */
+    editVersion?: string;
+    /** The client's own key for the item, echoed back */
+    id: string;
+    originalFilename?: string;
+    pixelHeight?: number;
+    pixelWidth?: number;
+    roles: ICloudIdentityRole[];
+    /** SHA-256 of the resources the device holds locally, by role */
+    sha256ByRole?: {
+        [key: string]: string;
+    };
+    uti?: string;
+};
+export type ICloudLookupDto = {
+    items: ICloudLookupItemDto[];
+};
+export type ICloudLookupRoleDto = {
+    assetId: string | null;
+    /** When an audit download proved an identity reuse; Free Up Space needs it */
+    auditVerifiedAt: string | null;
+    connectionId: string | null;
+    /** icloud-sync:<connectionId> or device:<deviceKey> */
+    deliveredBy: string | null;
+    /** sync-pending: the next sync run */
+    expectedBy: string | null;
+    lastVerifiedAt: string | null;
+    matchStrength: (ICloudMatchStrength) | null;
+    pendingSince: string | null;
+    role: ICloudIdentityRole;
+    sha256: string | null;
+    state: ICloudItemState;
+};
+export type ICloudLookupAnswerDto = {
+    cplAssetRecordName: string | null;
+    /** Who delivers edit renders for this item; the other path never uploads one */
+    editOwner: {
+        connectionId: string | null;
+        kind: Kind4;
+    };
+    id: string;
+    roles: ICloudLookupRoleDto[];
+};
+export type ICloudLookupResponseDto = {
+    /** False when identity matching is switched off: only SHA-256 matches count */
+    identityMatching: boolean;
+    items: ICloudLookupAnswerDto[];
+};
 export type ItemShareChangeDto = {
     /** The items (your own) to share or stop sharing */
     assetIds: string[];
@@ -6182,7 +6276,7 @@ export type LicenseLinkCodeResponseDto = {
 };
 export type LicenseProductDto = {
     id: string;
-    kind: Kind3;
+    kind: Kind5;
     period: Period;
     priceUsd: number;
     /** Where to buy it; null when no store is configured */
@@ -6688,7 +6782,7 @@ export type EventStoryDto = {
     /** Last local day of the event, 'yyyy-MM-dd' */
     endDate: string;
     /** Discriminator for an event story */
-    kind: Kind4;
+    kind: Kind6;
     place?: MemoryStoryPlaceDto;
     /** First local day of the event, 'yyyy-MM-dd' */
     startDate: string;
@@ -6701,7 +6795,7 @@ export type YearInReviewDto = {
     /** Number of assets captured that year */
     assetCount: number;
     /** Discriminator for a year in review recap */
-    kind: Kind5;
+    kind: Kind7;
     /** Number of distinct months represented */
     monthCount: number;
     /** Calendar year being recapped */
@@ -6711,7 +6805,7 @@ export type PetStoryDto = {
     /** Confirmed photos of the pet that month, before the diversity pass */
     assetCount: number;
     /** Discriminator for a pet story */
-    kind: Kind6;
+    kind: Kind8;
     /** The owner's local month, 'yyyy-MM' */
     month: string;
     /** The pet name */
@@ -6729,7 +6823,7 @@ export type BirthdayMemoryDto = {
     /** The birthday this year, 'yyyy-MM-dd' */
     date: string;
     /** Discriminator for a birthday */
-    kind: Kind7;
+    kind: Kind9;
     /** Their name when the memory was made */
     name: string;
     /** Whether the birthday is a person's or a pet's */
@@ -6743,7 +6837,7 @@ export type PersonRecapDto = {
     /** Number of their photos and videos that year */
     assetCount: number;
     /** Discriminator for a person or pet recap */
-    kind: Kind8;
+    kind: Kind10;
     /** Their name when the memory was made */
     name: string;
     /** Whether the recap is about a person or a pet */
@@ -8181,7 +8275,7 @@ export type PushDeviceRegisterDto = {
 };
 export type PushActivityTokenDto = {
     /** The Live Activity type */
-    kind: Kind9;
+    kind: Kind11;
     /** The ActivityKit push token of this activity */
     token: string;
 };
@@ -11192,7 +11286,7 @@ export type PinnedCollection = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind10;
+    kind: Kind12;
     /** Null when unavailable; the inaccessible target identity is not disclosed */
     targetId: string | null;
     /** Current access-filtered title; null when unavailable */
@@ -11207,7 +11301,7 @@ export type PinnedCollectionsResponseDto = {
 export type PinnedCollectionRef = {
     /** Opaque pin ID chosen by the client and retained across reorders */
     id: string;
-    kind: Kind10;
+    kind: Kind12;
     /** Target UUID, saved-search name, or built-in ID. Null retains an existing unavailable pin by its opaque ID */
     targetId: string | null;
 };
@@ -12113,7 +12207,7 @@ export type SyncPinnedCollectionV1 = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind10;
+    kind: Kind12;
     position: number;
     targetId: string;
     /** Current access-filtered title; null when unavailable */
@@ -12171,7 +12265,7 @@ export type SyncSharedSpaceV1 = {
     description: string | null;
     icon: string | null;
     id: string;
-    kind: Kind11;
+    kind: Kind13;
     name: string;
     updatedAt: string;
 };
@@ -16578,6 +16672,36 @@ export function removeICloudConnection({ id }: {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Does a sync connection cover this device library?
+ */
+export function probeICloudCoverage({ iCloudCoverageDto }: {
+    iCloudCoverageDto: ICloudCoverageDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudCoverageResponseDto;
+    }>("/icloud-sync/coverage", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudCoverageDto
+    })));
+}
+/**
+ * Is this iCloud item on the server, or coming from the sync?
+ */
+export function lookupICloudIdentities({ iCloudLookupDto }: {
+    iCloudLookupDto: ICloudLookupDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudLookupResponseDto;
+    }>("/icloud-sync/identities/lookup", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudLookupDto
+    })));
 }
 /**
  * Stop sharing items with people
@@ -24464,6 +24588,41 @@ export enum ICloudReviewKind {
     KeptTrashed = "kept-trashed",
     SourceRemoved = "source-removed"
 }
+export enum Kind3 {
+    Libraries = "libraries",
+    Albums = "albums"
+}
+export enum ICloudConnectionHealth {
+    Healthy = "healthy",
+    Paused = "paused",
+    ReauthenticationRequired = "reauthentication-required",
+    DeviceApprovalRequired = "device-approval-required",
+    Failing = "failing",
+    Disconnected = "disconnected"
+}
+export enum ICloudIdentityRole {
+    Original = "original",
+    LiveMotion = "live-motion",
+    RawAlternate = "raw-alternate",
+    EditRender = "edit-render"
+}
+export enum Kind4 {
+    IcloudSync = "icloud-sync",
+    Device = "device"
+}
+export enum ICloudMatchStrength {
+    Exact = "exact",
+    Corroborated = "corroborated",
+    Hint = "hint"
+}
+export enum ICloudItemState {
+    OnServer = "on-server",
+    SyncPending = "sync-pending",
+    Claimed = "claimed",
+    OutOfScope = "out-of-scope",
+    Unknown = "unknown",
+    Review = "review"
+}
 export enum ManualJobName {
     PersonCleanup = "person-cleanup",
     TagCleanup = "tag-cleanup",
@@ -24550,7 +24709,7 @@ export enum LicenseLinkCodeKind {
 export enum Currency {
     Usd = "USD"
 }
-export enum Kind3 {
+export enum Kind5 {
     Plan = "plan",
     Supporter = "supporter",
     Credit = "credit"
@@ -24648,23 +24807,23 @@ export enum MemoryType {
     Birthday = "birthday",
     PersonRecap = "person_recap"
 }
-export enum Kind4 {
+export enum Kind6 {
     EventStory = "event_story"
 }
-export enum Kind5 {
+export enum Kind7 {
     YearInReview = "year_in_review"
 }
-export enum Kind6 {
+export enum Kind8 {
     PetStory = "pet_story"
 }
-export enum Kind7 {
+export enum Kind9 {
     Birthday = "birthday"
 }
 export enum Subject {
     Person = "person",
     Pet = "pet"
 }
-export enum Kind8 {
+export enum Kind10 {
     PersonRecap = "person_recap"
 }
 export enum MemoryShowLessKind {
@@ -24921,7 +25080,7 @@ export enum PushPlatform {
     Ios = "ios",
     Android = "android"
 }
-export enum Kind9 {
+export enum Kind11 {
     CloudBackupActivation = "cloud-backup-activation"
 }
 export enum Cipher {
@@ -25574,7 +25733,7 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
-export enum Kind10 {
+export enum Kind12 {
     Album = "album",
     SmartAlbum = "smart-album",
     SavedSearch = "saved-search",
@@ -25617,7 +25776,7 @@ export enum Status4 {
     Trashed = "trashed",
     Deleted = "deleted"
 }
-export enum Kind11 {
+export enum Kind13 {
     Space = "space"
 }
 export enum UserMetadataKey {

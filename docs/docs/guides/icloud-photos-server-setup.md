@@ -63,6 +63,8 @@ The bridge has no published port or media mount. Its private Docker network perm
 
 The server configuration paths are `FRAMELEAF_ICLOUD_BRIDGE_URL`, `FRAMELEAF_ICLOUD_BRIDGE_TOKEN_FILE`, `FRAMELEAF_ICLOUD_KEY_FILE`, `FRAMELEAF_ICLOUD_CA_FILE`, and `FRAMELEAF_ICLOUD_STAGING_PATH`. They are set by the overlay. For split API/worker deployments, give each process the same transport/key configuration and consistent access to the private staging directory.
 
+`FRAMELEAF_ICLOUD_IDENTITY_MATCHING=false` switches off iCloud source identity matching between the sync and the Frameleaf app. Then only photos with the same SHA-256 are treated as the same. See [iCloud Photos Sync and the Frameleaf app](icloud-photos-sync.md#with-the-app).
+
 ### Check readiness and the pinned version
 
 From the server container, verify the bridge's HTTPS certificate and health response using Node's built-in client. Prefix `exec` with the same Compose files and environment used above:

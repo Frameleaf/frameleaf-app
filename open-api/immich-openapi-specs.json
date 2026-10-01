@@ -18229,6 +18229,118 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/icloud-sync/coverage": {
+      "post": {
+        "description": "Up to 200 sampled items from the device. For each of the caller's own connections: its state, scope and how many of the samples that existed before its last complete inventory it holds. A connection covers the library with at least 20 such samples and 95 % matched (corroborated or better). PhotoKit cannot tell which Apple Account is signed in, so overlap is the only proof.",
+        "operationId": "probeICloudCoverage",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudCoverageDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudCoverageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Does a sync connection cover this device library?",
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/identities/lookup": {
+      "post": {
+        "description": "Up to 1000 items. For each item and role: on-server (with who delivered it and how it was verified), sync-pending, out-of-scope, unknown or review; and who delivers its edit renders. Only the caller's own assets and connections, with the safety lookup's Locked and hidden rules. A hint is reported but never counts as on-server.",
+        "operationId": "lookupICloudIdentities",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudLookupDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudLookupResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Is this iCloud item on the server, or coming from the sync?",
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/item-shares": {
       "delete": {
         "description": "Stop sharing your own items with these people. They lose access at once.",
@@ -63846,6 +63958,17 @@
         ],
         "type": "object"
       },
+      "ICloudConnectionHealth": {
+        "enum": [
+          "healthy",
+          "paused",
+          "reauthentication-required",
+          "device-approval-required",
+          "failing",
+          "disconnected"
+        ],
+        "type": "string"
+      },
       "ICloudConnectionResponseDto": {
         "properties": {
           "authenticated": {
@@ -64060,6 +64183,192 @@
         ],
         "type": "object"
       },
+      "ICloudCoverageConnectionDto": {
+        "properties": {
+          "account": {
+            "description": "The Apple Account, masked (a•••@icloud.com); null until it signs in again",
+            "nullable": true,
+            "type": "string"
+          },
+          "connectionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "covers": {
+            "description": "At least 20 samples and 95 % of them matched: this connection covers the device library",
+            "type": "boolean"
+          },
+          "includeEdits": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lastCompleteInventoryAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "matched": {
+            "description": "Of those, matched in the inventory as corroborated or better",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "nextRunAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "sampled": {
+            "description": "Samples that existed before the last complete inventory",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "scope": {
+            "properties": {
+              "albums": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "kind": {
+                "description": "Whole libraries, or only some albums",
+                "enum": [
+                  "libraries",
+                  "albums"
+                ],
+                "type": "string"
+              },
+              "libraries": {
+                "description": "Library zones; empty means every supported library",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "libraries",
+              "albums"
+            ],
+            "type": "object"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ICloudConnectionHealth"
+          },
+          "unhealthySince": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "account",
+          "connectionId",
+          "covers",
+          "includeEdits",
+          "label",
+          "lastCompleteInventoryAt",
+          "matched",
+          "nextRunAt",
+          "sampled",
+          "scope",
+          "state",
+          "unhealthySince"
+        ],
+        "type": "object"
+      },
+      "ICloudCoverageDto": {
+        "properties": {
+          "deviceKey": {
+            "description": "This device's backup identity (the backup device registry's deviceKey)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "samples": {
+            "description": "Sampled items: some old, some recent, some in albums",
+            "items": {
+              "$ref": "#/components/schemas/ICloudCoverageSampleDto"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "deviceKey",
+          "samples"
+        ],
+        "type": "object"
+      },
+      "ICloudCoverageResponseDto": {
+        "properties": {
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudCoverageConnectionDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "connections"
+        ],
+        "type": "object"
+      },
+      "ICloudCoverageSampleDto": {
+        "properties": {
+          "cloudIdentifier": {
+            "description": "PHCloudIdentifier.stringValue, as the device reports it",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "creationDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "originalFilename": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pixelHeight": {
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pixelWidth": {
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "uti": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "cloudIdentifier"
+        ],
+        "type": "object"
+      },
+      "ICloudIdentityRole": {
+        "description": "original: the photo or video as taken; live-motion: a Live Photo video; raw-alternate: the RAW of a RAW + JPEG pair; edit-render: an edited version",
+        "enum": [
+          "original",
+          "live-motion",
+          "raw-alternate",
+          "edit-render"
+        ],
+        "type": "string"
+      },
       "ICloudInventoryResponseDto": {
         "properties": {
           "albums": {
@@ -64199,10 +64508,256 @@
         ],
         "type": "object"
       },
+      "ICloudItemState": {
+        "description": "on-server: the server has it; sync-pending: a healthy sync will import it; claimed: a path is fetching it; out-of-scope: a known library, outside the sync selection; unknown: nothing known; review: conflicting identities",
+        "enum": [
+          "on-server",
+          "sync-pending",
+          "claimed",
+          "out-of-scope",
+          "unknown",
+          "review"
+        ],
+        "type": "string"
+      },
       "ICloudLibraryArea": {
         "enum": [
           "private",
           "shared"
+        ],
+        "type": "string"
+      },
+      "ICloudLookupAnswerDto": {
+        "properties": {
+          "cplAssetRecordName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "editOwner": {
+            "description": "Who delivers edit renders for this item; the other path never uploads one",
+            "properties": {
+              "connectionId": {
+                "format": "uuid",
+                "nullable": true,
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "icloud-sync",
+                  "device"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "connectionId"
+            ],
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudLookupRoleDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cplAssetRecordName",
+          "editOwner",
+          "id",
+          "roles"
+        ],
+        "type": "object"
+      },
+      "ICloudLookupDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudLookupItemDto"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ICloudLookupItemDto": {
+        "properties": {
+          "cloudIdentifier": {
+            "description": "PHCloudIdentifier.stringValue, as the device reports it",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "creationDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "editVersion": {
+            "description": "The device's edit version (SHA-256 of the adjustment data and the modification date)",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "description": "The client's own key for the item, echoed back",
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "originalFilename": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pixelHeight": {
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pixelWidth": {
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudIdentityRole"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          },
+          "sha256ByRole": {
+            "additionalProperties": {
+              "pattern": "^[\\dA-Fa-f]{64}$",
+              "type": "string"
+            },
+            "description": "SHA-256 of the resources the device holds locally, by role",
+            "type": "object"
+          },
+          "uti": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "cloudIdentifier",
+          "id",
+          "roles"
+        ],
+        "type": "object"
+      },
+      "ICloudLookupResponseDto": {
+        "properties": {
+          "identityMatching": {
+            "description": "False when identity matching is switched off: only SHA-256 matches count",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudLookupAnswerDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "identityMatching",
+          "items"
+        ],
+        "type": "object"
+      },
+      "ICloudLookupRoleDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "auditVerifiedAt": {
+            "description": "When an audit download proved an identity reuse; Free Up Space needs it",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "connectionId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "deliveredBy": {
+            "description": "icloud-sync:<connectionId> or device:<deviceKey>",
+            "nullable": true,
+            "type": "string"
+          },
+          "expectedBy": {
+            "description": "sync-pending: the next sync run",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastVerifiedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "matchStrength": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ICloudMatchStrength"
+              }
+            ],
+            "nullable": true
+          },
+          "pendingSince": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ICloudIdentityRole"
+          },
+          "sha256": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ICloudItemState"
+          }
+        },
+        "required": [
+          "assetId",
+          "auditVerifiedAt",
+          "connectionId",
+          "deliveredBy",
+          "expectedBy",
+          "lastVerifiedAt",
+          "matchStrength",
+          "pendingSince",
+          "role",
+          "sha256",
+          "state"
+        ],
+        "type": "object"
+      },
+      "ICloudMatchStrength": {
+        "description": "exact: the record names match and the bytes are proven (Apple fingerprint or the same SHA-256); corroborated: the names match and filename, type, size and date agree; hint: weaker, reported but never acted on",
+        "enum": [
+          "exact",
+          "corroborated",
+          "hint"
         ],
         "type": "string"
       },

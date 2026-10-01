@@ -100,6 +100,17 @@ Choose **Refresh** to read saved progress. Counts survive closing the page or re
 
 **Recent verified results** links to **View media** and resolved missing/corrupt history. **Committed; follow-up pending** means the database change has been saved but follow-up work remains. Authentication challenges, incomplete inventories, and deferred repairs are not completed imports.
 
+## iCloud Photos Sync and the Frameleaf app {#with-the-app}
+
+The Frameleaf app for iPhone can back up the same iCloud photos the sync imports. The server keeps track of which iCloud item each photo came from (its **source identity**), so the two never download the same photo twice:
+
+- **Recording.** The sync records the identity of everything it imports, reuses or repairs. Items it imported before this feature existed are filled in by the nightly database clean-up.
+- **Coverage.** The app checks whether one of your connections covers the iPhone's library. It sends a sample of up to 200 items, and the server answers with each connection's state and how many of the samples are in its inventory. A connection covers the library when its last complete inventory holds at least 95 % of 20 or more samples.
+- **Lookup.** For each item, the app can ask whether the server already has it, whether the sync will bring it, or whether the item is outside the sync's selection. When the sync covers an item with edits on, the sync also delivers that item's edited versions. The app then never uploads its own render.
+- **Privacy.** Answers only ever cover your own connections and photos. Locked and hidden photos follow the same rules as the app's backup status.
+- **Matching rules.** Matching an iPhone item to an iCloud record uses the item's iCloud identifier. That identifier is undocumented, so a match only counts when the bytes agree (the same SHA-256 or Apple's fingerprint), or when the filename, capture date, type and size agree. A weaker match is reported but never acted on.
+- **Switching it off.** An administrator can turn identity matching off with `FRAMELEAF_ICLOUD_IDENTITY_MATCHING=false`. Only photos with the same SHA-256 are then treated as the same.
+
 ## Troubleshooting
 
 | What you see                                         | What to do                                                                                                                                                                   |
