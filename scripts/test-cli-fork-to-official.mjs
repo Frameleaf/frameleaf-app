@@ -35,9 +35,17 @@ const waitReady = async (base) => {
   throw new Error(`${base} did not become ready`);
 };
 
-const keyFor = async (base) => {
+// FL-292: the fork shows a setup code a new server is claimed with; the official server needs none
+const setupCodeOf = (service) =>
+  execFileSync('docker', ['compose', ...composeFiles, 'exec', '-T', service, 'immich-admin', 'setup-code', '--plain'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim();
+
+const keyFor = async (base, service) => {
   const credentials = { email: 'cli-migration@example.test', password: 'Certification123!', name: 'CLI Migration' };
-  await api(base, '/auth/admin-sign-up', undefined, 'POST', credentials);
+  const setupCode = service ? setupCodeOf(service) : undefined;
+  await api(base, '/auth/admin-sign-up', undefined, 'POST', { ...credentials, ...(setupCode && { setupCode }) });
   const { accessToken } = await api(base, '/auth/login', undefined, 'POST', credentials);
   const { secret } = await api(base, '/api-keys', accessToken, 'POST', { name: 'CLI migration fixture', permissions: ['all'] });
   return { accessToken, secret };
@@ -59,7 +67,7 @@ const run = () => {
 
 const main = async () => {
   await Promise.all([waitReady(fork), waitReady(official)]);
-  const from = await keyFor(fork);
+  const from = await keyFor(fork, 'fork-server');
   const to = await keyFor(official);
   const body = new FormData();
   const now = new Date().toISOString();

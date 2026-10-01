@@ -18,6 +18,16 @@ const ServerPingResponseSchema = z
       .meta({ example: '018f5e7a-6b1e-7f6e-9c2e-1a2b3c4d5e6f' }),
     linked: z.boolean().describe('Whether `id` is a Frameleaf Cloud instance id (true) or a local-only id (false)'),
     name: z.string().describe("The server's display name (the admin-set server name, or a default)"),
+    // FL-292 (NAPI-012): what an app needs to offer setting this server up, and nothing about users
+    // or content; the setup code itself is never here
+    setup: z
+      .enum(['needed', 'complete'])
+      .describe(
+        '`needed` while the server has no administrator: the Frameleaf app can set it up from the home network',
+      ),
+    cloud: z
+      .enum(['available', 'unavailable'])
+      .describe('Whether this server can link to Frameleaf Cloud (FRAMELEAF_CLOUD_URL is set)'),
   })
   .meta({ id: 'ServerPingResponse' });
 

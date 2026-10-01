@@ -4,7 +4,7 @@ import type { UserMetadataItem } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { UserAdmin } from 'src/database.js';
 import { AuthDto, SignUpDto } from 'src/dtos/auth.dto.js';
-import { AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
+import { AdminAuditAction, AuthType, Permission, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { AuthService, emailVerificationProblem } from 'src/services/auth.service.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -30,6 +30,8 @@ const dto = {
   email,
   password: 'password',
 };
+
+const home = { ip: '192.168.1.5', via: null };
 
 describe(AuthService.name, () => {
   let sut: AuthService;
@@ -518,7 +520,16 @@ describe(AuthService.name, () => {
         metadata: [] as UserMetadataItem[],
       } as UserAdmin);
 
-      await expect(sut.adminSignUp(dto)).resolves.toMatchObject({
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.FrameleafSetupCode
+            ? { code: 'ABCD2345', pinned: false, failures: 0, locked: false, generatedAt: '2026-10-01T00:00:00Z' }
+            : null) as never,
+        ),
+      );
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+
+      await expect(sut.adminSignUp({ ...dto, setupCode: 'abcd-2345' }, home)).resolves.toMatchObject({
         avatarColor: expect.any(String),
         id: 'admin',
         createdAt: new Date('2021-01-01'),
@@ -527,6 +538,52 @@ describe(AuthService.name, () => {
       });
 
       expect(mocks.user.create).toHaveBeenCalled();
+      expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+        expect.objectContaining({ action: AdminAuditAction.ServerClaimed, detail: 'web' }),
+      ]);
+    });
+
+    describe('setup code (FL-292)', () => {
+      beforeEach(() => {
+        mocks.systemMetadata.get.mockImplementation((key) =>
+          Promise.resolve(
+            (key === SystemMetadataKey.FrameleafSetupCode
+              ? { code: 'ABCD2345', pinned: false, failures: 0, locked: false, generatedAt: '2026-10-01T00:00:00Z' }
+              : null) as never,
+          ),
+        );
+        mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
+      });
+
+      it.each([
+        [undefined, 'setup_code_required'],
+        ['WRONG-CODE', 'setup_code_invalid'],
+      ])('refuses the first-run sign-up with code %s (%s) and creates no one', async (setupCode, code) => {
+        await expect(sut.adminSignUp({ ...dto, setupCode }, home)).rejects.toMatchObject({
+          response: expect.objectContaining({ code }),
+        });
+        expect(mocks.user.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses it from outside the home network, even with the right code', async () => {
+        for (const client of [
+          { ip: '203.0.113.9', via: null },
+          { ip: '192.168.1.5', via: 'relay' as const },
+          { ip: '192.168.1.5', via: 'wan' as const },
+        ]) {
+          await expect(sut.adminSignUp({ ...dto, setupCode: 'ABCD2345' }, client)).rejects.toMatchObject({
+            response: expect.objectContaining({ code: 'setup_lan_only' }),
+          });
+        }
+        expect(mocks.user.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses once an administrator exists', async () => {
+        mocks.user.getAdmin.mockResolvedValue(userStub.admin as never);
+        await expect(sut.adminSignUp({ ...dto, setupCode: 'ABCD2345' }, home)).rejects.toMatchObject({
+          response: expect.objectContaining({ code: 'setup_complete' }),
+        });
+      });
     });
   });
 

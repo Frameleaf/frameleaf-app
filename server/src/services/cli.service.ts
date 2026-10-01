@@ -6,6 +6,7 @@ import { MaintenanceAuthDto } from 'src/dtos/maintenance.dto.js';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto.js';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { currentSetupCode } from 'src/utils/frameleaf-setup-gate.js';
 import { createMaintenanceLoginUrl, generateMaintenanceSecret } from 'src/utils/maintenance.js';
 
 export type SchemaReport = {
@@ -49,6 +50,14 @@ export class CliService extends BaseService {
     const drift = await this.databaseRepository.getSchemaDrift();
 
     return { migrations, drift };
+  }
+
+  /** FL-292: the setup code of a server not set up yet (`frameleaf-admin setup-code`), or null. */
+  async getSetupCode(): Promise<string | null> {
+    if (await this.userRepository.getAdmin()) {
+      return null;
+    }
+    return currentSetupCode(this.setupGate);
   }
 
   async listUsers(): Promise<UserAdminResponseDto[]> {

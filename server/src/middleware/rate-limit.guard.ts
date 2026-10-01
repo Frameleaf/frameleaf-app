@@ -93,6 +93,16 @@ export const RATE_LIMITS = Object.freeze({
     principal: 'credential',
     principalLimit: 30,
   },
+  /**
+   * FL-292: checking a new server's setup code and claiming it (`server/setup/*`, the first-run
+   * admin sign-up): ten tries per address in ten minutes, on top of the code being replaced after
+   * five wrong ones.
+   */
+  frameleafSetup: {
+    bucket: 'frameleaf-setup',
+    limit: 10,
+    windowSeconds: 10 * MINUTE,
+  },
   /** Every `oauth/frameleaf/*` route (Sign in with Frameleaf, handoff, account link). */
   frameleafSignIn: {
     bucket: 'frameleaf-sign-in',

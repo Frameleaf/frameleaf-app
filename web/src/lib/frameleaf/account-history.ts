@@ -145,6 +145,11 @@ export const describeAdminEvent = (
     case AdminAuditAction.FrameleafAccountUnlinked: {
       return $t('frameleaf_account_history_frameleaf_account_unlinked');
     }
+    case AdminAuditAction.ServerClaimed: {
+      return detail === 'web'
+        ? $t('frameleaf_account_history_server_claimed_web')
+        : $t('frameleaf_account_history_server_claimed_app');
+    }
     default: {
       // an action from a newer server this client does not know yet
       return $t('frameleaf_account_history_other');
