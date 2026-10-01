@@ -5149,6 +5149,8 @@ export type AssetDevelopMask = {
 export type DevelopPresetSettingsDto = {
     /** Black point */
     blacks?: number;
+    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    brilliance?: number;
     /** Local contrast in the midtones */
     clarity?: number;
     /** Contrast around middle grey */
