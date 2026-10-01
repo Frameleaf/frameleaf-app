@@ -3,6 +3,12 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  ICloudClaimDto,
+  ICloudClaimReleaseDto,
+  ICloudClaimReleaseResponseDto,
+  ICloudClaimRenewDto,
+  ICloudClaimRenewResponseDto,
+  ICloudClaimResponseDto,
   ICloudCoverageDto,
   ICloudCoverageResponseDto,
   ICloudLookupDto,
@@ -42,5 +48,46 @@ export class ICloudIdentityController {
   })
   lookupICloudIdentities(@Auth() auth: AuthDto, @Body() dto: ICloudLookupDto): Promise<ICloudLookupResponseDto> {
     return this.service.lookup(auth, dto);
+  }
+
+  @Post('claims')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AssetUpload })
+  @Endpoint({
+    summary: 'Claim iCloud items for this device to fetch and upload',
+    description:
+      "Up to 500 items. A claim covers the whole item (still, Live Photo motion, RAW and the current edit) for 10 minutes, renewable to 4 hours. An item a healthy sync connection covers is the sync's to fetch; one an unhealthy connection covers is the device's after 72 hours, or at once with takeOver. An upload naming an item someone else claimed is refused with 409 icloud_claimed. The device key must be one of the caller's backup devices.",
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  claimICloudItems(@Auth() auth: AuthDto, @Body() dto: ICloudClaimDto): Promise<ICloudClaimResponseDto> {
+    return this.service.claim(auth, dto);
+  }
+
+  @Post('claims/renew')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AssetUpload })
+  @Endpoint({
+    summary: 'Renew iCloud claims this device holds',
+    description:
+      'Extends live claims, never past 4 hours from when each was taken; a claim missing from the answer is lost.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  renewICloudClaims(@Auth() auth: AuthDto, @Body() dto: ICloudClaimRenewDto): Promise<ICloudClaimRenewResponseDto> {
+    return this.service.renewClaims(auth, dto);
+  }
+
+  @Post('claims/release')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AssetUpload })
+  @Endpoint({
+    summary: 'Release iCloud claims this device holds',
+    description: 'Gives the items back, for example when the device stops before uploading them.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  releaseICloudClaims(
+    @Auth() auth: AuthDto,
+    @Body() dto: ICloudClaimReleaseDto,
+  ): Promise<ICloudClaimReleaseResponseDto> {
+    return this.service.releaseClaims(auth, dto);
   }
 }
