@@ -308,7 +308,8 @@
   const previewUrl = $derived.by(() => {
     const free = availability === 'available' && slug.trim();
     if (free) {
-      return asUrl({ ...link, slug: free, key: link?.key ?? '' } as SharedLinkResponseDto);
+      // the address the new slug would give, not the link's current one
+      return asUrl({ ...link, slug: free, key: link?.key ?? '', url: null } as SharedLinkResponseDto);
     }
     return link ? asUrl(link) : '';
   });
