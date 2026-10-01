@@ -6,7 +6,7 @@ import {
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
 } from 'src/dtos/asset-develop.dto.js';
-import { canWriteFork } from 'src/repositories/fork-write-guard.js';
+import { canWriteFork, lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { assertRenderableDevelopRecipe, developEnvelope, preserveDevelopEnvelope } from 'src/utils/develop-envelope.js';
@@ -61,6 +61,38 @@ export type AssetDevelopRevisionUpdate = Partial<
 >;
 
 const TABLE = sql`immich_fork.asset_develop_revision`;
+const ARTIFACTS = sql`immich_fork.asset_develop_artifact`;
+
+/** FL-233: the artifact ids a recipe's masks and Clean Up name (whether or not they render). */
+const referencedArtifacts = (recipe: AssetDevelopRecipe): string[] => {
+  const ids = new Set<string>();
+  const value = recipe as { masks?: unknown; cleanup?: unknown };
+  for (const [list, key] of [
+    [value.masks, 'artifact'],
+    [value.cleanup, 'fill'],
+  ] as const) {
+    for (const item of Array.isArray(list) ? list : []) {
+      const id = item && typeof item === 'object' ? (item as Record<string, unknown>)[key] : undefined;
+      if (typeof id === 'string' && /^[0-9a-f]{64}$/.test(id)) {
+        ids.add(id);
+      }
+    }
+  }
+  return [...ids];
+};
+
+/** FL-233: a stored develop artifact (fork migration 0000000000212). */
+export type AssetDevelopArtifact = {
+  assetId: string;
+  id: string;
+  ownerId: string;
+  kind: 'mask' | 'fill';
+  path: string;
+  bytes: number;
+  width: number;
+  height: number;
+  createdAt: Date;
+};
 
 /**
  * Storage for still-image develop revisions (FL-113). Rows are append-only history: a new
@@ -125,6 +157,23 @@ export class AssetDevelopRepository {
         if (!input.replaceRecipe) recipe = preserveDevelopEnvelope(source.rows[0].recipe, recipe);
       }
       if (input.requireRenderable) assertRenderableDevelopRecipe(recipe);
+      // FL-233: the artifacts this version uses start their grace period again, under their row
+      // locks, so the nightly release (which re-checks `createdAt` once these commit) never takes
+      // one a version is being saved with; a render needs every one of them
+      const artifactIds = referencedArtifacts(recipe);
+      if (artifactIds.length > 0) {
+        const touched = await sql<{ id: string }>`
+          UPDATE ${ARTIFACTS} SET "createdAt" = clock_timestamp()
+          WHERE "assetId" = ${input.assetId}::uuid AND id IN (${sql.join(artifactIds)})
+          RETURNING id
+        `.execute(trx);
+        if (input.requireRenderable && touched.rows.length < artifactIds.length) {
+          throw new BadRequestException({
+            message: 'This recipe uses a develop artifact that was not uploaded for this photo',
+            code: 'develop_artifact_missing',
+          });
+        }
+      }
       const { rows } = await sql<AssetDevelopRevision>`
         INSERT INTO ${TABLE} (
           "assetId", "ownerId", revision, "recipeVersion", recipe, label, status,
@@ -262,6 +311,93 @@ export class AssetDevelopRepository {
       const files = [
         ...new Set(rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path)),
       ];
+      if (files.length > 0) {
+        for (const path of files.toSorted()) {
+          await lockFilePath(tx, path);
+        }
+        await queue(files);
+      }
+      return files;
+    });
+  }
+
+  // ------------------------------------------------------------------ develop artifacts (FL-233)
+
+  /** The stored artifacts of an asset among `ids`. */
+  async getArtifacts(assetId: string, ids: string[]): Promise<AssetDevelopArtifact[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<AssetDevelopArtifact>`
+      SELECT * FROM ${ARTIFACTS} WHERE "assetId" = ${assetId}::uuid AND id IN (${sql.join(ids)})
+    `.execute(this.db);
+    return rows.map((row) => ({ ...row, bytes: Number(row.bytes) }));
+  }
+
+  /** How many artifacts an asset has, and the bytes its owner's artifacts take in all. */
+  async getArtifactUsage(assetId: string, ownerId: string): Promise<{ assetCount: number; ownerBytes: number }> {
+    const { rows } = await sql<{ assetCount: string; ownerBytes: string }>`
+      SELECT
+        (SELECT count(*) FROM ${ARTIFACTS} WHERE "assetId" = ${assetId}::uuid) AS "assetCount",
+        (SELECT COALESCE(sum(bytes), 0) FROM ${ARTIFACTS} WHERE "ownerId" = ${ownerId}::uuid) AS "ownerBytes"
+    `.execute(this.db);
+    return { assetCount: Number(rows[0]?.assetCount ?? 0), ownerBytes: Number(rows[0]?.ownerBytes ?? 0) };
+  }
+
+  /**
+   * Record a stored artifact. `true` when it is new; `false` when the asset already had it (the
+   * same bitmap uploaded again, which restarts its grace period). Refused while fork writes are.
+   */
+  async addArtifact(artifact: Omit<AssetDevelopArtifact, 'createdAt'>): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      await lockForkWrites(trx, 'An edit cannot be saved while the server is being handed over');
+      const { rows } = await sql<{ inserted: boolean }>`
+        INSERT INTO ${ARTIFACTS} ("assetId", id, "ownerId", kind, path, bytes, width, height)
+        VALUES (
+          ${artifact.assetId}::uuid, ${artifact.id}, ${artifact.ownerId}::uuid, ${artifact.kind}, ${artifact.path},
+          ${artifact.bytes}, ${artifact.width}, ${artifact.height}
+        )
+        ON CONFLICT ("assetId", id) DO UPDATE SET "createdAt" = clock_timestamp()
+        RETURNING (xmax = 0) AS inserted
+      `.execute(trx);
+      return !!rows[0]?.inserted;
+    });
+  }
+
+  /**
+   * Release artifacts and queue their files' deletion in the same transaction, holding the files'
+   * path locks: those of removed assets (or of `assetId` once it is removed), and those no saved
+   * version of their asset references any more after `unreferencedBefore`. Nothing is released while
+   * fork writes are refused. Returns the released files.
+   */
+  async releaseArtifacts(
+    queue: (files: string[]) => Promise<void>,
+    options: { assetId?: string; unreferencedBefore?: Date },
+  ): Promise<string[]> {
+    return this.db.transaction().execute(async (tx) => {
+      if (!(await canWriteFork(tx))) {
+        return [];
+      }
+      const { rows } = await sql<{ path: string }>`
+        DELETE FROM ${ARTIFACTS} artifact
+        WHERE (
+          NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = artifact."assetId")
+          ${
+            options.unreferencedBefore
+              ? sql`OR (
+                  artifact."createdAt" < ${options.unreferencedBefore}
+                  AND NOT EXISTS (
+                    SELECT 1 FROM ${TABLE} revision
+                    WHERE revision."assetId" = artifact."assetId" AND strpos(revision.recipe::text, artifact.id) > 0
+                  )
+                )`
+              : sql``
+          }
+        )
+        ${options.assetId ? sql`AND artifact."assetId" = ${options.assetId}::uuid` : sql``}
+        RETURNING artifact.path
+      `.execute(tx);
+      const files = [...new Set(rows.map(({ path }) => path))];
       if (files.length > 0) {
         for (const path of files.toSorted()) {
           await lockFilePath(tx, path);
