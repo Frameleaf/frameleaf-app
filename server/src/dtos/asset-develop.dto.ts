@@ -491,16 +491,25 @@ export const AssetDevelopRecipeSchema = z
   .nonoptional()
   .meta({ id: 'AssetDevelopRecipeDto' });
 
-/** Shared envelope budget: 64 KiB UTF-8, depth16, 4096 values, 128 keys/object. */
+/**
+ * Shared envelope budget. FL-233 sized it so every recipe the known schema allows fits: 4096 stroke
+ * points (three JSON values each) in up to 2560 strokes (four more each) need about 23,000 values
+ * and, with full-precision coordinates, about 330 KiB of JSON. Strings and keys stay within 64 KiB.
+ */
+export const RECIPE_JSON_MAX_VALUES = 32_768;
+export const RECIPE_JSON_MAX_BYTES = 512 * 1024;
+export const RECIPE_JSON_MAX_TEXT_BYTES = 64 * 1024;
+
+/** Envelope budget: `RECIPE_JSON_MAX_*`, depth 16, arrays of 4096, 128 keys per object. */
 export function recipeJsonError(value: unknown): string | undefined {
   let count = 0;
   let bytes = 0;
   const visit = (item: unknown, depth: number): boolean => {
-    if (++count > 4096 || depth > 16) return false;
+    if (++count > RECIPE_JSON_MAX_VALUES || depth > 16) return false;
     if (item === null || typeof item === 'boolean' || typeof item === 'string') {
-      if (typeof item === 'string' && item.length > 65_536) return false;
+      if (typeof item === 'string' && item.length > RECIPE_JSON_MAX_TEXT_BYTES) return false;
       bytes += new TextEncoder().encode(JSON.stringify(item)).length;
-      return bytes <= 65_536;
+      return bytes <= RECIPE_JSON_MAX_TEXT_BYTES;
     }
     if (typeof item === 'number') return Number.isFinite(item);
     if (Array.isArray(item)) return item.length <= 4096 && item.every((entry) => visit(entry, depth + 1));
@@ -510,7 +519,7 @@ export function recipeJsonError(value: unknown): string | undefined {
       entries.length <= 128 &&
       entries.every(
         ([key, entry]) =>
-          (bytes += new TextEncoder().encode(key).length) <= 65_536 &&
+          (bytes += new TextEncoder().encode(key).length) <= RECIPE_JSON_MAX_TEXT_BYTES &&
           key.length <= 128 &&
           !['__proto__', 'prototype', 'constructor'].includes(key) &&
           visit(entry, depth + 1),
@@ -518,7 +527,7 @@ export function recipeJsonError(value: unknown): string | undefined {
     );
   };
   if (!visit(value, 0)) return 'Recipe must be bounded plain JSON without unsafe keys';
-  if (new TextEncoder().encode(JSON.stringify(value)).length > 65_536) return 'Recipe exceeds 64 KiB';
+  if (new TextEncoder().encode(JSON.stringify(value)).length > RECIPE_JSON_MAX_BYTES) return 'Recipe exceeds 512 KiB';
 }
 
 export type KnownAssetDevelopRecipe = z.infer<typeof KnownAssetDevelopRecipeSchema>;

@@ -6,6 +6,7 @@ import {
   AssetDevelopRecipeSchema,
   AssetDevelopSaveDto,
   KnownAssetDevelopRecipeSchema,
+  recipeStrokePoints,
 } from 'src/dtos/asset-develop.dto.js';
 
 describe('AssetDevelopRecipeDto', () => {
@@ -151,6 +152,25 @@ it('accepts brilliance, brush and bitmap masks and Clean Up, and refuses malform
   });
   expect(invalid({ masks: ['a', 'b'].map((id) => brush(id)) })).toBe(true);
   expect(invalid({ masks: ['a', 'b', 'c'].map((id) => brush(id)) })).toBe(false);
+  // the envelope budget fits every recipe the known schema allows: a save carrying all 4096 points
+  // (here as many short strokes as the masks and Clean Up may hold) is accepted
+  const save = (recipe: object) => AssetDevelopSaveDto.schema.safeParse({ recipe: { version: 1, ...recipe } });
+  expect(save({ masks: ['a', 'b'].map((id) => brush(id)) }).success).toBe(true);
+  const short = (count: number) =>
+    Array.from({ length: 64 }, () => ({
+      points: Array.from({ length: count }, () => [0.12345, 0.67891]),
+      radius: 0.02,
+    }));
+  const crowded = {
+    masks: Array.from({ length: 8 }, (_, index) => ({ ...brush(`b${index}`), strokes: short(2) })),
+    cleanup: Array.from({ length: 24 }, (_, index) => ({
+      id: `c${index}`,
+      method: 'pixelate',
+      strokes: short(2),
+    })),
+  };
+  expect(recipeStrokePoints(crowded)).toBe(4096);
+  expect(save(crowded).success).toBe(true);
 
   // a future Clean Up method is kept opaque by the envelope, exactly like a future mask kind
   const future = { version: 1, cleanup: [{ id: 'g', method: 'generative-expand', prompt: 'opaque' }] };
