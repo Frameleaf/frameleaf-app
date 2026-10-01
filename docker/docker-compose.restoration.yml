@@ -34,7 +34,7 @@ services:
     environment:
       # This worker's own bearer. The worker reads the variable name the predict image uses, but
       # the value is separate; store the same value on the restoration destination as its token.
-      IMMICH_ML_AUTH_TOKEN: ${FRAMELEAF_RESTORATION_TOKEN:-}
+      FRAMELEAF_ML_AUTH_TOKEN: ${FRAMELEAF_RESTORATION_TOKEN:-}
     volumes:
       - ${FRAMELEAF_RESTORATION_CONFIG:-./restoration/config}:/restoration/config:ro
       - ${FRAMELEAF_RESTORATION_WEIGHTS:-./restoration/weights}:/restoration/weights:ro

@@ -396,7 +396,7 @@ photos of Alice in Calgary from April 2024
 
 ## Server-to-Server Library Migration
 
-Frameleaf adds a `migrate` command to the CLI (run as `immich migrate`; the CLI keeps its upstream package name) that moves **one user's entire library from one server to another** over the API — originals, albums, tags, descriptions, and everything else — then **audits the result** so you can safely retire the old server.
+Frameleaf adds a `migrate` command to the CLI (run as `frameleaf migrate`; `immich` still works as an alias, and the npm package keeps its upstream name `@immich/cli`) that moves **one user's entire library from one server to another** over the API — originals, albums, tags, descriptions, and everything else — then **audits the result** so you can safely retire the old server.
 
 It is built for real migrations: consolidating two home-lab servers, moving to new hardware, or folding a second instance into your main one.
 
@@ -464,7 +464,7 @@ Open <http://127.0.0.1:2285> to watch progress, pause, resume, or stop.
 
 The dashboard is only a window onto the migration — the work happens in the terminal process. **You can close the browser, or the whole tab, and the migration keeps running.** Reopen the page any time to check on it.
 
-To avoid putting API keys in your shell history, use environment variables instead: `IMMICH_FROM_URL`, `IMMICH_FROM_KEY`, `IMMICH_TO_URL`, `IMMICH_TO_KEY`.
+To avoid putting API keys in your shell history, use environment variables instead: `FRAMELEAF_FROM_URL`, `FRAMELEAF_FROM_KEY`, `FRAMELEAF_TO_URL`, `FRAMELEAF_TO_KEY` (the older `IMMICH_*` names still work).
 
 ### If it stops, just run it again
 
@@ -474,7 +474,7 @@ Press Ctrl+C, lose the network, or reboot the machine — nothing is lost. Re-ru
 Resuming: 148291/512773 assets already on B.
 ```
 
-Progress lives in the ledger file (`./immich-migrate.sqlite` by default). Keep it until the migration is verified complete. If some assets failed — a corrupt source file, a timeout — the run continues past them, records them, and you can retry just those with `--retry-failed`.
+Progress lives in the ledger file (`./frameleaf-migrate.sqlite` by default; an existing `./immich-migrate.sqlite` from an earlier version is kept). Keep it until the migration is verified complete. If some assets failed — a corrupt source file, a timeout — the run continues past them, records them, and you can retry just those with `--retry-failed`.
 
 ### Confirming it's safe to decommission
 
@@ -486,8 +486,8 @@ Assets:  512773/512773 on B   (0 failed, 0 missing)
 Verified on B by checksum: 512773/512773
 Albums:  184/184   Tags: 96/96
 Stacks:  312/312   People: 47/47
-Audit report: ./immich-migrate.sqlite.audit.json
-Ledger:       ./immich-migrate.sqlite
+Audit report: ./frameleaf-migrate.sqlite.audit.json
+Ledger:       ./frameleaf-migrate.sqlite
 
 ✅ PASS — every asset is present on SERVER B. SERVER A is safe to decommission.
 ```
@@ -540,7 +540,7 @@ Anything short of `PASS` names the specific assets still missing, both on screen
 | `--serve`                    | Serve the progress dashboard on `127.0.0.1`                       |
 | `--port <number>`            | Dashboard port (default `2285`)                                   |
 | `-c, --concurrency <number>` | Assets transferred in parallel (default: CPU cores − 1)           |
-| `-l, --ledger <path>`        | Resume/audit database (default `./immich-migrate.sqlite`)         |
+| `-l, --ledger <path>`        | Resume/audit database (default `./frameleaf-migrate.sqlite`)      |
 | `--retry-failed`             | Retry assets that failed on an earlier run, and re-attempt people |
 | `--include-trashed`          | Also migrate trashed assets                                       |
 | `--no-faces`                 | Skip people and face migration                                    |
