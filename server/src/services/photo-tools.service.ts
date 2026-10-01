@@ -112,9 +112,11 @@ export function normalizePresetSettings(settings: Partial<DevelopPresetSettings>
     preset: recipe.preset,
     presetStrength: recipe.presetStrength,
     // FL-233: a brush stroke or a subject/sky/background bitmap belongs to one photo's content
-    masks: recipe.masks.filter(
-      (mask) => mask.kind === AssetDevelopMaskKind.Radial || mask.kind === AssetDevelopMaskKind.Linear,
-    ),
+    masks: recipe.masks
+      .filter((mask) => mask.kind === AssetDevelopMaskKind.Radial || mask.kind === AssetDevelopMaskKind.Linear)
+      .map(
+        ({ strokes: _strokes, artifact: _artifact, detector: _detector, ...mask }) => mask,
+      ) as DevelopPresetSettings['masks'],
   };
   return picked;
 }

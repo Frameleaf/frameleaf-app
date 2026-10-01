@@ -5106,26 +5106,10 @@ export type AssetDevelopMaskAdjustments = {
     /** White point inside the mask */
     whites?: number;
 };
-export type AssetDevelopStroke = {
-    /** Erase from the mask instead of painting it (brush masks only) */
-    erase?: boolean;
-    points: [
-        number,
-        number
-    ][];
-    /** Stroke radius as a fraction of the original image's shorter side */
-    radius: number;
-};
-export type AssetDevelopMask = {
+export type DevelopPresetMask = {
     adjustments?: AssetDevelopMaskAdjustments;
     /** How much of the adjustment is applied, as a percentage */
     amount?: number;
-    /** Subject, sky and background masks: the stored greyscale mask bitmap, covering the whole original image */
-    artifact?: string | null;
-    /** Subject, sky and background masks: an opaque descriptor that lets a client detect the mask again; the server never runs it */
-    detector?: {
-        [key: string]: any;
-    };
     /** A disabled mask is kept but not rendered */
     enabled?: boolean;
     /** Where a linear mask has faded out, across the frame */
@@ -5138,19 +5122,17 @@ export type AssetDevelopMask = {
     id: string;
     /** Apply the adjustment outside the shape instead of inside */
     invert?: boolean;
-    kind: AssetDevelopMaskKind;
+    kind: DevelopPresetMaskKind;
     /** Optional name shown in the editor */
     name?: string | null;
     /** Horizontal radius of a radial mask as a fraction of the frame width */
     radiusX?: number;
     /** Vertical radius of a radial mask as a fraction of the frame height */
     radiusY?: number;
-    /** Brush masks: the painted strokes, in order */
-    strokes?: AssetDevelopStroke[];
-    /** Centre (radial) or start (linear) across the oriented frame; unused by brush and bitmap masks */
-    x?: number;
-    /** Centre (radial) or start (linear) down the oriented frame; unused by brush and bitmap masks */
-    y?: number;
+    /** Centre (radial) or start (linear) across the oriented frame; any value for brush and bitmap masks */
+    x: number;
+    /** Centre (radial) or start (linear) down the oriented frame; any value for brush and bitmap masks */
+    y: number;
 };
 export type DevelopPresetSettingsDto = {
     /** Black point */
@@ -5169,8 +5151,8 @@ export type DevelopPresetSettingsDto = {
     grain?: number;
     /** Highlight recovery (negative) or lift (positive) */
     highlights?: number;
-    /** Selective adjustments, applied in order after the global develop */
-    masks?: AssetDevelopMask[];
+    /** Radial and linear selective adjustments, applied in order after the global develop */
+    masks?: DevelopPresetMask[];
     /** Luminance noise reduction amount */
     noiseReduction?: number;
     preset?: AssetDevelopPreset;
@@ -11382,6 +11364,148 @@ export type WorkflowShareResponseDto = {
     steps: WorkflowShareStepDto[];
     /** Workflow trigger type */
     trigger: string;
+};
+export type AssetDevelopRegion = {
+    /** Height as a fraction of the original */
+    h: number;
+    /** Width as a fraction of the original */
+    w: number;
+    /** Left edge as a fraction of the original image width */
+    x: number;
+    /** Top edge as a fraction of the original image height */
+    y: number;
+};
+export type AssetDevelopStroke = {
+    /** Erase from the mask instead of painting it (brush masks only) */
+    erase?: boolean;
+    points: [
+        number,
+        number
+    ][];
+    /** Stroke radius as a fraction of the original image's shorter side */
+    radius: number;
+};
+export type AssetDevelopCleanup = {
+    /** Pixelate: block size as a fraction of the original image's shorter side */
+    blockSize?: number;
+    /** A disabled operation is kept but not rendered */
+    enabled?: boolean;
+    /** Softness of the area's edge, as a percentage */
+    feather?: number;
+    /** Remove: the generated fill, an RGBA artifact covering the bounding box of the area */
+    fill?: string;
+    /** Client-chosen identifier, unique within the recipe */
+    id: string;
+    method: AssetDevelopCleanupMethod;
+    region?: AssetDevelopRegion;
+    /** Heal and clone: where the pixels come from, relative to the area, in original-image fractions */
+    source?: {
+        /** Horizontal offset, fraction of the width */
+        dx: number;
+        /** Vertical offset, fraction of the height */
+        dy: number;
+    };
+    strokes?: AssetDevelopStroke[];
+};
+export type AssetDevelopMask = {
+    adjustments?: AssetDevelopMaskAdjustments;
+    /** How much of the adjustment is applied, as a percentage */
+    amount?: number;
+    /** Subject, sky and background masks: the stored greyscale mask bitmap, covering the whole original image */
+    artifact?: string | null;
+    /** Subject, sky and background masks: an opaque descriptor that lets a client detect the mask again; the server never runs it */
+    detector?: {
+        [key: string]: any;
+    };
+    /** A disabled mask is kept but not rendered */
+    enabled?: boolean;
+    /** Where a linear mask has faded out, across the frame */
+    endX?: number;
+    /** Where a linear mask has faded out, down the frame */
+    endY?: number;
+    /** Softness of a radial edge as a percentage of the radius, or of a brush stroke as one of its radius */
+    feather?: number;
+    /** Client-chosen identifier, unique within the recipe */
+    id: string;
+    /** Apply the adjustment outside the shape instead of inside */
+    invert?: boolean;
+    kind: AssetDevelopMaskKind;
+    /** Optional name shown in the editor */
+    name?: string | null;
+    /** Horizontal radius of a radial mask as a fraction of the frame width */
+    radiusX?: number;
+    /** Vertical radius of a radial mask as a fraction of the frame height */
+    radiusY?: number;
+    /** Brush masks: the painted strokes, in order */
+    strokes?: AssetDevelopStroke[];
+    /** Centre (radial) or start (linear) across the oriented frame; any value for brush and bitmap masks */
+    x: number;
+    /** Centre (radial) or start (linear) down the oriented frame; any value for brush and bitmap masks */
+    y: number;
+};
+export type KnownAssetDevelopCrop = {
+    /** Crop height as a fraction of the frame */
+    h: number;
+    /** Crop width as a fraction of the frame */
+    w: number;
+    /** Left edge of the crop as a fraction of the oriented frame width */
+    x: number;
+    /** Top edge of the crop as a fraction of the oriented frame height */
+    y: number;
+};
+export type KnownAssetDevelopRecipe = {
+    /** Black point */
+    blacks?: number;
+    /** FL-233: opens the shadows and holds back the highlights (positive), or the reverse (negative), with a slight colour lift; see the develop recipe protocol */
+    brilliance?: number;
+    /** Local contrast in the midtones */
+    clarity?: number;
+    /** FL-233: Clean Up operations, applied in order to the original before every other step */
+    cleanup?: AssetDevelopCleanup[];
+    /** Contrast around middle grey */
+    contrast?: number;
+    crop?: KnownAssetDevelopCrop;
+    /** Haze removal (positive) or addition (negative) */
+    dehaze?: number;
+    /** Exposure in EV; each whole stop doubles the light */
+    exposure?: number;
+    /** Mirror left to right */
+    flipHorizontal?: boolean;
+    /** Mirror top to bottom */
+    flipVertical?: boolean;
+    /** Film grain amount */
+    grain?: number;
+    /** Highlight recovery (negative) or lift (positive) */
+    highlights?: number;
+    /** Selective adjustments, applied in order after the global develop */
+    masks?: AssetDevelopMask[];
+    /** Luminance noise reduction amount */
+    noiseReduction?: number;
+    preset?: AssetDevelopPreset;
+    /** How much of the preset is applied, as a percentage */
+    presetStrength?: number;
+    /** Quarter-turn rotation in degrees, clockwise */
+    rotation?: number;
+    /** Global saturation */
+    saturation?: number;
+    /** Shadow lift (positive) or deepening (negative) */
+    shadows?: number;
+    /** Detail sharpening amount */
+    sharpen?: number;
+    /** Straighten angle in degrees, applied before the crop */
+    straighten?: number;
+    /** Warm (positive) or cool (negative) white balance shift */
+    temperature?: number;
+    /** Magenta (positive) or green (negative) tint */
+    tint?: number;
+    /** Recipe contract version */
+    version: Version;
+    /** Saturation weighted towards muted colours */
+    vibrance?: number;
+    /** Darkened (positive) or lightened (negative) edges */
+    vignette?: number;
+    /** White point */
+    whites?: number;
 };
 export type LicenseResponseDto = UserLicense;
 export type SyncAckV1 = {};
@@ -24113,13 +24237,9 @@ export enum Unit {
     Photo = "photo",
     Minute = "minute"
 }
-export enum AssetDevelopMaskKind {
+export enum DevelopPresetMaskKind {
     Radial = "radial",
-    Linear = "linear",
-    Brush = "brush",
-    Subject = "subject",
-    Sky = "sky",
-    Background = "background"
+    Linear = "linear"
 }
 export enum DocumentField {
     Date = "date",
@@ -25341,6 +25461,20 @@ export enum WorkflowResult {
 export enum WorkflowRunErrorCode {
     Unsupported = "unsupported",
     StepFailed = "step_failed"
+}
+export enum AssetDevelopCleanupMethod {
+    Heal = "heal",
+    Clone = "clone",
+    Remove = "remove",
+    Pixelate = "pixelate"
+}
+export enum AssetDevelopMaskKind {
+    Radial = "radial",
+    Linear = "linear",
+    Brush = "brush",
+    Subject = "subject",
+    Sky = "sky",
+    Background = "background"
 }
 export enum Status4 {
     Active = "active",
