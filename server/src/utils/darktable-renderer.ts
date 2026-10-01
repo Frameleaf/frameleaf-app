@@ -147,9 +147,14 @@ export async function renderDarktable(input: string, value: unknown, signal?: Ab
       '--conf',
       'plugins/imageio/format/png/bpp=16',
     ];
-    // Exporting once initializes native defaults from the copied original's camera metadata.
-    await runDarktable([source, join(directory, 'bootstrap.png'), '--width', '1', '--height', '1', ...common], abort);
+    // Native-size initialization avoids a tiny bounding box truncating the shorter image edge to zero.
+    const bootstrap = join(directory, 'bootstrap.png');
+    await runDarktable([source, bootstrap, ...common], abort);
     abort.throwIfAborted();
+    if ((await stat(bootstrap)).size > MAX_OUTPUT_BYTES) {
+      throw new Error('Invalid native bootstrap output size');
+    }
+    await rm(bootstrap); // Only the native history is needed; do not retain two full-resolution PNGs.
     prepareNativeHistory(library, recipe.exposureEV);
     await runDarktable([source, output, ...common], abort);
     abort.throwIfAborted();

@@ -778,7 +778,7 @@ export class AssetDevelopService {
         processInvalidImages: false,
       });
       controller.signal.throwIfAborted();
-      return { data, info: info as RawImageInfo, colorspace: Colorspace.Srgb, detail: { median: 0 } };
+      return { data, info: info as RawImageInfo, colorspace: Colorspace.Srgb, detail: { median: 0 as const } };
     } catch (error) {
       if (controller.signal.aborted) {
         throw controller.signal.reason;
