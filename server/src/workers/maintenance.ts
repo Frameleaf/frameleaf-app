@@ -4,7 +4,6 @@ import { configureExpress } from 'src/app.common.js';
 import { MaintenanceModule } from 'src/app.module.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
-import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { isStartUpError } from 'src/utils/misc.js';
 import { HttpRequestTracker, closeGracefully, onStopRequest } from 'src/utils/shutdown.js';
 
@@ -23,8 +22,7 @@ async function bootstrap() {
   });
   const http = new HttpRequestTracker(app.getHttpServer());
   const appRepository = app.get(AppRepository);
-  const { graceMs } = app.get(ConfigRepository).getEnv().shutdown;
-  appRepository.setCloseFn(() => closeGracefully({ http, close: () => app.close(), graceMs }));
+  appRepository.setCloseFn((graceMs) => closeGracefully({ http, close: () => app.close(), graceMs }));
   stop = () => appRepository.stop(0);
 
   void configureExpress(app, {

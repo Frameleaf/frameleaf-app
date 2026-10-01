@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vitest } from 'vitest';
 import { ExitCode } from 'src/enum.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
+import { RESTART_BUDGET } from 'src/utils/shutdown.js';
 
 const mocks = vitest.hoisted(() => {
   const pubClient = {
@@ -160,15 +161,41 @@ describe(AppRepository.name, () => {
       expect(close).toHaveBeenCalledOnce();
     });
 
-    it('restarts through the same graceful stop', async () => {
+    it('stops with the configured grace period', async () => {
       const sut = new AppRepository();
-      const close = vitest.fn(() => Promise.resolve());
+      const close = vitest.fn((_graceMs: number) => Promise.resolve());
+      sut.setCloseFn(close);
+
+      sut.stop(0);
+      await vitest.advanceTimersByTimeAsync(0);
+
+      expect(close).toHaveBeenCalledWith(2000);
+    });
+
+    // a restart is not a stop: the supervisor starts the workers again at once, and maintenance mode
+    // switches workers this way, so it keeps the old 2 s ceiling while still handing jobs back
+    it('restarts with the short restart budget, handing back what is still running after 1 s', async () => {
+      const sut = new AppRepository();
+      const close = vitest.fn((_graceMs: number) => Promise.resolve());
       sut.setCloseFn(close);
 
       sut.exitApp();
       await vitest.advanceTimersByTimeAsync(0);
 
-      expect(close).toHaveBeenCalledOnce();
+      expect(close).toHaveBeenCalledWith(RESTART_BUDGET.graceMs);
+      expect(RESTART_BUDGET).toEqual({ graceMs: 1000, workerDeadlineMs: 2000 });
+      expect(exit).toHaveBeenCalledWith(ExitCode.AppRestart);
+    });
+
+    it('exits a hanging restart at 2 s, not at the stop deadline', async () => {
+      const sut = new AppRepository();
+      sut.setCloseFn(() => new Promise<void>(() => {}));
+
+      sut.exitApp();
+      await vitest.advanceTimersByTimeAsync(1999);
+      expect(exit).not.toHaveBeenCalled();
+      await vitest.advanceTimersByTimeAsync(1);
+
       expect(exit).toHaveBeenCalledWith(ExitCode.AppRestart);
     });
   });
