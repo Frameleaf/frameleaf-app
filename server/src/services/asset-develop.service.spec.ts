@@ -290,10 +290,22 @@ describe(AssetDevelopService.name, () => {
       expect(mocks.storage.createFile).toHaveBeenCalledTimes(3);
       mocks.storage.createFile.mockClear();
 
-      // the same bitmap again returns the stored one
+      // the same bitmap again returns the stored one, records it again (restarting its grace
+      // period) and skips the limits, without writing the file that is still there
       developRepository.getArtifacts.mockResolvedValue([stored()]);
-      await sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged);
+      developRepository.addArtifact.mockClear();
+      developRepository.getArtifactUsage.mockClear();
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged),
+      ).resolves.toEqual({ id: artifact, kind: AssetDevelopArtifactKind.Mask, width: 400, height: 300 });
+      expect(developRepository.addArtifact).toHaveBeenCalledWith(expect.objectContaining({ id: artifact }));
+      expect(developRepository.getArtifactUsage).not.toHaveBeenCalled();
       expect(mocks.storage.createFile).not.toHaveBeenCalled();
+
+      // ... and writes it again if a release took the file after it was found
+      mocks.storage.checkFileExists.mockResolvedValueOnce(false);
+      await sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged);
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(developArtifactPath(asset, artifact), Buffer.from('png'));
     });
 
     it('refuses someone else’s photo, an unreadable or oversized bitmap, and keeps nothing', async () => {
@@ -345,9 +357,27 @@ describe(AssetDevelopService.name, () => {
       // saved without rendering it is kept, and renders once the artifact is uploaded
       developRepository.create.mockResolvedValue(revisionStub({ assetId: asset.id, recipe: subject }));
       await expect(sut.save(authStub.user1, asset.id, { recipe: subject, render: false })).resolves.toBeDefined();
+      // a fill never stands in for a mask bitmap
+      developRepository.getArtifacts.mockResolvedValue([stored('fill')]);
+      await expect(sut.save(authStub.user1, asset.id, { recipe: subject, render: true })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       developRepository.getArtifacts.mockResolvedValue([stored()]);
       await sut.save(authStub.user1, asset.id, { recipe: subject, render: true });
       expect(mocks.job.queue).toHaveBeenCalledWith(expect.objectContaining({ name: JobName.AssetDevelopRender }));
+    });
+
+    it('requires only the artifacts a render reads: a disabled mask or Clean Up keeps its reference', async () => {
+      developRepository.create.mockResolvedValue(revisionStub({ assetId: asset.id }));
+      const recipe = {
+        ...subject,
+        masks: [{ ...subject.masks[0], enabled: false }],
+        cleanup: [
+          { id: 'x', method: 'remove', enabled: false, region: { x: 0, y: 0, w: 0.5, h: 0.5 }, fill: 'e'.repeat(64) },
+        ],
+      };
+      await expect(sut.save(authStub.user1, asset.id, { recipe, render: true })).resolves.toBeDefined();
+      expect(developRepository.getArtifacts).toHaveBeenCalledWith(asset.id, []);
     });
 
     it('renders brilliance, a bitmap mask and Clean Up in the preview from the stored artifacts', async () => {
@@ -413,6 +443,20 @@ describe(AssetDevelopService.name, () => {
   });
 
   describe('save', () => {
+    it('saves and queues an explicit version 2 native recipe (FL-233 artifact checks are for version 1)', async () => {
+      const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 };
+      const created = revisionStub({ assetId: asset.id, recipe, status: AssetDevelopRevisionStatus.Saved });
+      developRepository.create.mockResolvedValue(created);
+      await expect(sut.save(authStub.user1, asset.id, { recipe, render: true })).resolves.toMatchObject({
+        status: AssetDevelopRevisionStatus.Queued,
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetDevelopRender, data: { id: created.id } });
+
+      developRepository.get.mockResolvedValue(created);
+      await expect(sut.render(authStub.user1, asset.id, created.id)).resolves.toBeDefined();
+      expect(developRepository.getArtifacts).not.toHaveBeenCalled();
+    });
+
     it('stores a valid recipe as the next revision and queues the render', async () => {
       const created = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Saved });
       developRepository.create.mockResolvedValue(created);

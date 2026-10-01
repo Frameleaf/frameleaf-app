@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import {
+  ASSET_DEVELOP_RECIPE_VERSION,
   type AssetDevelopRecipe,
   AssetDevelopRevisionKind,
   AssetDevelopRevisionStatus,
@@ -10,6 +11,7 @@ import { canWriteFork, lockForkWrites } from 'src/repositories/fork-write-guard.
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { assertRenderableDevelopRecipe, developEnvelope, preserveDevelopEnvelope } from 'src/utils/develop-envelope.js';
+import { developRenderArtifacts } from 'src/utils/develop-recipe.js';
 
 export type AssetDevelopRevision = {
   id: string;
@@ -156,18 +158,24 @@ export class AssetDevelopRepository {
         if (!source.rows[0]) throw new BadRequestException('Develop source revision is not available for this asset');
         if (!input.replaceRecipe) recipe = preserveDevelopEnvelope(source.rows[0].recipe, recipe);
       }
-      if (input.requireRenderable) assertRenderableDevelopRecipe(recipe);
-      // FL-233: the artifacts this version uses start their grace period again, under their row
+      const projection = input.requireRenderable ? assertRenderableDevelopRecipe(recipe) : undefined;
+      // FL-233: the artifacts this version names start their grace period again, under their row
       // locks, so the nightly release (which re-checks `createdAt` once these commit) never takes
-      // one a version is being saved with; a render needs every one of them
+      // one a version is being saved with; a render needs those its active masks and enabled
+      // Clean Up read, each of the right kind
       const artifactIds = referencedArtifacts(recipe);
-      if (artifactIds.length > 0) {
-        const touched = await sql<{ id: string }>`
-          UPDATE ${ARTIFACTS} SET "createdAt" = clock_timestamp()
-          WHERE "assetId" = ${input.assetId}::uuid AND id IN (${sql.join(artifactIds)})
-          RETURNING id
-        `.execute(trx);
-        if (input.requireRenderable && touched.rows.length < artifactIds.length) {
+      const touched =
+        artifactIds.length > 0
+          ? await sql<{ id: string; kind: string }>`
+              UPDATE ${ARTIFACTS} SET "createdAt" = clock_timestamp()
+              WHERE "assetId" = ${input.assetId}::uuid AND id IN (${sql.join(artifactIds)})
+              RETURNING id, kind
+            `.execute(trx)
+          : { rows: [] };
+      if (projection && projection.version === ASSET_DEVELOP_RECIPE_VERSION) {
+        const needed = developRenderArtifacts(projection);
+        const kinds = new Map(touched.rows.map((row) => [row.id, row.kind]));
+        if (needed.mask.some((id) => kinds.get(id) !== 'mask') || needed.fill.some((id) => kinds.get(id) !== 'fill')) {
           throw new BadRequestException({
             message: 'This recipe uses a develop artifact that was not uploaded for this photo',
             code: 'develop_artifact_missing',

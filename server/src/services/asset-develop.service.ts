@@ -69,6 +69,7 @@ import {
   applyDevelopTone,
   defaultDevelopRecipe,
   developMaskArtifacts,
+  developRenderArtifacts,
   effectiveDevelop,
   maskMappingFor,
   planDevelopDetail,
@@ -711,7 +712,15 @@ export class AssetDevelopService {
       const normalized = await this.mediaRepository.normalizeDevelopArtifact(file.path, dto.kind);
       const id = this.cryptoRepository.hashSha256(normalized.data).toString('hex');
       const [existing] = await this.assetDevelopRepository.getArtifacts(asset.id, [id]);
+      if (existing && existing.kind !== dto.kind) {
+        // the same bytes normalised as the other kind cannot happen (a mask has one channel, a fill four)
+        throw new BadRequestException('This bitmap is already stored as a different kind of develop artifact');
+      }
+      const target = developArtifactPath(asset, id);
       if (existing) {
+        // the same bitmap again: record it again, which restarts its grace period, and make sure its
+        // file is still there (a release may have taken both since it was found)
+        await this.recordArtifact(asset, id, dto.kind, target, normalized);
         return { id, kind: existing.kind as AssetDevelopArtifactKind, width: existing.width, height: existing.height };
       }
       const usage = await this.assetDevelopRepository.getArtifactUsage(asset.id, asset.ownerId);
@@ -730,38 +739,51 @@ export class AssetDevelopService {
       ) {
         throw new BadRequestException({ message: 'Your storage is full', code: 'develop_artifact_quota' });
       }
-      const target = developArtifactPath(asset, id);
       this.storageRepository.mkdirSync(path.dirname(target));
-      try {
-        await this.storageRepository.createFile(target, normalized.data);
-      } catch (error: any) {
-        // the same bitmap uploaded twice at once: the first one is kept
-        if (error?.code !== 'EEXIST') {
-          throw error;
-        }
-      }
-      await this.assetDevelopRepository.addArtifact({
-        assetId: asset.id,
-        id,
-        ownerId: asset.ownerId,
-        kind: dto.kind,
-        path: target,
-        bytes: normalized.data.length,
-        width: normalized.width,
-        height: normalized.height,
-      });
-      // a deletion queued by an earlier release may have run between finding the file and recording
-      // it; the recorded row now protects the path, so write the file again if it went
-      if (!(await this.storageRepository.checkFileExists(target))) {
-        await this.storageRepository.createFile(target, normalized.data).catch((error: any) => {
-          if (error?.code !== 'EEXIST') {
-            throw error;
-          }
-        });
-      }
+      await this.writeArtifactFile(target, normalized.data);
+      await this.recordArtifact(asset, id, dto.kind, target, normalized);
       return { id, kind: dto.kind, width: normalized.width, height: normalized.height };
     } finally {
       await this.discard([file.path]);
+    }
+  }
+
+  /** FL-233: write an artifact's file; the same bitmap written at the same time keeps the first. */
+  private async writeArtifactFile(target: string, data: Buffer) {
+    try {
+      await this.storageRepository.createFile(target, data);
+    } catch (error: any) {
+      if (error?.code !== 'EEXIST') {
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * FL-233: record a stored artifact (or restart its grace period). A deletion queued by an earlier
+   * release may have run between finding the file and recording it; the recorded row now protects
+   * the path, so the file is written again if it went.
+   */
+  private async recordArtifact(
+    asset: { id: string; ownerId: string },
+    id: string,
+    kind: AssetDevelopArtifactKind,
+    target: string,
+    normalized: { data: Buffer; width: number; height: number },
+  ) {
+    await this.assetDevelopRepository.addArtifact({
+      assetId: asset.id,
+      id,
+      ownerId: asset.ownerId,
+      kind,
+      path: target,
+      bytes: normalized.data.length,
+      width: normalized.width,
+      height: normalized.height,
+    });
+    if (!(await this.storageRepository.checkFileExists(target))) {
+      this.storageRepository.mkdirSync(path.dirname(target));
+      await this.writeArtifactFile(target, normalized.data);
     }
   }
 
@@ -784,19 +806,23 @@ export class AssetDevelopService {
     return long <= DEVELOP_ARTIFACT_MASK_MAX_SIDE;
   }
 
-  /** FL-233: refuse a recipe whose masks or Clean Up reference an artifact this photo does not have. */
+  /**
+   * FL-233: refuse a recipe whose active masks or enabled Clean Up need an artifact this photo does
+   * not have (or has as the other kind). Only version 1 recipes reference artifacts; a native
+   * (version 2) recipe has none. Call after `assertRenderableDevelopRecipe`.
+   */
   private async requireArtifacts(asset: { id: string; ownerId: string }, recipe: unknown) {
-    const projection = renderDevelopProjection(recipe);
-    if (projection.version !== ASSET_DEVELOP_RECIPE_VERSION) {
+    if (developEnvelope(recipe).version !== ASSET_DEVELOP_RECIPE_VERSION) {
       return;
     }
-    const ids = [
-      ...developMaskArtifacts(projection.masks),
-      ...developCleanupArtifacts((projection.cleanup ?? []).filter((op) => op.enabled)),
-    ];
-    const wanted = [...new Set(ids)];
+    const needed = developRenderArtifacts(renderDevelopProjection(recipe));
+    const wanted = [...new Set([...needed.mask, ...needed.fill])];
     const stored = await this.assetDevelopRepository.getArtifacts(asset.id, wanted);
-    if (stored.length !== wanted.length) {
+    const kinds = new Map(stored.map((artifact) => [artifact.id, artifact.kind]));
+    if (
+      needed.mask.some((id) => kinds.get(id) !== AssetDevelopArtifactKind.Mask) ||
+      needed.fill.some((id) => kinds.get(id) !== AssetDevelopArtifactKind.Fill)
+    ) {
       throw missingArtifact();
     }
   }
