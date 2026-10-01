@@ -799,6 +799,9 @@ async function runEaseOutHost(project, graph) {
   assert.ok(Math.abs(expectedX - 8.8628729965) < 1e-8);
   const graphOf = (detail) => detail.envelope?.graph ?? detail.document?.graph ?? detail.graph;
   const assertEasing = (stored, easing) => {
+    assert.equal(stored.metadata.width, 128);
+    assert.equal(stored.metadata.height, 96);
+    assert.equal(stored.metadata.fps, 30);
     const entry = stored.timeline.keyframes.find((e) => e.itemId === "still");
     assert.equal(entry.animationVersion, 2);
     assert.deepEqual(entry.properties, graph.timeline.keyframes[0].properties);
@@ -892,18 +895,53 @@ async function runEaseOutHost(project, graph) {
         ].filter((viewport) => viewport.checkVisibility());
         if (viewports.length !== 1)
           return { error: `expected one visible native viewport; got${viewports.length}` };
-        const canvases = [...viewports[0].querySelectorAll("canvas")].filter(
-          (c) => c.width === 128 && c.height === 96 && c.checkVisibility(),
+        const canvases = [...viewports[0].querySelectorAll("canvas")].filter((c) =>
+          c.checkVisibility(),
         );
         if (canvases.length !== 1)
-          return { error: `expected one visible native128x96 preview; got${canvases.length}` };
+          return { error: `expected one visible native preview; got${canvases.length}` };
         const canvas = canvases[0];
+        const rawPng = canvas.toDataURL("image/png");
+        const bounds = (element) => {
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return { x, y, width, height };
+        };
+        const evidence = {
+          rawPng,
+          backing: { width: canvas.width, height: canvas.height },
+          canvasCss: bounds(canvas),
+          viewportCss: bounds(viewports[0]),
+          dpr: window.devicePixelRatio,
+        };
         const image = new Image();
-        image.src = canvas.toDataURL("image/png");
+        image.src = rawPng;
         await image.decode();
+        const raw = new OffscreenCanvas(canvas.width, canvas.height);
+        const rawContext = raw.getContext("2d");
+        rawContext.drawImage(image, 0, 0);
+        const hash = async (bytes) =>
+          [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+            .map((v) => v.toString(16).padStart(2, "0"))
+            .join("");
+        evidence.rawDigest = await hash(
+          rawContext.getImageData(0, 0, canvas.width, canvas.height).data,
+        );
+        const padX = (canvas.width - 128) / 2;
+        const padY = (canvas.height - 96) / 2;
+        if (!Number.isInteger(padX) || padX !== padY || padX < 1 || padX > 256)
+          return {
+            ...evidence,
+            error: `invalid symmetric preview padding mapping: ${padX},${padY}`,
+          };
+        const mapping = {
+          sourceRect: { x: padX, y: padY, width: 128, height: 96 },
+          destinationRect: { x: 0, y: 0, width: 128, height: 96 },
+          scale: 1,
+        };
         const actual = new OffscreenCanvas(128, 96),
           ctx = actual.getContext("2d");
-        ctx.drawImage(image, 0, 0);
+        // Match copyPreviewDisplayCanvasContent: retain every authored edge pixel, without scaling.
+        ctx.drawImage(raw, padX, padY, 128, 96, 0, 0, 128, 96);
         const oracle = new OffscreenCanvas(128, 96),
           ref = oracle.getContext("2d");
         // Compare RGB on opaque black background, including native subpixel edge coverage.
@@ -919,10 +957,16 @@ async function runEaseOutHost(project, graph) {
         let maxDelta = 0;
         for (let i = 0; i < pixels.length; i++)
           maxDelta = Math.max(maxDelta, Math.abs(pixels[i] - expectedPixels[i]));
-        const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", pixels))]
-          .map((v) => v.toString(16).padStart(2, "0"))
-          .join("");
-        return { maxDelta, digest, png: canvas.toDataURL("image/png"), expectedX: expected };
+        const digest = await hash(pixels);
+        const png = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error);
+          actual
+            .convertToBlob({ type: "image/png" })
+            .then((blob) => reader.readAsDataURL(blob), reject);
+        });
+        return { ...evidence, mapping, maxDelta, digest, png, expectedX: expected };
       }, x);
       if (!result.error && result.maxDelta <= 1) break;
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -931,6 +975,11 @@ async function runEaseOutHost(project, graph) {
       new URL(`${browserName}-${label}-measurement.json`, dir),
       JSON.stringify(result, null, 2),
     );
+    if (result.rawPng)
+      await writeFile(
+        new URL(`${browserName}-${label}-padded-raw.png`, dir),
+        Buffer.from(result.rawPng.split(",")[1], "base64"),
+      );
     if (result.png)
       await writeFile(
         new URL(`${browserName}-${label}.png`, dir),
