@@ -6,7 +6,7 @@ import { AssetType } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getMocks } from 'test/utils.js';
 
 const exec = vi.hoisted(() => ({ error: undefined as Error | undefined }));
@@ -19,7 +19,10 @@ vi.mock('node:child_process', async (original) => ({
     callback: (error: Error | undefined, stdout: string, stderr: string) => void,
   ) => callback(exec.error, '', ''),
 }));
-vi.mock('src/utils/raw-renderer.js', () => ({ renderRawWithLibRaw: vi.fn() }));
+vi.mock('src/utils/raw-renderer.js', async (original) => ({
+  ...(await original<typeof import('src/utils/raw-renderer.js')>()),
+  renderRawWithLibRaw: vi.fn(),
+}));
 describe(MediaIntegrityService.name, () => {
   const mocks = getMocks();
   const bytes = Buffer.from('synthetic original bytes');
@@ -27,7 +30,9 @@ describe(MediaIntegrityService.name, () => {
   let input: { path: string; originalFileName: string; type: AssetType };
   let sut: MediaIntegrityService;
   beforeEach(async () => {
+    vi.clearAllMocks();
     exec.error = undefined;
+    vi.mocked(renderRawWithLibRaw).mockReset();
     directory = await mkdtemp(join(tmpdir(), 'integrity-test-'));
     input = { path: join(directory, 'original.jpg'), originalFileName: 'original.jpg', type: AssetType.Image };
     await writeFile(input.path, bytes);
@@ -113,6 +118,53 @@ describe(MediaIntegrityService.name, () => {
     expect(mocks.media.decodeImage).toHaveBeenCalledWith(bytes, { colorspace: 'srgb', processInvalidImages: false });
     expect(mocks.media.extract).not.toHaveBeenCalled();
   });
+  it.each([
+    ['unsupported', 'ERR_RAW_UNSUPPORTED', 'unsupported', 'raw_decode_unsupported'],
+    ['dependency_missing', 'ENOENT', 'transient', 'decoder_unavailable'],
+    ['timeout', 'ETIMEDOUT', 'timeout', 'decode_timeout'],
+    ['cancelled', 'ABORT_ERR', 'timeout', 'validation_timeout'],
+    ['resource_limit', 'ERR_RAW_RESOURCE_LIMIT', 'transient', 'decoder_resource_limit'],
+    ['damaged', 'ERR_RAW_DAMAGED', 'transient', 'raw_decode_damaged'],
+    ['io', 'EACCES', 'unreadable', 'access_denied'],
+    ['io', 'EIO', 'transient', 'io_failed'],
+    ['decode_failed', 'ERR_RAW_DECODE', 'transient', 'decode_unverified'],
+  ] as const)('maps typed RAW %s without confirming corruption', async (failure, code, status, reason) => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError(failure, code));
+    expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toEqual({ status, reason });
+    expect(mocks.media.extract).not.toHaveBeenCalled();
+    expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+  });
+
+  it('aborts an active RAW decoder at the validation deadline', async () => {
+    vi.useFakeTimers();
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let decoderSignal: AbortSignal | undefined;
+    vi.mocked(renderRawWithLibRaw).mockImplementation((_path, signal) => {
+      decoderSignal = signal;
+      started();
+      return new Promise((_resolve, reject) => {
+        signal!.addEventListener('abort', () => reject(new RawRenderError('cancelled', 'ABORT_ERR')), { once: true });
+      });
+    });
+    const result = sut.validate({ ...input, originalFileName: 'original.nef', deep: true });
+    await ready;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(await result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
+    expect(decoderSignal?.aborted).toBe(true);
+    expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+  });
+
+  it('preserves layered PSD decoding without treating it as camera sensor data', async () => {
+    expect(await sut.validate({ ...input, originalFileName: 'original.psd', deep: true })).toMatchObject({
+      status: 'healthy',
+    });
+    expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+    expect(mocks.media.decodeImage).toHaveBeenCalledWith(input.path, expect.any(Object));
+  });
+
   it('reports malformed image', async () => {
     mocks.media.decodeImage.mockRejectedValue(new Error('premature end of JPEG'));
     expect(await sut.validate({ ...input, deep: true })).toEqual({ status: 'corrupt', reason: 'decode_failed' });
