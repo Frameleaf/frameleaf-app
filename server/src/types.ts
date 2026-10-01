@@ -292,6 +292,8 @@ export interface IPhysicalDeduplicationDryRunJob extends IBaseJob {
 export interface IForkSchemaBackfillJob {
   kind: BackfillKind;
   batchSize: number;
+  /** FL-289: wait (ms) before running, used to retry once an orphaned claim's lease has expired. */
+  delay?: number;
 }
 
 export interface IDelayedJob extends IBaseJob {

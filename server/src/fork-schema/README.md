@@ -22,12 +22,22 @@ finishes before the queue workers start (`QueueService`, `BootstrapEventPriority
 before the API listens (`configureExpress` runs after module init). A refusal is logged as a warning
 naming the connected clients and retried at the next start; it never fails startup. Then the API
 worker's `ForkSchemaMigrationService.onBootstrap` (`ForkSchemaAutoStart`, after the queues exist)
-starts the compatibility backfill through `ForkSchemaRepository.beginInitialBackfill`: one
-transaction that locks the state row and moves `legacy` to `dual-write` only when no backfill
-progress row and no `fork-schema-backfill-pause` audit row exist. `fork-schema pause` writes that
-audit row, so a pause (even one before any batch ran) is never undone by a restart; any other phase
-is left alone. If queueing the first batches fails, the library returns to `legacy` and the next
-start retries.
+decides through `ForkSchemaRepository.beginInitialBackfill`, one transaction that locks the state
+row. In `legacy`, an operator pause (the latest of the `fork-schema-backfill-pause` /
+`fork-schema-backfill-resume` audit rows, written by `pause` and by `resume`/`start`) leaves the
+library alone. Otherwise it moves to `dual-write`: `resumed` when progress rows exist (for example
+after a failed seed fell back to legacy), `started` when none do. In `dual-write` every boot re-seeds
+the kinds (finished kinds skip; BullMQ keeps one job per kind). A kind with `lastError` is not
+re-seeded; startup logs it with the `fork-schema resume` hint. Every other phase is left alone. If
+queueing fails after a start or resume, the library returns to `legacy` without a pause record, so the
+next start tries again.
+
+A restart mid-batch leaves that kind's claim leased for 15 minutes. When `runBatch` finds a live
+claim (`getLiveClaimDelay`) while still in `dual-write`, it re-queues the kind with a BullMQ `delay`
+until just after the lease ends; the delayed job takes over the claimed ids through
+`claimBatchForMode`'s expired-claim branch. The delayed job keeps the per-kind dedup id: added from
+an active batch it is kept (`keepLastIfActive`) and later adds merge into it while it waits
+(`src/repositories/fork-schema-job-lifecycle.spec.ts`).
 
 Adoption (`official-adoption.ts`, `DatabaseRepository.adoptOfficialOrigin`; `immich-admin
 fork-schema adopt` is the manual form) completes the library in one transaction:

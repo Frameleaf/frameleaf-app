@@ -15,8 +15,10 @@ import { DeepPartial } from 'src/types.js';
 export type ForkSchemaPhase = 'legacy' | 'dual-write' | 'ready' | 'inactive' | 'active' | 'failed';
 /** FL-289: audit row an operator `fork-schema pause` writes; it keeps startup from restarting the backfill. */
 export const BACKFILL_PAUSE_AUDIT = 'fork-schema-backfill-pause';
+/** FL-289: audit row `fork-schema resume`/`start` writes; the latest pause/resume row decides. */
+export const BACKFILL_RESUME_AUDIT = 'fork-schema-backfill-resume';
 export type InitialBackfillResult = {
-  outcome: 'started' | 'paused' | 'not-legacy';
+  outcome: 'started' | 'resumed' | 'paused' | 'not-legacy';
   phase: ForkSchemaPhase;
 };
 export type BackfillKind = 'privacy' | 'albums' | 'enrichment' | 'automation' | 'health' | 'storage' | 'checksum';
@@ -351,11 +353,15 @@ export class ForkSchemaRepository {
   }
 
   /**
-   * FL-289: atomically move a library whose compatibility backfill has never started from `legacy` to
-   * `dual-write`. "Never started" means no backfill progress row exists (the first batch claim writes
-   * one) and no operator pause was recorded (`recordBackfillPause`, written by every `fork-schema
-   * pause`, including one before any batch ran). A paused library reports `paused` and stays where
-   * the operator left it. The state row lock serializes booting workers; only one sees `started`.
+   * FL-289: the API worker's boot decision for a `legacy` library, made atomically under the state
+   * row lock (so booting workers serialize and only one moves the phase).
+   *
+   * - The operator paused it (the latest of the pause/resume audit rows is a pause): `paused`.
+   * - Otherwise, with backfill progress (a batch ran before, e.g. a seed that failed and fell back
+   *   to legacy): `legacy` to `dual-write`, `resumed`.
+   * - Otherwise (never started): `legacy` to `dual-write`, `started`.
+   *
+   * Any other phase is `not-legacy` and unchanged.
    */
   async beginInitialBackfill(): Promise<InitialBackfillResult> {
     return this.db.transaction().execute(async (trx) => {
@@ -369,12 +375,19 @@ export class ForkSchemaRepository {
       if (state.phase !== 'legacy') {
         return { outcome: 'not-legacy', phase: state.phase };
       }
-      const progress = await sql<{ started: boolean }>`
+      const evidence = await sql<{ paused: boolean; progressed: boolean }>`
         SELECT
-          EXISTS (SELECT 1 FROM immich_fork.backfill_progress)
-          OR EXISTS (SELECT 1 FROM immich_fork.migration_audit WHERE name = ${BACKFILL_PAUSE_AUDIT}) AS started
+          coalesce((
+            SELECT name = ${BACKFILL_PAUSE_AUDIT}
+            FROM immich_fork.migration_audit
+            WHERE name IN (${BACKFILL_PAUSE_AUDIT}, ${BACKFILL_RESUME_AUDIT})
+            ORDER BY id DESC
+            LIMIT 1
+          ), false) AS paused,
+          EXISTS (SELECT 1 FROM immich_fork.backfill_progress) AS progressed
       `.execute(trx);
-      if (progress.rows[0]?.started) {
+      const { paused, progressed } = evidence.rows[0] ?? { paused: false, progressed: false };
+      if (paused) {
         return { outcome: 'paused', phase: state.phase };
       }
       await sql`
@@ -382,15 +395,38 @@ export class ForkSchemaRepository {
         SET active = false, phase = 'dual-write', "updatedAt" = now()
         WHERE id = 1
       `.execute(trx);
-      return { outcome: 'started', phase: 'dual-write' };
+      return { outcome: progressed ? 'resumed' : 'started', phase: 'dual-write' };
     });
   }
 
   /** FL-289: an operator paused (or held) the backfill; startup must not start it again by itself. */
   async recordBackfillPause(): Promise<void> {
+    await this.recordBackfillControl(BACKFILL_PAUSE_AUDIT, 'fork-schema pause');
+  }
+
+  /** FL-289: an operator resumed (or started) the backfill; an earlier pause no longer applies. */
+  async recordBackfillResume(): Promise<void> {
+    await this.recordBackfillControl(BACKFILL_RESUME_AUDIT, 'fork-schema resume');
+  }
+
+  /**
+   * FL-289: milliseconds until the live claim on this kind expires, or null when it holds none (or
+   * only an expired one, which the next claim takes over). Measured on the database clock, which
+   * also decides expiry.
+   */
+  async getLiveClaimDelay(kind: BackfillKind): Promise<number | null> {
+    const result = await sql<{ delay: number }>`
+      SELECT ceil(extract(epoch FROM ("claimExpiresAt" - now())) * 1000)::float8 AS delay
+      FROM immich_fork.backfill_progress
+      WHERE kind = ${kind} AND "claimToken" IS NOT NULL AND "claimExpiresAt" > now()
+    `.execute(this.db);
+    return result.rows[0]?.delay ?? null;
+  }
+
+  private async recordBackfillControl(name: string, source: string): Promise<void> {
     await sql`
       INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
-      VALUES (${BACKFILL_PAUSE_AUDIT}, 'legacy', 'applied', jsonb_build_object('source', 'fork-schema pause'), now())
+      VALUES (${name}, 'legacy', 'applied', jsonb_build_object('source', ${source}::text), now())
     `.execute(this.db);
   }
 

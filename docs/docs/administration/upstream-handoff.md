@@ -144,12 +144,19 @@ A fresh install and an adopted library both start the compatibility backfill at 
 server's first start; no command is needed. It runs in the background, and the library
 moves from `legacy` through `dual-write` to `ready` once every kind is verified.
 
+Restarting the server during the backfill is safe and needs no command: every start
+queues the backfill again. A batch that was running when the server stopped is taken
+over once its 15-minute claim expires.
+
 `pause` and `resume` are optional operator controls. `immich-admin fork-schema pause`
 returns the library to `legacy` after the running batches finish, and later starts leave
 it paused. Pausing before the backfill has started also holds it. `immich-admin
 fork-schema resume` (or `start`) continues it. `start` and `resume` on a library whose
 backfill is already `ready` (or `active`) only print the status, so existing scripts keep
 working.
+
+A kind whose last batch failed is not retried automatically. Startup logs the kind and
+the error; fix the cause and run `immich-admin fork-schema resume` to retry it.
 
 ## Checkpoints and destructive boundary
 
