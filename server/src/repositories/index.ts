@@ -75,6 +75,7 @@ import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
+import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
@@ -118,6 +119,7 @@ export const repositories = [
   MediaRecoveryRepository,
   ICloudTransportRepository,
   ICloudSyncRepository,
+  PhotographyWorkspaceRepository,
   AccessRepository,
   ActivityRepository,
   AdminAuditRepository,
