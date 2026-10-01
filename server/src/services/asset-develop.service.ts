@@ -717,7 +717,8 @@ export class AssetDevelopService {
       const usage = await this.assetDevelopRepository.getArtifactUsage(asset.id, asset.ownerId);
       if (usage.assetCount >= DEVELOP_ARTIFACT_PER_ASSET) {
         throw new BadRequestException({
-          message: 'This photo has as many edit masks and fills as it may keep; save the edit to release unused ones',
+          message:
+            'This photo has as many edit masks and fills as it may keep (64); ones no saved version uses are released a week after their last use',
           code: 'develop_artifact_limit',
         });
       }
