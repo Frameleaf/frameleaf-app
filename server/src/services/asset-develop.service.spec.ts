@@ -262,6 +262,7 @@ describe(AssetDevelopService.name, () => {
       mocks.media.normalizeDevelopArtifact.mockResolvedValue({ data: Buffer.from('png'), width: 400, height: 300 });
       mocks.crypto.hashSha256.mockReturnValue(Buffer.from(artifact, 'hex'));
       mocks.storage.createFile.mockResolvedValue(void 0);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
       mocks.user.get.mockResolvedValue({ id: asset.ownerId, quotaSizeInBytes: null, quotaUsageInBytes: 0 } as never);
       mocks.asset.getById.mockResolvedValue({
         ...asset,
@@ -283,10 +284,16 @@ describe(AssetDevelopService.name, () => {
       );
       expect(mocks.storage.unlink).toHaveBeenCalledWith(staged.path);
 
+      // a file deleted by an earlier release just before it was recorded again is written again
+      mocks.storage.checkFileExists.mockResolvedValueOnce(false);
+      await sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged);
+      expect(mocks.storage.createFile).toHaveBeenCalledTimes(3);
+      mocks.storage.createFile.mockClear();
+
       // the same bitmap again returns the stored one
       developRepository.getArtifacts.mockResolvedValue([stored()]);
       await sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged);
-      expect(mocks.storage.createFile).toHaveBeenCalledTimes(1);
+      expect(mocks.storage.createFile).not.toHaveBeenCalled();
     });
 
     it('refuses someone else’s photo, an unreadable or oversized bitmap, and keeps nothing', async () => {
