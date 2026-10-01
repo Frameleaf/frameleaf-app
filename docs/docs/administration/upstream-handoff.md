@@ -36,26 +36,36 @@ The command refuses to continue if both markers exist, neither marker exists
 while workflow tables exist, or the marker and exact schema fingerprint
 disagree. Do not repair these cases by manually editing the ledger.
 
-## Adopting a library created by the official server
+## Upgrading a library created by the official server
 
-A library the official v3.1.0 server created stays certified-upstream when Frameleaf
-first starts on it. Startup adds only the `immich_fork` schema, leaves the state
-`inactive` with schema version `1`, and warns that the library has not been adopted
-yet. Frameleaf features such as people groups, media operations, Studio projects, Takeout
-imports and preservation packages remain unavailable until adoption. Until then, the
-official server can still start on the library with no handoff.
+To move a library from the official v3.1.0 server to Frameleaf, change the server
+container image to the Frameleaf image and start it. Nothing else is needed: the first
+start adopts the library and starts the compatibility backfill by itself. Take database
+and media checkpoints before you swap the image, because adoption is one-way. Afterwards,
+the library can go back to the official server only through the certified handoff
+described below. Adoption also changes existing official data, as listed below.
 
-Adoption is an explicit, one-way step. Afterwards, the library can go back to the
-official server only through the certified handoff described below. It also changes
-existing official data, as listed below. Take database and media checkpoints first.
-Adoption refuses to run unless maintenance mode is on. It also refuses when another
-database client holds a transaction, is running a query, or connects from a different
-address than the admin process. It cannot detect an idle server that connects from the
-admin process's own address, for example over the same Unix socket, through a
-connection pooler, or when the command runs through `docker exec` inside a server
-container. Maintenance mode is required for that reason, and stopping every server is
-the operator's responsibility. Stop every server container, then run these commands from
-one-shot admin processes that use the Frameleaf image:
+At that first start, Frameleaf adds its `immich_fork` schema and then adopts the library
+while it holds the startup migration lock. That is before the API accepts requests and
+before any background job runs. Like every startup migration, adoption needs no
+maintenance mode. It refuses to run, and the library stays exactly as the official server
+left it, when another server is still connected to the database. For example, an official
+server container that is still running, or any other client that holds a transaction or is
+running a query. A Frameleaf process that only waits for the startup migration lock does
+not count. When adoption is refused, startup logs a warning that names the connected
+clients and continues without Frameleaf features such as people groups, media operations,
+Studio projects, Takeout imports and preservation packages. Until it succeeds, the official
+server can still start on the library with no handoff. Stop the other server; adoption is
+tried again at every start.
+
+Once the library is adopted, the API server starts the compatibility backfill, which runs
+in the background. `immich-admin fork-schema status` shows where it is.
+
+You can still adopt by hand, for example before the first start. The manual command also
+requires maintenance mode, because it cannot tell an idle server that connects from its
+own address (the same Unix socket, a connection pooler, or `docker exec` inside a server
+container) from its own connections. Stop every server container, then run these
+commands from one-shot admin processes that use the Frameleaf image:
 
 ```bash
 immich-admin enable-maintenance-mode
@@ -118,15 +128,28 @@ runs, they cover assets with a lock record.
   owner's own `remove` decisions in the face correction history (the audit row counts
   them as `faceDecisionsCarriedOver`).
 
-If adoption fails, nothing is applied and the command can be run again. The command refuses a
-ledger that is not the exact certified `v3.1.0` ledger. For a library from an older
-official release, upgrade it with the official server to `v3.1.0` first. The command also
-refuses a library that already holds Frameleaf tables and one that has been handed over.
-Running it again after success changes nothing.
+If adoption fails, nothing is applied and it is tried again at the next start (or run the
+command again). Adoption refuses a ledger that is not the exact certified `v3.1.0` ledger.
+For a library from an older official release, upgrade it with the official server to
+`v3.1.0` first. It also refuses a library that already holds Frameleaf tables and one that
+has been handed over. Running it again after success changes nothing.
 
-Leave maintenance mode and start the server normally. The adopted library now follows the
-same sequence as any other Frameleaf library: `fork-schema start` for the compatibility
-backfill, then the exact operator sequence below for a certified handoff and return.
+The adopted library now follows the same sequence as any other Frameleaf library: the
+compatibility backfill, which starts by itself, then the exact operator sequence below for
+a certified handoff and return.
+
+## Compatibility backfill
+
+A fresh install and an adopted library both start the compatibility backfill at the API
+server's first start; no command is needed. It runs in the background, and the library
+moves from `legacy` through `dual-write` to `ready` once every kind is verified.
+
+`pause` and `resume` are optional operator controls. `immich-admin fork-schema pause`
+returns the library to `legacy` after the running batches finish, and later starts leave
+it paused. Pausing before the backfill has started also holds it. `immich-admin
+fork-schema resume` (or `start`) continues it. `start` and `resume` on a library whose
+backfill is already `ready` (or `active`) only print the status, so existing scripts keep
+working.
 
 ## Checkpoints and destructive boundary
 
@@ -152,6 +175,7 @@ export DATABASE_BACKUP_ID='backup-immutable-id'
 export MEDIA_SNAPSHOT_ID='media-snapshot-immutable-id'
 
 immich-admin fork-schema status
+# The backfill started by itself; on a ready library these two only print the status.
 immich-admin fork-schema start
 # Interrupt the worker once, restart it, and then:
 immich-admin fork-schema resume

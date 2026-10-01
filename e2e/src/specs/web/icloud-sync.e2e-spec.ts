@@ -14,7 +14,7 @@ import {
 } from '@immich/sdk';
 import { Page, expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { asBearerAuth, immichAdmin, utils } from 'src/utils.js';
+import { asBearerAuth, utils } from 'src/utils.js';
 
 /**
  * FL-144: FL-68 iCloud Photos sync in the browser, against the real server and a TEST-ONLY fake bridge
@@ -197,20 +197,6 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup();
     await fixture.post('reset');
-
-    // A Frameleaf library writes its own (fork) tables only once the operator has started the
-    // compatibility backfill (docs/docs/administration/upstream-handoff.md); iCloud recovery refuses
-    // to import before that. A fresh e2e database is still `legacy`, so start it the operator's way.
-    const { child, promise } = immichAdmin(['fork-schema', 'start']);
-    let output = '';
-    child.stdout.on('data', (chunk) => {
-      output += chunk;
-      if (output.includes('Start the fork schema backfill')) {
-        child.stdin.end('y\n');
-      }
-    });
-    const { stdout, stderr } = await promise;
-    expect(`${stdout}${stderr}`).toMatch(/Phase: dual-write|only start from legacy phase/);
   });
 
   test('a wrong verification code asks to sign in again, and the retry connects', async ({ context, page }) => {

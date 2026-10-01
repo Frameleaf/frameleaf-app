@@ -2,8 +2,8 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { JobOf } from 'src/types.js';
-import { OnJob } from 'src/decorators.js';
-import { DatabaseLock, JobName, JobStatus, QueueName } from 'src/enum.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
+import { BootstrapEventPriority, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { OfficialAdoptionResult } from 'src/fork-schema/official-adoption.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
@@ -18,6 +18,7 @@ import {
   BackfillKind,
   BackfillProgress,
   ForkState,
+  InitialBackfillResult,
   ReturnConfigReconciliation,
 } from 'src/repositories/fork-schema.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
@@ -28,6 +29,11 @@ import { BaseService } from 'src/services/base.service.js';
 import { ForkStorageNormalizationService } from 'src/services/fork-storage-normalization.service.js';
 
 const DEFAULT_BATCH_SIZE = 100;
+
+/** The backfill already completed (`ready`) or the library is fully active: start/resume only report. */
+const isBackfillFinished = ({ phase }: ForkState) => phase === 'ready' || phase === 'active';
+
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 export type BackfillBatchResult = { count: number; digest: string };
 export type BackfillBatchHandler = (ids: string[], claim?: ReturnNormalizationClaim) => Promise<BackfillBatchResult>;
@@ -130,9 +136,52 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
     return { ...(await this.status()), adoption };
   }
 
+  /**
+   * FL-289: swapping the container image is the whole upgrade, so the API worker starts the
+   * compatibility backfill by itself once the queues exist. Only a backfill that never started is
+   * started; an operator pause and every later phase are left alone. Never fails startup.
+   */
+  @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.ForkSchemaAutoStart, workers: [ImmichWorker.Api] })
+  async onBootstrap(): Promise<void> {
+    let outcome: InitialBackfillResult['outcome'];
+    try {
+      ({ outcome } = await this.forkSchemaRepository.beginInitialBackfill());
+    } catch (error) {
+      this.logger.warn(
+        `Could not check whether the Frameleaf backfill should start (${errorMessage(error)}); it will be checked again at the next start`,
+      );
+      return;
+    }
+
+    if (outcome === 'paused') {
+      this.logger.log('The Frameleaf backfill is paused; run `immich-admin fork-schema resume` to continue it');
+      return;
+    }
+    if (outcome !== 'started') {
+      return;
+    }
+
+    try {
+      await this.seedAllKinds(DEFAULT_BATCH_SIZE);
+      this.logger.log('The Frameleaf backfill started automatically');
+    } catch (error) {
+      // Back to "never started" so the next start retries. A batch that already claimed (and so wrote
+      // progress) makes the library read as paused instead; `fork-schema resume` continues it.
+      await this.forkSchemaRepository.transitionPhase('dual-write', 'legacy').catch(() => false);
+      this.logger.warn(
+        `The Frameleaf backfill could not be queued (${errorMessage(error)}); it will start at the next start, or run \`immich-admin fork-schema resume\``,
+      );
+    }
+  }
+
   async start(batchSize = DEFAULT_BATCH_SIZE): Promise<ForkSchemaMigrationStatus> {
     const transitioned = await this.forkSchemaRepository.transitionPhase('legacy', 'dual-write');
     const status = await this.status();
+    if (!transitioned && isBackfillFinished(status)) {
+      // FL-289: startup normally starts (and finishes) the backfill by itself; an explicit start then
+      // reports where it is instead of failing operator scripts.
+      return status;
+    }
     if (!transitioned && status.phase !== 'dual-write') {
       throw new Error('Backfill can only start from legacy phase');
     }
@@ -146,6 +195,8 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
     if (!transitioned && status.phase !== 'legacy') {
       throw new Error('Backfill can only pause from dual-write phase');
     }
+    // FL-289: remembered, so startup does not start the backfill again (also a hold before it ever ran).
+    await this.forkSchemaRepository.recordBackfillPause();
     this.seedPromise = undefined;
     return status;
   }
@@ -153,6 +204,9 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
   async resume(batchSize = DEFAULT_BATCH_SIZE): Promise<ForkSchemaMigrationStatus> {
     const transitioned = await this.forkSchemaRepository.transitionPhase('legacy', 'dual-write');
     const status = await this.status();
+    if (!transitioned && isBackfillFinished(status)) {
+      return status;
+    }
     if (!transitioned && status.phase !== 'dual-write') {
       throw new Error('Backfill can only resume from legacy phase');
     }

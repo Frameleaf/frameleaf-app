@@ -13,6 +13,12 @@ import { DB } from 'src/schema/index.js';
 import { DeepPartial } from 'src/types.js';
 
 export type ForkSchemaPhase = 'legacy' | 'dual-write' | 'ready' | 'inactive' | 'active' | 'failed';
+/** FL-289: audit row an operator `fork-schema pause` writes; it keeps startup from restarting the backfill. */
+export const BACKFILL_PAUSE_AUDIT = 'fork-schema-backfill-pause';
+export type InitialBackfillResult = {
+  outcome: 'started' | 'paused' | 'not-legacy';
+  phase: ForkSchemaPhase;
+};
 export type BackfillKind = 'privacy' | 'albums' | 'enrichment' | 'automation' | 'health' | 'storage' | 'checksum';
 export type ForkState = {
   active: boolean;
@@ -342,6 +348,50 @@ export class ForkSchemaRepository {
       return true;
     });
     return transitioned;
+  }
+
+  /**
+   * FL-289: atomically move a library whose compatibility backfill has never started from `legacy` to
+   * `dual-write`. "Never started" means no backfill progress row exists (the first batch claim writes
+   * one) and no operator pause was recorded (`recordBackfillPause`, written by every `fork-schema
+   * pause`, including one before any batch ran). A paused library reports `paused` and stays where
+   * the operator left it. The state row lock serializes booting workers; only one sees `started`.
+   */
+  async beginInitialBackfill(): Promise<InitialBackfillResult> {
+    return this.db.transaction().execute(async (trx) => {
+      const lockedState = await sql<{ phase: ForkSchemaPhase }>`
+        SELECT phase FROM immich_fork.state WHERE id = 1 FOR UPDATE
+      `.execute(trx);
+      const state = lockedState.rows[0];
+      if (!state) {
+        throw new Error('Fork schema state is not initialized');
+      }
+      if (state.phase !== 'legacy') {
+        return { outcome: 'not-legacy', phase: state.phase };
+      }
+      const progress = await sql<{ started: boolean }>`
+        SELECT
+          EXISTS (SELECT 1 FROM immich_fork.backfill_progress)
+          OR EXISTS (SELECT 1 FROM immich_fork.migration_audit WHERE name = ${BACKFILL_PAUSE_AUDIT}) AS started
+      `.execute(trx);
+      if (progress.rows[0]?.started) {
+        return { outcome: 'paused', phase: state.phase };
+      }
+      await sql`
+        UPDATE immich_fork.state
+        SET active = false, phase = 'dual-write', "updatedAt" = now()
+        WHERE id = 1
+      `.execute(trx);
+      return { outcome: 'started', phase: 'dual-write' };
+    });
+  }
+
+  /** FL-289: an operator paused (or held) the backfill; startup must not start it again by itself. */
+  async recordBackfillPause(): Promise<void> {
+    await sql`
+      INSERT INTO immich_fork.migration_audit (name, phase, status, details, "completedAt")
+      VALUES (${BACKFILL_PAUSE_AUDIT}, 'legacy', 'applied', jsonb_build_object('source', 'fork-schema pause'), now())
+    `.execute(this.db);
   }
 
   async setPhase(phase: ForkSchemaPhase): Promise<void> {

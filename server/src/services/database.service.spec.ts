@@ -1,6 +1,6 @@
 import type { VectorExtension } from 'src/types.js';
 import { EXTENSION_NAMES } from 'src/constants.js';
-import { DatabaseExtension, VectorIndex } from 'src/enum.js';
+import { DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { envData, mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -407,15 +407,77 @@ describe(DatabaseService.name, () => {
       },
     );
 
-    it('reports an official-origin library that still awaits adoption without adopting it (FL-44)', async () => {
+    it('adopts an official-origin library automatically inside the boot migration lock (FL-289)', async () => {
+      let lockHeld = false;
+      mocks.database.withLock.mockImplementation(async (_lock, fn) => {
+        lockHeld = true;
+        try {
+          return await fn();
+        } finally {
+          lockHeld = false;
+        }
+      });
+      const adoptedInsideLock: boolean[] = [];
       mocks.database.detectMigrationMode.mockResolvedValue('official-origin');
+      mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(true);
+      mocks.database.runForkMigrations.mockResolvedValue();
+      mocks.database.adoptOfficialOrigin.mockImplementation(() => {
+        adoptedInsideLock.push(lockHeld);
+        return Promise.resolve({ adopted: true, applied: ['a', 'b'] });
+      });
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
+      expect(mocks.database.adoptOfficialOrigin).toHaveBeenCalledExactlyOnceWith({ atBoot: true });
+      expect(adoptedInsideLock).toEqual([true]);
+      expect(mocks.database.adoptOfficialOrigin.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mocks.database.runForkMigrations.mock.invocationCallOrder[0] ?? Infinity,
+      );
+      expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('adopted automatically (2 migrations'));
+      expect(mocks.logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('fork-schema adopt'));
+      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
+    it('defers a refused automatic adoption with a warning instead of failing startup (FL-289)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('official-origin');
+      mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(true);
+      mocks.database.adoptOfficialOrigin.mockRejectedValue(
+        new Error('Adoption found 1 other database connection(s): immich from 10.0.0.9 (idle in transaction)'),
+      );
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('immich from 10.0.0.9 (idle in transaction)'),
+      );
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('retries automatically at the next start'),
+      );
+      // startup carries on: the schema drift check still runs after the deferred adoption
+      expect(mocks.database.getSchemaDrift).toHaveBeenCalledOnce();
+    });
+
+    it.each(['legacy', 'fresh', 'isolated'] as const)(
+      'does not adopt a %s library that is not awaiting adoption (FL-289)',
+      async (mode) => {
+        mocks.database.detectMigrationMode.mockResolvedValue(mode);
+        mocks.database.applyIsolatedFrameleafMigrations.mockResolvedValue({ applied: [], pending: [], skipped: null });
+        mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(false);
+
+        await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+        expect(mocks.database.adoptOfficialOrigin).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not adopt when DB_SKIP_MIGRATIONS=true (FL-289)', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ database: { ...envData.database, skipMigrations: true } }));
       mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(true);
 
       await expect(sut.onBootstrap()).resolves.toBeUndefined();
 
-      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('immich-admin fork-schema adopt'));
       expect(mocks.database.adoptOfficialOrigin).not.toHaveBeenCalled();
-      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
     });
 
     it('guards an inactive schema version 2 return before either migration provider runs', async () => {

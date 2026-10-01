@@ -1221,7 +1221,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
 
   /**
    * An official-origin library the first Frameleaf boot set up (`inactive`, schema version 1) and that
-   * has not been adopted yet. Startup reports it; `immich-admin fork-schema adopt` completes it.
+   * has not been adopted yet. Startup adopts it automatically (FL-289); `immich-admin fork-schema adopt` is the manual form.
    */
   async isAwaitingOfficialAdoption(): Promise<boolean> {
     const relation = await sql<{ present: boolean }>`
@@ -1242,8 +1242,12 @@ export class DatabaseRepository extends ForkHandoffRepository {
    * `src/fork-schema/official-adoption.ts`). One transaction: a failure leaves the library exactly as
    * the official server can still read it, and a re-run starts over. A re-run after success changes
    * nothing. Callers hold `DatabaseLock.Migrations`, so no server boot migrates concurrently.
+   *
+   * FL-289: `atBoot` is the server's own startup adoption, run inside the boot migration step (the
+   * first bootstrap handler, before any queue worker starts or the API listens). Like every boot
+   * migration it needs no maintenance mode; another connected server still refuses it.
    */
-  async adoptOfficialOrigin(): Promise<OfficialAdoptionResult> {
+  async adoptOfficialOrigin({ atBoot = false }: { atBoot?: boolean } = {}): Promise<OfficialAdoptionResult> {
     return this.db.transaction().execute(async (transaction) => {
       const relation = await sql<{ present: boolean }>`
         SELECT to_regclass('immich_fork.state') IS NOT NULL AS present
@@ -1274,7 +1278,7 @@ export class DatabaseRepository extends ForkHandoffRepository {
       if (frameleafTables.rows[0]?.present) {
         throw new Error('Library already holds Frameleaf tables');
       }
-      await this.assertAdoptionQuiescent(transaction);
+      await this.assertAdoptionQuiescent(transaction, atBoot);
 
       const ledgerResult = await sql<{ name: string; timestamp: string }>`
         SELECT name, timestamp FROM public.kysely_migrations ORDER BY timestamp, name
@@ -1347,37 +1351,71 @@ export class DatabaseRepository extends ForkHandoffRepository {
   }
 
   /**
-   * Adoption changes the schema every server reads, so it runs only with maintenance mode on and no
-   * other server connected, the conditions the certified cutover requires. Connections from this
-   * process's own address that are idle (its connection pool, the migrations lock) are not servers.
+   * Adoption changes the schema every server reads, so no other server may be connected: the
+   * conditions the certified cutover requires. Connections from this process's own address that are
+   * idle (its connection pool, the migrations lock) are not servers.
+   *
+   * The manual command also requires maintenance mode. The boot adoption (FL-289) does not, and it
+   * ignores a backend whose only activity is waiting for the `DatabaseLock.Migrations` advisory lock
+   * this boot holds (a sibling worker that cannot do anything until adoption finishes). Any other lock
+   * wait, an idle-in-transaction session or an active query still refuses.
    */
-  private async assertAdoptionQuiescent(transaction: Kysely<DB>): Promise<void> {
-    const result = await sql<{ maintenanceMode: boolean; otherConnections: number }>`
+  private async assertAdoptionQuiescent(transaction: Kysely<DB>, atBoot: boolean): Promise<void> {
+    const migrationsLockKey = BigInt(DatabaseLock.Migrations);
+    const result = await sql<{ maintenanceMode: boolean; others: string[] }>`
       SELECT
         coalesce((
           SELECT (value->>'isMaintenanceMode')::boolean FROM public.system_metadata WHERE key = 'maintenance-mode'
         ), false) AS "maintenanceMode",
-        (
-          SELECT count(*)::int FROM pg_stat_activity
-          WHERE datname = current_database()
-            AND pid <> pg_backend_pid()
-            AND backend_type = 'client backend'
-            AND (
-              backend_xid IS NOT NULL
-              OR state IS DISTINCT FROM 'idle'
-              OR client_addr IS DISTINCT FROM inet_client_addr()
+        coalesce((
+          SELECT array_agg(
+            format(
+              '%s from %s (%s)',
+              coalesce(nullif(activity.application_name, ''), 'unnamed client'),
+              coalesce(host(activity.client_addr), 'local socket'),
+              coalesce(activity.state, 'unknown state')
             )
-        ) AS "otherConnections"
+            ORDER BY activity.pid
+          )
+          FROM pg_stat_activity activity
+          WHERE activity.datname = current_database()
+            AND activity.pid <> pg_backend_pid()
+            AND activity.backend_type = 'client backend'
+            AND (
+              activity.backend_xid IS NOT NULL
+              OR activity.state IS DISTINCT FROM 'idle'
+              OR activity.client_addr IS DISTINCT FROM inet_client_addr()
+            )
+            AND NOT (
+              ${atBoot}::boolean
+              AND activity.backend_xid IS NULL
+              AND activity.state = 'active'
+              AND activity.wait_event_type = 'Lock'
+              AND activity.wait_event = 'advisory'
+              AND EXISTS (
+                SELECT 1
+                FROM pg_locks waiting
+                WHERE waiting.pid = activity.pid
+                  AND waiting.locktype = 'advisory'
+                  AND NOT waiting.granted
+                  AND waiting.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                  AND waiting.classid = ${Number(migrationsLockKey >> 32n)}::oid
+                  AND waiting.objid = ${Number(migrationsLockKey & 0xff_ff_ff_ffn)}::oid
+                  AND waiting.objsubid = 1
+              )
+            )
+        ), '{}') AS others
     `.execute(transaction);
     const readiness = result.rows[0];
-    if (!readiness?.maintenanceMode) {
+    if (!atBoot && !readiness?.maintenanceMode) {
       throw new Error(
         'Adoption requires maintenance mode: run `immich-admin enable-maintenance-mode`, stop every server, then adopt',
       );
     }
-    if (readiness.otherConnections > 0) {
+    const others = readiness?.others ?? [];
+    if (others.length > 0) {
       throw new Error(
-        `Adoption found ${readiness.otherConnections} other database connection(s); stop every server connected to this database first`,
+        `Adoption found ${others.length} other database connection(s): ${others.join(', ')}; stop every server connected to this database first`,
       );
     }
   }
