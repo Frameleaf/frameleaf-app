@@ -2,7 +2,7 @@ import { Writable } from 'node:stream';
 import { SyncEntityType, SyncRequestType, UserMetadataKey } from 'src/enum.js';
 import { SyncService } from 'src/services/sync.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
-import { newTestService } from 'test/utils.js';
+import { makeStream, newTestService } from 'test/utils.js';
 
 it('omits private photography metadata from both legacy sync upserts and deletes', async () => {
   const { sut, mocks } = newTestService(SyncService);
@@ -11,25 +11,23 @@ it('omits private photography metadata from both legacy sync upserts and deletes
   mocks.syncCheckpoint.getNow.mockResolvedValue({ nowId: 'now-id' });
   Object.assign(mocks.sync, {
     userMetadata: {
-      async *getDeletes() {
-        yield await Promise.resolve({
-          id: 'private-delete',
-          key: UserMetadataKey.PhotographyWorkspace,
-          userId: authStub.user1.user.id,
-        });
-        yield { id: 'onboarding-delete', key: UserMetadataKey.Onboarding, userId: authStub.user1.user.id };
-      },
-      async *getUpserts() {
-        yield await Promise.resolve({
-          updateId: 'private-upsert',
-          key: UserMetadataKey.PhotographyWorkspace,
-          value: {
-            shoots: [{ client: 'Private client' }],
-            brand: { email: 'private-studio@example.test', logoAssetId: 'private-logo' },
+      getDeletes: () =>
+        makeStream([
+          { id: 'private-delete', key: UserMetadataKey.PhotographyWorkspace, userId: authStub.user1.user.id },
+          { id: 'onboarding-delete', key: UserMetadataKey.Onboarding, userId: authStub.user1.user.id },
+        ]),
+      getUpserts: () =>
+        makeStream([
+          {
+            updateId: 'private-upsert',
+            key: UserMetadataKey.PhotographyWorkspace,
+            value: {
+              shoots: [{ client: 'Private client' }],
+              brand: { email: 'private-studio@example.test', logoAssetId: 'private-logo' },
+            },
           },
-        });
-        yield { updateId: 'onboarding-upsert', key: UserMetadataKey.Onboarding, value: { isOnboarded: true } };
-      },
+          { updateId: 'onboarding-upsert', key: UserMetadataKey.Onboarding, value: { isOnboarded: true } },
+        ]),
     },
   });
   const chunks: string[] = [];

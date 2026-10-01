@@ -27,19 +27,13 @@ vi.mock('node:child_process', async () => {
         const child = Object.assign(new EventEmitter(), { kill: vi.fn().mockReturnValue(true) });
         mocks.children.push(child);
         mocks.onSpawn?.();
-        const execution = Promise.resolve().then(() => mocks.exec(...args));
-        void execution.then(
-          () => {
-            if (mocks.autoClose) {
-              child.emit('close');
-            }
-          },
-          () => {
-            if (mocks.autoClose) {
-              child.emit('close');
-            }
-          },
-        );
+        const execution = Promise.try(() => mocks.exec(...args));
+        const close = () => {
+          if (mocks.autoClose) {
+            child.emit('close');
+          }
+        };
+        void execution.then(close).catch(close);
         return Object.assign(execution, { child });
       },
     }),
@@ -170,7 +164,7 @@ describe('pinned darktable adapter', () => {
       options.signal.throwIfAborted();
     });
     await expect(renderDarktable(input, recipe, controller.signal)).rejects.toThrow('cancelled');
-    expect(mocks.children[0].kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
+    expect(mocks.children.at(0)!.kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
   });
 
   it('does not spawn a child for an already cancelled request', async () => {
@@ -185,7 +179,7 @@ describe('pinned darktable adapter', () => {
     mocks.onSpawn = () => controller.abort(new Error('cancelled during spawn'));
     mocks.exec.mockImplementation((_command, _args, options) => options.signal.throwIfAborted());
     await expect(renderDarktable(input, recipe, controller.signal)).rejects.toThrow('cancelled during spawn');
-    expect(mocks.children[0].kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
+    expect(mocks.children.at(0)!.kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
   });
 
   it('removes abort listeners after close so later cancellation does not signal completed children', async () => {
@@ -294,7 +288,7 @@ describe('pinned darktable adapter', () => {
     await aborted.promise;
     try {
       expect(mocks.children.at(-1)!.kill).toHaveBeenCalledExactlyOnceWith('SIGKILL');
-      expect(mocks.children[0].kill).not.toHaveBeenCalled();
+      expect(mocks.children.at(0)!.kill).not.toHaveBeenCalled();
       await expect(renderDarktable(input, recipe)).rejects.toBeInstanceOf(ServiceUnavailableException);
       expect(mocks.exec).toHaveBeenCalledTimes(2);
     } finally {
