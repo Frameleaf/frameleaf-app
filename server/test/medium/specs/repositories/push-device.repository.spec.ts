@@ -30,6 +30,7 @@ const registration = (userId: string, sessionId: string, overrides: Record<strin
   platform: PushPlatform.Ios,
   pushToken: `apns-${randomUUID()}`,
   pushToStartToken: null,
+  apnsEnvironment: null,
   publicKey: key(1),
   backupDeviceKey: null,
   disabledEvents: [],

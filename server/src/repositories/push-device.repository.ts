@@ -19,13 +19,17 @@ export type PushDeviceRegistration = {
   platform: PushPlatform;
   pushToken: string;
   pushToStartToken: string | null;
+  apnsEnvironment: 'production' | 'sandbox' | null;
   publicKey: string;
   backupDeviceKey: string | null;
   disabledEvents: string[];
 };
 
 export type PushDeviceChanges = Partial<
-  Pick<PushDeviceRegistration, 'pushToken' | 'pushToStartToken' | 'publicKey' | 'backupDeviceKey' | 'disabledEvents'>
+  Pick<
+    PushDeviceRegistration,
+    'pushToken' | 'pushToStartToken' | 'apnsEnvironment' | 'publicKey' | 'backupDeviceKey' | 'disabledEvents'
+  >
 >;
 
 export type StaleBackupWakeTarget = {
@@ -67,6 +71,7 @@ export class PushDeviceRepository {
             platform: registration.platform,
             pushToken: registration.pushToken,
             pushToStartToken: registration.pushToStartToken,
+            apnsEnvironment: registration.apnsEnvironment,
             publicKey: registration.publicKey,
             backupDeviceKey: registration.backupDeviceKey,
             disabledEvents: registration.disabledEvents,

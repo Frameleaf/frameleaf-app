@@ -105,6 +105,7 @@ export const LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set([
   '2100000000725-OwnerBackupDeletionFacts',
   '2100000000726-AssetUploadResources',
   '2100000000727-PushDevices',
+  '2100000000728-PushDeviceApnsEnvironment',
 ]);
 
 export const GENERIC_LEGACY_FORK_MIGRATIONS: ReadonlySet<string> = new Set(
