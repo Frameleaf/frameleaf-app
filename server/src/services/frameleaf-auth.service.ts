@@ -26,11 +26,13 @@ import { AdminAuditAction, DatabaseLock, ImmichCookie } from 'src/enum.js';
 import { ClientTokenRejection, type OAuthConfig, type OAuthProfile } from 'src/repositories/oauth.repository.js';
 import { type LoginDetails, UNVERIFIED_EMAIL_MESSAGE, emailVerificationProblem } from 'src/services/auth.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { HumanReadableSize } from 'src/utils/bytes.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import {
   FRAMELEAF_EXCHANGE_CLOCK_TOLERANCE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_MAX_AGE_SECONDS,
   FRAMELEAF_EXCHANGE_TOKEN_TYPE,
+  frameleafAccess,
   frameleafCallbackUrl,
   frameleafOAuthConfig,
   frameleafRedirectUri,
@@ -123,6 +125,9 @@ const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode) => {
  *   from the cloud ends it, and remote-access enforcement can recognise it.
  * - A Frameleaf app can exchange a server-audience token from the identity provider for a session
  *   without a browser (FL-230, `exchangeToken`), under the same account rules and session tagging.
+ * - FL-235: `frameleaf_access` is recorded on every sign-in and link. It grants nothing: everyone
+ *   the cloud invited gets their own regular account and library (owner decision, 2026-10-01), and
+ *   sees others' media only through what is shared with them.
  */
 @Injectable()
 export class FrameleafAuthService extends BaseService {
@@ -264,6 +269,7 @@ export class FrameleafAuthService extends BaseService {
       throw refuse('email', emailProblem);
     }
     const role = frameleafRole(profile);
+    const access = frameleafAccess(profile);
 
     let user: UserAdmin | undefined;
     const link = await this.frameleafAccountRepository.getLinkBySub(profile.sub);
@@ -290,6 +296,7 @@ export class FrameleafAuthService extends BaseService {
           emailVerified: true,
           role,
           autoRegistered: false,
+          access,
         });
         await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, email);
       }
@@ -297,10 +304,22 @@ export class FrameleafAuthService extends BaseService {
     if (!user) {
       // Frameleaf Cloud authorized this person for this server: it is the access authority
       this.logger.log(`Creating the account ${email} for a Frameleaf sign-in`);
+      // FL-235: a person invited to this server gets their own account, with the quota the
+      // administrator chose for invited accounts (unlimited by default); the server's owner is never
+      // capped: the owner is the link's account (its sub) when known, as GET /users/me reports it
+      const { frameleafCloud } = await this.getConfig({ withCache: false });
+      const { link: cloudLink, linked } = await readCloudLink({
+        configRepository: this.configRepository,
+        systemMetadataRepository: this.systemMetadataRepository,
+      });
+      const ownerAccountId = linked ? cloudLink?.accountId : undefined;
+      const isOwner = ownerAccountId ? profile.sub === ownerAccountId : access === 'owner';
+      const quota = isOwner ? null : (frameleafCloud.signIn?.invitedStorageQuota ?? null);
       user = await this.createUser({
         name: typeof profile.name === 'string' && profile.name.trim() ? profile.name.trim() : email,
         email,
         isAdmin: role === 'admin',
+        quotaSizeInBytes: quota === null ? null : quota * HumanReadableSize.GiB,
       });
       await this.frameleafAccountRepository.upsertLink({
         userId: user.id,
@@ -309,13 +328,14 @@ export class FrameleafAuthService extends BaseService {
         emailVerified: true,
         role,
         autoRegistered: true,
+        access,
       });
       await this.auditLink(user, AdminAuditAction.FrameleafAccountLinked, email);
     }
     if (role && user.isAdmin !== (role === 'admin')) {
       user = await this.applyRole(user, role);
     }
-    await this.frameleafAccountRepository.touchLink(user.id, { email, emailVerified: true, role });
+    await this.frameleafAccountRepository.touchLink(user.id, { email, emailVerified: true, role, access });
 
     const { session, response } = await createSession(
       { sessionRepository: this.sessionRepository, cryptoRepository: this.cryptoRepository },
@@ -445,6 +465,7 @@ export class FrameleafAuthService extends BaseService {
       emailVerified: true,
       role: frameleafRole(profile),
       autoRegistered: false,
+      access: frameleafAccess(profile),
     });
     const user = await this.userRepository.get(auth.user.id, { withDeleted: false });
     if (user) {

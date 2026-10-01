@@ -422,7 +422,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     },
   },
   frameleafCloud: {
-    signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false },
+    signIn: { buttonText: 'Sign in with Frameleaf', showOnLocalLogin: false, invitedStorageQuota: null },
     remoteAccess: {
       enabled: false,
       mode: 'relay',

@@ -414,6 +414,8 @@ export type CloudStatusResponseDto = {
     signInButtonText: string;
     /** The OpenID client ID for Sign in with Frameleaf */
     signInClientId: string | null;
+    /** Storage quota in GiB for accounts created through a Frameleaf invitation; null is unlimited */
+    signInInvitedStorageQuota: number | null;
     signInIssuer: string | null;
     /** Accounts here linked to a Frameleaf account */
     signInLinkedAccounts: number;
@@ -857,6 +859,8 @@ export type RemoteAccessUsageResponseDto = {
 export type CloudSignInUpdateDto = {
     /** The Sign in with Frameleaf button text */
     buttonText?: string;
+    /** Storage quota in GiB for accounts created through a Frameleaf invitation from now on; null is unlimited */
+    invitedStorageQuota?: number | null;
     /** Offer Sign in with Frameleaf on the login page at home */
     showOnLocalLogin?: boolean;
 };
@@ -1050,6 +1054,8 @@ export type AdminConfigFrameleafRemoteAccessDto = {
 export type AdminConfigFrameleafSignInDto = {
     /** Sign in with Frameleaf button text */
     buttonText: string;
+    /** Storage quota in GiB for an account Sign in with Frameleaf creates for a person invited to this server; null or omitted is unlimited. Applied when the account is created; existing accounts keep their quota. */
+    invitedStorageQuota?: number | null;
     /** Show Sign in with Frameleaf on the local sign-in page too */
     showOnLocalLogin: boolean;
 };
@@ -10939,6 +10945,44 @@ export type TrashSummaryResponseDto = {
     offline: number;
     /** Items already permanently deleted whose files are still being removed from storage */
     pendingDeletion: number;
+};
+export type UserMeResponseDto = {
+    avatarColor: UserAvatarColor;
+    /** Whether you may upload to this server, so an app shows backup ("this phone backs up here") only where it is true: false only for an API key without asset.upload */
+    canUpload: boolean;
+    /** Cluster group the user is a member of */
+    clusterGroupId: string;
+    /** Creation date */
+    createdAt: string;
+    /** Deletion date */
+    deletedAt: string | null;
+    /** User email */
+    email: string;
+    /** User ID */
+    id: string;
+    /** Is admin user */
+    isAdmin: boolean;
+    license: (UserLicense) | null;
+    /** User name */
+    name: string;
+    /** OAuth ID */
+    oauthId: string;
+    /** Profile change date */
+    profileChangedAt: string;
+    /** Profile image path */
+    profileImagePath: string;
+    /** Storage quota in bytes */
+    quotaSizeInBytes: number | null;
+    /** Storage usage in bytes */
+    quotaUsageInBytes: number | null;
+    serverRole: ServerRole;
+    /** Require password change on next login */
+    shouldChangePassword: boolean;
+    status: UserStatus;
+    /** Storage label */
+    storageLabel: string | null;
+    /** Last update date */
+    updatedAt: string;
 };
 export type UserUpdateMeDto = {
     avatarColor?: (UserAvatarColor) | null;
@@ -22116,7 +22160,7 @@ export function searchUsers(opts?: Oazapfts.RequestOpts) {
 export function getMyUser(opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: UserAdminResponseDto;
+        data: UserMeResponseDto;
     }>("/users/me", {
         ...opts
     }));
@@ -25179,6 +25223,11 @@ export enum TrashItemSort {
     Recent = "recent",
     Size = "size",
     Name = "name"
+}
+export enum ServerRole {
+    Owner = "owner",
+    Admin = "admin",
+    User = "user"
 }
 export enum Evidence {
     RegisteredCurrentOriginals = "registered-current-originals"

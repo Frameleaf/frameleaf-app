@@ -1917,6 +1917,21 @@ export enum MetadataKey {
   RemoteSignInExempt = 'remote_sign_in_exempt',
 }
 
+/**
+ * FL-235: a person's role on this server, reported by `GET /users/me`.
+ *
+ * - `owner`: an administrator whose Frameleaf account owns this server's Frameleaf Cloud link
+ *   (`frameleaf_access` `owner`);
+ * - `admin`: any other administrator;
+ * - `user`: a person with their own library, including everyone Frameleaf Cloud invited to this
+ *   server (owner decision, 2026-10-01: an invitation gives its own account, never a read-only role).
+ */
+export enum ServerRole {
+  Owner = 'owner',
+  Admin = 'admin',
+  User = 'user',
+}
+
 export enum RouteKey {
   Asset = 'assets',
   User = 'users',
