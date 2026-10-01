@@ -8,8 +8,8 @@ services:
       DB_USERNAME: immich
       DB_DATABASE_NAME: immich
       REDIS_HOSTNAME: redis
-      IMMICH_MACHINE_LEARNING_ENABLED: ${ENABLE_ML:?Missing installer configuration}
-      IMMICH_MACHINE_LEARNING_URL: http://machine-learning:3003
+      FRAMELEAF_MACHINE_LEARNING_ENABLED: ${ENABLE_ML:?Missing installer configuration}
+      FRAMELEAF_MACHINE_LEARNING_URL: http://machine-learning:3003
     volumes:
       - type: bind
         source: ${UPLOAD_LOCATION:?Missing installer configuration}
@@ -25,7 +25,7 @@ services:
     # FL-291: must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default); running jobs finish or go back to waiting first
     stop_grace_period: 10s
     healthcheck:
-      test: [CMD, immich-healthcheck]
+      test: [CMD, frameleaf-healthcheck]
   machine-learning:
     profiles: [ml]
     image: @ML_REF@

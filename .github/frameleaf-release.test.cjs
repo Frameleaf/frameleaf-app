@@ -311,11 +311,11 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     for (const name of INSTALL_FILES) {
       const text =
         name === "docker-compose.yml"
-          ? `services:\n  server:\n    image: ghcr.io/frameleaf/frameleaf-server:\${IMMICH_VERSION:-release}\n  redis:\n    image: valkey/valkey:9@${digest(1)}\n  database:\n    image: postgres:14@${digest(2)}\nvolumes: [model-cache]\n`
+          ? `services:\n  server:\n    image: ghcr.io/frameleaf/frameleaf-server:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-release}}\n  redis:\n    image: valkey/valkey:9@${digest(1)}\n  database:\n    image: postgres:14@${digest(2)}\nvolumes: [model-cache]\n`
           : name.startsWith("docker-compose")
-            ? "image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}\nvolumes: [model-cache]\n"
+            ? "image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}\nvolumes: [model-cache]\n"
             : name === "example.env"
-              ? "IMMICH_VERSION=v3\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres\n"
+              ? "FRAMELEAF_VERSION=v3\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres\n"
               : "services: {}\n";
       await fs.writeFile(path.join(root, "docker", name), text);
     }
@@ -353,7 +353,7 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     assert.deepEqual(nas.migration.officialImmich, []);
     const env = await fs.readFile(path.join(dir, "example.env"), "utf8");
     assert(
-      env.includes(`IMMICH_VERSION=${tag}\n`) &&
+      env.includes(`FRAMELEAF_VERSION=${tag}\n`) &&
         env.includes("DB_DATA_LOCATION=./postgres"),
     );
     const compose = await fs.readFile(
@@ -361,14 +361,14 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
       "utf8",
     );
     assert(
-      compose.includes("${IMMICH_VERSION:-" + tag + "}") &&
+      compose.includes("${FRAMELEAF_VERSION:-${IMMICH_VERSION:-" + tag + "}}") &&
         compose.includes("model-cache"),
     );
     const original = await fs.readFile(
       path.join(root, "docker/example.env"),
       "utf8",
     );
-    assert(original.includes("IMMICH_VERSION=v3"));
+    assert(original.includes("FRAMELEAF_VERSION=v3"));
     const sums = (await fs.readFile(path.join(dir, "SHA256SUMS"), "utf8"))
       .trim()
       .split("\n");
@@ -820,7 +820,7 @@ async function dependencyRoot(databaseImage) {
       ? [
           "services:",
           "  immich-server:",
-          "    image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}",
+          "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
           "  redis:",
           `    image: docker.io/valkey/valkey:9@${digest(7)}`,
           "  database:",
@@ -828,7 +828,7 @@ async function dependencyRoot(databaseImage) {
           "",
         ].join("\n")
       : name === "example.env"
-        ? "IMMICH_VERSION=release\n"
+        ? "FRAMELEAF_VERSION=release\n"
         : "services: {}\n";
     await fs.writeFile(path.join(root, "docker", name), text);
   }
@@ -945,16 +945,16 @@ test("promotion rejects stale pins, upstream images and unpinned third-party ima
       [
         "ghcr.io",
         "immich-app",
-        "immich-server:${IMMICH_VERSION:-release}",
+        "immich-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
       ].join("/"),
       /must not pull upstream images/,
     ],
     [
-      "docker.io/example/server:${IMMICH_VERSION:-release}",
+      "docker.io/example/server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
       /only the Frameleaf server and ML images may follow the release version/,
     ],
     [
-      "ghcr.io/frameleaf/frameleaf-postgres:${IMMICH_VERSION:-release}",
+      "ghcr.io/frameleaf/frameleaf-postgres:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
       /only the Frameleaf server and ML images may follow the release version/,
     ],
   ]) {

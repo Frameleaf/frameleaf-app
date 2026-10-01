@@ -24,7 +24,7 @@ for enabled in (False, True):
     candidate = copy.deepcopy(values)
     candidate["frameleaf"]["enable_ml"] = enabled
     result = json.loads(template.render(values=candidate, ix_lib=SimpleNamespace(base=SimpleNamespace(render=render))))
-    assert result["services"]["server"]["environment"]["IMMICH_MACHINE_LEARNING_ENABLED"] == str(enabled).lower()
+    assert result["services"]["server"]["environment"]["FRAMELEAF_MACHINE_LEARNING_ENABLED"] == str(enabled).lower()
     assert ("machine-learning" in result["services"]) == enabled
     postgres = result["services"]["pgvecto"]
     assert postgres["environment"]["PGDATA"] == "/var/lib/postgresql/14/docker"

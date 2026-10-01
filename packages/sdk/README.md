@@ -15,7 +15,7 @@ For a more detailed example, check out the [`@immich/cli`](../cli).
 ```typescript
 import { getAllAlbums, getMyUser, init } from "@immich/sdk";
 
-const API_KEY = "<API_KEY>"; // process.env.IMMICH_API_KEY
+const API_KEY = "<API_KEY>"; // process.env.FRAMELEAF_API_KEY
 
 init({ baseUrl: "https://photos.example.com/api", apiKey: API_KEY });
 

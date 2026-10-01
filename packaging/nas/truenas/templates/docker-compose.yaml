@@ -36,7 +36,7 @@
 {% do server_container.set_user(values.run_as.user, values.run_as.group) %}
 {# FL-291: must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default); running jobs finish or go back to waiting first #}
 {% do server_container.set_grace_period(10) %}
-{% do server_container.healthcheck.set_custom_test(["CMD", "immich-healthcheck"]) %}
+{% do server_container.healthcheck.set_custom_test(["CMD", "frameleaf-healthcheck"]) %}
 {% do server_container.depends.add_dependency(values.consts.pgvecto_container_name, "service_healthy") %}
 {% do server_container.depends.add_dependency(values.consts.redis_container_name, "service_healthy") %}
 
@@ -57,8 +57,8 @@
 {% do server_container.add_port(values.network.microservices_metrics_port) %}
 
 {% do server_container.environment.add_env("NODE_ENV", "production") %}
-{% do server_container.environment.add_env("IMMICH_LOG_LEVEL", values.frameleaf.log_level) %}
-{% do server_container.environment.add_env("IMMICH_PORT", values.network.web_port.port_number) %}
+{% do server_container.environment.add_env("FRAMELEAF_LOG_LEVEL", values.frameleaf.log_level) %}
+{% do server_container.environment.add_env("FRAMELEAF_PORT", values.network.web_port.port_number) %}
 {% do server_container.environment.add_env("IMMICH_API_METRICS_PORT", values.network.api_metrics_port.port_number) %}
 {% do server_container.environment.add_env("IMMICH_MICROSERVICES_METRICS_PORT", values.network.microservices_metrics_port.port_number) %}
 {% do server_container.environment.add_env("DB_USERNAME", values.consts.db_user) %}
@@ -72,7 +72,7 @@
 {% do server_container.environment.add_env("REDIS_DBINDEX", "0") %}
 {% do server_container.environment.add_user_envs(values.frameleaf.additional_envs) %}
 
-{% do server_container.environment.add_env("IMMICH_MACHINE_LEARNING_ENABLED", "true" if values.frameleaf.enable_ml else "false") %}
+{% do server_container.environment.add_env("FRAMELEAF_MACHINE_LEARNING_ENABLED", "true" if values.frameleaf.enable_ml else "false") %}
 
 {% if values.frameleaf.enable_ml %}
   {% set ml_container.x = tpl.add_container(values.consts.ml_container_name, values.frameleaf.ml_image_selector) %}
@@ -80,8 +80,8 @@
   {% do ml_container.x.set_user(values.run_as.user, values.run_as.group) %}
   {% do ml_container.x.healthcheck.set_custom_test(["CMD" ,"python3", "healthcheck.py"]) %}
   {% do ml_container.x.environment.add_env("NODE_ENV", "production") %}
-  {% do ml_container.x.environment.add_env("IMMICH_LOG_LEVEL", values.frameleaf.log_level) %}
-  {% do ml_container.x.environment.add_env("IMMICH_PORT", values.consts.ml_port) %}
+  {% do ml_container.x.environment.add_env("FRAMELEAF_LOG_LEVEL", values.frameleaf.log_level) %}
+  {% do ml_container.x.environment.add_env("FRAMELEAF_PORT", values.consts.ml_port) %}
   {% do ml_container.x.environment.add_env("MACHINE_LEARNING_CACHE_FOLDER", values.consts.ml_cache_path) %}
   {% do ml_container.x.environment.add_env("TRANSFORMERS_CACHE", values.consts.ml_cache_path) %}
   {% do ml_container.x.environment.add_env("HF_HOME", values.consts.ml_cache_path) %}
@@ -94,7 +94,7 @@
   {% do ml_container.x.add_storage(values.consts.ml_cache_path, ml_cache_config) %}
   {% do perm_container.add_or_skip_action("ml-cache", ml_cache_config, perms_config) %}
 
-  {% do server_container.environment.add_env("IMMICH_MACHINE_LEARNING_URL", "http://%s:%d"|format(values.consts.ml_container_name, values.consts.ml_port)) %}
+  {% do server_container.environment.add_env("FRAMELEAF_MACHINE_LEARNING_URL", "http://%s:%d"|format(values.consts.ml_container_name, values.consts.ml_port)) %}
 {% endif %}
 
 {% if perm_container.has_actions() %}

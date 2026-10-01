@@ -19,7 +19,7 @@ run = [
 ]
 
 [tasks."start-demo"]
-env.IMMICH_SERVER_URL = "https://demo.immich.app"
+env.FRAMELEAF_SERVER_URL = "https://demo.immich.app"
 run = { task = ":start" }
 
 [tasks.test]

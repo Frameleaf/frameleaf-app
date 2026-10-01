@@ -73,7 +73,7 @@ function environmentFile(example, databasePassword) {
   const values = {
     UPLOAD_LOCATION: "./library",
     DB_DATA_LOCATION: "./postgres",
-    IMMICH_VERSION: TEST_TAG,
+    FRAMELEAF_VERSION: TEST_TAG,
     DB_PASSWORD: databasePassword,
   };
   let body = example;
