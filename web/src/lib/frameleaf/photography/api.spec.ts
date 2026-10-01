@@ -65,3 +65,34 @@ it('reports conflicts and failures instead of returning empty or optimistic succ
   await expect(saveWorkspace({ revision: null, shoots: [] })).rejects.toThrow('Reload before saving');
   await expect(loadWorkspace()).rejects.toThrow('offline');
 });
+
+it('uses private branding routes and preserves the distinction between omitted and cleared logos', async () => {
+  const { loadBrand, saveBrand, loadLogos, logoThumbnailUrl } = await import('./api');
+  const brand = {
+    name: 'Studio',
+    tagline: '',
+    email: '',
+    phone: '',
+    logoInitials: 'S',
+    color: '#577059',
+    background: '#f5f3ed',
+    textColor: '#263329',
+    font: 'editorial' as const,
+    watermarkColor: '#ffffff',
+    watermarkOpacity: 45,
+    watermarkPosition: 'bottom-right' as const,
+    watermarkSize: 6,
+  };
+  transport.fetch.mockImplementation(
+    async () => new Response(JSON.stringify({ revision: 'new', brand, logoUnavailable: true })),
+  );
+  await loadBrand();
+  expect(transport.fetch.mock.calls[0][0]).toBe('/custom-api/photography/shoots/branding');
+  await saveBrand('loaded', brand);
+  expect(JSON.parse(transport.fetch.mock.calls[1][1].body)).toEqual({ expectedRevision: 'loaded', brand });
+  await saveBrand('loaded', { ...brand, logoAssetId: null });
+  expect(JSON.parse(transport.fetch.mock.calls[2][1].body).brand.logoAssetId).toBeNull();
+  await loadLogos('a+/b=');
+  expect(transport.fetch.mock.calls[3][0]).toBe('/custom-api/photography/shoots/branding/logos?cursor=a%2B%2Fb%3D');
+  expect(logoThumbnailUrl('logo')).toBe('/custom-api/photography/shoots/branding/logos/logo/thumbnail');
+});

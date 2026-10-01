@@ -1,8 +1,12 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Put, Query, Res, Next } from '@nestjs/common';
+import type { Response, NextFunction } from 'express';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  PhotographyBrandDto,
+  PhotographyBrandSaveDto,
+  PhotographyLogoCandidatesDto,
   PhotographyPhotosDto,
   PhotographyPhotoQueryDto,
   PhotographyRatingDto,
@@ -10,14 +14,19 @@ import {
   PhotographyWorkspaceSaveDto,
 } from 'src/dtos/photography-workspace.dto.js';
 import { ApiTag } from 'src/enum.js';
-import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { sendFile } from 'src/utils/file.js';
+import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.StudioProjects)
 @Controller('photography/shoots')
 export class PhotographyWorkspaceController {
-  constructor(private service: PhotographyWorkspaceService) {}
+  constructor(
+    private service: PhotographyWorkspaceService,
+    private logger: LoggingRepository,
+  ) {}
 
   @Get()
   @Authenticated()
@@ -37,6 +46,56 @@ export class PhotographyWorkspaceController {
     @Body() dto: PhotographyWorkspaceSaveDto,
   ): Promise<PhotographyWorkspaceDto> {
     return this.service.save(auth, dto);
+  }
+
+  @Get('branding')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Read your private studio branding',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getPhotographyBrand(@Auth() auth: AuthDto): Promise<PhotographyBrandDto> {
+    return this.service.getBrand(auth);
+  }
+
+  @Put('branding')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Save private studio branding with the workspace revision',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  savePhotographyBrand(@Auth() auth: AuthDto, @Body() dto: PhotographyBrandSaveDto): Promise<PhotographyBrandDto> {
+    return this.service.saveBrand(auth, dto);
+  }
+
+  @Get('branding/logos')
+  @Authenticated()
+  @Endpoint({
+    summary: 'List your eligible unlocked studio logo images',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  getPhotographyLogos(
+    @Auth() auth: AuthDto,
+    @Query() query: PhotographyPhotoQueryDto,
+  ): Promise<PhotographyLogoCandidatesDto> {
+    return this.service.logos(auth, query);
+  }
+
+  @Get('branding/logos/:id/thumbnail')
+  @FileResponse()
+  @Authenticated()
+  @Endpoint({
+    summary: 'View an eligible owned logo thumbnail without original metadata',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  async getPhotographyLogoThumbnail(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Res() response: Response,
+    @Next() next: NextFunction,
+  ): Promise<void> {
+    response.setHeader('Cache-Control', 'private, no-store');
+    await sendFile(response, next, () => this.service.logoThumbnail(auth, id), this.logger);
   }
 
   @Get(':id/photos')

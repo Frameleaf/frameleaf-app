@@ -8,6 +8,10 @@ import {
 } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
+  PhotographyBrandDto,
+  PhotographyBrandSaveDto,
+  PhotographyLogoCandidatesDto,
+  type PhotographyBrand,
   PhotographyPhotosDto,
   PhotographyPhotoQueryDto,
   PhotographyRatingDto,
@@ -15,10 +19,13 @@ import {
   PhotographyWorkspaceSaveDto,
   type StoredShoot,
 } from 'src/dtos/photography-workspace.dto.js';
+import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
 import { MetadataSearchDto } from 'src/dtos/search.dto.js';
-import { AlbumKind, AssetType, AssetVisibility } from 'src/enum.js';
+import { AlbumKind, AssetType, AssetVisibility, CacheControl } from 'src/enum.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
+import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { ImmichFileResponse } from 'src/utils/file.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { SearchService } from 'src/services/search.service.js';
 
@@ -29,6 +36,7 @@ export class PhotographyWorkspaceService {
     private albums: AlbumService,
     private search: SearchService,
     private assets: AssetService,
+    private media: AssetMediaService,
   ) {}
 
   private session(auth: AuthDto): AuthDto {
@@ -37,6 +45,152 @@ export class PhotographyWorkspaceService {
     }
     // Photography never surfaces Locked content, even while the owner's PIN session is elevated.
     return { ...auth, session: { ...auth.session, hasElevatedPermission: false } };
+  }
+
+  private defaultBrand(auth: AuthDto): PhotographyBrand {
+    return {
+      name: auth.user.name,
+      tagline: '',
+      email: '',
+      phone: '',
+      logoInitials: '',
+      logoAssetId: null,
+      color: '#577059',
+      background: '#f5f3ed',
+      textColor: '#263329',
+      font: 'editorial',
+      watermarkColor: '#ffffff',
+      watermarkOpacity: 45,
+      watermarkPosition: 'bottom-right',
+      watermarkSize: 6,
+    };
+  }
+
+  private async logo(auth: AuthDto, id: string) {
+    const result = await this.search.searchMetadata(
+      auth,
+      MetadataSearchDto.schema.parse({
+        filter: {
+          id: { eq: id },
+          type: { eq: AssetType.Image },
+          visibility: { ne: AssetVisibility.Locked },
+          fileSizeInBytes: { lte: 512_000 },
+          trashedAt: { eq: null },
+        },
+        size: 1,
+      }),
+    );
+    const asset = result.assets.items[0];
+    if (
+      !asset ||
+      asset.ownerId !== auth.user.id ||
+      asset.type !== AssetType.Image ||
+      asset.visibility === AssetVisibility.Locked ||
+      asset.isTrashed ||
+      asset.isOffline ||
+      !['image/png', 'image/jpeg', 'image/webp'].includes(asset.originalMimeType ?? '')
+    ) {
+      throw new ForbiddenException('Logo is unavailable');
+    }
+    return asset;
+  }
+
+  private async brandView(
+    auth: AuthDto,
+    brand: PhotographyBrand,
+    revision: string | null,
+  ): Promise<PhotographyBrandDto> {
+    if (brand.logoAssetId) {
+      try {
+        await this.logo(auth, brand.logoAssetId);
+      } catch (error) {
+        if (!(error instanceof HttpException) || ![400, 403, 404].includes(error.getStatus())) {
+          throw error;
+        }
+        return { revision, brand: { ...brand, logoAssetId: null }, logoUnavailable: true };
+      }
+    }
+    return { revision, brand, logoUnavailable: false };
+  }
+
+  async getBrand(auth: AuthDto): Promise<PhotographyBrandDto> {
+    const safeAuth = this.session(auth);
+    const stored = await this.repository.get(auth.user.id);
+    return this.brandView(safeAuth, stored?.value.brand ?? this.defaultBrand(auth), stored?.updateId ?? null);
+  }
+
+  async saveBrand(auth: AuthDto, input: PhotographyBrandSaveDto): Promise<PhotographyBrandDto> {
+    const safeAuth = this.session(auth);
+    const dto = PhotographyBrandSaveDto.schema.parse(input);
+    const stored = await this.repository.get(auth.user.id);
+    if ((stored?.updateId ?? null) !== dto.expectedRevision) {
+      throw new ConflictException('Branding changed; reload before saving');
+    }
+    const brand: PhotographyBrand = {
+      ...dto.brand,
+      logoAssetId:
+        dto.brand.logoAssetId === undefined ? (stored?.value.brand?.logoAssetId ?? null) : dto.brand.logoAssetId,
+    };
+    if (brand.logoAssetId) {
+      try {
+        await this.logo(safeAuth, brand.logoAssetId);
+      } catch (error) {
+        // An omitted inaccessible reference is retained privately, never hydrated or served.
+        if (
+          dto.brand.logoAssetId !== undefined ||
+          !(error instanceof HttpException) ||
+          ![400, 403, 404].includes(error.getStatus())
+        ) {
+          throw error;
+        }
+      }
+    }
+    const saved = await this.repository.saveBrand(auth.user.id, brand, dto.expectedRevision);
+    if (!saved) {
+      throw new ConflictException('Branding changed; reload before saving');
+    }
+    return this.brandView(safeAuth, brand, saved.updateId);
+  }
+
+  async logos(auth: AuthDto, query: PhotographyPhotoQueryDto): Promise<PhotographyLogoCandidatesDto> {
+    const safeAuth = this.session(auth);
+    const result = await this.search.searchMetadata(
+      safeAuth,
+      MetadataSearchDto.schema.parse({
+        filter: {
+          type: { eq: AssetType.Image },
+          visibility: { ne: AssetVisibility.Locked },
+          fileSizeInBytes: { lte: 512_000 },
+          trashedAt: { eq: null },
+        },
+        cursor: query.cursor,
+        size: 80,
+      }),
+    );
+    return {
+      nextCursor: result.assets.nextCursor ?? null,
+      logos: result.assets.items
+        .filter(
+          (asset) =>
+            asset.ownerId === auth.user.id &&
+            asset.type === AssetType.Image &&
+            asset.visibility !== AssetVisibility.Locked &&
+            !asset.isTrashed &&
+            !asset.isOffline &&
+            ['image/png', 'image/jpeg', 'image/webp'].includes(asset.originalMimeType ?? ''),
+        )
+        .map(({ id, originalFileName }) => ({ id, fileName: originalFileName })),
+    };
+  }
+
+  async logoThumbnail(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
+    const safeAuth = this.session(auth);
+    await this.logo(safeAuth, id);
+    const file = await this.media.viewThumbnail(safeAuth, id, { size: AssetMediaSize.THUMBNAIL, edited: false });
+    if ('targetSize' in file) {
+      throw new NotFoundException('Logo thumbnail is unavailable');
+    }
+    return new ImmichFileResponse({ ...file, fileName: 'studio-logo', cacheControl: CacheControl.None });
   }
 
   private async ownedAlbum(auth: AuthDto, albumId: string) {

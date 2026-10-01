@@ -7,6 +7,7 @@ import {
 import { AlbumKind, AssetVisibility } from 'src/enum.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
+import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
@@ -31,14 +32,12 @@ const setup = () => {
     currentRevisions: vi.fn().mockResolvedValue(new Map()),
   };
   const albums = {
-    get: vi
-      .fn()
-      .mockResolvedValue({
-        albumUsers: [{ user: { id: auth.user.id } }],
-        kind: AlbumKind.Album,
-        albumThumbnailAssetId: null,
-        assetCount: 0,
-      }),
+    get: vi.fn().mockResolvedValue({
+      albumUsers: [{ user: { id: auth.user.id } }],
+      kind: AlbumKind.Album,
+      albumThumbnailAssetId: null,
+      assetCount: 0,
+    }),
   };
   const search = { searchMetadata: vi.fn().mockResolvedValue({ assets: { items: [], nextCursor: null } }) };
   const assets = { update: vi.fn() };
@@ -47,6 +46,7 @@ const setup = () => {
     albums as unknown as AlbumService,
     search as unknown as SearchService,
     assets as unknown as AssetService,
+    {} as AssetMediaService,
   );
   return { sut, auth, shoot, revision, nextRevision, repository, albums, search, assets };
 };
