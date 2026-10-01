@@ -133,17 +133,25 @@ psql_sql() { compose exec -T database psql -v ON_ERROR_STOP=1 -U postgres -d imm
 
 # FL-295: what the server answers while it starts on a library the official server created: the
 # "Getting Ready…" screen, its status and the 503 refusals. One JSON line every 0.25 s until the
-# normal API answers the ping (or five minutes pass).
+# normal API answers the ping (or five minutes pass). While the status answers, the container's own
+# health check (by its old name, as the Compose file uses it) runs too: it must report healthy, so an
+# orchestrator never restarts the container in the middle of the copy.
 watch_getting_ready() {
-  local out="$1" base="${API_URL%/api}" ping page status redirect
+  local out="$1" base="${API_URL%/api}" ping page status redirect health
   : >"$out"
   for _ in $(seq 1 1200); do
+    health=null
     ping="$(curl -s -o /dev/null --max-time 2 -w '%{http_code} %header{retry-after}' "$API_URL/server/ping" || true)"
     redirect="$(curl -s -o /dev/null --max-time 2 -w '%{http_code} %{redirect_url}' "$base/photos" || true)"
     page="$(curl -s --max-time 2 "$base/getting-ready" | grep -c '<html' || true)"
     status="$(curl -s --max-time 2 "$API_URL/server/getting-ready" || true)"
+    if jq -e 'has("state")' <<<"$status" >/dev/null 2>&1; then
+      health=0
+      compose exec -T fork-server immich-healthcheck >/dev/null 2>&1 || health=$?
+    fi
     jq -cn --arg ping "$ping" --arg redirect "$redirect" --arg page "$page" --arg status "$status" \
-      '{ping: $ping, redirect: $redirect, page: ($page | tonumber? // 0),
+      --argjson health "$health" \
+      '{ping: $ping, redirect: $redirect, page: ($page | tonumber? // 0), healthcheck: $health,
         status: (($status | fromjson? // null) | if type == "object" and has("state") then . else null end)}' >>"$out"
     [[ "$ping" == 200* ]] && return 0
     sleep 0.25
