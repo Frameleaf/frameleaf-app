@@ -30,6 +30,7 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { identityMatchingEnabled } from 'src/services/icloud-identity.service.js';
 import { requireAccess, requireUploadAccess } from 'src/utils/access.js';
 import {
   UploadSourceIdentity,
@@ -413,7 +414,11 @@ export class AssetUploadResourceService {
     }
     const current = await this.uploads.get(id, auth.user.id);
     if (current.state === 'published' && current.ingested) {
-      await this.recordSourceIdentity(auth.user.id, current);
+      // the asset exists whatever happens here: a record that cannot be written now (a database
+      // handoff, say) is written by the next result request, and must not fail this one
+      await this.recordSourceIdentity(auth.user.id, current).catch((error) =>
+        this.logger.warn(`Upload ${id} iCloud identity was not recorded: ${String(error)}`),
+      );
       // Acknowledged parts and duplicate candidates are no longer needed; live asset references stay.
       await check();
       await this.sweepFolder(id, check);
@@ -423,20 +428,29 @@ export class AssetUploadResourceService {
 
   /**
    * FL-296: an upload naming an iCloud item that another path (the sync, or another device) holds the
-   * claim on is refused before any bytes are accepted; one carrying the claim goes ahead.
+   * claim on is refused before any bytes are accepted; one carrying the claim goes ahead. The
+   * identifier is only a hint: one the server cannot read, identity matching switched off, or a claim
+   * check that cannot be made never stops a backup (the bytes are still de-duplicated by digest).
    */
   private async refuseClaimedItem(ownerId: string, source: UploadSourceIdentity | undefined) {
     if (!source) {
       return;
     }
-    const parsed = parseCloudIdentifier(source.cloudIdentifier);
-    if (!parsed) {
-      throw new BadRequestException('Invalid iCloud identifier');
-    }
     if (source.deviceKey && !(await this.identities.ownsDevice(ownerId, source.deviceKey))) {
       throw new BadRequestException('The device key is not one of your backup devices');
     }
-    const [claim] = await this.identities.claims(ownerId, [parsed.cplAssetRecordName]);
+    const parsed = identityMatchingEnabled() ? parseCloudIdentifier(source.cloudIdentifier) : null;
+    if (!parsed) {
+      return;
+    }
+    let claims: Awaited<ReturnType<ICloudIdentityRepository['claims']>>;
+    try {
+      claims = await this.identities.claims(ownerId, [parsed.cplAssetRecordName]);
+    } catch (error) {
+      this.logger.warn(`iCloud claims could not be read; the upload goes ahead: ${String(error)}`);
+      return;
+    }
+    const [claim] = claims;
     if (claim && claim.id !== source.claimId) {
       throw new ConflictException('icloud_claimed');
     }
@@ -448,7 +462,7 @@ export class AssetUploadResourceService {
    */
   private async recordSourceIdentity(ownerId: string, row: AssetUploadResource) {
     const source = row.metadata.sourceIdentity;
-    const parsed = source && parseCloudIdentifier(source.cloudIdentifier);
+    const parsed = source && identityMatchingEnabled() && parseCloudIdentifier(source.cloudIdentifier);
     if (!source || !parsed || !row.resultAssetId || !row.verifiedChecksum) {
       return;
     }

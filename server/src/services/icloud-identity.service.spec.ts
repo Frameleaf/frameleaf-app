@@ -170,6 +170,25 @@ describe(ICloudIdentityService.name, () => {
       expect(disagreed.items[0].roles[0]).toMatchObject({ state: 'unknown', assetId: null, matchStrength: 'hint' });
     });
 
+    it("keeps a device's record that was only a hint a hint, unless the bytes are the same", async () => {
+      const c = connection();
+      const known = identity(1, { deliveredBy: 'device:phone', matchStrength: 'hint' });
+      const { sut } = setup({ identities: [known], inventory: [record(c.id, 1)], connections: [c] });
+      // the metadata agrees with the sync's inventory now, but the record itself was never confirmed
+      const agreed = await sut.lookup(auth, { items: [lookupItem(1)] });
+      expect(agreed.items[0].roles[0]).toMatchObject({ state: 'unknown', assetId: null, matchStrength: 'hint' });
+
+      const sameBytes = await sut.lookup(auth, {
+        items: [lookupItem(1, { sha256ByRole: { original: sha(1).toString('hex') } })],
+      });
+      expect(sameBytes.items[0].roles[0]).toMatchObject({ state: 'on-server', matchStrength: 'exact' });
+
+      const confirmed = identity(1, { deliveredBy: 'device:phone', matchStrength: 'corroborated' });
+      const later = setup({ identities: [confirmed], inventory: [record(c.id, 1)], connections: [c] });
+      const { items } = await later.sut.lookup(auth, { items: [lookupItem(1)] });
+      expect(items[0].roles[0]).toMatchObject({ state: 'on-server', matchStrength: 'corroborated' });
+    });
+
     it('reports two assets for one item and role for review', async () => {
       const { sut } = setup({ identities: [identity(1), identity(1, { sha256: sha(2) })] });
       const { items } = await sut.lookup(auth, { items: [lookupItem(1)] });
@@ -303,14 +322,15 @@ describe(ICloudIdentityService.name, () => {
 
     it('leaves an item a healthy sync covers to the sync, and an unhealthy one to the device after 72 hours or when asked', async () => {
       const healthy = connection();
-      const { sut, repository } = setup({ connections: [healthy], inventory: [record(healthy.id, 1)] });
+      const pending = { pendingRoles: ['original' as const] };
+      const { sut, repository } = setup({ connections: [healthy], inventory: [record(healthy.id, 1, pending)] });
       const covered = await sut.claim(auth, { deviceKey, items: [claimItem(1)] });
       expect(covered.items[0]).toMatchObject({ state: 'sync-covers', connectionId: healthy.id, takeOverAt: null });
       expect(repository.claim).toHaveBeenCalledWith('owner', [], expect.any(String), 600);
 
       const since = new Date(Date.now() - 3_600_000);
       const sick = connection({ state: 'error', unhealthySince: since });
-      const waiting = setup({ connections: [sick], inventory: [record(sick.id, 1)] });
+      const waiting = setup({ connections: [sick], inventory: [record(sick.id, 1, pending)] });
       const early = await waiting.sut.claim(auth, { deviceKey, items: [claimItem(1)] });
       expect(early.items[0]).toMatchObject({
         state: 'sync-covers',
@@ -320,9 +340,17 @@ describe(ICloudIdentityService.name, () => {
       expect(asked.items[0].state).toBe('granted');
 
       const long = connection({ state: 'error', unhealthySince: new Date(Date.now() - 73 * 3_600_000) });
-      const overdue = setup({ connections: [long], inventory: [record(long.id, 1)] });
+      const overdue = setup({ connections: [long], inventory: [record(long.id, 1, pending)] });
       const late = await overdue.sut.claim(auth, { deviceKey, items: [claimItem(1)] });
       expect(late.items[0].state).toBe('granted');
+    });
+
+    it('grants an item the sync has nothing left to bring, so the device can deliver what is missing', async () => {
+      // in scope, but nothing pending: the rest failed, needs review, or is a role the sync does not import
+      const healthy = connection();
+      const { sut } = setup({ connections: [healthy], inventory: [record(healthy.id, 1)] });
+      const { items } = await sut.claim(auth, { deviceKey, items: [claimItem(1)] });
+      expect(items[0]).toMatchObject({ state: 'granted', connectionId: null });
     });
 
     it("acts only for one of the caller's own backup devices", async () => {
