@@ -1,42 +1,41 @@
+import { createHash } from 'node:crypto';
 import z from 'zod';
 import type { FrameleafDiscoveryDocument } from 'src/utils/frameleaf-cloud.js';
-import { PushEventType, PushPlatform } from 'src/enum.js';
+import { PushEventType } from 'src/enum.js';
 
 /**
- * FL-228: the server side of the Frameleaf push gateway (`push.frameleaf.cloud`, Frameleaf Cloud C5).
+ * FL-302 (NAPI-015): the Frameleaf push gateway contract (FC-92, `push.frameleaf.cloud`; frameleaf-cloud
+ * `packages/contracts/src/instance/push.ts` and `docs/native-apps-cloud.md`). It replaces FL-228's
+ * assumed batch contract.
  *
- * ASSUMED CONTRACT. The gateway is Frameleaf Cloud work and its contract was not published when this was
- * written, so this module is the server's statement of it; a change on the cloud side changes it here.
- *
- * - Address: discovery's `endpoints.push` when present, else `api` (FL-155: "absent ones follow `api`").
- *   The instance token is requested with that address as its `resource`, DPoP-bound to the instance key
- *   like every other instance call (FL-178).
- * - `POST <push>/v1/push/messages`, `Authorization: DPoP <instance token>`, `DPoP: <proof>`, body
- *   `{ messages: PushGatewayMessage[] }` (at most `PUSH_GATEWAY_BATCH` per request), nothing else.
- *   Each message is `{ id, target, blob }`:
- *   - `id`: a random UUID, the gateway's idempotency key for that message;
- *   - `target`: where and how to deliver, never what: the platform (`ios` → APNs, `android` → FCM HTTP v1),
- *     the token, which token it is (`device`, ActivityKit `activity-start` or `activity-update`), the
- *     delivery mode (`alert`: a visible notification the app's Notification Service Extension / messaging
- *     service decrypts; `background`: a silent wake-up; `liveactivity`: an ActivityKit push whose
- *     content-state is `{ "e": <blob> }`), and for Live Activities the ActivityKit event and attributes type;
- *   - `blob`: the payload encrypted to the device key (`src/utils/push-crypto.ts`), opaque to the gateway.
- * - Answer `200`/`202` `{ results: [{ id, status }] }`: `accepted`; `unregistered` (APNs 410 / FCM
- *   UNREGISTERED: the token is gone, and this server forgets it); `rejected` (anything else; logged as a
- *   count only). Errors use the Frameleaf Cloud error envelope like every other cloud call.
+ * - Address: discovery's `endpoints.push` when present, else `api` (FL-155). The instance token is
+ *   requested with that address as its `resource` and DPoP-bound to the instance key (FL-178).
+ * - `POST <push>/v1/push/send`, one push per request: the target (`platform`: `apns`, `apns-sandbox`
+ *   for development builds, or `fcm`; and `token`), the push `type`, `priority`, `collapseId`,
+ *   `ttlSec`, and either the end-to-end encrypted `payload` (alert and background: the frameleaf-push-v1
+ *   envelope, `docs/developer/push-envelope-v1.md`) or, for a Live Activity, a fixed non-personal
+ *   `liveActivity.state` (ActivityKit renders the content state itself; nothing can decrypt it).
+ * - Answer `{ status, retryAfterSec? }`: `sent`; `invalid-token` (this server must not use the token
+ *   again); `throttled` or `retry` (try again later, after `retryAfterSec` when given).
  *
  * The server never holds APNs or FCM credentials; the gateway does.
  */
-export const PUSH_GATEWAY_PATH = '/v1/push/messages';
-export const PUSH_GATEWAY_BATCH = 100;
+export const PUSH_GATEWAY_PATH = '/v1/push/send';
+/** Sends in flight at once for one notice; the gateway allows 600 a minute per instance. */
+export const PUSH_GATEWAY_CONCURRENCY = 8;
+/** Delivery attempts for a target the gateway asked to retry (the first included). */
+export const PUSH_GATEWAY_MAX_ATTEMPTS = 5;
+/** The gateway's limit on the encrypted payload (base64url characters). */
+export const PUSH_PAYLOAD_MAX_CHARS = 3072;
 
-/** The ActivityKit attributes type of the Cloud Backup activation Live Activity (FL-266). */
+/** The ActivityKit attributes kind of the Cloud Backup activation Live Activity (FL-266), as the app registers it. */
 export const CLOUD_BACKUP_ACTIVITY_KIND = 'cloud-backup-activation';
+/** Its ActivityKit attributes type, as the gateway names it. */
+export const CLOUD_BACKUP_ATTRIBUTES_TYPE = 'ActivationAttributes';
 
 /**
- * The largest plaintext a payload may have before encryption. APNs takes 4 KiB, FCM data messages
- * 4 KiB; the envelope adds 61 bytes and base64url a third, and the gateway needs room for its own
- * wrapping, so 2 KiB of plaintext always fits.
+ * The largest plaintext a payload may have before encryption: the envelope adds 61 bytes and
+ * base64url a third, so 2 KiB of plaintext stays within the gateway's 3 KiB payload.
  */
 export const PUSH_PLAINTEXT_MAX_BYTES = 2048;
 
@@ -49,58 +48,117 @@ export const pushGatewayBase = (document: Pick<FrameleafDiscoveryDocument, 'api'
 export const pushGatewayUrl = (document: Pick<FrameleafDiscoveryDocument, 'api' | 'endpoints'>): string =>
   `${pushGatewayBase(document)}${PUSH_GATEWAY_PATH}`;
 
+/** Which token of a device a push goes to; an `invalid-token` answer forgets exactly that one. */
 export enum PushTargetKind {
   Device = 'device',
   ActivityStart = 'activity-start',
   ActivityUpdate = 'activity-update',
 }
 
-export enum PushDeliveryMode {
-  Alert = 'alert',
-  Background = 'background',
-  LiveActivity = 'liveactivity',
-}
+export const LIVE_ACTIVITY_STEPS = [
+  'plan-active',
+  'server-notified',
+  'storage-ready',
+  'first-backup',
+  'backup-running',
+  'backup-done',
+  'render-running',
+  'render-done',
+  'needs-attention',
+] as const;
 
-const pushTargetSchema = z
+const liveActivityStateSchema = z
   .object({
-    platform: z.enum(PushPlatform),
-    token: z.string().min(1).max(4096),
-    kind: z.enum(PushTargetKind),
-    mode: z.enum(PushDeliveryMode),
-    activityEvent: z.enum(['start', 'update', 'end']).optional(),
-    activityKind: z.literal(CLOUD_BACKUP_ACTIVITY_KIND).optional(),
+    step: z.enum(LIVE_ACTIVITY_STEPS),
+    progress: z.number().min(0).max(1).optional(),
+    done: z.int().min(0).max(1e9).optional(),
+    total: z.int().min(0).max(1e9).optional(),
   })
   .strict();
-export type PushGatewayTarget = z.infer<typeof pushTargetSchema>;
+export type LiveActivityState = z.infer<typeof liveActivityStateSchema>;
 
-const pushMessageSchema = z
-  .object({
-    id: z.uuid(),
-    target: pushTargetSchema,
-    blob: z
-      .string()
-      .min(1)
-      .max(8192)
-      .regex(/^[\w-]+$/),
-  })
-  .strict();
-export type PushGatewayMessage = z.infer<typeof pushMessageSchema>;
+/** A token the gateway takes: an APNs (hex) or ActivityKit token, or an FCM registration token. */
+export const isGatewayToken = (token: string) => token.length >= 32 && token.length <= 4096 && /^[\w:-]+$/.test(token);
+
+const LIVE_TYPES = ['live-activity-start', 'live-activity-update', 'live-activity-end'] as const;
 
 /** What may go to the gateway; checked before every request, so nothing else can leave. */
-export const pushGatewayRequestSchema = z
-  .object({ messages: z.array(pushMessageSchema).min(1).max(PUSH_GATEWAY_BATCH) })
-  .strict();
-export type PushGatewayRequest = z.infer<typeof pushGatewayRequestSchema>;
+export const pushSendRequestSchema = z
+  .object({
+    platform: z.enum(['apns', 'apns-sandbox', 'fcm']),
+    token: z.string().refine((token) => isGatewayToken(token)),
+    type: z.enum(['alert', 'background', ...LIVE_TYPES]),
+    priority: z.enum(['high', 'normal']),
+    collapseId: z
+      .string()
+      .regex(/^[\w.-]{1,64}$/)
+      .optional(),
+    ttlSec: z.int().min(0).max(604_800),
+    payload: z
+      .string()
+      .max(PUSH_PAYLOAD_MAX_CHARS)
+      .regex(/^[\w-]*$/)
+      .optional(),
+    liveActivity: z
+      .object({
+        state: liveActivityStateSchema,
+        attributesType: z.literal(CLOUD_BACKUP_ATTRIBUTES_TYPE).optional(),
+        staleAfterSec: z.int().positive().max(86_400).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    const live = (LIVE_TYPES as readonly string[]).includes(request.type);
+    const problems = [
+      live && request.platform === 'fcm' && 'Live Activities are iOS only',
+      live === !request.liveActivity && 'Only Live Activity pushes carry a state, and every one does',
+      live === !!request.payload && 'Alert and background pushes carry the encrypted payload, Live Activities never do',
+      request.type === 'live-activity-start' &&
+        !request.liveActivity?.attributesType &&
+        'Starting a Live Activity needs its attributes type',
+    ];
+    const problem = problems.find((value) => typeof value === 'string');
+    if (problem) {
+      context.addIssue({ code: 'custom', message: problem });
+    }
+  });
+export type PushSendRequest = z.infer<typeof pushSendRequestSchema>;
 
-export const pushGatewayResponseSchema = z.object({
-  results: z.array(
-    z.object({
-      id: z.string(),
-      status: z.enum(['accepted', 'unregistered', 'rejected']),
-    }),
-  ),
+export const pushSendResultSchema = z.object({
+  status: z.enum(['sent', 'invalid-token', 'throttled', 'retry']),
+  retryAfterSec: z.int().positive().optional(),
 });
-export type PushGatewayResponse = z.infer<typeof pushGatewayResponseSchema>;
+export type PushSendResult = z.infer<typeof pushSendResultSchema>;
+
+/** The Live Activity state of an activation step: no free text, nothing personal. */
+export const liveActivityStateOf = (progress: CloudBackupActivationProgress): LiveActivityState => {
+  if (progress.state === 'failed') {
+    return { step: 'needs-attention' };
+  }
+  const step = {
+    'plan-active': 'plan-active',
+    'server-notified': 'server-notified',
+    'preparing-storage': 'storage-ready',
+    'first-backup': progress.state === 'complete' ? 'backup-done' : 'first-backup',
+  } as const;
+  return { step: step[progress.stage], progress: Math.min(1, progress.step / progress.total) };
+};
+
+/** A notice's dedupe key as an APNs collapse id / FCM collapse key (64 safe characters at most). */
+export const collapseIdOf = (dedupeKey: string | undefined): string | undefined => {
+  if (!dedupeKey) {
+    return;
+  }
+  return /^[\w.-]{1,64}$/.test(dedupeKey)
+    ? dedupeKey
+    : createHash('sha256').update(dedupeKey).digest('hex').slice(0, 32);
+};
+
+/** How long a platform may hold a push for an offline device: a wake-up is stale after hours, a notice after a day. */
+export const pushTtlSec = (notice: Pick<PushNotice, 'background' | 'activation'>, live: boolean): number =>
+  live ? 3600 : notice.background ? 4 * 3600 : 86_400;
 
 /** Plain values only; identifiers, counts and names, never file paths or credentials. */
 export type PushNoticeData = Record<string, string | number | boolean | null>;
@@ -144,6 +202,11 @@ export type PushNotice = {
   dedupeKey?: string;
   /** How long to wait before delivering, so a burst becomes one notice. */
   delayMs?: number;
+  /**
+   * FL-302: a later attempt for only these targets (`deliveryKeyOf`), which the gateway asked to retry.
+   * It keeps the first attempt's collapse id, since the retry job no longer carries the dedupe key.
+   */
+  retry?: { targets: string[]; attempt: number; collapseId?: string };
 };
 
 /** The plaintext a device decrypts. */
@@ -166,18 +229,16 @@ const truncate = (value: string, max: number) =>
 /**
  * The payload for one notice. Privacy (FL-137, FL-212/FL-213): an item that is not in `safeAssetIds`
  * (Locked, sensitive, hidden or gone) is never named; data values naming it are dropped as well, so a
- * Locked item's event carries no preview and no trace of the item. A Live Activity carries no items at
- * all. The result always fits `PUSH_PLAINTEXT_MAX_BYTES`.
+ * Locked item's event carries no preview and no trace of the item. (A Live Activity carries no payload
+ * at all, only its fixed state.) The result always fits `PUSH_PLAINTEXT_MAX_BYTES`.
  */
 export const buildPushPayload = (
   notice: Pick<PushNotice, 'type' | 'title' | 'body' | 'data' | 'assetIds' | 'activation'>,
-  options: { id: string; sentAt: string; safeAssetIds: ReadonlySet<string>; liveActivity?: boolean },
+  options: { id: string; sentAt: string; safeAssetIds: ReadonlySet<string> },
 ): PushPayload => {
   const candidates = notice.assetIds ?? [];
   const withheld = new Set(candidates.filter((id) => !options.safeAssetIds.has(id)));
-  const assetIds = options.liveActivity
-    ? []
-    : candidates.filter((id) => options.safeAssetIds.has(id)).slice(0, PUSH_MAX_ASSET_IDS);
+  const assetIds = candidates.filter((id) => options.safeAssetIds.has(id)).slice(0, PUSH_MAX_ASSET_IDS);
   const data = Object.fromEntries(
     Object.entries(notice.data ?? {}).filter(([, value]) => typeof value !== 'string' || !withheld.has(value)),
   );

@@ -134,11 +134,45 @@ The gateway wraps the envelope in the platform message. Nothing else from the pl
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
 | Alert               | `{"aps":{"alert":{"title":"Frameleaf","body":"You have a new notification."},"mutable-content":1,"sound":"default"},"e":"<envelope>"}`. The Notification Service Extension replaces the placeholder alert with the decrypted `title` and `body`. | `data: {"e":"<envelope>","t":"alert"}`      |
 | Background (silent) | `{"aps":{"content-available":1},"e":"<envelope>"}`                                                                                                                                                                                               | `data: {"e":"<envelope>","t":"background"}` |
-| Live Activity (iOS) | `aps.content-state` is a small fixed, non-personal state. It is not an envelope, because ActivityKit renders the state itself and no extension can decrypt it.                                                                                   | —                                           |
+| Live Activity (iOS) | `aps.content-state` is a small fixed, non-personal state. It is not an envelope, because ActivityKit renders the state itself and no extension can decrypt it (see Live Activity content state below).                                           | —                                           |
 
 - **`e`** is always the envelope string exactly as sealed.
 - **`t`** appears only in FCM data messages. It is the gateway's push type, `alert` or `background`. FCM data messages have no `aps` to say how they should be shown, so `t` tells the Android app whether to post a visible notification (`alert`) or work silently (`background`).
 - **`t` is not authenticated.** It is outside the envelope, so it only says how to handle the push, never what it is about. The event type is the plaintext's `type`, which is authenticated.
+
+### Live Activity content state
+
+Live Activity pushes (iOS only) carry no envelope and no text. `aps.content-state` is exactly this JSON object, and nothing else from the server reaches ActivityKit:
+
+| Field      | Type                | Meaning                                                    |
+| ---------- | ------------------- | ---------------------------------------------------------- |
+| `step`     | string              | One of the steps below                                     |
+| `progress` | number 0–1, omitted | How far through the activation chain (the step's position) |
+| `done`     | integer, optional   | Reserved for counts; the server does not send it today     |
+| `total`    | integer, optional   | Reserved for counts; the server does not send it today     |
+
+The steps the gateway allows are `plan-active`, `server-notified`, `storage-ready`, `first-backup`, `backup-running`, `backup-done`, `render-running`, `render-done` and `needs-attention`. The Cloud Backup activation chain (`activation` in the plaintext) maps onto them like this:
+
+| Activation stage              | `step`            | `progress`   |
+| ----------------------------- | ----------------- | ------------ |
+| `plan-active`                 | `plan-active`     | step ÷ total |
+| `server-notified`             | `server-notified` | step ÷ total |
+| `preparing-storage`           | `storage-ready`   | step ÷ total |
+| `first-backup`, still running | `first-backup`    | step ÷ total |
+| `first-backup`, complete      | `backup-done`     | 1            |
+| any stage, failed             | `needs-attention` | omitted      |
+
+The activity's lifecycle is driven by the push type:
+
+- `live-activity-start` is sent to the push-to-start token, with attributes type `ActivationAttributes`.
+- `live-activity-update` is sent while the chain runs. Each update has a stale date one hour after it is sent.
+- `live-activity-end` is sent when the chain completes or fails. An ordinary alert carrying the full plaintext follows it.
+
+An update that could not be delivered is not sent again, because the next update replaces it.
+
+### APNs environment
+
+A development build gets APNs sandbox tokens, and only APNs sandbox delivers to them. Register such a build with `apnsEnvironment: "sandbox"` (`PUT /api/push/devices/current`, or later with `PATCH`; iOS only). The server then routes its pushes through the gateway as `apns-sandbox`. Production builds leave the field out.
 
 ## Test vectors
 
