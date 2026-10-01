@@ -107,7 +107,10 @@ function fakeServer({
       const [major, minor, patch] = version.split(".").map(Number);
       return json({ major, minor, patch });
     }
-    if (route === "/auth/admin-sign-up") return json({ id: "u" }, 201);
+    if (route === "/auth/admin-sign-up") {
+      assert.equal(JSON.parse(init.body).setupCode, "ABCD-2345");
+      return json({ id: "u" }, 201);
+    }
     if (route === "/auth/login") {
       assert.equal(JSON.parse(init.body).email, ADMIN.email);
       return json({ accessToken: "token", isAdmin });
@@ -132,6 +135,8 @@ function fakeServer({
   };
 }
 const execFake = (service, command) => {
+  if (service === "immich-server" && command.includes("setup-code"))
+    return "ABCD-2345\n";
   if (service === "immich-server" && /proc\/net/.test(command.join(" ")))
     return "  sl\n";
   if (service === "immich-server")

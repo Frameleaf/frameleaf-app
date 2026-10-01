@@ -275,8 +275,11 @@ export const authHeaders = (token: string): HeadersInit => ({ Authorization: `Be
 
 export const ensureAdmin = async () => {
   const credentials = { email: 'certification-admin@example.test', password: 'Certification123!' };
+  // FL-292: the fork shows a setup code; the harness reads it with the admin command line
+  // (scripts/test-fork-roundtrip.sh); the official server needs none
+  const setupCode = process.env.FORK_ROUNDTRIP_SETUP_CODE || undefined;
   await fetch(`${apiUrl}/auth/admin-sign-up`, {
-    body: JSON.stringify({ ...credentials, name: 'Certification Admin' }),
+    body: JSON.stringify({ ...credentials, name: 'Certification Admin', ...(setupCode && { setupCode }) }),
     headers: { 'content-type': 'application/json' },
     method: 'POST',
   });

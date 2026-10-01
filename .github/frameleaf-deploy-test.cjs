@@ -167,8 +167,15 @@ async function checkInstallation({
     "The server reports another version",
   );
 
+  // FL-292: a new server is claimed with the setup code it shows on its console; the admin command
+  // line prints it, as it would for a person whose console output is gone
+  const setupCode = exec("immich-server", [
+    "frameleaf-admin",
+    "setup-code",
+    "--plain",
+  ]).trim();
   await api.call("POST", "/auth/admin-sign-up", {
-    body: { ...ADMIN, password },
+    body: { ...ADMIN, password, setupCode },
   });
   const login = await api.call("POST", "/auth/login", {
     body: { email: ADMIN.email, password },

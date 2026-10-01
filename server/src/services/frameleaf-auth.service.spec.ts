@@ -150,6 +150,8 @@ describe(FrameleafAuthService.name, () => {
     });
     mocks.database.withLock.mockImplementation((_lock, callback) => callback() as never);
     mocks.session.create.mockImplementation((row) => Promise.resolve({ id: 'session-1', ...row } as never));
+    // FL-292: a set-up server (one administrator exists) unless a test says otherwise
+    mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
     mocks.frameleafAccount.upsertLink.mockImplementation((row) =>
       Promise.resolve({ ...row, access: row.access ?? null, linkedAt: new Date(), lastSignInAt: null }),
     );
@@ -238,6 +240,7 @@ describe(FrameleafAuthService.name, () => {
     it('makes an administrator of a person Frameleaf Cloud names as one', async () => {
       idClaims.frameleaf_role = 'admin';
       const created = UserFactory.create({ isAdmin: true });
+      mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
       mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
       mocks.user.getByEmail.mockResolvedValue(void 0);
       mocks.clusterGroup.create.mockResolvedValue({ id: 'group-1' } as never);
@@ -245,6 +248,48 @@ describe(FrameleafAuthService.name, () => {
 
       await sut.callback(callbackDto, {}, loginDetails);
       expect(mocks.user.create).toHaveBeenCalledWith(expect.objectContaining({ isAdmin: true }));
+    });
+
+    describe('a server set up from the Frameleaf app (FL-292)', () => {
+      beforeEach(() => {
+        idClaims.frameleaf_role = 'admin';
+        mocks.user.getAdmin.mockResolvedValue(void 0);
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+        mocks.user.getByEmail.mockResolvedValue(void 0);
+        mocks.clusterGroup.create.mockResolvedValue({ id: 'group-1' } as never);
+        mocks.user.create.mockResolvedValue(UserFactory.create({ isAdmin: true }) as never);
+      });
+
+      it('makes the owner who linked it its first administrator, without a password', async () => {
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'fl-sub' });
+        await sut.callback(callbackDto, {}, loginDetails);
+        expect(mocks.user.create).toHaveBeenCalledWith(
+          expect.objectContaining({ isAdmin: true, email: 'remote@example.test' }),
+        );
+        expect(mocks.user.create.mock.calls[0][0]).not.toHaveProperty('password');
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ action: AdminAuditAction.AccountCreated, detail: 'server-claimed:app-frameleaf' }),
+        ]);
+      });
+
+      it('never promotes a linked account that does not own the server while nobody administers it', async () => {
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'the-owner' });
+        const linked = UserFactory.create({ isAdmin: false });
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue({ userId: linked.id, sub: 'fl-sub' } as never);
+        mocks.user.get.mockResolvedValue(linked as never);
+        await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('signs in first');
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.session.create).not.toHaveBeenCalled();
+      });
+
+      it('lets nobody else become the first administrator', async () => {
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'someone-else' });
+        await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('signs in first');
+        delete idClaims.frameleaf_role;
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'fl-sub' });
+        await expect(sut.callback(callbackDto, {}, loginDetails)).rejects.toThrow('signs in first');
+        expect(mocks.user.create).not.toHaveBeenCalled();
+      });
     });
 
     it('links an existing account by its verified email', async () => {
@@ -436,6 +481,42 @@ describe(FrameleafAuthService.name, () => {
         created.id,
         expect.objectContaining({ role: 'user' }),
       );
+    });
+
+    describe('a server set up from the Frameleaf app (FL-292)', () => {
+      beforeEach(() => {
+        mocks.user.getAdmin.mockResolvedValue(void 0);
+        mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+        mocks.user.getByEmail.mockResolvedValue(void 0);
+        mocks.clusterGroup.create.mockResolvedValue({ id: 'group-1' } as never);
+        mocks.user.create.mockResolvedValue(UserFactory.create({ isAdmin: true }) as never);
+      });
+
+      it('gives the owner who claims it by token exchange no invited-account quota (FL-230, FL-235)', async () => {
+        metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { signIn: { invitedStorageQuota: 5 } } });
+        clearConfigCache();
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'fl-sub' });
+        const token = await mint({ claims: { frameleaf_role: 'admin', frameleaf_access: 'owner' } });
+        await sut.exchangeToken({ token }, loginDetails);
+        expect(mocks.user.create).toHaveBeenCalledWith(
+          expect.objectContaining({ isAdmin: true, quotaSizeInBytes: null }),
+        );
+        expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
+          expect.objectContaining({ sub: 'fl-sub', access: 'owner', autoRegistered: true }),
+        );
+        expect(mocks.adminAudit.create).toHaveBeenCalledWith([
+          expect.objectContaining({ action: AdminAuditAction.AccountCreated, detail: 'server-claimed:app-frameleaf' }),
+        ]);
+      });
+
+      it('refuses anyone else by token exchange with no_access', async () => {
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), accountId: 'someone-else' });
+        const token = await mint({ claims: { frameleaf_role: 'admin', frameleaf_access: 'admin' } });
+        await expect(sut.exchangeToken({ token }, loginDetails)).rejects.toMatchObject({
+          response: expect.objectContaining({ code: 'frameleaf_exchange_no_access' }),
+        });
+        expect(mocks.user.create).not.toHaveBeenCalled();
+      });
     });
 
     describe('storage quota for invited accounts (FL-235)', () => {

@@ -75,6 +75,22 @@ const LogoutResponseSchema = z
 const SignUpSchema = LoginCredentialSchema.omit({ rememberMe: true })
   .extend({
     name: z.string().describe('User name').meta({ example: 'Admin' }),
+    // FL-292: required in practice (a sign-up without either is refused with setup_code_required);
+    // optional in the schema so the request shape stays compatible
+    setupCode: z
+      .string()
+      .trim()
+      .max(32)
+      .optional()
+      .describe(
+        "The setup code shown on the server's console and in its log (XXXX-XXXX); required to create the first administrator",
+      ),
+    setupTicket: z
+      .string()
+      .trim()
+      .max(256)
+      .optional()
+      .describe('Instead of the code: a setup ticket from POST server/setup/code, from the same device'),
   })
   .meta({ id: 'SignUpDto' });
 

@@ -165,8 +165,15 @@ export type SetupState = {
 };
 
 /** What the screens know that isn't saved: the live storage check. */
+/**
+ * FL-292: what a setup code looks like: 8 characters of ABCDEFGHJKMNPQRSTUVWXYZ23456789, typed with
+ * or without the dash, in any case. The server decides whether it is right.
+ */
+export const isSetupCodeShape = (value: string) =>
+  /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/.test(value.toUpperCase().replaceAll(/[^0-9A-Z]/g, ''));
+
 export type SetupContext = {
-  secrets?: { password?: string; confirm?: string };
+  secrets?: { password?: string; confirm?: string; setupCode?: string };
   storageWritable?: boolean | null;
   /** FL-168: the server is already linked with Sign in with Frameleaf, so the Frameleaf path signs in. */
   frameleafSignIn?: boolean;
@@ -216,7 +223,9 @@ export const validEmail = (value: string) => EMAIL.test(value.trim());
  * are required; every other step has a recommended choice.
  */
 export const validateStep = (state: SetupState, stepId: SetupStepId, context: SetupContext = {}) => {
-  const errors: Partial<Record<'link' | 'name' | 'email' | 'password' | 'confirm' | 'storage', Translations>> = {};
+  const errors: Partial<
+    Record<'link' | 'name' | 'email' | 'password' | 'confirm' | 'storage' | 'setupCode', Translations>
+  > = {};
   const { choices } = state;
   const secrets = context.secrets ?? {};
   if (stepId === 'account' && state.flow === 'new') {
@@ -237,6 +246,10 @@ export const validateStep = (state: SetupState, stepId: SetupStepId, context: Se
         errors.password = 'frameleaf_setup_error_password';
       } else if (secrets.password !== secrets.confirm) {
         errors.confirm = 'frameleaf_setup_error_confirm';
+      }
+      // FL-292: the code the server shows on its console and in its log
+      if (!isSetupCodeShape(secrets.setupCode ?? '')) {
+        errors.setupCode = 'frameleaf_setup_error_setup_code';
       }
     }
   }

@@ -60,8 +60,9 @@ export class AuthController {
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   @Authenticated({ public: true, setup: true })
-  signUpAdmin(@Body() dto: SignUpDto): Promise<UserAdminResponseDto> {
-    return this.service.adminSignUp(dto);
+  @RateLimited(RATE_LIMITS.frameleafSetup)
+  signUpAdmin(@Body() dto: SignUpDto, @GetLoginDetails() details: LoginDetails): Promise<UserAdminResponseDto> {
+    return this.service.adminSignUp(dto, { ip: details.clientIp, via: details.via ?? null });
   }
 
   @Post('validateToken')
