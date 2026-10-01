@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it, vitest } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vitest } from 'vitest';
+import { ExitCode } from 'src/enum.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
+import { SHUTDOWN_WORKER_DEADLINE_MS } from 'src/utils/shutdown.js';
 
 const mocks = vitest.hoisted(() => {
   const pubClient = {
@@ -90,5 +92,83 @@ describe(AppRepository.name, () => {
     expect(mocks.server.sockets.adapter.close).toHaveBeenCalledOnce();
     expect(mocks.pubClient.disconnect).toHaveBeenCalledOnce();
     expect(mocks.subClient.disconnect).toHaveBeenCalledOnce();
+  });
+
+  describe('stop (FL-291)', () => {
+    let exit: ReturnType<typeof vitest.spyOn>;
+
+    beforeEach(() => {
+      vitest.useFakeTimers();
+      exit = vitest.spyOn(process, 'exit').mockImplementation((() => {}) as never);
+    });
+
+    afterEach(() => {
+      exit.mockRestore();
+      vitest.useRealTimers();
+    });
+
+    it('closes the application gracefully, then exits with the code asked for', async () => {
+      const sut = new AppRepository();
+      let finish!: () => void;
+      const close = vitest.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+      sut.setCloseFn(close);
+
+      sut.stop(0);
+      expect(close).toHaveBeenCalledOnce();
+      await vitest.advanceTimersByTimeAsync(4000);
+      expect(exit).not.toHaveBeenCalled();
+
+      finish();
+      await vitest.advanceTimersByTimeAsync(0);
+      expect(exit).toHaveBeenCalledWith(0);
+    });
+
+    it('exits at the deadline when closing hangs', async () => {
+      const sut = new AppRepository();
+      sut.setCloseFn(() => new Promise<void>(() => {}));
+
+      sut.stop(0);
+      await vitest.advanceTimersByTimeAsync(SHUTDOWN_WORKER_DEADLINE_MS - 1);
+      expect(exit).not.toHaveBeenCalled();
+      await vitest.advanceTimersByTimeAsync(1);
+
+      expect(exit).toHaveBeenCalledWith(0);
+    });
+
+    it('still exits when closing fails', async () => {
+      const sut = new AppRepository();
+      const log = vitest.spyOn(console, 'error').mockImplementation(() => {});
+      sut.setCloseFn(() => Promise.reject(new Error('redis away')));
+
+      sut.stop(0);
+      await vitest.advanceTimersByTimeAsync(0);
+
+      expect(exit).toHaveBeenCalledWith(0);
+      log.mockRestore();
+    });
+
+    it('closes once when asked twice', async () => {
+      const sut = new AppRepository();
+      const close = vitest.fn(() => Promise.resolve());
+      sut.setCloseFn(close);
+
+      sut.stop(0);
+      sut.stop(0);
+      await vitest.advanceTimersByTimeAsync(0);
+
+      expect(close).toHaveBeenCalledOnce();
+    });
+
+    it('restarts through the same graceful stop', async () => {
+      const sut = new AppRepository();
+      const close = vitest.fn(() => Promise.resolve());
+      sut.setCloseFn(close);
+
+      sut.exitApp();
+      await vitest.advanceTimersByTimeAsync(0);
+
+      expect(close).toHaveBeenCalledOnce();
+      expect(exit).toHaveBeenCalledWith(ExitCode.AppRestart);
+    });
   });
 });

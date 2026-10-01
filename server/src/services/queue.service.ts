@@ -41,6 +41,7 @@ import {
   isNsfwDetectionEnabled,
   isSmartSearchEnabled,
 } from 'src/utils/misc.js';
+import { SHUTDOWN_GRACE_MS } from 'src/utils/shutdown.js';
 
 /** FL-71: the machine-learning workload whose routed destination runs a queue's jobs. */
 const QUEUE_ML_WORKLOADS: Partial<Record<QueueName, MlWorkload>> = {
@@ -136,9 +137,14 @@ export class QueueService extends BaseService {
     }
   }
 
+  /**
+   * FL-291: the graceful stop has already stopped the workers by now; this covers anything else that
+   * closes the application, so a running job is never left active.
+   */
   @OnEvent({ name: 'AppShutdown' })
-  onShutdown() {
+  async onShutdown() {
     this.jobRepository.teardown();
+    await this.jobRepository.stopWorkers(SHUTDOWN_GRACE_MS);
   }
 
   private updateConcurrency(config: SystemConfig) {
