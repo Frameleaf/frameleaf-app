@@ -95,7 +95,61 @@ describe.runIf(phase === 'origin-seed')(`${lane}: exact official origin`, () => 
   });
 });
 
+type GettingReadyObservation = {
+  ping: string;
+  redirect: string;
+  page: number;
+  status: { state: string; copy?: string; backup?: { filename: string } } | null;
+};
+
+/** Recorded by scripts/test-fork-roundtrip.sh (start_fork_first_launch) while the fork first started. */
+type FirstLaunchEvidence = {
+  expected: 'taken' | 'skipped';
+  copy: { filename: string; complete: boolean; forkSchemaStatements: number } | null;
+  backups: string[];
+  skipLogged: boolean;
+  observations: GettingReadyObservation[];
+};
+
+const PRE_UPGRADE_COPY = /^immich-db-backup-\d{8}T\d{6}-pre-upgrade-v[\d.]+-pg[\d.]+\.sql\.gz$/;
+const OFFICIAL_BACKUP = /^immich-db-backup-\d{8}T\d{6}-v3\.1\.0-pg[\d.]+\.sql\.gz$/;
+
 describe.runIf(phase === 'origin-pre-migrator')(`${lane}: compatible fork pre-migrator`, () => {
+  // FL-295: the first start served "Getting Ready…" (every page sent to it, every API call refused with
+  // 503 and Retry-After) while it took the safety copy, or skipped it for a recent official backup.
+  it('showed "Getting Ready…" and took or skipped the safety copy before upgrading', async () => {
+    const evidence = await loadState<FirstLaunchEvidence>('first-launch');
+    const preparing = evidence.observations.filter(({ status }) => status !== null);
+
+    expect(preparing.length).toBeGreaterThan(0);
+    for (const observation of preparing) {
+      expect(observation.ping).toBe('503 5');
+      expect(observation.redirect).toMatch(/^302 http:\/\/127\.0\.0\.1:\d+\/getting-ready\?continue=%2Fphotos$/);
+      expect(observation.page).toBe(1);
+    }
+    expect(evidence.observations.at(-1)?.ping).toMatch(/^200/);
+
+    const states = new Set(preparing.map(({ status }) => status!.state));
+    if (evidence.expected === 'taken') {
+      expect(evidence.copy).toEqual({
+        filename: expect.stringMatching(PRE_UPGRADE_COPY),
+        complete: true,
+        forkSchemaStatements: 0,
+      });
+      expect([...states].some((state) => ['backing-up', 'done', 'ready'].includes(state))).toBe(true);
+      expect(states.has('skipped')).toBe(false);
+      expect(evidence.skipLogged).toBe(false);
+    } else {
+      expect(evidence.copy).toBeNull();
+      expect(evidence.backups.some((name) => OFFICIAL_BACKUP.test(name))).toBe(true);
+      expect(states.has('skipped')).toBe(true);
+      expect(states.has('backing-up')).toBe(false);
+      const skipped = preparing.find(({ status }) => status!.state === 'skipped')!.status!;
+      expect(skipped.backup?.filename).toMatch(OFFICIAL_BACKUP);
+      expect(evidence.skipLogged).toBe(true);
+    }
+  });
+
   // FL-289: swapping the image is the upgrade. The first boot adopts the official library by itself
   // (inside the boot migration lock, without maintenance mode) and the API worker starts the backfill.
   it('adopts the official library at its first boot and preserves the official workflow ledger and rows', async () => {
