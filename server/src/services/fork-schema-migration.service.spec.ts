@@ -214,19 +214,52 @@ describe(ForkSchemaMigrationService.name, () => {
       expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('fork-schema resume'));
     });
 
-    it.each(['dual-write', 'ready', 'active', 'inactive', 'failed'] as const)(
-      'leaves a %s library untouched',
-      async (phase) => {
-        mocks.forkSchema.beginInitialBackfill.mockResolvedValue({ outcome: 'not-legacy', phase });
+    it('resumes a backfill that stopped in legacy without an operator pause', async () => {
+      mocks.forkSchema.beginInitialBackfill.mockResolvedValue({ outcome: 'resumed', phase: 'dual-write' });
 
-        await expect(service.onBootstrap()).resolves.toBeUndefined();
+      await expect(service.onBootstrap()).resolves.toBeUndefined();
 
-        expect(mocks.forkSchema.transitionPhase).not.toHaveBeenCalled();
-        expect(mocks.job.queueAll).not.toHaveBeenCalled();
-      },
-    );
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith(seeds(100));
+      expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('resumed automatically'));
+    });
 
-    it('seeds once when two booting API workers race', async () => {
+    it('re-seeds a dual-write backfill at boot, so a restart never strands it', async () => {
+      mocks.forkSchema.beginInitialBackfill.mockResolvedValue({ outcome: 'not-legacy', phase: 'dual-write' });
+      mocks.forkSchema.getProgress.mockResolvedValue([progress('privacy', { remaining: 5 })]);
+
+      await expect(service.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.forkSchema.transitionPhase).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith(seeds(100));
+    });
+
+    it('leaves a failed kind for the operator and names it, its error and the retry command', async () => {
+      mocks.forkSchema.beginInitialBackfill.mockResolvedValue({ outcome: 'not-legacy', phase: 'dual-write' });
+      mocks.forkSchema.getProgress.mockResolvedValue([
+        progress('privacy', { remaining: 5 }),
+        progress('storage', { remaining: 3, lastError: 'disk full' }),
+      ]);
+
+      await expect(service.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.job.queueAll).toHaveBeenCalledExactlyOnceWith(
+        seeds(100).filter(({ data }) => data.kind !== 'storage'),
+      );
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('storage'));
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('disk full'));
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('immich-admin fork-schema resume'));
+    });
+
+    it.each(['ready', 'active', 'inactive', 'failed'] as const)('leaves a %s library untouched', async (phase) => {
+      mocks.forkSchema.beginInitialBackfill.mockResolvedValue({ outcome: 'not-legacy', phase });
+
+      await expect(service.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.forkSchema.transitionPhase).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('moves the phase once when two booting API workers race', async () => {
       mocks.forkSchema.beginInitialBackfill
         .mockResolvedValueOnce({ outcome: 'started', phase: 'dual-write' })
         .mockResolvedValueOnce({ outcome: 'not-legacy', phase: 'dual-write' });
@@ -237,8 +270,11 @@ describe(ForkSchemaMigrationService.name, () => {
 
       await Promise.all([service.onBootstrap(), other.sut.onBootstrap()]);
 
+      // One worker moves the phase; the other re-seeds the same per-kind jobs, which BullMQ
+      // deduplicates by kind (getForkSchemaBackfillJobOptions), so no batch runs twice.
       expect(mocks.forkSchema.beginInitialBackfill).toHaveBeenCalledTimes(2);
-      expect(mocks.job.queueAll).toHaveBeenCalledOnce();
+      expect(mocks.job.queueAll).toHaveBeenCalledTimes(2);
+      expect(mocks.job.queueAll.mock.calls[0]).toEqual(mocks.job.queueAll.mock.calls[1]);
     });
 
     it('returns a library to never-started when seeding fails, so the next start retries', async () => {
@@ -341,6 +377,24 @@ describe(ForkSchemaMigrationService.name, () => {
     await service.pause();
 
     expect(mocks.forkSchema.recordBackfillPause).toHaveBeenCalledOnce();
+  });
+
+  it('records an operator resume so a later fallback to legacy does not read as paused (FL-289)', async () => {
+    mocks.forkSchema.transitionPhase.mockResolvedValue(true);
+    mocks.forkSchema.getState.mockResolvedValue(state('dual-write'));
+
+    await service.resume(250);
+
+    expect(mocks.forkSchema.recordBackfillResume).toHaveBeenCalledOnce();
+  });
+
+  it('records an operator start from legacy as a resume (FL-289)', async () => {
+    mocks.forkSchema.transitionPhase.mockResolvedValue(true);
+    mocks.forkSchema.getState.mockResolvedValue(state('dual-write'));
+
+    await service.start(250);
+
+    expect(mocks.forkSchema.recordBackfillResume).toHaveBeenCalledOnce();
   });
 
   it('records no pause when pause is refused (FL-289)', async () => {
@@ -473,6 +527,62 @@ describe(ForkSchemaMigrationService.name, () => {
 
     expect(mocks.job.queue).not.toHaveBeenCalled();
     expect(mocks.forkSchema.setPhase).not.toHaveBeenCalled();
+  });
+
+  describe('orphaned claims (FL-289)', () => {
+    it('re-queues the kind for when an orphaned live claim expires', async () => {
+      mocks.forkSchema.claimBatch.mockResolvedValue(null);
+      mocks.forkSchema.getState.mockResolvedValue(state('dual-write'));
+      mocks.forkSchema.getProgress.mockResolvedValue([progress('storage', { remaining: 156 })]);
+      mocks.forkSchema.getLiveClaimDelay.mockResolvedValue(600_000);
+
+      await expect(service.runBatch('storage', 32)).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.forkSchema.getLiveClaimDelay).toHaveBeenCalledWith('storage');
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
+        name: JobName.ForkSchemaBackfill,
+        data: { kind: 'storage', batchSize: 32, delay: 605_000 },
+      });
+    });
+
+    it('keeps the chain alive: the delayed job reclaims the expired claim and continues', async () => {
+      const handler = vi.fn().mockResolvedValue({ count: 32, digest: 'a'.repeat(64) });
+      service.registerHandler('storage', handler);
+      mocks.forkSchema.getState.mockResolvedValue(state('dual-write'));
+      mocks.forkSchema.getProgress.mockResolvedValue([progress('storage', { remaining: 156 })]);
+      // The old process died holding the claim: the first run finds it live, the delayed run after
+      // the lease expired gets it back (claimBatchForMode's claimExpired branch keeps its ids).
+      mocks.forkSchema.claimBatch
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ids: ['a1', 'a2'], cursor: 'reclaimed-token' });
+      mocks.forkSchema.getLiveClaimDelay.mockResolvedValueOnce(1000);
+
+      await expect(service.runBatch('storage', 32)).resolves.toBe(JobStatus.Skipped);
+      const [{ data }] = mocks.job.queue.mock.calls[0] as [{ data: { delay?: number } }];
+      expect(data.delay).toBe(6000);
+
+      await expect(service.runBatch('storage', 32)).resolves.toBe(JobStatus.Success);
+
+      expect(handler).toHaveBeenCalledWith(['a1', 'a2']);
+      expect(mocks.forkSchema.completeBatch).toHaveBeenCalledWith('storage', 'reclaimed-token', 32, 'a'.repeat(64));
+      expect(mocks.job.queue).toHaveBeenLastCalledWith({
+        name: JobName.ForkSchemaBackfill,
+        data: { kind: 'storage', batchSize: 32 },
+      });
+    });
+
+    it('does not re-queue when the claim was released or the library left dual-write', async () => {
+      mocks.forkSchema.claimBatch.mockResolvedValue(null);
+      mocks.forkSchema.getProgress.mockResolvedValue([progress('storage', { remaining: 156 })]);
+      mocks.forkSchema.getLiveClaimDelay.mockResolvedValue(600_000);
+      mocks.forkSchema.getState
+        .mockResolvedValueOnce(state('dual-write'))
+        .mockResolvedValue({ ...state(), phase: 'ready' });
+
+      await expect(service.runBatch('storage', 32)).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
   });
 
   it('skips a queued batch after pause without claiming or recording an error', async () => {

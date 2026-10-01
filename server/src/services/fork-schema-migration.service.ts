@@ -29,6 +29,8 @@ import { BaseService } from 'src/services/base.service.js';
 import { ForkStorageNormalizationService } from 'src/services/fork-storage-normalization.service.js';
 
 const DEFAULT_BATCH_SIZE = 100;
+/** FL-289: run a retry this long after an orphaned claim's lease expires. */
+const CLAIM_EXPIRY_GRACE_MS = 5000;
 
 /** The backfill already completed (`ready`) or the library is fully active: start/resume only report. */
 const isBackfillFinished = ({ phase }: ForkState) => phase === 'ready' || phase === 'active';
@@ -138,14 +140,16 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
 
   /**
    * FL-289: swapping the container image is the whole upgrade, so the API worker starts the
-   * compatibility backfill by itself once the queues exist. Only a backfill that never started is
-   * started; an operator pause and every later phase are left alone. Never fails startup.
+   * compatibility backfill by itself once the queues exist: it starts a backfill that never started,
+   * resumes one that fell back to legacy without an operator pause, and re-seeds a running one. An
+   * operator pause and every later phase are left alone. Never fails startup.
    */
   @OnEvent({ name: 'AppBootstrap', priority: BootstrapEventPriority.ForkSchemaAutoStart, workers: [ImmichWorker.Api] })
   async onBootstrap(): Promise<void> {
     let outcome: InitialBackfillResult['outcome'];
+    let phase: InitialBackfillResult['phase'];
     try {
-      ({ outcome } = await this.forkSchemaRepository.beginInitialBackfill());
+      ({ outcome, phase } = await this.forkSchemaRepository.beginInitialBackfill());
     } catch (error) {
       this.logger.warn(
         `Could not check whether the Frameleaf backfill should start (${errorMessage(error)}); it will be checked again at the next start`,
@@ -157,19 +161,36 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
       this.logger.log('The Frameleaf backfill is paused; run `immich-admin fork-schema resume` to continue it');
       return;
     }
-    if (outcome !== 'started') {
+    const restarted = outcome === 'started' || outcome === 'resumed';
+    if (!restarted && phase !== 'dual-write') {
       return;
     }
 
+    // A restart never strands the backfill: every boot re-seeds a running one (jobs for finished
+    // kinds skip, and BullMQ keeps one job per kind). A kind whose last batch failed is left for
+    // the operator, as before.
+    let kinds: BackfillKind[] = [...BACKFILL_KINDS];
     try {
-      await this.seedAllKinds(DEFAULT_BATCH_SIZE);
-      this.logger.log('The Frameleaf backfill started automatically');
+      const failed = (await this.forkSchemaRepository.getProgress()).filter(({ lastError }) => lastError !== null);
+      for (const { kind, lastError } of failed) {
+        this.logger.warn(
+          `The Frameleaf backfill of ${kind} stopped after a failed batch (${lastError}); run \`immich-admin fork-schema resume\` to retry it`,
+        );
+      }
+      kinds = kinds.filter((kind) => failed.every((item) => item.kind !== kind));
+      await this.seedAllKinds(DEFAULT_BATCH_SIZE, kinds);
+      if (outcome === 'started') {
+        this.logger.log('The Frameleaf backfill started automatically');
+      } else if (outcome === 'resumed') {
+        this.logger.log('The Frameleaf backfill resumed automatically');
+      }
     } catch (error) {
-      // Back to "never started" so the next start retries. A batch that already claimed (and so wrote
-      // progress) makes the library read as paused instead; `fork-schema resume` continues it.
-      await this.forkSchemaRepository.transitionPhase('dual-write', 'legacy').catch(() => false);
+      if (restarted) {
+        // Back to legacy without a pause record, so the next start starts or resumes it again.
+        await this.forkSchemaRepository.transitionPhase('dual-write', 'legacy').catch(() => false);
+      }
       this.logger.warn(
-        `The Frameleaf backfill could not be queued (${errorMessage(error)}); it will start at the next start, or run \`immich-admin fork-schema resume\``,
+        `The Frameleaf backfill could not be queued (${errorMessage(error)}); it will be queued again at the next start`,
       );
     }
   }
@@ -184,6 +205,10 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
     }
     if (!transitioned && status.phase !== 'dual-write') {
       throw new Error('Backfill can only start from legacy phase');
+    }
+    if (transitioned) {
+      // Starting from legacy ends an operator pause, the same as resume.
+      await this.forkSchemaRepository.recordBackfillResume();
     }
     await this.seedAllKinds(batchSize);
     return this.status();
@@ -210,6 +235,8 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
     if (!transitioned && status.phase !== 'dual-write') {
       throw new Error('Backfill can only resume from legacy phase');
     }
+    // FL-289: the latest pause/resume audit row decides whether the operator paused the backfill.
+    await this.forkSchemaRepository.recordBackfillResume();
     await this.seedAllKinds(batchSize);
     return this.status();
   }
@@ -322,7 +349,9 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
       const status = await this.status();
       if (status.phase === 'dual-write' && status.verified) {
         await this.forkSchemaRepository.transitionPhase('dual-write', 'ready');
+        return JobStatus.Skipped;
       }
+      await this.retryAfterLiveClaim(kind, batchSize);
       return JobStatus.Skipped;
     }
 
@@ -344,10 +373,31 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
     return JobStatus.Success;
   }
 
-  private async seedAllKinds(batchSize: number): Promise<void> {
+  /**
+   * FL-289: a claim held by a process that died (a restart mid-batch) keeps its lease, and no job
+   * would come back for the kind once it expires. Queue one for just after the lease ends; the
+   * claim's ids are then taken over (claimBatchForMode's expired-claim branch). A live holder that
+   * finishes first queues its own successor, and BullMQ keeps one job per kind.
+   */
+  private async retryAfterLiveClaim(kind: BackfillKind, batchSize: number): Promise<void> {
+    const delay = await this.forkSchemaRepository.getLiveClaimDelay(kind);
+    if (delay === null || delay === undefined) {
+      return;
+    }
+    const { phase } = await this.forkSchemaRepository.getState();
+    if (phase !== 'dual-write') {
+      return;
+    }
+    await this.jobRepository.queue({
+      name: JobName.ForkSchemaBackfill,
+      data: { kind, batchSize, delay: Math.max(0, delay) + CLAIM_EXPIRY_GRACE_MS },
+    });
+  }
+
+  private async seedAllKinds(batchSize: number, kinds: readonly BackfillKind[] = BACKFILL_KINDS): Promise<void> {
     if (!this.seedPromise) {
       this.seedPromise = this.jobRepository.queueAll(
-        BACKFILL_KINDS.map((kind) => ({ name: JobName.ForkSchemaBackfill, data: { kind, batchSize } })),
+        kinds.map((kind) => ({ name: JobName.ForkSchemaBackfill, data: { kind, batchSize } })),
       );
     }
     const seedPromise = this.seedPromise;
