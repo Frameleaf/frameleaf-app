@@ -4,6 +4,7 @@ import { orderBy } from 'lodash-es';
 import { Socket } from 'socket.io';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobItem, JobSource, UploadFile } from 'src/types.js';
+import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import { Asset } from 'src/database.js';
 import { EventConfig } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
@@ -157,6 +158,9 @@ type EventMap = {
 
   /** FL-155: tell every administrator once per `dedupeDays` (at most 30) for the same `dedupeKey`. */
   AdminNotify: [AdminNotice];
+
+  /** FL-228: something happened that registered devices may be told about by push. */
+  PushNotify: [PushNotice];
 };
 
 export type AdminNotice = {

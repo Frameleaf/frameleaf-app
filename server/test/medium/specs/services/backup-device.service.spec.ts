@@ -26,7 +26,7 @@ const report = (deviceKey = randomUUID()) => ({
 const page = { limit: 100, offset: 0 };
 const setup = () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
-  return { ctx, sut: new BackupDeviceService(new BackupDeviceRepository(db)) };
+  return { ctx, sut: new BackupDeviceService(new BackupDeviceRepository(db), { emit: vi.fn() } as never) };
 };
 beforeAll(async () => {
   db = await getKyselyDB();

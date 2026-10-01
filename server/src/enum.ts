@@ -2287,6 +2287,10 @@ export enum JobName {
   CloudBackupSchedule = 'CloudBackupSchedule',
   /** FL-164: the hourly check that queues the weekly sample or the monthly full verification when due. */
   CloudBackupVerify = 'CloudBackupVerify',
+  /** FL-228: one push notice, encrypted per device and handed to the Frameleaf push gateway. */
+  PushDeliver = 'PushDeliver',
+  /** FL-228: the nightly wake-up of devices whose phone backup went stale. */
+  PushBackupStaleCheck = 'PushBackupStaleCheck',
 
   // OCR
   OcrQueueAll = 'OcrQueueAll',
@@ -3082,6 +3086,7 @@ export enum ApiTag {
   Pets = 'Pets',
   Plugins = 'Plugins',
   Preservation = 'Preservation',
+  Push = 'Push',
   Queues = 'Queues',
   Search = 'Search',
   Server = 'Server',
@@ -3208,3 +3213,54 @@ export const DecodeRefusalSchema = z
   .enum(DecodeRefusal)
   .describe('FL-101: why this server cannot decode a video source')
   .meta({ id: 'DecodeRefusal' });
+
+/** FL-228: the push service a registered device receives notifications through. */
+export enum PushPlatform {
+  /** Apple Push Notification service, including ActivityKit Live Activities. */
+  Ios = 'ios',
+  /** Firebase Cloud Messaging. */
+  Android = 'android',
+}
+
+export const PushPlatformSchema = z
+  .enum(PushPlatform)
+  .describe('FL-228: the push service a device receives notifications through')
+  .meta({ id: 'PushPlatform' });
+
+/** FL-228: the events this server delivers as push notifications. */
+export enum PushEventType {
+  /** A phone backup reconciliation found missing items, or the server's cloud backup needs the owner. */
+  BackupNeedsAttention = 'backup-needs-attention',
+  /** A background wake-up for a device whose phone backup has not succeeded for a while. */
+  BackupStale = 'backup-stale',
+  /** A step of the Cloud Backup activation chain (Live Activity on iOS, progress notification on Android). */
+  CloudBackupActivation = 'cloud-backup-activation',
+  /** Activity in a shared album or shared space: new items, invitations, mentions, replies, item shares. */
+  SharedActivity = 'shared-activity',
+  /** New memories are ready. */
+  Memories = 'memories',
+  /** A Studio render (export) finished. */
+  RenderFinished = 'render-finished',
+  /** Access to an album, shared space or partner library was granted, changed or ended. */
+  AccessChanged = 'access-changed',
+}
+
+export const PushEventTypeSchema = z
+  .enum(PushEventType)
+  .describe('FL-228: an event this server delivers as a push notification')
+  .meta({ id: 'PushEventType' });
+
+/** FL-228: why push notifications are unavailable on this server. */
+export enum PushUnavailableReason {
+  /** `FRAMELEAF_CLOUD_URL` is not set. */
+  NotConfigured = 'not-configured',
+  /** The server is not linked to a Frameleaf account (or the link was revoked). */
+  NotLinked = 'not-linked',
+  /** Frameleaf Cloud suspects a copy of this server; nothing is sent until that is resolved. */
+  CloneSuspected = 'clone-suspected',
+}
+
+export const PushUnavailableReasonSchema = z
+  .enum(PushUnavailableReason)
+  .describe('FL-228: why push notifications are unavailable on this server')
+  .meta({ id: 'PushUnavailableReason' });
