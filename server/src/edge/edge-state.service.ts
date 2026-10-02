@@ -348,12 +348,7 @@ export class EdgeStateService {
     previous: FrameleafRemoteAccess | null,
     now: number,
   ) {
-    this.proxy.configureRecovery(null);
-    if (this.direct.listening) {
-      await this.direct.stop();
-      this.served = null;
-    }
-    await Promise.all([this.relay.stop(), this.portMapping.release()]);
+    await this.stopServing();
     if (desired.removeCertificates) {
       // every pass: removing files that are already gone costs nothing, and a pair left by a crash goes too
       await this.certificates.remove(identityDirectory(this.configRepository));
@@ -799,11 +794,14 @@ export class EdgeStateService {
   }
 
   private async stopServing() {
-    this.proxy.configureRecovery(null);
-    if (this.direct.listening) {
-      await this.direct.stop();
-    }
-    await Promise.all([this.relay.stop(), this.portMapping.release()]);
+    // Deny every late arrival until a serving pass explicitly installs its next access policy.
+    this.proxy.configureRecovery(null, true);
+    // Close both admission paths before awaiting either listener's asynchronous drain.
+    await Promise.all([
+      this.relay.stop(),
+      this.direct.listening ? this.direct.stop() : Promise.resolve(),
+      this.portMapping.release(),
+    ]);
     this.served = null;
   }
 
