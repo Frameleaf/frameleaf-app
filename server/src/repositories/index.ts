@@ -18,6 +18,7 @@ import { BackupDeviceRepository } from 'src/repositories/backup-device.repositor
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
+import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';
@@ -179,6 +180,7 @@ export const repositories = [
   InstanceIdentityRepository,
   CloudBackupStoreRepository,
   CloudBackupIndexRepository,
+  BuddyBackupRepository,
   CloudBackupKeyRepository,
   MediaRepository,
   MemoryRepository,

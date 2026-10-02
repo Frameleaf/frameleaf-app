@@ -280,12 +280,16 @@ export class DatabaseBackupService {
    */
   async createDatabaseBackup(
     filenamePrefix: string = '',
-    { label, verify = true }: { label?: string; verify?: boolean } = {},
+    { label, verify = true, snapshot }: { label?: string; verify?: boolean; snapshot?: string } = {},
   ): Promise<string> {
     this.logger.debug(`Database Backup Started`);
 
     const { bin, args, databasePassword, databaseVersion, databaseMajorVersion } =
       await this.buildPostgresLaunchArguments('pg_dump');
+    if (snapshot !== undefined) {
+      if (!/^[\da-f]+-[\da-f]+-\d+$/i.test(snapshot)) throw new Error('Invalid PostgreSQL backup snapshot');
+      args.push(`--snapshot=${snapshot}`);
+    }
 
     this.logger.log(`Database Backup Starting. Database Version: ${databaseMajorVersion}`);
 
@@ -531,12 +535,15 @@ export class DatabaseBackupService {
   async restoreDatabaseBackup(
     filename: string,
     progressCb?: (action: 'backup' | 'restore' | 'migrations' | 'rollback', progress: number) => void,
-    { keepSafetyBackup = true }: { keepSafetyBackup?: boolean } = {},
+    { keepSafetyBackup = true, fence }: { keepSafetyBackup?: boolean; fence?: DatabaseRestoreFence } = {},
   ): Promise<void> {
     this.logger.debug(`Database Restore Started`);
 
     let isComplete = false;
     try {
+      await fence?.assert();
+      if (fence && (!Number.isSafeInteger(fence.backendPid) || fence.backendPid <= 0))
+        throw new Error('Invalid restore lock');
       if (!isValidDatabaseBackupName(filename)) {
         throw new Error('Invalid backup file format!');
       }
@@ -559,6 +566,9 @@ export class DatabaseBackupService {
       if (version && satisfies(version, '<= 2.4')) {
         isPgClusterDump = true;
       }
+      // A cluster dump may drop this database, which cannot preserve its reserved lock connection.
+      if (isPgClusterDump && fence)
+        throw new Error('Convert this legacy cluster dump to a database dump before a locked restore');
 
       const { bin, args, databaseUsername, databasePassword, databaseMajorVersion } =
         await this.buildPostgresLaunchArguments('psql', {
@@ -581,7 +591,7 @@ export class DatabaseBackupService {
         inputStream = this.storageRepository.createPlainReadStream(backupFilePath);
       }
 
-      const sqlStream = Readable.from(sql(inputStream, databaseUsername, isPgClusterDump));
+      const sqlStream = Readable.from(sql(inputStream, databaseUsername, isPgClusterDump, fence));
       const psql = this.processRepository.spawnDuplexStream(bin, args, {
         env: {
           PATH: process.env.PATH,
@@ -601,12 +611,14 @@ export class DatabaseBackupService {
       await pipeline(sqlStream, createSqlOwnerTransformStream(databaseUsername), progressSource, psql, progressSink);
 
       try {
+        await fence?.assert();
         progressCb?.('migrations', 0.9);
 
         if (await this.databaseRepository.isCertifiedReturnStartup()) {
           await this.databaseRepository.assertCertifiedReturnLedger();
         }
         const migrationMode = await this.databaseRepository.detectMigrationMode();
+        await fence?.assert();
         // Mirror the startup routing in DatabaseService: only post-cutover
         // isolated and adopted official-origin databases are certified-upstream.
         // A restored blank/fresh database has no ledger at all and still needs
@@ -618,6 +630,7 @@ export class DatabaseBackupService {
           ? this.databaseRepository.runOfficialMigrations()
           : this.databaseRepository.runMigrations());
         if (migrationMode === 'isolated') {
+          await fence?.assert();
           // FL-180: as at startup, a restored library past the certified cutover receives the newer
           // Frameleaf public migrations before the `immich_fork` migrations that may build on them.
           const { applied } = await this.databaseRepository.withLock(DatabaseLock.Migrations, () =>
@@ -627,6 +640,7 @@ export class DatabaseBackupService {
             this.logger.log(`Frameleaf migration "${name}" succeeded`);
           }
         }
+        await fence?.assert();
         await this.databaseRepository.runForkMigrations();
 
         const hasAdmin = await this.userRepository.hasAdmin();
@@ -635,7 +649,10 @@ export class DatabaseBackupService {
         }
 
         await this.maintenanceHealthRepository.checkApiHealth();
+        await fence?.assert();
       } catch (error) {
+        // A lost fence belongs to another worker; even rollback must not mutate underneath it.
+        await fence?.assert();
         progressCb?.('rollback', 0);
 
         const fileStream = this.storageRepository.createPlainReadStream(restorePointFilePath);
@@ -643,7 +660,7 @@ export class DatabaseBackupService {
         fileStream.pipe(gunzip);
         inputStream = gunzip;
 
-        const sqlStream = Readable.from(sqlRollback(inputStream, databaseUsername));
+        const sqlStream = Readable.from(sqlRollback(inputStream, databaseUsername, fence));
         const psql = this.processRepository.spawnDuplexStream(bin, args, {
           env: {
             PATH: process.env.PATH,
@@ -684,12 +701,14 @@ export class DatabaseBackupService {
   }
 }
 
-const SQL_DROP_CONNECTIONS = `
+export type DatabaseRestoreFence = { backendPid: number; assert: () => Promise<void> };
+
+const SQL_DROP_CONNECTIONS = (backendPid = 0) => `
   -- drop all other database connections
   SELECT pg_terminate_backend(pid)
   FROM pg_stat_activity
   WHERE datname = current_database()
-    AND pid <> pg_backend_pid();
+    AND pid <> pg_backend_pid()${backendPid ? ` AND pid <> ${backendPid}` : ''};
 `;
 
 const SQL_RESET_SCHEMA = (username: string) => `
@@ -713,8 +732,14 @@ const SQL_RESET_SCHEMA = (username: string) => `
   GRANT ALL ON SCHEMA public TO public;
 `;
 
-async function* sql(inputStream: Readable, databaseUsername: string, isPgClusterDump: boolean) {
-  yield SQL_DROP_CONNECTIONS;
+async function* sql(
+  inputStream: Readable,
+  databaseUsername: string,
+  isPgClusterDump: boolean,
+  fence?: DatabaseRestoreFence,
+) {
+  await fence?.assert();
+  yield SQL_DROP_CONNECTIONS(fence?.backendPid);
   yield isPgClusterDump
     ? // it is likely the dump contains SQL to try to drop the currently active
       // database to ensure we have a fresh slate; if the `postgres` database exists
@@ -725,17 +750,22 @@ async function* sql(inputStream: Readable, databaseUsername: string, isPgCluster
     : SQL_RESET_SCHEMA(databaseUsername);
 
   for await (const chunk of inputStream) {
+    await fence?.assert();
     yield chunk;
   }
+  await fence?.assert();
 }
 
-async function* sqlRollback(inputStream: Readable, databaseUsername: string) {
-  yield SQL_DROP_CONNECTIONS;
+async function* sqlRollback(inputStream: Readable, databaseUsername: string, fence?: DatabaseRestoreFence) {
+  await fence?.assert();
+  yield SQL_DROP_CONNECTIONS(fence?.backendPid);
   yield SQL_RESET_SCHEMA(databaseUsername);
 
   for await (const chunk of inputStream) {
+    await fence?.assert();
     yield chunk;
   }
+  await fence?.assert();
 }
 
 function createSqlProgressStreams(cb: (progress: number) => void) {

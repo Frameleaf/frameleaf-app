@@ -143,6 +143,8 @@ export const PAUSABLE_MEDIA_OPERATION_KINDS: readonly MediaOperationKind[] = [
   MediaOperationKind.CloudBackup,
   // FL-164: a restore records every file it has written and carries on from the next one.
   MediaOperationKind.CloudRestore,
+  MediaOperationKind.BuddyBackup,
+  MediaOperationKind.BuddyRestore,
   // FL-162: a Frameleaf Cloud job records its cloud job and every uploaded part, and resumes by the cloud
   // job id; it can pause only until it was started on Frameleaf Cloud (`cloudMlJobCanPause`).
   MediaOperationKind.CloudMlJob,

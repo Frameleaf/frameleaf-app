@@ -18,6 +18,7 @@
   import TakeoutSettingsSection from '$lib/components/frameleaf/settings/TakeoutSettingsSection.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getApiKeys, getSessions, type ApiKeyResponseDto, type SessionResponseDto } from '@immich/sdk';
+  import BuddyRestoreSection from '$lib/components/frameleaf/cloud/BuddyRestoreSection.svelte';
   import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import AppSettings from './AppSettings.svelte';
   import DownloadSettings from './DownloadSettings.svelte';
@@ -71,6 +72,7 @@
 {:else if section === 'preservation'}
   <!-- FL-74: every account preserves and restores its own originals, not only administrators. -->
   <PreservationPanel />
+  <BuddyRestoreSection />
 {:else if section === 'takeout'}
   <TakeoutSettingsSection showRoots={authManager.user.isAdmin} />
 {:else if section === 'feature'}

@@ -687,13 +687,14 @@ export class CloudBackupIndexRepository {
     assetId: string,
     lease: { operationId: string; claimToken: string },
     callback: (trx: Transaction<DB>) => Promise<T>,
+    buddy?: { authorize: () => Promise<void> },
   ): Promise<T> {
     return this.db.transaction().execute(async (trx) => {
       const operation = await trx
         .selectFrom('media_operation')
         .select('id')
         .where('id', '=', lease.operationId)
-        .where('kind', '=', MediaOperationKind.CloudRestore)
+        .where('kind', '=', buddy ? MediaOperationKind.BuddyRestore : MediaOperationKind.CloudRestore)
         .where('ownerId', '=', owner.ownerId)
         .where('claimToken', '=', lease.claimToken)
         .where('status', '=', MediaOperationStatus.Rendering)
@@ -730,46 +731,51 @@ export class CloudBackupIndexRepository {
         .forShare()
         .noWait()
         .execute();
-      const kept = await trx
-        .selectFrom('cloud_backup_manifest')
-        .select('id')
-        .where('bucket', '=', identity.bucketRef)
-        .where('key', '=', identity.manifestKey)
-        .where('status', 'in', ['complete', 'degraded'])
-        .forShare()
-        .noWait()
-        .executeTakeFirst();
-      const metadata = await trx
-        .selectFrom('system_metadata')
-        .select('value')
-        .where('key', '=', SystemMetadataKey.FrameleafCloudBackup)
-        .forShare()
-        .noWait()
-        .executeTakeFirst();
-      const claim = metadata?.value as { bucketRef?: string; keyFingerprint?: string; target?: string } | undefined;
-      const storedConfig = await trx
-        .selectFrom('system_metadata')
-        .select('value')
-        .where('key', '=', SystemMetadataKey.SystemConfig)
-        .forShare()
-        .noWait()
-        .executeTakeFirst();
-      const partial = (storedConfig?.value as SystemMetadata[SystemMetadataKey.SystemConfig] | undefined)
-        ?.frameleafCloud?.cloudBackup;
-      const fallback = defaults.frameleafCloud.cloudBackup;
-      const target = partial?.target ?? fallback.target;
-      if (
-        !storedConfig ||
-        !(partial?.enabled ?? fallback.enabled) ||
-        target === 'off' ||
-        target !== claim?.target ||
-        (target === 'byo-s3' &&
-          bucketRef(partial?.s3?.endpoint ?? fallback.s3.endpoint, partial?.s3?.bucket ?? fallback.s3.bucket) !==
-            identity.bucketRef)
-      )
-        throw new Error('Owner restore configuration unavailable');
-      if (!kept || claim?.bucketRef !== identity.bucketRef || claim.keyFingerprint !== identity.keyFingerprint)
-        throw new Error('Owner restore backup unavailable');
+      if (buddy) {
+        // Buddy has a separately authenticated encrypted manifest; current owner/session/item locks below remain identical.
+        await buddy.authorize();
+      } else {
+        const kept = await trx
+          .selectFrom('cloud_backup_manifest')
+          .select('id')
+          .where('bucket', '=', identity.bucketRef)
+          .where('key', '=', identity.manifestKey)
+          .where('status', 'in', ['complete', 'degraded'])
+          .forShare()
+          .noWait()
+          .executeTakeFirst();
+        const metadata = await trx
+          .selectFrom('system_metadata')
+          .select('value')
+          .where('key', '=', SystemMetadataKey.FrameleafCloudBackup)
+          .forShare()
+          .noWait()
+          .executeTakeFirst();
+        const claim = metadata?.value as { bucketRef?: string; keyFingerprint?: string; target?: string } | undefined;
+        const storedConfig = await trx
+          .selectFrom('system_metadata')
+          .select('value')
+          .where('key', '=', SystemMetadataKey.SystemConfig)
+          .forShare()
+          .noWait()
+          .executeTakeFirst();
+        const partial = (storedConfig?.value as SystemMetadata[SystemMetadataKey.SystemConfig] | undefined)
+          ?.frameleafCloud?.cloudBackup;
+        const fallback = defaults.frameleafCloud.cloudBackup;
+        const target = partial?.target ?? fallback.target;
+        if (
+          !storedConfig ||
+          !(partial?.enabled ?? fallback.enabled) ||
+          target === 'off' ||
+          target !== claim?.target ||
+          (target === 'byo-s3' &&
+            bucketRef(partial?.s3?.endpoint ?? fallback.s3.endpoint, partial?.s3?.bucket ?? fallback.s3.bucket) !==
+              identity.bucketRef)
+        )
+          throw new Error('Owner restore configuration unavailable');
+        if (!kept || claim?.bucketRef !== identity.bucketRef || claim.keyFingerprint !== identity.keyFingerprint)
+          throw new Error('Owner restore backup unavailable');
+      }
       // Lock the current item and its immediate authority rows, never across remote I/O.
       const asset = await trx
         .selectFrom('asset')
@@ -946,12 +952,13 @@ export class CloudBackupIndexRepository {
     limit: number;
     includeThumbs: boolean;
     includeEncodedVideo: boolean;
+    includeExternal?: boolean;
   }): Promise<CloudBackupAsset[]> {
     const assets = await this.db
       .selectFrom('asset')
       .select(['id', 'ownerId', 'originalPath'])
       .where('status', 'in', [AssetStatus.Active, AssetStatus.Trashed])
-      .where('isExternal', '=', false)
+      .$if(!options.includeExternal, (query) => query.where('isExternal', '=', false))
       .$if(options.afterId !== null, (qb) => qb.where('id', '>', options.afterId!))
       .orderBy('id')
       .limit(options.limit)
