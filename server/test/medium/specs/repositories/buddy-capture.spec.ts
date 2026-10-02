@@ -264,11 +264,24 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         references: 1,
       });
       expect(await readFile(later.path)).toEqual(later.bytes);
+      // This update commits after pg_export_snapshot(). Capture must retain the old version
+      // metadata alongside the dump, even though it reads the per-asset records afterwards.
+      await sql`UPDATE immich_fork.asset_develop_revision SET label='After snapshot'
+        WHERE "assetId"=${first.asset.id}::uuid`.execute(db);
     });
     const result = await capture.capture(run);
     expect(result.manifest.cloudBackupKeys).toEqual([
       { fingerprint: keyFingerprint(cloudKey), content: cloudKeyContent },
     ]);
+    expect(result.manifest.assetFidelity?.[first.asset.id].developRevisions[0]).toMatchObject({
+      kind: 'external', status: 'rendered', label: null, masterPath: developed.path, previewPath: developedPreview.path,
+    });
+    expect(result.manifest.assetFidelity?.[first.asset.id].restorations[0]).toMatchObject({
+      status: 'restored', resultPath: restored.path, resultPreviewPath: preview.path,
+    });
+    expect(result.manifest.assetFidelity?.[video.asset.id].files.map((file) => file.path)).toEqual(
+      expect.arrayContaining([master.path, proxy.path, lineage.path]),
+    );
     const recorded = [
       ...Object.values(result.manifest.library.assets).flatMap(({ files }) => files),
       ...result.manifest.dependencies,
