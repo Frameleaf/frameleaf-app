@@ -19,7 +19,7 @@
   $effect(() => {
     const id = asset.id;
     const allowed = canRead;
-    attempt;
+    const requestAttempt = attempt;
     evidence = null;
     failed = false;
     if (!allowed) {
@@ -28,12 +28,12 @@
     const controller = new AbortController();
     getAssetMetadata({ id }, { signal: controller.signal })
       .then((items) => {
-        if (!controller.signal.aborted && asset.id === id && canRead) {
+        if (!controller.signal.aborted && asset.id === id && canRead && attempt === requestAttempt) {
           evidence = parseCameraIdentification(items.find((item) => item.key === 'camera-identification')?.value);
         }
       })
       .catch(() => {
-        if (!controller.signal.aborted && asset.id === id && canRead) {
+        if (!controller.signal.aborted && asset.id === id && canRead && attempt === requestAttempt) {
           failed = true;
         }
       });
@@ -65,7 +65,7 @@
                 </p>
               </div>
             {/if}
-            {#each evidence.alternatives as alternative}
+            {#each evidence.alternatives as alternative, index (JSON.stringify( [alternative.source, alternative.makeTag, alternative.modelTag, alternative.make, alternative.model, index] ))}
               <div>
                 <Text color="muted" size="small"
                   >{$t(

@@ -6,9 +6,9 @@ describe('duplicate EXIF rejection comparison', () => {
   it('displays rejection and distinguishes it from stars', () => {
     const rejected = assetFactory.build({ exifInfo: { rating: null, isRejected: true } });
     const translate = ((key: string) => key) as Parameters<typeof getAllMetadataItems>[1];
-    expect(getAllMetadataItems(rejected, translate, 'en').find((item) => item.keys.some((key) => key === 'rating'))?.render).toBe(
-      'frameleaf_library_rating_rejected',
-    );
+    expect(
+      getAllMetadataItems(rejected, translate, 'en').find((item) => [...item.keys].includes('rating'))?.render,
+    ).toBe('frameleaf_library_rating_rejected');
     const stars = assetFactory.build({ exifInfo: { rating: 3, isRejected: false } });
     expect(computeDifferingMetadataFields([rejected, stars]).rating).toBe(true);
     const legacy = assetFactory.build({ exifInfo: { rating: -1 } });
