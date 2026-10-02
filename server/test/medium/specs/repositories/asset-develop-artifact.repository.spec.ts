@@ -232,6 +232,8 @@ it('refuses writes while the server is being handed over', async () => {
       }),
     ).rejects.toThrow(/handed over/);
     await expect(sut.releaseArtifacts(vi.fn(), { assetId: asset.id })).resolves.toEqual([]);
+    // FL-304: nor is usage recounted here; the caller recounts the photos alone
+    await expect(sut.syncUsage(user.id)).resolves.toBe(false);
   } finally {
     await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
   }
@@ -295,7 +297,7 @@ it('holds the owner’s quota when uploads for several photos arrive at once, an
   await expect(users.get(user.id, {})).resolves.toMatchObject({ quotaUsageInBytes: 5000, quotaSizeInBytes: 5500 });
   await ctx.newExif({ assetId: assets[0].asset.id, fileSizeInByte: 300 });
   await sql`UPDATE "user" SET "quotaUsageInBytes" = 0 WHERE id = ${user.id}::uuid`.execute(db);
-  await users.syncUsage(user.id);
+  await expect(sut.syncUsage(user.id)).resolves.toBe(true);
   await expect(usage(user.id)).resolves.toBe(5300);
 
   // released artifacts leave the usage again
