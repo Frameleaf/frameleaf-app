@@ -127,9 +127,8 @@ describe('Buddy retained per-asset work', () => {
 
   it('restores video history, selection, recipes and lineage with a translated legacy checksum, then safely replays', async () => {
     const { asset, source } = await original(AssetType.Video, true);
-    const versions = [];
     const edits = [{ action: 'rotate', parameters: { angle: 90 } }];
-    for (const name of ['first', 'second']) {
+    const createVersion = async (name: string) => {
       const master = await file(`${name}.mp4`);
       const proxy = await file(`${name}-proxy.mp4`);
       await file(
@@ -151,8 +150,9 @@ describe('Buddy retained per-asset work', () => {
           'save','ready',${master.path},${proxy.path},${JSON.stringify(projection)}::text::jsonb) RETURNING id`.execute(
         db,
       );
-      versions.push({ id: result.rows[0].id, master, proxy, projection });
-    }
+      return { id: result.rows[0].id, master, proxy, projection };
+    };
+    const versions = [await createVersion('first'), await createVersion('second')];
     await sql`INSERT INTO immich_fork.video_edit_selection ("assetId","ownerId","requestedVersionId","currentVersionId")
       VALUES (${asset.id}::uuid,${ownerId}::uuid,${versions[1].id}::uuid,${versions[1].id}::uuid)`.execute(db);
     const { state, manifest } = await capture(asset.id, source, versions[1].projection, edits);

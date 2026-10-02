@@ -27,16 +27,15 @@ export const buddyBackupPresentation = (
           ? 'frameleaf_backup_ended'
           : pairing.state === 'pending'
             ? 'frameleaf_backup_pending'
-            : !linked
-              ? 'frameleaf_backup_authorization'
-              : !entitled || !status?.enabled
+            : linked
+              ? !entitled || !status?.enabled
                 ? 'frameleaf_backup_recovery_only'
-                : undefined;
+                : undefined
+              : 'frameleaf_backup_authorization';
     outgoing =
       restricted ??
-      (!status?.settings
-        ? 'frameleaf_buddy_not_configured'
-        : status.settings.pausedSending
+      (status?.settings
+        ? status.settings.pausedSending
           ? 'frameleaf_backup_paused'
           : !status?.recoveryVerified || !status.keyFingerprint
             ? 'frameleaf_backup_key_required'
@@ -52,14 +51,15 @@ export const buddyBackupPresentation = (
                   incomplete: 'frameleaf_backup_incomplete',
                   complete: 'frameleaf_backup_complete',
                 } as Record<string, Translations>
-              )[status.run?.state ?? ''] ?? 'frameleaf_buddy_ready'));
+              )[status.run?.state ?? ''] ?? 'frameleaf_buddy_ready')
+        : 'frameleaf_buddy_not_configured');
     incoming =
       restricted ??
-      (!status?.settings
-        ? 'frameleaf_buddy_not_configured'
-        : status.settings.pausedReceiving
+      (status?.settings
+        ? status.settings.pausedReceiving
           ? 'frameleaf_buddy_receiving_paused'
-          : 'frameleaf_buddy_ready_to_receive');
+          : 'frameleaf_buddy_ready_to_receive'
+        : 'frameleaf_buddy_not_configured');
   }
   return { outgoing, incoming, write, read, send: write && !!status?.recoveryVerified && !!status.keyFingerprint };
 };
