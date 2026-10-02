@@ -123,12 +123,12 @@ export class BuddyPreflightRequestDto extends createZodDto(
 export class BuddyPreflightDto extends createZodDto(
   z.object({
     timezone: z.string(),
-    items: z.number(),
-    originalBytes: z.number(),
-    unknownSizes: z.number(),
-    databaseBytes: z.number(),
-    stagingAvailableBytes: z.number(),
-    hostingAvailableBytes: z.number().nullable(),
+    items: z.number().int().nonnegative(),
+    originalBytes: z.number().int().nonnegative(),
+    unknownSizes: z.number().int().nonnegative(),
+    databaseBytes: z.number().int().nonnegative(),
+    stagingAvailableBytes: z.number().meta({ format: 'double' }),
+    hostingAvailableBytes: z.number().meta({ format: 'double' }).nullable(),
     mounts: z.array(z.object({ path: z.string(), available: z.boolean() })),
     configurationFiles: z.array(z.object({ path: z.string(), available: z.boolean() })),
   }),
