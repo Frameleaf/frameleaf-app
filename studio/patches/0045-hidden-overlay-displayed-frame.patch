@@ -1,0 +1,190 @@
+Subject: Drop a frame presented under a hidden preview overlay when the playhead moves
+
+Freecut MIT adaptation (FL-112). While paused, the frame the preview bridge
+last presented outranks the playhead for the transport timecode, gizmos and
+scopes. The overlay controller cleared it only when the rendered overlay
+changed from visible to hidden. A frame presented while the overlay was
+already hidden (a committed-frame restore after ruler skimming, or a show
+and hide inside one render) stayed, and navigation that does not clear the
+bridge itself, such as keyframe navigation, left the timecode on the stale
+frame until a transport seek. The controller now drops that frame as soon
+as the playhead or the skim target moves while neither rendered overlay is
+shown. A visible overlay keeps its presented frame, as before.
+
+diff --git a/src/features/preview/hooks/use-preview-overlay-controller.ts b/src/features/preview/hooks/use-preview-overlay-controller.ts
+--- a/src/features/preview/hooks/use-preview-overlay-controller.ts
++++ b/src/features/preview/hooks/use-preview-overlay-controller.ts
+@@ -97,6 +97,27 @@
+     }
+   }, [isRenderedOverlayVisible, setDisplayedFrame])
+ 
++  // A presented frame outranks the playhead while paused, so it must not
++  // outlive the overlay that showed it. The effect above only fires when the
++  // overlay hides; a frame presented while it is already hidden would pin the
++  // timecode and gizmos until a transport seek. Drop it as soon as the playhead
++  // or the skim target moves, whichever caller moved it. The refs are set in
++  // the same turn that presents a frame, before the visibility state commits.
++  useEffect(
++    () =>
++      usePlaybackStore.subscribe((state, previous) => {
++        if (
++          state.currentFrame === previous.currentFrame &&
++          state.previewFrame === previous.previewFrame
++        ) {
++          return
++        }
++        if (showFastScrubOverlayRef.current || showPlaybackTransitionOverlayRef.current) return
++        setDisplayedFrame(null)
++      }),
++    [setDisplayedFrame],
++  )
++
+   return {
+     isRenderedOverlayVisible,
+     showFastScrubOverlayRef,
+diff --git a/src/features/preview/hooks/use-preview-overlay-controller.test.tsx b/src/features/preview/hooks/use-preview-overlay-controller.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/features/preview/hooks/use-preview-overlay-controller.test.tsx
+@@ -0,0 +1,141 @@
++import { act, renderHook } from '@testing-library/react'
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import { getResolvedPlaybackFrame, usePlaybackStore } from '@/shared/state/playback'
++import { resetPlaybackPreviewState } from '@/shared/state/playback-preview-test-helpers'
++import { usePreviewBridgeStore } from '@/shared/state/preview-bridge'
++import { usePreviewOverlayController } from './use-preview-overlay-controller'
++
++function renderOverlayController() {
++  const bypassPreviewSeekRef = { current: false }
++  return renderHook(() =>
++    usePreviewOverlayController({
++      bypassPreviewSeekRef,
++      setDisplayedFrame: usePreviewBridgeStore.getState().setDisplayedFrame,
++    }),
++  )
++}
++
++/** The frame the transport timecode and the gizmos read. */
++function resolvedFrame(): number {
++  const playback = usePlaybackStore.getState()
++  return getResolvedPlaybackFrame({
++    currentFrame: playback.currentFrame,
++    previewFrame: playback.previewFrame,
++    displayedFrame: usePreviewBridgeStore.getState().displayedFrame,
++    isPlaying: playback.isPlaying,
++    currentFrameEpoch: playback.currentFrameEpoch,
++    previewFrameEpoch: playback.previewFrameEpoch,
++  })
++}
++
++function presentFrame(frame: number) {
++  usePreviewBridgeStore.getState().setDisplayedFrame(frame)
++}
++
++describe('usePreviewOverlayController', () => {
++  beforeEach(() => {
++    resetPlaybackPreviewState(15)
++  })
++
++  it('drops a frame presented under a hidden overlay when the playhead moves', () => {
++    const { result } = renderOverlayController()
++    expect(result.current.isRenderedOverlayVisible).toBe(false)
++
++    // The render pump presents the restored playhead without showing the overlay.
++    act(() => presentFrame(15))
++    // Keyframe navigation moves the playhead without clearing the bridge.
++    act(() => usePlaybackStore.getState().setCurrentFrame(30))
++
++    expect(usePreviewBridgeStore.getState().displayedFrame).toBeNull()
++    expect(resolvedFrame()).toBe(30)
++  })
++
++  it('drops a frame presented under a hidden overlay when skimming starts', () => {
++    renderOverlayController()
++
++    act(() => presentFrame(15))
++    act(() => usePlaybackStore.getState().setPreviewFrame(22))
++
++    expect(usePreviewBridgeStore.getState().displayedFrame).toBeNull()
++    expect(resolvedFrame()).toBe(22)
++  })
++
++  it('drops a frame whose overlay was shown and hidden before it rendered', () => {
++    const { result } = renderOverlayController()
++
++    act(() => {
++      presentFrame(15)
++      result.current.showFastScrubOverlayForFrame()
++      result.current.hideFastScrubOverlay()
++    })
++    act(() => usePlaybackStore.getState().setCurrentFrame(30))
++
++    expect(result.current.isRenderedOverlayVisible).toBe(false)
++    expect(resolvedFrame()).toBe(30)
++  })
++
++  it('keeps the presented frame while either overlay is visible', () => {
++    const { result } = renderOverlayController()
++
++    // The pump draws first and shows the overlay second, in one synchronous turn.
++    act(() => {
++      presentFrame(15)
++      result.current.showFastScrubOverlayForFrame()
++    })
++    act(() => usePlaybackStore.getState().setCurrentFrame(30))
++    expect(result.current.isRenderedOverlayVisible).toBe(true)
++    expect(resolvedFrame()).toBe(15)
++
++    act(() => {
++      presentFrame(30)
++      result.current.showPlaybackTransitionOverlayForFrame()
++    })
++    act(() => usePlaybackStore.getState().setCurrentFrame(31))
++    expect(resolvedFrame()).toBe(30)
++  })
++
++  it('keeps a presented frame whose overlay is shown but has not rendered yet', () => {
++    const { result } = renderOverlayController()
++
++    // The show call sets its ref at once; the visibility state commits later.
++    act(() => {
++      result.current.showFastScrubOverlayRef.current = true
++      presentFrame(15)
++      usePlaybackStore.getState().setCurrentFrame(30)
++    })
++
++    expect(result.current.isRenderedOverlayVisible).toBe(false)
++    expect(usePreviewBridgeStore.getState().displayedFrame).toBe(15)
++  })
++
++  it('leaves a presented frame alone when playback state changes without moving', () => {
++    renderOverlayController()
++
++    act(() => presentFrame(15))
++    act(() => usePlaybackStore.getState().setVolume(0.5))
++
++    expect(usePreviewBridgeStore.getState().displayedFrame).toBe(15)
++  })
++
++  it('still drops the presented frame when the overlay hides', () => {
++    const { result } = renderOverlayController()
++    act(() => {
++      presentFrame(15)
++      result.current.showFastScrubOverlayForFrame()
++    })
++
++    act(() => result.current.hideFastScrubOverlay())
++
++    expect(usePreviewBridgeStore.getState().displayedFrame).toBeNull()
++  })
++
++  it('stops watching the playhead once unmounted', () => {
++    const { unmount } = renderOverlayController()
++    unmount()
++
++    presentFrame(15)
++    usePlaybackStore.getState().setCurrentFrame(30)
++
++    expect(usePreviewBridgeStore.getState().displayedFrame).toBe(15)
++  })
++})

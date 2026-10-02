@@ -226,10 +226,15 @@
       "sha256": "a6438376c53e2c77b7e0daa5ade903bb75070a40e22b0a3115a59ae5058de5ef"
     },
     {
+      "path": "patches/0045-hidden-overlay-displayed-frame.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "99ac43d1fa4f1717af2b12dda9f4934d8618fd34d38740e9e82bd8463579924e"
+    },
+    {
       "path": "patches/0046-preview-canvas-transform-placement.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "4f1bd7d0871cb6f7a273848253b2d57f61b4880b5f8dee97bdfa9322b22df734"
     }
   ],
-  "sourceSha256": "f368aabea4097290ac215954bf707b225aa7f144b1c6de7b1a82c04c3113d82f"
+  "sourceSha256": "9a14f8017ac0d3a851ac6be237e47e1541e2ee89c4734768456af645247ed9a6"
 }
