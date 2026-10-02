@@ -526,17 +526,6 @@ export class FrameleafCloudService extends BaseService {
         if (current?.usedLinkTokens?.includes(hash)) {
           throw setupRefusal(FrameleafSetupErrorCode.LinkTokenUsed);
         }
-        if (dto.serverName) {
-          // the name the person chose: the server is linked, and shows up in the app, under it
-          const serverName = dto.serverName;
-          const { oldConfig, newConfig } = await this.updateConfigExclusively(
-            (config) => {
-              config.server.name = serverName;
-            },
-            { source: 'frameleaf-cloud' },
-          );
-          await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
-        }
         await this.saveLink(
           {
             ...(current ?? emptyLink(cloudUrl)),
@@ -546,7 +535,8 @@ export class FrameleafCloudService extends BaseService {
         );
         let link: FrameleafCloudLink;
         try {
-          link = await this.completeLink(cloudUrl, { headlessToken: dto.linkToken });
+          // the name the person chose: the server is linked, and shows up in the app, under it
+          link = await this.completeLink(cloudUrl, { headlessToken: dto.linkToken }, { name: dto.serverName });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           this.logger.warn(`The Frameleaf app's link token did not link this server: ${message}`);
@@ -562,6 +552,17 @@ export class FrameleafCloudService extends BaseService {
           throw setupRefusal(FrameleafSetupErrorCode.LinkFailed, {
             message: `Frameleaf Cloud did not link this server: ${message}`,
           });
+        }
+        if (dto.serverName) {
+          // FL-304: saved only now that the server is linked; a refused link leaves the server's name as it was
+          const serverName = dto.serverName;
+          const { oldConfig, newConfig } = await this.updateConfigExclusively(
+            (config) => {
+              config.server.name = serverName;
+            },
+            { source: 'frameleaf-cloud' },
+          );
+          await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
         }
         this.logger.log(
           `This server was set up from the Frameleaf app (${client.ip}) and linked to ${link.accountLabel ?? 'a Frameleaf account'}; that account's first Sign in with Frameleaf creates the administrator`,
@@ -664,8 +665,9 @@ export class FrameleafCloudService extends BaseService {
     /**
      * FC-18: `dataRegion` is sent only when the administrator chose one; nothing in this server offers
      * that choice yet, so it is set only when linking again in the account's region after a refusal.
+     * FL-304: `name` registers the server under a name that is not saved yet (setup from the app).
      */
-    options: { dataRegion?: DataRegion } = {},
+    options: { dataRegion?: DataRegion; name?: string } = {},
   ): Promise<FrameleafCloudLink> {
     const { instanceId } = await loadInstanceIdentity(this.gatewayDeps());
     // one key for the proof and the registered public key, even if a rotation swapped it meanwhile
@@ -675,7 +677,7 @@ export class FrameleafCloudService extends BaseService {
     const endpoints = linkEndpoints(document);
     const previous = await this.readLink(cloudUrl);
     const permissions = permissionsOf(previous);
-    const { name } = await this.serverIdentity();
+    const name = options.name ?? (await this.serverIdentity()).name;
 
     let registration: InstanceRegistration;
     try {
