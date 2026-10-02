@@ -5,24 +5,45 @@ import en from '../../../../../../i18n/en.json';
 import BackupSummary from './BackupSummary.svelte';
 
 const state = vi.hoisted(() => ({
-  user: { isAdmin: true }, getBuddyBackupStatus: vi.fn(), getCloudBackupStatus: vi.fn(),
+  user: { isAdmin: true },
+  getBuddyBackupStatus: vi.fn(),
+  getCloudBackupStatus: vi.fn(),
 }));
-vi.mock('@immich/sdk', async (original) => ({ ...(await original<typeof import('@immich/sdk')>()),
-  getBuddyBackupStatus: state.getBuddyBackupStatus, getCloudBackupStatus: state.getCloudBackupStatus,
+vi.mock('@immich/sdk', async (original) => ({
+  ...(await original<typeof import('@immich/sdk')>()),
+  getBuddyBackupStatus: state.getBuddyBackupStatus,
+  getCloudBackupStatus: state.getCloudBackupStatus,
 }));
-vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { get user() { return state.user; } } }));
-vi.mock('$lib/managers/cloud-manager.svelte', () => ({ cloudManager: {
-  listen: () => () => {}, status: { state: 'linked' }, license: { entitlements: { cloudBackup: false } },
-} }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({
+  authManager: {
+    get user() {
+      return state.user;
+    },
+  },
+}));
+vi.mock('$lib/managers/cloud-manager.svelte', () => ({
+  cloudManager: {
+    listen: () => () => {},
+    status: { state: 'linked' },
+    license: { entitlements: { cloudBackup: false } },
+  },
+}));
 
 describe('Backup operational summary', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {
     state.user = { isAdmin: true };
     state.getBuddyBackupStatus.mockReset().mockResolvedValue({
-      enabled: true, configured: true, pairing: { state: 'active' },
-      recoveryVerified: true, keyFingerprint: 'key', settings: { pausedSending: false, pausedReceiving: false },
-      lastCompleteAt: null, lastVerifiedAt: null, connection: null, transferMbps: 0,
+      enabled: true,
+      configured: true,
+      pairing: { state: 'active' },
+      recoveryVerified: true,
+      keyFingerprint: 'key',
+      settings: { pausedSending: false, pausedReceiving: false },
+      lastCompleteAt: null,
+      lastVerifiedAt: null,
+      connection: null,
+      transferMbps: 0,
       hosting: { committedBytes: 1024, reservedBytes: 128, quotaBytes: 4096 },
     });
     state.getCloudBackupStatus.mockReset().mockResolvedValue({ configured: false, usage: null });
@@ -32,8 +53,10 @@ describe('Backup operational summary', () => {
     render(BackupSummary, { analytics: true });
     const outgoing = await screen.findByRole('link', { name: /My backup · outgoing.*Recovery only/ });
     expect(outgoing).toHaveAttribute('href', '/user-settings?area=backups&backupView=status');
-    expect(screen.getByRole('link', { name: /Hosting for my buddy · incoming.*Recovery only/ }))
-      .toHaveAttribute('href', '/user-settings?area=backups&backupView=controls');
+    expect(screen.getByRole('link', { name: /Hosting for my buddy · incoming.*Recovery only/ })).toHaveAttribute(
+      'href',
+      '/user-settings?area=backups&backupView=controls',
+    );
     expect(screen.getByText(/Independent of the library filters/)).toBeInTheDocument();
     expect(screen.getByText(/Hosting is encrypted storage only/)).toBeInTheDocument();
     state.getBuddyBackupStatus.mockRejectedValue(new Error('offline'));

@@ -14,8 +14,8 @@ export const BuddySettingsSchema = z.strictObject({
     .int()
     .min(10 * 1024 ** 3)
     .max(Number.MAX_SAFE_INTEGER),
-  uploadMbps: z.number().min(1).max(10_000).default(20),
-  downloadMbps: z.number().min(1).max(10_000).default(20),
+  uploadMbps: z.number().meta({ format: 'double' }).min(1).max(10_000).default(20),
+  downloadMbps: z.number().meta({ format: 'double' }).min(1).max(10_000).default(20),
   schedule: z.string().min(1).max(128).default('0 2 * * *'),
   timezone: z.string().min(1).max(128),
   windowStart: z
@@ -36,10 +36,10 @@ const run = z.object({
   state: z.string(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
-  uploadedBytes: z.number(),
-  totalBytes: z.number(),
-  objects: z.number(),
-  uploadedObjects: z.number(),
+  uploadedBytes: z.number().meta({ format: 'double' }),
+  totalBytes: z.number().meta({ format: 'double' }),
+  objects: z.number().meta({ format: 'double' }),
+  uploadedObjects: z.number().meta({ format: 'double' }),
   error: z.string().nullable(),
 });
 export const BuddyStatusSchema = z.object({
@@ -58,7 +58,11 @@ export const BuddyStatusSchema = z.object({
   pendingObjects: z.number().int().nonnegative(),
   availableBytes: z.number().int().nonnegative().nullable(),
   capacityUpdatedAt: z.string().nullable(),
-  hosting: z.object({ committedBytes: z.number(), reservedBytes: z.number(), quotaBytes: z.number() }),
+  hosting: z.object({
+    committedBytes: z.number().meta({ format: 'double' }),
+    reservedBytes: z.number().meta({ format: 'double' }),
+    quotaBytes: z.number().meta({ format: 'double' }),
+  }),
 });
 export const BuddyKitSchema = z.strictObject({
   version: z.literal(1),
@@ -80,8 +84,15 @@ export const BuddyControlSchema = z.strictObject({
   ]),
 });
 export const BuddySnapshotListSchema = z.object({
-  nextOffset: z.number().nullable(),
-  snapshots: z.array(z.object({ id: z.string(), createdAt: z.string(), sequence: z.number(), keyVersion: z.number() })),
+  nextOffset: z.number().meta({ format: 'double' }).nullable(),
+  snapshots: z.array(
+    z.object({
+      id: z.string(),
+      createdAt: z.string(),
+      sequence: z.number().meta({ format: 'double' }),
+      keyVersion: z.number().meta({ format: 'double' }),
+    }),
+  ),
 });
 export const BuddyRestoreSchema = z.strictObject({
   snapshotId: z.uuid(),
@@ -92,23 +103,30 @@ export const BuddyRestoreSchema = z.strictObject({
   confirm: z.boolean().default(false),
 });
 export const BuddyBrowseSchema = z.object({
-  items: z.array(z.object({ id: z.uuid(), name: z.string(), ownerId: z.string().optional(), bytes: z.number() })),
-  nextOffset: z.number().nullable(),
-  albums: z.array(z.object({ id: z.string(), name: z.string(), items: z.number() })),
+  items: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      ownerId: z.string().optional(),
+      bytes: z.number().meta({ format: 'double' }),
+    }),
+  ),
+  nextOffset: z.number().meta({ format: 'double' }).nullable(),
+  albums: z.array(z.object({ id: z.string(), name: z.string(), items: z.number().meta({ format: 'double' }) })),
 });
 export const BuddyRestoreResponseSchema = z.object({
   operationId: z.string().nullable(),
-  items: z.number(),
+  items: z.number().meta({ format: 'double' }),
   metadataItems: z.number().int().nonnegative().optional(),
-  bytes: z.number(),
-  conflicts: z.number(),
+  bytes: z.number().meta({ format: 'double' }),
+  conflicts: z.number().meta({ format: 'double' }),
   mode: z.enum(['keep', 'replace']),
   state: z.string(),
 });
 export const BuddyRestoreStatusSchema = z.object({
   id: z.uuid(),
   state: z.string(),
-  progress: z.number().nullable(),
+  progress: z.number().meta({ format: 'double' }).nullable(),
   phase: z.string(),
   recoveryId: z.string().nullable(),
   error: z.string().nullable(),
