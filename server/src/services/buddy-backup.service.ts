@@ -631,7 +631,7 @@ export class BuddyBackupService {
           hour: '2-digit',
           minute: '2-digit',
           hourCycle: 'h23',
-        }).format();
+        }).format(new Date());
         const { windowStart: start, windowEnd: end } = state.settings!;
         const inside = start === end || (start < end ? time >= start && time < end : time >= start || time < end);
         if (!inside || (await this.operations.getActiveOfKind(MediaOperationKind.BuddyRestore)))

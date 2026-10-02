@@ -295,7 +295,8 @@ describe('Buddy recovery crash barriers', () => {
     await writeFile(join(directory, 'publication.json'), JSON.stringify({ version: 2, state: 'database-ready' }));
     await writeFile(join(directory, 'replacement.json'), JSON.stringify({ keys: [], metadata: [] }));
     await writeFile(target, 'recovered');
-    database.deleteFrom = () => ({ execute: () => Promise.resolve() });
+    const deletion = { where: vi.fn().mockReturnThis(), execute: vi.fn().mockResolvedValue(undefined) };
+    database.deleteFrom = vi.fn(() => deletion);
     const restore = vi.fn();
     const maintenance = {
       isMaintenanceMode: true,
@@ -303,6 +304,8 @@ describe('Buddy recovery crash barriers', () => {
     } as never;
     const before = await repository.state();
     await service.restore(id, restore, maintenance, assert);
+    expect(database.deleteFrom.mock.calls).toEqual([['session'], ['system_metadata']]);
+    expect(deletion.where).toHaveBeenCalledExactlyOnceWith('key', 'in', []);
     expect((await repository.state()).settings).toMatchObject({
       uploadMbps: 7,
       pausedSending: true,
