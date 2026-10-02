@@ -209,6 +209,18 @@ describe(UserAdminService.name, () => {
       },
     );
 
+    it("recounts the user's usage, with develop artifacts where the fork schema can be used, when the quota changes (FL-304)", async () => {
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      mocks.assetDevelop.syncUsage.mockResolvedValue(true);
+      await sut.update(authStub.admin, userStub.user1.id, { quotaSizeInBytes: 1024 });
+      expect(mocks.assetDevelop.syncUsage).toHaveBeenCalledWith(userStub.user1.id);
+      expect(mocks.user.syncUsage).not.toHaveBeenCalled();
+
+      mocks.assetDevelop.syncUsage.mockResolvedValue(false);
+      await sut.update(authStub.admin, userStub.user1.id, { quotaSizeInBytes: 1024 });
+      expect(mocks.user.syncUsage).toHaveBeenCalledExactlyOnceWith(userStub.user1.id);
+    });
+
     it('should update the user', async () => {
       const update = {
         shouldChangePassword: true,

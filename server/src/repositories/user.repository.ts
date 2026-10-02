@@ -665,28 +665,16 @@ export class UserRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   async syncUsage(id?: string) {
-    // FL-304: develop artifacts are charged to their owner when stored, so a recount keeps them
-    // (the table is there once the fork schema is installed)
-    const artifacts = await sql<{ table: string | null }>`
-      SELECT to_regclass('immich_fork.asset_develop_artifact')::text AS "table"
-    `.execute(this.db);
     const query = this.db
       .updateTable('user')
       .set({
-        quotaUsageInBytes: (eb) => {
-          const assets = eb
+        quotaUsageInBytes: (eb) =>
+          eb
             .selectFrom('asset')
             .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
             .select((eb) => eb.fn.coalesce(eb.fn.sum<number>('asset_exif.fileSizeInByte'), eb.lit(0)).as('usage'))
             .where('asset.libraryId', 'is', null)
-            .where('asset.ownerId', '=', eb.ref('user.id'));
-          return artifacts.rows[0]?.table
-            ? sql<number>`${assets} + (
-                SELECT COALESCE(sum(artifact.bytes), 0) FROM immich_fork.asset_develop_artifact artifact
-                WHERE artifact."ownerId" = "user"."id"
-              )`
-            : assets;
-        },
+            .where('asset.ownerId', '=', eb.ref('user.id')),
         updatedAt: new Date(),
       })
       .where('user.deletedAt', 'is', null)
