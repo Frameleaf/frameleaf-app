@@ -305,21 +305,27 @@ export class EventRepository {
   async onEvent<T extends EmitEvent>(event: { name: T; args: ArgsOf<T>; server: boolean }): Promise<void> {
     const handlers = this.emitHandlers[event.name] || [];
     const isolated = ISOLATED_EVENTS.has(event.name);
+    // FL-299: how long each handler holds a stop, so a slow one can be named from the logs
+    const timed = event.name === 'AppShutdown';
     for (const { handler, server, label } of handlers) {
       // exclude handlers that ignore server events
       if (!server && event.server) {
         continue;
       }
 
-      if (!isolated) {
-        await handler(...event.args);
-        continue;
-      }
-
+      const startedAt = performance.now();
       try {
         await handler(...event.args);
       } catch (error: any) {
+        if (!isolated) {
+          throw error;
+        }
         this.logger.error(`Event ${event.name} handler ${label ?? 'unknown'} failed: ${error}`, error?.stack);
+      } finally {
+        if (timed) {
+          const elapsed = Math.round(performance.now() - startedAt);
+          this.logger.debug(`${event.name} handler ${label ?? 'unknown'} took ${elapsed} ms`);
+        }
       }
     }
   }
