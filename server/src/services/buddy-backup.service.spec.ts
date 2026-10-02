@@ -7,17 +7,17 @@ import { DatabaseLock, MediaOperationKind, MediaOperationStatus } from 'src/enum
 import { BuddyBackupRepository, type BuddyState } from 'src/repositories/buddy-backup.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperationRepository, type MediaOperation } from 'src/repositories/media-operation.repository.js';
+import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { BuddyBackupCaptureService, type BuddyCapture } from 'src/services/buddy-backup-capture.service.js';
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import { buddyObjectId, createBuddyKeyring, encryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
 import { buddyCommitReceipt } from 'src/utils/buddy-backup-protocol.js';
-import { BuddyVault, type BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
+import { type BuddySignedSnapshot, BuddyVault } from 'src/utils/buddy-backup-vault.js';
 import { CLOUD_BACKUP_MANIFEST_FORMAT } from 'src/utils/cloud-backup.js';
 import { BuddyGrantResponse, BuddyPairing } from 'src/utils/frameleaf-buddy.js';
-import { jwsSigningInput, type FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
+import { type FrameleafKeySigner, jwsSigningInput } from 'src/utils/frameleaf-dpop.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { makeLicenseSigner } from 'test/fixtures/frameleaf-license.fixture.js';
 import { automock } from 'test/utils.js';
@@ -122,16 +122,11 @@ const createRunFixture = async (directory: string) => {
   vi.spyOn(repository, 'root').mockReturnValue(directory);
   // Lock admission is covered by repository/PG specs; keep the real durable state reader and writer here.
   vi.spyOn(repository, 'locked').mockImplementation((_name, callback) => callback(undefined as never));
-  const capture = new BuddyBackupCaptureService(
-    repository,
-    undefined as never,
-    undefined as never,
-    undefined as never,
-  );
+  const capture = new BuddyBackupCaptureService(repository, undefined as never, undefined as never, undefined as never);
   vi.spyOn(capture, 'reconcile').mockResolvedValue(undefined);
-  const release = vi.spyOn(capture, 'release').mockImplementation((id) =>
-    rm(capture.runDirectory(id), { recursive: true, force: true }),
-  );
+  const release = vi
+    .spyOn(capture, 'release')
+    .mockImplementation((id) => rm(capture.runDirectory(id), { recursive: true, force: true }));
   const captured: BuddyCapture = {
     manifest: {
       version: 1,
@@ -267,9 +262,10 @@ const createRunFixture = async (directory: string) => {
   // Only transport and PG are mocked. Production client request/proof/receipt validation still runs.
   const fetch = vi.fn(async (input: string | URL | Request, options?: RequestInit) => {
     const path = new URL(String(input)).pathname.split(`/${ring.vaultId}/`)[1];
-    let data: unknown = { ok: true };
-    if (path === 'snapshots' && options?.method === 'GET')
-      data = [{ id: priorSnapshot, sequence: 7, keyVersion: 1, createdAt: state.lastCompleteAt }];
+    let data: unknown =
+      path === 'snapshots' && options?.method === 'GET'
+        ? [{ id: priorSnapshot, sequence: 7, keyVersion: 1, createdAt: state.lastCompleteAt }]
+        : { ok: true };
     if (path === 'inventory') {
       const { ids } = JSON.parse(options!.body as string) as { ids: string[] };
       data = ids
@@ -292,7 +288,7 @@ const createRunFixture = async (directory: string) => {
       data = buddyCommitReceipt(envelope);
     }
     const proof = (options!.headers as Record<string, string>).DPoP;
-    const { jti } = JSON.parse(Buffer.from(proof.split('.')[1], 'base64url').toString()) as { jti: string };
+    const { jti } = JSON.parse(Buffer.from(proof.split('.', 2)[1], 'base64url').toString()) as { jti: string };
     return Response.json(
       BuddyBackupPeerService.prototype.signed.call(
         replies,
