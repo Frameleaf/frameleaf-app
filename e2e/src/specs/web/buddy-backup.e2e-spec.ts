@@ -183,6 +183,15 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       await expect(dialog.getByLabel('Ends', { exact: true })).toHaveValue('00:00');
       await expect(dialog.getByRole('button', { name: 'Save hosting settings' })).toBeDisabled();
       await expect(dialog).not.toHaveCSS('animation-name', /fl-sheet-rise/);
+      const centerOffset = await dialog.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return {
+          x: Math.abs(bounds.x + bounds.width / 2 - innerWidth / 2),
+          y: Math.abs(bounds.y + bounds.height / 2 - innerHeight / 2),
+        };
+      });
+      expect(centerOffset.x, 'dialog is horizontally centered').toBeLessThanOrEqual(1);
+      expect(centerOffset.y, 'dialog is vertically centered').toBeLessThanOrEqual(1);
       await recordScreen(page, info, `${screen.name}-hosting-dialog`, 'dialog[open]');
       const derived = dialog.getByRole('checkbox', { name: 'Also include thumbnails and transcoded copies' });
       await derived.focus();
