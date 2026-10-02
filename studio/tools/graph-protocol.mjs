@@ -1,5 +1,5 @@
 /**
- * The computable rules of the Studio graph protocol v1 (FL-306), implemented from
+ * The computable rules of the Studio graph protocol v1 (FL-306, FL-307), implemented from
  * `docs/docs/developer/studio-graph-protocol-v1.md` alone, without the engine.
  *
  * `graph-protocol.test.mjs` checks this implementation against the engine-generated fixtures in
@@ -166,4 +166,225 @@ export function validate(schema, value) {
   };
   check(schema, value, '');
   return errors;
+}
+
+/* Part 2 (protocol section 12): rules that can be computed from a graph and a payload alone */
+
+/** Section 3.2, step 2: the exact reading of a rate stored as a number, or null when it has none. */
+export function exactRate(fps) {
+  if (!Number.isFinite(fps) || fps <= 0) return null;
+  if (Number.isInteger(fps)) return { num: fps, den: 1 };
+  for (const num of [24000, 30000, 48000, 60000, 120000]) {
+    const exact = num / 1001;
+    if (Math.abs(fps - exact) < 1e-9 || fps === Math.round(exact * 1000) / 1000) return { num, den: 1001 };
+  }
+  return null;
+}
+
+/** 12.2.4: timeline frames to source frames, in doubles, in the order written. */
+export const toSource = (frames, fps, sourceFps = fps, speed = 1) => Math.floor((frames / fps) * sourceFps * speed + 0.5);
+
+/** 12.2.4: source frames to timeline frames, in doubles, in the order written. */
+export const toTimeline = (frames, fps, sourceFps = fps, speed = 1) => Math.floor(((frames / sourceFps) * fps) / speed);
+
+const MEDIA = new Set(['video', 'audio', 'composition']);
+export const isMediaClip = (item) => MEDIA.has(item.type);
+const endOf = (item) => item.from + item.durationInFrames;
+
+/** 12.2.5: the source windows of the two halves of a media clip split after `left` of its frames. */
+export function splitSource(item, left, fps) {
+  const start = item.sourceStart ?? 0;
+  const cut = start + toSource(left, fps, item.sourceFps ?? fps, item.speed ?? 1);
+  const end = start + toSource(item.durationInFrames, fps, item.sourceFps ?? fps, item.speed ?? 1);
+  return { left: { sourceStart: start, sourceEnd: cut }, right: { sourceStart: cut, sourceEnd: end } };
+}
+
+/** 12.2.4: a clip after its start is trimmed by `amount` frames (positive shortens). */
+export function trimStart(item, amount, fps) {
+  const next = { ...item, from: item.from + amount, durationInFrames: item.durationInFrames - amount };
+  if (isMediaClip(item)) {
+    next.sourceStart = (item.sourceStart ?? 0) + toSource(amount, fps, item.sourceFps ?? fps, item.speed ?? 1);
+  }
+  return next;
+}
+
+/** 12.2.4: a clip after its end is trimmed by `amount` frames (positive lengthens). */
+export function trimEnd(item, amount, fps) {
+  const next = { ...item, durationInFrames: item.durationInFrames + amount };
+  if (isMediaClip(item) && item.sourceEnd !== undefined) {
+    const start = item.sourceStart ?? 0;
+    const moved = Math.max(start + 1, item.sourceEnd + toSource(amount, fps, item.sourceFps ?? fps, item.speed ?? 1));
+    next.sourceEnd = item.sourceDuration === undefined ? moved : Math.min(item.sourceDuration, moved);
+  }
+  return next;
+}
+
+/** 12.4.5: the length and stored speed of a clip retimed to `speed` (a rational), or null when its rate is inexact. */
+export function retime(item, speed, metadata) {
+  const span = item.sourceEnd - (item.sourceStart ?? 0);
+  const source = exactRate(item.sourceFps ?? metadata.fps);
+  if (!source) return null;
+  const project = metadata.frameRate;
+  // span / sourceRate / speed * projectRate, to the nearest frame, halves up, in exact integers.
+  const numerator = BigInt(span) * BigInt(source.den) * BigInt(speed.den) * BigInt(project.num);
+  const denominator = BigInt(source.num) * BigInt(speed.num) * BigInt(project.den);
+  const durationInFrames = Number((2n * numerator + denominator) / (2n * denominator));
+  const derived = (span * metadata.fps) / (durationInFrames * (item.sourceFps ?? metadata.fps));
+  return { durationInFrames, speed: Math.max(0.1, Math.min(16, derived)) };
+}
+
+/** Section 5: every pair of clips on one track that share a frame and that no transition joins. */
+export function overlapsOf(graph) {
+  const joined = new Set();
+  for (const transition of graph.timeline.transitions ?? []) {
+    joined.add(`${transition.leftClipId}|${transition.rightClipId}`);
+    joined.add(`${transition.rightClipId}|${transition.leftClipId}`);
+  }
+  const found = [];
+  for (const [trackId, items] of Map.groupBy(graph.timeline.items ?? [], (item) => item.trackId)) {
+    const sorted = items.toSorted((a, b) => a.from - b.from);
+    for (let i = 0; i < sorted.length; i++) {
+      for (let j = i + 1; j < sorted.length && sorted[j].from < endOf(sorted[i]); j++) {
+        if (!joined.has(`${sorted[i].id}|${sorted[j].id}`)) found.push(`${trackId}: ${sorted[i].id} and ${sorted[j].id}`);
+      }
+    }
+  }
+  return found;
+}
+
+/** 12.2.8: the name each track with a classic name must have, by position. */
+export function classicNames(tracks) {
+  const names = new Map();
+  const classic = (kind, pattern) => tracks.filter((track) => track.kind === kind && pattern.test(track.name));
+  classic('video', /^V\d+$/i)
+    .toSorted((a, b) => b.order - a.order)
+    .forEach((track, index) => names.set(track.id, `V${index + 1}`));
+  classic('audio', /^A\d+$/i)
+    .toSorted((a, b) => a.order - b.order)
+    .forEach((track, index) => names.set(track.id, `A${index + 1}`));
+  return names;
+}
+
+/** 12.2.8: a track list as a command writes it: ascending order (ties keep their order), classic names renumbered. */
+export function writeTracks(tracks) {
+  const list = tracks
+    .map((track, index) => ({ track, index }))
+    .sort((a, b) => a.track.order - b.track.order || a.index - b.index)
+    .map(({ track }) => track);
+  const names = classicNames(list);
+  return list.map((track) => (names.has(track.id) ? { ...track, name: names.get(track.id) } : track));
+}
+
+/** 12.2.8: the first name of a track a command creates. */
+export function firstTrackName(tracks, kind) {
+  const [letter, pattern] = kind === 'video' ? ['V', /^V\d+$/i] : ['A', /^A\d+$/i];
+  const used = new Set(
+    tracks.filter((track) => track.kind === kind && pattern.test(track.name)).map((track) => Number(track.name.slice(1))),
+  );
+  let next = 1;
+  while (used.has(next)) next++;
+  return `${letter}${next}`;
+}
+
+/** 12.2.7: in and out points clamped to an extent whose last frame is `last`. */
+export function clampInOut(inPoint, outPoint, last, fps) {
+  const max = Math.max(last, Math.floor(10 * fps), 1);
+  let a = inPoint === undefined ? undefined : Math.max(0, Math.min(max, inPoint));
+  let b = outPoint === undefined ? undefined : Math.max(1, Math.min(max, outPoint));
+  if (a !== undefined && b !== undefined && a >= b) {
+    if (a >= max) [a, b] = [Math.max(0, max - 1), max];
+    else b = Math.min(max, a + 1);
+  }
+  return { inPoint: a, outPoint: b };
+}
+
+/** 12.2.6, rules 1 to 4: whether repair keeps a transition, before any change of its length. */
+export function transitionKept(transition, graph) {
+  const items = new Map((graph.timeline.items ?? []).map((item) => [item.id, item]));
+  const left = items.get(transition.leftClipId);
+  const right = items.get(transition.rightClipId);
+  if (!left || !right) return false;
+  if (left.trackId !== right.trackId) return false;
+  if (right.from > endOf(left) + 1) return false;
+  return [left, right].every((item) => ['video', 'image', 'composition'].includes(item.type));
+}
+
+/* Part 2 reference replays: commands whose whole effect a few lines of the prose give */
+
+/** 12.8: the marker list after a marker command; `draw` yields the envelope's next id. */
+export function applyMarkerCommand(markers, envelope, rate, draw) {
+  const { id, payload } = envelope;
+  if (id === 'marker.add') {
+    const marker = { id: draw(), frame: framesOf(payload.at, rate), color: payload.colour ?? '#3B82F6' };
+    if (payload.name) marker.label = payload.name;
+    return [...markers, marker];
+  }
+  if (id === 'marker.remove') return markers.filter((marker) => marker.id !== payload.markerId);
+  if (id === 'marker.update') {
+    return markers.map((marker) => {
+      if (marker.id !== payload.markerId) return marker;
+      const next = { ...marker };
+      if (payload.patch.name !== undefined) {
+        if (payload.patch.name) next.label = payload.patch.name;
+        else delete next.label;
+      }
+      if (payload.patch.colour !== undefined) next.color = payload.patch.colour;
+      if (payload.patch.at !== undefined) next.frame = framesOf(payload.patch.at, rate);
+      return next;
+    });
+  }
+  throw new Error(`not a marker command: ${id}`);
+}
+
+/** 12.7.1 to 12.7.4: the track list after a track command (not `track.closeGap`); `draw` yields the next id. */
+export function applyTrackCommand(tracks, envelope, draw) {
+  const { id, payload } = envelope;
+  const sorted = tracks.toSorted((a, b) => a.order - b.order);
+  if (id === 'track.add') {
+    const orders = tracks.map((track) => track.order);
+    const { index, kind } = payload;
+    const order =
+      index === undefined
+        ? kind === 'video'
+          ? Math.min(0, ...orders) - 1
+          : Math.max(0, ...orders) + 1
+        : index === 0
+          ? (sorted[0]?.order ?? 0) - 1
+          : index >= sorted.length
+            ? (sorted.at(-1)?.order ?? 0) + 1
+            : (sorted[index - 1].order + sorted[index].order) / 2;
+    const created = {
+      id: `track-${draw()}`,
+      name: payload.name || firstTrackName(tracks, kind),
+      kind,
+      height: 100,
+      locked: false,
+      syncLock: true,
+      visible: true,
+      muted: false,
+      solo: false,
+      volume: 0,
+      order,
+      items: [],
+    };
+    return writeTracks([...tracks, created]);
+  }
+  if (id === 'track.remove') return writeTracks(tracks.filter((track) => track.id !== payload.trackId));
+  if (id === 'track.reorder') {
+    const moved = sorted.find((track) => track.id === payload.trackId);
+    const next = sorted.filter((track) => track !== moved);
+    next.splice(payload.index, 0, moved);
+    const orders = sorted.map((track) => track.order);
+    const order = new Map(next.map((track, position) => [track.id, orders[position]]));
+    return writeTracks(tracks.map((track) => ({ ...track, order: order.get(track.id) })));
+  }
+  if (id === 'track.set') {
+    const { gain, ...rest } = payload.patch;
+    return writeTracks(
+      tracks.map((track) =>
+        track.id === payload.trackId ? { ...track, ...rest, ...(gain === undefined ? {} : { volume: gain }) } : track,
+      ),
+    );
+  }
+  throw new Error(`not a track list command: ${id}`);
 }
