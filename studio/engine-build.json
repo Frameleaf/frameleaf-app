@@ -234,7 +234,12 @@
       "path": "patches/0046-preview-canvas-transform-placement.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "4f1bd7d0871cb6f7a273848253b2d57f61b4880b5f8dee97bdfa9322b22df734"
+    },
+    {
+      "path": "patches/0047-edge-keyframe-marker-overflow.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "bf1a61a74bbbc8080b731092d59153964d7a7ee4b528c6debcd2a947ef91f9c4"
     }
   ],
-  "sourceSha256": "9a14f8017ac0d3a851ac6be237e47e1541e2ee89c4734768456af645247ed9a6"
+  "sourceSha256": "dc3af56d1d7a3c4dd527ce62f3dd63eb940cdad5cbe5fd3b14d5bc89368593e3"
 }
