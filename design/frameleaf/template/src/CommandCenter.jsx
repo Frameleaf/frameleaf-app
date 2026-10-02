@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Button, Dialog } from "./App";
 import { Icon } from "./Icon";
 import { SettingsAnalytics, LibraryGrowthChart } from "./SettingsAnalytics";
+import { BackupCenter, BackupSummary } from "./BackupCenter";
 import {
   ANALYTICS_SUMMARY as summary,
   getAnalytics,
@@ -709,10 +710,10 @@ export function CommandCenter({
             <Icon name="mdiServerOutline" /> {settings.serverName}{" "}
             <span className="cc-context-divider">/</span> Settings
           </span>
-          {ownDuplicateReview ? (
+          {ownDuplicateReview || area === "backups" ? (
             <div className="cc-account-scope">
               <span>Viewing</span>
-              <span>{ownProfile.name}’s library</span>
+              <span>{area === "backups" ? "This server’s backups & hosting" : `${ownProfile.name}’s library`}</span>
             </div>
           ) : (
             <label className="cc-account-scope">
@@ -889,6 +890,8 @@ export function CommandCenter({
               scope={scope}
               onScopeChange={setRequestedScope}
             />
+          ) : area === "backups" ? (
+            <BackupCenter onNavigate={navigate} />
           ) : area === "history" ? (
             <ChangeHistory changes={changes} onNavigate={navigate} />
           ) : (
@@ -1834,7 +1837,7 @@ function Overview({
             02:00 <em>19 Sep</em>
           </strong>
           <small>
-            Time to test restoring your photos
+            Local database restore test pending
             <Icon name="mdiChevronRight" />
           </small>
         </button>
@@ -1847,6 +1850,7 @@ function Overview({
           </small>
         </button>
       </div>
+      <BackupSummary onNavigate={navigate} />
       <div className="cc-overview-grid">
         <section className="cc-panel cc-growth">
           <div className="cc-panel-title">
@@ -1871,10 +1875,10 @@ function Overview({
           >
             <Icon name="mdiBackupRestore" />
             <span>
-              <strong>Prove your backup can restore</strong>
+              <strong>Test your local database backup</strong>
               <small>
-                Albums, people and edits are backed up, but restoring your
-                original photos hasn't been tested yet.
+                The local database restore test is still pending. Cloud and
+                Buddy destinations have their own restore verification checks.
               </small>
             </span>
             <Icon name="mdiChevronRight" />

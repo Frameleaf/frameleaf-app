@@ -8,12 +8,14 @@
  * element, never from the panel under test. Clicks are ordinary locator / WebDriver clicks: no
  * force, no position, no dispatched event. No host, API, Safari or render claim.
  *
- * Known red (measured in Chromium, October 1, 2026): linked-frame0 and
- * linked-right-endpoint. A marker on either edge of the linked axis is centred on the edge, so
- * only 5 of its 12 pixels stay inside the clipped cell and its centre belongs to the cell border
- * (left) or the scrollbar strip (right). An ordinary click on the left one is intercepted and
- * times out after 30 seconds. They stay red until the engine gives edge markers a reachable hit
- * area; do not relax them.
+ * Edge markers (decision of October 2, 2026; engine patch 0047). A marker on either edge of the
+ * linked axis is centred on the edge. The lane used to clip it to 5 of its 12 pixels, with its
+ * centre on the cell border (left) or the scrollbar strip (right), so linked-frame0 and
+ * linked-right-endpoint were red. Edge markers now overflow the lane by half a marker, over the
+ * property column on the left and the scrollbar strip on the right, and stay on their frame. Do
+ * not relax these cases: every selected marker must be reachable across its whole width, and the
+ * pixels just beyond it must still belong to its neighbours (the property column on the left
+ * edge, the scrollbar on the right).
  *
  *   STUDIO_TEST_ORIGIN=http://127.0.0.1:<vite port of keyframe-browser.config.mjs> \
  *   STUDIO_TEST_EVIDENCE=<directory> [BROWSER=firefox WEBDRIVER_ENDPOINT=...] \
@@ -95,8 +97,11 @@ async function open(page, width) {
   await settled(page);
 }
 
-/** One ordinary click on a marker, with the hit witness saved before it. */
-async function selectCase(page, report, selector, ids) {
+/**
+ * One ordinary click on a marker, with the hit witness saved before it. `edge` names the lane
+ * edge the marker is centred on, whose neighbour it must not cover beyond its own box.
+ */
+async function selectCase(page, report, selector, ids, edge) {
   report.before = await measure(page, selector);
   report.stateBefore = await page.evaluate(() => window.fl100Linked.snapshot());
   await writeFile(
@@ -116,6 +121,28 @@ async function selectCase(page, report, selector, ids) {
     report.before.marker.centerHitsButton,
     "default button center belongs to the actual visible marker",
   );
+  const { reach } = report.before.marker;
+  assert.ok(
+    reach.insideLeft.hitsButton && reach.insideRight.hitsButton,
+    "the marker is reachable across its whole width",
+  );
+  assert.ok(
+    !reach.outsideLeft.hitsButton && !reach.outsideRight.hitsButton,
+    "the marker takes no pointer input beyond its own box",
+  );
+  if (edge === "left") {
+    assert.ok(
+      !reach.outsideLeft.inSurface,
+      "left of a frame-0 marker the property column keeps its own pixels",
+    );
+  }
+  if (edge === "right") {
+    assert.equal(
+      reach.outsideRight.region,
+      "dopesheet-scrollbar",
+      "right of a last-frame marker the scrollbar keeps its own pixels",
+    );
+  }
   assert.deepEqual(
     report.stateAfter.selection.map((r) => r.keyframeId).sort(),
     [...ids].sort(),
@@ -169,7 +196,7 @@ const cases = [
     name: "linked-frame0",
     async run(page, report) {
       await open(page);
-      await selectCase(page, report, K0, ["k0"]);
+      await selectCase(page, report, K0, ["k0"], "left");
     },
   },
   {
@@ -191,7 +218,7 @@ const cases = [
         ) <= AXIS_TOLERANCE_PX,
         "arrangement: frame 30 is the last visible frame of the main timeline",
       );
-      await selectCase(page, report, K30, ["k30"]);
+      await selectCase(page, report, K30, ["k30"], "right");
     },
   },
   {
