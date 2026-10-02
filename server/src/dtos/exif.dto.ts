@@ -6,6 +6,9 @@ import { asDateTimeString } from 'src/utils/date.js';
 
 export const ExifResponseSchema = z
   .object({
+    bitsPerSample: z.int().nullish().default(null).describe('Bits per sample'),
+    colorspace: z.string().nullish().default(null).describe('Recorded color space'),
+    profileDescription: z.string().nullish().default(null).describe('Color profile description'),
     make: z.string().nullish().default(null).describe('Camera make'),
     model: z.string().nullish().default(null).describe('Camera model'),
     exifImageWidth: z.int().min(0).nullish().default(null).describe('Image width in pixels'),
@@ -29,7 +32,14 @@ export const ExifResponseSchema = z
     country: z.string().nullish().default(null).describe('Country name'),
     description: z.string().nullish().default(null).describe('Image description'),
     projectionType: z.string().nullish().default(null).describe('Projection type'),
-    rating: z.int().min(1).max(5).nullish().default(null).describe('Rating'),
+    rating: z
+      .int()
+      .min(-1)
+      .max(5)
+      .nullish()
+      .default(null)
+      .refine((value) => value !== 0)
+      .describe('Rating in range [1-5] (starred), -1 (rejected), or null (unrated)'),
     fps: z.number().meta({ format: 'double' }).nullish().default(null).describe('Video frame rate (frames per second)'),
   })
   .describe('EXIF response')
@@ -39,6 +49,9 @@ class ExifResponseDto extends createZodDto(ExifResponseSchema) {}
 
 export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
   return {
+    bitsPerSample: entity.bitsPerSample ?? null,
+    colorspace: entity.colorspace ?? null,
+    profileDescription: entity.profileDescription ?? null,
     make: entity.make,
     model: entity.model,
     exifImageWidth: entity.exifImageWidth,

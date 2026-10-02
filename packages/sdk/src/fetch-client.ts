@@ -3919,8 +3919,12 @@ export type LivePhotoUploadResultDto = {
     video: AssetUploadResultDto;
 };
 export type ExifResponseDto = {
+    /** Bits per sample */
+    bitsPerSample?: number | null;
     /** City name */
     city?: string | null;
+    /** Recorded color space */
+    colorspace?: string | null;
     /** Country name */
     country?: string | null;
     /** Original date/time */
@@ -3957,9 +3961,11 @@ export type ExifResponseDto = {
     modifyDate?: string | null;
     /** Image orientation */
     orientation?: string | null;
+    /** Color profile description */
+    profileDescription?: string | null;
     /** Projection type */
     projectionType?: string | null;
-    /** Rating */
+    /** Rating in range [1-5] (starred), -1 (rejected), or null (unrated) */
     rating?: number | null;
     /** State/province name */
     state?: string | null;

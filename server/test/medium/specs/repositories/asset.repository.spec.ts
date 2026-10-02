@@ -298,6 +298,130 @@ describe(AssetRepository.name, () => {
   });
 
   describe('upsertExif', () => {
+    it.each(['make', 'model', null] as const)(
+      'atomically writes evidence with EXIF and respects camera lock %s',
+      async (lock) => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        const evidence = {
+          version: 1 as const,
+          recorded: { make: 'A', model: 'one', source: 'original' as const },
+          alternatives: [],
+          suggestion: null,
+        };
+        await sut.upsertExif({
+          exif: { assetId: asset.id, make: 'A', model: 'one' },
+          cameraEvidence: evidence,
+          expectedUpdateId: null,
+          lockedPropertiesBehavior: 'skip',
+        });
+        const previous = await ctx.database
+          .selectFrom('asset_exif')
+          .select('updateId')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow();
+        if (lock) {
+          await sut.upsertExif({
+            exif: { assetId: asset.id, make: null, model: null, lockedProperties: [lock] },
+            lockedPropertiesBehavior: 'append',
+          });
+        }
+        const current = await ctx.database
+          .selectFrom('asset_exif')
+          .select('updateId')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow();
+        const newer = { ...evidence, recorded: { ...evidence.recorded, model: 'two' } };
+        await sut.upsertExif({
+          exif: { assetId: asset.id, make: 'A', model: 'two' },
+          cameraEvidence: newer,
+          expectedUpdateId: current.updateId,
+          lockedPropertiesBehavior: 'skip',
+        });
+        expect((await sut.getMetadata(asset.id))[0].value).toEqual(lock ? evidence : newer);
+        if (lock) {
+          expect(
+            await ctx.database
+              .selectFrom('asset_exif')
+              .select(lock)
+              .where('assetId', '=', asset.id)
+              .executeTakeFirstOrThrow(),
+          ).toEqual({ [lock]: null });
+        }
+        // The original revision is stale after either the edit or the successful extraction.
+        await sut.upsertExif({
+          exif: { assetId: asset.id, model: 'stale' },
+          cameraEvidence: { ...newer, recorded: { ...newer.recorded, model: 'stale' } },
+          expectedUpdateId: previous.updateId,
+          lockedPropertiesBehavior: 'skip',
+        });
+        expect((await sut.getMetadata(asset.id))[0].value).toEqual(lock ? evidence : newer);
+      },
+    );
+
+    it('preserves media CTE writes when publishing camera evidence', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await sut.upsertExif({
+        exif: { assetId: asset.id, model: 'recorded' },
+        cameraEvidence: {
+          version: 1,
+          recorded: { make: null, model: 'recorded', source: 'original' },
+          alternatives: [],
+          suggestion: null,
+        },
+        audio: audioRow(asset.id, 1),
+        video: videoRow(asset.id, 1),
+        keyframes: keyframeRow(asset.id, 1),
+        lockedPropertiesBehavior: 'skip',
+        expectedUpdateId: null,
+      });
+      expect(
+        await ctx.database
+          .selectFrom('asset_audio')
+          .selectAll()
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual(audioRow(asset.id, 1));
+      expect(
+        await ctx.database
+          .selectFrom('asset_video')
+          .selectAll()
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual(videoRow(asset.id, 1));
+      expect(
+        await ctx.database
+          .selectFrom('asset_keyframe')
+          .selectAll()
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual(keyframeRow(asset.id, 1));
+    });
+
+    it('rejects stale evidence when an EXIF row was inserted after the empty snapshot', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, model: 'owner edit' });
+      await sut.upsertExif({
+        exif: { assetId: asset.id, model: 'stale' },
+        cameraEvidence: { version: 1, recorded: null, alternatives: [], suggestion: null },
+        expectedUpdateId: null,
+        lockedPropertiesBehavior: 'skip',
+      });
+      expect(await sut.getMetadata(asset.id)).toEqual([]);
+      expect(
+        await ctx.database
+          .selectFrom('asset_exif')
+          .select('model')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ model: 'owner edit' });
+    });
+
     it('should replace stored audio metadata on a second extraction', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

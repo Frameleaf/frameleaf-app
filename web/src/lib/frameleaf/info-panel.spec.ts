@@ -380,3 +380,27 @@ describe('ownerLine (V-27)', () => {
     expect(ownerLine(item, 'me', { sharedAlbum: true })).toEqual({ kind: 'shared', name: 'Avery' });
   });
 });
+
+describe('stored technical detail facts', () => {
+  it('shows color/profile and bits per sample independently without claiming HDR', () => {
+    const rows = infoDetailRows(
+      asset({ exifInfo: exif({ bitsPerSample: 12, colorspace: 'Uncalibrated', profileDescription: 'Display P3' }) }),
+      { isOwner: true },
+    );
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { id: 'bit-depth', value: '12' },
+        { id: 'color-space', value: 'Uncalibrated' },
+        { id: 'profile', value: 'Display P3' },
+      ]),
+    );
+    expect(rows.some((row) => row.value.includes('HDR'))).toBe(false);
+  });
+  it('omits unavailable technical facts', () => {
+    expect(
+      infoDetailRows(asset({ exifInfo: exif({ bitsPerSample: null, colorspace: null, profileDescription: null }) }), {
+        isOwner: false,
+      }).filter((row) => ['bit-depth', 'color-space', 'profile'].includes(row.id)),
+    ).toEqual([]);
+  });
+});
