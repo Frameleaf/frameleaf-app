@@ -275,7 +275,7 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
         metadata: saved,
         library: {
           version: 2,
-          format: 'frameleaf-cloud-backup',
+          format: 'frameleaf-backup-manifest',
           instanceId: randomUUID(),
           createdAt: new Date().toISOString(),
           database: null,
