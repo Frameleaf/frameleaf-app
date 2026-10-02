@@ -8,7 +8,7 @@ import { services } from 'src/services/index.js';
 type Handler = (...args: unknown[]) => Promise<void>;
 
 const setup = (event: string, handlers: Handler[]) => {
-  const logger = { setContext: vi.fn(), error: vi.fn() };
+  const logger = { setContext: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const sut = new EventRepository({} as never, {} as never, logger as unknown as LoggingRepository);
   (sut as unknown as { emitHandlers: Record<string, unknown[]> }).emitHandlers = {
     [event]: handlers.map((handler, index) => ({ event, handler, server: false, label: `Handler${index}` })),
@@ -139,6 +139,30 @@ describe(EventRepository.name, () => {
         expect.stringContaining('AssetDelete handler Handler0 failed'),
         expect.any(String),
       );
+    });
+  });
+
+  describe('AppShutdown (FL-299)', () => {
+    it('logs how long each handler took at debug level, the failing one included', async () => {
+      const { sut, logger } = setup('AppShutdown', [
+        vi.fn(() => Promise.resolve()),
+        vi.fn(() => Promise.reject(new Error('tick still running'))),
+      ]);
+
+      await expect(sut.emit('AppShutdown')).rejects.toThrow('tick still running');
+
+      expect(logger.debug.mock.calls.map(([message]) => message)).toEqual([
+        expect.stringMatching(/^AppShutdown handler Handler0 took \d+ ms$/),
+        expect.stringMatching(/^AppShutdown handler Handler1 took \d+ ms$/),
+      ]);
+    });
+
+    it('does not time the handlers of other events', async () => {
+      const { sut, logger } = setup('AppBootstrap', [vi.fn(() => Promise.resolve())]);
+
+      await sut.emit('AppBootstrap');
+
+      expect(logger.debug).not.toHaveBeenCalled();
     });
   });
 
