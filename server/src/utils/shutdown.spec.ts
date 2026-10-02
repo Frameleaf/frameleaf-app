@@ -160,6 +160,35 @@ describe(closeGracefully.name, () => {
     await expect(closeGracefully({ stopJobs, close, graceMs: 5000 })).rejects.toThrow('redis away');
     expect(close).toHaveBeenCalled();
   });
+
+  it('reports how long each part of the stop took (FL-299)', async () => {
+    const debug = vi.fn();
+    const http = { drain: vi.fn(() => Promise.resolve(true)) };
+
+    await closeGracefully({
+      http,
+      stopJobs: () => Promise.resolve(),
+      close: () => Promise.resolve(),
+      graceMs: 5000,
+      debug,
+    });
+
+    expect(debug.mock.calls.map(([message]) => message)).toEqual([
+      expect.stringMatching(/^Stop: draining HTTP requests took \d+ ms$/),
+      expect.stringMatching(/^Stop: stopping the job workers took \d+ ms$/),
+      expect.stringMatching(/^Stop: closing the application took \d+ ms$/),
+    ]);
+  });
+
+  it('reports only the parts a worker has', async () => {
+    const debug = vi.fn();
+
+    await closeGracefully({ close: () => Promise.resolve(), graceMs: 5000, debug });
+
+    expect(debug.mock.calls.map(([message]) => message)).toEqual([
+      expect.stringMatching(/^Stop: closing the application took \d+ ms$/),
+    ]);
+  });
 });
 
 describe(onStopRequest.name, () => {
