@@ -26,7 +26,6 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetDevelopService, developImportStagingFolder } from 'src/services/asset-develop.service.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -75,7 +74,6 @@ const setup = () => {
     new StorageRepository(logger()),
     new SystemMetadataRepository(database),
     new MediaOperationRepository(database),
-    new UserRepository(database),
   );
   const presets = new PhotoToolsService(logger(), photoTools);
   return { ctx, sut, presets, job, develop, integrity: new IntegrityRepository(database) };

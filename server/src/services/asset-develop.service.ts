@@ -51,7 +51,6 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
-import { UserRepository } from 'src/repositories/user.repository.js';
 import { requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
 import { DARKTABLE_RENDERER_VERSION, renderDarktable } from 'src/utils/darktable-renderer.js';
@@ -101,14 +100,13 @@ export const DEVELOP_RENDER_LEASE_MS = 10 * 60 * 1000;
 /**
  * FL-233: develop artifact bounds. A mask covers the whole original, so it is never larger than the
  * original (nor than `MASK_MAX_SIDE` when the original's size is unknown); a fill covers one Clean Up
- * area. A photo keeps at most `PER_ASSET` artifacts; one no saved version references is released
- * after `UNREFERENCED_GRACE_MS`.
+ * area. A photo keeps at most `DEVELOP_ARTIFACT_PER_ASSET` artifacts (the repository holds that
+ * limit, with the insert); one no saved version references is released after `UNREFERENCED_GRACE_MS`.
  */
 export const DEVELOP_ARTIFACT_MAX_BYTES = 64 * 1024 ** 2;
 export const DEVELOP_ARTIFACT_MASK_MAX_SIDE = 8192;
 export const DEVELOP_ARTIFACT_FILL_MAX_SIDE = 4096;
 export const DEVELOP_ARTIFACT_FILL_MAX_PIXELS = 16_000_000;
-export const DEVELOP_ARTIFACT_PER_ASSET = 64;
 export const DEVELOP_ARTIFACT_UNREFERENCED_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
@@ -170,7 +168,6 @@ export class AssetDevelopService {
     private storageRepository: StorageRepository,
     private systemMetadataRepository: SystemMetadataRepository,
     private mediaOperationRepository: MediaOperationRepository,
-    private userRepository: UserRepository,
   ) {
     this.logger.setContext(AssetDevelopService.name);
     this.editOperations = new EditOperationTracker(mediaOperationRepository, jobRepository, logger);
@@ -723,25 +720,18 @@ export class AssetDevelopService {
         await this.recordArtifact(asset, id, dto.kind, target, normalized);
         return { id, kind: existing.kind as AssetDevelopArtifactKind, width: existing.width, height: existing.height };
       }
-      const usage = await this.assetDevelopRepository.getArtifactUsage(asset.id, asset.ownerId);
-      if (usage.assetCount >= DEVELOP_ARTIFACT_PER_ASSET) {
-        throw new BadRequestException({
-          message:
-            'This photo has as many edit masks and fills as it may keep (64); ones no saved version uses are released a week after their last use',
-          code: 'develop_artifact_limit',
-        });
-      }
-      const owner = await this.userRepository.get(asset.ownerId, {});
-      if (
-        owner?.quotaSizeInBytes !== null &&
-        owner?.quotaSizeInBytes !== undefined &&
-        Number(owner.quotaUsageInBytes) + usage.ownerBytes + normalized.data.length > Number(owner.quotaSizeInBytes)
-      ) {
-        throw new BadRequestException({ message: 'Your storage is full', code: 'develop_artifact_quota' });
-      }
       this.storageRepository.mkdirSync(path.dirname(target));
       await this.writeArtifactFile(target, normalized.data);
-      await this.recordArtifact(asset, id, dto.kind, target, normalized);
+      try {
+        // FL-304: recording it checks the photo's limit and the owner's quota and charges the
+        // owner's storage usage, all in one transaction
+        await this.recordArtifact(asset, id, dto.kind, target, normalized);
+      } catch (error) {
+        // not recorded (the photo is full, the owner's storage is, or the server is being handed
+        // over): the file goes again, unless the same bitmap was recorded meanwhile
+        await this.queueFileDelete([target]);
+        throw error;
+      }
       return { id, kind: dto.kind, width: normalized.width, height: normalized.height };
     } finally {
       await this.discard([file.path]);
