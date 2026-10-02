@@ -4,7 +4,14 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, join, parse } from 'node:path';
 import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
-import { AssetFileType, AssetStatus, ChecksumAlgorithm, PhysicalFileType, StudioExportScope, StudioExportVersionState } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetStatus,
+  ChecksumAlgorithm,
+  PhysicalFileType,
+  StudioExportScope,
+  StudioExportVersionState,
+} from 'src/enum.js';
 import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
@@ -1109,7 +1116,8 @@ export class PhysicalFileRepository {
       WHERE exported."outputPath"=${path} AND exported."projectId"=${projectId}::uuid
         AND exported."ownerId"=${ownerId}::uuid AND exported."outputChecksum"=${Buffer.from(sha256, 'hex')}
     ) owned`.execute(trx);
-    if (physical || references !== Number(rows[0].count)) throw new Error('Studio restore destination is shared or pinned');
+    if (physical || references !== Number(rows[0].count))
+      throw new Error('Studio restore destination is shared or pinned');
     return callback();
   }
 
@@ -1224,19 +1232,30 @@ export class PhysicalFileRepository {
             AND item.checksum=${imported.checksum} AND item."sizeBytes"=${imported.sizeBytes}
             AND NOT EXISTS (SELECT 1 FROM public.studio_project project WHERE project.id=item."projectId")
           FOR UPDATE`.execute(trx);
-        if (!orphan.rows.length) return { deleted: false, references: 1 };
+        if (orphan.rows.length === 0) return { deleted: false, references: 1 };
       }
       if (exported) {
-        const retired = await trx.selectFrom('studio_export_version').select('id')
-          .where('id', '=', exported.id).where('ownerId', '=', exported.ownerId).where('outputPath', '=', path)
+        const retired = await trx
+          .selectFrom('studio_export_version')
+          .select('id')
+          .where('id', '=', exported.id)
+          .where('ownerId', '=', exported.ownerId)
+          .where('outputPath', '=', path)
           .where('outputRemovedAt', 'is', null)
           .where(sql<boolean>`"outputChecksum" IS NOT DISTINCT FROM ${exported.checksum}::bytea`)
           .where(sql<boolean>`"outputSizeInBytes" IS NOT DISTINCT FROM ${exported.sizeBytes}::bigint`)
-          .where((eb) => eb.or([
-            eb('state', 'in', [StudioExportVersionState.Failed, StudioExportVersionState.Cancelled]),
-            eb.and([eb('state', '=', StudioExportVersionState.Published), eb('scope', '=', StudioExportScope.Project),
-              eb('projectId', 'is', null)]),
-          ])).forUpdate().executeTakeFirst();
+          .where((eb) =>
+            eb.or([
+              eb('state', 'in', [StudioExportVersionState.Failed, StudioExportVersionState.Cancelled]),
+              eb.and([
+                eb('state', '=', StudioExportVersionState.Published),
+                eb('scope', '=', StudioExportScope.Project),
+                eb('projectId', 'is', null),
+              ]),
+            ]),
+          )
+          .forUpdate()
+          .executeTakeFirst();
         if (!retired) return { deleted: false, references: 1 };
       }
 
@@ -1248,7 +1267,8 @@ export class PhysicalFileRepository {
 
       // Only this exact orphan row may be released. Other imports, generated outputs, live
       // assets and Buddy capture pins remain references, even when owned by the same person.
-      const references = (await this.countPathReferencesIn(trx, path, physicalFile?.id)) - (imported || exported ? 1 : 0);
+      const references =
+        (await this.countPathReferencesIn(trx, path, physicalFile?.id)) - (imported || exported ? 1 : 0);
       if (references > 0) {
         await sql`UPDATE immich_fork.buddy_backup_reference SET "deleteRequested" = true WHERE path = ${path} AND NOT released`.execute(
           trx,
@@ -1264,9 +1284,16 @@ export class PhysicalFileRepository {
         await sql`DELETE FROM immich_fork.studio_project_import
           WHERE "projectId"=${imported.projectId}::uuid AND id=${imported.id}::uuid`.execute(trx);
       }
-      if (exported) await trx.updateTable('studio_export_version')
-        .set({ outputPath: null, outputRemovedAt: sql<Date>`clock_timestamp()`, updatedAt: sql<Date>`clock_timestamp()` })
-        .where('id', '=', exported.id).execute();
+      if (exported)
+        await trx
+          .updateTable('studio_export_version')
+          .set({
+            outputPath: null,
+            outputRemovedAt: sql<Date>`clock_timestamp()`,
+            updatedAt: sql<Date>`clock_timestamp()`,
+          })
+          .where('id', '=', exported.id)
+          .execute();
 
       if (physicalFile) {
         await trx.deleteFrom('physical_file').where('id', '=', physicalFile.id).execute();

@@ -97,7 +97,6 @@ it.each([
     this: CloudBackupRestorer,
     options,
   ) {
-    // eslint-disable-next-line unicorn/no-this-outside-of-class -- Preserve the real restorer instance in this wrapper.
     return restore.call(this, { ...options, library: (result) => Promise.resolve(result) });
   });
   const media = vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(directory);
