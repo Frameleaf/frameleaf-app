@@ -1837,7 +1837,7 @@ function Overview({
             02:00 <em>19 Sep</em>
           </strong>
           <small>
-            Time to test restoring your photos
+            Local database restore test pending
             <Icon name="mdiChevronRight" />
           </small>
         </button>
@@ -1875,10 +1875,10 @@ function Overview({
           >
             <Icon name="mdiBackupRestore" />
             <span>
-              <strong>Prove your backup can restore</strong>
+              <strong>Test your local database backup</strong>
               <small>
-                Albums, people and edits are backed up, but restoring your
-                original photos hasn't been tested yet.
+                The local database restore test is still pending. Cloud and
+                Buddy destinations have their own restore verification checks.
               </small>
             </span>
             <Icon name="mdiChevronRight" />

@@ -14,9 +14,9 @@
 }
 .bk-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   border-bottom: 1px solid var(--fl-border);
-  overflow-x: auto;
   padding: 0 0 10px;
 }
 .bk-tabs button {
@@ -428,6 +428,10 @@
   margin: 18px 0;
   font-size: 13px;
 }
+.backup-center label.bk-check {
+  flex-direction: row;
+  align-items: flex-start;
+}
 .bk-check input,
 .bk-radio input {
   accent-color: var(--fl-accent);
@@ -601,6 +605,10 @@
 .bk-dialog-body {
   padding: 4px 2px;
 }
+.bk-dialog-body > .bk-facts:first-child {
+  margin-top: 0;
+  padding-top: 0;
+}
 .bk-dialog-body .bk-facts dd {
   color: var(--fl-text);
 }
@@ -626,6 +634,31 @@
 }
 .bk-dialog-body .bk-alert {
   margin: 16px 0;
+}
+.bk-preview-context {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--fl-muted);
+  font-size: 11px;
+}
+.bk-preview-context > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.bk-preview-context strong {
+  font-weight: 550;
+}
+.bk-summary .bk-preview-context {
+  margin-bottom: 16px;
+}
+.cc-nav-group > button[aria-label="Backup command center"] {
+  --tile: #007a85;
+}
+.cc-nav-group > button[aria-label="Backup command center"] > svg,
+.cc-nav-group > button[aria-label="Backup command center"].selected > svg {
+  color: #fff;
 }
 .bk-steps {
   display: grid;
@@ -1036,6 +1069,13 @@
   .bk-server-art {
     width: 60px;
     height: 76px;
+  }
+  .bk-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bk-tabs button:last-child {
+    grid-column: 1 / -1;
   }
   .bk-tabs button {
     padding: 10px;
