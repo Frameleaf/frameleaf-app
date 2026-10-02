@@ -852,11 +852,14 @@ export class ICloudSyncRepository {
       }>`
         SELECT a."recordId" AS "recordName", a."recordType", a.revision AS "recordChangeTag", a.fields,
           CASE WHEN m."recordId" IS NULL THEN NULL ELSE jsonb_build_object('recordName',m."recordId",'recordType',m."recordType",'recordChangeTag',m.revision,'fields',m.fields) END AS master
-        FROM immich_fork.icloud_record a LEFT JOIN immich_fork.icloud_record m ON m."connectionId" = a."connectionId"
+        FROM (
+          SELECT * FROM immich_fork.icloud_record
+          WHERE "connectionId" = ${connection.id}::uuid AND "libraryKey" = ${libraryKey} AND "recordType" = 'CPLAsset'
+            AND NOT deleted AND "recordId" > ${checkpoint?.cursor ?? ''}
+          ORDER BY "recordId" LIMIT 100
+        ) a LEFT JOIN immich_fork.icloud_record m ON m."connectionId" = a."connectionId"
           AND m."libraryKey" = a."libraryKey" AND m."recordId" = a."masterId" AND NOT m.deleted
-        WHERE a."connectionId" = ${connection.id}::uuid AND a."libraryKey" = ${libraryKey} AND a."recordType" = 'CPLAsset'
-          AND NOT a.deleted AND a."recordId" > ${checkpoint?.cursor ?? ''}
-        ORDER BY a."recordId" LIMIT 100`.execute(db);
+        ORDER BY a."recordId"`.execute(db);
       for (const row of rows) {
         await sql`UPDATE immich_fork.icloud_resource SET source=source || '{"current":false}'::jsonb
           WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${libraryKey} AND "sourceAssetId"=${row.recordName}`.execute(
