@@ -2,6 +2,7 @@ import { BinaryField, ExifDateTime } from 'exiftool-vendored';
 import { DateTime } from 'luxon';
 import { randomBytes } from 'node:crypto';
 import { Stats } from 'node:fs';
+import type { LockableProperty } from 'src/database.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import {
@@ -203,7 +204,8 @@ describe(MetadataService.name, () => {
     ])('bounds JPEG clues to eligible originals: %j', async ({ type, tags, locks, eligible }) => {
       const asset = AssetFactory.create({ type });
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(locks as Array<'make' | 'model'>);
+      // Simulate persisted varchar[] camera locks beyond the public editable-property union.
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(locks as unknown as LockableProperty[]);
       mockReadTags(tags);
       mocks.media.probe.mockResolvedValue(videoInfoStub.noVideoStreams);
       mocks.metadata.readJpegSignature.mockResolvedValue({
@@ -235,7 +237,10 @@ describe(MetadataService.name, () => {
       expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
         expect.objectContaining({ exif: expect.objectContaining({ model: 'Recorded sidecar' }) }),
       );
-      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['make']);
+      // This mock represents a database row, not an owner-edit API request.
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue([
+        'make',
+      ] as unknown as LockableProperty[]);
       mockReadTags({ FileType: 'JPEG' });
       await sut.handleMetadataExtraction({ id: asset.id });
       expect(mocks.asset.upsertExif.mock.calls.at(-1)?.[0].cameraEvidence).toBeUndefined();
