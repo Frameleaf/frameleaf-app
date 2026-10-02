@@ -26,6 +26,7 @@ export type SettingsHostSection = {
 export type SettingsAreaId =
   | 'overview'
   | 'analytics'
+  | 'backups'
   | 'storage'
   | 'backup'
   | 'intelligence'
@@ -67,6 +68,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   // and, FL-79, Library analytics. Both are screens of their own rather than section directories.
   { id: 'overview', group: 'command', sections: [], adminOnly: true },
   { id: 'analytics', group: 'command', sections: [], adminOnly: true },
+  { id: 'backups', group: 'command', sections: [], adminOnly: true },
   // FL-75: `migration` is the template's "Move or export your library", last in this area. FL-71:
   // physical deduplication (the old /admin/physical-deduplication page) is the template's
   // `deduplication` section, after the folder layout.
@@ -174,6 +176,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
 export const AREA_TILE_COLORS: Readonly<Record<SettingsAreaId, string>> = Object.freeze({
   overview: '#0a84ff',
   analytics: '#bf5af2',
+  backups: '#30b0c7',
   storage: '#8e8e93',
   backup: '#30b0c7',
   intelligence: '#5e5ce6',
@@ -208,7 +211,7 @@ export const isSettingsAreaId = (value: string | null | undefined): value is Set
   SETTINGS_AREAS.some((area) => area.id === value);
 
 /** Areas that are screens of their own rather than directories of settings sections (FL-79). */
-export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['overview', 'analytics', 'utilities', 'history']);
+export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['overview', 'analytics', 'backups', 'utilities', 'history']);
 
 /** Areas whose one section opens directly, as the template's `navigate()` does for them. */
 export const DIRECT_SECTION: Partial<Record<SettingsAreaId, string>> = Object.freeze({

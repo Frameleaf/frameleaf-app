@@ -259,6 +259,7 @@
               values: { count: preview.items, bytes: getByteUnitString(preview.bytes), conflicts: preview.conflicts },
             })}
           </p>
+          {#if preview.metadataItems}<p>{$t('frameleaf_backup_restore_metadata', { values: { count: preview.metadataItems } })}</p>{/if}
           <p>
             {mode === 'keep'
               ? $t('frameleaf_buddy_current_changes_will_be_preserved')
