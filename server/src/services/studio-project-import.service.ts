@@ -19,11 +19,12 @@ import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import {
   STUDIO_IMPORT_MAX_BYTES,
-  STUDIO_IMPORT_VECTOR_MAX_BYTES,
-  type StudioImportKind,
+  STUDIO_IMPORT_TEXT_LIMITS,
   StudioImportRefusal,
   scanStudioVector,
   sniffStudioImport,
+  studioImportKind,
+  validateStudioImportText,
 } from 'src/utils/studio-imports.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
 
@@ -40,14 +41,9 @@ export const studioImportIncomingFolder = (ownerId: string) =>
 export const studioImportProjectFolder = (ownerId: string, projectId: string) =>
   join(StorageCore.getFolderLocation(StorageFolder.Exports, ownerId), IMPORT_FOLDER, projectId);
 
-const kindOf = (contentType: string): StudioImportKind =>
-  contentType === 'image/svg+xml' || contentType === 'application/json'
-    ? 'vector'
-    : (contentType.split('/', 1)[0] as StudioImportKind);
-
 export const mapStudioProjectImport = (item: StudioProjectImport): StudioProjectImportDto => ({
   id: item.id,
-  kind: kindOf(item.contentType),
+  kind: studioImportKind(item.contentType),
   contentType: item.contentType,
   fileName: item.fileName,
   sizeBytes: item.sizeBytes,
@@ -84,6 +80,7 @@ export class StudioProjectImportService {
     rawId: string | undefined,
     file: Express.Multer.File | undefined,
   ): Promise<StudioProjectImportDto> {
+    let textLabel = 'The file';
     try {
       if (!file?.path) {
         throw new BadRequestException('Choose a file to import');
@@ -111,12 +108,16 @@ export class StudioProjectImportService {
       });
       const type = sniffStudioImport(new Uint8Array(head.subarray(0, Math.min(file.size, 1024))), file.mimetype);
       let externalReferences: number | null = null;
-      if (type.kind === 'vector') {
-        if (file.size > STUDIO_IMPORT_VECTOR_MAX_BYTES) {
-          throw new PayloadTooLargeException('A vector graphic may be at most 16 MB');
+      // Graphics, caption files and LUTs are text: bounded, read whole and checked in full.
+      const limit = STUDIO_IMPORT_TEXT_LIMITS[type.kind];
+      if (limit) {
+        textLabel = limit.label;
+        if (file.size > limit.maxBytes) {
+          throw new PayloadTooLargeException(`${limit.label} may be at most ${limit.maxBytes / 1024 / 1024} MB`);
         }
         const text = new TextDecoder('utf-8', { fatal: true }).decode(await this.storage.readFile(file.path));
         externalReferences = scanStudioVector(type, text) ?? null;
+        validateStudioImportText(type, text);
       }
 
       // A retry of an import already kept is answered by it; anything new counts against the quota.
@@ -157,7 +158,7 @@ export class StudioProjectImportService {
         throw new BadRequestException(error.message);
       }
       if ((error as { code?: unknown }).code === 'ERR_ENCODING_INVALID_ENCODED_DATA') {
-        throw new BadRequestException('A vector graphic must be UTF-8 text');
+        throw new BadRequestException(`${textLabel} must be UTF-8 text`);
       }
       throw error;
     }

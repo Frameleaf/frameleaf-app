@@ -7,7 +7,12 @@
  * that import. The host never trusts the editor's name or type: the server reads both from the
  * bytes, and a refusal (a script in an SVG, a file it cannot place) comes back as an error.
  */
-import { getStudioProjectImports, importStudioProjectFile, type StudioProjectImportDto } from '@immich/sdk';
+import {
+  getStudioProjectImports,
+  importStudioProjectFile,
+  StudioProjectImportKind,
+  type StudioProjectImportDto,
+} from '@immich/sdk';
 import { getStudioProjectImportUrl } from '$lib/utils';
 import type { StudioProjectImportRef, StudioProjectImportUpload } from './host-contract';
 
@@ -24,8 +29,23 @@ export const toStudioProjectImport = (projectId: string, dto: StudioProjectImpor
   url: getStudioProjectImportUrl(projectId, dto.id),
 });
 
+/**
+ * What the editor's media bin can place. A caption file or a LUT kept with the project is not bin
+ * media: the editor would list it as a clip it cannot read, so it is not offered as one.
+ */
+const binKinds = new Set<StudioProjectImportDto['kind']>([
+  StudioProjectImportKind.Audio,
+  StudioProjectImportKind.Image,
+  StudioProjectImportKind.Video,
+  StudioProjectImportKind.Vector,
+]);
+
+export const isStudioBinImport = (dto: StudioProjectImportDto) => binKinds.has(dto.kind);
+
 export const loadStudioProjectImports = async (projectId: string): Promise<StudioProjectImportRef[]> =>
-  (await getStudioProjectImports({ id: projectId })).map((dto) => toStudioProjectImport(projectId, dto));
+  (await getStudioProjectImports({ id: projectId }))
+    .filter((dto) => isStudioBinImport(dto))
+    .map((dto) => toStudioProjectImport(projectId, dto));
 
 export const uploadStudioProjectImport = async (
   projectId: string,
