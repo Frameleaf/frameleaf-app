@@ -5,7 +5,6 @@ import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repos
 import {
   PushSendRequest,
   PushSendResult,
-  pushGatewayBase,
   pushGatewayUrl,
   pushSendRequestSchema,
   pushSendResultSchema,
@@ -24,14 +23,20 @@ export type PushGatewayTarget = { url: string; token: FrameleafInstanceToken };
 export class FrameleafCloudPushRepository {
   constructor(private cloud: FrameleafCloudRepository) {}
 
-  /** The gateway address from discovery and an instance token for it. */
+  /** The gateway address and the instance token to call it with; null when no address is known. */
   async target(
     document: FrameleafDiscoveryDocument,
     instanceId: string,
     signer: FrameleafKeySigner,
-  ): Promise<PushGatewayTarget> {
-    const token = await this.cloud.accessToken(document, instanceId, pushGatewayBase(document), signer);
-    return { url: pushGatewayUrl(document), token };
+    configured: string | null,
+  ): Promise<PushGatewayTarget | null> {
+    const url = pushGatewayUrl(document, configured);
+    if (!url) {
+      return null;
+    }
+    // the gateway takes the ordinary instance token; only the DPoP proof names the push address
+    const token = await this.cloud.accessToken(document, instanceId, document.api.replace(/\/+$/, ''), signer);
+    return { url, token };
   }
 
   /** Route one push. */

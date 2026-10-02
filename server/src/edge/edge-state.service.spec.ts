@@ -82,6 +82,7 @@ describe(EdgeStateService.name, () => {
       mockEnvData({
         frameleafCloud: {
           url: env.url,
+          pushUrl: null,
           identityDir,
           linkToken: null,
           setupCode: null,

@@ -5,7 +5,6 @@ import {
   cloudBackupActivationProgress,
   collapseIdOf,
   liveActivityStateOf,
-  pushGatewayBase,
   pushGatewayUrl,
   pushTtlSec,
 } from 'src/utils/frameleaf-push.js';
@@ -23,12 +22,13 @@ const locked = '22222222-2222-4222-8222-222222222222';
 const nsfw = '33333333-3333-4333-8333-333333333333';
 
 describe('Frameleaf push gateway contract (FL-302, FC-92)', () => {
-  it('reaches the push gateway through discovery, following api when it names none', () => {
-    expect(pushGatewayBase(document)).toBe('https://api.frameleaf.test');
-    expect(pushGatewayUrl(document)).toBe('https://api.frameleaf.test/v1/push/send');
-    const named = { ...document, endpoints: { push: 'https://push.frameleaf.test/' } };
-    expect(pushGatewayBase(named)).toBe('https://push.frameleaf.test');
-    expect(pushGatewayUrl(named)).toBe('https://push.frameleaf.test/v1/push/send');
+  it('reaches the gateway at the configured address, else the one discovery names, never the api host (FL-293)', () => {
+    // `/v1/push/*` answers on the push host only: with no address, push is off
+    expect(pushGatewayUrl(document, null)).toBeNull();
+    expect(pushGatewayUrl(document, 'https://push.frameleaf.test/')).toBe('https://push.frameleaf.test/v1/push/send');
+    const named = { ...document, endpoints: { push: 'https://discovered.frameleaf.test/' } };
+    expect(pushGatewayUrl(named, null)).toBe('https://discovered.frameleaf.test/v1/push/send');
+    expect(pushGatewayUrl(named, 'https://push.frameleaf.test')).toBe('https://push.frameleaf.test/v1/push/send');
   });
 
   it('maps the activation chain onto fixed, non-personal Live Activity steps', () => {
