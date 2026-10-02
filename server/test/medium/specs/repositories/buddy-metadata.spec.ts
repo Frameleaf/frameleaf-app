@@ -459,6 +459,75 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
     expect((await new AlbumRepository(database).getById(album.id, { withAssets: false }))!).toMatchObject({ albumName: 'Backup name', icon: 'camera', sortOrder: 2 });
   });
 
+  it.each(['parent', 'kind', 'closure'] as const)(
+    'refuses divergent legacy %s atomically during Keep without replacing authoritative fork structure',
+    async (conflict) => {
+      const { ctx, metadata } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { album: parent } = await ctx.newAlbum({ ownerId: owner.id, kind: AlbumKind.Collection });
+      const { album } = await ctx.newAlbum({
+        ownerId: owner.id,
+        albumName: 'Backup name',
+        kind: conflict === 'kind' ? AlbumKind.Space : AlbumKind.Album,
+        parentId: conflict === 'kind' ? null : parent.id,
+      });
+      const captured = await metadata.capture([]);
+      await database.updateTable('album').set({ albumName: 'Current name' }).where('id', '=', album.id).execute();
+      if (conflict === 'parent') {
+        await database.updateTable('album').set({ parentId: null }).where('id', '=', album.id).execute();
+      } else if (conflict === 'kind') {
+        await database.updateTable('album').set({ kind: AlbumKind.Album }).where('id', '=', album.id).execute();
+      }
+      if (conflict !== 'kind') {
+        await database
+          .deleteFrom('album_closure')
+          .where('id_ancestor', '=', parent.id)
+          .where('id_descendant', '=', album.id)
+          .execute();
+      }
+      const authoritative = await new AlbumRepository(database).getById(album.id, { withAssets: false });
+      expect(authoritative).toMatchObject({
+        albumName: 'Current name',
+        parentId: conflict === 'kind' ? null : parent.id,
+        kind: conflict === 'kind' ? AlbumKind.Space : AlbumKind.Album,
+      });
+      const legacy = await database.selectFrom('album').selectAll().where('id', '=', album.id).executeTakeFirstOrThrow();
+      const legacyClosure = await database
+        .selectFrom('album_closure')
+        .selectAll()
+        .where('id_descendant', '=', album.id)
+        .orderBy('id_ancestor')
+        .execute();
+      const fork = await sql`SELECT * FROM immich_fork.album_metadata WHERE "albumId" = ${album.id}::uuid`.execute(database);
+      const forkClosure = await sql`
+        SELECT * FROM immich_fork.album_closure WHERE "descendantId" = ${album.id}::uuid ORDER BY "ancestorId"
+      `.execute(database);
+      const plan = await metadata.plan(captured, [album.id], 'keep');
+      const authority = await claim(ctx, owner.id);
+      await expect(
+        metadata.withRestore(
+          authority.owner,
+          authority.lease,
+          false,
+          () => Promise.resolve(),
+          (db) => new BuddyBackupMetadataRepository(db).publish(plan, owner.id, false),
+        ),
+      ).rejects.toThrow('Buddy restore album representation unavailable');
+      expect(await database.selectFrom('album').selectAll().where('id', '=', album.id).executeTakeFirstOrThrow()).toEqual(legacy);
+      expect(await database
+        .selectFrom('album_closure')
+        .selectAll()
+        .where('id_descendant', '=', album.id)
+        .orderBy('id_ancestor')
+        .execute()).toEqual(legacyClosure);
+      expect((await sql`SELECT * FROM immich_fork.album_metadata WHERE "albumId" = ${album.id}::uuid`.execute(database)).rows).toEqual(fork.rows);
+      expect((await sql`
+        SELECT * FROM immich_fork.album_closure WHERE "descendantId" = ${album.id}::uuid ORDER BY "ancestorId"
+      `.execute(database)).rows).toEqual(forkClosure.rows);
+      expect(await new AlbumRepository(database).getById(album.id, { withAssets: false })).toEqual(authoritative);
+    },
+  );
+
   it('refuses a revoked foreign parent grant and rolls back newly created own albums', async () => {
     const { ctx, metadata } = setup();
     const { user: owner } = await ctx.newUser();
