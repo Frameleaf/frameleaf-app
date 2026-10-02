@@ -50,6 +50,7 @@ describe(MaintenanceWorkerService.name, () => {
       mocks.process,
       mocks.database as never,
       databaseBackupServiceMock,
+      { restore: vi.fn(), settings: vi.fn() } as never,
     );
 
     sut.mock({

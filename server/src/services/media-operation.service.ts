@@ -624,6 +624,12 @@ export class MediaOperationService {
       throw new BadRequestException('Restore again from Settings › Frameleaf Cloud › Cloud backup');
     }
 
+    if ([MediaOperationKind.BuddyBackup, MediaOperationKind.BuddyRestore].includes(operation.kind)) {
+      throw new BadRequestException(
+        'Restart or restore from Buddy Backup so its keys, permissions and active run are checked',
+      );
+    }
+
     // FL-163: a Frameleaf Cloud description batch spends the AI Wallet, which only an administrator may
     // do, and only after a fresh estimate; a photo owner retrying it here would queue that spend again.
     if (operation.kind === MediaOperationKind.CloudDescriptionBatch) {

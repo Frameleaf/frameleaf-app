@@ -19,6 +19,8 @@ const sdk = vi.hoisted(() => ({
   getRenderWorkerCompatibility: vi.fn(),
   listMlDestinations: vi.fn(),
   getMlWorkloadRoutes: vi.fn(),
+  getBuddyBackupStatus: vi.fn().mockRejectedValue(new Error('not read')),
+  getCloudBackupStatus: vi.fn().mockRejectedValue(new Error('not read')),
 }));
 vi.mock('$app/state', () => ({
   page: {
@@ -27,6 +29,7 @@ vi.mock('$app/state', () => ({
     },
   },
 }));
+vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { isAdmin: true } } }));
 const cloud = vi.hoisted(() => ({ status: null as unknown, license: null as unknown }));
 vi.mock('$lib/managers/cloud-manager.svelte', () => ({
   cloudManager: {
@@ -198,7 +201,7 @@ describe('Command Center measured Overview', () => {
       });
       render(CommandCenterOverview);
 
-      expect(await screen.findByRole('link', { name: /Prove your backup can restore/ })).toHaveTextContent(
+      expect(await screen.findByRole('link', { name: /Verify local database recovery/ })).toHaveTextContent(
         'Metadata is backed up. Original-file verification has not been recorded.',
       );
       expect(screen.getByRole('link', { name: /Check worker compatibility/ })).toHaveTextContent(

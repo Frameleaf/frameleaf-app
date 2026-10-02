@@ -29,6 +29,7 @@ const SetMaintenanceModeSchema = z
     action: MaintenanceActionSchema,
     reason: maintenanceReason,
     restoreBackupFilename: z.string().optional().describe('Restore backup filename'),
+    buddyRecoveryId: z.uuid().optional().describe('A verified, locally staged Buddy recovery'),
     keepSafetyBackup: z
       .boolean()
       .optional()
@@ -37,7 +38,10 @@ const SetMaintenanceModeSchema = z
       ),
   })
   .refine(
-    (data) => data.action !== MaintenanceAction.RestoreDatabase || (data.restoreBackupFilename?.length ?? 0) > 0,
+    (data) =>
+      data.action !== MaintenanceAction.RestoreDatabase ||
+      (data.restoreBackupFilename?.length ?? 0) > 0 ||
+      !!data.buddyRecoveryId,
     { error: 'Backup filename is required when action is restore_database', path: ['restoreBackupFilename'] },
   )
   .meta({ id: 'SetMaintenanceModeDto' });

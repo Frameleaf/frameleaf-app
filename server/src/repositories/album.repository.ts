@@ -618,7 +618,7 @@ export class AlbumRepository {
     await this.db.transaction().execute((tx) => this.reparentIn(tx, id, newParentId, expectedParentId));
   }
 
-  private async reparentIn(
+  async reparentIn(
     tx: Transaction<DB>,
     id: string,
     newParentId: string | null,

@@ -13,6 +13,8 @@ The instructions on this page show you how to prepare your Frameleaf instance to
 
 ## Database
 
+For encrypted backups between two Frameleaf servers, see [Buddy Backup](./buddy-backup.md).
+
 Frameleaf stores file paths and user metadata in the database. It does not scan the library folder, so database backups are essential.
 
 ### Automatic Database Backups

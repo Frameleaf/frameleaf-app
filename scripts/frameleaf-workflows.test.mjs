@@ -39,7 +39,11 @@ const owned = readdirSync(path.join(root, ".github/workflows")).filter(
 const required = {
   "Test & Lint Server": ["test.yml", "server-unit-tests", /ci-unit/],
   "Test Web": ["test.yml", "web-unit-tests", /ci-unit/],
-  "Lint Web": ["test.yml", "web-lint", /pnpm lint/],
+  "Lint Web": [
+    "test.yml",
+    "web-lint",
+    /^pnpm exec eslint \. --max-warnings 0 --concurrency 2$/m,
+  ],
   "Medium Tests (Server)": ["test.yml", "server-medium-tests", /ci-medium/],
   "Unit Test CLI": ["test.yml", "cli-unit-tests", /ci-unit/],
   "SQL Schema Checks": ["test.yml", "sql-schema-up-to-date", /migrations:run/],
@@ -69,6 +73,22 @@ const admission = (
     always: () => true,
   });
 
+const assertPrimaryWebLint = (job) => {
+  const lint = job.steps.find((step) => step.name === "Run linter");
+  assert.ok(lint, "Lint Web requires its primary linter step");
+  assert.equal(
+    lint.run,
+    "pnpm exec eslint . --max-warnings 0 --concurrency 2",
+  );
+  assert.equal(lint.if, "${{ !cancelled() }}");
+  assert.equal(lint["continue-on-error"], undefined);
+  assert.equal(job["continue-on-error"], undefined);
+  assert.equal(
+    lint["working-directory"] ?? job.defaults?.run?.["working-directory"],
+    "./web",
+  );
+};
+
 test("all nine protected check contexts execute real commands on external fork/main PRs", () => {
   for (const [name, [file, id, command]] of Object.entries(required)) {
     const w = workflow(file);
@@ -93,7 +113,38 @@ test("all nine protected check contexts execute real commands on external fork/m
       j.steps.some((s) => s["continue-on-error"]),
       false,
     );
+    if (id === "web-lint") assertPrimaryWebLint(j);
   }
+});
+
+test("the primary web lint gate cannot be replaced by diagnostics or weakened", () => {
+  const job = workflow("test.yml").jobs["web-lint"];
+  const command = "pnpm exec eslint . --max-warnings 0 --concurrency 2";
+  for (const change of [
+    { run: `${command} || true` },
+    { run: command.replace("--max-warnings 0", "--max-warnings 1") },
+    { run: command.replace("--concurrency 2", "--concurrency auto") },
+    { run: command.replace("eslint .", "eslint src") },
+    { if: "failure()" },
+    { if: "false" },
+    { "continue-on-error": true },
+    { "working-directory": "./server" },
+  ]) {
+    const changed = structuredClone(job);
+    Object.assign(
+      changed.steps.find((step) => step.name === "Run linter"),
+      change,
+    );
+    assert.throws(() => assertPrimaryWebLint(changed));
+  }
+  const diagnosticsOnly = structuredClone(job);
+  diagnosticsOnly.steps = diagnosticsOnly.steps.filter(
+    (step) => step.name !== "Run linter",
+  );
+  assert.throws(() => assertPrimaryWebLint(diagnosticsOnly));
+  assert.throws(() =>
+    assertPrimaryWebLint({ ...job, "continue-on-error": true }),
+  );
 });
 
 test("standalone script tests install their locked JavaScript dependencies first", () => {

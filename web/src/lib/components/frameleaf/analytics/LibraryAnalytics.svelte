@@ -25,6 +25,7 @@
    */
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import BackupSummary from '$lib/components/frameleaf/cloud/BackupSummary.svelte';
   import AnalyticsChart from '$lib/components/frameleaf/analytics/AnalyticsChart.svelte';
   import AnalyticsDataTable from '$lib/components/frameleaf/analytics/AnalyticsDataTable.svelte';
   import LibraryHero from '$lib/components/frameleaf/analytics/LibraryHero.svelte';
@@ -268,6 +269,8 @@
       <AnalyticsDataTable table={table('growth')} />
     </figure>
   </div>
+
+  <BackupSummary analytics />
 
   {#if report.insights}
     {#if report.insights.hiddenItems > 0}

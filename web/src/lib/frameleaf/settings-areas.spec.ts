@@ -97,10 +97,20 @@ describe('Frameleaf settings areas', () => {
     );
   });
 
+  it('opens Backup for administrators and keeps the old Cloud and database addresses', () => {
+    expect(isScreenArea('backups')).toBe(true);
+    expect(resolveSettingsArea({ area: 'backups' })).toBe('backups');
+    expect(isAreaAvailable(area('backups'), false)).toBe(false);
+    expect(isAreaAvailable(area('backups'), true)).toBe(true);
+    expect(areaForSection('cloud-backup')).toBe('cloud');
+    expect(areaForSection('backup')).toBe('backup');
+  });
+
   it('lists the areas in the template catalogue order', () => {
     expect(SETTINGS_AREAS.map((item) => item.id)).toEqual([
       'overview',
       'analytics',
+      'backups',
       'storage',
       'backup',
       'intelligence',

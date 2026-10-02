@@ -5,7 +5,7 @@
    * Trash and repair queues, and the account settings (`UserSettingsList`).
    */
   import CloudAccountSection from '$lib/components/frameleaf/cloud/CloudAccountSection.svelte';
-  import CloudBackupSection from '$lib/components/frameleaf/cloud/CloudBackupSection.svelte';
+  import BackupDestinationsSection from '$lib/components/frameleaf/cloud/BackupDestinationsSection.svelte';
   import CloudMlSection from '$lib/components/frameleaf/cloud/CloudMlSection.svelte';
   import FrameleafSignInSection from '$lib/components/frameleaf/cloud/FrameleafSignInSection.svelte';
   import HardwareSection from '$lib/components/frameleaf/cloud/HardwareSection.svelte';
@@ -57,7 +57,7 @@
   {:else if section.key === 'cloud-remote'}
     <RemoteAccessSection />
   {:else if section.key === 'cloud-backup'}
-    <CloudBackupSection />
+    <BackupDestinationsSection />
   {:else if section.key === 'frameleaf-signin'}
     <FrameleafSignInSection />
   {:else if section.key === 'render-workers'}

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { access, chmod, link, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { access, chmod, link, mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
@@ -55,6 +56,32 @@ export class CloudBackupKeyRepository {
       }
       throw error;
     }
+  }
+
+  /** Only stored backup keys, never instance credentials or other identity-directory contents. */
+  async readAll(directory: string): Promise<Array<{ fingerprint: string; content: string }>> {
+    const entries = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+      return [] as string[];
+    });
+    const keys = [];
+    for (const name of entries.sort()) {
+      const match = /^cloud-backup-([\dA-F]{4}-[\dA-F]{4})\.key$/.exec(name);
+      if (!match) continue;
+      const file = await open(join(directory, name), constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        const before = await file.stat();
+        if (!before.isFile() || before.size > 16_384) throw new Error('Stored backup key is unavailable');
+        const content = await file.readFile({ encoding: 'utf8' });
+        const after = await file.stat();
+        if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs)
+          throw new Error('Stored backup key changed during capture');
+        keys.push({ fingerprint: match[1], content });
+      } finally {
+        await file.close();
+      }
+    }
+    return keys;
   }
 
   /**

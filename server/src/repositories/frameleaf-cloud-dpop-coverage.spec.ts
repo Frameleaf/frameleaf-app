@@ -51,6 +51,9 @@ const RAW_FETCH = {
   'repositories/server-info.repository.ts': 'public release feed',
   // a user's own workflow HTTP step
   'services/workflow-execution.service.ts': 'workflow HTTP step',
+  // Buddy vault requests carry source-key DPoP and require a pinned destination receipt (buddy-backup-client.spec.ts).
+  // Cloud grants still use FrameleafCloudRepository through BuddyBackupPeerService.cloud.
+  'utils/buddy-backup-client.ts': 'DPoP-authenticated Buddy peer transport',
 };
 
 /** Every file that opens a socket itself. */

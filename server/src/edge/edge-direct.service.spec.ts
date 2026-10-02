@@ -7,7 +7,6 @@ import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
-import { automock } from 'test/utils.js';
 
 /** Test-only self-signed certificates and keys (openssl, P-256), never used anywhere else. */
 const FIXTURES = join(import.meta.dirname, '../../test/fixtures/frameleaf-edge');
@@ -58,7 +57,7 @@ describe(EdgeDirectService.name, () => {
       }),
       closeAll: vi.fn(() => Promise.resolve()),
     };
-    const logger = automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false });
+    const logger = { setContext: vi.fn(), log: vi.fn(), error: vi.fn() } as unknown as LoggingRepository;
     sut = new EdgeDirectService(logger, config, proxy as unknown as EdgeProxyService);
     sut.configure({
       contexts: {
@@ -113,6 +112,17 @@ describe(EdgeDirectService.name, () => {
   it('serves the custom hostname’s certificate by SNI', async () => {
     const result = await connect('photos.example.com');
     expect(result.subject).toBe('photos.example.com');
+  });
+
+  it('marks recovery SNI for the same restricted proxy boundary on a paid direct listener', async () => {
+    const host = `recovery.${enrollment.label}.${enrollment.domain}`;
+    await connect(host);
+    expect(proxy.accept).toHaveBeenCalledWith(expect.anything(), {
+      via: 'wan',
+      clientIp: '127.0.0.1',
+      host,
+      buddyRecovery: true,
+    });
   });
 
   it('serves the wildcard certificate to a ClientHello with no SNI at all (FL-229: connecting by IP literal)', async () => {

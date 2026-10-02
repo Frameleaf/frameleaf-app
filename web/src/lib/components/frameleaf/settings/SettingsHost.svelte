@@ -21,6 +21,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
+  import BackupDestinationsSection from '$lib/components/frameleaf/cloud/BackupDestinationsSection.svelte';
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CommandCenterOverview from '$lib/components/frameleaf/settings/CommandCenterOverview.svelte';
@@ -124,6 +125,11 @@
       title: $t('frameleaf_settings_area_analytics'),
       description: $t('frameleaf_settings_area_analytics_description'),
       icon: mdiChartTimelineVariant,
+    },
+    backups: {
+      title: $t('frameleaf_settings_area_backups'),
+      description: $t('frameleaf_settings_area_backups_description'),
+      icon: mdiBackupRestore,
     },
     storage: {
       title: $t('frameleaf_settings_area_storage'),
@@ -735,6 +741,8 @@
           {/if}
           {#if area === 'overview'}
             <CommandCenterOverview />
+          {:else if area === 'backups'}
+            <BackupDestinationsSection />
           {:else if area === 'history'}
             <SettingsChangeHistory
               entries={settingsDraft ? history : undefined}

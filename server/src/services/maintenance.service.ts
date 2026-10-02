@@ -10,6 +10,8 @@ import {
 } from 'src/dtos/maintenance.dto.js';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { buddyMaintenancePath } from 'src/utils/buddy-backup-maintenance.js';
+import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import {
   createMaintenanceLoginUrl,
   detectPriorInstall,
@@ -42,6 +44,12 @@ export class MaintenanceService extends BaseService {
 
   async startMaintenance(action: SetMaintenanceModeDto, username: string): Promise<{ jwt: string }> {
     const secret = generateMaintenanceSecret();
+    if (action.buddyRecoveryId) {
+      await writeBuddyFile(
+        buddyMaintenancePath(this.configRepository),
+        JSON.stringify({ isMaintenanceMode: true, secret, action }),
+      );
+    }
     await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
       isMaintenanceMode: true,
       secret,

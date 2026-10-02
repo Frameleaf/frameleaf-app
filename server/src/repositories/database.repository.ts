@@ -254,7 +254,7 @@ export const probes: Record<VectorIndex, number> = {
 };
 
 /** FL-165: a session advisory lock held on its own reserved connection (`DatabaseRepository.holdLock`). */
-export type HeldLock = { verify: () => Promise<boolean>; release: () => Promise<void> };
+export type HeldLock = { backendPid: number; verify: () => Promise<boolean>; release: () => Promise<void> };
 
 @Injectable()
 export class DatabaseRepository extends ForkHandoffRepository {
@@ -1544,35 +1544,40 @@ export class DatabaseRepository extends ForkHandoffRepository {
           settle(null);
           return;
         }
-        let lost = false;
-        settle({
-          verify: async () => {
-            if (lost) {
-              return false;
-            }
-            try {
-              const { rows } = await sql<{ held: boolean }>`
-                SELECT EXISTS (
-                  SELECT 1 FROM pg_locks
-                  WHERE locktype = 'advisory' AND objid = ${lock} AND pid = pg_backend_pid() AND granted
-                ) AS held`.execute(connection);
-              lost = !rows[0]?.held;
-            } catch {
-              lost = true;
-            }
-            if (lost) {
+        try {
+          let lost = false;
+          const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(connection);
+          settle({
+            backendPid: rows[0].pid,
+            verify: async () => {
+              if (lost) {
+                return false;
+              }
+              try {
+                const { rows } = await sql<{ held: boolean }>`
+                  SELECT EXISTS (
+                    SELECT 1 FROM pg_locks
+                    WHERE locktype = 'advisory' AND objid = ${lock} AND pid = pg_backend_pid() AND granted
+                  ) AS held`.execute(connection);
+                lost = !rows[0]?.held;
+              } catch {
+                lost = true;
+              }
+              if (lost) {
+                finish();
+              }
+              return !lost;
+            },
+            release: async () => {
               finish();
-            }
-            return !lost;
-          },
-          release: async () => {
-            finish();
-            await reserved;
-          },
-        });
-        await done;
-        // always: a failed check on a live session must not leave the lock on a pooled connection
-        await this.releaseLock(lock, connection).catch(() => {});
+              await reserved;
+            },
+          });
+          await done;
+        } finally {
+          // Never return a still-locked session to the pool, including failed initial PID lookup.
+          await this.releaseLock(lock, connection).catch(() => {});
+        }
       })
       .catch((error: unknown) => {
         this.logger.warn(`A held database lock ended: ${error}`);
