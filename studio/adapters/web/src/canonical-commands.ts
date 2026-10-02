@@ -894,7 +894,7 @@ export const transitionPresentationOf = (type: string): TransitionPresentation =
 }
 
 /** The prototype's title styles (`titleStyles`) as Freecut text style presets, or a plain weight. */
-const prototypeTitleStyles: Record<string, TextStylePresetId | 'plain' | 'bold'> = {
+export const prototypeTitleStyles: Record<string, TextStylePresetId | 'plain' | 'bold'> = {
   Minimal: 'plain',
   Bold: 'bold',
   Serif: 'quote',
@@ -923,7 +923,7 @@ const titlePositionOf = (position: string): Pick<TextItem, 'textAlign' | 'vertic
 }
 
 /** The prototype's title animations (`titleAnimations`) as Freecut text motion presets. */
-const prototypeTitleAnimations: Record<string, { in: string; out?: string }> = {
+export const prototypeTitleAnimations: Record<string, { in: string; out?: string }> = {
   Fade: { in: 'fade-up', out: 'fade-down' },
   Rise: { in: 'rise', out: 'sink' },
   Typewriter: { in: 'typewriter', out: 'typewriter-erase' },
