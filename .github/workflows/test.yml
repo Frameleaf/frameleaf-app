@@ -4,6 +4,7 @@ name: Test
   pull_request:
     branches:
       - fork/main
+      - master/frameleaf-implementation
   push:
     branches:
       - fork/main
@@ -70,6 +71,9 @@ jobs:
           version: 2026.7.12
       - name: Run ci-unit
         run: mise run //server:ci-unit
+      - name: Run Buddy Backup and recovery runtime tests
+        working-directory: ./server
+        run: node --test --test-timeout=15000 test/runtime/buddy-backup.test.mjs test/runtime/buddy-recovery.test.mjs
       - name: Capture automatic server lint fixes
         if: failure()
         run: |
