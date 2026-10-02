@@ -13,6 +13,7 @@ import {
   PushPlatform,
   PushUnavailableReason,
   SystemMetadataKey,
+  UserMetadataKey,
 } from 'src/enum.js';
 import { FrameleafCloudPushRepository } from 'src/repositories/frameleaf-cloud-push.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
@@ -93,7 +94,7 @@ const newHarness = (options: { linked?: boolean; cloudUrl?: string | null; clone
     }),
   };
   const jobs = { queue: vi.fn() };
-  const users = { getAdmins: vi.fn().mockResolvedValue([]) };
+  const users = { getAdmins: vi.fn().mockResolvedValue([]), getMetadata: vi.fn().mockResolvedValue([]) };
   const albums = { getById: vi.fn() };
   const cloud = { discovery: vi.fn().mockResolvedValue({ api: `${CLOUD_URL}/api` }) };
   const identity = {
@@ -372,7 +373,7 @@ describe(PushService.name, () => {
       const { sut, jobs, albums } = newHarness();
       albums.getById.mockResolvedValue({ albumName: 'Trip', albumThumbnailAssetId: null });
 
-      await sut.onAlbumUserRemove({ albumId: 'album-1', userId: 'b' });
+      await sut.onAlbumUserRemove({ albumId: 'album-1', userId: 'b', removedById: 'a' });
 
       expect(jobs.queue).toHaveBeenCalledWith({
         name: JobName.PushDeliver,
@@ -384,6 +385,15 @@ describe(PushService.name, () => {
           }),
         },
       });
+    });
+
+    it('tells a member who left by themselves nothing (FL-293)', async () => {
+      const { sut, jobs, albums } = newHarness();
+      albums.getById.mockResolvedValue({ albumName: 'Trip', albumThumbnailAssetId: null });
+
+      await sut.onAlbumUserRemove({ albumId: 'album-1', userId: 'b', removedById: 'b' });
+
+      expect(jobs.queue).not.toHaveBeenCalled();
     });
   });
 
@@ -475,6 +485,41 @@ describe(PushService.name, () => {
       expect(payload.preview).toBeNull();
       expect(payload.assetIds).toEqual([]);
       expect(JSON.stringify(payload)).not.toContain('locked-asset');
+    });
+
+    it("keeps an item hidden by a recipient's hidden people or tags out of that recipient's push only (FL-293)", async () => {
+      const { sut, devices, users, sent } = newHarness();
+      const plain = newDeviceKey();
+      const hiding = newDeviceKey();
+      devices.getDeliveryTargets.mockResolvedValue([
+        device(plain, { userId: 'user-1' }),
+        device(hiding, { userId: 'user-2' }),
+      ]);
+      const suppression = { tagIds: ['tag-1'], personIds: ['person-1'], petIds: [], scope: 'visible' };
+      users.getMetadata.mockImplementation((userId: string) =>
+        Promise.resolve(
+          userId === 'user-2' ? [{ key: UserMetadataKey.Preferences, value: { privacy: { suppression } } }] : [],
+        ),
+      );
+      devices.getPreviewSafeAssetIds.mockImplementation((_ids: string[], hiddenContent?: unknown) =>
+        Promise.resolve(new Set(hiddenContent ? [] : ['asset-1'])),
+      );
+
+      await sut.handleDeliver({
+        notice: notice({ userIds: ['user-1', 'user-2'], assetIds: ['asset-1'], data: { assetId: 'asset-1' } }),
+      });
+
+      expect(sent).toHaveLength(2);
+      expect(devices.getPreviewSafeAssetIds).toHaveBeenCalledTimes(2);
+      expect(devices.getPreviewSafeAssetIds).toHaveBeenCalledWith(['asset-1'], {
+        userId: 'user-2',
+        includeNsfw: false,
+        ...suppression,
+      });
+      expect(decrypt(sent[0], plain)).toMatchObject({ assetIds: ['asset-1'], preview: { assetId: 'asset-1' } });
+      const hidden = decrypt(sent[1], hiding);
+      expect(hidden).toMatchObject({ title: 'Trip', assetIds: [], preview: null });
+      expect(JSON.stringify(hidden)).not.toContain('asset-1');
     });
 
     it('honours per-device preferences', async () => {
@@ -771,7 +816,7 @@ describe(PushService.name, () => {
         devices as never,
         new FrameleafCloudPushRepository(cloudRepository),
         { queue: vi.fn() } as never,
-        { getAdmins: vi.fn().mockResolvedValue([]) } as never,
+        { getAdmins: vi.fn().mockResolvedValue([]), getMetadata: vi.fn().mockResolvedValue([]) } as never,
         { getById: vi.fn() } as never,
       );
 

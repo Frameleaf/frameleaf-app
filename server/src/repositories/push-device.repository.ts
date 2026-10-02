@@ -4,9 +4,10 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { Selectable } from 'kysely';
 import type { DB } from 'src/schema/index.js';
 import type { PushDeviceActivityTable, PushDeviceTable } from 'src/schema/tables/push-device.table.js';
+import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AssetVisibility, PushPlatform } from 'src/enum.js';
 import { withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
-import { anyUuid } from 'src/utils/database.js';
+import { anyUuid, withHiddenContentFilter } from 'src/utils/database.js';
 import { isNotLocked } from 'src/utils/locked.js';
 
 export type PushDevice = Selectable<PushDeviceTable>;
@@ -229,9 +230,10 @@ export class PushDeviceRepository {
   /**
    * FL-228 privacy (FL-137, FL-212/FL-213): which of these items may be named in a push payload or
    * shown as its thumbnail. Locked items (either lock representation), hidden items (the video half of a
-   * live photo), items flagged sensitive (`is_nsfw`) and trashed or missing items never are.
+   * live photo), items flagged sensitive (`is_nsfw`) and trashed or missing items never are. Nor, for a
+   * recipient with hidden people, pets or tags (`hiddenContent`, FL-293), the items those rules hide.
    */
-  async getPreviewSafeAssetIds(ids: string[]): Promise<Set<string>> {
+  async getPreviewSafeAssetIds(ids: string[], hiddenContent?: HiddenContentFilter): Promise<Set<string>> {
     if (ids.length === 0) {
       return new Set();
     }
@@ -243,6 +245,7 @@ export class PushDeviceRepository {
       .where('asset.visibility', 'not in', [AssetVisibility.Locked, AssetVisibility.Hidden])
       .where('asset.is_nsfw', '=', false)
       .where(isNotLocked('asset'))
+      .$call((qb) => withHiddenContentFilter(qb, { hiddenContent }))
       .execute();
     return new Set(rows.map(({ id }) => id));
   }

@@ -53,7 +53,8 @@ type EventMap = {
   /** FL-83 (AL-30b): `count` more of `ownerId`'s items were shared with `userId`. */
   ItemShare: [{ ownerId: string; userId: string; senderName: string; count: number; link: string | null }];
   /** FL-90: a member left, or was taken out of, an album or shared space; their access ended. */
-  AlbumUserRemove: [{ albumId: string; userId: string }];
+  /** `removedById` is `userId` when the member left by themselves. */
+  AlbumUserRemove: [{ albumId: string; userId: string; removedById: string }];
 
   // cluster group events
   ClusterGroupRequest: [{ clusterGroupId: string; userId: string; senderName: string }];
