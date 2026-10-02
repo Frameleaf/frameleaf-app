@@ -25,6 +25,7 @@ import {
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
+import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import {
   ICloudConnection,
   ICloudLibrary,
@@ -193,6 +194,7 @@ export class ICloudSyncService {
     private metadata: ICloudMetadataService,
     private operations: MediaOperationRepository,
     private logger: LoggingRepository,
+    private identities: ICloudIdentityRepository,
   ) {
     this.logger.setContext(ICloudSyncService.name);
   }
@@ -985,6 +987,16 @@ export class ICloudSyncService {
           return;
         }
         if (!reused) {
+          // FL-296: one path per item; a device holding the claim fetches it, and the sync waits
+          const heldUntil = await this.identities.claimForSync(
+            connection.ownerId,
+            resource.sourceAssetId,
+            connection.id,
+          );
+          if (heldUntil) {
+            await this.repository.waitForClaim(resource, heldUntil);
+            return;
+          }
           const path = await this.staging.download(connection, resource);
           const type = resource.source.type;
           if (type !== AssetType.Image && type !== AssetType.Video) {

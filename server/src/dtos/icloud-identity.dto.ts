@@ -7,6 +7,7 @@ import z from 'zod';
  */
 
 const DateTime = z.string().meta({ format: 'date-time' });
+const ICloudClaimHolderSchema = z.enum(['device', 'icloud-sync']).meta({ id: 'ICloudClaimHolder' });
 const Sha256 = z
   .string()
   .regex(/^[\dA-Fa-f]{64}$/)
@@ -141,6 +142,8 @@ const RoleAnswer = z
     connectionId: z.uuid().nullable(),
     expectedBy: DateTime.nullable().describe('sync-pending: the next sync run'),
     pendingSince: DateTime.nullable(),
+    claimedBy: ICloudClaimHolderSchema.nullable().describe('claimed: who is fetching it'),
+    claimExpiresAt: DateTime.nullable(),
   })
   .meta({ id: 'ICloudLookupRoleDto' });
 
@@ -165,3 +168,79 @@ export const ICloudLookupResponseSchema = z
   })
   .meta({ id: 'ICloudLookupResponseDto' });
 export class ICloudLookupResponseDto extends createZodDto(ICloudLookupResponseSchema) {}
+
+const DeviceKey = z.uuid().describe("This device's backup identity (the backup device registry's deviceKey)");
+const ClaimTtl = z
+  .int()
+  .min(60)
+  .max(600)
+  .optional()
+  .describe('Seconds the claim lives before it must be renewed (default and most: 10 minutes)');
+
+export const ICloudClaimSchema = z
+  .object({
+    deviceKey: DeviceKey,
+    items: z
+      .array(z.object({ id: z.string().min(1).max(256), ...ItemFields }).meta({ id: 'ICloudClaimItemDto' }))
+      .min(1)
+      .max(500),
+    ttlSec: ClaimTtl,
+    takeOver: z
+      .boolean()
+      .optional()
+      .describe(
+        'The person chose "Back them up from this iPhone": claim items an unhealthy sync connection covers without waiting 72 hours',
+      ),
+  })
+  .meta({ id: 'ICloudClaimDto' });
+export class ICloudClaimDto extends createZodDto(ICloudClaimSchema) {}
+
+export const ICloudClaimStateSchema = z
+  .enum(['granted', 'held', 'sync-covers', 'invalid'])
+  .describe(
+    'granted: this device holds the claim; held: another device or a sync run does; sync-covers: a healthy sync connection covers the item, so the server fetches it; invalid: the identifier is not an iCloud item identifier',
+  )
+  .meta({ id: 'ICloudClaimState' });
+
+const ClaimAnswer = z
+  .object({
+    id: z.string(),
+    cplAssetRecordName: z.string().nullable(),
+    state: ICloudClaimStateSchema,
+    claimId: z.uuid().nullable(),
+    expiresAt: DateTime.nullable(),
+    holder: ICloudClaimHolderSchema.nullable().describe('held: who holds it'),
+    connectionId: z.uuid().nullable().describe('sync-covers: the connection that covers it'),
+    takeOverAt: DateTime.nullable().describe(
+      'sync-covers on an unhealthy connection: when this device may take over without asking (72 hours after it became unhealthy)',
+    ),
+  })
+  .meta({ id: 'ICloudClaimAnswerDto' });
+
+export const ICloudClaimResponseSchema = z
+  .object({ items: z.array(ClaimAnswer) })
+  .meta({ id: 'ICloudClaimResponseDto' });
+export class ICloudClaimResponseDto extends createZodDto(ICloudClaimResponseSchema) {}
+
+export const ICloudClaimRenewSchema = z
+  .object({ deviceKey: DeviceKey, claimIds: z.array(z.uuid()).min(1).max(500), ttlSec: ClaimTtl })
+  .meta({ id: 'ICloudClaimRenewDto' });
+export class ICloudClaimRenewDto extends createZodDto(ICloudClaimRenewSchema) {}
+
+export const ICloudClaimRenewResponseSchema = z
+  .object({
+    claims: z.array(z.object({ claimId: z.uuid(), expiresAt: DateTime }).meta({ id: 'ICloudClaimRenewedDto' })),
+  })
+  .describe('Only the claims still held; a missing one expired or was taken over')
+  .meta({ id: 'ICloudClaimRenewResponseDto' });
+export class ICloudClaimRenewResponseDto extends createZodDto(ICloudClaimRenewResponseSchema) {}
+
+export const ICloudClaimReleaseSchema = z
+  .object({ deviceKey: DeviceKey, claimIds: z.array(z.uuid()).min(1).max(500) })
+  .meta({ id: 'ICloudClaimReleaseDto' });
+export class ICloudClaimReleaseDto extends createZodDto(ICloudClaimReleaseSchema) {}
+
+export const ICloudClaimReleaseResponseSchema = z
+  .object({ released: z.array(z.uuid()) })
+  .meta({ id: 'ICloudClaimReleaseResponseDto' });
+export class ICloudClaimReleaseResponseDto extends createZodDto(ICloudClaimReleaseResponseSchema) {}

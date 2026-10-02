@@ -3,9 +3,33 @@ import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { mkdir, open, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
+import z from 'zod';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Readable } from 'node:stream';
 import { AssetMediaCreateDto } from 'src/dtos/asset-media.dto.js';
+
+/**
+ * FL-296: the iCloud item an upload is, so the server can record its source identity once the digest
+ * checks out, and refuse it while another path holds the item's claim.
+ */
+export const UploadSourceIdentitySchema = z
+  .object({
+    kind: z.literal('icloud'),
+    cloudIdentifier: z.string().min(1).max(512),
+    role: z.enum(['original', 'live-motion', 'raw-alternate', 'edit-render']),
+    editVersion: z.string().min(1).max(256).optional(),
+    claimId: z.uuid().optional(),
+    deviceKey: z.uuid().optional(),
+  })
+  .strict()
+  .refine((value) => (value.role === 'edit-render') === !!value.editVersion, {
+    message: 'An edit render, and only one, names its edit version',
+  });
+export type UploadSourceIdentity = z.infer<typeof UploadSourceIdentitySchema>;
+export type AssetUploadMetadata = AssetMediaCreateDto & {
+  publication?: 'live-photo';
+  sourceIdentity?: UploadSourceIdentity;
+};
 
 export const ASSET_UPLOAD_LIMITS = { maxSize: 2 ** 31, maxAppendSize: 64 * 2 ** 20, maxAge: 86_400, maxActive: 4 };
 export type AssetUploadPart = { path: string; size: number; interrupted: boolean };
@@ -40,7 +64,7 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
   if (!encoded || encoded.length > 8192 || !/^[A-Za-z0-9_-]+$/.test(encoded)) {
     throw new BadRequestException('Invalid Asset-Metadata');
   }
-  let metadata: AssetMediaCreateDto & { publication?: 'live-photo' };
+  let metadata: AssetUploadMetadata;
   try {
     const buffer = Buffer.from(encoded, 'base64url');
     if (buffer.toString('base64url') !== encoded) {
@@ -60,6 +84,7 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
       'isFavorite',
       'visibility',
       'metadata',
+      'sourceIdentity',
     ]);
     if (
       !decoded ||
@@ -79,9 +104,13 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
     if (value.publication !== undefined && value.publication !== 'live-photo') {
       throw new Error('Unsupported publication');
     }
+    const sourceIdentity =
+      value.sourceIdentity === undefined ? undefined : UploadSourceIdentitySchema.parse(value.sourceIdentity);
+    delete value.sourceIdentity;
     metadata = {
       ...AssetMediaCreateDto.schema.parse(value),
       ...(value.publication === 'live-photo' && { publication: 'live-photo' as const }),
+      ...(sourceIdentity && { sourceIdentity }),
     };
     if (!metadata.filename) {
       throw new Error('Filename is required');

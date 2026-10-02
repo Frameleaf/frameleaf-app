@@ -1,6 +1,8 @@
+import { ForbiddenException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
+  ICloudClaimRow,
   ICloudCoverageConnection,
   ICloudIdentityRow,
   ICloudInventoryItem,
@@ -74,11 +76,32 @@ const setup = (state: {
   visible?: string[];
   /** sha256 hex → asset id held by the caller. */
   hashes?: Record<string, string>;
+  claims?: ICloudClaimRow[];
+  ownsDevice?: boolean;
 }) => {
   const repository = {
     identities: vi.fn().mockResolvedValue(state.identities ?? []),
     inventory: vi.fn().mockResolvedValue(state.inventory ?? []),
     connections: vi.fn().mockResolvedValue(state.connections ?? []),
+    claims: vi.fn().mockResolvedValue(state.claims ?? []),
+    ownsDevice: vi.fn().mockResolvedValue(state.ownsDevice ?? true),
+    // grants every requested item to the holder unless `state.claims` names another holder
+    claim: vi.fn((_owner: string, names: string[], holder: string) =>
+      Promise.resolve(
+        names.map(
+          (cplAssetRecordName) =>
+            state.claims?.find((claim) => claim.cplAssetRecordName === cplAssetRecordName) ?? {
+              id: `claim-${cplAssetRecordName}`,
+              cplAssetRecordName,
+              holder,
+              expiresAt: new Date('2026-07-01T00:10:00Z'),
+              createdAt: new Date('2026-07-01T00:00:00Z'),
+            },
+        ),
+      ),
+    ),
+    renew: vi.fn().mockResolvedValue([]),
+    release: vi.fn().mockResolvedValue([]),
   };
   const visible = state.visible ?? (state.identities ?? []).map(({ assetId }) => assetId);
   const integrity = {
@@ -145,6 +168,25 @@ describe(ICloudIdentityService.name, () => {
       const disagreed = await sut.lookup(auth, { items: [lookupItem(1, { originalFilename: 'OTHER.HEIC' })] });
       // reported, so hint rates can be measured, but never acted on
       expect(disagreed.items[0].roles[0]).toMatchObject({ state: 'unknown', assetId: null, matchStrength: 'hint' });
+    });
+
+    it("keeps a device's record that was only a hint a hint, unless the bytes are the same", async () => {
+      const c = connection();
+      const known = identity(1, { deliveredBy: 'device:phone', matchStrength: 'hint' });
+      const { sut } = setup({ identities: [known], inventory: [record(c.id, 1)], connections: [c] });
+      // the metadata agrees with the sync's inventory now, but the record itself was never confirmed
+      const agreed = await sut.lookup(auth, { items: [lookupItem(1)] });
+      expect(agreed.items[0].roles[0]).toMatchObject({ state: 'unknown', assetId: null, matchStrength: 'hint' });
+
+      const sameBytes = await sut.lookup(auth, {
+        items: [lookupItem(1, { sha256ByRole: { original: sha(1).toString('hex') } })],
+      });
+      expect(sameBytes.items[0].roles[0]).toMatchObject({ state: 'on-server', matchStrength: 'exact' });
+
+      const confirmed = identity(1, { deliveredBy: 'device:phone', matchStrength: 'corroborated' });
+      const later = setup({ identities: [confirmed], inventory: [record(c.id, 1)], connections: [c] });
+      const { items } = await later.sut.lookup(auth, { items: [lookupItem(1)] });
+      expect(items[0].roles[0]).toMatchObject({ state: 'on-server', matchStrength: 'corroborated' });
     });
 
     it('reports two assets for one item and role for review', async () => {
@@ -250,6 +292,111 @@ describe(ICloudIdentityService.name, () => {
       expect(repository.identities).not.toHaveBeenCalled();
       expect(items.map(({ roles }) => roles[0].state)).toEqual(['unknown', 'on-server']);
       expect(items[1].roles[0]).toMatchObject({ assetId, matchStrength: null, deliveredBy: null });
+    });
+  });
+
+  describe('claims', () => {
+    const deviceKey = randomUUID();
+    const claimItem = (n: number) => ({ id: `item-${n}`, cloudIdentifier: cloudIdentifier(n), ...metadata });
+
+    it('grants items nobody covers or holds, and says who holds the others', async () => {
+      const held = {
+        id: randomUUID(),
+        cplAssetRecordName: name(2),
+        holder: 'device:other',
+        expiresAt: new Date('2026-07-01T00:05:00Z'),
+        createdAt: new Date(),
+      };
+      const { sut, repository } = setup({ claims: [held] });
+      const { items } = await sut.claim(auth, {
+        deviceKey,
+        items: [claimItem(1), claimItem(2), { id: 'bad', cloudIdentifier: 'nonsense' }],
+      });
+      expect(repository.claim).toHaveBeenCalledWith('owner', [name(1), name(2)], `device:${deviceKey}`, 600);
+      expect(items).toEqual([
+        expect.objectContaining({ id: 'item-1', state: 'granted', claimId: `claim-${name(1)}` }),
+        expect.objectContaining({ id: 'item-2', state: 'held', holder: 'device', claimId: null }),
+        expect.objectContaining({ id: 'bad', state: 'invalid', cplAssetRecordName: null }),
+      ]);
+    });
+
+    it('leaves an item a healthy sync covers to the sync, and an unhealthy one to the device after 72 hours or when asked', async () => {
+      const healthy = connection();
+      const pending = { pendingRoles: ['original' as const] };
+      const { sut, repository } = setup({ connections: [healthy], inventory: [record(healthy.id, 1, pending)] });
+      const covered = await sut.claim(auth, { deviceKey, items: [claimItem(1)] });
+      expect(covered.items[0]).toMatchObject({ state: 'sync-covers', connectionId: healthy.id, takeOverAt: null });
+      expect(repository.claim).toHaveBeenCalledWith('owner', [], expect.any(String), 600);
+
+      const since = new Date(Date.now() - 3_600_000);
+      const sick = connection({ state: 'error', unhealthySince: since });
+      const waiting = setup({ connections: [sick], inventory: [record(sick.id, 1, pending)] });
+      const early = await waiting.sut.claim(auth, { deviceKey, items: [claimItem(1)] });
+      expect(early.items[0]).toMatchObject({
+        state: 'sync-covers',
+        takeOverAt: new Date(since.getTime() + 72 * 3_600_000).toISOString(),
+      });
+      const asked = await waiting.sut.claim(auth, { deviceKey, items: [claimItem(1)], takeOver: true });
+      expect(asked.items[0].state).toBe('granted');
+
+      const long = connection({ state: 'error', unhealthySince: new Date(Date.now() - 73 * 3_600_000) });
+      const overdue = setup({ connections: [long], inventory: [record(long.id, 1, pending)] });
+      const late = await overdue.sut.claim(auth, { deviceKey, items: [claimItem(1)] });
+      expect(late.items[0].state).toBe('granted');
+    });
+
+    it('grants an item the sync has nothing left to bring, so the device can deliver what is missing', async () => {
+      // in scope, but nothing pending: the rest failed, needs review, or is a role the sync does not import
+      const healthy = connection();
+      const { sut } = setup({ connections: [healthy], inventory: [record(healthy.id, 1)] });
+      const { items } = await sut.claim(auth, { deviceKey, items: [claimItem(1)] });
+      expect(items[0]).toMatchObject({ state: 'granted', connectionId: null });
+    });
+
+    it("acts only for one of the caller's own backup devices", async () => {
+      const { sut, repository } = setup({ ownsDevice: false });
+      await expect(sut.claim(auth, { deviceKey, items: [claimItem(1)] })).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.renewClaims(auth, { deviceKey, claimIds: [randomUUID()] })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(sut.releaseClaims(auth, { deviceKey, claimIds: [randomUUID()] })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(repository.claim).not.toHaveBeenCalled();
+    });
+
+    it("renews and releases only this device's claims", async () => {
+      const { sut, repository } = setup({});
+      const id = randomUUID();
+      repository.renew.mockResolvedValue([
+        { id, cplAssetRecordName: name(1), holder: `device:${deviceKey}`, expiresAt: new Date('2026-07-01T00:20:00Z') },
+      ]);
+      repository.release.mockResolvedValue([id]);
+      await expect(sut.renewClaims(auth, { deviceKey, claimIds: [id, id], ttlSec: 300 })).resolves.toEqual({
+        claims: [{ claimId: id, expiresAt: '2026-07-01T00:20:00.000Z' }],
+      });
+      expect(repository.renew).toHaveBeenCalledWith('owner', [id], `device:${deviceKey}`, 300);
+      await expect(sut.releaseClaims(auth, { deviceKey, claimIds: [id] })).resolves.toEqual({ released: [id] });
+    });
+
+    it('reports an item someone is fetching as claimed in the lookup', async () => {
+      const { sut } = setup({
+        claims: [
+          {
+            id: randomUUID(),
+            cplAssetRecordName: name(1),
+            holder: 'icloud-sync:connection',
+            expiresAt: new Date('2026-07-01T00:30:00Z'),
+            createdAt: new Date(),
+          },
+        ],
+      });
+      const { items } = await sut.lookup(auth, { items: [lookupItem(1)] });
+      expect(items[0].roles[0]).toMatchObject({
+        state: 'claimed',
+        claimedBy: 'icloud-sync',
+        claimExpiresAt: '2026-07-01T00:30:00.000Z',
+      });
     });
   });
 
