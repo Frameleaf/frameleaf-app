@@ -26,6 +26,12 @@ const HANDSHAKE_TIMEOUT_MS = 10 * 1000;
  * when a visitor asks for that name. Each connection is tagged `lan` or `wan` (`classifyArrival`) and
  * handed to the proxy core, which applies the connection caps and the via contract.
  *
+ * Which certificate a ClientHello gets (Frameleaf Cloud's contract S7 for the native apps):
+ * - no SNI at all (an app connecting to an IP literal): the wildcard, also right after a renewal;
+ * - the verified custom hostname: that hostname's certificate;
+ * - any other name, known or not: the wildcard.
+ * Before the wildcard is issued there is no listener at all, so nothing is presented.
+ *
  * In "Relay only" mode nothing from outside the home network is served here: such connections are
  * closed, and only the LAN names answer. Certificates are swapped in place on renewal; open
  * connections keep the one they started with.
