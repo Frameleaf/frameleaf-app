@@ -6,7 +6,6 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MAX_CONNECTIONS_PER_ADDRESS, REQUEST_TIMEOUT_MS } from 'src/utils/frameleaf-remote-access.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
-import { automock } from 'test/utils.js';
 
 const SECRET = 'edge-secret-0123456789abcdef';
 const arrival: EdgeArrival = { via: 'wan', clientIp: '203.0.113.9', host: 'r.u225vlzhsdlhwh4l.frameleaf.net' };
@@ -114,7 +113,7 @@ describe(EdgeProxyService.name, () => {
             },
           }),
       } as unknown as ConfigRepository;
-      const logger = automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false });
+      const logger = { setContext: vi.fn(), warn: vi.fn() } as unknown as LoggingRepository;
       sut = new EdgeProxyService(logger, config);
       // a plain TCP front stands in for the TLS listener
       front = net.createServer((socket) => sut.accept(socket, arrival));
@@ -160,6 +159,72 @@ describe(EdgeProxyService.name, () => {
         'x-forwarded-for': '203.0.113.9',
         'x-forwarded-proto': 'https',
       });
+    });
+
+    it('restricts recovery SNI before proxying and forwards only its trusted host', async () => {
+      const host = 'recovery.u225vlzhsdlhwh4l.frameleaf.net';
+      const vaultId = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
+      const path = `/api/buddy/v1/vaults/${vaultId}/snapshots`;
+      sut.configureRecovery({
+        host,
+        vaultId,
+        pairId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54',
+        sourceInstanceId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e55',
+        readUntil: null,
+      });
+      front.removeAllListeners('connection');
+      front.on('connection', (socket) => sut.accept(socket, { ...arrival, host, buddyRecovery: true }));
+      for (const options of [
+        { path: '/api/server/ping' },
+        { path: path + '?ignored=1' },
+        { path, method: 'POST' },
+        { path, headers: { host: 'ordinary.example' } },
+        { path, headers: { host, upgrade: 'websocket', connection: 'Upgrade' } },
+      ]) {
+        expect((await request({ headers: { host }, ...options })).status).toBe(403);
+      }
+      expect(seen).toHaveLength(0);
+      expect(
+        (
+          await request({
+            path,
+            headers: { host, 'x-forwarded-host': 'ordinary.example', dpop: 'proof', authorization: 'DPoP grant' },
+          })
+        ).status,
+      ).toBe(200);
+      expect(seen[0].headers).toMatchObject({
+        'x-forwarded-host': host,
+        'x-frameleaf-via-auth': SECRET,
+        dpop: 'proof',
+        authorization: 'DPoP grant',
+      });
+      sut.configureRecovery(null);
+      expect((await request({ path, headers: { host } })).status).toBe(403);
+      expect(seen).toHaveLength(1);
+    });
+
+    it('restricts every paid Buddy-only arrival, including direct ports, while ordinary access is off', async () => {
+      const vaultId = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
+      const path = `/api/buddy/v1/vaults/${vaultId}/snapshots`;
+      const access = {
+        host: 'recovery.u225vlzhsdlhwh4l.frameleaf.net',
+        vaultId,
+        pairId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54',
+        sourceInstanceId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e55',
+        readUntil: null,
+        backupEnabled: true as const,
+        writeAllowed: true as const,
+      };
+      sut.configureRecovery(access, true);
+      const host = arrival.host! + ':2443';
+      expect((await request({ path: '/api/server/ping', headers: { host } })).status).toBe(403);
+      expect((await request({ path, method: 'POST', headers: { host } }, ['snapshot'])).status).toBe(200);
+      expect(seen[0].headers['x-forwarded-host']).toBe(host);
+      expect((await request({ path, method: 'POST', headers: { host: 'evil.example' } })).status).toBe(403);
+      sut.configureRecovery({ ...access, writeAllowed: undefined }, true);
+      expect((await request({ path, method: 'POST', headers: { host } })).status).toBe(403);
+      expect((await request({ path, headers: { host } })).status).toBe(200);
+      expect(seen).toHaveLength(2);
     });
 
     it('streams a chunked upload and passes ranges through', async () => {
@@ -286,7 +351,7 @@ describe(EdgeProxyService.name, () => {
   describe('connection caps', () => {
     it('takes at most 64 connections per address and frees them on close', () => {
       const config = { getEnv: () => mockEnvData({}) } as unknown as ConfigRepository;
-      const logger = automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false });
+      const logger = { setContext: vi.fn(), warn: vi.fn() } as unknown as LoggingRepository;
       const sut = new EdgeProxyService(logger, config);
       (sut as unknown as { server: { emit: () => void } }).server.emit = vi.fn();
 

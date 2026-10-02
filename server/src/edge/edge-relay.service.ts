@@ -5,6 +5,12 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import tls, { type SecureContext, type TLSSocket } from 'node:tls';
 import type { EdgeContexts } from 'src/edge/edge-direct.service.js';
 import type { FrameleafRemoteAccess, FrameleafRemoteEnrollment } from 'src/types.js';
+import {
+  type BuddyRecoveryScope,
+  buddyRecoveryHost,
+  buddyRecoveryRelayResponseSchema,
+  buddyRelayPurposeProblem,
+} from 'src/edge/buddy-recovery.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -54,6 +60,9 @@ export type EdgeRelayTarget = {
   linkKey: string;
   enrollment: Pick<FrameleafRemoteEnrollment, 'label' | 'domain'>;
   cloud: () => Promise<EdgeCloudSession>;
+  /** Present only when the one tunnel for this label must serve recovery instead of paid remote access. */
+  recovery?: BuddyRecoveryScope;
+  buddyOnly?: boolean;
 };
 
 type Contexts = { wildcard: SecureContext; custom: { host: string; context: SecureContext } | null };
@@ -146,7 +155,13 @@ export class EdgeRelayService {
    */
   async ensure(target: EdgeRelayTarget, now = Date.now()): Promise<void> {
     const previous = this.target;
-    if (previous && (previous.instanceId !== target.instanceId || previous.linkKey !== target.linkKey)) {
+    if (
+      previous &&
+      (previous.instanceId !== target.instanceId ||
+        previous.linkKey !== target.linkKey ||
+        previous.buddyOnly !== target.buddyOnly ||
+        JSON.stringify(previous.recovery) !== JSON.stringify(target.recovery))
+    ) {
       await this.stop();
     }
     this.target = target;
@@ -221,7 +236,7 @@ export class EdgeRelayService {
       this.revoked = null;
       let end: TunnelEnd | null = null;
       try {
-        if (this.reselect) {
+        if (this.reselect && !target.recovery) {
           await this.select(target).catch((error: unknown) => {
             // the enrolment's relay stays in use
             this.logger.warn(`No other relay could be selected: ${message(error)}`);
@@ -258,7 +273,10 @@ export class EdgeRelayService {
           ? cloudErrorCode(error)
           : null;
     this.note(message(error));
-    if (code !== null && [TUNNEL_REVOKED, 'enrollment-suspended', 'instance_revoked'].includes(code)) {
+    if (
+      (target.recovery && error instanceof FrameleafCloudError && [401, 403, 404, 409].includes(error.status ?? 0)) ||
+      (code !== null && [TUNNEL_REVOKED, 'enrollment-suspended', 'instance_revoked'].includes(code))
+    ) {
       this.stopUntilLinked(target);
       return;
     }
@@ -383,20 +401,32 @@ export class EdgeRelayService {
   /** A relay token for this server, checked before it is used. */
   private async token(target: EdgeRelayTarget): Promise<{ answer: RelayTokenResponse; token: FrameleafInstanceToken }> {
     const { document, token } = await target.cloud();
-    const answer = await this.frameleafCloudRepository.requestJson(relayTokenResponseSchema, {
-      method: 'POST',
-      url: remoteEndpoints(document).relayToken,
-      dpop: token,
-      body: {},
-    });
+    const answer = await this.frameleafCloudRepository.requestJson(
+      target.recovery ? buddyRecoveryRelayResponseSchema : relayTokenResponseSchema,
+      {
+        method: 'POST',
+        url: target.recovery ? `${document.api}/v1/buddy/recovery-relay-token` : remoteEndpoints(document).relayToken,
+        dpop: token,
+        body: target.recovery ? { version: 1, pairId: target.recovery.pairId, vaultId: target.recovery.vaultId } : {},
+      },
+    );
     const problem = relayTokenProblem(answer, {
       instanceId: target.instanceId,
       enrollment: target.enrollment,
       publicKeyX: token.signer.publicJwk.x,
       now: Date.now(),
     });
-    if (problem) {
-      throw new Error(`Frameleaf Cloud answered with a relay token this server cannot use: ${problem}`);
+    const purposeProblem = buddyRelayPurposeProblem(
+      answer,
+      target.recovery,
+      buddyRecoveryHost(target.enrollment),
+      document.api,
+      Date.now(),
+    );
+    if (problem || purposeProblem) {
+      throw new Error(
+        `Frameleaf Cloud answered with a relay token this server cannot use: ${problem ?? purposeProblem}`,
+      );
     }
     return { answer, token };
   }
@@ -480,6 +510,7 @@ export class EdgeRelayService {
       let control: { stream: ServerHttp2Stream; reader: FrameReader } | null = null;
       let pingsOut = 0;
       let refreshTimer: NodeJS.Timeout | undefined;
+      let expiryTimer: NodeJS.Timeout | undefined;
       let closed = false;
 
       const close = (reason: string) => {
@@ -489,6 +520,7 @@ export class EdgeRelayService {
         closed = true;
         clearInterval(keepalive);
         clearTimeout(refreshTimer);
+        clearTimeout(expiryTimer);
         signal.removeEventListener('abort', onAbort);
         this.bytesBefore = {
           in: this.bytesBefore.in + socket.bytesRead,
@@ -520,7 +552,7 @@ export class EdgeRelayService {
         stream.on('error', () => stream.destroy());
         const method = headers[':method'];
         if (method === 'CONNECT') {
-          this.visitor(stream, headers);
+          this.visitor(stream, headers, target);
         } else if (method === 'POST' && headers[':path'] === TUNNEL_CONTROL_PATH && !control) {
           stream.respond({ ':status': 200 });
           // a control stream that breaks or floods ends the tunnel; it reconnects
@@ -559,6 +591,9 @@ export class EdgeRelayService {
       const refresh = async () => {
         try {
           const next = await this.token(target);
+          if (closed) {
+            return;
+          }
           if (next.answer.relay.id !== first.relay.id || next.answer.relay.host !== first.relay.host) {
             close('Frameleaf Cloud moved this server to another relay');
             return;
@@ -576,12 +611,20 @@ export class EdgeRelayService {
             return;
           }
           expectFrame(reply, TunnelFrame.READY);
+          if (target.recovery) {
+            expire(next.answer);
+          }
           schedule(refreshDelayMs(next.answer, Date.now()));
         } catch (error) {
           if (closed) {
             return;
           }
-          if (error instanceof TunnelRefusedError && error.code === TUNNEL_REVOKED) {
+          if (
+            (error instanceof TunnelRefusedError && error.code === TUNNEL_REVOKED) ||
+            (target.recovery &&
+              error instanceof FrameleafCloudError &&
+              [401, 403, 404, 409].includes(error.status ?? 0))
+          ) {
             goaway = TUNNEL_REVOKED;
             close('revoked');
             return;
@@ -598,6 +641,17 @@ export class EdgeRelayService {
           refreshTimer.unref();
         }
       };
+      const expire = (answer: RelayTokenResponse) => {
+        clearTimeout(expiryTimer);
+        expiryTimer = setTimeout(
+          () => close('the relay token expired'),
+          Math.max(0, Date.parse(answer.expiresAt) - Date.now()),
+        );
+        expiryTimer.unref();
+      };
+      if (target.recovery) {
+        expire(first);
+      }
       schedule(refreshDelayMs(first, Date.now()));
 
       this.relayStatus = {
@@ -619,13 +673,19 @@ export class EdgeRelayService {
    * accepted; the TLS name the visitor asks for must be the one the relay routed by; the connection
    * is decrypted here and proxied as `via: relay` from the address the relay saw.
    */
-  private visitor(stream: ServerHttp2Stream, headers: IncomingHttpHeaders) {
+  private visitor(stream: ServerHttp2Stream, headers: IncomingHttpHeaders, target: EdgeRelayTarget) {
     const enrollment = this.enrollment;
     const contexts = this.contexts;
     const clientIp = relayClientIp(headers[TUNNEL_HEADER_CLIENT_IP]);
     const sniHeader = headers[TUNNEL_HEADER_SNI];
     const sni = typeof sniHeader === 'string' ? sniHeader.toLowerCase().replace(/\.$/, '') : null;
-    if (!enrollment || !contexts || !clientIp || !relayVisitorNameAllowed(sni, enrollment, this.customHost)) {
+    if (
+      !enrollment ||
+      !contexts ||
+      !clientIp ||
+      !relayVisitorNameAllowed(sni, enrollment, this.customHost) ||
+      (target.recovery && sni !== buddyRecoveryHost(target.enrollment))
+    ) {
       stream.respond({ ':status': 403 }, { endStream: true });
       return;
     }
@@ -661,7 +721,12 @@ export class EdgeRelayService {
         socket.destroy();
         return;
       }
-      this.proxy.accept(socket, { via: 'relay', clientIp, host: servername });
+      this.proxy.accept(socket, {
+        via: 'relay',
+        clientIp,
+        host: servername,
+        ...(servername === buddyRecoveryHost(enrollment) && { buddyRecovery: true }),
+      });
     });
   }
 }
