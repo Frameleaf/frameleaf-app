@@ -616,7 +616,7 @@ export class AssetRepository {
             sql<string>`'camera-identification'`.as('key'),
             sql<Record<string, unknown>>`${JSON.stringify(cameraEvidence)}::jsonb`.as('value'),
           ])
-          .where(sql<boolean>`not coalesce("lockedProperties" && array['make', 'model']::text[], false)`),
+          .where(sql<boolean>`not coalesce("lockedProperties" && array['make', 'model']::varchar[], false)`),
       )
       .onConflict((oc) => oc.columns(['assetId', 'key']).doUpdateSet((eb) => ({ value: eb.ref('excluded.value') })))
       .execute();
