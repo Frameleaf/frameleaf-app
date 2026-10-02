@@ -72,9 +72,10 @@ try {
       name: "group-frame0",
       selector: '[data-testid="group-keyframe-transform-0"]',
       ids: ["k0"],
-      // Open owner question (FL-100): Position shows as one combined X/Y row, so should a
-      // group-diamond click also select the Y proxy? Recorded, never asserted either way.
-      undecidedId: "k0:y",
+      // Decided (FL-100, October 2, 2026): Position shows as one combined X/Y row, but a
+      // group-diamond click does not also select the Y proxy. The engine's behaviour is kept,
+      // and the exact selection below asserts it.
+      unselectedId: "k0:y",
       width: 1200,
       group: true,
       // Product auto-expands the group of the active property (use-group-expansion), which
@@ -126,16 +127,18 @@ try {
         "default button center belongs to the actual visible marker",
       );
       const selected = report.stateAfter.selection.map((r) => r.keyframeId);
-      if (test.undecidedId) {
-        report.undecided = {
-          keyframeId: test.undecidedId,
-          selected: selected.includes(test.undecidedId),
+      if (test.unselectedId) {
+        report.unselected = {
+          keyframeId: test.unselectedId,
+          selected: selected.includes(test.unselectedId),
         };
+        assert.equal(
+          report.unselected.selected,
+          false,
+          "a group-diamond click does not select the Y proxy",
+        );
       }
-      assert.deepEqual(
-        selected.filter((id) => id !== test.undecidedId).sort(),
-        [...test.ids].sort(),
-      );
+      assert.deepEqual([...selected].sort(), [...test.ids].sort());
       assert.ok(report.stateAfter.selection.every((r) => r.itemId === "hero"));
       assert.deepEqual(
         report.stateAfter.graph,

@@ -24,6 +24,27 @@ export async function geometry(page, selector) {
         testId: node.getAttribute("data-testid"),
         className: node.getAttribute("class"),
       };
+    // What a pointer finds along the marker's middle row: one pixel inside each end of its box
+    // (the whole marker is reachable), and two pixels beyond each end (it covers nothing more).
+    const probe = (x) => {
+      const found = document.elementFromPoint(x, center.y);
+      return {
+        x,
+        hit: describe(found),
+        label: found?.getAttribute("aria-label") ?? null,
+        hitRect: found && rect(found),
+        hitsButton: found === button || button.contains(found),
+        region:
+          found?.closest("[data-testid]")?.getAttribute("data-testid") ?? null,
+        inSurface: !!found && surface.contains(found),
+      };
+    };
+    const reach = {
+      insideLeft: probe(b.x + 1),
+      insideRight: probe(b.x + b.width - 1),
+      outsideLeft: probe(b.x - 2),
+      outsideRight: probe(b.x + b.width + 2),
+    };
     const css = getComputedStyle(button);
     const clippedAncestors = [];
     for (let node = button.parentElement; node; node = node.parentElement) {
@@ -77,6 +98,7 @@ export async function geometry(page, selector) {
       defaultCenter: center,
       centerHit: describe(hit),
       centerHitsButton: hit === button || button.contains(hit),
+      reach,
       clippedAncestors,
       frame: Number(button.dataset.dopesheetFrame),
       logicalAxis: {
