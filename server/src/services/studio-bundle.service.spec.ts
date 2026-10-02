@@ -1006,7 +1006,13 @@ describe(StudioBundleService.name, () => {
                 clips: [
                   { id: 'c1', assetId: assetA },
                   { id: 'c2', mediaId: voice },
-                  { id: 'c3', importId: logo, captionsImportId: subs },
+                  {
+                    id: 'c3',
+                    importId: logo,
+                    captionsImportId: subs,
+                    // Edits to the graphic are part of the clip, in whatever shape the editor writes them.
+                    graphicEdits: { colors: { '#ff0000': '#00ff88' }, theme: 'dark', text: { title: 'Lake' } },
+                  },
                 ],
               },
             ],
@@ -1264,6 +1270,7 @@ describe(StudioBundleService.name, () => {
 
       expect(operations.fail).not.toHaveBeenCalled();
       const created = (await projects.createWithRevision.mock.results[0].value).project.id as string;
+      // The graph comes back as it left, so a graphic's edits arrive with the graphic they apply to.
       expect(projects.createWithRevision.mock.calls[0][0].revision.envelope.graph).toEqual(importsEnvelope.graph);
       expect(registered).toEqual(
         kept.map((item) => ({
