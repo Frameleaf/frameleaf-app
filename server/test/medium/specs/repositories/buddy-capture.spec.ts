@@ -2,7 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AssetFileType,
@@ -15,6 +15,7 @@ import {
   MediaOperationStatus,
   PhysicalFileType,
   SystemMetadataKey,
+  UserMetadataKey,
 } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
@@ -26,6 +27,7 @@ import { BUDDY_CAPTURE_LOCK, PhysicalFileRepository } from 'src/repositories/phy
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { BuddyBackupCaptureService, type BuddyCapture } from 'src/services/buddy-backup-capture.service.js';
+import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { BUDDY_BLOCK_BYTES, type BuddyKeyring, decryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
 import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
@@ -316,7 +318,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       const previous = await readAll(directory);
       await keys.write(directory, fingerprint, content);
       await sql`INSERT INTO system_metadata (key, value)
-        VALUES (${SystemMetadataKey.FrameleafCloudBackup}, ${JSON.stringify({ keyMode: 'server', keyFingerprint: fingerprint })}::jsonb)
+        VALUES (${SystemMetadataKey.FrameleafCloudBackup}, ${JSON.stringify({ keyMode: 'server', keyFingerprint: fingerprint })}::text::jsonb)
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(db);
       return previous;
     });
@@ -327,6 +329,112 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     const missing = options();
     await expect(next.capture.capture(missing)).rejects.toThrow('Stored Cloud Backup recovery key is missing');
     expect(await next.capture.readCapture(missing.runId)).toBeNull();
+  }, 20_000);
+
+  it('round-trips settings and replacement identity metadata as JSON objects through PostgreSQL', async () => {
+    const system = { server: { welcomeMessage: 'Recovered library' } };
+    const preferences = { folders: { enabled: true }, tags: ['one', 'two'] };
+    const fork = { enabled: true, sequence: [1, 2] };
+    await sql`INSERT INTO system_metadata (key, value)
+      VALUES (${SystemMetadataKey.SystemConfig}, ${JSON.stringify(system)}::text::jsonb)
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(db);
+    await sql`INSERT INTO user_metadata ("userId", key, value)
+      VALUES (${ownerId}::uuid, ${UserMetadataKey.Preferences}, ${JSON.stringify(preferences)}::text::jsonb)`.execute(
+      db,
+    );
+    await sql`INSERT INTO immich_fork.config (key, value)
+      VALUES ('buddy-recovery-test', ${JSON.stringify(fork)}::text::jsonb)`.execute(db);
+    const { capture, backups, keys } = fixture();
+    const { manifest } = await capture.capture(options());
+    await repository.update((state) => ({ ...state, settings }));
+    const recovery = new BuddyBackupRecoveryService(
+      repository,
+      { getEnv: () => ({ bull: { queues: [], config: {} } }) } as unknown as ConfigRepository,
+      backups,
+      keys,
+    );
+    const id = randomUUID();
+    const directory = join(repository.root(), 'recovery', id);
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      join(directory, 'prepared.json'),
+      JSON.stringify({ version: 1, scope: 'settings', mode: 'replace', manifest, files: [] }),
+    );
+    await sql`UPDATE system_metadata SET value = '{}'::jsonb WHERE key = ${SystemMetadataKey.SystemConfig}`.execute(db);
+    await sql`UPDATE user_metadata SET value = '{}'::jsonb WHERE "userId" = ${ownerId}::uuid`.execute(db);
+    await sql`UPDATE immich_fork.config SET value = '{}'::jsonb WHERE key = 'buddy-recovery-test'`.execute(db);
+    await recovery.settings(id, async () => {});
+    expect(
+      (
+        await db
+          .selectFrom('system_metadata')
+          .select('value')
+          .where('key', '=', SystemMetadataKey.SystemConfig)
+          .executeTakeFirstOrThrow()
+      ).value,
+    ).toEqual(system);
+    expect(
+      (
+        await db
+          .selectFrom('user_metadata')
+          .select('value')
+          .where('userId', '=', ownerId)
+          .where('key', '=', UserMetadataKey.Preferences)
+          .executeTakeFirstOrThrow()
+      ).value,
+    ).toEqual(preferences);
+    expect(
+      (
+        await sql<{ value: unknown }>`SELECT value FROM immich_fork.config WHERE key = 'buddy-recovery-test'`.execute(
+          db,
+        )
+      ).rows[0].value,
+    ).toEqual(fork);
+
+    const serverId = randomUUID();
+    const serverDirectory = join(repository.root(), 'recovery', serverId);
+    await mkdir(serverDirectory, { recursive: true });
+    await writeFile(
+      join(serverDirectory, 'prepared.json'),
+      JSON.stringify({ version: 1, scope: 'server', mode: 'replace', manifest, files: [] }),
+    );
+    const replacement = { instanceId: randomUUID(), heartbeat: { cloneSuspected: false } };
+    await writeFile(
+      join(serverDirectory, 'replacement.json'),
+      JSON.stringify({
+        keys: [SystemMetadataKey.FrameleafCloudLink],
+        metadata: [{ key: SystemMetadataKey.FrameleafCloudLink, value: replacement }],
+      }),
+    );
+    const maintenance = {
+      isMaintenanceMode: true,
+      action: { restoreBackupFilename: `buddy-restore-${serverId}-${basename(manifest.library.database!.key)}` },
+    };
+    // The dump importer is outside this case; exercise the real post-import metadata transaction.
+    await recovery.restore(
+      serverId,
+      async () => {},
+      maintenance as never,
+      async () => {},
+    );
+    expect(
+      (
+        await db
+          .selectFrom('system_metadata')
+          .select('value')
+          .where('key', '=', SystemMetadataKey.FrameleafCloudLink)
+          .executeTakeFirstOrThrow()
+      ).value,
+    ).toEqual(replacement);
+    expect(
+      (
+        await db
+          .selectFrom('system_metadata')
+          .select('value')
+          .where('key', '=', SystemMetadataKey.MaintenanceMode)
+          .executeTakeFirstOrThrow()
+      ).value,
+    ).toEqual(maintenance);
   }, 20_000);
 
   it('reclaims an interrupted multi-block capture before capture.json exists', async () => {

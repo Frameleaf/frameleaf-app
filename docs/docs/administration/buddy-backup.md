@@ -2,6 +2,8 @@
 
 Buddy Backup stores an encrypted copy of your library on another Frameleaf server. Each server has its own backup key and independent storage allowance. Cloud Backup and Buddy Backup can run together.
 
+Buddy Backup is solely a backup and restore destination. Hosting a buddy's vault never adds their photos, thumbnails, albums or people to your Frameleaf library, timeline or search. Your restore browser opens only your own server's backup; it cannot browse or restore the buddy's library. The hosting panel shows encrypted storage usage and transfer status.
+
 Buddy Backup is initially disabled while beta qualification is completed. Enabling `FRAMELEAF_BUDDY_BACKUP=true` on a compatible server permits new backups when Cloud also enables the feature. Setting it back to `false` stops new backups and keeps recovery available. Production enabling requires the security, data-integrity and two-network beta checks.
 
 ## Set up a buddy

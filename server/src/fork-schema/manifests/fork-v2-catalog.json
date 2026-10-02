@@ -665,6 +665,26 @@
       "identity": "immich_fork.backfill_progress.updatedAt"
     },
     {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.buddy_backup_reference.createdAt"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.buddy_backup_reference.deleteRequested"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.buddy_backup_reference.path"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.buddy_backup_reference.released"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.buddy_backup_reference.runId"
+    },
+    {
       "definition": "text|not null|||",
       "identity": "immich_fork.config.key"
     },
@@ -8071,6 +8091,10 @@
       "identity": "immich_fork.backfill_progress.backfill_progress_pkey"
     },
     {
+      "definition": "PRIMARY KEY (\"runId\", path)",
+      "identity": "immich_fork.buddy_backup_reference.buddy_backup_reference_pkey"
+    },
+    {
       "definition": "PRIMARY KEY (key)",
       "identity": "immich_fork.config.config_pkey"
     },
@@ -10486,7 +10510,8 @@
     "0000000000210-FrameleafTokenExchange",
     "0000000000211-FrameleafAccountAccess",
     "0000000000212-AssetDevelopArtifacts",
-    "0000000000213-ICloudSourceIdentity"
+    "0000000000213-ICloudSourceIdentity",
+    "0000000000214-BuddyBackupReferences"
   ],
   "functions": [
     {
@@ -11798,6 +11823,14 @@
     {
       "definition": "CREATE UNIQUE INDEX backfill_progress_pkey ON immich_fork.backfill_progress USING btree (kind)",
       "identity": "immich_fork.backfill_progress.backfill_progress_pkey"
+    },
+    {
+      "definition": "CREATE INDEX buddy_backup_reference_path_idx ON immich_fork.buddy_backup_reference USING btree (path)",
+      "identity": "immich_fork.buddy_backup_reference.buddy_backup_reference_path_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX buddy_backup_reference_pkey ON immich_fork.buddy_backup_reference USING btree (\"runId\", path)",
+      "identity": "immich_fork.buddy_backup_reference.buddy_backup_reference_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX config_pkey ON immich_fork.config USING btree (key)",
@@ -14753,6 +14786,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.backfill_progress"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.buddy_backup_reference"
     },
     {
       "definition": "table",

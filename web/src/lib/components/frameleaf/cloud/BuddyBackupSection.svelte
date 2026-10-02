@@ -395,6 +395,8 @@
       {/if}
     </CloudCard>
 
+    {#if status.pairing && status.recoveryVerified}<BuddyRestoreSection admin />{/if}
+
     <CloudCard
       title={$t('frameleaf_buddy_hosting_for_my_buddy')}
       description={$t(
@@ -442,7 +444,6 @@
       </div>
     </CloudCard>
 
-    {#if status.pairing && status.recoveryVerified}<BuddyRestoreSection admin />{/if}
     {#if status.pairing}<details>
         <summary>{$t('frameleaf_buddy_pairing_and_recovery_controls')}</summary>
         <p>
