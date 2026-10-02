@@ -1,7 +1,8 @@
 import { DateTime } from 'luxon';
 import { locale } from '$lib/stores/preferences.store';
 import { parseUtcDate } from '$lib/utils/date-time';
-import { formatGroupTitle, toISOYearMonthUTC } from '$lib/utils/timeline-util';
+import { formatGroupTitle, toTimelineAsset, toISOYearMonthUTC } from '$lib/utils/timeline-util';
+import { assetFactory } from '@test-data/factories/asset-factory';
 
 describe('formatGroupTitle', () => {
   beforeAll(() => {
@@ -95,5 +96,16 @@ describe('toISOYearMonthUTC', () => {
 
   it('should prefix month with 0s', () => {
     expect(toISOYearMonthUTC({ year: 2025, month: 1 })).toBe('2025-01-01T00:00:00.000Z');
+  });
+});
+
+describe('EXIF timeline rating projection', () => {
+  it.each([
+    [{ rating: null, isRejected: true }, -1],
+    [{ rating: -1 }, -1],
+    [{ rating: 3, isRejected: false }, 3],
+    [{ rating: null, isRejected: false }, null],
+  ])('preserves tile/culling rating for %j', (exifInfo, expected) => {
+    expect(toTimelineAsset(assetFactory.build({ exifInfo })).rating).toBe(expected);
   });
 });
