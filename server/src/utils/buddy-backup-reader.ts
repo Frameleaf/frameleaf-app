@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { open, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { BUDDY_ID, type BuddyKeyring, decryptBuddyBlock } from './buddy-backup-crypto.ts';
+import { readBuddyMetadata } from './buddy-backup-metadata.ts';
 import {
   type BuddyReceipt,
   type BuddySignedSnapshot,
@@ -72,6 +73,9 @@ export class BuddyBackupReader {
       !manifest.contents
     )
       throw new Error('Buddy snapshot manifest binding failed');
+    if (manifest.metadata !== undefined) {
+      manifest.metadata = readBuddyMetadata(manifest.metadata);
+    }
     return manifest;
   }
 

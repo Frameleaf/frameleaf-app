@@ -38,6 +38,9 @@ export type OwnerRestoreDetailsContext = {
   db: Transaction<DB>;
   ownerId: string;
   jobs: Array<Parameters<JobRepository['queue']>[0]>;
+  /** Internal Buddy policy; ordinary Cloud owner restores keep their existing group restrictions. */
+  buddyPeople?: boolean;
+  buddyPeopleMode?: 'keep' | 'replace';
 };
 
 /** A deleted item as the manifest records it, and where its restored files now are. */
@@ -403,6 +406,9 @@ export class CloudBackupDetailsService extends BaseService {
     context?: OwnerRestoreDetailsContext,
   ): Promise<string | null> {
     const repositories = this.restoreRepositories(context);
+    if (context?.buddyPeople) {
+      return this.buddyPersonFor(ownerId, personId, people, context);
+    }
     if (context) {
       await context.db
         .selectFrom('person_group')
@@ -438,6 +444,68 @@ export class CloudBackupDetailsService extends BaseService {
       isHidden: person.isHidden,
       isFavorite: person.isFavorite,
     });
+    return personId;
+  }
+
+  private async buddyPersonFor(
+    ownerId: string,
+    personId: string,
+    people: Record<string, CloudBackupPerson>,
+    context: OwnerRestoreDetailsContext,
+  ): Promise<string> {
+    const owner = await context.db
+      .selectFrom('user')
+      .select('clusterGroupId')
+      .where('id', '=', ownerId)
+      .where('deletedAt', 'is', null)
+      .forShare()
+      .noWait()
+      .executeTakeFirst();
+    const group = await context.db
+      .selectFrom('person_group')
+      .select(['id', 'clusterGroupId'])
+      .where('id', '=', personId)
+      .forUpdate()
+      .noWait()
+      .executeTakeFirst();
+    if (!owner || (group && group.clusterGroupId !== owner.clusterGroupId)) {
+      throw new Error('Buddy restore person unavailable');
+    }
+    const existing = await context.db
+      .selectFrom('person')
+      .select('personGroupId')
+      .where('ownerId', '=', ownerId)
+      .where('personGroupId', '=', personId)
+      .forUpdate()
+      .noWait()
+      .executeTakeFirst();
+    const person = people[personId];
+    if (existing && context.buddyPeopleMode !== 'replace') {
+      return personId;
+    }
+    if (!person || person.ownerId !== ownerId) {
+      if (existing) {
+        return personId;
+      }
+      throw new Error('Buddy restore person unavailable');
+    }
+    const repositories = this.restoreRepositories(context);
+    const values = {
+      ownerId,
+      personGroupId: personId,
+      name: person.name,
+      birthDate: person.birthDate,
+      isHidden: person.isHidden,
+      isFavorite: person.isFavorite,
+    };
+    if (existing) {
+      await repositories.person.update(values);
+    } else {
+      if (!group) {
+        await repositories.person.createGroups([{ id: personId, clusterGroupId: owner.clusterGroupId }]);
+      }
+      await repositories.person.create(values);
+    }
     return personId;
   }
 }
