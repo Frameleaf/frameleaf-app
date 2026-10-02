@@ -191,7 +191,18 @@ export function sensitivityReview(enrichment: AssetImageEnrichmentResponseDto | 
 
 /* ---------------------------------------------------------------- detail rows */
 
-export type InfoDetailRowId = 'filename' | 'path' | 'image' | 'camera' | 'lens' | 'exposure' | 'video' | 'checksum';
+export type InfoDetailRowId =
+  | 'filename'
+  | 'path'
+  | 'image'
+  | 'camera'
+  | 'lens'
+  | 'exposure'
+  | 'video'
+  | 'checksum'
+  | 'bit-depth'
+  | 'color-space'
+  | 'profile';
 
 export interface InfoDetailRow {
   id: InfoDetailRowId;
@@ -223,6 +234,11 @@ export function infoDetailRows(asset: AssetResponseDto, { isOwner }: { isOwner: 
     cameraLabel(exif) ? { id: 'camera', value: cameraLabel(exif) as string } : null,
     exif?.lensModel ? { id: 'lens', value: exif.lensModel } : null,
     exposure ? { id: 'exposure', value: exposure } : null,
+    exif?.bitsPerSample && Number.isFinite(exif.bitsPerSample) && exif.bitsPerSample > 0
+      ? { id: 'bit-depth', value: String(exif.bitsPerSample) }
+      : null,
+    exif?.colorspace?.trim() ? { id: 'color-space', value: exif.colorspace.trim() } : null,
+    exif?.profileDescription?.trim() ? { id: 'profile', value: exif.profileDescription.trim() } : null,
     video ? { id: 'video', value: video } : null,
     isOwner && asset.checksum ? { id: 'checksum', value: asset.checksum } : null,
   ];

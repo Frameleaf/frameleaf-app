@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getExifRating } from '$lib/frameleaf/rating';
   import { readingKey } from '$lib/frameleaf/reading-direction';
   /**
    * The viewer's Rating tool (audit V-3), ported from `MediaViewer.jsx:1076-1125` and `RatingStars`
@@ -54,11 +55,15 @@
 
   const enabled = $derived(authManager.authenticated && authManager.preferences.ratings.enabled);
   const current = $derived.by(() => {
-    const value = Number(asset.exifInfo?.rating ?? 0);
-    return Number.isSafeInteger(value) && value >= 0 && value <= 5 ? value : 0;
+    const value = Number(getExifRating(asset.exifInfo) ?? 0);
+    return Number.isSafeInteger(value) && value >= -1 && value <= 5 ? value : 0;
   });
   const ratingText = $derived(
-    current === 0 ? $t('frameleaf_viewer_not_rated') : $t('frameleaf_viewer_stars', { values: { count: current } }),
+    current === -1
+      ? $t('frameleaf_library_rating_rejected')
+      : current === 0
+        ? $t('frameleaf_viewer_not_rated')
+        : $t('frameleaf_viewer_stars', { values: { count: current } }),
   );
 
   const focusButton = () => wrapper?.querySelector<HTMLButtonElement>('button[aria-haspopup]')?.focus();
@@ -82,6 +87,7 @@
         exifInfo: {
           ...asset.exifInfo,
           rating,
+          isRejected: rating === -1,
         },
       };
 
@@ -156,7 +162,7 @@
       color="secondary"
       shape="round"
       variant="ghost"
-      icon={current ? mdiStar : mdiStarOutline}
+      icon={current > 0 ? mdiStar : mdiStarOutline}
       aria-label={$t('frameleaf_viewer_rating_label', { values: { rating: ratingText } })}
       title={$t('frameleaf_viewer_rating_label', { values: { rating: ratingText } })}
       aria-haspopup="true"

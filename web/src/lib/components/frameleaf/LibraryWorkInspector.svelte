@@ -10,6 +10,7 @@
    * has no source for is left out rather than invented: the frame rate, the device-local note and
    * the prototype's Versions tab (versions live in the editor).
    */
+  import { getExifRating } from '$lib/frameleaf/rating';
   import { formatDuration, cameraLabel, dimensionsLabel } from '$lib/frameleaf/viewer-headline';
   import { locationLabel } from '$lib/frameleaf/info-panel';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -74,7 +75,7 @@
         }
 
         detail = response;
-        rating = response.exifInfo?.rating ?? null;
+        rating = getExifRating(response.exifInfo);
       })
       .catch((error) => {
         if (current) {

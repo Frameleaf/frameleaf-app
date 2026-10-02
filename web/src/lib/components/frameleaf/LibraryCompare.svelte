@@ -8,6 +8,7 @@
    * point, so detail is compared where it matters. Only the owner of an item can rate it; anybody
    * else's item is shown but not decided.
    */
+  import { getExifRating } from '$lib/frameleaf/rating';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import {
     compareDecisionOf,
@@ -59,7 +60,7 @@
         .then((asset) => {
           assets = { ...assets, [id]: asset };
           if (!Object.hasOwn(ratings, id)) {
-            ratings = { ...ratings, [id]: asset.exifInfo?.rating ?? null };
+            ratings = { ...ratings, [id]: getExifRating(asset.exifInfo) };
           }
         })
         .catch((error) => handleError(error, $t('errors.failed_to_load_asset')))

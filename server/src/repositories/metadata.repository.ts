@@ -4,6 +4,7 @@ import geotz from 'geo-tz';
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, realpath, rm, stat, utimes } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
+import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { LOCATION_DELETE_ARGS, LOCATION_TAG_SELECTORS, SAMSUNG_TRAILER_DELETE_ARGS } from 'src/utils/location-tags.js';
@@ -29,6 +30,7 @@ type TagsWithWrongTypes =
   | 'LensModel';
 
 export interface ImmichTags extends Omit<Tags, TagsWithWrongTypes> {
+  JPEGDigest?: string;
   ContentIdentifier?: string;
   MotionPhoto?: number;
   MotionPhotoVersion?: number;
@@ -224,13 +226,44 @@ export class MetadataRepository {
     await Promise.all([this.exiftool.end(), this.locationTool.end()]);
   }
 
-  readTags(path: string): Promise<ImmichTags> {
+  async readTags(path: string): Promise<ImmichTags> {
     const options: ReadTaskOptions | undefined = mimeTypes.isVideo(path) ? { readArgs: ['-ee'] } : undefined;
+    try {
+      const tags = await this.exiftool.read(path, options);
+      // The vendored reader can resolve with errors rather than reject the promise.
+      if (tags.errors?.length || tags.Error) {
+        throw new Error([...(tags.errors ?? []), tags.Error].filter(Boolean).join('; '));
+      }
+      return tags as ImmichTags;
+    } catch (error) {
+      this.logger.warn(`Error reading exif data (${path}): ${error}`);
+      throw error;
+    }
+  }
 
-    return this.exiftool.read(path, options).catch((error) => {
-      this.logger.warn(`Error reading exif data (${path}): ${error}\n${error?.stack}`);
-      return {};
-    }) as Promise<ImmichTags>;
+  async readJpegSignature(path: string): Promise<CameraIdentification['suggestion']> {
+    // Per-tag raw and print selectors collapse to one JSON key. Read each explicitly,
+    // using the installed tool's table instead of importing or maintaining a camera catalogue.
+    const raw = await this.exiftool.readRaw<Tags & { JPEGDigest?: string }>(path, { readArgs: ['-JPEGDigest', '-n'] });
+    if (raw.errors?.length || raw.Error) {
+      throw new Error([...(raw.errors ?? []), raw.Error].filter(Boolean).join('; '));
+    }
+    const signature = typeof raw.JPEGDigest === 'string' ? raw.JPEGDigest.trim() : '';
+    if (!signature) {
+      return null;
+    }
+    const interpreted = await this.exiftool.readRaw<Tags & { JPEGDigest?: string }>(path, {
+      readArgs: ['-JPEGDigest'],
+    });
+    if (interpreted.errors?.length || interpreted.Error) {
+      throw new Error([...(interpreted.errors ?? []), interpreted.Error].filter(Boolean).join('; '));
+    }
+    const lookup = typeof interpreted.JPEGDigest === 'string' ? interpreted.JPEGDigest.trim() : '';
+    return {
+      method: 'jpeg-signature',
+      signature,
+      matches: lookup && lookup !== signature && !lookup.startsWith('Unknown') ? lookup : null,
+    };
   }
 
   extractBinaryTag(path: string, tagName: string): Promise<Buffer> {

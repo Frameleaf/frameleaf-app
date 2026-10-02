@@ -18,6 +18,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { AssetFile, LockableProperty, Stack } from 'src/database.js';
@@ -380,6 +381,7 @@ interface GetByIdsRelations {
 }
 
 type UpsertExifOptions = {
+  cameraEvidence?: CameraIdentification;
   exif: Insertable<AssetExifTable>;
   audio?: Insertable<AssetAudioTable>;
   video?: Insertable<AssetVideoTable>;
@@ -467,6 +469,7 @@ export class AssetRepository {
     keyframes,
     lockedPropertiesBehavior,
     expectedUpdateId,
+    cameraEvidence,
   }: UpsertExifOptions): Promise<void> {
     let query = this.db;
     if (audio) {
@@ -534,65 +537,88 @@ export class AssetRepository {
       );
     }
 
-    await query
-      .insertInto('asset_exif')
-      .values(exif)
-      .onConflict((oc) => {
-        const update = oc.column('assetId').doUpdateSet((eb) => {
-          const updateLocked = <T extends keyof AssetExifTable>(col: T) => eb.ref(`excluded.${col}`);
-          const skipLocked = <T extends keyof AssetExifTable>(col: T) =>
-            eb
-              .case()
-              .when(sql`${col}`, '=', eb.fn.any('asset_exif.lockedProperties'))
-              .then(eb.ref(`asset_exif.${col}`))
-              .else(eb.ref(`excluded.${col}`))
-              .end();
-          const ref = lockedPropertiesBehavior === 'skip' ? skipLocked : updateLocked;
-          return {
-            ...removeUndefinedKeys(
-              {
-                description: ref('description'),
-                exifImageWidth: ref('exifImageWidth'),
-                exifImageHeight: ref('exifImageHeight'),
-                fileSizeInByte: ref('fileSizeInByte'),
-                orientation: ref('orientation'),
-                dateTimeOriginal: ref('dateTimeOriginal'),
-                modifyDate: ref('modifyDate'),
-                timeZone: ref('timeZone'),
-                latitude: ref('latitude'),
-                longitude: ref('longitude'),
-                projectionType: ref('projectionType'),
-                city: ref('city'),
-                livePhotoCID: ref('livePhotoCID'),
-                autoStackId: ref('autoStackId'),
-                state: ref('state'),
-                country: ref('country'),
-                make: ref('make'),
-                model: ref('model'),
-                lensModel: ref('lensModel'),
-                fNumber: ref('fNumber'),
-                focalLength: ref('focalLength'),
-                iso: ref('iso'),
-                exposureTime: ref('exposureTime'),
-                profileDescription: ref('profileDescription'),
-                colorspace: ref('colorspace'),
-                bitsPerSample: ref('bitsPerSample'),
-                rating: ref('rating'),
-                fps: ref('fps'),
-                tags: ref('tags'),
-                lockedProperties:
-                  lockedPropertiesBehavior === 'append'
-                    ? distinctLocked(eb, exif.lockedProperties ?? null)
-                    : ref('lockedProperties'),
-              },
-              exif,
-            ),
-          };
+    const buildExifQuery = (db: Pick<Kysely<DB>, 'insertInto'>) =>
+      db
+        .insertInto('asset_exif')
+        .values(exif)
+        .onConflict((oc) => {
+          const update = oc.column('assetId').doUpdateSet((eb) => {
+            const updateLocked = <T extends keyof AssetExifTable>(col: T) => eb.ref(`excluded.${col}`);
+            const skipLocked = <T extends keyof AssetExifTable>(col: T) =>
+              eb
+                .case()
+                .when(sql`${col}`, '=', eb.fn.any('asset_exif.lockedProperties'))
+                .then(eb.ref(`asset_exif.${col}`))
+                .else(eb.ref(`excluded.${col}`))
+                .end();
+            const ref = lockedPropertiesBehavior === 'skip' ? skipLocked : updateLocked;
+            return {
+              ...removeUndefinedKeys(
+                {
+                  description: ref('description'),
+                  exifImageWidth: ref('exifImageWidth'),
+                  exifImageHeight: ref('exifImageHeight'),
+                  fileSizeInByte: ref('fileSizeInByte'),
+                  orientation: ref('orientation'),
+                  dateTimeOriginal: ref('dateTimeOriginal'),
+                  modifyDate: ref('modifyDate'),
+                  timeZone: ref('timeZone'),
+                  latitude: ref('latitude'),
+                  longitude: ref('longitude'),
+                  projectionType: ref('projectionType'),
+                  city: ref('city'),
+                  livePhotoCID: ref('livePhotoCID'),
+                  autoStackId: ref('autoStackId'),
+                  state: ref('state'),
+                  country: ref('country'),
+                  make: ref('make'),
+                  model: ref('model'),
+                  lensModel: ref('lensModel'),
+                  fNumber: ref('fNumber'),
+                  focalLength: ref('focalLength'),
+                  iso: ref('iso'),
+                  exposureTime: ref('exposureTime'),
+                  profileDescription: ref('profileDescription'),
+                  colorspace: ref('colorspace'),
+                  bitsPerSample: ref('bitsPerSample'),
+                  rating: ref('rating'),
+                  fps: ref('fps'),
+                  tags: ref('tags'),
+                  lockedProperties:
+                    lockedPropertiesBehavior === 'append'
+                      ? distinctLocked(eb, exif.lockedProperties ?? null)
+                      : ref('lockedProperties'),
+                },
+                exif,
+              ),
+            };
+          });
+          return expectedUpdateId === undefined
+            ? update
+            : update.where('asset_exif.updateId', expectedUpdateId === null ? 'is' : '=', expectedUpdateId);
         });
-        return expectedUpdateId === undefined
-          ? update
-          : update.where('asset_exif.updateId', expectedUpdateId === null ? 'is' : '=', expectedUpdateId);
-      })
+
+    if (cameraEvidence === undefined) {
+      await buildExifQuery(query).execute();
+      return;
+    }
+    // Only the row actually inserted/updated by the revision guard can publish evidence.
+    // Check the persisted locks as well as the service snapshot, in the same statement.
+    await query
+      .with('camera_exif', (qb) => buildExifQuery(qb).returning(['assetId', 'lockedProperties']))
+      .insertInto('asset_metadata')
+      .columns(['assetId', 'key', 'value'])
+      .expression((eb) =>
+        eb
+          .selectFrom('camera_exif')
+          .select([
+            'assetId',
+            sql<string>`'camera-identification'`.as('key'),
+            sql<Record<string, unknown>>`${cameraEvidence}::jsonb`.as('value'),
+          ])
+          .where(sql<boolean>`not coalesce("lockedProperties" && array['make', 'model']::varchar[], false)`),
+      )
+      .onConflict((oc) => oc.columns(['assetId', 'key']).doUpdateSet((eb) => ({ value: eb.ref('excluded.value') })))
       .execute();
   }
 

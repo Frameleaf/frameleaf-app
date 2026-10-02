@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import DetailPanelCameraIdentification from '$lib/components/asset-viewer/DetailPanelCameraIdentification.svelte';
   import DetailPanelDate from '$lib/components/asset-viewer/DetailPanelDate.svelte';
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
   import DetailPanelImageEnrichment from '$lib/components/asset-viewer/DetailPanelImageEnrichment.svelte';
@@ -165,6 +166,7 @@
       the path and the checksum owner-only.
     -->
   <ViewerDetailRows {asset} {isOwner} />
+  <DetailPanelCameraIdentification {asset} {isOwner} />
 
   {#if authManager.authenticated && authManager.preferences.tags.enabled}
     <DetailPanelTags {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />

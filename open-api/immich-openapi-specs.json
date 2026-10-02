@@ -65403,9 +65403,23 @@
       "ExifResponseDto": {
         "description": "EXIF response",
         "properties": {
+          "bitsPerSample": {
+            "default": null,
+            "description": "Bits per sample",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
           "city": {
             "default": null,
             "description": "City name",
+            "nullable": true,
+            "type": "string"
+          },
+          "colorspace": {
+            "default": null,
+            "description": "Recorded color space",
             "nullable": true,
             "type": "string"
           },
@@ -65479,6 +65493,12 @@
             "nullable": true,
             "type": "number"
           },
+          "isRejected": {
+            "default": null,
+            "description": "Whether the stored rating is rejected",
+            "nullable": true,
+            "type": "boolean"
+          },
           "iso": {
             "default": null,
             "description": "ISO sensitivity",
@@ -65529,6 +65549,12 @@
           "orientation": {
             "default": null,
             "description": "Image orientation",
+            "nullable": true,
+            "type": "string"
+          },
+          "profileDescription": {
+            "default": null,
+            "description": "Color profile description",
             "nullable": true,
             "type": "string"
           },

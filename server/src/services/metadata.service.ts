@@ -32,6 +32,7 @@ import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles, linkLivePhotoAssets } from 'src/utils/asset.util.js';
+import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { isLockedRow } from 'src/utils/locked.js';
@@ -118,16 +119,13 @@ const validateRange = (value: number | undefined, min: number, max: number): Non
 };
 
 const getLensModel = (exifTags: ImmichTags): string | null => {
-  const lensModel = String(
-    exifTags.LensID ?? exifTags.LensType ?? exifTags.LensSpec ?? exifTags.LensModel ?? '',
-  ).trim();
-  if (lensModel === '----') {
-    return null;
+  for (const value of [exifTags.LensID, exifTags.LensType, exifTags.LensSpec, exifTags.LensModel]) {
+    const lens = String(value ?? '').trim();
+    if (lens && lens.toLowerCase() !== 'n/a' && lens !== '----' && !lens.startsWith('Unknown')) {
+      return lens;
+    }
   }
-  if (lensModel.startsWith('Unknown')) {
-    return null;
-  }
-  return lensModel || null;
+  return null;
 };
 
 type ImmichTagsWithFaces = ImmichTags & { RegionInfo: NonNullable<ImmichTags['RegionInfo']> };
@@ -243,7 +241,7 @@ export class MetadataService extends BaseService {
       this.getExifTags(asset),
       this.storageRepository.stat(asset.originalPath),
     ]);
-    const { tags: exifTags, audio, video, packets, format } = exifResult;
+    const { tags: exifTags, originalTags, cameraEvidence, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
 
     const dates = this.getDates(asset, exifTags, stats);
@@ -253,6 +251,20 @@ export class MetadataService extends BaseService {
     // instead of being read from the file's own coordinates
     const lockedProperties = (await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(asset.id)) ?? [];
     const locationLocked = lockedProperties.includes('latitude');
+    // Persisted locks can include camera fields beyond the public editable-property union.
+    const cameraLocked = lockedProperties.some((property: string) => property === 'make' || property === 'model');
+    if (
+      !cameraLocked &&
+      asset.type === AssetType.Image &&
+      originalTags.FileType === 'JPEG' &&
+      !cameraEvidence.recorded
+    ) {
+      try {
+        cameraEvidence.suggestion = await this.metadataRepository.readJpegSignature(asset.originalPath);
+      } catch (error) {
+        this.logger.warn(`Unable to read optional JPEG encoding clue for ${asset.id}: ${error}`);
+      }
+    }
     let geo: ReverseGeocodeResult = { country: null, state: null, city: null },
       latitude: number | null = null,
       longitude: number | null = null;
@@ -289,10 +301,8 @@ export class MetadataService extends BaseService {
       colorspace: exifTags.ColorSpace === undefined ? null : String(exifTags.ColorSpace),
 
       // camera
-      make:
-        exifTags.Make ?? exifTags.Device?.Manufacturer ?? exifTags.AndroidMake ?? (exifTags.DeviceManufacturer || null),
-      model:
-        exifTags.Model ?? exifTags.Device?.ModelName ?? exifTags.AndroidModel ?? (exifTags.DeviceModelName || null),
+      make: cameraEvidence.recorded?.make ?? null,
+      model: cameraEvidence.recorded?.model ?? null,
       fps: video?.frameRate ?? validate(Number(exifTags.VideoFrameRate!)),
       iso: validate(exifTags.ISO) as number,
       exposureTime: exifTags.ExposureTime ?? null,
@@ -303,7 +313,8 @@ export class MetadataService extends BaseService {
       // comments
       description: String(exifTags.ImageDescription || exifTags.Description || '').trim(),
       profileDescription: exifTags.ProfileDescription || null,
-      rating: exifTags.Rating === 0 ? null : validateRange(exifTags.Rating, 1, 5),
+      rating:
+        Number.isSafeInteger(exifTags.Rating) && exifTags.Rating !== 0 ? validateRange(exifTags.Rating, -1, 5) : null,
 
       // grouping
       livePhotoCID: (exifTags.ContentIdentifier || exifTags.MediaGroupUUID) ?? null,
@@ -385,6 +396,7 @@ export class MetadataService extends BaseService {
       async () => {
         await this.assetRepository.upsertExif({
           exif: exifData,
+          cameraEvidence: cameraLocked ? undefined : cameraEvidence,
           audio: audioData,
           video: videoData,
           keyframes: keyframeData,
@@ -675,6 +687,10 @@ export class MetadataService extends BaseService {
       shouldProbe ? this.getVideoTags(asset.originalPath) : null,
     ]);
 
+    // Resolve capture identity before merging sidecar tags or deleting any original fields.
+    const cameraEvidence = resolveCameraIdentification(mediaTags, sidecarTags);
+    const originalTags = { ...mediaTags };
+
     // prefer dates from sidecar tags
     if (sidecarTags) {
       const result = firstDateTime(sidecarTags);
@@ -717,6 +733,8 @@ export class MetadataService extends BaseService {
 
     return {
       tags: { ...mediaTags, ...videoResult?.tags, ...sidecarTags },
+      originalTags,
+      cameraEvidence,
       audio: videoResult?.audio,
       video: videoResult?.video,
       packets: videoResult?.packets,

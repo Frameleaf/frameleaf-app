@@ -50,6 +50,9 @@
     exposure: mdiTune,
     video: mdiVideoOutline,
     checksum: mdiHarddisk,
+    'bit-depth': mdiTune,
+    'color-space': mdiTune,
+    profile: mdiTune,
   };
 
   const LABEL_KEYS: Record<InfoDetailRowId, Translations> = {
@@ -61,6 +64,9 @@
     exposure: 'frameleaf_info_detail_exposure',
     video: 'frameleaf_info_detail_video',
     checksum: 'frameleaf_info_detail_checksum',
+    'bit-depth': 'frameleaf_camera_bit_depth',
+    'color-space': 'frameleaf_camera_color_space',
+    profile: 'frameleaf_camera_profile',
   };
 </script>
 
@@ -122,6 +128,8 @@
               >
                 {row.value}
               </a>
+            {:else if row.id === 'bit-depth'}
+              {$t('frameleaf_camera_bits_per_sample', { values: { bits: row.value } })}
             {:else}
               {row.value}
             {/if}

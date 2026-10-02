@@ -8,6 +8,7 @@
    * section is the owner's, and not for an item in the trash (MediaViewer.jsx:2383-2388). A failure
    * states itself in place and offers the recovery that can work.
    */
+  import { getExifRating } from '$lib/frameleaf/rating';
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
   import StarRating, { type Rating } from '$lib/elements/StarRating.svelte';
@@ -26,7 +27,7 @@
 
   let { asset, isOwner, onAssetRefresh }: Props = $props();
 
-  let rating = $derived(asset.exifInfo?.rating ?? null) as Rating;
+  let rating = $derived(getExifRating(asset.exifInfo)) as Rating;
   let failure = $state<InlineEditFailure | null>(null);
   let isSaving = $state(false);
   /** The last value chosen, so a retryable failure replays that value and not the stored one. */
@@ -40,7 +41,7 @@
       failure = null;
       pending = null;
       // The top row's Rating tool reads the viewer's asset, so hand it the stored value.
-      onAssetRefresh?.({ ...asset, exifInfo: { ...asset.exifInfo, rating: next } });
+      onAssetRefresh?.({ ...asset, exifInfo: { ...asset.exifInfo, rating: next, isRejected: next === -1 } });
     } catch (error) {
       failure = classifyInlineEditError(error);
       handleError(error, $t('errors.cant_apply_changes'));
@@ -67,6 +68,9 @@
       <Text color="muted">{$t('frameleaf_info_rating')}</Text>
     </div>
     <div class="flex items-center gap-2">
+      {#if rating === -1}
+        <Text color="muted">{$t('frameleaf_library_rating_rejected')}</Text>
+      {/if}
       <StarRating {rating} onRating={(value) => handlePromiseError(handleChangeRating(value))} />
       <button
         type="button"
