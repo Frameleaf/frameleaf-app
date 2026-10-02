@@ -18,10 +18,12 @@ import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
+  AssetType,
   AlbumUserRole,
   AssetStatus,
   DatabaseLock,
   ImmichWorker,
+  JobName,
   MaintenanceAction,
   MediaOperationDestination,
   MediaOperationKind,
@@ -642,19 +644,26 @@ export class BuddyBackupRestoreService {
   }
 
   /** Written before the metadata transaction commits; dispatched only after the complete restore verifies. */
-  private async saveRestoreJobs(operationId: string, assetId: string, jobs: OwnerRestoreDetailsContext['jobs']) {
-    if (jobs.length === 0) return;
+  private async saveRestoreJobs(
+    operationId: string,
+    assetId: string,
+    jobs: OwnerRestoreDetailsContext['jobs'],
+    retainedEditedProjection = false,
+  ) {
+    if (jobs.length === 0 && !retainedEditedProjection) return;
     if (!BUDDY_UUID.test(operationId) || !BUDDY_UUID.test(assetId)) throw new Error('Invalid restore job identity');
     const path = join(this.repository.root(), 'restores', operationId, 'jobs', `${assetId}.json`);
     const previous = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error;
       return '[]';
     });
-    const pending = [...JSON.parse(previous), ...jobs];
-    await writeBuddyFile(
-      path,
-      JSON.stringify(new Map(pending.map((job) => [JSON.stringify(job), job])).values().toArray()),
-    );
+    const pending: OwnerRestoreDetailsContext['jobs'] = [...JSON.parse(previous), ...jobs];
+    // A verified captured projection is already rendered. Also prune intent left by an
+    // interrupted attempt, whose metadata transaction may have committed before publication.
+    const filtered = retainedEditedProjection
+      ? pending.filter((job) => job.name !== JobName.AssetEditThumbnailGeneration || job.data.id !== assetId)
+      : pending;
+    await writeBuddyFile(path, JSON.stringify(new Map(filtered.map((job) => [JSON.stringify(job), job])).values().toArray()));
   }
 
   private async drainRestoreJobs() {
@@ -988,10 +997,10 @@ export class BuddyBackupRestoreService {
               const state = readBuddyAssetFidelity(manifest, assetId);
               if (state) {
                 const versionFiles = buddyFidelityFiles(manifest, assetId);
-                const outcome = await this.guarded(operation, token, job, manifest, snapshot, file, async (trx, ownerId) => {
+                const published = await this.guarded(operation, token, job, manifest, snapshot, file, async (trx, ownerId) => {
                   const current = await captureOwnerRestoreFile(file.target, async (path) =>
                     (await this.crypto.hashFile(path, 'sha256')).toString('hex'));
-                  return new BuddyBackupFidelityRepository(trx).publish({
+                  const outcome = await new BuddyBackupFidelityRepository(trx).publish({
                     state,
                     ownerId,
                     originalSha256: current.sha256 ?? '',
@@ -1005,8 +1014,18 @@ export class BuddyBackupRestoreService {
                           throw new Error('Buddy retained version did not verify');
                     },
                   });
+                  const projection = await trx.selectFrom('asset_file').select(['path', 'type'])
+                    .where('assetId', '=', assetId).where('isEdited', '=', true).execute();
+                  const retainedEditedProjection = outcome === 'restored' && state.source.type === AssetType.Image &&
+                    state.projection.length > 0 && state.projection.every((source) =>
+                      projection.some((current) => current.type === source.type &&
+                        current.path === versionFiles[state.files.findIndex((file) => file.path === source.path)]?.target));
+                  return { outcome, retainedEditedProjection };
                 }, true);
-                if (outcome === 'preserved-source') preservedVersionAssetIds.push(assetId);
+                // Remove the re-render only after the guarded publication commits. A crash before
+                // this write cannot complete the restore; replay will prune the saved job again.
+                if (published.retainedEditedProjection) await this.saveRestoreJobs(operation.id, assetId, [], true);
+                if (published.outcome === 'preserved-source') preservedVersionAssetIds.push(assetId);
               }
             }
             for (const assetId of ids) {
