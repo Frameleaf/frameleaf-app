@@ -16,6 +16,7 @@ import {
   checkStudioBundleProject,
   digestZipEntry,
   isBundleExportDownloadable,
+  isStudioBundleImportAlias,
   parseBundleExportSnapshot,
   parseBundleImportSnapshot,
   planStudioBundleRelink,
@@ -26,6 +27,7 @@ import {
   serializeStudioBundleProject,
   sha256Of,
   studioBundleFileName,
+  studioBundleImportSources,
   studioBundleSourceKeys,
   studioChecksumSha256,
   studioSequenceSubsetProblem,
@@ -962,5 +964,36 @@ describe('snapshots and results', () => {
     expect(isBundleExportDownloadable({ ...result, expiresAt: '2026-09-22T11:00:00.000Z' }, now)).toBe(false);
     expect(isBundleExportDownloadable({ ...result, expiredAt: '2026-09-22T11:30:00.000Z' }, now)).toBe(false);
     expect(isBundleExportDownloadable(null, now)).toBe(false);
+  });
+
+  it('names the files kept with the project and reads a snapshot written before bundles carried them (FL-105)', () => {
+    const base = { kind: 'studio-bundle-export', projectId: 'p', revision: 1, digest: 'd' };
+    expect(parseBundleExportSnapshot(base).imports).toEqual([]);
+    expect(parseBundleExportSnapshot({ ...base, imports: ['a', 7, 'b'] }).imports).toEqual(['a', 'b']);
+
+    const source = (kind: StudioResourceKind, id: string, mode: 'embedded' | 'reference') => ({
+      key: `${kind}:${id}`,
+      kind,
+      id,
+      mode,
+      path: mode === 'embedded' ? `media/${kind}-${id}` : null,
+      sha256: null,
+      bytes: null,
+      fileName: null,
+      contentType: null,
+    });
+    const sources = [
+      source(StudioResourceKind.LibraryAsset, 'take', 'reference'),
+      source(StudioResourceKind.LibraryAsset, 'photo', 'reference'),
+      source(StudioResourceKind.EditedMaster, 'take', 'reference'),
+      source(StudioResourceKind.ProjectImport, 'take', 'embedded'),
+      source(StudioResourceKind.ProjectImport, 'subs', 'reference'),
+    ];
+    const imports = studioBundleImportSources(sources);
+    expect(imports.keys().toArray()).toEqual(['take', 'subs']);
+    // Only the library key a clip places the file by stands for it; nothing else with that id does.
+    expect(sources.filter((item) => isStudioBundleImportAlias(item, imports)).map((item) => item.key)).toEqual([
+      'library-asset:take',
+    ]);
   });
 });

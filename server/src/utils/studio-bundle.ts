@@ -7,7 +7,8 @@
  *   manifest.json   what the bundle contains, with a SHA-256 for every other entry
  *   project.json    the stored envelope `{ schemaVersion, engine, engineRevision, graph }`,
  *                   serialized with {@link canonicalJson} so its digest is the revision digest
- *   media/...       optional copies of sources the exporting account was allowed to read
+ *   media/...       optional copies of sources the exporting account was allowed to read, and of
+ *                   the files kept with the project (FL-105 project imports)
  *
  * Three rules shape everything here:
  *
@@ -99,11 +100,32 @@ export const STUDIO_BUNDLE_DESTINATION = MediaOperationDestination.Local;
  */
 export const STUDIO_BUNDLE_MAX_ATTEMPTS = 1;
 
-/** Sources the export may copy into the bundle. Everything else travels as a reference. */
+/** Library sources the export may copy into the bundle. Everything else travels as a reference. */
 export const STUDIO_BUNDLE_EMBEDDABLE_KINDS: readonly StudioResourceKind[] = [
   StudioResourceKind.LibraryAsset,
   StudioResourceKind.EditedMaster,
 ];
+
+/**
+ * The files kept with a project (FL-105) that a manifest names, by import id. They are sources of
+ * kind `project-import`: embedded, the import re-creates them with the new project under the same
+ * id, after the same checks as an upload; as a reference they are reported missing.
+ */
+export const studioBundleImportSources = (sources: readonly StudioBundleSource[]): Map<string, StudioBundleSource> =>
+  new Map(
+    sources.filter((source) => source.kind === StudioResourceKind.ProjectImport).map((source) => [source.id, source]),
+  );
+
+/**
+ * Whether a library source is really a project import under another name. A clip places a kept file
+ * by its media id, which the graph walker reads as a library id, so the manifest lists that id as a
+ * library source too. It is never relinked or reported on its own: the import's own source speaks
+ * for it.
+ */
+export const isStudioBundleImportAlias = (
+  source: Pick<StudioBundleSource, 'kind' | 'id'>,
+  imports: ReadonlyMap<string, unknown>,
+): boolean => source.kind === StudioResourceKind.LibraryAsset && imports.has(source.id);
 
 /* ------------------------------------------------------------------ */
 /* Manifest                                                             */
@@ -1097,9 +1119,10 @@ export const relinkStudioGraph = (graph: unknown, mapping: StudioRelinkMapping):
  *
  * Library assets and edited masters are the only sources a bundle carries: they are the person's
  * own media, which another server cannot know about. Presets, bundled fonts, catalogue music and
- * the other deployment resources resolve by name on any Frameleaf server, and project imports and
- * generated intermediates are re-created by the engine, so none of them needs relinking. An audio
- * stream declared from a library video is recorded under that video's key.
+ * the other deployment resources resolve by name on any Frameleaf server, so none of them needs
+ * relinking. Files kept with the project travel separately ({@link studioBundleImportSources}): they
+ * keep their ids, so they are not relinked either. An audio stream declared from a library video is
+ * recorded under that video's key.
  */
 export type StudioBundleSourceKey = { key: string; kind: StudioResourceKind; id: string };
 
@@ -1382,6 +1405,12 @@ export type StudioBundleExportSnapshot = {
    */
   embed: Array<{ key: string; kind: StudioResourceKind; id: string }>;
   /**
+   * Ids of the files kept with the project (FL-105) that this bundle names: all of them for a whole
+   * project, the ones the chosen sequences place for a subset. Copied when `includeMedia` is set,
+   * listed as references otherwise. Absent on jobs queued before bundles carried them.
+   */
+  imports?: string[];
+  /**
    * The sequences the owner asked for, or null for the whole project. The runner cuts the stored
    * revision down to these and the sequences they nest ({@link selectStudioSequences}).
    */
@@ -1421,7 +1450,10 @@ export type StudioBundleMissingSource = {
   kind: StudioResourceKind;
   id: string;
   fileName: string | null;
-  /** The bundle carries a copy this release cannot yet adopt into the library (FL-105). */
+  /**
+   * The bundle carries a verified copy that was not added: library media is never written to the
+   * library by an import, and a project file is left out when it fails the checks of an upload.
+   */
   embedded: boolean;
 };
 
@@ -1463,6 +1495,7 @@ export const parseBundleExportSnapshot = (value: unknown): StudioBundleExportSna
     digest: raw.digest,
     includeMedia: raw.includeMedia === true,
     embed,
+    imports: Array.isArray(raw.imports) ? raw.imports.filter((id) => typeof id === 'string') : [],
     sequenceIds: Array.isArray(raw.sequenceIds) ? raw.sequenceIds.filter((id) => typeof id === 'string') : null,
     requestKey: typeof raw.requestKey === 'string' ? raw.requestKey : null,
   };

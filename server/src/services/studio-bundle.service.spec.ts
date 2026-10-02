@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { crc32 } from 'node:zlib';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -12,6 +13,7 @@ import {
   StudioProjectRepository,
 } from 'src/repositories/studio-project.repository.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
+import { StudioProjectImportService, studioImportProjectFolder } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import {
@@ -143,6 +145,15 @@ const memoryFs = () => {
     createReadStream: vi.fn((path: string, type: string) =>
       Promise.resolve({ stream: new PassThrough(), length: read(path).length, type }),
     ),
+    readFile: vi.fn((path: string, options?: { buffer: Buffer; position: number; length: number }) => {
+      const bytes = read(path);
+      if (!options) {
+        return Promise.resolve(bytes);
+      }
+      bytes.copy(options.buffer, 0, options.position, options.position + options.length);
+      return Promise.resolve(options.buffer);
+    }),
+    checkFileExists: vi.fn((path: string) => Promise.resolve(files.has(path))),
   };
   const crypto = {
     hashFile: vi.fn((path: string, algorithm: 'sha1' | 'sha256' = 'sha1') =>
@@ -959,6 +970,488 @@ describe(StudioBundleService.name, () => {
         expect.objectContaining({ errorCode: 'bundle_project_invalid', error: expect.stringContaining('comp-n') }),
       );
       expect(projects.createWithRevision).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('files kept with the project (FL-105)', () => {
+    const voice = newUuid();
+    const subs = newUuid();
+    const lut = newUuid();
+    const logo = newUuid();
+    const unplaced = newUuid();
+
+    const wav = Buffer.concat([Buffer.from('RIFF\0\0\0\0WAVEfmt '), Buffer.alloc(64, 7)]);
+    const srt = Buffer.from('1\n00:00:01,000 --> 00:00:02,500\nHello\n');
+    const cube = Buffer.from(`TITLE "Warm"\nLUT_3D_SIZE 2\n${'0.5 0.25 1.0\n'.repeat(8)}`);
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>');
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 1)]);
+
+    const kept = [
+      { id: voice, bytes: wav, contentType: 'audio/wav', extension: '.wav', fileName: 'Voiceover 1.webm' },
+      { id: subs, bytes: srt, contentType: 'application/x-subrip', extension: '.srt', fileName: 'subs.srt' },
+      { id: lut, bytes: cube, contentType: 'text/x-cube-lut', extension: '.cube', fileName: 'Warm.cube' },
+      { id: logo, bytes: svg, contentType: 'image/svg+xml', extension: '.svg', fileName: 'logo.svg' },
+      { id: unplaced, bytes: png, contentType: 'image/png', extension: '.png', fileName: 'spare.png' },
+    ];
+
+    /** A clip places a kept file by its media id; captions and a LUT name theirs by their own keys. */
+    const importsEnvelope = {
+      ...envelope,
+      graph: {
+        sequences: [
+          {
+            id: 'seq-1',
+            tracks: [
+              {
+                clips: [
+                  { id: 'c1', assetId: assetA },
+                  { id: 'c2', mediaId: voice },
+                  { id: 'c3', importId: logo, captionsImportId: subs },
+                ],
+              },
+            ],
+          },
+          {
+            id: 'seq-2',
+            tracks: [{ clips: [{ id: 'c4', mediaId: voice, grade: { lutId: lut, lutSource: 'import' } }] }],
+          },
+        ],
+      },
+    };
+
+    let sourceProject: StudioProject;
+    let registered: Array<Record<string, unknown>>;
+
+    const rowsOf = (projectId: string) =>
+      kept.map((item) => ({
+        projectId,
+        id: item.id,
+        ownerId: owner.user.id,
+        contentType: item.contentType,
+        checksum: sha256(item.bytes).toString('hex'),
+        sizeBytes: item.bytes.length,
+        path: join(studioImportProjectFolder(owner.user.id, projectId), `${item.id}${item.extension}`),
+        fileName: item.fileName,
+        externalReferences: item.contentType === 'image/svg+xml' ? 0 : null,
+        createdAt: new Date(0),
+      }));
+
+    const readBundleManifest = async (bundle: Buffer) => {
+      const source = {
+        size: bundle.length,
+        read: (position: number, length: number) => Promise.resolve(bundle.subarray(position, position + length)),
+      };
+      const directory = await readZipDirectory(source);
+      return JSON.parse(
+        (await readZipEntry(source, directory.byName.get(STUDIO_BUNDLE_MANIFEST_ENTRY)!)).toString('utf8'),
+      ) as StudioBundleManifest;
+    };
+
+    const exportJobOf = (includeMedia: boolean, imports: string[]) =>
+      operationOf({
+        kind: MediaOperationKind.StudioBundleExport,
+        snapshot: {
+          kind: 'studio-bundle-export',
+          projectId: sourceProject.id,
+          revision: 4,
+          digest: studioEnvelopeDigest(importsEnvelope),
+          includeMedia,
+          embed: [],
+          imports,
+          sequenceIds: null,
+          requestKey: null,
+        },
+      } as never);
+
+    const uploadOf = (bundle: Buffer, manifest: StudioBundleManifest) => {
+      fs.files.set('/uploads/kept.zip', bundle);
+      const upload = {
+        id: newUuidV7(),
+        ownerId: owner.user.id,
+        path: '/uploads/kept.zip',
+        digest: sha256(bundle).toString('hex'),
+        expiresAt: new Date(Date.now() + 60_000),
+        manifest,
+      } as unknown as StudioBundleUpload;
+      projects.getUpload.mockResolvedValue(upload);
+      return upload;
+    };
+
+    const importJobOf = (upload: StudioBundleUpload) =>
+      operationOf({
+        kind: MediaOperationKind.StudioBundleImport,
+        snapshot: {
+          kind: 'studio-bundle-import',
+          uploadId: upload.id,
+          digest: upload.digest,
+          name: null,
+          mapping: {},
+          requestKey: null,
+        },
+      } as never);
+
+    /** A bundle written by hand, as a file from somewhere else would be. */
+    const handMade = (
+      items: Array<{
+        id: string;
+        bytes?: Buffer;
+        fileName: string | null;
+        contentType: string | null;
+        sha256?: string;
+      }>,
+    ) => {
+      const document = { ...envelope, graph: { sequences: [{ id: 'seq-1', tracks: [] }] } };
+      const project = serializeStudioBundleProject(document);
+      const media: Record<string, { sha256: string; bytes: number }> = {};
+      const entries: Array<{ name: string; data: Buffer }> = [];
+      const sources = items.map((item, index) => {
+        const path = item.bytes ? `media/project-import-${index}` : null;
+        if (item.bytes && path) {
+          media[path] = { sha256: item.sha256 ?? sha256(item.bytes).toString('hex'), bytes: item.bytes.length };
+          entries.push({ name: path, data: item.bytes });
+        }
+        return {
+          key: `project-import:${item.id}`,
+          kind: StudioResourceKind.ProjectImport,
+          id: item.id,
+          mode: item.bytes ? ('embedded' as const) : ('reference' as const),
+          path,
+          sha256: null,
+          bytes: item.bytes?.length ?? null,
+          fileName: item.fileName,
+          contentType: item.contentType,
+        };
+      });
+      const manifest = buildStudioBundleManifest({
+        createdAt: new Date('2026-10-01T10:00:00.000Z'),
+        producerVersion: '3.0.0',
+        name: 'From elsewhere',
+        revision: 1,
+        digest: studioEnvelopeDigest(document),
+        sourceProjectId: 'p',
+        engine: STUDIO_ENGINE,
+        engineRevision: 'rev-1',
+        project,
+        sources,
+        media,
+      });
+      const bundle = buildZip([
+        { name: 'manifest.json', data: Buffer.from(JSON.stringify(manifest)) },
+        { name: 'project.json', data: project },
+        ...entries,
+      ]);
+      return { bundle, manifest };
+    };
+
+    beforeEach(() => {
+      sourceProject = { id: newUuidV7(), ownerId: owner.user.id, name: 'Lake trip', deletedAt: null } as StudioProject;
+      registered = [];
+      projects.getById.mockResolvedValue(sourceProject);
+      projects.getRevision.mockResolvedValue({
+        id: newUuidV7(),
+        revision: 4,
+        digest: studioEnvelopeDigest(importsEnvelope),
+        envelope: importsEnvelope,
+      });
+      const rows = rowsOf(sourceProject.id);
+      for (const [index, row] of rows.entries()) {
+        fs.files.set(row.path, kept[index].bytes);
+      }
+      projects.listImports = vi.fn().mockResolvedValue(rows);
+      projects.listImportDeclarations.mockResolvedValue(rows.map(({ id }) => ({ id })));
+      projects.getImport = vi.fn().mockResolvedValue(undefined);
+      projects.getImportBytes = vi.fn().mockResolvedValue(0);
+      projects.registerImport = vi.fn().mockImplementation((item: Record<string, unknown>) => {
+        registered.push(item);
+        return Promise.resolve({ ...item, createdAt: new Date(0) });
+      });
+      // The real upload path: the owner check answers with the project the import created.
+      const ownedStudio = {
+        ...studio,
+        forgetResolutions: vi.fn(),
+        requireOwnedProject: vi.fn((auth: AuthDto, id: string) =>
+          Promise.resolve({ id, ownerId: auth.user.id, deletedAt: null, archivedAt: null }),
+        ),
+      };
+      const logger = getMocks().logger as never;
+      sut = new StudioBundleService(
+        logger,
+        operations as unknown as MediaOperationRepository,
+        projects as unknown as StudioProjectRepository,
+        fs.storage as never,
+        fs.crypto as never,
+        assets as never,
+        users as never,
+        resources as unknown as StudioResourceService,
+        ownedStudio as unknown as StudioProjectService,
+        new StudioProjectImportService(
+          logger,
+          projects as never,
+          fs.storage as never,
+          fs.crypto as never,
+          users as never,
+          ownedStudio as never,
+        ),
+      );
+    });
+
+    it('names every kept file for a whole project and only the placed ones for a subset', async () => {
+      studio.authorizeRevision.mockResolvedValue({
+        access: 'owner',
+        project: { id: sourceProject.id, name: 'Lake trip' },
+        revision: { id: newUuidV7(), revision: 4, digest: studioEnvelopeDigest(importsEnvelope) },
+        envelope: importsEnvelope,
+        manifest: { entries: [] },
+      });
+
+      await sut.createExport(owner, sourceProject.id, { includeMedia: true });
+      expect(operations.create.mock.calls[0][0].snapshot.imports).toEqual(kept.map((item) => item.id));
+
+      await sut.createExport(owner, sourceProject.id, { includeMedia: true, sequenceIds: ['seq-2'] });
+      expect(operations.create.mock.calls[1][0].snapshot.imports).toEqual([voice, lut]);
+    });
+
+    it('carries the bytes out and keeps them with the imported project under the same ids', async () => {
+      // --- The exporting server -------------------------------------------------------------
+      const exportJob = exportJobOf(
+        true,
+        kept.map((item) => item.id),
+      );
+      await sut.run({ operation: exportJob, claimToken: 'token' });
+
+      expect(operations.fail).not.toHaveBeenCalled();
+      const exported = lastResult();
+      expect(exported).toMatchObject({ embedded: 5, referenced: 2 });
+      const bundle = fs.files.get(exported.path as string)!;
+      const manifest = await readBundleManifest(bundle);
+      const byKey = new Map(manifest.sources.map((item) => [item.key, item]));
+      for (const item of kept) {
+        // Named by the import id and the type the upload read, never by the uploaded name.
+        expect(byKey.get(`project-import:${item.id}`)).toEqual({
+          key: `project-import:${item.id}`,
+          kind: 'project-import',
+          id: item.id,
+          mode: 'embedded',
+          path: `media/project-import-${item.id}${item.extension}`,
+          sha256: sha256(item.bytes).toString('hex'),
+          bytes: item.bytes.length,
+          fileName: item.fileName,
+          contentType: item.contentType,
+        });
+      }
+      // The id a clip places the take by is still listed the way older readers expect.
+      expect(byKey.get(`library-asset:${voice}`)).toMatchObject({ mode: 'reference', fileName: null, sha256: null });
+
+      // --- The importing server -------------------------------------------------------------
+      for (const path of fs.files.keys()) {
+        if (path !== exported.path) {
+          fs.files.delete(path);
+        }
+      }
+      const upload = uploadOf(bundle, manifest);
+
+      // The review lists each kept file once, as coming with the bundle.
+      const review = await sut.getUpload(owner, upload.id);
+      expect(review.sources.map((source) => [source.key, source.resolution])).toEqual([
+        [`library-asset:${assetA}`, 'missing'],
+        ...kept.map((item) => [`project-import:${item.id}`, 'kept']),
+      ]);
+      expect(assets.getByChecksums).not.toHaveBeenCalled();
+
+      operations.setBulkResult.mockClear();
+      const importJob = importJobOf(upload);
+      await sut.run({ operation: importJob, claimToken: 'token-2' });
+
+      expect(operations.fail).not.toHaveBeenCalled();
+      const created = (await projects.createWithRevision.mock.results[0].value).project.id as string;
+      expect(projects.createWithRevision.mock.calls[0][0].revision.envelope.graph).toEqual(importsEnvelope.graph);
+      expect(registered).toEqual(
+        kept.map((item) => ({
+          projectId: created,
+          id: item.id,
+          ownerId: owner.user.id,
+          contentType: item.contentType,
+          checksum: sha256(item.bytes).toString('hex'),
+          sizeBytes: item.bytes.length,
+          path: join(studioImportProjectFolder(owner.user.id, created), `${item.id}${item.extension}`),
+          fileName: item.fileName,
+          externalReferences: item.contentType === 'image/svg+xml' ? 0 : null,
+        })),
+      );
+      for (const item of kept) {
+        expect(
+          fs.files.get(join(studioImportProjectFolder(owner.user.id, created), `${item.id}${item.extension}`)),
+        ).toEqual(item.bytes);
+      }
+      // Nothing is left behind in the incoming folder.
+      expect(
+        fs.files
+          .keys()
+          .filter((path) => path.includes('/incoming/'))
+          .toArray(),
+      ).toEqual([]);
+      expect(lastResult()).toMatchObject({
+        projectId: created,
+        relinked: 0,
+        kept: 0,
+        embeddedVerified: 5,
+        missing: [{ key: `library-asset:${assetA}`, embedded: false }],
+      });
+    });
+
+    it('lists kept files by digest without their bytes when media was not asked for', async () => {
+      const exportJob = exportJobOf(false, [voice, subs]);
+      await sut.run({ operation: exportJob, claimToken: 'token' });
+
+      expect(lastResult()).toMatchObject({ embedded: 0, referenced: 4 });
+      const bundle = fs.files.get(lastResult().path as string)!;
+      const manifest = await readBundleManifest(bundle);
+      expect(Object.keys(manifest.files)).toEqual(['project.json']);
+      expect(manifest.sources.find((item) => item.id === voice && item.kind === 'project-import')).toMatchObject({
+        mode: 'reference',
+        path: null,
+        sha256: sha256(wav).toString('hex'),
+        fileName: 'Voiceover 1.webm',
+      });
+
+      const upload = uploadOf(bundle, manifest);
+      operations.setBulkResult.mockClear();
+      await sut.run({ operation: importJobOf(upload), claimToken: 'token-2' });
+      expect(registered).toEqual([]);
+      expect(lastResult().missing).toEqual(
+        expect.arrayContaining([
+          {
+            key: `project-import:${voice}`,
+            kind: 'project-import',
+            id: voice,
+            fileName: 'Voiceover 1.webm',
+            embedded: false,
+          },
+          { key: `project-import:${subs}`, kind: 'project-import', id: subs, fileName: 'subs.srt', embedded: false },
+        ]),
+      );
+      // The take is reported once, by its own source, not again under its media id.
+      expect((lastResult().missing as Array<{ key: string }>).map((item) => item.key)).not.toContain(
+        `library-asset:${voice}`,
+      );
+    });
+
+    it('refuses to export a kept file that no longer matches its record', async () => {
+      fs.files.set(rowsOf(sourceProject.id)[0].path, Buffer.concat([wav, Buffer.from('tampered')]));
+      const exportJob = exportJobOf(true, [voice]);
+      await sut.run({ operation: exportJob, claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalledWith(
+        exportJob.id,
+        'token',
+        expect.objectContaining({ errorCode: 'bundle_import_changed' }),
+      );
+    });
+
+    it('checks every carried file as an upload and leaves out what fails, whatever the bundle says', async () => {
+      const good = newUuid();
+      const scripted = newUuid();
+      const notCaptions = newUuid();
+      const named = newUuid();
+      const { bundle, manifest } = handMade([
+        { id: good, bytes: wav, fileName: '../../../etc/cron.d/take.wav', contentType: 'image/svg+xml' },
+        {
+          id: scripted,
+          bytes: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
+          fileName: 'logo.wav',
+          contentType: 'audio/wav',
+        },
+        { id: notCaptions, bytes: Buffer.from('These are my notes.\n'), fileName: 'subs.vtt', contentType: 'text/vtt' },
+        { id: 'not-a-uuid', bytes: png, fileName: 'still.png', contentType: 'image/png' },
+        { id: named, fileName: 'left-behind.wav', contentType: 'audio/wav' },
+      ]);
+      // Another server: nothing of the exporting project is here.
+      fs.files.clear();
+      const upload = uploadOf(bundle, manifest);
+
+      await expect(
+        sut.createImport(owner, { uploadId: upload.id, mapping: { [`project-import:${good}`]: newUuid() } }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      await sut.run({ operation: importJobOf(upload), claimToken: 'token' });
+
+      expect(operations.fail).not.toHaveBeenCalled();
+      const created = (await projects.createWithRevision.mock.results[0].value).project.id as string;
+      // Only the sound file is kept: under its id and the type its bytes are, with a bare name as a label.
+      expect(registered).toEqual([
+        expect.objectContaining({
+          id: good,
+          contentType: 'audio/wav',
+          path: join(studioImportProjectFolder(owner.user.id, created), `${good}.wav`),
+          fileName: 'take.wav',
+        }),
+      ]);
+      expect(lastResult().missing).toEqual([
+        expect.objectContaining({ id: named, embedded: false }),
+        expect.objectContaining({ id: scripted, embedded: true }),
+        expect.objectContaining({ id: notCaptions, embedded: true }),
+        expect.objectContaining({ id: 'not-a-uuid', embedded: true }),
+      ]);
+      // Nothing was written anywhere but the bundle itself and the one kept file.
+      expect(fs.files.keys().toArray().sort()).toEqual(
+        ['/uploads/kept.zip', join(studioImportProjectFolder(owner.user.id, created), `${good}.wav`)].sort(),
+      );
+    });
+
+    it('fails the import, and creates nothing, when a carried file does not match its digest', async () => {
+      const { bundle, manifest } = handMade([
+        { id: newUuid(), bytes: wav, fileName: 'take.wav', contentType: 'audio/wav', sha256: 'a'.repeat(64) },
+      ]);
+      const upload = uploadOf(bundle, manifest);
+      const job = importJobOf(upload);
+      await sut.run({ operation: job, claimToken: 'token' });
+
+      expect(operations.fail).toHaveBeenCalledWith(
+        job.id,
+        'token',
+        expect.objectContaining({ errorCode: 'bundle_digest_mismatch' }),
+      );
+      expect(projects.createWithRevision).not.toHaveBeenCalled();
+      expect(registered).toEqual([]);
+    });
+
+    it('keeps the files on the retry when the first attempt stopped after creating the project', async () => {
+      const first = newUuid();
+      const second = newUuid();
+      const { bundle, manifest } = handMade([
+        { id: first, bytes: wav, fileName: 'one.wav', contentType: 'audio/wav' },
+        { id: second, bytes: png, fileName: 'two.png', contentType: 'image/png' },
+      ]);
+      const upload = uploadOf(bundle, manifest);
+      const job = importJobOf(upload);
+      const project = { id: newUuidV7(), ownerId: owner.user.id, importedFromDigest: upload.digest } as StudioProject;
+      projects.createWithRevision.mockResolvedValueOnce({ project, created: true });
+      // The second file cannot be moved into place: storage fails, which is not a refusal.
+      fs.storage.rename.mockImplementationOnce(fs.storage.rename.getMockImplementation()!);
+      fs.storage.rename.mockImplementationOnce(() => Promise.reject(new Error('EIO')));
+
+      await sut.run({ operation: job, claimToken: 'token' });
+      expect(operations.fail).toHaveBeenCalledWith(job.id, 'token', expect.objectContaining({ error: 'EIO' }));
+      expect(registered.map((item) => item.id)).toEqual([first, second]);
+      const prepared = operations.setBulkResult.mock.calls.find((call) => call[2].result?.projectId === null)?.[2]
+        .result;
+
+      operations.fail.mockClear();
+      projects.getByImportOperation.mockResolvedValueOnce(project);
+      projects.createWithRevision.mockClear();
+      await sut.run({ operation: { ...job, result: prepared } as MediaOperation, claimToken: 'token-retry' });
+
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(projects.createWithRevision).not.toHaveBeenCalled();
+      expect(operations.complete).toHaveBeenCalledWith(job.id, 'token-retry', { resultAssetId: null });
+      for (const [id, extension, bytes] of [
+        [first, '.wav', wav],
+        [second, '.png', png],
+      ] as const) {
+        expect(fs.files.get(join(studioImportProjectFolder(owner.user.id, project.id), `${id}${extension}`))).toEqual(
+          bytes,
+        );
+      }
+      expect(lastResult()).toMatchObject({ projectId: project.id, missing: [] });
     });
   });
 
