@@ -58,7 +58,7 @@ describe('Buddy photo projection publication and deferred jobs', () => {
     const source = await sourceFile('original.jpg', 'original');
     const master = await sourceFile('captured-master.jpg', 'full-size');
     const preview = await sourceFile('captured-preview.jpg', 'preview');
-    const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: source.path,
+    const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: source.path, originalFileName: 'original.jpg',
       checksum: Buffer.from(source.sha256, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File });
     const recipe = [{ action: AssetEditAction.Rotate, parameters: { angle: 90 } }];
     const projection = retained ? [master, preview].map((file, index) => ({ path: file.path,
