@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout } from 'node:timers/promises';
 
 const root = new URL('../', import.meta.url).pathname;
 const composeFiles = ['-f', join(root, 'e2e/docker-compose.fork-roundtrip.yml'), '-f', join(root, 'e2e/docker-compose.cli-migrate.yml')];
@@ -55,13 +56,22 @@ const keyFor = async (base, service) => {
   return { accessToken, secret };
 };
 
-const run = () => {
+const run = async () => {
   const manifest = JSON.parse(readFileSync(join(root, 'server/src/fork-schema/supported-versions.json')));
   const tag = manifest.certifiedTags[0];
   assert.equal(tag, 'v3.1.0');
   process.env.OFFICIAL_IMMICH_TAG = tag;
   process.env.FORK_ROUNDTRIP_CANDIDATE_SHA = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  compose('pull', 'official-server', 'redis');
+  for (let attempt = 1; ; attempt++) {
+    try {
+      compose('pull', 'official-server', 'redis');
+      break;
+    } catch (error) {
+      if (attempt === 5) throw error;
+      console.error(`docker pull failed (attempt ${attempt}/5); retrying in ${attempt * 15}s`);
+      await setTimeout(attempt * 15_000);
+    }
+  }
   const digest = execFileSync('docker', ['image', 'inspect', `ghcr.io/immich-app/immich-server:${tag}`, '--format', '{{index .RepoDigests 0}}'], { encoding: 'utf8' }).trim();
   assert.equal(digest, `ghcr.io/immich-app/immich-server@${manifest.certification.officialDigest}`);
   compose('build', 'database', 'fork-server');

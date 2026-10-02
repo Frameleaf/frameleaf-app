@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 
 const source = readFileSync(
   new URL("./test-fork-roundtrip.sh", import.meta.url),
@@ -161,6 +162,80 @@ const evidenceFunctions = [
   .join("\n");
 const sha = "0123456789abcdef0123456789abcdef01234567";
 const imageId = `sha256:${"a".repeat(64)}`;
+
+const cliSource = readFileSync(
+  new URL("./test-cli-fork-to-official.mjs", import.meta.url),
+  "utf8",
+);
+const cliRun = cliSource.slice(
+  cliSource.indexOf("const run ="),
+  cliSource.indexOf("const main ="),
+);
+
+for (const [failures, attempts] of [
+  [0, 1],
+  [2, 3],
+  [5, 5],
+]) {
+  test(`CLI certification handles ${failures} image pull failures before verifying the digest`, async () => {
+    const calls = [],
+      waits = [];
+    const failure = new Error("registry rate limited");
+    let pulls = 0;
+    const result = runInNewContext(`${cliRun}; run()`, {
+      assert,
+      join,
+      root: "/repo",
+      process: { env: {} },
+      readFileSync: () =>
+        JSON.stringify({
+          certifiedTags: ["v3.1.0"],
+          certification: { officialDigest: imageId },
+        }),
+      execFileSync: (command, args) => {
+        if (command === "git") return sha;
+        assert.deepEqual(Array.from(args).slice(0, 2), ["image", "inspect"]);
+        calls.push("digest");
+        return `ghcr.io/immich-app/immich-server@${imageId}`;
+      },
+      compose: (...args) => {
+        calls.push(args.join(" "));
+        if (args[0] === "pull" && ++pulls <= failures) throw failure;
+      },
+      setTimeout: async (ms) => {
+        waits.push(ms);
+      },
+      console: { error() {} },
+      main: () => {
+        calls.push("main");
+        return true;
+      },
+    });
+    if (failures === 5)
+      await assert.rejects(result, (error) => error === failure);
+    else assert.equal(await result, true);
+    assert.equal(pulls, attempts);
+    assert.deepEqual(
+      waits,
+      failures === 0
+        ? []
+        : failures === 2
+          ? [15000, 30000]
+          : [15000, 30000, 45000, 60000],
+    );
+    assert.deepEqual(
+      calls.slice(attempts),
+      failures === 5
+        ? []
+        : [
+            "digest",
+            "build database fork-server",
+            "up -d database redis official-database official-redis fork-server official-server",
+            "main",
+          ],
+    );
+  });
+}
 
 function evidence({
   dirtyTree = "",
