@@ -2,6 +2,7 @@ import React, { useEffect, useId, useState } from "react";
 import { Button, Dialog } from "./Controls";
 import { Icon } from "./Icon";
 import { FrameleafCloud, useCloudState } from "./FrameleafCloud";
+import { licenseStatus } from "./frameleaf-cloud-data.mjs";
 import {
   BUDDY_STORAGE_KEY,
   BUDDY_SCENARIOS,
@@ -12,6 +13,9 @@ import {
   previewBuddyScenario,
   validateBuddyAgreement,
   validateBuddyControls,
+  unlockBuddyKey,
+  verifyBuddyRecovery,
+  attachBuddyRecovery,
 } from "./buddy-backup.mjs";
 import "./backup-center.css";
 
@@ -36,7 +40,7 @@ function useBuddyState() {
       removeEventListener("frameleaf-buddy-design", sync);
       removeEventListener("storage", sync);
     };
-  }, []);
+  }, [loadBuddyState]);
   function save(next) {
     try {
       localStorage.setItem(BUDDY_STORAGE_KEY, JSON.stringify(next));
@@ -101,6 +105,23 @@ function Card({ title, icon, status, children, className = "" }) {
   );
 }
 
+function BuddyPreviewContext({ cloud }) {
+  return (
+    <p className="bk-preview-context">
+      <Icon name="mdiInformationOutline" size={16} />
+      <span>
+        <strong>Buddy scenario preview.</strong> Saved Cloud:{" "}
+        <strong>
+          {cloud.link.status === "linked" ? "Linked" : "Not linked"} ·{" "}
+          {licenseStatus(cloud.license).label}
+        </strong>
+        . Active transfers assume both servers are linked and subscribed. Your
+        account stays unchanged.
+      </span>
+    </p>
+  );
+}
+
 export function BackupSummary({ onNavigate, analytics = false }) {
   const [state] = useBuddyState();
   const status = buddyStatus(state);
@@ -129,6 +150,7 @@ export function BackupSummary({ onNavigate, analytics = false }) {
           Open Backup
         </Button>
       </div>
+      <BuddyPreviewContext cloud={cloud} />
       <div className="bk-summary-grid">
         <button className="bk-summary-item" onClick={() => openBackup("cloud")}>
           <Icon name="mdiCloudUploadOutline" />
@@ -151,9 +173,9 @@ export function BackupSummary({ onNavigate, analytics = false }) {
           <Icon name="mdiArrowTopRight" />
           <span>
             <strong>My backup · outgoing</strong>
-            <small>{status.label}</small>
+            <small>Buddy preview · {status.label}</small>
             <b>
-              {state.paired
+              {state.paired || state.recoveryAttached
                 ? `${gb(status.storedGB)} / ${gb(state.outgoingQuotaGB)}`
                 : "Choose a buddy"}
             </b>
@@ -167,7 +189,7 @@ export function BackupSummary({ onNavigate, analytics = false }) {
           <Icon name="mdiArrowBottomLeft" />
           <span>
             <strong>Hosting for my buddy · incoming</strong>
-            <small>{status.receiving}</small>
+            <small>Buddy preview · {status.receiving}</small>
             <b>
               {state.paired
                 ? `${gb(state.incomingGB)} encrypted / ${gb(state.incomingQuotaGB)}`
@@ -325,7 +347,7 @@ export function BackupCenter({ onNavigate }) {
         "Sample connection check: Jamie’s server is still offline. Your existing recovery point is kept.",
       );
     else if (state.scenario === "stale") runBackup();
-    else if (state.scenario === "ending" || state.scenario === "integrity")
+    else if (["ending", "integrity", "subscription"].includes(state.scenario))
       setView("restore");
     else if (state.scenario === "blocked") setDialog("end");
     else setView("controls");
@@ -343,6 +365,7 @@ export function BackupCenter({ onNavigate }) {
           </button>
         ))}
       </nav>
+      {view !== "cloud" && <BuddyPreviewContext cloud={cloud} />}
       {notice && (
         <div className="bk-notice" role="status">
           <Icon name="mdiInformationOutline" />
@@ -479,7 +502,12 @@ export function BackupCenter({ onNavigate }) {
                     </Button>
                     <Button
                       icon={state.sendingPaused ? "mdiPlayOutline" : "mdiPause"}
-                      disabled={["ending", "blocked"].includes(state.scenario)}
+                      disabled={[
+                        "ending",
+                        "blocked",
+                        "auth",
+                        "subscription",
+                      ].includes(state.scenario)}
                       onClick={() =>
                         update(
                           { sendingPaused: !state.sendingPaused },
@@ -504,11 +532,15 @@ export function BackupCenter({ onNavigate }) {
                   <Icon name="mdiServerSecurity" size={44} />
                   <h3>Give your memories another home.</h3>
                   <p>
-                    Pair compatible Cloud-linked servers, agree on space, save
-                    your recovery kit, then test the encrypted connection.
+                    {state.recoveryAttached
+                      ? "Your existing backup is attached for recovery. Pair again to start new transfers."
+                      : "Pair compatible Cloud-linked servers, agree on space, save your recovery kit, then test the encrypted connection."}
                   </p>
                   <Button primary onClick={() => setDialog("pair")}>
                     Set up Buddy Backup
+                  </Button>
+                  <Button onClick={() => setView("restore")}>
+                    Recover an existing backup
                   </Button>
                 </div>
               )}
@@ -593,7 +625,12 @@ export function BackupCenter({ onNavigate }) {
                       icon={
                         state.receivingPaused ? "mdiPlayOutline" : "mdiPause"
                       }
-                      disabled={["ending", "blocked"].includes(state.scenario)}
+                      disabled={[
+                        "ending",
+                        "blocked",
+                        "auth",
+                        "subscription",
+                      ].includes(state.scenario)}
                       onClick={() =>
                         update(
                           { receivingPaused: !state.receivingPaused },
@@ -611,13 +648,7 @@ export function BackupCenter({ onNavigate }) {
                       Manage hosting
                     </Button>
                     <Button
-                      disabled={
-                        ["ending", "blocked", "capacity"].includes(
-                          state.scenario,
-                        ) ||
-                        state.receivingActive ||
-                        state.receivingPaused
-                      }
+                      disabled={!status.canReceive || state.receivingActive}
                       onClick={() =>
                         update(
                           { receivingActive: true },
@@ -717,7 +748,7 @@ export function BackupCenter({ onNavigate }) {
       {dialog === "pair" && (
         <PairBuddy
           close={() => setDialog(null)}
-          state={state}
+          cloud={cloud}
           complete={(patch) => {
             update(
               patch,
@@ -750,8 +781,8 @@ export function BackupCenter({ onNavigate }) {
           close={() => setDialog(null)}
           complete={() => {
             update(
-              { scenario: "current" },
-              "Sample recovery key verified on this server. No real key was loaded.",
+              unlockBuddyKey(state),
+              "Sample recovery key verified. Partnership access restrictions are unchanged; no real key was loaded.",
             );
             setDialog(null);
           }}
@@ -767,7 +798,7 @@ export function BackupCenter({ onNavigate }) {
               onClick={() => {
                 update(
                   { scenario: "current" },
-                  "Sample server links and subscriptions renewed.",
+                  "Sample account authorization renewed. The saved Cloud plan is unchanged.",
                 );
                 setDialog(null);
               }}
@@ -778,13 +809,14 @@ export function BackupCenter({ onNavigate }) {
         >
           <div className="bk-dialog-body">
             <p>
-              Both servers must stay linked to Frameleaf Cloud with active
-              subscriptions and compatible Buddy Backup versions.
+              Authorize your Cloud account again to reconnect. Recovery of an
+              existing backup does not require an active subscription; new
+              transfers do.
             </p>
             <Facts
               rows={[
                 ["Your server", "Cloud link needs renewal"],
-                ["Buddy’s server", "Subscription needs renewal"],
+                ["Buddy’s server", "Compatible version · encrypted data kept"],
                 [
                   "Existing backups",
                   "Retained while the connection is repaired",
@@ -1047,11 +1079,13 @@ function BuddyControls({ state, update, setDialog }) {
   );
 }
 
-function PairBuddy({ close, complete, state }) {
+function PairBuddy({ close, complete, cloud }) {
   const [step, setStep] = useState(0);
   const [method, setMethod] = useState("invite");
-  const [linked, setLinked] = useState(true);
-  const [subscribed, setSubscribed] = useState(true);
+  const [linked, setLinked] = useState(cloud.link.status === "linked");
+  const [subscribed, setSubscribed] = useState(
+    ["active", "grace"].includes(licenseStatus(cloud.license).state),
+  );
   const [compatible, setCompatible] = useState(true);
   const [code, setCode] = useState("");
   const [accepted, setAccepted] = useState(false);
@@ -1118,6 +1152,7 @@ function PairBuddy({ close, complete, state }) {
     else
       complete({
         paired: true,
+        recoveryAttached: false,
         scenario: "initial",
         hasRecoveryPoint: false,
         lastVerified: null,
@@ -1165,8 +1200,9 @@ function PairBuddy({ close, complete, state }) {
           ))}
         </ol>
         <p className="bk-local-note">
-          Local sample flow. No invitation is sent and no real account is
-          linked.
+          Local sample flow. Link and subscription checks start from this
+          server’s saved Cloud state. Check them to simulate both servers being
+          eligible; this does not link an account or change a subscription.
         </p>
         {error && (
           <p className="bk-alert" role="alert">
@@ -1505,7 +1541,7 @@ function BuddyRecovery({ state, update, setDialog }) {
             <Icon name="mdiAlertCircleOutline" />
             <p>
               {!state.hasRecoveryPoint
-                ? "Complete the first backup before restoring."
+                ? "No recovery point is attached here. Complete the first backup, or recover an existing backup from your previous server."
                 : state.scenario === "key"
                   ? "Unlock your recovery key to open your backup."
                   : "Your backup is currently unavailable. Resolve the connection or access alert before restoring."}
@@ -1513,6 +1549,25 @@ function BuddyRecovery({ state, update, setDialog }) {
             {state.scenario === "key" && (
               <Button onClick={() => setDialog("unlock")}>Unlock key</Button>
             )}
+          </div>
+        )}
+        {!status.canRestore && (
+          <div className="bk-restore-wide">
+            <Icon name="mdiServerOutline" size={38} />
+            <div>
+              <h3>Recover an existing backup</h3>
+              <p>
+                On a fresh or replacement server, authorize your Cloud account
+                and verify your recovery kit to attach your own existing backup.
+                New pairing is not required for recovery.
+              </p>
+            </div>
+            <Button
+              disabled={!status.canAttachRecovery}
+              onClick={() => setReplacement(true)}
+            >
+              Begin replacement recovery
+            </Button>
           </div>
         )}
         <div hidden={!status.canRestore}>
@@ -1707,7 +1762,7 @@ function BuddyRecovery({ state, update, setDialog }) {
           disabled={!status.canRestore}
           onClick={() => {
             update(
-              { lastVerified: "2 Oct, 13:42", scenario: "current" },
+              verifyBuddyRecovery(state, "2 Oct, 13:42"),
               "Sample restore verification passed. This is a local design simulation.",
             );
             setResult(
@@ -1774,8 +1829,7 @@ function BuddyRecovery({ state, update, setDialog }) {
                   setAttached(false);
                 }}
               />
-              Replacement server linked to my Cloud account with an active
-              subscription
+              Recovery authorized through my Cloud account
             </label>
             <label className="bk-field">
               Verification code from my sample recovery kit
@@ -1793,16 +1847,25 @@ function BuddyRecovery({ state, update, setDialog }) {
                 !replacementLinked ||
                 replacementKey.trim() !==
                   SAMPLE_RECOVERY_KIT.verificationCode ||
-                !status.canRestore
+                !status.canAttachRecovery
               }
-              onClick={() => setAttached(true)}
+              onClick={() => {
+                update(
+                  attachBuddyRecovery(state, {
+                    cloudAuthorized: replacementLinked,
+                    verificationCode: replacementKey,
+                  }),
+                );
+                setAttached(true);
+              }}
             >
               Attach my existing sample backup
             </Button>
             {attached && (
               <p role="status" className="bk-success">
                 Attached your backup at Jamie’s home server. 684.2 GB is
-                available for recovery.
+                available for recovery. This attachment does not start sending
+                or receiving.
               </p>
             )}
             <ol className="bk-roundtrip">
@@ -1811,8 +1874,9 @@ function BuddyRecovery({ state, update, setDialog }) {
               <li>Verify restored data, then rebuild previews</li>
             </ol>
             <p className="bk-local-note">
-              This flow does not create a second backup or expose any hosted
-              buddy library.
+              Recovery remains available after subscription expiry. This local
+              authorization simulation does not change the saved account or
+              plan, create another backup, or expose a hosted buddy library.
             </p>
           </div>
         </Dialog>
