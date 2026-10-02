@@ -211,9 +211,11 @@ export function trimStart(item, amount, fps) {
 /** 12.2.4: a clip after its end is trimmed by `amount` frames (positive lengthens). */
 export function trimEnd(item, amount, fps) {
   const next = { ...item, durationInFrames: item.durationInFrames + amount };
-  if (isMediaClip(item) && item.sourceEnd !== undefined) {
+  if (isMediaClip(item)) {
     const start = item.sourceStart ?? 0;
-    const moved = Math.max(start + 1, item.sourceEnd + toSource(amount, fps, item.sourceFps ?? fps, item.speed ?? 1));
+    const frames = (count) => toSource(count, fps, item.sourceFps ?? fps, item.speed ?? 1);
+    // A clip with no sourceEnd gets one from its new length; otherwise the end moves with the trim.
+    const moved = Math.max(start + 1, item.sourceEnd === undefined ? start + frames(next.durationInFrames) : item.sourceEnd + frames(amount));
     next.sourceEnd = item.sourceDuration === undefined ? moved : Math.min(item.sourceDuration, moved);
   }
   return next;
