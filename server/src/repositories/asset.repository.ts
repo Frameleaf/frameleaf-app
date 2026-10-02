@@ -614,7 +614,7 @@ export class AssetRepository {
           .select([
             'assetId',
             sql<string>`'camera-identification'`.as('key'),
-            sql<Record<string, unknown>>`${JSON.stringify(cameraEvidence)}::jsonb`.as('value'),
+            sql<Record<string, unknown>>`${cameraEvidence}::jsonb`.as('value'),
           ])
           .where(sql<boolean>`not coalesce("lockedProperties" && array['make', 'model']::varchar[], false)`),
       )
