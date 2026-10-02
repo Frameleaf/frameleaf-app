@@ -1,5 +1,10 @@
 // Fictional studio data. RAW labels and client activity demonstrate a workflow;
 // the generated PNGs are not sensor data, finished exports, or real client work.
+import {
+  eligiblePhoto,
+  createSelectionOrder,
+  orderProjectPhotos,
+} from "./photography-workflow.mjs";
 export const photographyStorageKey = "frameleaf:photography:v1";
 
 export const demoPhotos = [
@@ -87,6 +92,11 @@ export const defaultBrand = {
   watermarkOpacity: 45,
   watermarkPosition: "bottom-right",
   watermarkSize: 6,
+  watermarkType: "text",
+  watermarkFont: "script",
+  watermarkPattern: "tile",
+  watermarkAngle: -24,
+  watermarkSpacing: 6,
 };
 
 export const shootStages = [
@@ -115,6 +125,15 @@ export function createProofGallery(shootId) {
     approved: false,
     delivered: false,
     zipReady: false,
+    workflowEnabled: false,
+    workflowMode: "selection",
+    proofScope: "selected",
+    webWatermark: true,
+    proofPattern: "tile",
+    template: "portrait",
+    includedCount: 3,
+    extraPriceCents: 0,
+    currency: "CAD",
     export: {
       format: "JPEG",
       longEdge: "3840",
@@ -174,8 +193,14 @@ export function photosForShoot(state, shootId) {
 }
 
 export function proofPhotos(state, shootId) {
-  return photosForShoot(state, shootId).filter(
-    (photo) => photo.selected && !photo.rejected,
+  const gallery = state.galleries[shootId];
+  return orderProjectPhotos(
+    photosForShoot(state, shootId).filter(
+      (photo) =>
+        (gallery?.proofScope === "all" || photo.selected) &&
+        eligiblePhoto(photo),
+    ),
+    gallery,
   );
 }
 
@@ -248,6 +273,14 @@ export function applyClientFeedback(state, galleryId, feedback) {
         clientSelected,
         comments,
         submitted: !!feedback.submitted && clientSelected.length > 0,
+        ...(gallery.workflowEnabled &&
+        feedback.submitted &&
+        clientSelected.length
+          ? {
+              order: createSelectionOrder(gallery, clientSelected),
+              submittedAt: new Date().toISOString(),
+            }
+          : {}),
         approved: false,
         zipReady: false,
       },
@@ -353,8 +386,8 @@ export function readStudioState(storage) {
                     (photo) =>
                       photo.id === photoId &&
                       photo.shootId === id &&
-                      photo.selected &&
-                      !photo.rejected,
+                      (gallery.proofScope === "all" || photo.selected) &&
+                      eligiblePhoto(photo),
                   ),
                 )
                 .slice(0, selectionLimit)
