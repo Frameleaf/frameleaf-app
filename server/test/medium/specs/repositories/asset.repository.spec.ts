@@ -1,4 +1,4 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetOrder, AssetOrderBy, AssetVisibility, CalendarHeatmapType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -322,10 +322,12 @@ describe(AssetRepository.name, () => {
           .where('assetId', '=', asset.id)
           .executeTakeFirstOrThrow();
         if (lock) {
-          await sut.upsertExif({
-            exif: { assetId: asset.id, make: null, model: null, lockedProperties: [lock] },
-            lockedPropertiesBehavior: 'append',
-          });
+          // Seed persisted camera locks directly: the public edit API exposes a narrower union.
+          await ctx.database
+            .updateTable('asset_exif')
+            .set({ make: null, model: null, lockedProperties: sql`array[${lock}]::varchar[]` })
+            .where('assetId', '=', asset.id)
+            .execute();
         }
         const current = await ctx.database
           .selectFrom('asset_exif')
