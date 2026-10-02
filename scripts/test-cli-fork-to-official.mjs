@@ -13,14 +13,18 @@ const official = 'http://127.0.0.1:2288/api';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=', 'base64');
 
 const api = async (base, path, token, method = 'GET', body) => {
-  const response = await fetch(`${base}${path}`, {
-    method,
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(body && !(body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: body instanceof FormData ? body : body && JSON.stringify(body),
-  });
+  const request = () =>
+    fetch(`${base}${path}`, {
+      method,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(body && !(body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body instanceof FormData ? body : body && JSON.stringify(body),
+    });
+  // The server closes a kept-alive connection after 5 s idle; a request sent on it at that moment
+  // gets no answer ("other side closed"). Send it once more, on a new connection.
+  const response = await request().catch(() => request());
   if (!response.ok) throw new Error(`${method} ${path} on ${base} returned ${response.status}: ${await response.text()}`);
   return response.headers.get('content-type')?.includes('application/json') ? response.json() : response.arrayBuffer();
 };
