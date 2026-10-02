@@ -65493,6 +65493,12 @@
             "nullable": true,
             "type": "number"
           },
+          "isRejected": {
+            "default": null,
+            "description": "Whether the stored rating is rejected",
+            "nullable": true,
+            "type": "boolean"
+          },
           "iso": {
             "default": null,
             "description": "ISO sensitivity",
@@ -65560,9 +65566,9 @@
           },
           "rating": {
             "default": null,
-            "description": "Rating in range [1-5] (starred), -1 (rejected), or null (unrated)",
+            "description": "Rating",
             "maximum": 5,
-            "minimum": -1,
+            "minimum": 1,
             "nullable": true,
             "type": "integer"
           },

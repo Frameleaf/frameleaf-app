@@ -133,7 +133,8 @@ describe(MetadataService.name, () => {
         .selectAll()
         .where('assetId', '=', asset.id)
         .executeTakeFirstOrThrow();
-      expect(ExifResponseSchema.parse(mapExif(exif)).rating).toBe(locked ? 4 : -1);
+      expect(exif.rating).toBe(locked ? 4 : -1);
+      expect(ExifResponseSchema.parse(mapExif(exif))).toMatchObject({ rating: locked ? 4 : null, isRejected: !locked });
     });
 
     it.each([true, false, null])(

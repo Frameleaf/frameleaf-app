@@ -3945,6 +3945,8 @@ export type ExifResponseDto = {
     focalLength?: number | null;
     /** Video frame rate (frames per second) */
     fps?: number | null;
+    /** Whether the stored rating is rejected */
+    isRejected?: boolean | null;
     /** ISO sensitivity */
     iso?: number | null;
     /** GPS latitude */
@@ -3965,7 +3967,7 @@ export type ExifResponseDto = {
     profileDescription?: string | null;
     /** Projection type */
     projectionType?: string | null;
-    /** Rating in range [1-5] (starred), -1 (rejected), or null (unrated) */
+    /** Rating */
     rating?: number | null;
     /** State/province name */
     state?: string | null;
