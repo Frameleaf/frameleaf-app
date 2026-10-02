@@ -180,6 +180,42 @@ export class BuddyBackupMetadataRepository {
     }
   }
 
+  /** Never copy divergent public hierarchy or identity over the authoritative fork representation. */
+  private async assertLegacyStructure(id: string, current: BuddyAlbum) {
+    const legacy = await this.db
+      .selectFrom('album')
+      .select(['parentId', 'kind'])
+      .where('id', '=', id)
+      .executeTakeFirstOrThrow();
+    if (legacy.parentId !== current.parentId || legacy.kind !== current.kind) {
+      throw new Error('Buddy restore album representation unavailable');
+    }
+    if (!(await new ForkAlbumMetadataRepository(this.db).shouldReadSidecar())) {
+      return;
+    }
+    const legacyClosure = await this.db
+      .selectFrom('album_closure')
+      .select('id_ancestor')
+      .where('id_descendant', '=', id)
+      .orderBy('id_ancestor')
+      .forShare()
+      .noWait()
+      .execute();
+    const forkClosure = await sql<{ ancestorId: string }>`
+      SELECT "ancestorId"::text AS "ancestorId"
+      FROM immich_fork.album_closure
+      WHERE "descendantId" = ${id}::uuid
+      ORDER BY "ancestorId"
+      FOR SHARE NOWAIT
+    `.execute(this.db);
+    if (
+      JSON.stringify(legacyClosure.map(({ id_ancestor }) => id_ancestor)) !==
+      JSON.stringify(forkClosure.rows.map(({ ancestorId }) => ancestorId))
+    ) {
+      throw new Error('Buddy restore album representation unavailable');
+    }
+  }
+
   /** Runs only under withRestore's current session/claim guard. No historical ACL or foreign membership is inserted. */
   async publish(plan: BuddyAlbumPlan, actorId: string, admin: boolean): Promise<void> {
     if (!this.db.isTransaction || plan.version !== 1) {
@@ -214,6 +250,9 @@ export class BuddyBackupMetadataRepository {
         : !!before;
       if (changed) {
         throw new Error('Buddy restore album changed');
+      }
+      if (row) {
+        await this.assertLegacyStructure(id, row.album);
       }
       if (!row) {
         await albums.create(
