@@ -1,4 +1,4 @@
-import { type Kysely, sql } from 'kysely';
+import { type Kysely, type Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -505,6 +505,73 @@ describe('Buddy Studio library fidelity', () => {
     await expect(readFile(oldPath)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await readFile(await currentPath(), 'utf8')).toBe(caption);
   });
+
+  it('serializes detached export cleanup before restore without holding the export row while waiting for its path', async () => {
+    const { project, output, exported } = await retainedExport();
+    const manifest = await capture();
+    await db.deleteFrom('studio_project').where('id', '=', project.id).execute();
+    const job = await worker(manifest);
+    const repository = new StudioExportRepository(db, new DerivativePrivacyRepository(db),
+      new ForkPrivacyRepository(db), new ForkEnrichmentRepository(db));
+    const storage = new StorageRepository(ctx.getMock(LoggingRepository));
+    const held = Promise.withResolvers<number>();
+    const release = Promise.withResolvers<void>();
+    // Pause the real cleanup immediately after PostgreSQL grants its path lock, before its
+    // export-row lookup. All lock acquisition, row validation and unlink work remain real.
+    const physical = PhysicalFileRepository.prototype as unknown as {
+      lockPath: (trx: Transaction<DB>, path: string) => Promise<void>;
+    };
+    const lockPath = physical.lockPath;
+    const pause = vi.spyOn(physical, 'lockPath').mockImplementationOnce(async function (this: PhysicalFileRepository, trx, path) {
+      await lockPath.call(this, trx, path);
+      const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx);
+      held.resolve(rows[0].pid);
+      await release.promise;
+    });
+    const cleaning = repository.markOutputRemoved(exported.id, (version) => storage.unlink(version.outputPath!));
+    let restoring: Promise<unknown> | undefined;
+    try {
+      const cleanupPid = await Promise.race([held.promise, cleaning.then(() => {
+        throw new Error('Cleanup did not pause at its path lock');
+      })]);
+      restoring = Promise.resolve(job.run());
+      void restoring.catch(() => {});
+      await vi.waitFor(async () => {
+        const { rows } = await sql<{ waiting: boolean }>`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND wait_event='advisory'
+            AND pg_blocking_pids(pid) @> ARRAY[${cleanupPid}]::integer[]
+        ) AS waiting`.execute(db);
+        expect(rows[0].waiting).toBe(true);
+      }, { timeout: 5000 });
+      // Restore has staged its bytes and is waiting for cleanup's old path. If it already
+      // held this row, cleanup would wait in reverse order and PostgreSQL would deadlock.
+      await db.transaction().execute(async (trx) => {
+        await trx.selectFrom('studio_export_version').select('id').where('id', '=', exported.id)
+          .forUpdate().noWait().executeTakeFirstOrThrow();
+      });
+    } finally {
+      release.resolve();
+      await Promise.allSettled([cleaning, restoring]);
+      pause.mockRestore();
+    }
+    await expect(cleaning).resolves.toBe(true);
+    expect(restoring).toBeDefined();
+    await restoring;
+    expect((await job.operations.getOfKind(job.operation.id, MediaOperationKind.BuddyRestore))?.status)
+      .toBe(MediaOperationStatus.Completed);
+    const target = buddyStudioFiles(manifest, project.id)[0].target;
+    expect(await db.selectFrom('studio_export_version').selectAll().where('id', '=', exported.id).executeTakeFirstOrThrow())
+      .toMatchObject({ projectId: project.id, ownerId, state: StudioExportVersionState.Published,
+        scope: StudioExportScope.Project, resultAssetId: null, outputPath: target, outputRemovedAt: null,
+        outputChecksum: exported.outputChecksum, outputSizeInBytes: output.size });
+    expect(hash(await readFile(target))).toBe(output.sha256);
+    await expect(readFile(output.path)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await repository.listRemovableOutputs()).toEqual([]);
+    const unlink = vi.fn();
+    expect(await repository.markOutputRemoved(exported.id, unlink)).toBe(false);
+    expect(unlink).not.toHaveBeenCalled();
+    expect(hash(await readFile(target))).toBe(output.sha256);
+  }, 10_000);
 
   it('defers a retained export through capture pins and failed unlink without erasing its retry intent or staging neighbours', async () => {
     const project = await db.insertInto('studio_project').values({ ownerId, name: 'Retained export', currentRevision: 1 })
