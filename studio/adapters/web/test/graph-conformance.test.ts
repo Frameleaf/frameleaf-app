@@ -22,7 +22,9 @@ import catalogue from '../../../frameleaf-studio-commands.json'
  * engine. `studio/graph-conformance-v1.json` holds the inputs (media, seed graphs, bases, cases and
  * history scripts) and the engine's answers. This test recomputes every answer and fails on any
  * difference, so the protocol the native apps implement cannot silently drift from the engine.
- * FL-307 (NAPI-018) added the cases of the clip, timeline-edit, track and marker commands.
+ * FL-307 (NAPI-018) added the cases of the clip, timeline-edit, track and marker commands, and
+ * FL-308 (NAPI-019) those of the effect, transition, keyframe, expression, modifier, text motion
+ * and Ken Burns commands.
  *
  *   GRAPH_CONFORMANCE_WRITE=1 node studio/tools/adapter.mjs test   # regenerate the answers
  *
@@ -79,6 +81,11 @@ interface Case {
    * false). Declared by hand; the recorded answer must agree, in both directions.
    */
   outsideNormalForm?: boolean
+  /**
+   * FL-308: the answer holds values from floating-point functions the protocol does not fix (sine,
+   * arctangent, keyframe interpolation). Declared by hand; it changes nothing in the replay.
+   */
+  engineArithmetic?: boolean
   envelopes: CanonicalEnvelope[]
   expect: CaseExpectation | null
 }
@@ -341,7 +348,7 @@ const REPLAY_TIMEOUT = 300_000
 /** The drift test's run, kept so that the determinism test replays the fixtures once, not twice. */
 let firstRun: Fixtures | undefined
 
-describe('Studio graph protocol v1 conformance (FL-306, FL-307)', () => {
+describe('Studio graph protocol v1 conformance (FL-306, FL-307, FL-308)', () => {
   it('replays every fixture through the engine without drift', { timeout: REPLAY_TIMEOUT }, async () => {
     const stored = load()
     const generated = await generate(stored)
