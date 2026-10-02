@@ -16,6 +16,7 @@ import {
   UserMetadataKey,
 } from 'src/enum.js';
 import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
+import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -38,6 +39,7 @@ import {
 } from 'src/utils/cloud-backup.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
+import { readBuddyAssetFidelity, type BuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 
 export type BuddyContent = { blocks: string[]; keyVersion: number; bytes: number };
 export type BuddyManifest = {
@@ -54,6 +56,8 @@ export type BuddyManifest = {
     string,
     Array<{ path: string; type: AssetFileType; isEdited: boolean; isProgressive: boolean; isTransparent: boolean }>
   >;
+  /** Absent on older snapshots. Per-asset retained work; never a replay of background jobs. */
+  assetFidelity?: Record<string, BuddyAssetFidelity>;
   dependencies: CloudBackupManifestFile[];
   configurationFiles: CloudBackupManifestFile[];
   cloudBackupKeys?: Array<{ fingerprint: string; content: string }>;
@@ -177,6 +181,7 @@ export class BuddyBackupCaptureService {
       contents: {},
       assetLinks: {},
       assetFiles: {},
+      assetFidelity: {},
       dependencies: [],
       configurationFiles: [],
       environment: { ...process.env },
@@ -335,6 +340,7 @@ export class BuddyBackupCaptureService {
             await sql`SELECT pg_advisory_unlock(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(connection);
             barrier = false;
             const index = new CloudBackupIndexRepository(trx);
+            const fidelity = new BuddyBackupFidelityRepository(trx);
             manifest.storageRoots = [
               StorageCore.getMediaLocation(),
               ...(await trx.selectFrom('library').select('importPaths').execute()).flatMap(
@@ -429,6 +435,12 @@ export class BuddyBackupCaptureService {
                     ...metadata.record,
                     details: metadata.details,
                   };
+                  manifest.assetFidelity![asset.id] = await fidelity.capture(
+                    asset.id,
+                    files[0].sha256,
+                    manifest.assetFiles[asset.id].filter((file) => file.isEdited).map((file) => ({ ...file, isEdited: true as const })),
+                    metadata.details.edits,
+                  );
                   for (const album of metadata.details.albums) albums.add(album.id);
                   for (const face of metadata.details.faces)
                     if (face.personId)
@@ -445,6 +457,14 @@ export class BuddyBackupCaptureService {
                 manifest.library.profiles[profile.userId] = await captureFile(profile.path, 'profile');
               for (const path of new Set(dependencies.map((entry) => entry.path).filter(Boolean)))
                 manifest.dependencies.push(await captureFile(path, 'project'));
+              const inventory = new Map([
+                ...Object.values(manifest.library.assets).flatMap((asset) => asset.files),
+                ...manifest.dependencies,
+              ].map((file) => [file.path, file]));
+              for (const state of Object.values(manifest.assetFidelity!)) {
+                fidelity.bindFiles(state, inventory);
+                readBuddyAssetFidelity(manifest, state.assetId);
+              }
               for (const path of configurationPaths)
                 manifest.configurationFiles.push(await captureFile(path, 'configuration'));
               const database = await captureFile(dump, 'database', undefined, true);
