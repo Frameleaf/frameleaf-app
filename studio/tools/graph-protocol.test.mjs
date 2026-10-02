@@ -442,6 +442,113 @@ test('section 12 is enough to reproduce every part 2 case: graphs, ids and refus
   assert.ok(replayed >= 350, `only ${replayed} cases were replayed`);
 });
 
+/* Part 3 (FL-308): the parameter catalogue */
+
+const parameters = read('graph-parameters-v1.json');
+/** Every key of every object in a JSON value. */
+const keysOf = (value, found = new Set()) => {
+  if (Array.isArray(value)) for (const entry of value) keysOf(entry, found);
+  else if (value && typeof value === 'object') {
+    for (const [key, entry] of Object.entries(value)) {
+      found.add(key);
+      keysOf(entry, found);
+    }
+  }
+  return found;
+};
+const manifestIds = (command, prefix) =>
+  catalogue.commands
+    .find((entry) => entry.id === command)
+    .manifestIds.filter((id) => id.startsWith(prefix))
+    .map((id) => id.slice(prefix.length))
+    .sort();
+
+test('13.2.1: the parameter catalogue is the generated one, unedited', () => {
+  assert.equal(parameters.format, 'frameleaf-studio-graph-parameters');
+  assert.equal(parameters.version, 1);
+  assert.deepEqual(parameters.engine, { name: 'freecut', revision: build.upstreamCommit });
+  // The generator stamps the digest of everything else; a hand edit of any value breaks it.
+  const { contentSha256, ...content } = parameters;
+  assert.equal(sha256Hex(canonicalJson(content)), contentSha256, 'the catalogue was edited by hand: regenerate it from the engine');
+  assert.deepEqual(parameters.counts, {
+    effects: parameters.effects.length,
+    transitions: parameters.transitions.length,
+    blendModes: parameters.blendModes.length,
+  });
+  for (const kind of ['effects', 'transitions', 'blendModes']) {
+    const ids = parameters[kind].map((entry) => entry.id);
+    assert.equal(new Set(ids).size, ids.length, `${kind}: ids are unique`);
+  }
+  // Clean room: ids, names, types and numbers only. No display text or source from the engine.
+  for (const key of ['label', 'description', 'shader', 'icon', 'entryPoint']) {
+    assert.ok(!keysOf(parameters).has(key), `the catalogue carries engine text under "${key}"`);
+  }
+});
+
+test('13.2.1: the catalogue lists what the command catalogue names: every effect, blend mode and published transition', () => {
+  const sorted = (kind) => parameters[kind].map((entry) => entry.id).sort();
+  assert.deepEqual(sorted('effects'), manifestIds('effect.update', 'effect.'), 'effects');
+  assert.deepEqual(sorted('blendModes'), manifestIds('clip.setBlendMode', 'blend.'), 'blend modes');
+  const transitions = new Set(sorted('transitions'));
+  for (const id of manifestIds('clip.setTransition', 'transition.')) assert.ok(transitions.has(id), `transition ${id}`);
+  for (const [alias, id] of Object.entries(parameters.transitionAliases)) {
+    assert.ok(transitions.has(id), `alias ${alias} names ${id}`);
+    assert.ok(!transitions.has(alias), `alias ${alias} is also a transition id`);
+  }
+  // Blend mode indexes are 0..n-1 in listed order.
+  parameters.blendModes.forEach((mode, index) => assert.equal(mode.index, index, mode.id));
+});
+
+test('13.2.1: every catalogue parameter has a type, and a default its own type and range allow', () => {
+  const colour = /^#([0-9a-f]{6}|[0-9a-f]{8})$/i;
+  for (const effect of parameters.effects) {
+    const names = effect.parameters.map((parameter) => parameter.name);
+    assert.equal(new Set(names).size, names.length, `${effect.id}: parameter names are unique`);
+    for (const parameter of effect.parameters) {
+      const where = `${effect.id}.${parameter.name}`;
+      assert.ok(['number', 'boolean', 'select', 'color', 'json', 'text', 'point'].includes(parameter.type), `${where}: type ${parameter.type}`);
+      assert.equal(typeof parameter.animatable, 'boolean', where);
+      if (parameter.type === 'number') {
+        assert.equal(typeof parameter.default, 'number', where);
+        assert.ok(typeof parameter.min === 'number' && typeof parameter.max === 'number' && parameter.min <= parameter.max, `${where}: range`);
+        assert.ok(parameter.default >= parameter.min && parameter.default <= parameter.max, `${where}: default outside its range`);
+      } else if (parameter.type === 'boolean') {
+        assert.equal(typeof parameter.default, 'boolean', where);
+      } else if (parameter.type === 'select') {
+        assert.ok(Array.isArray(parameter.options) && parameter.options.includes(parameter.default), `${where}: default is not an option`);
+      } else {
+        assert.equal(typeof parameter.default, 'string', where);
+        if (parameter.type === 'color') assert.match(parameter.default, colour, where);
+      }
+    }
+  }
+  for (const transition of parameters.transitions) {
+    const { default: usual, min, max } = transition.editorDuration;
+    assert.ok(Number.isInteger(min) && min >= 1 && min <= usual && usual <= max, `${transition.id}: editor duration`);
+    if (transition.directions) assert.ok(transition.directions.length > 0, `${transition.id}: directions`);
+    for (const parameter of transition.parameters) {
+      const where = `${transition.id}.${parameter.name}`;
+      if (parameter.type === 'number') {
+        assert.ok(parameter.default >= parameter.min && parameter.default <= parameter.max, `${where}: default outside its range`);
+      } else {
+        assert.equal(parameter.type, 'color', where);
+        assert.equal(parameter.valueFormat, 'rgb-array', where);
+        assert.ok(Array.isArray(parameter.default) && parameter.default.length === 3, where);
+      }
+    }
+  }
+});
+
+test('13.8: each direct edit names graph fields, and its command is one the engine refuses', () => {
+  for (const edit of parameters.directEdits) {
+    assert.ok(edit.fields.length > 0 && edit.fields.every((field) => field.startsWith('timeline.')), edit.id);
+    assert.match(edit.section, /^13\.8\.\d+$/, edit.id);
+    if (edit.command !== null) {
+      assert.equal(fixtures.commandStatus[edit.command]?.status, 'not-implemented', `${edit.id}: ${edit.command}`);
+    }
+  }
+});
+
 test('a refused batch leaves the graph it was given untouched', () => {
   for (const entry of part2Cases.filter((candidate) => candidate.expect.status === 'rejected' && !deferred.has(candidate.id))) {
     const base = fixtures.bases[entry.base];
