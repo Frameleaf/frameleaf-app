@@ -1461,7 +1461,7 @@
     {
       "commands": ["clip.setTransform"],
       "id": "extra.bento",
-      "reason": "Panel layout preset; a client preference, not a graph change."
+      "reason": "Arranges the selected clips on the canvas by writing their transforms; it has no command of its own."
     },
     {
       "commands": [],

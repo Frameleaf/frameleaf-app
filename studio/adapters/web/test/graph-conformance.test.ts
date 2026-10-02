@@ -15,6 +15,7 @@ import {
 } from '../src/canonical-commands'
 import { createStudioEngineCommandHandlers, createStudioGraphHistory } from '@frameleaf/host/engine-commands'
 import type { StudioCommandEnvelope } from '@frameleaf/host/commands'
+import { frameRatio, scaleFrame } from '@/features/timeline/utils/project-retime'
 import catalogue from '../../../frameleaf-studio-commands.json'
 
 /**
@@ -22,7 +23,10 @@ import catalogue from '../../../frameleaf-studio-commands.json'
  * engine. `studio/graph-conformance-v1.json` holds the inputs (media, seed graphs, bases, cases and
  * history scripts) and the engine's answers. This test recomputes every answer and fails on any
  * difference, so the protocol the native apps implement cannot silently drift from the engine.
- * FL-307 (NAPI-018) added the cases of the clip, timeline-edit, track and marker commands.
+ * FL-307 (NAPI-018) added the cases of the clip, timeline-edit, track and marker commands, and
+ * FL-308 (NAPI-019) those of the effect, transition, keyframe, expression, modifier, text motion
+ * and Ken Burns commands. FL-309 (NAPI-020) added those of the composition, group, published
+ * control, title, sequence settings and template commands, and the retime vectors.
  *
  *   GRAPH_CONFORMANCE_WRITE=1 node studio/tools/adapter.mjs test   # regenerate the answers
  *
@@ -64,6 +68,8 @@ type CaseExpectation =
       clockIndependent: boolean
       draws: Draw[][]
       graph: Json
+      /** FL-309: what one load makes of `graph`, for a case that settles on load. */
+      settled?: { digest: string; envelopeDigest: string; fixedPoint: boolean }
     }
   | { status: 'rejected'; index: number; reason: string; detail: string }
 
@@ -79,6 +85,17 @@ interface Case {
    * false). Declared by hand; the recorded answer must agree, in both directions.
    */
   outsideNormalForm?: boolean
+  /**
+   * FL-308: the answer holds values from floating-point functions the protocol does not fix (sine,
+   * arctangent, keyframe interpolation). Declared by hand; it changes nothing in the replay.
+   */
+  engineArithmetic?: boolean
+  /**
+   * FL-309: the engine's own result is one load short of normal form: the next load completes it,
+   * and nothing a person made changes (14.2.3). The answer records the settled digest too, and that
+   * the settled graph is a fixed point. Declared by hand; the recorded answer must agree.
+   */
+  settlesOnLoad?: boolean
   envelopes: CanonicalEnvelope[]
   expect: CaseExpectation | null
 }
@@ -121,10 +138,12 @@ interface Fixtures {
     canonicalJson: Array<{ value: Json; canonical?: string; sha256?: string }>
     uuids: Array<{ seed: string; count: number; uuids?: string[] }>
     frames: Array<{ time: Rational; rate: Rational; frames?: number | null }>
+    retime?: Array<{ frame: number; from: number; to: number; scaled?: number }>
   }
   cases: Case[]
   history: HistoryScript[]
-  commandStatus: Record<string, { status: string; story: string; note?: string }>
+  /** FL-309: `section` is the section of the protocol page that holds the command's rule. */
+  commandStatus: Record<string, { status: string; story: string; section: string; note?: string }>
 }
 
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex')
@@ -209,6 +228,17 @@ async function runCase(fixtures: Fixtures, entry: Case): Promise<CaseExpectation
     media,
   )
   const clockIndependent = later.status === 'applied' && graphDigestOf(later.project) === digest
+  // FL-309: a case that settles on load records what the load makes of it, and that it then holds.
+  let settled: { digest: string; envelopeDigest: string; fixedPoint: boolean } | undefined
+  if (entry.settlesOnLoad && again.status === 'applied') {
+    const loaded = JSON.parse(JSON.stringify(again.project)) as Json
+    const once = await apply(loaded, [], media)
+    settled = {
+      digest: graphDigestOf(loaded),
+      envelopeDigest: envelopeDigestOf(loaded),
+      fixedPoint: once.status === 'applied' && graphDigestOf(once.project) === graphDigestOf(loaded),
+    }
+  }
   return {
     status: 'applied',
     digest,
@@ -217,6 +247,7 @@ async function runCase(fixtures: Fixtures, entry: Case): Promise<CaseExpectation
     clockIndependent,
     draws: drawsOf(graph, entry.envelopes),
     graph,
+    ...(settled ? { settled } : {}),
   }
 }
 
@@ -312,6 +343,13 @@ function vectors(fixtures: Fixtures): Fixtures['vectors'] {
       }
       return { time, rate, frames }
     }),
+    // FL-309: a frame count carried from one frame rate to another by a keep-time retime.
+    retime: (fixtures.vectors.retime ?? []).map(({ frame, from, to }) => ({
+      frame,
+      from,
+      to,
+      scaled: scaleFrame(frame, frameRatio(from, to)),
+    })),
   }
 }
 
@@ -341,7 +379,7 @@ const REPLAY_TIMEOUT = 300_000
 /** The drift test's run, kept so that the determinism test replays the fixtures once, not twice. */
 let firstRun: Fixtures | undefined
 
-describe('Studio graph protocol v1 conformance (FL-306, FL-307)', () => {
+describe('Studio graph protocol v1 conformance (FL-306 to FL-309)', () => {
   it('replays every fixture through the engine without drift', { timeout: REPLAY_TIMEOUT }, async () => {
     const stored = load()
     const generated = await generate(stored)
@@ -362,7 +400,13 @@ describe('Studio graph protocol v1 conformance (FL-306, FL-307)', () => {
     // A result outside normal form is declared, never discovered by accident.
     for (const entry of generated.cases) {
       if (entry.expect?.status !== 'applied') continue
-      expect(entry.expect.fixedPoint, `${entry.id}: outsideNormalForm`).toBe(entry.outsideNormalForm !== true)
+      const declared = entry.outsideNormalForm === true || entry.settlesOnLoad === true
+      expect(entry.expect.fixedPoint, `${entry.id}: outsideNormalForm or settlesOnLoad`).toBe(!declared)
+      // A case that settles reaches normal form with one load, and is never also one to refuse.
+      if (entry.settlesOnLoad) {
+        expect(entry.outsideNormalForm, `${entry.id}: both marks`).not.toBe(true)
+        expect(entry.expect.settled?.fixedPoint, `${entry.id}: settles in one load`).toBe(true)
+      }
     }
     generated.history.forEach((script, index) => expect(script.expect, script.id).toEqual(stored.history[index]!.expect))
   })

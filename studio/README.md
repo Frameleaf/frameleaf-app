@@ -14,7 +14,11 @@ The engine tooling rejects duplicate keys in its contract JSON and verifies the 
 
 `docs/docs/developer/studio-graph-protocol-v1.md` specifies the project graph for the native apps, which may not read engine source. Its machine-readable files are `graph-schema-v1.json` (JSON Schema of a graph in normal form) and `graph-conformance-v1.json` (fixtures whose answers come from the real engine). `adapters/web/test/graph-conformance.test.ts` replays every fixture through the engine and fails on drift; `GRAPH_CONFORMANCE_WRITE=1 node studio/tools/adapter.mjs test` regenerates the answers. `tools/graph-protocol.test.mjs` re-derives digests, id draws and rounding from the prose without the engine, and validates every fixture graph against the schema.
 
-Part 2 of the protocol (FL-307, section 12 of the page) gives the mutation rules of the 28 clip, timeline-edit, track and marker commands, each with applied and rejected fixtures named `<command>/<case>`. A case marked `outsideNormalForm` records an edit the engine accepts but a native client must refuse. To add a case, append its inputs to `cases` in `graph-conformance-v1.json` with `"expect": null` and regenerate; envelopes name clips by the ids the base graph or earlier envelopes of the batch minted. The engine-free check also replays every part 2 case through `tools/graph-reference.mjs`, an implementation of section 12 written from the page without the engine, and requires the engine's graph, digest and refusal for each; the eight cases that need a rule of part 3 or 4 are skipped by name. When a part 2 rule changes, change the page, the reference and the fixtures together.
+Part 2 of the protocol (FL-307, section 12 of the page) gives the mutation rules of the 28 clip, timeline-edit, track and marker commands, each with applied and rejected fixtures named `<command>/<case>`. A case marked `outsideNormalForm` records an edit the engine accepts but a native client must refuse. To add a case, append its inputs to `cases` in `graph-conformance-v1.json` with `"expect": null` and regenerate; envelopes name clips by the ids the base graph or earlier envelopes of the batch minted. The engine-free check also replays every part 2 case through `tools/graph-reference.mjs`, an implementation of section 12 written from the page without the engine, and requires the engine's graph, digest and refusal for each. When a part 2 rule changes, change the page, the reference and the fixtures together.
+
+Part 3 (FL-308, section 13) gives the rules of the 12 effect, transition, keyframe, expression, modifier, text motion and Ken Burns commands, and of the graph fields that no engine command writes. `graph-parameters-v1.json` is its parameter catalogue: every effect, transition and blend mode a graph may name, with parameter names, types, ranges, options and defaults, and no engine text. It is generated from the engine's registries by `adapters/web/test/graph-parameters.test.ts`, which fails when a registry and the committed file differ; `GRAPH_PARAMETERS_WRITE=1 node studio/tools/adapter.mjs test` regenerates it, and the engine-free check re-derives its content digest, so a hand edit fails too. A case marked `engineArithmetic` holds values from sines, arctangents or keyframe interpolation that the page does not fix to the last bit; the reference skips those six by name.
+
+Part 4 (FL-309, section 14) gives the rules of the 8 composition, group, published control, title, sequence setting and template commands, including the `keep-time` and `keep-frames` retime policies, and adds title styles, title animations, templates and project rates to the parameter catalogue. A case marked `settlesOnLoad` records a graph that is one load short of normal form; its answer also holds the `settled` digest a native client must match. Section 8.3 of the page has one row for each of the 73 graph-changing commands, and `commandStatus` in the fixtures names each command's status, story and section. The engine-free check is the coverage gate: it fails when a `mutatesGraph` command of `frameleaf-studio-commands.json` has no row in section 8.3, when the row and `commandStatus` disagree, when an engine command lacks applied or rejected fixtures, or when a command the engine does not apply lacks a `not-implemented/<command>` fixture and a native rule. To add a graph-changing command, add its rule to the page, its row to section 8.3, its `commandStatus` entry and its fixtures in the same change.
 
 ## Local source preflight
 
@@ -153,11 +157,23 @@ Hosted regressions:
   including Freecut's stylised SDR endpoints for chromatic, sparkles, liquid distort
   and light leak. Each transition also runs through the production renderer on a cut
   between two image clips: progress follows the timeline, a participant's keyframed
-  opacity draws as its static values, and a blended layer stacks over the result. The
-  invalid inputs the engine gives a meaning to are checked too (unknown direction,
-  timing and transition id, out-of-range alignment, fractional duration). A non-finite
-  duration or alignment and a transition's own parameter values are not sanitised by
-  the engine yet, so the transition rows' invalid case stays open.
+  opacity draws as its static values, and a blended layer stacks over the result.
+  Every invalid input draws as its declared meaning, the same on the preview surface
+  as in export.
+
+Patch 0048 gives a transition's invalid inputs that meaning (FL-99), by the rule patch
+0039 set for effect parameters: a finite number outside its declared range is clamped to
+the range, and a value that is not a finite number falls back to the declared default.
+A duration that is not a finite number draws as the transition type's default 30 frames
+(it used to leave the outgoing clip on screen for the whole incoming clip); an alignment
+that is not a finite number draws centred on the cut. A declared numeric parameter is
+clamped to its range or drawn as its default, a declared colour that is not three finite
+numbers as its default, and a property the transition does not declare is dropped unless
+it is a finite number. The check lives in the transition planner
+(`shared/timeline/transitions/transition-inputs.ts`), which every preview and export
+renderer and the audio crossfade read their windows and transitions from, so no
+transition carries its own. Finite durations keep their whole frames and are not held to
+a transition's editing minimum and maximum, and finite colour components are not clamped.
 
 The existing compositor, transition and nested regressions now cover both project
 ranges. Everything passes on SwiftShader (CI) and Apple Metal.

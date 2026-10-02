@@ -181,6 +181,44 @@ export function exactRate(fps) {
   return null;
 }
 
+/**
+ * 14.5.1: `frame` counted at `from` frames per second, as a frame at `to`: the nearest frame, exact
+ * halves away from zero. Not the rule of section 3.3, which sends a negative half up.
+ */
+export function carryFrame(frame, from, to) {
+  const [a, b] = [exactRate(from), exactRate(to)];
+  if (!a || !b) return null;
+  const numerator = BigInt(b.num) * BigInt(a.den);
+  const denominator = BigInt(b.den) * BigInt(a.num);
+  const scaled = (2n * BigInt(Math.abs(frame)) * numerator + denominator) / (2n * denominator);
+  // The sign is put back by multiplying, so a count that rounds to nothing is 0 or -0 as the engine has it.
+  return Number((frame < 0 ? -1n : 1n) * scaled);
+}
+
+/**
+ * 14.2.3: what one load makes of a graph that settles on load. Every track of a composition has a
+ * sync lock, and a track of the main timeline lists no items.
+ */
+export function settle(graph) {
+  const { timeline } = graph;
+  if (!timeline) return graph;
+  return {
+    ...graph,
+    timeline: {
+      ...timeline,
+      tracks: timeline.tracks.map((track) => ((track.items?.length ?? 0) > 0 ? { ...track, items: [] } : track)),
+      ...(timeline.compositions
+        ? {
+            compositions: timeline.compositions.map((composition) => ({
+              ...composition,
+              tracks: composition.tracks.map((track) => (track.syncLock === undefined ? { ...track, syncLock: true } : track)),
+            })),
+          }
+        : {}),
+    },
+  };
+}
+
 /** 12.2.4: timeline frames to source frames, in doubles, in the order written. */
 export const toSource = (frames, fps, sourceFps = fps, speed = 1) => Math.floor((frames / fps) * sourceFps * speed + 0.5);
 

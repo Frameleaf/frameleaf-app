@@ -43,6 +43,12 @@ The photographer review starts at `/?screen=photography`: open a shoot, cull and
 
 ## Source map
 
+The Buddy Backup review starts at `/?screen=admin&settings=backups`. Status shows your outgoing backup and the separate encrypted data you host for a buddy. Use the preview-state selector to inspect offline, quota, key, capacity, verification, schedule and partnership-ending states. The pairing flow includes independent quota agreement, a plainly marked sample recovery-kit download and verification, optional wrapped-key escrow, and an encrypted round-trip simulation. Recover shows only the source owner's own items, albums, library, settings and replacement-server recovery. Hosting never exposes a buddy's media catalogue.
+
+The same outgoing and incoming status appears on `/?screen=admin&settings=overview` and `/?screen=admin&settings=analytics`. Within Backup, `backupView=cloud`, `controls`, `restore` or `compare` opens each review surface directly. Cloud reuses the existing setup and restore controls; the comparison distinguishes provider-side Cloud SSE-C from Buddy encryption before transmission. All actions use local sample state; no accounts, libraries, encryption services or servers are contacted. These additions are maintained only in the portable template; the original source-capture manifest and historical prototype remain unchanged.
+
+The lightweight Buddy state check is `node --test tests/buddy-backup.test.mjs`. It does not start a dev server or run the full design suite.
+
 | Area | Entry points |
 | --- | --- |
 | Shell, library and session | `src/App.jsx`, `LibraryRail.jsx`, `styles.css`, `reference/library-session.ts` |
@@ -55,6 +61,7 @@ The photographer review starts at `/?screen=photography`: open a shoot, cull and
 | Timeline, Explore and full-size viewer | `TimelineLibrary.jsx`, `ExploreLibrary.jsx`, `MediaViewer.jsx`, `FaceTagger.jsx` |
 | Quick editor and Studio layout | `Editor.jsx`, `state.mjs` |
 | Settings and analytics | `CommandCenter.jsx` (grouped area directories), `settings-catalog.mjs`, `settings-coverage.mjs`, `SettingsAnalytics.jsx` + `AnalyticsDashboard.jsx` + `library-insights.mjs` (dashboard sections and their reconciled sample breakdowns) |
+| Cloud + Buddy backup review | `BackupCenter.jsx`, `buddy-backup.mjs`, `backup-center.css`; the existing `FrameleafCloud.jsx` remains the Cloud setup/restore surface |
 | Users, workers, jobs and utilities | `AccountsLibraries.jsx`, `WorkerManager.jsx`, `JobsManager.jsx`, `UtilitiesManager.jsx`, `DuplicateReview.jsx`, `TrashManager.jsx` |
 | Portable source snapshots | `src/reference/`: library session, discovery query, theme CSS and plugin method manifest |
 | Editing surfaces | `Editor.jsx` + `develop.mjs` (full-screen quick editor, develop module, presets, crop), `Studio.jsx` + `studio-project.mjs` (multitrack timeline, colour, audio, captions, restoration), `Activity.jsx` |

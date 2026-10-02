@@ -12,6 +12,7 @@ import {
   commandMatrixCoverage,
   mergeMatrixCoverage,
   missingCases,
+  pendingArtifactEntry,
   rowCommandsFromCatalogue,
 } from "./frameleaf-studio-evidence.mjs";
 
@@ -56,12 +57,12 @@ test("missingCases is empty once every required case is covered", () => {
   assert.deepEqual(missingCases(fixture("blend.normal"), "chromium", all), []);
 });
 
-test("the transition family claims every chromium case its matrix measures in full, and the overlay names the one it cannot", async () => {
-  // transition-matrix.browser.mjs measures animated and composed for every transition. Its
-  // invalid case covers only the inputs the engine gives a meaning to, so invalid stays unclaimed.
+test("the transition family claims all five chromium cases its matrix measures, and the overlay says so", async () => {
+  // transition-matrix.browser.mjs measures animated, composed and invalid for every transition
+  // through the production renderer; engine patch 0048 gives the invalid inputs their meaning.
   assert.deepEqual(
     [...FAMILY_CASE_COVERAGE.chromium.transition].sort(),
-    ["animated", "composed", "extreme", "normal"],
+    ["animated", "composed", "extreme", "invalid", "normal"],
   );
   const overlay = JSON.parse(
     await readFile(path.join(ROOT, "studio/conformance.json"), "utf8"),
@@ -69,10 +70,7 @@ test("the transition family claims every chromium case its matrix measures in fu
   const rows = overlay.rows.filter((row) => row.id.startsWith("transition."));
   assert.equal(rows.length, 21);
   for (const row of rows) {
-    assert.deepEqual(row.axes.chromium, {
-      status: "blocked",
-      reason: "Missing chromium-axis case(s): invalid (FL-112).",
-    });
+    assert.deepEqual(row.axes.chromium, pendingArtifactEntry("chromium"));
   }
 });
 
