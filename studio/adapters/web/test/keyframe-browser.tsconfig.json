@@ -16,6 +16,7 @@
     "editor-controls.browser.tsx",
     "boundary-hit.browser.tsx",
     "linked-edit-axis.browser.tsx",
+    "edge-parity.browser.tsx",
     "../../../engine/src/**/*.d.ts",
     "../../../engine/node_modules/@webgpu/types/dist/index.d.ts"
   ]
