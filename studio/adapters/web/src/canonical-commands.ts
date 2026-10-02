@@ -447,7 +447,7 @@ const requireItem = (id: string, field = 'clipId'): TimelineItem => {
 const RUNTIME_ONLY_EXPRESSION_ERRORS = /^(Division by zero|Expression produced a non-finite value|Property reference is unavailable|Expression dependency limit exceeded)/
 
 
-const MODIFIER_TYPES: readonly MotionModifierType[] = ['float-drift', 'breath-pulse', 'micro-shake', 'sway', 'spin']
+export const MODIFIER_TYPES: readonly MotionModifierType[] = ['float-drift', 'breath-pulse', 'micro-shake', 'sway', 'spin']
 
 const finiteIn = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
@@ -604,7 +604,7 @@ const keyframeCount = (item: TimelineItem): number =>
     0,
   )
 
-const EASINGS: readonly EasingType[] = ['linear', 'ease-in', 'ease-out', 'ease-in-out', 'hold', 'cubic-bezier', 'spring']
+export const EASINGS: readonly EasingType[] = ['linear', 'ease-in', 'ease-out', 'ease-in-out', 'hold', 'cubic-bezier', 'spring']
 
 const keyframesOn = (item: TimelineItem, property: AnimatableProperty): Keyframe[] =>
   useKeyframesStore
@@ -879,7 +879,7 @@ const landSourceEdit = (placed: TimelineItem[], command: string) => {
 /* ------------------------------------------------------------------ */
 
 /** The prototype's transition names (`studio-project.mjs` `transitionTypes`) as Freecut presentations. */
-const prototypeTransitions: Record<string, TransitionPresentation> = {
+export const prototypeTransitions: Record<string, TransitionPresentation> = {
   'Cross dissolve': 'dissolve',
   'Dip to black': 'dipToColorDissolve',
   Wipe: 'wipe',
