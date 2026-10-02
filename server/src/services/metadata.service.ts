@@ -251,7 +251,8 @@ export class MetadataService extends BaseService {
     // instead of being read from the file's own coordinates
     const lockedProperties = (await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(asset.id)) ?? [];
     const locationLocked = lockedProperties.includes('latitude');
-    const cameraLocked = lockedProperties.includes('make') || lockedProperties.includes('model');
+    // Persisted locks can include camera fields beyond the public editable-property union.
+    const cameraLocked = lockedProperties.some((property: string) => property === 'make' || property === 'model');
     if (
       !cameraLocked &&
       asset.type === AssetType.Image &&

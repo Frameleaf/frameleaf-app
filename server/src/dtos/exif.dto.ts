@@ -32,14 +32,8 @@ export const ExifResponseSchema = z
     country: z.string().nullish().default(null).describe('Country name'),
     description: z.string().nullish().default(null).describe('Image description'),
     projectionType: z.string().nullish().default(null).describe('Projection type'),
-    rating: z
-      .int()
-      .min(-1)
-      .max(5)
-      .nullish()
-      .default(null)
-      .refine((value) => value !== 0)
-      .describe('Rating in range [1-5] (starred), -1 (rejected), or null (unrated)'),
+    rating: z.int().min(1).max(5).nullish().default(null).describe('Rating'),
+    isRejected: z.boolean().nullish().default(null).describe('Whether the stored rating is rejected'),
     fps: z.number().meta({ format: 'double' }).nullish().default(null).describe('Video frame rate (frames per second)'),
   })
   .describe('EXIF response')
@@ -73,7 +67,8 @@ export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
     country: entity.country,
     description: entity.description,
     projectionType: entity.projectionType,
-    rating: entity.rating,
+    rating: entity.rating === -1 ? null : entity.rating,
+    isRejected: entity.rating === -1,
     fps: entity.fps ?? null,
   };
 }

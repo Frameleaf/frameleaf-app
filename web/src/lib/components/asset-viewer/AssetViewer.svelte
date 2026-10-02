@@ -729,6 +729,7 @@
           exifInfo: {
             ...asset.exifInfo,
             rating: action.rating,
+            isRejected: action.rating === -1,
           },
         };
         notifyAssetUpdate?.(cursor.current);
