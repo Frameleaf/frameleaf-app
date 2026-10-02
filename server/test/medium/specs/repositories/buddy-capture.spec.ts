@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
+  AlbumKind,
   AssetFileType,
   AssetPathType,
   AssetType,
@@ -158,6 +159,50 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       ),
     );
   };
+
+  it('writes owner-specific people and empty album structure into the encrypted source manifest', async () => {
+    const own = await original('own-person.jpg');
+    const owner = await db.selectFrom('user').select('clusterGroupId').where('id', '=', ownerId).executeTakeFirstOrThrow();
+    const { user: other } = await ctx.newUser({ clusterGroupId: owner.clusterGroupId });
+    const otherFile = await file('other-person.jpg');
+    const { asset: otherAsset } = await ctx.newAsset({
+      ownerId: other.id,
+      originalPath: otherFile.path,
+      checksum: createHash('sha256').update(otherFile.bytes).digest(),
+      checksumAlgorithm: ChecksumAlgorithm.sha256File,
+    });
+    const { person } = await ctx.newPerson({ ownerId, name: 'Own name' });
+    await ctx.newPerson({ ownerId: other.id, personGroupId: person.personGroupId, name: 'Other name' });
+    for (const assetId of [own.asset.id, otherAsset.id]) {
+      await ctx.newAssetFace({
+        assetId,
+        personGroupId: person.personGroupId,
+        imageWidth: 100,
+        imageHeight: 80,
+        boundingBoxX1: 1,
+        boundingBoxY1: 2,
+        boundingBoxX2: 30,
+        boundingBoxY2: 40,
+      });
+    }
+    const { album: collection } = await ctx.newAlbum({
+      ownerId, kind: AlbumKind.Collection, albumName: 'Empty collection',
+    });
+    const { album: child } = await ctx.newAlbum({
+      ownerId, parentId: collection.id, icon: 'camera', sortOrder: 3, albumName: 'Empty child',
+    });
+    const { capture } = fixture();
+    const run = options();
+    const result = await capture.capture(run);
+    expect(result.manifest.metadata?.peopleByOwner[ownerId][person.personGroupId].name).toBe('Own name');
+    expect(result.manifest.metadata?.peopleByOwner[other.id][person.personGroupId].name).toBe('Other name');
+    expect(result.manifest.metadata?.albums[child.id]).toMatchObject({
+      ownerId, parentId: collection.id, kind: 'album', icon: 'camera', sortOrder: 3, sharedUsers: [],
+    });
+    expect(result.manifest.library.assets[own.asset.id].owner).toBe(ownerId);
+    expect(result.manifest.library.assets[otherAsset.id].owner).toBe(other.id);
+    await capture.release(run.runId);
+  });
 
   it('pins retained versions before the dump and preserves them through later moves and deletes', async () => {
     const first = await original('first.jpg');
