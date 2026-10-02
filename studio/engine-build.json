@@ -224,7 +224,12 @@
       "path": "patches/0044-preview-padding-copy.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "a6438376c53e2c77b7e0daa5ade903bb75070a40e22b0a3115a59ae5058de5ef"
+    },
+    {
+      "path": "patches/0046-preview-canvas-transform-placement.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4f1bd7d0871cb6f7a273848253b2d57f61b4880b5f8dee97bdfa9322b22df734"
     }
   ],
-  "sourceSha256": "2b97c8b5e76584b6716ead8457a86c0465adbd7d68112b5eb6794845c2dc4031"
+  "sourceSha256": "f368aabea4097290ac215954bf707b225aa7f144b1c6de7b1a82c04c3113d82f"
 }

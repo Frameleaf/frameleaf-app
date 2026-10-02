@@ -27,6 +27,7 @@ export default async () => {
         "test/editor-controls.browser.html",
         "test/boundary-hit.browser.html",
         "test/linked-edit-axis.browser.html",
+        "test/edge-parity.browser.html",
       ],
     },
     resolve: {
