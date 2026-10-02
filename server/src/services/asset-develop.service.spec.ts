@@ -109,7 +109,6 @@ describe(AssetDevelopService.name, () => {
       releaseRemovedAssetRevisions: vi.fn().mockResolvedValue([]),
       listUnfinished: vi.fn().mockResolvedValue([]),
       getArtifacts: vi.fn().mockResolvedValue([]),
-      getArtifactUsage: vi.fn().mockResolvedValue({ assetCount: 0, ownerBytes: 0 }),
       addArtifact: vi.fn().mockResolvedValue(true),
       releaseArtifacts: vi.fn().mockResolvedValue([]),
       beginAttempt: vi.fn().mockImplementation((id: string) =>
@@ -159,7 +158,6 @@ describe(AssetDevelopService.name, () => {
       mocks.storage as never,
       mocks.systemMetadata as never,
       mocks.mediaOperation as never,
-      mocks.user as never,
     );
     mocks.mediaOperation.getTrackedRevisionIds.mockResolvedValue(new Set());
     mocks.mediaOperation.listActiveEditsOfRevision.mockResolvedValue([]);
@@ -263,7 +261,6 @@ describe(AssetDevelopService.name, () => {
       mocks.crypto.hashSha256.mockReturnValue(Buffer.from(artifact, 'hex'));
       mocks.storage.createFile.mockResolvedValue(void 0);
       mocks.storage.checkFileExists.mockResolvedValue(true);
-      mocks.user.get.mockResolvedValue({ id: asset.ownerId, quotaSizeInBytes: null, quotaUsageInBytes: 0 } as never);
       mocks.asset.getById.mockResolvedValue({
         ...asset,
         exifInfo: { ...asset.exifInfo, exifImageWidth: 4000, exifImageHeight: 3000 },
@@ -294,12 +291,10 @@ describe(AssetDevelopService.name, () => {
       // period) and skips the limits, without writing the file that is still there
       developRepository.getArtifacts.mockResolvedValue([stored()]);
       developRepository.addArtifact.mockClear();
-      developRepository.getArtifactUsage.mockClear();
       await expect(
         sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged),
       ).resolves.toEqual({ id: artifact, kind: AssetDevelopArtifactKind.Mask, width: 400, height: 300 });
       expect(developRepository.addArtifact).toHaveBeenCalledWith(expect.objectContaining({ id: artifact }));
-      expect(developRepository.getArtifactUsage).not.toHaveBeenCalled();
       expect(mocks.storage.createFile).not.toHaveBeenCalled();
 
       // ... and writes it again if a release took the file after it was found
@@ -331,20 +326,27 @@ describe(AssetDevelopService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledTimes(3);
     });
 
-    it('refuses an upload over the per-photo limit or the owner’s quota', async () => {
-      developRepository.getArtifactUsage.mockResolvedValue({ assetCount: 64, ownerBytes: 0 });
-      const limit = await sut
-        .uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged)
-        .catch((error: BadRequestException) => error);
-      expect((limit as BadRequestException).getResponse()).toMatchObject({ code: 'develop_artifact_limit' });
+    it('removes the file of an upload the recording refused (FL-304: the photo’s limit, the owner’s quota)', async () => {
+      // the limit and the quota are decided where the row is inserted; the service keeps no file
+      // for a refused upload
+      const refusal = new BadRequestException({ message: 'Your storage is full', code: 'develop_artifact_quota' });
+      developRepository.addArtifact.mockRejectedValue(refusal);
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged),
+      ).rejects.toBe(refusal);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: [developArtifactPath(asset, artifact)] },
+      });
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(staged.path);
 
-      developRepository.getArtifactUsage.mockResolvedValue({ assetCount: 0, ownerBytes: 9 });
-      mocks.user.get.mockResolvedValue({ id: asset.ownerId, quotaSizeInBytes: 10, quotaUsageInBytes: 0 } as never);
-      const quota = await sut
-        .uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged)
-        .catch((error: BadRequestException) => error);
-      expect((quota as BadRequestException).getResponse()).toMatchObject({ code: 'develop_artifact_quota' });
-      expect(mocks.storage.createFile).not.toHaveBeenCalled();
+      // the same bitmap again, already recorded, queues nothing whatever happens
+      mocks.job.queue.mockClear();
+      developRepository.getArtifacts.mockResolvedValue([stored()]);
+      await expect(
+        sut.uploadArtifact(authStub.user1, asset.id, { kind: AssetDevelopArtifactKind.Mask }, staged),
+      ).rejects.toBe(refusal);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
     it('refuses to render a recipe whose artifact this photo does not have, before saving', async () => {

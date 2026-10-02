@@ -1,11 +1,13 @@
+import { BadRequestException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as artifacts from 'src/fork-schema/migrations/0000000000212-AssetDevelopArtifacts.js';
-import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
+import { AssetDevelopRepository, DEVELOP_ARTIFACT_PER_ASSET } from 'src/repositories/asset-develop.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
@@ -29,6 +31,27 @@ const setup = () => {
 
 const isOurs = (entry: { identity: string }) => entry.identity.startsWith('immich_fork.asset_develop_artifact');
 const sha = (character: string) => character.repeat(64);
+/** The owner's storage usage as the quota checks read it. */
+const usage = async (userId: string) =>
+  Number(
+    (
+      await sql<{ bytes: string }>`SELECT "quotaUsageInBytes" AS bytes FROM "user" WHERE id = ${userId}::uuid`.execute(
+        db,
+      )
+    ).rows[0].bytes,
+  );
+const stored = async (assetId: string) =>
+  Number(
+    (
+      await sql<{ count: string }>`
+        SELECT count(*) AS count FROM immich_fork.asset_develop_artifact WHERE "assetId" = ${assetId}::uuid
+      `.execute(db)
+    ).rows[0].count,
+  );
+const refusals = (results: PromiseSettledResult<boolean>[]) =>
+  results.flatMap((result) =>
+    result.status === 'rejected' ? [(result.reason as BadRequestException).getResponse() as { code: string }] : [],
+  );
 
 it('matches the private catalog and rolls back without modifying the official catalog', async () => {
   const before = await getCatalogEvidence(db);
@@ -71,7 +94,9 @@ it('records an artifact once, counts it, and releases unreferenced and removed o
   await expect(sut.getArtifacts(asset.id, [sha('a'), sha('c')])).resolves.toEqual([
     expect.objectContaining({ id: sha('a'), bytes: 1000, kind: 'mask' }),
   ]);
-  await expect(sut.getArtifactUsage(asset.id, user.id)).resolves.toEqual({ assetCount: 2, ownerBytes: 2000 });
+  await expect(stored(asset.id)).resolves.toBe(2);
+  // FL-304: each new artifact is charged to its owner once; the same one again is not
+  await expect(usage(user.id)).resolves.toBe(2000);
 
   // a saved version references `a`; `b` is unused
   await sut.create({
@@ -92,11 +117,13 @@ it('records an artifact once, counts it, and releases unreferenced and removed o
     row(sha('b')).path,
   ]);
   expect(queue).toHaveBeenCalledWith([row(sha('b')).path]);
-  await expect(sut.getArtifactUsage(asset.id, user.id)).resolves.toEqual({ assetCount: 1, ownerBytes: 1000 });
+  await expect(stored(asset.id)).resolves.toBe(1);
+  await expect(usage(user.id)).resolves.toBe(1000);
 
   // a removed photo takes its artifacts with it
   await sql`DELETE FROM public.asset WHERE id = ${asset.id}::uuid`.execute(db);
   await expect(sut.releaseArtifacts(queue, { assetId: asset.id })).resolves.toEqual([row(sha('a')).path]);
+  await expect(usage(user.id)).resolves.toBe(0);
 });
 
 it('keeps a file recorded again before its queued deletion runs, and restarts the grace period on use', async () => {
@@ -208,4 +235,71 @@ it('refuses writes while the server is being handed over', async () => {
   } finally {
     await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
   }
+});
+
+it('holds the per-photo limit when more uploads than it allows arrive at once (FL-304)', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: user.id });
+  const results = await Promise.allSettled(
+    Array.from({ length: DEVELOP_ARTIFACT_PER_ASSET + 16 }, (_, index) => {
+      const id = index.toString(16).padStart(64, '0');
+      return sut.addArtifact({
+        assetId: asset.id,
+        id,
+        ownerId: user.id,
+        kind: 'mask',
+        path: `/thumbs/${asset.id}_develop_artifact_${id}.png`,
+        bytes: 100,
+        width: 10,
+        height: 10,
+      });
+    }),
+  );
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(DEVELOP_ARTIFACT_PER_ASSET);
+  expect(refusals(results)).toHaveLength(16);
+  expect(refusals(results).every(({ code }) => code === 'develop_artifact_limit')).toBe(true);
+  await expect(stored(asset.id)).resolves.toBe(DEVELOP_ARTIFACT_PER_ASSET);
+  // a refused upload is not charged
+  await expect(usage(user.id)).resolves.toBe(DEVELOP_ARTIFACT_PER_ASSET * 100);
+});
+
+it('holds the owner’s quota when uploads for several photos arrive at once, and counts them for later uploads (FL-304)', async () => {
+  const { ctx, sut } = setup();
+  const { user } = await ctx.newUser({ quotaSizeInBytes: 5500 });
+  const assets = await Promise.all(Array.from({ length: 12 }, () => ctx.newAsset({ ownerId: user.id })));
+  const results = await Promise.allSettled(
+    assets.map(({ asset }) =>
+      sut.addArtifact({
+        assetId: asset.id,
+        id: sha('a'),
+        ownerId: user.id,
+        kind: 'fill',
+        path: `/thumbs/${asset.id}_develop_artifact_${sha('a')}.png`,
+        bytes: 1000,
+        width: 10,
+        height: 10,
+      }),
+    ),
+  );
+  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(5);
+  expect(refusals(results)).toHaveLength(7);
+  expect(refusals(results).every(({ code }) => code === 'develop_artifact_quota')).toBe(true);
+  await expect(usage(user.id)).resolves.toBe(5000);
+  const kept = await Promise.all(assets.map(({ asset }) => stored(asset.id)));
+  expect(kept.filter((count) => count === 1)).toHaveLength(5);
+
+  // the usage a photo upload is checked against includes them, and a recount keeps them: one
+  // stored before FL-304 was never charged, and is from the next recount on
+  const users = new UserRepository(db);
+  await expect(users.get(user.id, {})).resolves.toMatchObject({ quotaUsageInBytes: 5000, quotaSizeInBytes: 5500 });
+  await ctx.newExif({ assetId: assets[0].asset.id, fileSizeInByte: 300 });
+  await sql`UPDATE "user" SET "quotaUsageInBytes" = 0 WHERE id = ${user.id}::uuid`.execute(db);
+  await users.syncUsage(user.id);
+  await expect(usage(user.id)).resolves.toBe(5300);
+
+  // released artifacts leave the usage again
+  const before = new Date(Date.now() + 60_000);
+  await sut.releaseArtifacts(vi.fn().mockResolvedValue(void 0), { unreferencedBefore: before });
+  await expect(usage(user.id)).resolves.toBe(300);
 });
