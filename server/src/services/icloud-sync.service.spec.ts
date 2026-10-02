@@ -24,6 +24,7 @@ describe(ICloudSyncService.name, () => {
     id: 'resource',
     ownerId: 'owner',
     connectionId: 'connection',
+    sourceAssetId: '32A01DD9-75DF-41B2-8773-80C153D73A5A',
     leaseToken: 'lease',
     status: 'pending',
     expectedSize: 4,
@@ -56,6 +57,7 @@ describe(ICloudSyncService.name, () => {
     invalidateCursor: vi.fn(),
     block: vi.fn(),
     finalize: vi.fn(),
+    waitForClaim: vi.fn(),
     defer: vi.fn(),
     counts: vi.fn(),
     get: vi.fn(),
@@ -84,6 +86,7 @@ describe(ICloudSyncService.name, () => {
   };
   const transport = { decodeSession: vi.fn(), encodeSession: vi.fn(), authenticate: vi.fn(), enabled: vi.fn() };
   const staging = { download: vi.fn(), cleanup: vi.fn(), root: vi.fn() };
+  const identities = { claimForSync: vi.fn() };
   const recovery = { verifyMapped: vi.fn(), reconcile: vi.fn() };
   const jobs = { queue: vi.fn() };
   const albums = { reconcile: vi.fn() };
@@ -130,6 +133,7 @@ describe(ICloudSyncService.name, () => {
     repository.list.mockResolvedValue([]);
     repository.notify.mockResolvedValue(undefined);
     staging.download.mockResolvedValue('/private/complete');
+    identities.claimForSync.mockResolvedValue(null);
     recovery.verifyMapped.mockResolvedValue(undefined);
     recovery.reconcile.mockResolvedValue({ outcome: 'repaired-missing', assetId: 'same-asset' });
     jobs.queue.mockResolvedValue(undefined);
@@ -160,6 +164,7 @@ describe(ICloudSyncService.name, () => {
       albums as never,
       operations as never,
       logger as never,
+      identities as never,
     );
   });
 
@@ -242,6 +247,16 @@ describe(ICloudSyncService.name, () => {
       expect(repository.finalize).toHaveBeenCalledWith(resource, expect.any(Function));
       expect(repository.completeRun).toHaveBeenCalledOnce();
       expect(operations.complete).toHaveBeenCalledWith('run', 'token', { resultAssetId: null });
+    });
+
+    it('waits for a device that holds the item, without downloading or counting an attempt (FL-296)', async () => {
+      const until = new Date(Date.now() + 600_000);
+      identities.claimForSync.mockResolvedValue(until);
+      await sut.run(operation(), 'token');
+      expect(identities.claimForSync).toHaveBeenCalledWith(connection.ownerId, resource.sourceAssetId, connection.id);
+      expect(staging.download).not.toHaveBeenCalled();
+      expect(repository.waitForClaim).toHaveBeenCalledWith(resource, until);
+      expect(repository.finish).not.toHaveBeenCalledWith(resource, 'retry', expect.anything());
     });
 
     it('records real progress from resources settled out of those known, never an invented figure', async () => {

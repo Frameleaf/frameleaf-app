@@ -126,6 +126,7 @@ describe('resumable asset byte commit boundaries', () => {
       physical as never,
       { warn: vi.fn() } as never,
       rateLimits as never,
+      { claims: vi.fn().mockResolvedValue([]), recordDevice: vi.fn() } as never,
     );
     vi.spyOn(service as unknown as { owner: (auth: AuthDto) => Promise<string> }, 'owner').mockResolvedValue('owner');
     vi.spyOn(service as unknown as { folder: (id: string) => string }, 'folder').mockReturnValue(folder);
@@ -536,6 +537,7 @@ describe('Live Photo required postcommit ingestion', () => {
       {} as never,
       { warn: vi.fn() } as never,
       rateLimits as never,
+      { claims: vi.fn().mockResolvedValue([]), recordDevice: vi.fn() } as never,
     );
     vi.spyOn(service as unknown as { owner: () => Promise<string> }, 'owner').mockResolvedValue(ownerId);
     vi.spyOn(
@@ -555,5 +557,108 @@ describe('Live Photo required postcommit ingestion', () => {
     await expect(service.commitLivePhoto(auth, dto)).resolves.toEqual(result);
     expect(media.finishUploadAsset).toHaveBeenCalledTimes(3);
     expect(rateLimits.releaseUploadStream).toHaveBeenCalledTimes(6);
+  });
+});
+
+describe('iCloud source identity on resumable uploads (FL-296)', () => {
+  const ASSET = '32A01DD9-75DF-41B2-8773-80C153D73A5A';
+  const MASTER = 'AQohY6yKZR0+tXlMi9FUQ82zySGo';
+  const setup = (claims: Array<{ id: string; holder: string }> = []) => {
+    const identities = {
+      claims: vi.fn().mockResolvedValue(claims.map((claim) => ({ ...claim, cplAssetRecordName: ASSET }))),
+      recordDevice: vi.fn(),
+      ownsDevice: vi.fn((_owner: string, key: string) => Promise.resolve(key !== 'stranger-key')),
+    };
+    const logger = { warn: vi.fn() };
+    const service = new AssetUploadResourceService(
+      ...(Array.from({ length: 6 }, () => ({})) as never as [never, never, never, never, never, never]),
+      logger as never,
+      {} as never,
+      identities as never,
+    );
+    const internals = service as unknown as {
+      refuseClaimedItem: (owner: string, source: unknown) => Promise<void>;
+      recordSourceIdentity: (owner: string, row: unknown) => Promise<void>;
+    };
+    return { identities, internals, logger };
+  };
+  afterEach(() => vi.unstubAllEnvs());
+  const source = (overrides: Record<string, unknown> = {}) => ({
+    kind: 'icloud',
+    cloudIdentifier: `${ASSET}:001:${MASTER}`,
+    role: 'original',
+    ...overrides,
+  });
+
+  it('refuses an upload of an item another path claimed, before any bytes, and lets the claim holder in', async () => {
+    const claimId = randomUUID();
+    const { internals } = setup([{ id: claimId, holder: 'icloud-sync:connection' }]);
+    await expect(internals.refuseClaimedItem('owner', source())).rejects.toThrow(ConflictException);
+    await expect(internals.refuseClaimedItem('owner', source())).rejects.toThrow('icloud_claimed');
+    await expect(internals.refuseClaimedItem('owner', source({ claimId }))).resolves.toBeUndefined();
+    await expect(internals.refuseClaimedItem('owner', undefined)).resolves.toBeUndefined();
+    // the device named must be one of the caller's own
+    await expect(internals.refuseClaimedItem('owner', source({ claimId, deviceKey: 'stranger-key' }))).rejects.toThrow(
+      HttpException,
+    );
+  });
+
+  it('never stops a backup over the identifier itself: it is only a hint', async () => {
+    const { identities, internals, logger } = setup([{ id: randomUUID(), holder: 'icloud-sync:connection' }]);
+    // an identifier the server cannot read
+    await expect(
+      internals.refuseClaimedItem('owner', source({ cloudIdentifier: 'nonsense' })),
+    ).resolves.toBeUndefined();
+    expect(identities.claims).not.toHaveBeenCalled();
+
+    // a claim check that cannot be made
+    identities.claims.mockRejectedValueOnce(new Error('relation "immich_fork.icloud_claim" does not exist'));
+    await expect(internals.refuseClaimedItem('owner', source())).resolves.toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+
+    // identity matching switched off: hash only
+    identities.claims.mockClear();
+    vi.stubEnv('FRAMELEAF_ICLOUD_IDENTITY_MATCHING', 'false');
+    await expect(internals.refuseClaimedItem('owner', source())).resolves.toBeUndefined();
+    expect(identities.claims).not.toHaveBeenCalled();
+    await internals.recordSourceIdentity('owner', {
+      resultAssetId: 'asset-1',
+      verifiedChecksum: Buffer.alloc(32, 7),
+      metadata: { filename: 'IMG_0001.HEIC', fileCreatedAt: '2026-06-01T10:00:00.000Z', sourceIdentity: source() },
+    });
+    expect(identities.recordDevice).not.toHaveBeenCalled();
+  });
+
+  it('records the identity once the asset exists, with the claim to give back', async () => {
+    const { identities, internals } = setup();
+    const claimId = randomUUID();
+    const sha256 = Buffer.alloc(32, 7);
+    const row = {
+      resultAssetId: 'asset-1',
+      verifiedChecksum: sha256,
+      metadata: {
+        filename: 'IMG_0001.HEIC',
+        fileCreatedAt: '2026-06-01T10:00:00.000Z',
+        sourceIdentity: source({ claimId, deviceKey: randomUUID() }),
+      },
+    };
+    await internals.recordSourceIdentity('owner', row);
+    expect(identities.recordDevice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerId: 'owner',
+        assetId: 'asset-1',
+        parsed: { cplAssetRecordName: ASSET, cplMasterRecordName: MASTER },
+        role: 'original',
+        editVersion: '',
+        sha256,
+        claimId,
+        metadata: { originalFilename: 'IMG_0001.HEIC', creationDate: '2026-06-01T10:00:00.000Z' },
+      }),
+    );
+
+    identities.recordDevice.mockClear();
+    await internals.recordSourceIdentity('owner', { ...row, metadata: { ...row.metadata, sourceIdentity: undefined } });
+    await internals.recordSourceIdentity('owner', { ...row, resultAssetId: null });
+    expect(identities.recordDevice).not.toHaveBeenCalled();
   });
 });
