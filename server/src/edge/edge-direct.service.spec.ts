@@ -16,6 +16,9 @@ const fixture = (name: string) => readFile(join(FIXTURES, name), 'utf8');
 const enrollment = { label: 'u225vlzhsdlhwh4l', domain: 'frameleaf.net' };
 const LAN_NAME = '192-168-1-10.u225vlzhsdlhwh4l.frameleaf.net';
 const RELAY_NAME = 'r.u225vlzhsdlhwh4l.frameleaf.net';
+/** Serial numbers of `wildcard.cert.pem` and of `wildcard-renewed.cert.pem` (the same names, reissued). */
+const WILDCARD_SERIAL = '330510F67D50B8376B7ABFE68031E0498A9387B7';
+const RENEWED_WILDCARD_SERIAL = '36E8100F80EF7EBC0D092F1E66A123B91B26B3DD';
 
 describe(EdgeDirectService.name, () => {
   let sut: EdgeDirectService;
@@ -23,14 +26,15 @@ describe(EdgeDirectService.name, () => {
   let port: number;
 
   const connect = (servername: string) =>
-    new Promise<{ subject: string; closedByServer: boolean }>((resolve, reject) => {
+    new Promise<{ subject: string; serial: string; closedByServer: boolean }>((resolve, reject) => {
       const socket = tls.connect({ host: '127.0.0.1', port, servername, rejectUnauthorized: false }, () => {
-        const cn = socket.getPeerCertificate().subject?.CN;
-        const subject = (Array.isArray(cn) ? cn[0] : cn) ?? '';
-        socket.once('close', () => resolve({ subject, closedByServer: true }));
+        const certificate = socket.getPeerCertificate();
+        const cn = certificate.subject?.CN;
+        const peer = { subject: (Array.isArray(cn) ? cn[0] : cn) ?? '', serial: certificate.serialNumber };
+        socket.once('close', () => resolve({ ...peer, closedByServer: true }));
         setTimeout(() => {
           socket.destroy();
-          resolve({ subject, closedByServer: false });
+          resolve({ ...peer, closedByServer: false });
         }, 200);
       });
       socket.on('error', reject);
@@ -118,6 +122,60 @@ describe(EdgeDirectService.name, () => {
     // address.
     const result = await connect('');
     expect(result.subject).toBe('u225vlzhsdlhwh4l.frameleaf.net');
+    expect(result.serial).toBe(WILDCARD_SERIAL);
+    // the connection is served like any other: no name, so it is never `lan`
+    expect(proxy.accept).toHaveBeenCalledWith(expect.anything(), { via: 'wan', clientIp: '127.0.0.1', host: null });
+  });
+
+  it('serves the wildcard certificate with no SNI when there is no custom hostname certificate', async () => {
+    sut.configure({
+      contexts: {
+        wildcard: { certificate: await fixture('wildcard.cert.pem'), key: await fixture('wildcard.key.pem') },
+      },
+      enrollment,
+      allowWan: false,
+      advertised: ['192.168.1.10'],
+    });
+    expect((await connect('')).serial).toBe(WILDCARD_SERIAL);
+  });
+
+  it('serves the renewed wildcard certificate with no SNI once a renewal swaps it in (FL-288)', async () => {
+    expect((await connect('')).serial).toBe(WILDCARD_SERIAL);
+    // a renewal: the same names, a new certificate and key, swapped in while listening
+    sut.configure({
+      contexts: {
+        wildcard: {
+          certificate: await fixture('wildcard-renewed.cert.pem'),
+          key: await fixture('wildcard-renewed.key.pem'),
+        },
+        custom: {
+          host: 'photos.example.com',
+          certificate: await fixture('custom.cert.pem'),
+          key: await fixture('custom.key.pem'),
+        },
+      },
+      enrollment,
+      allowWan: false,
+      advertised: ['192.168.1.10'],
+    });
+    const unnamed = await connect('');
+    expect(unnamed.subject).toBe('u225vlzhsdlhwh4l.frameleaf.net');
+    expect(unnamed.serial).toBe(RENEWED_WILDCARD_SERIAL);
+    // and the names keep their certificates: the renewed wildcard by name, the custom one untouched
+    expect((await connect(LAN_NAME)).serial).toBe(RENEWED_WILDCARD_SERIAL);
+    expect((await connect('photos.example.com')).subject).toBe('photos.example.com');
+  });
+
+  it('keeps serving the wildcard certificate for a name it does not know', async () => {
+    const result = await connect('elsewhere.example.org');
+    expect(result.serial).toBe(WILDCARD_SERIAL);
+  });
+
+  it('does not listen before it has a certificate, so there is nothing for a no-SNI connection to reach', async () => {
+    await sut.stop();
+    await expect(sut.start()).rejects.toThrow('The direct listener has no certificate yet');
+    expect(sut.listening).toBe(false);
+    await expect(connect('')).rejects.toMatchObject({ code: 'ECONNREFUSED' });
   });
 
   it('closes connections from outside the home in "Relay only" mode', () => {
