@@ -12,6 +12,7 @@ import {
   unlockBuddyKey,
   verifyBuddyRecovery,
   attachBuddyRecovery,
+  completeBuddyReceive,
 } from "../src/buddy-backup.mjs";
 
 test("Buddy design keeps independent directions, enforces capacity, and gates recovery", () => {
@@ -176,4 +177,37 @@ test("subscription expiry stops transfers but preserves authorized replacement r
   assert.equal(verified.scenario, "subscription");
   assert.equal(buddyStatus(verified).canSend, false);
   assert.equal(buddyStatus(verified).canReceive, false);
+});
+
+test("successful verification clears only the integrity failure", () => {
+  const failed = {
+    ...previewBuddyScenario(createBuddyState(), "integrity"),
+    sendingPaused: true,
+    receivingPaused: true,
+  };
+  assert.match(buddyStatus(failed).verification, /Failed/);
+  const verified = verifyBuddyRecovery(failed, "2 Oct, 13:42");
+  assert.equal(verified.scenario, "current");
+  assert.equal(buddyStatus(verified).verification, "2 Oct, 13:42");
+  assert.equal(buddyStatus(verified).alert, null);
+  assert.equal(buddyStatus(verified).canSend, false);
+  assert.equal(buddyStatus(verified).canReceive, false);
+});
+
+test("an interrupted incoming transfer cannot complete until receiving is allowed", () => {
+  const active = { ...createBuddyState(), receivingActive: true };
+  for (const scenario of [
+    "subscription", "ending", "blocked", "auth", "offline", "capacity",
+  ]) {
+    const interrupted = previewBuddyScenario(active, scenario);
+    assert.equal(interrupted.receivingActive, true);
+    assert.equal(buddyStatus(interrupted).canReceive, false);
+    assert.notEqual(buddyStatus(interrupted).receiving, "Receiving encrypted data");
+    assert.equal(completeBuddyReceive(interrupted), interrupted);
+  }
+  const paused = { ...active, receivingPaused: true };
+  assert.equal(completeBuddyReceive(paused), paused);
+  const idle = createBuddyState();
+  assert.equal(completeBuddyReceive(idle), idle);
+  assert.deepEqual(completeBuddyReceive(active), { ...active, receivingActive: false });
 });
