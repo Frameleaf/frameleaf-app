@@ -138,10 +138,10 @@
         "effects": { "type": "array", "items": { "$ref": "#/$defs/itemEffect" } },
         "motionModifiers": { "type": "array", "items": { "$ref": "#/$defs/motionModifier" } },
         "motionLayers": { "type": "array" },
-        "blendMode": { "type": "string" },
+        "blendMode": { "$ref": "#/$defs/blendMode" },
         "text": { "type": "string" },
         "color": { "type": "string" },
-        "textMotion": { "type": "object" },
+        "textMotion": { "$ref": "#/$defs/textMotion" },
         "textRole": { "const": "caption" },
         "captionSource": {
           "type": "object",
@@ -260,6 +260,60 @@
       },
       "additionalProperties": true
     },
+    "blendMode": {
+      "enum": [
+        "normal",
+        "dissolve",
+        "darken",
+        "multiply",
+        "color-burn",
+        "linear-burn",
+        "lighten",
+        "screen",
+        "color-dodge",
+        "linear-dodge",
+        "overlay",
+        "soft-light",
+        "hard-light",
+        "vivid-light",
+        "linear-light",
+        "pin-light",
+        "hard-mix",
+        "difference",
+        "exclusion",
+        "subtract",
+        "divide",
+        "hue",
+        "saturation",
+        "color",
+        "luminosity"
+      ]
+    },
+    "textMotionSlot": {
+      "type": "object",
+      "required": ["presetId", "durationFrames", "staggerFrames", "intensity", "order", "easing", "seed"],
+      "properties": {
+        "presetId": { "type": "string", "minLength": 1 },
+        "durationFrames": { "type": "integer", "minimum": 1 },
+        "offsetFrames": { "type": "integer", "minimum": 1 },
+        "staggerFrames": { "type": "integer", "minimum": 0 },
+        "intensity": { "type": "number", "minimum": 0, "maximum": 2 },
+        "order": { "enum": ["forward", "backward", "center", "random"] },
+        "easing": { "enum": ["linear", "ease-in", "ease-out", "ease-in-out", "overshoot"] },
+        "seed": { "type": "integer" },
+        "unit": { "enum": ["character", "word", "line", "whole-clip"] }
+      },
+      "additionalProperties": true
+    },
+    "textMotion": {
+      "type": "object",
+      "properties": {
+        "in": { "$ref": "#/$defs/textMotionSlot" },
+        "out": { "$ref": "#/$defs/textMotionSlot" },
+        "loop": { "$ref": "#/$defs/textMotionSlot" }
+      },
+      "additionalProperties": true
+    },
     "motionModifier": {
       "type": "object",
       "required": ["id", "type", "enabled", "amplitude", "frequency"],
@@ -297,9 +351,9 @@
         "rightClipId": { "$ref": "#/$defs/id" },
         "trackId": { "$ref": "#/$defs/id" },
         "durationInFrames": { "$ref": "#/$defs/length" },
-        "presentation": { "type": "string" },
-        "timing": { "type": "string" },
-        "direction": { "type": "string" },
+        "presentation": { "type": "string", "minLength": 1 },
+        "timing": { "enum": ["linear", "ease-in", "ease-out", "ease-in-out", "cubic-bezier"] },
+        "direction": { "enum": ["from-left", "from-right", "from-top", "from-bottom"] },
         "alignment": { "type": "number", "minimum": 0, "maximum": 1 },
         "bezierPoints": { "$ref": "#/$defs/bezier" },
         "presetId": { "type": "string", "minLength": 1 },
@@ -348,6 +402,26 @@
         "easing": { "$ref": "#/$defs/easing" },
         "easingConfig": { "$ref": "#/$defs/easingConfig" }
       },
+      "additionalProperties": false
+    },
+    "easeHandle": {
+      "type": "object",
+      "required": ["speed", "influence"],
+      "properties": {
+        "speed": { "type": "number" },
+        "influence": { "type": "number", "minimum": 0.1, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
+    "propertyExpression": {
+      "type": "object",
+      "required": ["type", "targetProperty", "source", "enabled"],
+      "properties": {
+        "type": { "const": "expression" },
+        "targetProperty": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean" }
+      },
       "additionalProperties": true
     },
     "vector": {
@@ -365,8 +439,21 @@
         "value": { "$ref": "#/$defs/vector" },
         "easing": { "$ref": "#/$defs/easing" },
         "easingConfig": { "$ref": "#/$defs/easingConfig" },
-        "temporalEase": { "type": "object" },
-        "spatial": { "type": "object" }
+        "temporalEase": {
+          "type": "object",
+          "properties": { "in": { "$ref": "#/$defs/easeHandle" }, "out": { "$ref": "#/$defs/easeHandle" } },
+          "additionalProperties": false
+        },
+        "spatial": {
+          "type": "object",
+          "required": ["inTangent", "outTangent"],
+          "properties": {
+            "inTangent": { "$ref": "#/$defs/vector" },
+            "outTangent": { "$ref": "#/$defs/vector" },
+            "continuous": { "const": true }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": true
     },
@@ -389,6 +476,7 @@
         },
         "vectorProperties": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "type": "object",
             "required": ["property", "keyframes"],
@@ -398,9 +486,13 @@
             }
           }
         },
-        "separatedVectorProperties": { "type": "array", "items": { "enum": ["position", "scale", "anchor"] } },
-        "propertyLinks": { "type": "array" },
-        "expressions": { "type": "array" }
+        "separatedVectorProperties": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["position", "scale", "anchor"] }
+        },
+        "propertyLinks": { "type": "array", "minItems": 1 },
+        "expressions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/propertyExpression" } }
       },
       "additionalProperties": false
     },

@@ -7,7 +7,14 @@ import { GPU_EFFECT_REGISTRY } from '@/infrastructure/gpu-effects'
 import { transitionRegistry } from '@/shared/timeline/transitions/registry'
 import '@/shared/timeline/transitions'
 import { BLEND_MODE_GROUPS, BLEND_MODE_INDEX } from '@/types/blend-modes'
-import { DEFAULT_BEZIER_POINTS, DEFAULT_SPRING_PARAMS } from '@/types/keyframe'
+import {
+  DEFAULT_BEZIER_POINTS,
+  DEFAULT_SPRING_PARAMS,
+  PROPERTY_LABELS,
+  isDirectLinkableProperty,
+  isVectorAnimatableProperty,
+} from '@/types/keyframe'
+import { getActiveMotionModifierChannels } from '@/features/keyframes/utils/motion-modifier-eval'
 import {
   TEXT_MOTION_IN_PRESET_IDS,
   TEXT_MOTION_LOOP_PRESET_IDS,
@@ -135,6 +142,9 @@ function build() {
     .sort(([, a], [, b]) => a - b)
     .map(([id, index]) => ({ id, index, group: groupOf.get(id as never) ?? null }))
 
+  const scalarProperties = Object.keys(PROPERTY_LABELS)
+  const vectorProperties = ['position', 'scale', 'anchor'].filter((property) => isVectorAnimatableProperty(property))
+
   const catalogue = {
     format: 'frameleaf-studio-graph-parameters',
     version: 1,
@@ -152,7 +162,25 @@ function build() {
       bezierDefault: { ...DEFAULT_BEZIER_POINTS },
       springDefault: { ...DEFAULT_SPRING_PARAMS },
     },
-    motionModifiers: { types: [...MODIFIER_TYPES] },
+    // The properties keyframes, expressions and modifiers name (13.2.5).
+    properties: {
+      scalar: scalarProperties,
+      vector: vectorProperties,
+      expression: [...scalarProperties, ...vectorProperties].filter((property) => isDirectLinkableProperty(property)),
+    },
+    // Each modifier type with the channels it drives when every gain is at its default of 1.
+    motionModifiers: MODIFIER_TYPES.map((type) => ({
+      id: type,
+      channels: getActiveMotionModifierChannels({
+        id: type,
+        type,
+        enabled: true,
+        amplitude: 1,
+        frequency: 1,
+        phaseFrames: 0,
+        seed: 1,
+      }),
+    })),
     textMotion: {
       in: [...TEXT_MOTION_IN_PRESET_IDS],
       out: [...TEXT_MOTION_OUT_PRESET_IDS],
