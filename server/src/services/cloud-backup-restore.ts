@@ -6,9 +6,9 @@ import type { StorageRepository } from 'src/repositories/storage.repository.js';
 import type { RestoreDetailsMode } from 'src/utils/cloud-backup-details.js';
 import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { CloudBackupBucket, CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
+import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
 import { assertOwnerRestoreFile, captureOwnerRestoreFile } from 'src/utils/cloud-backup-owner-path.js';
 import { CloudBackupManifest, objectKey } from 'src/utils/cloud-backup.js';
-import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
 

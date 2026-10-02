@@ -106,7 +106,7 @@ const escrowKey = (passphrase: string, salt: Buffer) => {
   if (typeof passphrase !== 'string' || passphrase.length < 12 || Buffer.byteLength(passphrase) > 1024)
     throw new Error('Use a recovery passphrase of at least 12 characters and at most 1024 bytes');
   return new Promise<Buffer>((resolve, reject) =>
-    scrypt(passphrase, salt, 32, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 ** 2 }, (error, key) =>
+    scrypt(passphrase, salt, 32, { N: 32_768, r: 8, p: 1, maxmem: 64 * 1024 ** 2 }, (error, key) =>
       error ? reject(error) : resolve(key),
     ),
   );
@@ -140,7 +140,7 @@ export const unwrapBuddyKeyring = async (escrow: BuddyEscrow, passphrase: string
     escrow?.version !== 1 ||
     !BUDDY_UUID.test(escrow.vaultId) ||
     typeof escrow.blob !== 'string' ||
-    escrow.blob.length > 32768 ||
+    escrow.blob.length > 32_768 ||
     !/^[\w-]+$/.test(escrow.blob)
   )
     throw new Error('Invalid encrypted recovery package');

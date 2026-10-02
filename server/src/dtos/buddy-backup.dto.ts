@@ -163,7 +163,7 @@ export const BuddyEscrowSchema = z.strictObject({
   blob: z
     .string()
     .min(64)
-    .max(32768)
+    .max(32_768)
     .regex(/^[A-Za-z0-9_-]+$/),
 });
 const passphrase = z.string().min(12).max(1024);

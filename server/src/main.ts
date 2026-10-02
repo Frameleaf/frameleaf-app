@@ -9,8 +9,8 @@ import { DatabaseLock, ExitCode, ImmichWorker, LogLevel, SystemMetadataKey } fro
 import { ConfigRepository, warnDeprecatedEnv } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
-import { getKyselyConfig } from 'src/utils/database.js';
 import { buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
+import { getKyselyConfig } from 'src/utils/database.js';
 import { chooseBootWorkers, isFirstLaunchHandover } from 'src/utils/first-launch.js';
 import { SupervisorStop, WORKER_STOP_MESSAGE } from 'src/utils/shutdown.js';
 

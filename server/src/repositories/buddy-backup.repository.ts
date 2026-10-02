@@ -1,14 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql, type Transaction } from 'kysely';
+import { Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { BuddyPairing } from 'src/utils/frameleaf-buddy.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DB } from 'src/schema/index.js';
-import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
-import type { BuddyPairing } from 'src/utils/frameleaf-buddy.js';
+import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 
 export type BuddySettings = {
   directory: string;

@@ -6,17 +6,17 @@ import { constants } from 'node:fs';
 import { access, readFile, readdir, realpath, rm, stat, statfs } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type z from 'zod';
-import { StorageCore } from 'src/cores/storage.core.js';
-import { OnEvent } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
   BuddyControlDto,
   BuddyKitDto,
+  BuddyPreflightRequestDto,
   BuddySettingsDto,
   BuddyStatusDto,
-  BuddyPreflightRequestDto,
 } from 'src/dtos/buddy-backup.dto.js';
+import type z from 'zod';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnEvent } from 'src/decorators.js';
 import {
   DatabaseLock,
   ImmichWorker,
@@ -29,38 +29,38 @@ import {
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperationRepository, type MediaOperation } from 'src/repositories/media-operation.repository.js';
+import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
 import { BuddyBackupClient, BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
-import { buddyInside } from 'src/utils/buddy-backup-recovery.js';
-import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
-import { assertBuddyCommitReceipt } from 'src/utils/buddy-backup-protocol.js';
 import {
+  type BuddyKeyring,
   buddyObjectId,
   createBuddyKeyring,
   decryptBuddyBlock,
   encryptBuddyBlock,
   parseBuddyKeyring,
-  type BuddyKeyring,
 } from 'src/utils/buddy-backup-crypto.js';
+import { assertBuddyCommitReceipt } from 'src/utils/buddy-backup-protocol.js';
+import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
+import { buddyInside } from 'src/utils/buddy-backup-recovery.js';
 import {
+  type BuddyReceipt,
+  type BuddySignedSnapshot,
   BuddyVault,
   buddySnapshotBytes,
   createBuddyDirectory,
   writeBuddyFile,
-  type BuddyReceipt,
-  type BuddySignedSnapshot,
 } from 'src/utils/buddy-backup-vault.js';
 import {
+  type BuddyAcceptRequest,
   BuddyAction,
   BuddyGrantResponse,
+  type BuddyInviteRequest,
+  BuddyInviteResponse,
   BuddyPairing,
   BuddyStatusResponse,
-  BuddyInviteResponse,
-  type BuddyInviteRequest,
-  type BuddyAcceptRequest,
 } from 'src/utils/frameleaf-buddy.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 
@@ -174,7 +174,7 @@ export class BuddyBackupService {
       hostingAvailableBytes = await available(parent).catch(() => null);
     }
     return {
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timezone: new Intl.DateTimeFormat().resolvedOptions().timeZone,
       items: Number(rows[0].items),
       originalBytes: Number(rows[0].bytes),
       unknownSizes: Number(rows[0].unknown),
@@ -233,7 +233,7 @@ export class BuddyBackupService {
       if (current.settings && current.settings.directory !== directory)
         throw new ConflictException('Export or move the hosted vault before choosing another hosting directory.');
       const entries = await readdir(directory);
-      if (entries.length && !entries.includes('frameleaf-buddy-vault.json'))
+      if (entries.length > 0 && !entries.includes('frameleaf-buddy-vault.json'))
         throw new BadRequestException('Choose an empty dedicated hosting directory.');
       if (entries.includes('frameleaf-buddy-vault.json')) {
         const existing = JSON.parse(await readFile(marker, 'utf8'));
@@ -372,24 +372,26 @@ export class BuddyBackupService {
     return this.status();
   }
 
-  async client(scope: 'read' | 'write') {
+  client(scope: 'read' | 'write') {
     let grant: z.infer<typeof BuddyGrantResponse> | null = null;
-    return new BuddyBackupClient(
-      async () => {
-        if (!grant || Date.parse(grant.expiresAt) < Date.now() + 30_000) grant = await this.peer.grant(scope);
-        return grant;
-      },
-      () => this.peer.signer(),
-      async (bytes, direction) => {
-        const settings = (await this.repository.state()).settings;
-        const mbps = (direction === 'upload' ? settings?.uploadMbps : settings?.downloadMbps) ?? 20;
-        const units = Math.max(1, Math.ceil(bytes / (64 * 1024)));
-        for (let unit = 0; unit < units; unit++) {
-          const hit = await this.rates.hit(`buddy:bandwidth:${direction}`, 1);
-          if (hit.count > Math.max(1, Math.floor((mbps * 1_000_000) / (8 * 64 * 1024))))
-            await sleep(hit.resetSeconds * 1000);
-        }
-      },
+    return Promise.resolve(
+      new BuddyBackupClient(
+        async () => {
+          if (!grant || Date.parse(grant.expiresAt) < Date.now() + 30_000) grant = await this.peer.grant(scope);
+          return grant;
+        },
+        () => this.peer.signer(),
+        async (bytes, direction) => {
+          const settings = (await this.repository.state()).settings;
+          const mbps = (direction === 'upload' ? settings?.uploadMbps : settings?.downloadMbps) ?? 20;
+          const units = Math.max(1, Math.ceil(bytes / (64 * 1024)));
+          for (let unit = 0; unit < units; unit++) {
+            const hit = await this.rates.hit(`buddy:bandwidth:${direction}`, 1);
+            if (hit.count > Math.max(1, Math.floor((mbps * 1_000_000) / (8 * 64 * 1024))))
+              await sleep(hit.resetSeconds * 1000);
+          }
+        },
+      ),
     );
   }
 
@@ -522,7 +524,7 @@ export class BuddyBackupService {
 
   private async drain() {
     if (Date.now() >= this.housekeepingAt) {
-      this.housekeepingAt = Date.now() + 3600_000;
+      this.housekeepingAt = Date.now() + 3_600_000;
       await this.housekeeping().catch(() =>
         this.logger.warn('Buddy protection checks are waiting for Cloud or local storage.'),
       );
@@ -564,7 +566,7 @@ export class BuddyBackupService {
           }));
         } else if (
           state.lastCompleteAt &&
-          (!state.lastVerifiedAt || Date.parse(state.lastVerifiedAt) < Date.now() - 7 * 86400_000)
+          (!state.lastVerifiedAt || Date.parse(state.lastVerifiedAt) < Date.now() - 7 * 86_400_000)
         ) {
           const admin = await this.repository.db
             .selectFrom('user')
@@ -588,7 +590,9 @@ export class BuddyBackupService {
 
   private async run(operation: MediaOperation, token: string) {
     const id = operation.id;
-    const alive = setInterval(() => this.operations.heartbeat(id, token, LEASE_MS).catch(() => false), LEASE_MS / 4);
+    const alive = setInterval(() => {
+      void this.operations.heartbeat(id, token, LEASE_MS).catch(() => false);
+    }, LEASE_MS / 4);
     let cancelled = false;
     try {
       if (
@@ -607,7 +611,7 @@ export class BuddyBackupService {
         const bound = operation.snapshot as { pairId: string; vaultId: string; keyVersion: number; task: string };
         if (
           state.pairing?.pairId !== bound.pairId ||
-          !state.pairing.vaults.some((vault) => vault.vaultId === bound.vaultId) ||
+          state.pairing.vaults.every((vault) => vault.vaultId !== bound.vaultId) ||
           state.pairing.state === 'blocked' ||
           (bound.task === 'backup' &&
             (state.pairing.state !== 'active' || process.env.FRAMELEAF_BUDDY_BACKUP !== 'true'))
@@ -652,9 +656,9 @@ export class BuddyBackupService {
         const reader = new BuddyBackupReader(ring, envelope, (id) => client.request<Buffer>('GET', `objects/${id}`));
         const manifest = await reader.manifest();
         const selected = envelope.snapshot.objects.filter(
-          (_, index) => index % 52 === Math.floor(Date.now() / (7 * 86400_000)) % 52,
+          (_, index) => index % 52 === Math.floor(Date.now() / (7 * 86_400_000)) % 52,
         );
-        const sample = selected.length ? selected : envelope.snapshot.objects.slice(0, 1);
+        const sample = selected.length > 0 ? selected : envelope.snapshot.objects.slice(0, 1);
         for (const receipt of sample) {
           await checkpoint();
           const encrypted = await client.request<Buffer>('GET', `objects/${receipt.id}`);
@@ -665,7 +669,7 @@ export class BuddyBackupService {
           );
         }
         const files = Object.entries(manifest.contents);
-        const chosen = files[Math.floor(Date.now() / (7 * 86400_000)) % files.length];
+        const chosen = files[Math.floor(Date.now() / (7 * 86_400_000)) % files.length];
         if (!chosen) throw new Error('The Buddy snapshot has no recoverable content');
         const isolated = join(this.repository.root(), 'verification', operation.id);
         try {
@@ -753,7 +757,7 @@ export class BuddyBackupService {
           sequence: captured.manifest.sequence,
           previous: captured.manifest.previous,
           createdAt: new Date().toISOString(),
-          retainUntil: new Date(Date.now() + 31 * 86400_000).toISOString(),
+          retainUntil: new Date(Date.now() + 31 * 86_400_000).toISOString(),
           keyVersion: ring.current,
           manifest: captured.manifestBlocks,
           objects: captured.objects,
@@ -868,7 +872,7 @@ export class BuddyBackupService {
         dedupeDays: 1,
       });
     const protectedSince = state.lastCompleteAt ?? state.protectionStartedAt ?? state.run?.startedAt;
-    if (protectedSince && Date.parse(protectedSince) < Date.now() - 3 * 86400_000)
+    if (protectedSince && Date.parse(protectedSince) < Date.now() - 3 * 86_400_000)
       await alert(
         'stale',
         'Buddy Backup is out of date',
@@ -888,7 +892,7 @@ export class BuddyBackupService {
         'Your Buddy pairing has ended',
         `Recover your backup before ${state.pairing.readUntil}. New backups have stopped.`,
       );
-    if (state.pairing.state === 'blocked')
+    else if (state.pairing.state === 'blocked')
       await alert(
         'blocked',
         'Buddy access was blocked',

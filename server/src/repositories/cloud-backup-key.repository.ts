@@ -72,7 +72,7 @@ export class CloudBackupKeyRepository {
       try {
         const before = await file.stat();
         if (!before.isFile() || before.size > 16_384) throw new Error('Stored backup key is unavailable');
-        const content = await file.readFile('utf8');
+        const content = await file.readFile({ encoding: 'utf8' });
         const after = await file.stat();
         if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs)
           throw new Error('Stored backup key changed during capture');
