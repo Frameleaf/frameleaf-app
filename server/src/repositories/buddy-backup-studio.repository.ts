@@ -1,7 +1,7 @@
 import { type Kysely, type Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetLockReason, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
+import { AssetLockReason, MediaOperationKind, MediaOperationStatus, StudioExportScope } from 'src/enum.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
@@ -130,7 +130,7 @@ export class BuddyBackupStudioRepository {
     // Project deletion detaches published exports instead of deleting them; their previous
     // file remains part of the rebind even while projectId is null.
     const previousExports = await sql<{ record: Row }>`SELECT to_jsonb(item) AS record FROM public.studio_export_version item
-      WHERE id = ANY(${project.exports.map((row) => row.id)}::uuid[])`.execute(trx);
+      WHERE id = ANY(${project.exports.map((row) => row.id)}::uuid[]) ORDER BY id FOR UPDATE`.execute(trx);
     const previousFiles = [...await this.rows(tables.imported, 'projectId', project.id),
       ...await this.rows(tables.generated, 'projectId', project.id), ...previousExports.rows.map((row) => row.record)];
     const previousPaths = previousFiles.flatMap((row) => [row.path, row.outputPath].filter((path): path is string => typeof path === 'string'));
@@ -149,7 +149,9 @@ export class BuddyBackupStudioRepository {
     for (const imported of project.imports) await validateBuddyStudioImport(imported, target(imported.path));
     const assetIds = buddyStudioAssetIds(options.manifest, project);
     const privacy = new DerivativePrivacyRepository(trx);
-    const sources = await privacy.lockSources(trx, assetIds);
+    const currentResultIds = previousExports.rows.flatMap(({ record }) =>
+      typeof record.resultAssetId === 'string' ? [record.resultAssetId] : []);
+    const sources = await privacy.lockSources(trx, [...new Set([...assetIds, ...currentResultIds])].sort());
     for (const id of assetIds) {
       const source = sources.get(id);
       if (!source || source.ownerId !== project.ownerId || source.deleted || source.offline)
@@ -192,7 +194,14 @@ export class BuddyBackupStudioRepository {
     for (const exported of project.exports) {
       const evidence = exported.sources.flatMap((row) => row.assetId ? [sources.get(row.assetId)!] : []);
       const inherited = unionDerivativePrivacy(project.ownerId, evidence, { nsfwHiding: true });
-      const previous = (await this.rows(tables.exported, 'id', exported.id))[0];
+      const previous = previousExports.rows.find(({ record }) => record.id === exported.id)?.record;
+      // Save to library promotes this same immutable publication. Both restore policies keep
+      // its current result binding; Replace only restores the project document, never demotes
+      // a published library item or retires the file already adopted by that item.
+      const promoted = exported.scope === StudioExportScope.Project && exported.resultAssetId === null &&
+        previous?.scope === StudioExportScope.Library && typeof previous.resultAssetId === 'string'
+        ? buddyStudioExportSchema.parse({ ...previous, projectId: previous.projectId ?? exported.projectId, sources: [] })
+        : null;
       for (const value of [exported.privacy, previous?.privacy as Row | null | undefined]) {
         const reason = value?.lockReason;
         if (reason != null && !Object.values(AssetLockReason).includes(reason as AssetLockReason))
@@ -200,13 +209,21 @@ export class BuddyBackupStudioRepository {
         inherited.lockReason = strongestLockReason([inherited.lockReason, (reason ?? null) as AssetLockReason | null]);
         inherited.sensitive ||= value?.sensitive === true;
       }
-      if (exported.resultAssetId) {
-        const result = sources.get(exported.resultAssetId)!;
+      const resultAssetId = promoted?.resultAssetId ?? exported.resultAssetId;
+      if (resultAssetId) {
+        const result = sources.get(resultAssetId);
+        if (!result || result.ownerId !== project.ownerId || result.deleted || result.offline)
+          throw new Error('Buddy Studio result is no longer owned and available');
+        if (promoted && Buffer.from(result.checksum, 'base64').toString('hex') !== exported.outputChecksum)
+          throw new Error('Buddy Studio promoted result content changed');
         if (!satisfiesDerivativePrivacy(result, inherited)) throw new Error('Buddy Studio result privacy changed');
       }
       const { sources: capturedSources, ...record } = exported;
-      await this.put(tables.exported, { ...record, outputPath: record.outputPath ? target(record.outputPath) : null,
-        outputRemovedAt: null, privacy: { ...inherited, scope: exported.scope } }, ['id'],
+      const scope = promoted?.scope ?? exported.scope;
+      await this.put(tables.exported, { ...record, scope, resultAssetId,
+        outputPath: promoted ? promoted.outputPath : record.outputPath ? target(record.outputPath) : null,
+        outputRemovedAt: promoted ? previous?.outputRemovedAt ?? null : null,
+        privacy: { ...inherited, scope } }, ['id'],
         ['projectId', 'ownerId', 'revision', 'revisionDigest', 'version', 'scope', 'outputChecksum', 'outputSizeInBytes',
           'outputContentType', 'resultAssetId', 'createdAt'],
         (row) => buddyStudioExportSchema.parse({ ...row, projectId: row.projectId ?? exported.projectId,

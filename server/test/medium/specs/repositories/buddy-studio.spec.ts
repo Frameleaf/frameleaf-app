@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { JobName, MediaOperationDestination, MediaOperationKind, MediaOperationStatus, StorageFolder,
+import { AssetLockReason, AssetType, ChecksumAlgorithm, JobName, MediaOperationDestination, MediaOperationKind, MediaOperationStatus, StorageFolder,
   StudioExportScope, StudioExportVersionState } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -31,7 +31,7 @@ import { buddyStudioFiles, buddyStudioProjectIds, readBuddyStudioProject } from 
 import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 import { checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
-import { studioExportProjectPath, studioExportStagingFolder } from 'src/utils/studio-export.js';
+import { studioExportLibraryPath, studioExportProjectPath, studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
 
@@ -135,6 +135,116 @@ describe('Buddy Studio library fidelity', () => {
     return { service, operation, token: claimed.claimToken, operations,
       run: () => service.run(claimed.operation, claimed.claimToken) };
   };
+
+  const retainedExport = async () => {
+    const project = await db.insertInto('studio_project').values({ ownerId, name: 'Promoted result', currentRevision: 1 })
+      .returningAll().executeTakeFirstOrThrow();
+    const saved = await revision(project.id, 1, { title: 'Captured cut', tracks: [] });
+    const id = randomUUID();
+    const content = 'Verified retained export bytes';
+    const output = { path: studioExportProjectPath(ownerId, id, '.mp4'), role: 'project',
+      sha256: hash(content), size: Buffer.byteLength(content), mtime: null };
+    await mkdir(dirname(output.path), { recursive: true });
+    await writeFile(output.path, content);
+    inventory.set(output.path, output);
+    const exported = await db.insertInto('studio_export_version').values({ id, ownerId, projectId: project.id,
+      revision: 1, revisionDigest: saved.digest, state: StudioExportVersionState.Published, version: 1,
+      scope: StudioExportScope.Project, destination: MediaOperationDestination.Local, settings: {},
+      outputPath: output.path, outputChecksum: Buffer.from(output.sha256, 'hex'), outputSizeInBytes: output.size,
+      outputContentType: 'video/mp4', publishedAt: new Date() }).returningAll().executeTakeFirstOrThrow();
+    return { project, saved, output, exported };
+  };
+
+  const promoteExport = async ({ output, exported }: Awaited<ReturnType<typeof retainedExport>>, duplicate = false) => {
+    const path = studioExportLibraryPath(ownerId, exported.id, '.mp4');
+    await mkdir(dirname(path), { recursive: true });
+    // The old file remains the fixture's immutable backup reader; promotion adopts a real copy.
+    await writeFile(path, await readFile(output.path));
+    let duplicateId: string | null = null;
+    if (duplicate) {
+      const originalPath = studioExportLibraryPath(ownerId, randomUUID(), '.mp4');
+      await mkdir(dirname(originalPath), { recursive: true });
+      await writeFile(originalPath, await readFile(output.path));
+      duplicateId = (await ctx.newAsset({ ownerId, originalPath, checksum: Buffer.from(output.sha256, 'hex'),
+        checksumAlgorithm: ChecksumAlgorithm.sha256File, type: AssetType.Video })).asset.id;
+    }
+    const repository = new StudioExportRepository(db, new DerivativePrivacyRepository(db),
+      new ForkPrivacyRepository(db), new ForkEnrichmentRepository(db));
+    const promoted = await repository.saveToLibrary({ versionId: exported.id, ownerId, sources: [], nsfwHiding: true,
+      path, checksum: Buffer.from(output.sha256, 'hex'), sizeInBytes: output.size, contentType: 'video/mp4',
+      assetType: AssetType.Video, originalFileName: 'Promoted result.mp4' });
+    expect(promoted.version).toMatchObject({ scope: StudioExportScope.Library,
+      resultAssetId: duplicate ? duplicateId : promoted.createdAssetId, outputPath: duplicate ? null : path });
+    if (duplicate) {
+      expect(promoted.reusedAssetId).toBe(duplicateId);
+      await rm(path); // The normal save service removes this unreferenced duplicate copy.
+    }
+    return promoted.version;
+  };
+
+  it.each([
+    ['keep', false], ['replace', false], ['keep', true], ['replace', true],
+  ] as const)('%s preserves a verified Save to library promotion (deduplicated: %s)', async (mode, duplicate) => {
+    const fixture = await retainedExport();
+    const manifest = await capture();
+    const promoted = await promoteExport(fixture, duplicate);
+    const asset = await db.selectFrom('asset').selectAll().where('id', '=', promoted.resultAssetId!).executeTakeFirstOrThrow();
+    const newer = await revision(fixture.project.id, 2, { title: 'Current cut', tracks: [] });
+    await db.updateTable('studio_project').set({ currentRevision: 2 }).where('id', '=', fixture.project.id).execute();
+    const job = await worker(manifest, mode);
+    await job.run();
+    expect((await job.operations.getOfKind(job.operation.id, MediaOperationKind.BuddyRestore))?.status)
+      .toBe(MediaOperationStatus.Completed);
+    const version = await db.selectFrom('studio_export_version').selectAll().where('id', '=', promoted.id).executeTakeFirstOrThrow();
+    expect(version).toMatchObject({ id: promoted.id, ownerId, projectId: fixture.project.id,
+      revision: promoted.revision, revisionDigest: promoted.revisionDigest, version: promoted.version,
+      scope: StudioExportScope.Library, resultAssetId: asset.id, outputPath: promoted.outputPath,
+      outputChecksum: promoted.outputChecksum, outputSizeInBytes: promoted.outputSizeInBytes,
+      outputContentType: promoted.outputContentType, outputRemovedAt: promoted.outputRemovedAt, privacy: promoted.privacy });
+    expect(await db.selectFrom('asset').selectAll().where('id', '=', asset.id).executeTakeFirstOrThrow()).toEqual(asset);
+    expect(hash(await readFile(asset.originalPath))).toBe(fixture.output.sha256);
+    expect(job.service.jobs.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete,
+      data: expect.objectContaining({ files: expect.arrayContaining([asset.originalPath]) }) }));
+    const history = await db.selectFrom('studio_project_revision').selectAll()
+      .where('projectId', '=', fixture.project.id).orderBy('revision').execute();
+    expect(history.slice(0, 2)).toEqual([fixture.saved, newer]);
+    expect(history).toHaveLength(mode === 'keep' ? 2 : 3);
+    if (mode === 'replace') expect(history[2]).toMatchObject({ revision: 3, restoredFromRevision: 1,
+      digest: fixture.saved.digest, envelope: fixture.saved.envelope });
+    expect((await db.selectFrom('studio_project').select('currentRevision')
+      .where('id', '=', fixture.project.id).executeTakeFirstOrThrow()).currentRevision).toBe(mode === 'keep' ? 2 : 3);
+  });
+
+  it.each([
+    ['keep', 'unrelated'], ['replace', 'unrelated'], ['keep', 'foreign'], ['replace', 'foreign'],
+    ['keep', 'privacy'], ['replace', 'privacy'],
+  ] as const)('%s refuses a promoted result with %s evidence', async (mode, mismatch) => {
+    const fixture = await retainedExport();
+    const manifest = await capture();
+    const promoted = await promoteExport(fixture);
+    if (mismatch === 'privacy') {
+      await db.updateTable('studio_export_version').set({ privacy: { ...promoted.privacy, lockReason: AssetLockReason.Marked } })
+        .where('id', '=', promoted.id).execute();
+    } else {
+      const resultOwner = mismatch === 'foreign' ? (await ctx.newUser()).user.id : ownerId;
+      const bytes = mismatch === 'foreign' ? await readFile(fixture.output.path) : Buffer.from('Unrelated result bytes');
+      const originalPath = studioExportLibraryPath(resultOwner, randomUUID(), '.mp4');
+      await mkdir(dirname(originalPath), { recursive: true });
+      await writeFile(originalPath, bytes);
+      const { asset } = await ctx.newAsset({ ownerId: resultOwner, originalPath, checksum: Buffer.from(hash(bytes), 'hex'),
+        checksumAlgorithm: ChecksumAlgorithm.sha256File, type: AssetType.Video });
+      await db.updateTable('studio_export_version').set({ resultAssetId: asset.id }).where('id', '=', promoted.id).execute();
+    }
+    const before = await db.selectFrom('studio_export_version').selectAll().where('id', '=', promoted.id).executeTakeFirstOrThrow();
+    const job = await worker(manifest, mode);
+    await job.run();
+    expect((await job.operations.getOfKind(job.operation.id, MediaOperationKind.BuddyRestore))?.status)
+      .toBe(MediaOperationStatus.Failed);
+    expect(await db.selectFrom('studio_export_version').selectAll().where('id', '=', promoted.id).executeTakeFirstOrThrow()).toEqual(before);
+    expect(hash(await readFile(promoted.outputPath!))).toBe(fixture.output.sha256);
+    expect(job.service.jobs.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete,
+      data: expect.objectContaining({ files: expect.arrayContaining([promoted.outputPath]) }) }));
+  });
 
   it('restores an unanchored project archive with comments, imports, generated files and exports; keep and replace preserve immutable history', async () => {
     const { project, imported, importId, saved } = await seed();
