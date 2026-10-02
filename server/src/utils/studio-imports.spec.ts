@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  STUDIO_IMPORT_CAPTIONS_MAX_BYTES,
+  STUDIO_IMPORT_LUT_MAX_BYTES,
+  STUDIO_IMPORT_LUT_MAX_SIZE,
   StudioImportRefusal,
   scanStudioLottie,
   scanStudioSvg,
   scanStudioVector,
   sniffStudioImport,
+  studioImportKind,
+  validateStudioCubeLut,
+  validateStudioImportText,
+  validateStudioSubRip,
+  validateStudioWebVtt,
 } from 'src/utils/studio-imports.js';
 
 const bytes = (...parts: Array<string | number[]>) => {
@@ -141,5 +149,152 @@ describe('scanStudioLottie', () => {
 
   it('scans only vector imports', () => {
     expect(scanStudioVector({ contentType: 'audio/wav', kind: 'audio', extension: '.wav' }, '')).toBeUndefined();
+  });
+});
+
+const bom = String.fromCodePoint(0xfe_ff);
+const srt =
+  '1\n00:00:01,000 --> 00:00:02,500\nHello <i>there</i>\nsecond line\n\n2\n00:00:03,000 --> 00:00:04,000\nBye\n';
+const vtt =
+  'WEBVTT - demo\nKind: captions\n\nNOTE made by hand\n\nintro\n00:01.000 --> 00:02.500 align:start line:90%\nHello\n';
+const cube = (size: number, rows = size ** 3, head = '') =>
+  `# made for a test\nTITLE "Warm"\n${head}LUT_3D_SIZE ${size}\n\n${'0.5 0.25 1.0\n'.repeat(rows)}`;
+
+describe('caption files and LUTs (FL-105)', () => {
+  it.each([
+    ['SubRip', srt, 'application/x-subrip', 'captions', '.srt'],
+    [
+      'SubRip with a byte-order mark and CRLF',
+      `${bom}${srt.replaceAll('\n', '\r\n')}`,
+      'application/x-subrip',
+      'captions',
+      '.srt',
+    ],
+    ['WebVTT', vtt, 'text/vtt', 'captions', '.vtt'],
+    ['a .cube LUT', cube(2), 'text/x-cube-lut', 'lut', '.cube'],
+    ['a .cube LUT that opens with its size', 'LUT_3D_SIZE 2\n', 'text/x-cube-lut', 'lut', '.cube'],
+  ])('reads %s from its bytes, whatever it is called', (_name, body, contentType, kind, extension) => {
+    const type = sniffStudioImport(text(body), 'application/octet-stream');
+    expect(type).toEqual({ contentType, kind, extension });
+    expect(studioImportKind(contentType)).toBe(kind);
+  });
+
+  it.each([
+    ['plain text', 'Dear diary,\ntoday I edited a film.\n'],
+    ['a shell script', '#!/bin/sh\nrm -rf /\n'],
+    ['only comments', '# TITLE\n# LUT_3D_SIZE 2\n'],
+    ['CSV', '1,2,3\n4,5,6\n'],
+    ['a number and no timing', '1\nhello\n'],
+    ['WEBVTT as the start of a word', 'WEBVTTX\n\n00:01.000 --> 00:02.000\nHi\n'],
+    ['a cube keyword as the start of a word', 'TITLED "x"\nLUT_3D_SIZE 2\n'],
+  ])('refuses %s', (_name, body) => {
+    expect(() => sniffStudioImport(text(body), 'text/vtt')).toThrow(StudioImportRefusal);
+  });
+
+  it('accepts well-formed SubRip', () => {
+    expect(() => validateStudioSubRip(srt)).not.toThrow();
+    expect(() => validateStudioSubRip(`${bom}${srt.replaceAll('\n', '\r\n')}`)).not.toThrow();
+    expect(() =>
+      validateStudioSubRip('7\n00:00:01.000 --> 00:00:02.000 X1:10 X2:20 Y1:30 Y2:40\nplaced\n'),
+    ).not.toThrow();
+    expect(() => validateStudioSubRip('1\n100:00:01,000 --> 100:00:01,000\n')).not.toThrow();
+  });
+
+  it.each([
+    ['nothing after the head', '\n\n'],
+    ['a caption without a number', '00:00:01,000 --> 00:00:02,000\nHi\n'],
+    ['a caption without timing', '1\nHi\n'],
+    ['a time that runs backwards', '1\n00:00:05,000 --> 00:00:02,000\nHi\n'],
+    ['minutes past 59', '1\n00:61:00,000 --> 00:62:00,000\nHi\n'],
+    ['seconds past 59', '1\n00:00:75,000 --> 00:01:00,000\nHi\n'],
+    ['a short timestamp', '1\n0:00:01,000 --> 0:00:02,000\nHi\n'],
+    ['text after the timing', '1\n00:00:01,000 --> 00:00:02,000 <script>\nHi\n'],
+    ['a second timing line', '1\n00:00:01,000 --> 00:00:02,000\n00:00:03,000 --> 00:00:04,000\n'],
+    ['a text gap inside a caption', `${srt}\nstray words\n`],
+    ['a trailing document', `${srt}\n<html><body>hello</body></html>\n`],
+    ['a control character', '1\n00:00:01,000 --> 00:00:02,000\nHi\u{0}\n'],
+    ['an escape sequence', '1\n00:00:01,000 --> 00:00:02,000\n\u{1B}[31mHi\n'],
+  ])('refuses SubRip with %s', (_name, body) => {
+    expect(() => validateStudioSubRip(body)).toThrow(StudioImportRefusal);
+  });
+
+  it('accepts well-formed WebVTT', () => {
+    expect(() => validateStudioWebVtt(vtt)).not.toThrow();
+    expect(() => validateStudioWebVtt(`${bom}${vtt.replaceAll('\n', '\r\n')}`)).not.toThrow();
+    expect(() =>
+      validateStudioWebVtt(
+        'WEBVTT\n\nSTYLE\n::cue { color: yellow }\n\nREGION\nid:top\nwidth:40%\n\n01:00:01.000 --> 01:00:02.000 region:top\n<v Ana>Hi\n',
+      ),
+    ).not.toThrow();
+  });
+
+  it.each([
+    ['no signature', '00:01.000 --> 00:02.000\nHi\n'],
+    ['a signature that runs on', 'WEBVTTX\n\n00:01.000 --> 00:02.000\nHi\n'],
+    ['no captions', 'WEBVTT\n\nNOTE nothing here\n'],
+    ['a caption in the header', 'WEBVTT\n00:01.000 --> 00:02.000\nHi\n'],
+    ['a comma in a timestamp', 'WEBVTT\n\n00:01,000 --> 00:02,000\nHi\n'],
+    ['a time that runs backwards', 'WEBVTT\n\n00:05.000 --> 00:02.000\nHi\n'],
+    ['seconds past 59', 'WEBVTT\n\n00:75.000 --> 01:80.000\nHi\n'],
+    ['a malformed setting', 'WEBVTT\n\n00:01.000 --> 00:02.000 <b>\nHi\n'],
+    ['a block that is not a caption', 'WEBVTT\n\njust some words\nand more\n'],
+    ['a second timing line', 'WEBVTT\n\n00:01.000 --> 00:02.000\n00:03.000 --> 00:04.000\n'],
+    [
+      'a style that loads a file',
+      'WEBVTT\n\nSTYLE\n::cue { background: url(https://tracker.example/p.png) }\n\n00:01.000 --> 00:02.000\nHi\n',
+    ],
+    ['a style import', 'WEBVTT\n\nSTYLE\n@import "https://tracker.example/a.css";\n\n00:01.000 --> 00:02.000\nHi\n'],
+    ['a style escape', 'WEBVTT\n\nSTYLE\n::cue { background: \\75 rl(x) }\n\n00:01.000 --> 00:02.000\nHi\n'],
+    ['a style after the first caption', 'WEBVTT\n\n00:01.000 --> 00:02.000\nHi\n\nSTYLE\n::cue { color: red }\n'],
+    ['a control character', 'WEBVTT\n\n00:01.000 --> 00:02.000\nHi\u{7}\n'],
+  ])('refuses WebVTT with %s', (_name, body) => {
+    expect(() => validateStudioWebVtt(body)).toThrow(StudioImportRefusal);
+  });
+
+  it('accepts a well-formed 3D LUT', () => {
+    expect(() => validateStudioCubeLut(cube(2))).not.toThrow();
+    expect(() => validateStudioCubeLut(cube(2).replaceAll('\n', '\r\n'))).not.toThrow();
+    expect(() =>
+      validateStudioCubeLut(cube(3, 27, 'DOMAIN_MIN 0 0 0\nDOMAIN_MAX 1.0 1.0 1.0\nLUT_3D_INPUT_RANGE 0.0 1.0\n')),
+    ).not.toThrow();
+    expect(() => validateStudioCubeLut('LUT_3D_SIZE 2\n' + '1e-3 -.5 +2.\n'.repeat(8))).not.toThrow();
+    expect(() => validateStudioCubeLut(cube(STUDIO_IMPORT_LUT_MAX_SIZE))).not.toThrow();
+  });
+
+  it.each([
+    ['no size', '# empty\nTITLE "x"\n'],
+    ['a 1D LUT', 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n'],
+    ['too few rows', cube(2, 7)],
+    ['too many rows', cube(2, 9)],
+    ['a grid of one', cube(1)],
+    ['a grid past the limit', `LUT_3D_SIZE ${STUDIO_IMPORT_LUT_MAX_SIZE + 1}\n`],
+    ['a size that is not a whole number', 'LUT_3D_SIZE 2.5\n' + '0 0 0\n'.repeat(8)],
+    ['two sizes', 'LUT_3D_SIZE 2\nLUT_3D_SIZE 2\n' + '0 0 0\n'.repeat(8)],
+    ['rows before the size', '0 0 0\nLUT_3D_SIZE 2\n' + '0 0 0\n'.repeat(7)],
+    ['a keyword inside the table', 'LUT_3D_SIZE 2\n0 0 0\nTITLE "late"\n' + '0 0 0\n'.repeat(7)],
+    ['a row of two numbers', 'LUT_3D_SIZE 2\n' + '0 0 0\n'.repeat(7) + '0 0\n'],
+    ['a row of four numbers', 'LUT_3D_SIZE 2\n' + '0 0 0\n'.repeat(7) + '0 0 0 0\n'],
+    ['a row that is not numbers', 'LUT_3D_SIZE 2\n' + '0 0 0\n'.repeat(7) + 'a b c\n'],
+    ['a number that is not finite', 'LUT_3D_SIZE 2\n' + '0 0 0\n'.repeat(7) + '1e999 0 0\n'],
+    ['a hexadecimal number', 'LUT_3D_SIZE 2\n' + '0 0 0\n'.repeat(7) + '0x10 0 0\n'],
+    ['an unknown keyword', 'LUT_3D_SIZE 2\nINCLUDE /etc/passwd\n' + '0 0 0\n'.repeat(8)],
+    ['an empty domain', cube(2, 8, 'DOMAIN_MIN 1 1 1\nDOMAIN_MAX 1 1 1\n')],
+    ['a domain of two numbers', cube(2, 8, 'DOMAIN_MIN 0 0\n')],
+    ['a backwards input range', cube(2, 8, 'LUT_3D_INPUT_RANGE 1 0\n')],
+    ['a line past the limit', `LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(7)}0 0 ${'0'.repeat(300)}\n`],
+    ['a control character', `${cube(2)}\u{0}`],
+  ])('refuses a LUT with %s', (_name, body) => {
+    expect(() => validateStudioCubeLut(body)).toThrow(StudioImportRefusal);
+  });
+
+  it('checks each text kind with its own rules and leaves other kinds alone', () => {
+    const type = (contentType: string) => ({ contentType, kind: studioImportKind(contentType), extension: '' });
+    expect(() => validateStudioImportText(type('application/x-subrip'), vtt)).toThrow(StudioImportRefusal);
+    expect(() => validateStudioImportText(type('text/vtt'), srt)).toThrow(StudioImportRefusal);
+    expect(() => validateStudioImportText(type('text/x-cube-lut'), srt)).toThrow(StudioImportRefusal);
+    expect(() => validateStudioImportText(type('text/vtt'), vtt)).not.toThrow();
+    expect(() => validateStudioImportText(type('audio/wav'), 'anything')).not.toThrow();
+    expect(STUDIO_IMPORT_CAPTIONS_MAX_BYTES).toBe(4 * 1024 * 1024);
+    expect(STUDIO_IMPORT_LUT_MAX_BYTES).toBe(16 * 1024 * 1024);
   });
 });

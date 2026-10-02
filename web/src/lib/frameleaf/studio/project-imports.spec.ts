@@ -1,5 +1,5 @@
 import { StudioProjectImportKind } from '@immich/sdk';
-import { toStudioProjectImport } from '$lib/frameleaf/studio/project-imports';
+import { isStudioBinImport, toStudioProjectImport } from '$lib/frameleaf/studio/project-imports';
 
 describe('Studio project imports (FL-103 / FL-105)', () => {
   const dto = {
@@ -30,5 +30,14 @@ describe('Studio project imports (FL-103 / FL-105)', () => {
     expect(toStudioProjectImport('p', lottie).mimeType).toBe('application/lottie+json');
     const svg = { ...dto, kind: StudioProjectImportKind.Vector, contentType: 'image/svg+xml' };
     expect(toStudioProjectImport('p', svg).mimeType).toBe('image/svg+xml');
+  });
+
+  it('does not offer a kept caption file or LUT to the media bin (FL-105)', () => {
+    expect(isStudioBinImport(dto)).toBe(true);
+    expect(isStudioBinImport({ ...dto, kind: StudioProjectImportKind.Vector })).toBe(true);
+    expect(isStudioBinImport({ ...dto, kind: StudioProjectImportKind.Captions, contentType: 'text/vtt' })).toBe(false);
+    expect(isStudioBinImport({ ...dto, kind: StudioProjectImportKind.Lut, contentType: 'text/x-cube-lut' })).toBe(
+      false,
+    );
   });
 });

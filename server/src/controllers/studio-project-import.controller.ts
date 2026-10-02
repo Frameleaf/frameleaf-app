@@ -77,7 +77,7 @@ export class StudioProjectImportController {
   @Endpoint({
     summary: 'Import a file into a Studio project',
     description:
-      'Keeps a recording, sound, image, short video, SVG or Lottie file with the project rather than the library. The type is read from the bytes; an SVG with scripts is refused and external subresources of a graphic are counted. The same id and file again answers the stored import.',
+      'Keeps a recording, sound, image, short video, SVG or Lottie graphic, caption file (.srt or .vtt) or .cube LUT with the project rather than the library. The type is read from the bytes; an SVG with scripts is refused, external subresources of a graphic are counted, and a caption file or LUT must be well formed throughout. The same id and file again answers the stored import.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   importStudioProjectFile(
