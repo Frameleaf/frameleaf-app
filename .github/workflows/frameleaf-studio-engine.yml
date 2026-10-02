@@ -129,6 +129,7 @@ jobs:
           node studio/tools/hdr-master.browser.mjs
           node studio/tools/scopes.browser.mjs
           node studio/tools/scope-hdr-capture.browser.mjs
+          node studio/tools/preview-padding.browser.mjs
       # FL-112 (STU-405): record exactly which conformance.json chromium-axis cases this run's own
       # software-WebGPU browser matrix covers, from the reports the step above just wrote - not from
       # any developer machine's GPU. Fails the job (via the tracked-file diff) if conformance.json

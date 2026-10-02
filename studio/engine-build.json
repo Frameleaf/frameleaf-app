@@ -219,7 +219,12 @@
       "path": "patches/0043-hdr-raster-input.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "23c6c87a1e97deb59005dbe9bae52655a100a7fdadb1f9adc210df96cb39f54c"
+    },
+    {
+      "path": "patches/0044-preview-padding-copy.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "a6438376c53e2c77b7e0daa5ade903bb75070a40e22b0a3115a59ae5058de5ef"
     }
   ],
-  "sourceSha256": "636fb58140ac8bd9c8d136ad3948ed70d790e17197ca143790861daf09a7b949"
+  "sourceSha256": "2b97c8b5e76584b6716ead8457a86c0465adbd7d68112b5eb6794845c2dc4031"
 }
