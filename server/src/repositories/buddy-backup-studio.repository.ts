@@ -129,13 +129,22 @@ export class BuddyBackupStudioRepository {
     await lockForkWrites(trx, 'Buddy Studio restore is unavailable during database handoff');
     // Project deletion detaches published exports instead of deleting them; their previous
     // file remains part of the rebind even while projectId is null.
-    const previousExports = await sql<{ record: Row }>`SELECT to_jsonb(item) AS record FROM public.studio_export_version item
-      WHERE id = ANY(${project.exports.map((row) => row.id)}::uuid[]) ORDER BY id FOR UPDATE`.execute(trx);
+    const exportIds = project.exports.map((row) => row.id);
+    const observedExports = await sql<{ record: Row }>`SELECT to_jsonb(item) AS record FROM public.studio_export_version item
+      WHERE id = ANY(${exportIds}::uuid[]) ORDER BY id`.execute(trx);
     const previousFiles = [...await this.rows(tables.imported, 'projectId', project.id),
-      ...await this.rows(tables.generated, 'projectId', project.id), ...previousExports.rows.map((row) => row.record)];
+      ...await this.rows(tables.generated, 'projectId', project.id), ...observedExports.rows.map((row) => row.record)];
     const previousPaths = previousFiles.flatMap((row) => [row.path, row.outputPath].filter((path): path is string => typeof path === 'string'));
     const lockedPaths = new Set([...options.paths.values(), ...previousPaths]);
     for (const path of [...lockedPaths].sort()) await lockFilePath(trx, path);
+    // Export cleanup takes its path before its row. Re-read under the same order so cleanup
+    // can finish while we wait, then validate only the current, locked publication identity.
+    const previousExports = await sql<{ record: Row }>`SELECT to_jsonb(item) AS record FROM public.studio_export_version item
+      WHERE id = ANY(${exportIds}::uuid[]) ORDER BY id FOR UPDATE`.execute(trx);
+    // A concurrent promotion may introduce another path. Refuse it without waiting for a
+    // new path while holding the row; a cleanup-cleared path needs no additional lock.
+    if (previousExports.rows.some(({ record }) => typeof record.outputPath === 'string' && !lockedPaths.has(record.outputPath)))
+      throw new Error('Buddy Studio previous file changed');
     const retireFile = async (file: RetiredFile) => {
       if (!lockedPaths.has(file.path)) throw new Error('Buddy Studio previous file changed');
       await options.retireFile(file);
