@@ -220,7 +220,7 @@ Each id consumes 16 outputs. `vectors.uuids` in the fixtures gives the first ids
 
 ### 4.3 Which draw goes where
 
-Each applied fixture records, for each envelope, its `draws`: draw number `n`, the id, and every graph path that holds it. Draws that a command makes but does not keep are listed with no paths. They still consume their 16 outputs, and a native client must skip them in the same order. Parts 2 to 4 give the draw order for each command in prose. The fixtures are authoritative where the two differ. A track that a command creates has the id `track-` followed by the drawn id; `draws` lists that draw at the track's `id` path.
+Each applied fixture records, for each envelope, its `draws`: draw number `n`, the id, and every graph path that holds it. Draws that a command makes but does not keep are listed with no paths. They still consume their 16 outputs, and a native client must skip them in the same order. Unkept draws after an envelope's last kept one are not listed, because nothing depends on them. Parts 2 to 4 give the draw order for each command in prose. The fixtures are authoritative where the two differ. A track that a command creates has the id `track-` followed by the drawn id; `draws` lists that draw at the track's `id` path.
 
 For example, `clip.add` of a video with sound (fixture `ids/clip-add-draws`) draws the shared `originId` first, then the shared `linkedGroupId`, then the video item's `id`, then the audio item's `id`.
 
@@ -365,7 +365,7 @@ Run the vectors first: id generation and canonical JSON must be right before any
 **Drift.** Two checks keep this page and the engine together:
 
 - The engine replay runs in the Studio engine workflow. It recomputes every answer, fails on any difference, and checks that a second run gives identical answers.
-- `studio/tools/graph-protocol.test.mjs` runs in the Scripts unit tests on every pull request, without the engine. It re-derives every digest, id draw and rounding answer from an independent implementation of sections 3, 4 and 6, and validates every graph against the schema. For part 2 it also checks the rules of section 12 that can be computed from a graph alone: no overlap, track order and names, in and out points, the transitions repair keeps, split and trim source frames, retimed length and speed, and that every part 2 command has applied and rejected cases.
+- `studio/tools/graph-protocol.test.mjs` runs in the Scripts unit tests on every pull request, without the engine. It re-derives every digest, id draw and rounding answer from an independent implementation of sections 3, 4 and 6, and validates every graph against the schema. For part 2 it also checks the rules of section 12 that can be computed from a graph alone: no overlap, track order and names, in and out points, the transitions repair keeps, split and trim source frames, retimed length and speed, and that every part 2 command has applied and rejected cases. Then it replays every part 2 case through `studio/tools/graph-reference.mjs`, an implementation written from section 12 without the engine, and requires the engine's graph, digest and refusal for each. That file is a test of this page, not part of the protocol: it shows that the prose is enough, and it skips, by name, the few cases whose rules parts 3 and 4 still owe.
 
 A change to the engine that alters any answer fails the first check. A hand edit of any answer fails the second.
 
@@ -424,7 +424,7 @@ This section gives the mutation rules of the 28 commands of FL-307 (NAPI-018). T
 | `track.add`, `track.remove`, `track.reorder`, `track.set`, `track.closeGap`               | 12.7    |
 | `marker.add`, `marker.update`, `marker.remove`, `music.add`                               | 12.8    |
 
-Every command has fixtures named `<command>/<case>` in `studio/graph-conformance-v1.json`, both applied and rejected (`music.add` has only rejected ones). Where this prose and a fixture differ, the fixture is right and this page has a defect.
+Every command has fixtures named `<command>/<case>` in `studio/graph-conformance-v1.json`, both applied and rejected (`music.add` has only rejected ones). Cases named `…busy-timeline…` run a command on a timeline with two video layers, a linked chain and a transition, so that its linked, sync-lock and transition consequences show together. Where this prose and a fixture differ, the fixture is right and this page has a defect.
 
 ### 12.1 How to read the rules
 
@@ -541,6 +541,8 @@ Transitions are specified in part 3. Part 2 commands never create one, but they 
 Transitions that pass unchanged keep their order in `timeline.transitions`. Transitions whose length was changed are moved after them, in their own order. When the list becomes empty the key is removed.
 
 `M` is the largest `d` from 1 to `min(L, R lengths) − 1` for which `d − floor(d × alignment)` frames fit in `L`'s tail handle and `floor(d × alignment)` frames fit in `R`'s head handle. The tail handle of a video or composition clip is `toTimeline(sourceDuration − sourceEnd)`, and its head handle is `toTimeline(sourceStart)`. A still has unlimited handles.
+
+Some commands refuse an edit that would starve a transition instead of repairing it afterwards. For them a transition is **valid** between two clips when rules 2 to 4 keep it, its length is at most `min(L, R lengths) − 1`, and, when the clips meet, its two parts fit the handles as in the definition of `M`. Such a command is refused (`failed`) unless every transition it names is valid both before the edit and with the edited clips in place.
 
 Rule 3 is **implementation-defined**: the overlap branch exists for projects made before transitions were cut-centred, and it accepts any incoming clip that starts before the outgoing clip ends, however far apart the clips now are. A transition therefore survives when its outgoing clip is moved later, or the clips swap places (fixtures `clip.move/transition-survives-outgoing-clip-moved-later`, `clip.reorder/transition-survives-out-of-order`), and is removed only when the incoming clip starts more than one frame after the outgoing clip ends (`clip.move/removes-transition`). **Native rule:** apply rules 1 to 6 literally. Do not remove a transition that they keep.
 
@@ -729,7 +731,7 @@ When the trim shortened the clips, each **attached caption** is cut to the part 
 - On each trimmed clip's track, every other clip with `from ≥` the trimmed clip's **old end**, and the incoming clip of any transition out of it, moves by the shift.
 - Every sync-enabled track that is not edited follows (12.2.3). For a negative shift the interval `[old end + shift, old end)` is removed. For a positive shift a gap of `shift` frames is opened at the old end.
 
-Limits with ripple: the source and length limits of 12.2.4 (the neighbour limit does not apply), and every transition that touches a trimmed clip or a clip that shifts must still be valid for its present length afterwards (part 3). Attached captions are **not** cut by a ripple trim.
+Limits with ripple: the source and length limits of 12.2.4 (the neighbour limit does not apply), and every transition that touches a trimmed clip or a clip that shifts must be valid (12.2.6). Attached captions are **not** cut by a ripple trim.
 
 **Consequences**
 
@@ -757,7 +759,7 @@ Moves the cut between a clip and the clip that follows it. Payload: `clipId` (th
 
 `at = end(c)` is applied and changes nothing. That check comes before refusal 3.
 
-**Effect.** With `d = at − end(c)`: `c`'s end is trimmed by `d` and the next clip's start is trimmed by `d` (12.2.4). If `c` has a synchronised linked clip and the next clip has one on the same track and of the same type, that pair is rolled by the same `d`. Limits: the source and length limits of 12.2.4 for each clip, and every transition that touches `c` or the next clip must still be valid afterwards (part 3).
+**Effect.** With `d = at − end(c)`: `c`'s end is trimmed by `d` and the next clip's start is trimmed by `d` (12.2.4). If `c` has a synchronised linked clip and the next clip has one on the same track and of the same type, that pair is rolled by the same `d`. Limits: the source and length limits of 12.2.4 for each clip, and every transition that touches a rolled clip must be valid (12.2.6).
 
 **Consequences**
 
@@ -783,7 +785,7 @@ Moves a clip's source window without moving the clip. Payload: `clipId`, `delta`
 
 `delta` becomes `d` source frames by section 3.3 at the clip's `sourceFps` (the project rate when absent). `d = 0` is applied and changes nothing; that check comes before refusal 4.
 
-**Effect.** The clip and each synchronised clip that has a `sourceEnd` get `sourceStart += d` and `sourceEnd += d`. Limits, for each of them: `sourceStart + d ≥ 0`; `sourceEnd + d ≤ sourceDuration` when it has one; and every transition that touches it must still be valid afterwards (part 3).
+**Effect.** The clip and each synchronised clip that has a `sourceEnd` get `sourceStart += d` and `sourceEnd += d`. Limits, for each of them: `sourceStart + d ≥ 0`; `sourceEnd + d ≤ sourceDuration` when it has one; and every transition that touches it must be valid (12.2.6).
 
 **Consequences**
 
@@ -814,7 +816,7 @@ Moves a clip between its neighbours, which take up the difference. Payload: `cli
 - **Source continuity.** If both neighbours exist, the clip is a media clip with a `sourceEnd`, and both pairs (left, clip) and (clip, right) are joinable (12.5.5), the clip's source window also moves by `toSource(d)`, limited to the source as a slip is. The three then stay one continuous run of their source (`clip.slide/split-chain-keeps-continuity`). Otherwise the clip's source window is unchanged (`clip.slide/between-unrelated-clips`).
 - If the clip has a synchronised linked clip (the first other one), that clip slides by the same `d` between **its own** neighbours on its track, found the same way, and its source window moves by the same amount as the clip's.
 
-Limits: `c.from + d ≥ 0`; the source and length limits of 12.2.4 for each neighbour trim; the clip may not pass any other clip on its track; and every transition and keyframe the edit touches must still be valid afterwards (part 3).
+Limits: `c.from + d ≥ 0`; the source and length limits of 12.2.4 for each neighbour trim; the clip may not pass any other clip on its track; every transition that touches the clip or a neighbour must be valid (12.2.6); and no keyframe of those clips may fall outside its clip or into a transition (part 3).
 
 **Consequences**
 
