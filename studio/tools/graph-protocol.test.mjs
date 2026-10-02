@@ -3,7 +3,9 @@
  * the engine. `graph-protocol.mjs` implements the protocol's computable rules from the prose; every
  * engine-generated digest, identity draw and rounding answer in `studio/graph-conformance-v1.json`
  * must agree with it, and every graph there must satisfy `studio/graph-schema-v1.json`. For part 2
- * (FL-307) the rules of section 12 that a graph and a payload alone decide are re-derived too.
+ * (FL-307) the rules of section 12 that a graph and a payload alone decide are re-derived too, and
+ * `graph-reference.mjs`, a reference implementation written from section 12, replays every part 2
+ * case: the prose must be enough to reproduce the engine's graphs, ids and refusals.
  *
  * The engine replay itself (`studio/adapters/web/test/graph-conformance.test.ts`) runs in the
  * Studio engine workflow; this check runs in the Scripts unit tests on every pull request, so a
@@ -32,8 +34,9 @@ import {
   uuidStream,
   validate,
 } from './graph-protocol.mjs';
+import { applyBatch, Unspecified } from './graph-reference.mjs';
 
-const read = (name) => JSON.parse(readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'));
+const read =(name) => JSON.parse(readFileSync(new URL(`../${name}`, import.meta.url), 'utf8'));
 const fixtures = read('graph-conformance-v1.json');
 const schema = read('graph-schema-v1.json');
 const catalogue = read('frameleaf-studio-commands.json');
@@ -390,4 +393,60 @@ test('12.7.2: track.remove removes the track and its clips and leaves the other 
     checked++;
   }
   assert.ok(checked >= 3, `only ${checked} removals were checked`);
+});
+
+/**
+ * The part 2 cases the reference implementation does not replay, each for a rule the prose defers
+ * to a later part. A case that starts to need one of these must be added here on purpose.
+ */
+const deferred = new Map([
+  ['clip.move/rejects-clip-inside-composition', 'composition.add is specified in part 4'],
+  ['clip.update/style-bold', 'title styles are specified in part 4'],
+  ['clip.update/style-minimal', 'title styles are specified in part 4'],
+  ['clip.update/style-lower-third', 'title styles are specified in part 4'],
+  ['clip.update/animation', 'title animations are specified in part 4'],
+  ['clip.update/rejects-unknown-style', 'title styles are specified in part 4'],
+  ['clip.setTransformParent/detach', 'poses of already-parented clips are specified in part 3'],
+  ['clip.setTransformParent/reparent', 'poses of already-parented clips are specified in part 3'],
+]);
+
+test('section 12 is enough to reproduce every part 2 case: graphs, ids and refusals', () => {
+  const skipped = [];
+  let replayed = 0;
+  for (const entry of part2Cases) {
+    const base = fixtures.bases[entry.base];
+    let outcome;
+    try {
+      outcome = applyBatch(base.graph, entry.envelopes, fixtures.media[entry.media ?? base.media]);
+    } catch (error) {
+      if (!(error instanceof Unspecified)) throw new Error(`${entry.id}: ${error.message}`, { cause: error });
+      skipped.push(entry.id);
+      continue;
+    }
+    if (entry.expect.status === 'rejected') {
+      assert.deepEqual(
+        { status: outcome.status, index: outcome.index, reason: outcome.reason },
+        { status: 'rejected', index: entry.expect.index, reason: entry.expect.reason },
+        `${entry.id}: ${outcome.detail ?? 'the reference applied the batch'}`,
+      );
+    } else {
+      assert.equal(outcome.status, 'applied', `${entry.id}: refused at ${outcome.index} (${outcome.reason}): ${outcome.detail}`);
+      // The digest covers every id the batch drew and every field it wrote.
+      assert.deepEqual(JSON.parse(JSON.stringify(outcome.graph)), entry.expect.graph, entry.id);
+      assert.equal(graphDigest(outcome.graph), entry.expect.digest, `${entry.id}: digest`);
+    }
+    replayed++;
+  }
+  assert.deepEqual(skipped.sort(), [...deferred.keys()].sort(), 'the cases deferred to parts 3 and 4');
+  assert.equal(replayed, part2Cases.length - deferred.size);
+  assert.ok(replayed >= 350, `only ${replayed} cases were replayed`);
+});
+
+test('a refused batch leaves the graph it was given untouched', () => {
+  for (const entry of part2Cases.filter((candidate) => candidate.expect.status === 'rejected' && !deferred.has(candidate.id))) {
+    const base = fixtures.bases[entry.base];
+    const before = canonicalJson(base.graph);
+    applyBatch(base.graph, entry.envelopes, fixtures.media[entry.media ?? base.media]);
+    assert.equal(canonicalJson(base.graph), before, `${entry.id}: the reference changed its input`);
+  }
 });
