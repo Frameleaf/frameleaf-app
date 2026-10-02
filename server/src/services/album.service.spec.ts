@@ -860,6 +860,11 @@ describe(AlbumService.name, () => {
       expect(mocks.albumUser.delete).toHaveBeenCalledTimes(1);
       expect(mocks.albumUser.delete).toHaveBeenCalledWith({ albumId: album.id, userId });
       expect(mocks.album.getById).toHaveBeenCalledWith(album.id, { withAssets: false }, owner.id);
+      expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUserRemove', {
+        albumId: album.id,
+        userId,
+        removedById: owner.id,
+      });
     });
 
     it('should prevent removing a shared user from a not-owned album (shared with auth user)', async () => {
@@ -886,6 +891,12 @@ describe(AlbumService.name, () => {
 
       expect(mocks.albumUser.delete).toHaveBeenCalledTimes(1);
       expect(mocks.albumUser.delete).toHaveBeenCalledWith({ albumId: album.id, userId: user1.id });
+      // FL-293: says who did it, so the person who left by themselves gets no push about it
+      expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUserRemove', {
+        albumId: album.id,
+        userId: user1.id,
+        removedById: user1.id,
+      });
     });
 
     it('lets the last member leave: the album stays with its owner and everyone is told (FL-53)', async () => {

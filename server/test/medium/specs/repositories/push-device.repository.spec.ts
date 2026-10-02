@@ -180,6 +180,39 @@ describe('push device registry (FL-228)', () => {
     expect(await sut.getPreviewSafeAssetIds([])).toEqual(new Set());
   });
 
+  it("keeps items a recipient hides by person or tag out of that recipient's preview only (FL-293)", async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { user: other } = await ctx.newUser();
+    const { asset: ordinary } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: withPerson } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: withTag } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: othersWithPerson } = await ctx.newAsset({ ownerId: other.id });
+    const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Hidden' });
+    await ctx.newAssetFace({ assetId: withPerson.id, personGroupId: person.personGroupId });
+    await ctx.newAssetFace({ assetId: othersWithPerson.id, personGroupId: person.personGroupId });
+    const { tag: parent } = await ctx.newTag({ userId: user.id, value: 'private' });
+    const { tag: child } = await ctx.newTag({ userId: user.id, value: 'private/letters', parentId: parent.id });
+    await ctx.newTagAsset({ tagIds: [child.id], assetIds: [withTag.id] });
+    const ids = [ordinary.id, withPerson.id, withTag.id, othersWithPerson.id];
+    const rules = {
+      userId: user.id,
+      includeNsfw: false,
+      personIds: [person.personGroupId],
+      tagIds: [parent.id],
+      petIds: [],
+    };
+
+    // somebody without such rules sees all four
+    expect(await sut.getPreviewSafeAssetIds(ids)).toEqual(new Set(ids));
+    // the rules of this recipient, applying to their own items: the person, and the tag through its parent
+    expect(await sut.getPreviewSafeAssetIds(ids, { ...rules, scope: 'owned' })).toEqual(
+      new Set([ordinary.id, othersWithPerson.id]),
+    );
+    // applying to everything they can see
+    expect(await sut.getPreviewSafeAssetIds(ids, { ...rules, scope: 'visible' })).toEqual(new Set([ordinary.id]));
+  });
+
   it('finds devices whose phone backup went stale, at most once per wake window', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

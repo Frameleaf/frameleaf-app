@@ -91,7 +91,7 @@ describe(StudioRevocationService.name, () => {
   });
 
   it("stops only the departing member's work on the space's projects", async () => {
-    await sut.onAlbumUserRemove({ albumId: 'space-1', userId: 'reviewer-1' });
+    await sut.onAlbumUserRemove({ albumId: 'space-1', userId: 'reviewer-1', removedById: 'owner-9' });
     expect(projectRepository.getIdsInSpace).toHaveBeenCalledWith('space-1');
     expect(previews.revokeForProjects).toHaveBeenCalledWith(['project-3'], 'reviewer-1');
     expect(streams.revokeForProjects).toHaveBeenCalledWith(['project-3'], 'reviewer-1');
@@ -109,7 +109,7 @@ describe(StudioRevocationService.name, () => {
 
   it("keeps the departing member's own projects as private ones and ends their space sharing (FL-146)", async () => {
     projectRepository.detachOwnerFromSpace.mockResolvedValue(['project-9']);
-    await sut.onAlbumUserRemove({ albumId: 'space-1', userId: 'owner-9' });
+    await sut.onAlbumUserRemove({ albumId: 'space-1', userId: 'owner-9', removedById: 'owner-9' });
     expect(projectRepository.detachOwnerFromSpace).toHaveBeenCalledWith('space-1', 'owner-9');
     // Nothing is deleted; every other member's view of the project stops.
     expect(projects.forgetResolutions).toHaveBeenCalledWith(['project-9']);
