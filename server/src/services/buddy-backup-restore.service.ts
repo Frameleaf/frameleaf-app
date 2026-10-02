@@ -262,7 +262,7 @@ export class BuddyBackupRestoreService {
       items: ids.slice(offset, offset + 100).map((id) => ({
         id,
         name: manifest.library.assets[id].originalFileName ?? '',
-        ownerId: manifest.library.assets[id].owner,
+        ownerId: manifest.library.assets[id].owner ?? undefined,
         bytes: manifest.library.assets[id].files.reduce((sum, file) => sum + file.size, 0),
       })),
       nextOffset: offset + 100 < ids.length ? offset + 100 : null,
@@ -331,7 +331,7 @@ export class BuddyBackupRestoreService {
     const running = coerce(serverVersion.toString());
     if (!version || !running || gt(version, running))
       throw new BadRequestException('Update this Frameleaf server before restoring this snapshot.');
-    const selectedFiles =
+    const selectedFiles: Array<{ size: number }> =
       request.scope === 'settings'
         ? manifest.configurationFiles
         : ids.flatMap((id) => manifest.library.assets[id].files);
@@ -766,13 +766,14 @@ export class BuddyBackupRestoreService {
             this.recordFile(operation.id, file, job.request.mode === 'keep' && outcome === 'skipped'),
           checkpoint: async (result) => {
             await checkpoint();
-            return this.operations.setBulkResult(operation.id, token, {
+            const saved = await this.operations.setBulkResult(operation.id, token, {
               result,
               processedUnits: result.files,
               totalUnits: result.filesTotal,
               progress: result.filesTotal ? (result.files * 100) / result.filesTotal : 100,
               leaseMs: LEASE_MS,
             });
+            return !!saved && !saved.cancelRequestedAt && !saved.pauseRequestedAt;
           },
           publish: async (file, _staged, publish, phase) => {
             if (phase === 'inspect')

@@ -1,5 +1,6 @@
 import { BullModule } from '@nestjs/bullmq';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
+import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { Inject, Module, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
@@ -130,6 +131,7 @@ export class ApiModule extends BaseModule {}
     DatabaseBackupService,
     MaintenanceWorkerService,
     BuddyBackupRepository,
+    CloudBackupKeyRepository,
     BuddyBackupRecoveryService,
     ...commonMiddleware,
     { provide: APP_GUARD, useClass: MaintenanceAuthGuard },

@@ -13,10 +13,12 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   PhysicalFileType,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BUDDY_CAPTURE_LOCK, PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -28,6 +30,7 @@ import { BUDDY_BLOCK_BYTES, decryptBuddyBlock, type BuddyKeyring } from 'src/uti
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
+import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
 
 // CI's temporary volume may be below the production 10 GiB/10% reserve. Keep all file I/O real;
 // only supply enough reported free space for these small fixtures when that reserve would reject them.
@@ -116,16 +119,17 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     settings,
     checkpoint: async () => {},
   });
-  const fixture = (beforeDump: () => Promise<void> = async () => {}) => {
+  const fixture = (beforeDump: (snapshot: string) => Promise<void> = async () => {}) => {
     const queue = vi.fn<JobRepository['queue']>().mockResolvedValue(undefined);
     const createDatabaseBackup = vi.fn<DatabaseBackupService['createDatabaseBackup']>(async (_prefix, input) => {
       expect(input).toMatchObject({ verify: true, snapshot: expect.stringMatching(/^[\da-f]+-[\da-f]+-\d+$/i) });
-      await beforeDump();
+      await beforeDump(input?.snapshot ?? '');
       return (await file('database.sql.gz', Buffer.from('fake pg_dump bytes'))).path;
     });
     const backups = { createDatabaseBackup } as unknown as DatabaseBackupService;
     const jobs = { queue } as unknown as JobRepository;
-    return { capture: new BuddyBackupCaptureService(repository, backups, jobs), backups, jobs, queue };
+    const keys = new CloudBackupKeyRepository(LoggingRepository.create());
+    return { capture: new BuddyBackupCaptureService(repository, backups, jobs, keys), backups, jobs, keys, queue };
   };
   const references = async (runId: string) =>
     (
@@ -161,6 +165,12 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     const master = await file('edited-video.mp4');
     const proxy = await file('edited-video-proxy.mp4');
     const lineage = await file('edited-video.mp4.lineage.json');
+    const cloudKey = randomBytes(32);
+    const cloudKeyContent = JSON.stringify(
+      backupKeyFile({ key: cloudKey, instanceId: randomUUID(), bucket: 'test', mode: 'server', createdAt: new Date() }),
+    );
+    await writeFile(join(root, 'identity', `cloud-backup-${keyFingerprint(cloudKey)}.key`), cloudKeyContent);
+    await writeFile(join(root, 'identity', 'instance-key.pem'), 'must not be captured');
     const developed = await file('external-developed.jpg');
     const developedPreview = await file('external-developed-preview.jpg');
     await sql`INSERT INTO immich_fork.asset_develop_revision
@@ -251,6 +261,9 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       expect(await readFile(later.path)).toEqual(later.bytes);
     });
     const result = await capture.capture(run);
+    expect(result.manifest.cloudBackupKeys).toEqual([
+      { fingerprint: keyFingerprint(cloudKey), content: cloudKeyContent },
+    ]);
     const recorded = [
       ...Object.values(result.manifest.library.assets).flatMap(({ files }) => files),
       ...result.manifest.dependencies,
@@ -271,6 +284,46 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     await unlink(preview.path);
     await expect(capture.capture(unavailable)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await capture.readCapture(unavailable.runId)).toBeNull();
+  }, 20_000);
+
+  it('keeps concurrent Cloud setup outside the database view and refuses a missing claimed key', async () => {
+    const key = randomBytes(32);
+    const fingerprint = keyFingerprint(key);
+    const content = JSON.stringify(
+      backupKeyFile({ key, instanceId: randomUUID(), bucket: 'test', mode: 'server', createdAt: new Date() }),
+    );
+    const { capture, keys } = fixture(async (snapshot) => {
+      await db
+        .transaction()
+        .setIsolationLevel('repeatable read')
+        .execute(async (trx) => {
+          await sql`SET TRANSACTION SNAPSHOT ${sql.lit(snapshot)}`.execute(trx);
+          expect(
+            await trx
+              .selectFrom('system_metadata')
+              .select('value')
+              .where('key', '=', SystemMetadataKey.FrameleafCloudBackup)
+              .executeTakeFirst(),
+          ).toBeUndefined();
+        });
+    });
+    await db.deleteFrom('system_metadata').where('key', '=', SystemMetadataKey.FrameleafCloudBackup).execute();
+    const readAll = keys.readAll.bind(keys);
+    vi.spyOn(keys, 'readAll').mockImplementationOnce(async (directory) => {
+      const previous = await readAll(directory);
+      await keys.write(directory, fingerprint, content);
+      await sql`INSERT INTO system_metadata (key, value)
+        VALUES (${SystemMetadataKey.FrameleafCloudBackup}, ${JSON.stringify({ keyMode: 'server', keyFingerprint: fingerprint })}::jsonb)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(db);
+      return previous;
+    });
+    expect((await capture.capture(options())).manifest.cloudBackupKeys).toEqual([]);
+    const next = fixture();
+    expect((await next.capture.capture(options())).manifest.cloudBackupKeys).toEqual([{ fingerprint, content }]);
+    await keys.remove(join(root, 'identity'), fingerprint);
+    const missing = options();
+    await expect(next.capture.capture(missing)).rejects.toThrow('Stored Cloud Backup recovery key is missing');
+    expect(await next.capture.readCapture(missing.runId)).toBeNull();
   }, 20_000);
 
   it('reclaims an interrupted multi-block capture before capture.json exists', async () => {
@@ -320,7 +373,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
   }, 20_000);
 
   it('reconciles abandoned runs and retries the deletion outbox without releasing resumable claims', async () => {
-    const { capture, backups, jobs, queue } = fixture();
+    const { capture, backups, jobs, keys, queue } = fixture();
     const terminal: string[] = [];
     const retained: string[] = [];
     for (const [status, claimed] of [
@@ -368,7 +421,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     expect(await references(missing)).toEqual([{ path: deferred, released: true, deleteRequested: true }]);
     expect(await readFile(deferred)).toEqual(Buffer.from(`${missing}.jpg`));
 
-    const restarted = new BuddyBackupCaptureService(repository, backups, jobs);
+    const restarted = new BuddyBackupCaptureService(repository, backups, jobs, keys);
     await restarted.reconcile();
     expect(queue.mock.calls).toEqual([
       [{ name: JobName.FileDelete, data: { files: [deferred] } }],

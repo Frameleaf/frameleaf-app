@@ -16,9 +16,11 @@ import {
 } from 'src/enum.js';
 import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
+import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import type { FrameleafCloudBackup } from 'src/types.js';
 import {
   BUDDY_BLOCK_BYTES,
   buddyObjectId,
@@ -29,6 +31,8 @@ import {
 import { BuddyVault, createBuddyDirectory, writeBuddyFile, type BuddyReceipt } from 'src/utils/buddy-backup-vault.js';
 import {
   CLOUD_BACKUP_MANIFEST_FORMAT,
+  keyFingerprint,
+  parseBackupKey,
   type CloudBackupManifest,
   type CloudBackupManifestFile,
 } from 'src/utils/cloud-backup.js';
@@ -52,6 +56,7 @@ export type BuddyManifest = {
   >;
   dependencies: CloudBackupManifestFile[];
   configurationFiles: CloudBackupManifestFile[];
+  cloudBackupKeys?: Array<{ fingerprint: string; content: string }>;
   environment: Record<string, string | undefined>;
   storageRoot: string;
   storageRoots: string[];
@@ -86,6 +91,7 @@ export class BuddyBackupCaptureService {
     private repository: BuddyBackupRepository,
     private backups: DatabaseBackupService,
     private jobs: JobRepository,
+    private keys: CloudBackupKeyRepository,
   ) {}
 
   runDirectory(runId: string) {
@@ -267,6 +273,24 @@ export class BuddyBackupCaptureService {
           .setIsolationLevel('repeatable read')
           .execute(async (trx) => {
             const { rows } = await sql<{ snapshot: string }>`SELECT pg_export_snapshot() AS snapshot`.execute(trx);
+            // Cloud setup publishes its immutable key before the claim. Enumerate only after fixing the database view.
+            const claim = (
+              await trx
+                .selectFrom('system_metadata')
+                .select('value')
+                .where('key', '=', SystemMetadataKey.FrameleafCloudBackup)
+                .executeTakeFirst()
+            )?.value as FrameleafCloudBackup | undefined;
+            manifest.cloudBackupKeys = await this.keys.readAll(sourceRoot);
+            for (const key of manifest.cloudBackupKeys)
+              if (keyFingerprint(parseBackupKey(key.content)) !== key.fingerprint)
+                throw new Error('Stored Cloud Backup recovery key failed verification');
+            if (
+              claim &&
+              claim.keyMode !== 'own-memory' &&
+              !manifest.cloudBackupKeys.some((key) => key.fingerprint === claim.keyFingerprint)
+            )
+              throw new Error('Stored Cloud Backup recovery key is missing');
             const dependencies = (await dependencyPaths.execute(trx)).rows;
             const lineageCandidates = await sql<{
               path: string;
