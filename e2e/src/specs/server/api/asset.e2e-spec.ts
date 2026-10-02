@@ -533,7 +533,7 @@ describe('/asset', () => {
       expect(status).toEqual(200);
     });
 
-    it('should set the negative rating', async () => {
+    it('should persist rejection through the compatible response and clear it', async () => {
       const { status, body } = await request(app)
         .put(`/assets/${user1Assets[0].id}`)
         .set('Authorization', `Bearer ${user1.accessToken}`)
@@ -541,10 +541,28 @@ describe('/asset', () => {
       expect(body).toMatchObject({
         id: user1Assets[0].id,
         exifInfo: expect.objectContaining({
-          rating: -1,
+          rating: null,
+          isRejected: true,
         }),
       });
       expect(status).toEqual(200);
+      const rejected = await request(app)
+        .get(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+      expect(rejected.status).toEqual(200);
+      expect(rejected.body.exifInfo).toMatchObject({ rating: null, isRejected: true });
+
+      const cleared = await request(app)
+        .put(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`)
+        .send({ rating: null });
+      expect(cleared.status).toEqual(200);
+      expect(cleared.body.exifInfo).toMatchObject({ rating: null, isRejected: false });
+      const restored = await request(app)
+        .get(`/assets/${user1Assets[0].id}`)
+        .set('Authorization', `Bearer ${user1.accessToken}`);
+      expect(restored.status).toEqual(200);
+      expect(restored.body.exifInfo).toMatchObject({ rating: null, isRejected: false });
     });
 
     it('should return tagged people', async () => {
