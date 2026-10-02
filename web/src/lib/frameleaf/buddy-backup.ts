@@ -32,28 +32,34 @@ export const buddyBackupPresentation = (
               : !entitled || !status?.enabled
                 ? 'frameleaf_backup_recovery_only'
                 : undefined;
-    outgoing = restricted ?? (
-      !status?.settings
+    outgoing =
+      restricted ??
+      (!status?.settings
         ? 'frameleaf_buddy_not_configured'
         : status.settings.pausedSending
-        ? 'frameleaf_backup_paused'
-        : !status?.recoveryVerified || !status.keyFingerprint
-          ? 'frameleaf_backup_key_required'
-          : ({
-              capturing: 'frameleaf_backup_capturing',
-              sending: 'frameleaf_backup_sending',
-              paused: 'frameleaf_backup_paused',
-              'waiting-peer': 'frameleaf_backup_waiting_peer',
-              'waiting-quota': 'frameleaf_backup_waiting_quota',
-              'waiting-key': 'frameleaf_backup_key_required',
-              'waiting-authorization': 'frameleaf_backup_authorization',
-              incomplete: 'frameleaf_backup_incomplete',
-              complete: 'frameleaf_backup_complete',
-            } as Record<string, Translations>)[status.run?.state ?? ''] ?? 'frameleaf_buddy_ready'
-    );
-    incoming = restricted ?? (
-      !status?.settings ? 'frameleaf_buddy_not_configured' : status.settings.pausedReceiving ? 'frameleaf_buddy_receiving_paused' : 'frameleaf_buddy_ready_to_receive'
-    );
+          ? 'frameleaf_backup_paused'
+          : !status?.recoveryVerified || !status.keyFingerprint
+            ? 'frameleaf_backup_key_required'
+            : ((
+                {
+                  capturing: 'frameleaf_backup_capturing',
+                  sending: 'frameleaf_backup_sending',
+                  paused: 'frameleaf_backup_paused',
+                  'waiting-peer': 'frameleaf_backup_waiting_peer',
+                  'waiting-quota': 'frameleaf_backup_waiting_quota',
+                  'waiting-key': 'frameleaf_backup_key_required',
+                  'waiting-authorization': 'frameleaf_backup_authorization',
+                  incomplete: 'frameleaf_backup_incomplete',
+                  complete: 'frameleaf_backup_complete',
+                } as Record<string, Translations>
+              )[status.run?.state ?? ''] ?? 'frameleaf_buddy_ready'));
+    incoming =
+      restricted ??
+      (!status?.settings
+        ? 'frameleaf_buddy_not_configured'
+        : status.settings.pausedReceiving
+          ? 'frameleaf_buddy_receiving_paused'
+          : 'frameleaf_buddy_ready_to_receive');
   }
   return { outgoing, incoming, write, read, send: write && !!status?.recoveryVerified && !!status.keyFingerprint };
 };
