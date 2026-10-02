@@ -65,7 +65,7 @@ export const BuddyStatusSchema = z.object({
   }),
 });
 export const BuddyKitSchema = z.strictObject({
-  version: z.literal(1),
+  version: z.literal(1).meta({ format: 'double' }),
   vaultId: z.uuid(),
   current: z.number().int().positive(),
   keys: z
@@ -177,7 +177,7 @@ export class BuddyApplyResponseDto extends createZodDto(z.object({ jwt: z.string
 export class BuddyProbeResponseDto extends createZodDto(z.object({ ok: z.boolean() })) {}
 
 export const BuddyEscrowSchema = z.strictObject({
-  version: z.literal(1),
+  version: z.literal(1).meta({ format: 'double' }),
   vaultId: z.uuid(),
   blob: z
     .string()

@@ -12,8 +12,11 @@ const RelayConfirmationKey = z.strictObject({
 export const BUDDY_VERSION = 1;
 export const BUDDY_GRANT_TYPE = 'buddy-grant+jwt';
 export const BUDDY_GRANT_LIFETIME_SEC = 300;
-export const BuddyVersion = z.literal(BUDDY_VERSION);
-export const BuddyRetention = z.strictObject({ days: z.literal(30), monthly: z.literal(12) });
+export const BuddyVersion = z.literal(BUDDY_VERSION).meta({ format: 'double' });
+export const BuddyRetention = z.strictObject({
+  days: z.literal(30).meta({ format: 'double' }),
+  monthly: z.literal(12).meta({ format: 'double' }),
+});
 export const BuddyScope = z.enum(['read', 'write']);
 const bytes = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const quota = bytes.min(10 * 1024 ** 3);
