@@ -40,6 +40,7 @@ it.each([
     snapshot: {
       request: { scope: 'asset', assetIds: [assetId], mode },
       admin: true,
+      owner: { current: { [assetId]: { originalPath: files[0].path, isExternal: false } } },
       manifestHash: hash(JSON.stringify(manifest)),
     },
   };
