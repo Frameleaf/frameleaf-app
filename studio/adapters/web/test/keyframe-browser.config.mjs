@@ -26,6 +26,7 @@ export default async () => {
         "test/keyframe-render.browser.html",
         "test/editor-controls.browser.html",
         "test/boundary-hit.browser.html",
+        "test/linked-edit-axis.browser.html",
       ],
     },
     resolve: {
