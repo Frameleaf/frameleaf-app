@@ -222,10 +222,7 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
     });
   }
 
-  test('an ordinary account cannot see or request server-wide Buddy status and controls', async ({
-    context,
-    page,
-  }) => {
+  test('an ordinary account cannot see or request server-wide Buddy status and controls', async ({ context, page }) => {
     const user = await utils.userSetup(admin.accessToken, {
       email: 'buddy-reader@example.com',
       name: 'Buddy reader',
