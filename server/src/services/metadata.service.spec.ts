@@ -277,7 +277,7 @@ describe(MetadataService.name, () => {
       );
     });
 
-    it.each(['', ' '.repeat(3), '----', 'Unknown (0)'])(
+    it.each(['', ' '.repeat(3), '----', 'Unknown (0)', 'n/a', ' N/A '])(
       'uses LensModel after an unusable earlier lens: %s',
       async (LensID) => {
         const asset = AssetFactory.create();
@@ -289,6 +289,16 @@ describe(MetadataService.name, () => {
         );
       },
     );
+
+    it('stores no lens when every lens candidate is a placeholder', async () => {
+      const asset = AssetFactory.create();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({ LensID: 'n/a', LensType: ' N/A ', LensSpec: '----', LensModel: 'Unknown (0)' });
+      await sut.handleMetadataExtraction({ id: asset.id });
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ lensModel: null }) }),
+      );
+    });
 
     it.each([
       [-1, -1],
