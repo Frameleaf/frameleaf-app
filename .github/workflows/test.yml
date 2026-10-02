@@ -421,6 +421,69 @@ jobs:
       - name: Capture upload transport Docker logs
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.upload-transport.yml logs --no-color > docker-upload-transport-logs.txt
+      # FL-310: two real app/PG/Redis stacks, with only the coordinator and edge enrollment substituted.
+      # The first bounded lane qualifies direct HTTPS on x64; relay/real-Cloud/two-network acceptance is separate.
+      - name: Prepare disposable Buddy TLS and storage
+        id: buddy-prepare
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        run: bash buddy-fixture-tls.sh
+      - name: Start the two-server Buddy fixture
+        id: buddy-fixture
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        env:
+          BUDDY_PREPARE_OUTCOME: ${{ steps.buddy-prepare.outcome }}
+        run: |
+          if [ "$BUDDY_PREPARE_OUTCOME" != success ]; then
+            echo '::error::Two-server Buddy preparation failed; fixture startup refused.'
+            exit 1
+          fi
+          # Stop the previous owned fixture after its diagnostics to bound runner resource use.
+          docker compose stop
+          docker compose -f docker-compose.buddy.yml up -d --no-build --wait --wait-timeout 300
+          for port in 3285 3286; do
+            timeout 120s bash -c 'until curl --fail --silent --max-time 2 "http://127.0.0.1:$1/api/server/ping" > /dev/null; do sleep 2; done' -- "$port"
+          done
+      - name: Run two-server direct Buddy acceptance
+        id: buddy-test
+        if: ${{ !cancelled() && matrix.runner == 'ubuntu-24.04' }}
+        working-directory: ./server
+        env:
+          BUDDY_FIXTURE_OUTCOME: ${{ steps.buddy-fixture.outcome }}
+          FRAMELEAF_BUDDY_BACKUP: 'true'
+        run: |
+          # Setup failure is a failed required lane, never a skipped or green acceptance test.
+          if [ "$BUDDY_FIXTURE_OUTCOME" != success ]; then
+            echo '::error::Two-server Buddy fixture did not start; acceptance was not executed.'
+            exit 1
+          fi
+          pnpm exec vitest run --config test/vitest.config.buddy.mjs
+      - name: Capture redacted Buddy diagnostics
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        run: |
+          # Intentionally exclude raw app/fixture logs, environment, auth headers, kits and media.
+          {
+            date --utc --iso-8601=seconds
+            git rev-parse HEAD
+            docker image inspect immich-server:latest frameleaf-postgres:e2e --format '{{.Id}}' || true
+            if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/.fl310-buddy-fixture" ]; then
+              while IFS= read -r container_id; do
+                [ -n "$container_id" ] || continue
+                docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}} status={{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} image={{.Image}}' "$container_id" || true
+              done < <(docker compose -f docker-compose.buddy.yml ps --all --quiet)
+            fi
+          } > docker-buddy-diagnostics.txt 2>&1
+          if [ -n "${BUDDY_ROOT:-}" ] && [ -f "$BUDDY_ROOT/evidence/buddy.json" ]; then
+            cp "$BUDDY_ROOT/evidence/buddy.json" buddy-evidence.json
+          fi
+      - name: Remove the owned Buddy fixture
+        if: ${{ always() && matrix.runner == 'ubuntu-24.04' }}
+        run: |
+          if [ -n "${BUDDY_ROOT:-}" ]; then
+            case "$BUDDY_ROOT" in "$RUNNER_TEMP"/fl310-buddy.*) ;; *) exit 1 ;; esac
+            test -f "$BUDDY_ROOT/.fl310-buddy-fixture"
+            docker compose -f docker-compose.buddy.yml down --volumes --remove-orphans
+            rm -rf -- "$BUDDY_ROOT"
+          fi
       # FL-201: the same image, now pointed at the fake Frameleaf Cloud (vendored contract fixtures), for the
       # processing-consent specs. Runs after the main suite, whose specs expect the default cloud address.
       # The whole stack starts fresh (new database and volumes): the server must record its media location
@@ -463,6 +526,8 @@ jobs:
             e2e/docker-diagnostics-after-api-tests.txt
             e2e/docker-diagnostics-after-maintenance-tests.txt
             e2e/docker-upload-transport-logs.txt
+            e2e/docker-buddy-diagnostics.txt
+            e2e/buddy-evidence.json
             e2e/docker-cloud-accounting-logs.txt
     # The server image compiles its own media libraries (FL-191), which lengthens the Compose build.
     timeout-minutes: 120
