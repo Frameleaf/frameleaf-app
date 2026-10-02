@@ -22,6 +22,7 @@ import catalogue from '../../../frameleaf-studio-commands.json'
  * engine. `studio/graph-conformance-v1.json` holds the inputs (media, seed graphs, bases, cases and
  * history scripts) and the engine's answers. This test recomputes every answer and fails on any
  * difference, so the protocol the native apps implement cannot silently drift from the engine.
+ * FL-307 (NAPI-018) added the cases of the clip, timeline-edit, track and marker commands.
  *
  *   GRAPH_CONFORMANCE_WRITE=1 node studio/tools/adapter.mjs test   # regenerate the answers
  *
@@ -73,6 +74,11 @@ interface Case {
   summary: string
   base: string
   media?: string
+  /**
+   * FL-307: the engine accepts this batch but its result is not in normal form (`fixedPoint` is
+   * false). Declared by hand; the recorded answer must agree, in both directions.
+   */
+  outsideNormalForm?: boolean
   envelopes: CanonicalEnvelope[]
   expect: CaseExpectation | null
 }
@@ -126,10 +132,13 @@ const graphDigestOf = (graph: unknown) => sha256(canonicalJson(graph))
 const envelopeDigestOf = (graph: unknown) =>
   sha256(canonicalJson({ schemaVersion: 1, engine: 'freecut', engineRevision: engineBuild.upstreamCommit, graph }))
 
-/** Every JSON path, in canonical key order, whose string value is `id`. */
+/**
+ * Every JSON path, in canonical key order, whose string value is `id`, or `track-` + `id`: the form
+ * of the id of a track a command creates.
+ */
 const pathsOf = (value: unknown, id: string, at = '', found: string[] = []): string[] => {
   if (typeof value === 'string') {
-    if (value === id) found.push(at)
+    if (value === id || value === `track-${id}`) found.push(at)
   } else if (Array.isArray(value)) {
     value.forEach((entry, index) => pathsOf(entry, id, `${at}[${index}]`, found))
   } else if (value && typeof value === 'object') {
@@ -323,10 +332,20 @@ const mutating = (catalogue as { commands: Array<{ id: string; mutatesGraph: boo
   .map((command) => command.id)
   .sort()
 
-describe('Studio graph protocol v1 conformance (FL-306)', () => {
-  it('replays every fixture through the engine without drift', async () => {
+/**
+ * Each case is applied three times (the batch, an empty batch, the batch at another time), and
+ * FL-307 added several hundred cases. The suite's 30 s default is too tight on a busy runner.
+ */
+const REPLAY_TIMEOUT = 300_000
+
+/** The drift test's run, kept so that the determinism test replays the fixtures once, not twice. */
+let firstRun: Fixtures | undefined
+
+describe('Studio graph protocol v1 conformance (FL-306, FL-307)', () => {
+  it('replays every fixture through the engine without drift', { timeout: REPLAY_TIMEOUT }, async () => {
     const stored = load()
     const generated = await generate(stored)
+    firstRun = generated
     if (WRITE) {
       writeFileSync(fixturePath, `${JSON.stringify(generated, null, 2)}\n`)
       return
@@ -340,12 +359,18 @@ describe('Studio graph protocol v1 conformance (FL-306)', () => {
     }
     expect(generated.vectors).toEqual(stored.vectors)
     generated.cases.forEach((entry, index) => expect(entry.expect, entry.id).toEqual(stored.cases[index]!.expect))
+    // A result outside normal form is declared, never discovered by accident.
+    for (const entry of generated.cases) {
+      if (entry.expect?.status !== 'applied') continue
+      expect(entry.expect.fixedPoint, `${entry.id}: outsideNormalForm`).toBe(entry.outsideNormalForm !== true)
+    }
     generated.history.forEach((script, index) => expect(script.expect, script.id).toEqual(stored.history[index]!.expect))
   })
 
-  it('is deterministic: a second run gives the same answers', async () => {
+  it('is deterministic: a second run gives the same answers', { timeout: REPLAY_TIMEOUT }, async () => {
     const stored = load()
-    const [first, second] = [await generate(stored), await generate(stored)]
+    const first = firstRun ?? (await generate(stored))
+    const second = await generate(stored)
     expect(canonicalJson(second)).toBe(canonicalJson(first))
   })
 
