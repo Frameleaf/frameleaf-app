@@ -64,6 +64,7 @@ def test_warning_lists_every_pair_on_one_line() -> None:
     assert message is not None
     assert "IMMICH_PORT → FRAMELEAF_PORT" in message
     assert "IMMICH_HOST → FRAMELEAF_HOST" in message
+    assert "The old names still work in this major version and stop working in the next major release." in message
     assert "\n" not in message
 
 
