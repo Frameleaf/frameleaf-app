@@ -57,8 +57,11 @@ export const dimensionsLabel = (asset: AssetResponseDto): string | null => {
     : null;
 };
 
-export const cameraLabel = (exif: ExifResponseDto | undefined): string | null =>
-  [exif?.make, exif?.model].filter(Boolean).join(' ') || null;
+export const cameraLabel = (exif: ExifResponseDto | undefined): string | null => {
+  const make = exif?.make?.trim() ?? '';
+  const model = exif?.model?.trim() ?? '';
+  return model.toLowerCase().startsWith(make.toLowerCase()) ? model || null : [make, model].filter(Boolean).join(' ');
+};
 
 const exposureSeconds = (value: string | null | undefined): string | null => {
   if (typeof value !== 'string' || !value.trim()) {

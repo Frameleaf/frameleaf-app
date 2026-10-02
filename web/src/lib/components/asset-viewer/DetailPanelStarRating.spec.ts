@@ -38,7 +38,9 @@ describe('DetailPanelStarRating', () => {
     await waitFor(() =>
       expect(sdkMock.updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { rating: 4 } }),
     );
-    expect(onAssetRefresh).toHaveBeenCalledWith(expect.objectContaining({ exifInfo: { rating: 4 } }));
+    expect(onAssetRefresh).toHaveBeenCalledWith(
+      expect.objectContaining({ exifInfo: { rating: 4, isRejected: false } }),
+    );
   });
 
   it('clears a rating with no rating at all', async () => {
@@ -50,8 +52,25 @@ describe('DetailPanelStarRating', () => {
 
     expect(sdkMock.updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { rating: null } });
     await waitFor(() =>
-      expect(onAssetRefresh).toHaveBeenCalledWith(expect.objectContaining({ exifInfo: { rating: null } })),
+      expect(onAssetRefresh).toHaveBeenCalledWith(
+        expect.objectContaining({ exifInfo: { rating: null, isRejected: false } }),
+      ),
     );
+  });
+
+  it('shows and clears a rejected EXIF response', async () => {
+    const asset = owned(null);
+    asset.exifInfo = { rating: null, isRejected: true };
+    const onAssetRefresh = vi.fn();
+    render(DetailPanelStarRating, { asset, isOwner: true, onAssetRefresh });
+    expect(screen.getByText(en.frameleaf_library_rating_rejected)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: en.clear }));
+    await waitFor(() =>
+      expect(onAssetRefresh).toHaveBeenCalledWith(
+        expect.objectContaining({ exifInfo: { rating: null, isRejected: false } }),
+      ),
+    );
+    expect(sdkMock.updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { rating: null } });
   });
 
   it('cannot clear what is not rated', () => {

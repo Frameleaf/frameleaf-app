@@ -25,9 +25,9 @@ describe('RatingAction (V-3)', () => {
     vi.clearAllMocks();
   });
 
-  const render = (rating: number | null) => {
+  const render = (rating: number | null, isRejected?: boolean) => {
     const onAction = vi.fn();
-    const asset = assetFactory.build({ ownerId: 'owner', exifInfo: { rating } });
+    const asset = assetFactory.build({ ownerId: 'owner', exifInfo: { rating, isRejected } });
     return { onAction, asset, ...renderWithTooltips(RatingAction, { asset, onAction }) };
   };
 
@@ -55,6 +55,17 @@ describe('RatingAction (V-3)', () => {
     await fireEvent.click(getByTestId('viewer-rating-button'));
     await fireEvent.click(getAllByRole('button', { name: 'frameleaf_viewer_rate_stars' })[1]);
     await waitFor(() => expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { rating: null } }));
+  });
+
+  it('restores a rejected response by clearing or assigning stars', async () => {
+    const { getByTestId, getByRole, getAllByRole, asset, onAction } = render(null, true);
+    await fireEvent.click(getByTestId('viewer-rating-button'));
+    expect(getByRole('button', { name: 'clear' })).toBeEnabled();
+    await fireEvent.click(getByRole('button', { name: 'clear' }));
+    await waitFor(() => expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { rating: null } }));
+    await fireEvent.click(getByTestId('viewer-rating-button'));
+    await fireEvent.click(getAllByRole('button', { name: 'frameleaf_viewer_rate_stars' })[3]);
+    await waitFor(() => expect(onAction).toHaveBeenLastCalledWith(expect.objectContaining({ rating: 4 })));
   });
 
   it('closes on Escape and returns focus to the button', async () => {

@@ -96,6 +96,13 @@ describe('cameraLabel', () => {
     expect(cameraLabel({})).toBeNull();
     expect(cameraLabel(undefined)).toBeNull();
   });
+
+  it('does not repeat a make already recorded in the model', () => {
+    expect(cameraLabel({ make: 'Canon', model: 'Canon EOS R6' })).toBe('Canon EOS R6');
+    expect(cameraLabel({ make: ' NIKON ', model: ' Nikon Z 8 ' })).toBe('Nikon Z 8');
+    expect(cameraLabel({ make: ' ', model: ' ' })).toBeNull();
+    expect(cameraLabel({ make: 'Sony' })).toBe('Sony');
+  });
 });
 
 describe('exposureParts', () => {
