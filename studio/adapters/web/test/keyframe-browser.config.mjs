@@ -25,6 +25,7 @@ export default async () => {
       entries: [
         "test/keyframe-render.browser.html",
         "test/editor-controls.browser.html",
+        "test/boundary-hit.browser.html",
       ],
     },
     resolve: {
