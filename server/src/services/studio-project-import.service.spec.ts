@@ -6,7 +6,7 @@ import {
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -322,7 +322,9 @@ describe(StudioProjectImportService.name, () => {
     });
   });
 
-  it('removes the files of projects deleted for good and stale incoming uploads', async () => {
+  it('removes registered orphan files individually and retries failures while sweeping stale incoming uploads', async () => {
+    StorageCore.setMediaLocation(await realpath(directory));
+    await mkdir(join(directory, 'exports'));
     const storage = (sut as unknown as { storage: StorageRepository }).storage;
     const unlink = vi.spyOn(storage, 'unlink').mockResolvedValue();
     const unlinkDir = vi.spyOn(storage, 'unlinkDir').mockResolvedValue();
@@ -337,14 +339,18 @@ describe(StudioProjectImportService.name, () => {
       { projectId: PROJECT, ownerId: OWNER },
       { projectId: GONE, ownerId: OWNER },
     ]);
-    // Storage refusing one folder keeps its rows for the next sweep.
-    unlinkDir.mockImplementation((folder) =>
-      folder.endsWith(GONE) ? Promise.reject(new Error('EIO')) : Promise.resolve(),
-    );
+    const keptPath = join(studioImportProjectFolder(OWNER, PROJECT), `${IMPORT}.wav`);
+    const failedPath = join(studioImportProjectFolder(OWNER, GONE), `${IMPORT}.wav`);
+    projects.deleteImports.mockImplementation(async (projectId, ownerId, remove) => {
+      await remove({ projectId, ownerId, id: IMPORT, path: projectId === PROJECT ? keptPath : failedPath });
+    });
+    unlink.mockImplementation(async (path) => { if (path === failedPath) throw new Error('EIO'); });
     await sut.sweep(new Date());
-    expect(unlinkDir).toHaveBeenCalledWith(studioImportProjectFolder(OWNER, PROJECT), { recursive: true, force: true });
-    expect(projects.deleteImports).toHaveBeenCalledWith(PROJECT);
-    expect(projects.deleteImports).not.toHaveBeenCalledWith(GONE);
+    expect(unlinkDir).not.toHaveBeenCalled();
+    expect(projects.deleteImports).toHaveBeenCalledWith(PROJECT, OWNER, expect.any(Function));
+    expect(projects.deleteImports).toHaveBeenCalledWith(GONE, OWNER, expect.any(Function));
+    expect(unlink).toHaveBeenCalledWith(keptPath);
+    expect(unlink).toHaveBeenCalledWith(failedPath);
     expect(unlink).toHaveBeenCalledWith(expect.stringMatching(/incoming\/old\.upload$/));
     expect(unlink).not.toHaveBeenCalledWith(expect.stringMatching(/new\.upload$/));
   });

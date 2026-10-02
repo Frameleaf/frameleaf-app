@@ -35,6 +35,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-metadata.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
+import { BuddyBackupStudioRepository } from 'src/repositories/buddy-backup-studio.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -45,6 +46,13 @@ import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
+import { MaintenanceService } from 'src/services/maintenance.service.js';
+import { StudioResourceService } from 'src/services/studio-resource.service.js';
+import { buddyStudioAssetIds, buddyStudioFiles, buddyStudioProjectIds, readBuddyStudioProject } from 'src/utils/buddy-backup-studio.js';
+import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
+import { isManagedStudioImportPath } from 'src/utils/studio-managed-paths.js';
+import { buddyFileHash } from 'src/utils/buddy-backup-recovery.js';
+import { BUDDY_UUID } from 'src/utils/buddy-backup-crypto.js';
 import {
   CloudBackupDetailsService,
   type OwnerRestoreDetailsContext,
@@ -56,13 +64,10 @@ import {
   emptyRestoreResult,
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
-import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
-import { BUDDY_UUID } from 'src/utils/buddy-backup-crypto.js';
 import { assertBuddyAlbumPlan, buddyLibraryForOwner, selectBuddyAlbumIds } from 'src/utils/buddy-backup-metadata.js';
 import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
 import { buddyFidelityFiles, buddyRestoreChecksum, readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
-import { buddyFileHash } from 'src/utils/buddy-backup-recovery.js';
 import { type BuddySignedSnapshot, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import {
@@ -110,6 +115,7 @@ export class BuddyBackupRestoreService {
     private jobs: JobRepository,
     private recovery: BuddyBackupRecoveryService,
     private maintenance: MaintenanceService,
+    private studioResources: StudioResourceService,
   ) {}
 
   private async auth(auth: AuthDto) {
@@ -358,6 +364,16 @@ export class BuddyBackupRestoreService {
     if (admin && !current.user.isAdmin) throw new ForbiddenException();
     const { reader, manifest } = await this.open(request.snapshotId);
     const ids = await this.selection(current, request, manifest, admin);
+    const projectIds = buddyStudioProjectIds(manifest, request.scope);
+    for (const projectId of projectIds) {
+      const project = readBuddyStudioProject(manifest, projectId);
+      if (buddyStudioAssetIds(manifest, project).some((id) => !ids.includes(id)))
+        throw new BadRequestException('A Studio project dependency is outside this restore');
+      const currentProject = await this.repository.db.selectFrom('studio_project').select('ownerId')
+        .where('id', '=', projectId).executeTakeFirst();
+      if (currentProject && currentProject.ownerId !== project.ownerId)
+        throw new ForbiddenException('Studio project ownership changed');
+    }
     const version = coerce(manifest.frameleafVersion);
     const running = coerce(serverVersion.toString());
     if (!version || !running || gt(version, running))
@@ -370,6 +386,7 @@ export class BuddyBackupRestoreService {
             (!manifest.assetFidelity && manifest.assetFiles?.[id]?.some((row) => row.isEdited && row.path === file.path))));
     if (!['settings', 'server'].includes(request.scope))
       for (const id of ids) selectedFiles.push(...(readBuddyAssetFidelity(manifest, id)?.files ?? []));
+    for (const projectId of projectIds) selectedFiles.push(...readBuddyStudioProject(manifest, projectId).files);
     if (request.scope === 'server')
       selectedFiles.push(
         ...Object.values(manifest.library.profiles),
@@ -405,11 +422,14 @@ export class BuddyBackupRestoreService {
         ]),
       ),
     };
-    const conflicts = ids.filter((id) => identities[id]).length;
+    const projectConflicts = projectIds.length ? await this.repository.db.selectFrom('studio_project').select('id')
+      .where('id', 'in', projectIds).execute() : [];
+    const conflicts = ids.filter((id) => identities[id]).length + projectConflicts.length;
+    const items = ids.length + projectIds.length;
     if (!request.confirm) {
       return {
         operationId: null,
-        items: ids.length,
+        items,
         metadataItems: albumIds.length,
         bytes,
         conflicts,
@@ -454,7 +474,7 @@ export class BuddyBackupRestoreService {
     this.tick();
     return {
       operationId: result.created.id,
-      items: ids.length,
+      items,
       metadataItems: albumIds.length,
       bytes,
       conflicts,
@@ -561,6 +581,8 @@ export class BuddyBackupRestoreService {
     action: (trx: Transaction<DB>, ownerId: string) => Promise<T>,
     inspect = false,
   ) {
+    if (file.role === 'buddy-studio') return this.guardedStudio(operation, token, job, manifest,
+      file.fileKey.split(':')[1], (trx, owner) => action(trx, owner.user.id), file);
     if (!file.assetId) throw new Error('Buddy restore item is missing');
     const assetId = file.assetId;
     const execute = async (trx: Transaction<DB>) => {
@@ -705,6 +727,26 @@ export class BuddyBackupRestoreService {
         .executeTakeFirst();
       if (!current) throw new RestoreStopped();
       return execute(trx);
+    });
+  }
+
+  private async guardedStudio<T>(
+    operation: MediaOperation, token: string, job: RestoreJob, manifest: BuddyManifest, projectId: string,
+    action: (trx: Transaction<DB>, owner: AuthDto) => Promise<T>, file?: CloudBackupRestoreFile,
+  ) {
+    if (!job.admin || job.request.scope !== 'library' || !buddyStudioProjectIds(manifest, 'library').includes(projectId))
+      throw new ForbiddenException('Studio projects require administrator library recovery');
+    const project = readBuddyStudioProject(manifest, projectId);
+    return new BuddyBackupStudioRepository(this.repository.db).guarded({ project, actorId: operation.ownerId,
+      sessionId: job.sessionId, operationId: operation.id, claimToken: token, authorize: () => this.binding(job),
+    }, async (trx, owner) => {
+      if (!file) return action(trx, owner);
+      const expected = buddyStudioFiles(manifest, projectId).find((entry) => entry.fileKey === file.fileKey);
+      if (!expected || file.assetId !== null || file.target !== expected.target || file.sha256 !== expected.sha256 ||
+        file.size !== expected.size) throw new Error('Buddy Studio destination changed');
+      await assertOwnerRestorePath([StorageCore.getBaseFolder(StorageFolder.Exports)], file.target);
+      return new PhysicalFileRepository(trx).withStudioRestorePath(file.target, projectId, project.ownerId,
+        file.sha256, () => action(trx, owner));
     });
   }
 
@@ -898,6 +940,12 @@ export class BuddyBackupRestoreService {
               )),
         );
         plan.files.push(...ids.flatMap((id) => buddyFidelityFiles(manifest, id)));
+        const projectIds = buddyStudioProjectIds(manifest, job.request.scope);
+        for (const projectId of projectIds) {
+          if (buddyStudioAssetIds(manifest, readBuddyStudioProject(manifest, projectId)).some((id) => !ids.includes(id)))
+            throw new Error('Buddy Studio dependency is outside this restore');
+          plan.files.push(...buddyStudioFiles(manifest, projectId));
+        }
         plan.files.sort((a, b) => compareCodeUnits(a.fileKey, b.fileKey));
         if (plan.files.some((file) => !file.inPlace))
           throw new Error('Restore the original storage mounts before restoring these items.');
@@ -917,7 +965,7 @@ export class BuddyBackupRestoreService {
           operationId: operation.id,
           start: { ...emptyRestoreResult(), ...operation.result },
           completedFile: (file, outcome) =>
-            this.recordFile(operation.id, file, file.role !== 'buddy-version' && job.request.mode === 'keep' && outcome === 'skipped'),
+            this.recordFile(operation.id, file, file.role !== 'buddy-version' && file.role !== 'buddy-studio' && job.request.mode === 'keep' && outcome === 'skipped'),
           checkpoint: async (result) => {
             await checkpoint();
             const saved = await this.operations.setBulkResult(operation.id, token, {
@@ -944,7 +992,7 @@ export class BuddyBackupRestoreService {
             const evidence = await captureOwnerRestoreFile(file.target, async (path) =>
               (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
             );
-            if (file.role === 'buddy-version' && evidence.identity && evidence.sha256 !== file.sha256)
+            if (['buddy-version', 'buddy-studio'].includes(file.role) && evidence.identity && evidence.sha256 !== file.sha256)
               throw new Error('A retained Buddy version copy changed');
             if (evidence.identity && (job.request.mode === 'keep' || evidence.sha256 === file.sha256))
               return this.guarded(
@@ -1265,7 +1313,65 @@ export class BuddyBackupRestoreService {
                 true,
               );
             }
-            return { ...result, preservedVersionAssetIds };
+            const restoredProjectIds: string[] = [];
+            for (const projectId of projectIds) {
+              await checkpoint();
+              const project = readBuddyStudioProject(manifest, projectId);
+              const files = buddyStudioFiles(manifest, projectId);
+              const paths = new Map(project.files.map((source, index) => [source.path, files[index].target]));
+              await this.guardedStudio(operation, token, job, manifest, projectId, async (trx, owner) => {
+                for (const file of files) {
+                  await assertOwnerRestorePath([StorageCore.getBaseFolder(StorageFolder.Exports)], file.target);
+                  await new PhysicalFileRepository(trx).withStudioRestorePath(file.target, projectId, project.ownerId,
+                    file.sha256, async () => {});
+                }
+                await new BuddyBackupStudioRepository(trx).publish({ manifest, projectId, actorId: operation.ownerId,
+                  operationId: operation.id, mode: job.request.mode, paths,
+                  retireFile: async (previous) => {
+                    if (previous.importId && !isManagedStudioImportPath({ ...previous, id: previous.importId,
+                      projectId, ownerId: project.ownerId })) return;
+                    try {
+                      await assertOwnerRestorePath([StorageCore.getFolderLocation(StorageFolder.Exports, project.ownerId)], previous.path);
+                    } catch { return; } // Preserve unknown or non-owned paths, including historical external declarations.
+                    const evidence = await captureOwnerRestoreFile(previous.path,
+                      async (path) => (await this.crypto.hashFile(path, 'sha256')).toString('hex'));
+                    if (!evidence.identity || evidence.sha256 !== previous.checksum ||
+                      (previous.size !== null && evidence.size !== BigInt(previous.size))) return;
+                    await assertOwnerRestoreFile(previous.path, evidence.identity);
+                    await this.jobs.queue({ name: JobName.FileDelete, data: { files: [previous.path] } });
+                  },
+                  verify: async () => {
+                    const evidence = await this.verifyFiles(operation.id, files);
+                    for (const file of files) if (evidence.get(file.fileKey)?.sha256 !== file.sha256)
+                      throw new Error('Buddy Studio retained file did not verify');
+                  },
+                  validateResources: async (project) => {
+                    for (const revision of project.revisions) {
+                      const resolution = await this.studioResources.resolveProjectResources(owner, {
+                        projectId, ownerId: project.ownerId, revision: revision.revision, destination: StudioDestination.Local,
+                        graph: { document: revision.envelope.graph,
+                          retained: project.generated.filter((row) => row.sourceRevision === revision.revision)
+                            .map((row) => ({ $resource: { kind: StudioResourceKind.GeneratedIntermediate, id: row.id } })) },
+                        imports: project.imports.map((row) => ({ ...row, path: paths.get(row.path)!,
+                          externalReferences: row.externalReferences ?? undefined })),
+                        generated: project.generated.map((row) => ({ ...row, path: paths.get(row.path)! })),
+                      });
+                      if (!resolution.manifest.complete || resolution.manifest.entries.some((entry) =>
+                        entry.sourceAccess === 'shared' || (entry.ownerId && entry.ownerId !== project.ownerId)))
+                        throw new Error('Buddy Studio requires complete, currently owned resources');
+                    }
+                  },
+                });
+              });
+              restoredProjectIds.push(projectId);
+            }
+            for (const projectId of projectIds) {
+              await checkpoint();
+              const project = readBuddyStudioProject(manifest, projectId);
+              await this.guardedStudio(operation, token, job, manifest, projectId, (trx) =>
+                new BuddyBackupStudioRepository(trx).restoreLineage(project, job.request.mode));
+            }
+            return { ...result, preservedVersionAssetIds, restoredProjectIds };
           },
         });
         if (!done) throw new RestoreStopped();

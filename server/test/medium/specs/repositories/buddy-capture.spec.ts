@@ -32,6 +32,7 @@ import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.s
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { BUDDY_BLOCK_BYTES, type BuddyKeyring, decryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
 import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
+import { checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
@@ -202,6 +203,53 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     expect(result.manifest.library.assets[own.asset.id].owner).toBe(ownerId);
     expect(result.manifest.library.assets[otherAsset.id].owner).toBe(other.id);
     await capture.release(run.runId);
+
+  });
+
+  it('captures unanchored Studio documents and their pinned imports from the same exported database snapshot', async () => {
+    const source = await file('captions.srt', Buffer.from('1\n00:00:00,000 --> 00:00:01,000\nSnapshot words\n'));
+    const project = await db.insertInto('studio_project').values({ ownerId, name: 'Snapshot project', currentRevision: 1 })
+      .returningAll().executeTakeFirstOrThrow();
+    const empty = await db.insertInto('studio_project').values({ ownerId, name: 'Metadata-only project' })
+      .returningAll().executeTakeFirstOrThrow();
+    const importId = randomUUID();
+    const envelope = { schemaVersion: 1, engine: 'freecut', engineRevision: 'fixture', graph: { captionsImportId: importId } };
+    const checked = checkStudioEnvelope(envelope);
+    if (!checked.ok) throw new Error(checked.detail);
+    const saved = await db.insertInto('studio_project_revision').values({ projectId: project.id, revision: 1, authorId: ownerId,
+      envelope, digest: studioEnvelopeDigest(envelope), graphBytes: checked.graphBytes, summary: {} })
+      .returningAll().executeTakeFirstOrThrow();
+    const checksum = createHash('sha256').update(source.bytes).digest('hex');
+    await sql`INSERT INTO immich_fork.studio_project_import
+      ("projectId",id,"ownerId","contentType",checksum,"sizeBytes",path,"fileName","externalReferences")
+      VALUES (${project.id}::uuid,${importId}::uuid,${ownerId}::uuid,'application/x-subrip',${checksum},
+        ${source.bytes.length},${source.path},'captions.srt',NULL)`.execute(db);
+    const input = options();
+    const { capture, queue } = fixture(async () => {
+      expect((await references(input.runId)).map((row) => row.path)).toContain(source.path);
+      // The live project disappears after the export. Its retained file cannot disappear while
+      // that same snapshot is being encrypted, and the deletion intent remains durable.
+      await db.deleteFrom('studio_project').where('id', '=', project.id).execute();
+      const remove = vi.fn(async () => unlink(source.path));
+      expect((await physical.deleteUnreferencedPath(source.path, remove, { orphanStudioImport: {
+        projectId: project.id, id: importId, ownerId, checksum, sizeBytes: source.bytes.length,
+      } })).deleted).toBe(false);
+      expect(remove).not.toHaveBeenCalled();
+      await db.updateTable('studio_project').set({ name: 'Changed after export' }).where('id', '=', empty.id).execute();
+    });
+    const result = await capture.capture(input);
+    const captured = result.manifest.studio!.projects[project.id];
+    expect(captured).toMatchObject({ name: 'Snapshot project', currentRevision: 1,
+      revisions: [expect.objectContaining({ id: saved.id, digest: saved.digest })],
+      imports: [expect.objectContaining({ id: importId, path: source.path, checksum })] });
+    expect(result.manifest.studio!.projects[empty.id]).toMatchObject({ name: 'Metadata-only project', currentRevision: 0 });
+    expect(await restoreBytes(result, input.runId, checksum)).toEqual(source.bytes);
+    queue.mockRejectedValueOnce(new Error('Queue unavailable'));
+    await expect(capture.release(input.runId)).rejects.toThrow('Queue unavailable');
+    expect((await references(input.runId)).filter((row) => row.path === source.path))
+      .toEqual([expect.objectContaining({ released: true, deleteRequested: true })]);
+    await capture.release(input.runId);
+    expect(queue).toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete, data: { files: [source.path] } }));
   });
 
   it('pins retained versions before the dump and preserves them through later moves and deletes', async () => {

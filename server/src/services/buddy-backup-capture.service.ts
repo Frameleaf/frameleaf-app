@@ -18,6 +18,8 @@ import {
 import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-metadata.repository.js';
 import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
 import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
+import { BuddyBackupStudioRepository } from 'src/repositories/buddy-backup-studio.repository.js';
+import type { BuddyStudioSnapshot } from 'src/utils/buddy-backup-studio.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -61,6 +63,8 @@ export type BuddyManifest = {
   >;
   /** Absent on older snapshots. Per-asset retained work; never a replay of background jobs. */
   assetFidelity?: Record<string, BuddyAssetFidelity>;
+  /** Durable project archive components, encrypted with the snapshot; no upload/job/lease records. */
+  studio?: BuddyStudioSnapshot;
   dependencies: CloudBackupManifestFile[];
   configurationFiles: CloudBackupManifestFile[];
   cloudBackupKeys?: Array<{ fingerprint: string; content: string }>;
@@ -88,7 +92,7 @@ const dependencyPaths = sql<{ path: string }>`SELECT path FROM immich_fork.studi
   UNION SELECT "masterPath" AS path FROM immich_fork.video_edit_version WHERE "masterPath" IS NOT NULL
   UNION SELECT "proxyPath" AS path FROM immich_fork.video_edit_version WHERE "proxyPath" IS NOT NULL
   UNION SELECT f->>'path' AS path FROM immich_fork.video_edit_version, jsonb_array_elements(files) f
-  UNION SELECT "outputPath" AS path FROM public.studio_export_version WHERE "outputPath" IS NOT NULL
+  UNION SELECT "outputPath" AS path FROM public.studio_export_version WHERE "outputPath" IS NOT NULL AND "outputRemovedAt" IS NULL
   UNION SELECT "resultPath" AS path FROM public.asset_restoration WHERE "resultPath" IS NOT NULL
   UNION SELECT "resultPreviewPath" AS path FROM public.asset_restoration WHERE "resultPreviewPath" IS NOT NULL`;
 
@@ -344,6 +348,8 @@ export class BuddyBackupCaptureService {
             barrier = false;
             const index = new CloudBackupIndexRepository(trx);
             const fidelity = new BuddyBackupFidelityRepository(trx);
+            const studio = new BuddyBackupStudioRepository(trx);
+            manifest.studio = await studio.capture();
             manifest.storageRoots = [
               StorageCore.getMediaLocation(),
               ...(await trx.selectFrom('library').select('importPaths').execute()).flatMap(
@@ -469,6 +475,7 @@ export class BuddyBackupCaptureService {
                 fidelity.bindFiles(state, inventory);
                 readBuddyAssetFidelity(manifest, state.assetId);
               }
+              for (const project of Object.values(manifest.studio.projects)) studio.bindFiles(project, inventory);
               for (const path of configurationPaths)
                 manifest.configurationFiles.push(await captureFile(path, 'configuration'));
               const database = await captureFile(dump, 'database', undefined, true);

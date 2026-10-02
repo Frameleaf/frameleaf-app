@@ -842,11 +842,14 @@ describe(StudioProjectRepository.name, () => {
       );
 
       expect(await sut.listOrphanImportProjects()).toEqual([]);
-      await sut.deleteImports(kept.id);
+      const unlink = vi.fn().mockResolvedValue(undefined);
+      await sut.deleteImports(kept.id, user.id, unlink);
+      expect(unlink).not.toHaveBeenCalled();
       expect(await sut.getImportBytes(user.id)).toBe(150);
       await sut.delete(gone.id);
       expect(await sut.listOrphanImportProjects()).toEqual([{ projectId: gone.id, ownerId: user.id }]);
-      await sut.deleteImports(gone.id);
+      await sut.deleteImports(gone.id, user.id, unlink);
+      expect(unlink).toHaveBeenCalledWith(expect.objectContaining({ id: doomed.id, path: doomed.path }));
       expect(await sut.listOrphanImportProjects()).toEqual([]);
       expect(await sut.getImportBytes(user.id)).toBe(100);
     });
