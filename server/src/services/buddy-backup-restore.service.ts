@@ -20,7 +20,6 @@ import { OnEvent } from 'src/decorators.js';
 import {
   AlbumUserRole,
   AssetStatus,
-  ChecksumAlgorithm,
   DatabaseLock,
   ImmichWorker,
   MaintenanceAction,
@@ -31,12 +30,14 @@ import {
 } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
+import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { PhysicalFileRepository, lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
@@ -55,8 +56,10 @@ import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
 import { BUDDY_UUID } from 'src/utils/buddy-backup-crypto.js';
 import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
+import { buddyFidelityFiles, buddyRestoreChecksum, readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { buddyFileHash } from 'src/utils/buddy-backup-recovery.js';
 import { type BuddySignedSnapshot, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import { compareCodeUnits } from 'src/utils/compare.js';
 import {
   assertOwnerRestoreFile,
   assertOwnerRestorePath,
@@ -123,13 +126,17 @@ export class BuddyBackupRestoreService {
     await this.auth(auth);
     const operation = await this.operations.getOfKind(id, MediaOperationKind.BuddyRestore);
     if (!operation || operation.ownerId !== auth.user.id) throw new NotFoundException('Restore unavailable');
+    const preserved = operation.status === MediaOperationStatus.Completed &&
+      Array.isArray(operation.result?.preservedVersionAssetIds) ? operation.result.preservedVersionAssetIds.length : 0;
     return {
       id,
       state: operation.status,
       progress: operation.progress,
       phase: String(operation.result?.phase ?? operation.status),
       recoveryId: typeof operation.result?.recoveryId === 'string' ? operation.result.recoveryId : null,
-      error: operation.error ?? null,
+      error: operation.error ?? (preserved
+        ? `Existing originals and their current saved versions were kept for ${preserved} item(s). Choose replace to restore their backed-up versions.`
+        : null),
     };
   }
 
@@ -334,7 +341,11 @@ export class BuddyBackupRestoreService {
     const selectedFiles: Array<{ size: number }> =
       request.scope === 'settings'
         ? manifest.configurationFiles
-        : ids.flatMap((id) => manifest.library.assets[id].files);
+        : ids.flatMap((id) => manifest.library.assets[id].files.filter((file) =>
+            request.scope === 'server' || file.role === 'original' || file.role === 'sidecar' ||
+            (!manifest.assetFidelity && manifest.assetFiles?.[id]?.some((row) => row.isEdited && row.path === file.path))));
+    if (!['settings', 'server'].includes(request.scope))
+      for (const id of ids) selectedFiles.push(...(readBuddyAssetFidelity(manifest, id)?.files ?? []));
     if (request.scope === 'server')
       selectedFiles.push(
         ...Object.values(manifest.library.profiles),
@@ -506,10 +517,27 @@ export class BuddyBackupRestoreService {
           .executeTakeFirstOrThrow();
         roots.push(...library.importPaths);
       }
+      if (file.role === 'buddy-version') {
+        const expected = buddyFidelityFiles(manifest, assetId).find((entry) => entry.fileKey === file.fileKey);
+        if (!expected || expected.target !== file.target || expected.sha256 !== file.sha256 || expected.size !== file.size)
+          throw new Error('Buddy version destination changed');
+        // A deleted asset's owner directory may be gone. Only the recomputed private target
+        // may be created below the current managed mount; all existing ancestors are checked.
+        roots.push(StorageCore.getBaseFolder(StorageFolder.Thumbnails));
+      }
       await assertOwnerRestorePath(roots, file.target);
+      if (file.role === 'buddy-version') {
+        if (inspect) {
+          // These deterministic owner-private copies are immutable. Publication still uses the ordinary
+          // unreferenced-path guard; inspection also permits a retry after their metadata committed.
+          await lockForkWrites(trx, 'Buddy versions cannot be restored during database handoff');
+          await lockFilePath(trx, file.target);
+          return action(trx, ownerId);
+        }
+      }
       const source = manifest.library.assets[assetId].files[Number(file.fileKey.split(':').at(-1))];
       const derivative =
-        file.role === 'original'
+        file.role === 'original' || file.role === 'buddy-version'
           ? undefined
           : manifest.assetFiles?.[assetId]?.find((entry) => entry.path === source?.path);
       const physical = new PhysicalFileRepository(trx);
@@ -741,13 +769,15 @@ export class BuddyBackupRestoreService {
           (file) =>
             file.role === 'original' ||
             file.role === 'sidecar' ||
-            manifest.assetFiles?.[file.assetId!]?.some(
+            (!manifest.assetFidelity && manifest.assetFiles?.[file.assetId!]?.some(
               (entry) =>
                 entry.isEdited &&
                 entry.path ===
                   manifest.library.assets[file.assetId!].files[Number(file.fileKey.split(':').at(-1))].path,
-            ),
+            )),
         );
+        plan.files.push(...ids.flatMap((id) => buddyFidelityFiles(manifest, id)));
+        plan.files.sort((a, b) => compareCodeUnits(a.fileKey, b.fileKey));
         if (plan.files.some((file) => !file.inPlace))
           throw new Error('Restore the original storage mounts before restoring these items.');
         const restorer = new CloudBackupRestorer(null, this.storage, this.crypto, this.logger);
@@ -766,7 +796,7 @@ export class BuddyBackupRestoreService {
           operationId: operation.id,
           start: { ...emptyRestoreResult(), ...operation.result },
           completedFile: (file, outcome) =>
-            this.recordFile(operation.id, file, job.request.mode === 'keep' && outcome === 'skipped'),
+            this.recordFile(operation.id, file, file.role !== 'buddy-version' && job.request.mode === 'keep' && outcome === 'skipped'),
           checkpoint: async (result) => {
             await checkpoint();
             const saved = await this.operations.setBulkResult(operation.id, token, {
@@ -793,6 +823,8 @@ export class BuddyBackupRestoreService {
             const evidence = await captureOwnerRestoreFile(file.target, async (path) =>
               (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
             );
+            if (file.role === 'buddy-version' && evidence.identity && evidence.sha256 !== file.sha256)
+              throw new Error('A retained Buddy version copy changed');
             if (evidence.identity && (job.request.mode === 'keep' || evidence.sha256 === file.sha256))
               return this.guarded(
                 operation,
@@ -811,6 +843,7 @@ export class BuddyBackupRestoreService {
           },
           library: async (result) => {
             const verified = await this.verifyFiles(operation.id, plan.files);
+            const preservedVersionAssetIds: string[] = [];
             for (const assetId of ids) {
               await checkpoint();
               const file = plan.files.find((entry) => entry.assetId === assetId && entry.role === 'original')!;
@@ -861,6 +894,8 @@ export class BuddyBackupRestoreService {
                   }
                   const details = { ...asset.details!, albums };
                   if (existing) {
+                    const currentChecksum = await trx.selectFrom('asset').select(['checksum', 'checksumAlgorithm'])
+                      .where('id', '=', assetId).executeTakeFirstOrThrow();
                     await this.details.putBack(
                       {
                         assetId,
@@ -877,10 +912,9 @@ export class BuddyBackupRestoreService {
                       id: assetId,
                       status: AssetStatus.Active,
                       deletedAt: null,
-                      ...(evidence.sha256 === file.sha256 && {
-                        checksum: Buffer.from(file.sha256, 'hex'),
-                        checksumAlgorithm: ChecksumAlgorithm.sha256File,
-                      }),
+                      ...(evidence.sha256 === file.sha256 && buddyRestoreChecksum(
+                        readBuddyAssetFidelity(manifest, assetId), currentChecksum, file.sha256,
+                      )),
                     });
                   } else {
                     if (evidence.sha256 !== file.sha256) throw new Error('Buddy original has not been restored');
@@ -914,7 +948,7 @@ export class BuddyBackupRestoreService {
                 true,
               );
               for (const restored of plan.files) {
-                if (restored.assetId !== assetId || restored.role === 'original') continue;
+                if (restored.assetId !== assetId || restored.role === 'original' || restored.role === 'buddy-version') continue;
                 const source = manifest.library.assets[assetId].files[Number(restored.fileKey.split(':').at(-1))];
                 const metadata = manifest.assetFiles?.[assetId]?.find((entry) => entry.path === source.path);
                 if (!metadata) continue;
@@ -950,6 +984,29 @@ export class BuddyBackupRestoreService {
                   },
                   true,
                 );
+              }
+              const state = readBuddyAssetFidelity(manifest, assetId);
+              if (state) {
+                const versionFiles = buddyFidelityFiles(manifest, assetId);
+                const outcome = await this.guarded(operation, token, job, manifest, snapshot, file, async (trx, ownerId) => {
+                  const current = await captureOwnerRestoreFile(file.target, async (path) =>
+                    (await this.crypto.hashFile(path, 'sha256')).toString('hex'));
+                  return new BuddyBackupFidelityRepository(trx).publish({
+                    state,
+                    ownerId,
+                    originalSha256: current.sha256 ?? '',
+                    mode: job.request.mode,
+                    paths: new Map(state.files.map((source, index) => [source.path, versionFiles[index].target])),
+                    verify: async () => {
+                      await assertOwnerRestoreFile(file.target, current.identity);
+                      const evidence = await this.verifyFiles(operation.id, versionFiles);
+                      for (const restored of versionFiles)
+                        if (evidence.get(restored.fileKey)?.sha256 !== restored.sha256)
+                          throw new Error('Buddy retained version did not verify');
+                    },
+                  });
+                }, true);
+                if (outcome === 'preserved-source') preservedVersionAssetIds.push(assetId);
               }
             }
             for (const assetId of ids) {
@@ -1047,11 +1104,18 @@ export class BuddyBackupRestoreService {
                 true,
               );
             }
-            return result;
+            return { ...result, preservedVersionAssetIds };
           },
         });
         if (!done) throw new RestoreStopped();
         await this.verifyFiles(operation.id, plan.files);
+        if (!(await this.operations.setBulkResult(operation.id, token, {
+          result: done,
+          processedUnits: done.files,
+          totalUnits: done.filesTotal,
+          progress: 100,
+          leaseMs: LEASE_MS,
+        }))) throw new RestoreStopped();
       }
       await checkpoint();
       await this.operations.beginValidation(operation.id, token);
