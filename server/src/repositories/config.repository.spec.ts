@@ -521,6 +521,7 @@ describe('getEnv', () => {
     it('is not configured by default and never falls back to a default host', () => {
       expect(getEnv().frameleafCloud).toEqual({
         url: null,
+        pushUrl: null,
         identityDir: null,
         linkToken: null,
         setupCode: null,
@@ -533,6 +534,7 @@ describe('getEnv', () => {
 
     it('parses the deployment configuration', () => {
       process.env.FRAMELEAF_CLOUD_URL = 'https://frameleaf.cloud.test/';
+      process.env.FRAMELEAF_PUSH_URL = 'https://push.frameleaf.cloud.test/';
       process.env.FRAMELEAF_IDENTITY_DIR = '/data/identity';
       process.env.FRAMELEAF_LINK_TOKEN = 'fll_abcdefgh12345678';
       process.env.FRAMELEAF_EDGE_PORT = '8443';
@@ -545,6 +547,7 @@ describe('getEnv', () => {
       process.env.FRAMELEAF_SETUP_CODE = 'abcd-2345';
       expect(getEnv().frameleafCloud).toEqual({
         url: 'https://frameleaf.cloud.test',
+        pushUrl: 'https://push.frameleaf.cloud.test',
         identityDir: '/data/identity',
         linkToken: 'fll_abcdefgh12345678',
         setupCode: 'ABCD2345',

@@ -739,7 +739,7 @@ describe(PushService.name, () => {
 
     it('delivers opaque payloads through the gateway, signed with the instance key', async () => {
       const received: PushSendRequest[] = [];
-      cloud.on('POST /api/v1/push/send', (request) => {
+      cloud.on('POST /push/v1/push/send', (request) => {
         received.push(request.json());
         return { status: 200, body: { status: 'sent' } };
       });
@@ -758,7 +758,9 @@ describe(PushService.name, () => {
       const cloudRepository = new FrameleafCloudRepository(LoggingRepository.create());
       const sut = new PushService(
         LoggingRepository.create(),
-        { getEnv: () => ({ frameleafCloud: { url: cloud.url, identityDir: dir } }) } as never,
+        {
+          getEnv: () => ({ frameleafCloud: { url: cloud.url, pushUrl: `${cloud.url}/push`, identityDir: dir } }),
+        } as never,
         {
           get: (k: string) => Promise.resolve(metadata.get(k) ?? null),
           set: (k: string, v: unknown) => Promise.resolve(void metadata.set(k, v)),
@@ -778,7 +780,7 @@ describe(PushService.name, () => {
       ).resolves.toBe(JobStatus.Success);
 
       expect(received).toHaveLength(1);
-      const request = cloud.requests.find(({ path }) => path === '/api/v1/push/send')!;
+      const request = cloud.requests.find(({ path }) => path === '/push/v1/push/send')!;
       expect(request.dpop).not.toBeNull();
       expect(request.body).not.toContain('Trip');
       expect(request.body).not.toContain('locked');

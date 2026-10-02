@@ -8,8 +8,11 @@ import { PushEventType } from 'src/enum.js';
  * `packages/contracts/src/instance/push.ts` and `docs/native-apps-cloud.md`). It replaces FL-228's
  * assumed batch contract.
  *
- * - Address: discovery's `endpoints.push` when present, else `api` (FL-155). The instance token is
- *   requested with that address as its `resource` and DPoP-bound to the instance key (FL-178).
+ * - Address (FL-293): the gateway answers on its own host only (`/v1/push/*` is a 404 on the API
+ *   host), and discovery does not name it today. It is `FRAMELEAF_PUSH_URL`, else discovery's
+ *   `endpoints.push` should Frameleaf Cloud publish one; without either, push is off.
+ * - The token is the ordinary instance token (the `api` resource), DPoP-bound to the instance key
+ *   (FL-178), with the proof made for the push address.
  * - `POST <push>/v1/push/send`, one push per request: the target (`platform`: `apns`, `apns-sandbox`
  *   for development builds, or `fcm`; and `token`), the push `type`, `priority`, `collapseId`,
  *   `ttlSec`, and either the end-to-end encrypted `payload` (alert and background: the frameleaf-push-v1
@@ -42,11 +45,14 @@ export const PUSH_PLAINTEXT_MAX_BYTES = 2048;
 /** At most this many item ids travel in one payload. */
 export const PUSH_MAX_ASSET_IDS = 5;
 
-export const pushGatewayBase = (document: Pick<FrameleafDiscoveryDocument, 'api' | 'endpoints'>): string =>
-  (document.endpoints?.push ?? document.api).replace(/\/+$/, '');
-
-export const pushGatewayUrl = (document: Pick<FrameleafDiscoveryDocument, 'api' | 'endpoints'>): string =>
-  `${pushGatewayBase(document)}${PUSH_GATEWAY_PATH}`;
+/** Where pushes are sent: the configured address, else the one discovery names; null when neither. */
+export const pushGatewayUrl = (
+  document: Pick<FrameleafDiscoveryDocument, 'api' | 'endpoints'>,
+  configured: string | null,
+): string | null => {
+  const base = (configured || document.endpoints?.push)?.replace(/\/+$/, '');
+  return base ? `${base}${PUSH_GATEWAY_PATH}` : null;
+};
 
 /** Which token of a device a push goes to; an `invalid-token` answer forgets exactly that one. */
 export enum PushTargetKind {

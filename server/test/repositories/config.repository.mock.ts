@@ -97,6 +97,7 @@ export const envData: EnvData = {
   appReleases: {},
   frameleafCloud: {
     url: null,
+    pushUrl: null,
     identityDir: null,
     linkToken: null,
     setupCode: null,

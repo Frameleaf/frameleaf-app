@@ -113,6 +113,7 @@ export const EnvSchema = z
      * hard-coded). Unset means Frameleaf Cloud is not configured and nothing is ever contacted.
      */
     FRAMELEAF_CLOUD_URL: z.url({ protocol: /^https?$/ }).optional(),
+    FRAMELEAF_PUSH_URL: z.url({ protocol: /^https?$/ }).optional(),
     /**
      * Pre-release integration builds only (owner decision 2026-09-27): an absolute path to a mounted,
      * read-only JWKS whose Ed25519 keys may also sign licence certificates. Release builds ignore it.

@@ -149,6 +149,8 @@ export interface EnvData {
   /** FL-159: Frameleaf Cloud deployment configuration. `url` null means not configured. */
   frameleafCloud: {
     url: string | null;
+    /** FL-293: the push gateway's address (`FRAMELEAF_PUSH_URL`), or null: discovery's, else push is off. */
+    pushUrl: string | null;
     identityDir: string | null;
     /** FL-155: single-use headless link token, or null. */
     linkToken: string | null;
@@ -391,6 +393,7 @@ const getEnv = (): EnvData => {
 
     frameleafCloud: {
       url: dto.FRAMELEAF_CLOUD_URL ? dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, '') : null,
+      pushUrl: dto.FRAMELEAF_PUSH_URL ? dto.FRAMELEAF_PUSH_URL.replace(/\/+$/, '') : null,
       identityDir: dto.FRAMELEAF_IDENTITY_DIR ?? null,
       linkToken: dto.FRAMELEAF_LINK_TOKEN ?? null,
       setupCode: dto.FRAMELEAF_SETUP_CODE ?? null,
