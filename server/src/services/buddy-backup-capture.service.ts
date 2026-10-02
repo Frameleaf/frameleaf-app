@@ -15,6 +15,7 @@ import {
   SystemMetadataKey,
   UserMetadataKey,
 } from 'src/enum.js';
+import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-metadata.repository.js';
 import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
@@ -28,6 +29,7 @@ import {
   decryptBuddyBlock,
   encryptBuddyBlock,
 } from 'src/utils/buddy-backup-crypto.js';
+import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
 import { type BuddyReceipt, BuddyVault, createBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import {
   CLOUD_BACKUP_MANIFEST_FORMAT,
@@ -48,6 +50,7 @@ export type BuddyManifest = {
   previous: string | null;
   frameleafVersion: string;
   library: CloudBackupManifest;
+  metadata?: BuddyMetadata;
   contents: Record<string, BuddyContent>;
   assetLinks: Record<string, { livePhotoVideoId: string | null; libraryId: string | null; isExternal: boolean }>;
   assetFiles: Record<
@@ -441,6 +444,7 @@ export class BuddyBackupCaptureService {
               }
               manifest.library.albums = Object.fromEntries(await index.getAlbumRecords([...albums]));
               manifest.library.people = Object.fromEntries(await index.getPersonRecords(people.values().toArray()));
+              manifest.metadata = await new BuddyBackupMetadataRepository(trx).capture(people.values().toArray());
               for (const profile of await index.listProfileImages())
                 manifest.library.profiles[profile.userId] = await captureFile(profile.path, 'profile');
               for (const path of new Set(dependencies.map((entry) => entry.path).filter(Boolean)))

@@ -14,6 +14,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { BuddyRestoreDto } from 'src/dtos/buddy-backup.dto.js';
 import type { DB } from 'src/schema/index.js';
 import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
+import type { BuddyAlbumPlan } from 'src/utils/buddy-backup-metadata.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
@@ -30,6 +31,7 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-metadata.repository.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -54,6 +56,7 @@ import {
 import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
 import { BUDDY_UUID } from 'src/utils/buddy-backup-crypto.js';
+import { assertBuddyAlbumPlan, buddyLibraryForOwner, selectBuddyAlbumIds } from 'src/utils/buddy-backup-metadata.js';
 import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
 import { buddyFileHash } from 'src/utils/buddy-backup-recovery.js';
 import { type BuddySignedSnapshot, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
@@ -79,6 +82,7 @@ type RestoreJob = {
   fingerprint: string;
   owner: NonNullable<CloudBackupRestoreSnapshot['owner']>;
   manifestHash: string;
+  albums?: BuddyAlbumPlan;
 };
 const LEASE_MS = 300_000;
 class RestoreStopped extends Error {}
@@ -245,8 +249,15 @@ export class BuddyBackupRestoreService {
     }
     const current = await this.auth(auth);
     const visible = [];
-    for (const snapshot of page)
-      if ((await this.visible(current, (await this.open(snapshot.id)).manifest)).length > 0) visible.push(snapshot);
+    for (const snapshot of page) {
+      const { manifest } = await this.open(snapshot.id);
+      const albums = manifest.metadata
+        ? await new BuddyBackupMetadataRepository(this.repository.db).visibleAlbumIds(manifest.metadata, current.user.id)
+        : new Set<string>();
+      if ((await this.visible(current, manifest)).length > 0 || albums.size > 0) {
+        visible.push(snapshot);
+      }
+    }
     await this.auth(auth);
     return { snapshots: visible, nextOffset };
   }
@@ -254,6 +265,11 @@ export class BuddyBackupRestoreService {
   async browse(auth: AuthDto, snapshotId: string, admin: boolean, offset = 0) {
     const current = admin ? await this.administrator(auth) : await this.auth(auth);
     const { manifest } = await this.open(snapshotId);
+    const library = buddyLibraryForOwner(manifest, current.user.id);
+    const availableAlbums =
+      !admin && manifest.metadata
+        ? await new BuddyBackupMetadataRepository(this.repository.db).visibleAlbumIds(manifest.metadata, current.user.id)
+        : undefined;
     const ids = admin ? Object.keys(manifest.library.assets) : await this.visible(current, manifest);
     const permitted = new Set(ids);
     if (admin) await this.administrator(auth);
@@ -266,18 +282,20 @@ export class BuddyBackupRestoreService {
         bytes: manifest.library.assets[id].files.reduce((sum, file) => sum + file.size, 0),
       })),
       nextOffset: offset + 100 < ids.length ? offset + 100 : null,
-      albums: Object.entries(manifest.library.albums)
+      albums: Object.entries(library.albums)
         .filter(([, album]) => admin || album.ownerId === current.user.id)
+        .filter(([id]) => !availableAlbums || availableAlbums.has(id))
         .flatMap(([id, album]) => {
           const members = Object.entries(manifest.library.assets).filter(
             ([assetId, asset]) => permitted.has(assetId) && asset.details?.albums.some((entry) => entry.id === id),
           );
-          return members.length > 0 ? [{ id, name: album.name, items: members.length }] : [];
+          return members.length > 0 || manifest.metadata ? [{ id, name: album.name, items: members.length }] : [];
         }),
     };
   }
 
   private async selection(auth: AuthDto, request: BuddyRestoreDto, manifest: BuddyManifest, admin: boolean) {
+    const library = buddyLibraryForOwner(manifest, auth.user.id);
     if (!admin && ['library', 'settings', 'server'].includes(request.scope))
       throw new ForbiddenException('Administrator restore required');
     if (request.scope === 'asset' && !request.assetIds?.length)
@@ -285,17 +303,21 @@ export class BuddyBackupRestoreService {
     if (
       request.scope === 'album' &&
       (!request.albumId ||
-        !manifest.library.albums[request.albumId] ||
-        (!admin && manifest.library.albums[request.albumId].ownerId !== auth.user.id))
+        !library.albums[request.albumId] ||
+        (!admin && library.albums[request.albumId].ownerId !== auth.user.id))
     )
       throw new NotFoundException('Backup album unavailable');
     const all = Object.keys(manifest.library.assets);
+    const albumIds =
+      request.scope === 'album' && manifest.metadata
+        ? new Set(selectBuddyAlbumIds(manifest.metadata, { ...request, assetIds: [] }, library.assets, auth.user.id, admin))
+        : new Set(request.albumId ? [request.albumId] : []);
     let ids =
       request.scope === 'asset'
         ? request.assetIds!
         : request.scope === 'album'
           ? all.filter((id) =>
-              manifest.library.assets[id].details?.albums.some((album) => album.id === request.albumId),
+              manifest.library.assets[id].details?.albums.some((album) => albumIds.has(album.id)),
             )
           : all;
     if (!admin) {
@@ -347,17 +369,41 @@ export class BuddyBackupRestoreService {
     if (bytes + 1024 ** 3 > free.bavail * free.bsize)
       throw new BadRequestException('More free space is needed to stage and verify this restore.');
     const identities = await this.index.getOwnerRestoreIdentities(ids);
+    const albumIds = manifest.metadata
+      ? selectBuddyAlbumIds(
+          manifest.metadata,
+          { ...request, assetIds: request.mode === 'keep' ? ids.filter((id) => !identities[id]) : ids },
+          manifest.library.assets,
+          current.user.id,
+          admin,
+        )
+      : [];
+    const albums = manifest.metadata
+      ? await new BuddyBackupMetadataRepository(this.repository.db).plan(manifest.metadata, albumIds, request.mode)
+      : undefined;
     const owner = {
       ownerId: current.user.id,
       sessionId: current.session!.id,
       current: identities,
       assetHashes: Object.fromEntries(
-        ids.map((id) => [id, ownerRestoreHash(manifest.library.assets[id], manifest.library)]),
+        ids.map((id) => [
+          id,
+          ownerRestoreHash(manifest.library.assets[id], buddyLibraryForOwner(manifest, manifest.library.assets[id].owner!)),
+        ]),
       ),
     };
     const conflicts = ids.filter((id) => identities[id]).length;
-    if (!request.confirm)
-      return { operationId: null, items: ids.length, bytes, conflicts, mode: request.mode, state: 'preview' };
+    if (!request.confirm) {
+      return {
+        operationId: null,
+        items: ids.length,
+        metadataItems: albumIds.length,
+        bytes,
+        conflicts,
+        mode: request.mode,
+        state: 'preview',
+      };
+    }
     const currentAuth = admin ? await this.administrator(auth) : await this.auth(auth);
     await this.selection(currentAuth, request, manifest, admin);
     const job: RestoreJob = {
@@ -369,6 +415,7 @@ export class BuddyBackupRestoreService {
       fingerprint: this.fingerprint(reader.ring),
       owner,
       manifestHash: this.fingerprint(manifest),
+      ...(albums && { albums }),
     };
     const result = await this.operations.createExclusive(
       {
@@ -392,7 +439,15 @@ export class BuddyBackupRestoreService {
     );
     if (!('created' in result)) throw new ConflictException('Another Buddy restore is running');
     this.tick();
-    return { operationId: result.created.id, items: ids.length, bytes, conflicts, mode: request.mode, state: 'queued' };
+    return {
+      operationId: result.created.id,
+      items: ids.length,
+      metadataItems: albumIds.length,
+      bytes,
+      conflicts,
+      mode: request.mode,
+      state: 'queued',
+    };
   }
 
   @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
@@ -428,6 +483,59 @@ export class BuddyBackupRestoreService {
     const ring = await this.backup.keyring(job.vaultId);
     if (ring.vaultId !== job.vaultId || this.fingerprint(ring) !== job.fingerprint)
       throw new Error('Buddy restore key binding changed');
+  }
+
+  private async restoreAlbums(
+    operation: MediaOperation,
+    token: string,
+    job: RestoreJob,
+    manifest: BuddyManifest,
+    snapshot: CloudBackupRestoreSnapshot,
+  ) {
+    if (!manifest.metadata) {
+      return;
+    }
+    if (!job.albums || job.owner.ownerId !== operation.ownerId || job.owner.sessionId !== job.sessionId) {
+      throw new Error('Buddy restore album selection unavailable');
+    }
+    const selected = selectBuddyAlbumIds(
+      manifest.metadata,
+      {
+        ...job.request,
+        assetIds:
+          job.request.mode === 'keep'
+            ? job.request.assetIds?.filter((id) => !job.owner.current[id])
+            : job.request.assetIds,
+      },
+      manifest.library.assets,
+      operation.ownerId,
+      job.admin,
+    );
+    assertBuddyAlbumPlan(manifest.metadata, job.albums, selected, job.request.mode);
+    const metadata = new BuddyBackupMetadataRepository(this.repository.db);
+    await metadata.withRestore(
+      job.owner,
+      { operationId: operation.id, claimToken: token },
+      job.admin,
+      async () => {
+        await this.binding(job);
+        if (this.fingerprint(manifest) !== job.manifestHash) {
+          throw new Error('Buddy restore manifest changed');
+        }
+      },
+      async (trx) => {
+        const index = new CloudBackupIndexRepository(trx);
+        const { auth } = await index.getOwnerRestoreAuth({ ownerId: operation.ownerId, sessionId: job.sessionId });
+        if (!job.admin) {
+          const library = buddyLibraryForOwner(manifest, auth.user.id);
+          for (const id of job.request.assetIds ?? []) {
+            const parent = job.request.assetIds?.find((assetId) => manifest.assetLinks?.[assetId]?.livePhotoVideoId === id);
+            await checkOwnerRestoreItems(auth, library, snapshot, true, index, [id], true, parent);
+          }
+        }
+        await new BuddyBackupMetadataRepository(trx).publish(job.albums!, operation.ownerId, job.admin);
+      },
+    );
   }
 
   private async guarded<T>(
@@ -466,7 +574,9 @@ export class BuddyBackupRestoreService {
           )
             throw new Error('Live Photo relationship changed');
         }
-        await checkOwnerRestoreItems(auth, manifest.library, snapshot, true, index, [assetId], true, parentId);
+        await checkOwnerRestoreItems(
+          auth, buddyLibraryForOwner(manifest, auth.user.id), snapshot, true, index, [assetId], true, parentId,
+        );
       }
       const ownerId = manifest.library.assets[assetId].owner!;
       const owner = await trx
@@ -741,12 +851,13 @@ export class BuddyBackupRestoreService {
           (file) =>
             file.role === 'original' ||
             file.role === 'sidecar' ||
-            manifest.assetFiles?.[file.assetId!]?.some(
-              (entry) =>
-                entry.isEdited &&
-                entry.path ===
-                  manifest.library.assets[file.assetId!].files[Number(file.fileKey.split(':').at(-1))].path,
-            ),
+            ((job.request.mode === 'replace' || !job.owner.current[file.assetId!]) &&
+              manifest.assetFiles?.[file.assetId!]?.some(
+                (entry) =>
+                  entry.isEdited &&
+                  entry.path ===
+                    manifest.library.assets[file.assetId!].files[Number(file.fileKey.split(':').at(-1))].path,
+              )),
         );
         if (plan.files.some((file) => !file.inPlace))
           throw new Error('Restore the original storage mounts before restoring these items.');
@@ -811,6 +922,7 @@ export class BuddyBackupRestoreService {
           },
           library: async (result) => {
             const verified = await this.verifyFiles(operation.id, plan.files);
+            await this.restoreAlbums(operation, token, job, manifest, snapshot);
             for (const assetId of ids) {
               await checkpoint();
               const file = plan.files.find((entry) => entry.assetId === assetId && entry.role === 'original')!;
@@ -832,10 +944,22 @@ export class BuddyBackupRestoreService {
                   const index = new CloudBackupIndexRepository(trx);
                   const existing = (await index.getAssetDetails([assetId])).get(assetId);
                   const asset = manifest.library.assets[assetId];
-                  const context = { db: trx, ownerId, jobs: queued };
+                  const library = buddyLibraryForOwner(manifest, ownerId);
+                  const context: OwnerRestoreDetailsContext = {
+                    db: trx,
+                    ownerId,
+                    jobs: queued,
+                    buddyPeople: true,
+                    buddyPeopleMode: job.request.mode,
+                  };
                   const albums = [];
-                  for (const album of asset.details?.albums ?? []) {
-                    if (manifest.library.albums[album.id]?.ownerId !== ownerId) continue;
+                  for (const album of existing && job.request.mode === 'keep' ? [] : (asset.details?.albums ?? [])) {
+                    if (
+                      library.albums[album.id]?.ownerId !== ownerId ||
+                      (manifest.metadata && !job.albums?.albums[album.id])
+                    ) {
+                      continue;
+                    }
                     const present = await trx
                       .selectFrom('album')
                       .select(['id', 'deletedAt'])
@@ -853,7 +977,7 @@ export class BuddyBackupRestoreService {
                           .executeTakeFirst()));
                     if (owned) {
                       await this.details.restoreAlbum(
-                        { albumId: album.id, album: manifest.library.albums[album.id], memberIds: [] },
+                        { albumId: album.id, album: library.albums[album.id], memberIds: [] },
                         context,
                       );
                       albums.push(album);
@@ -868,8 +992,8 @@ export class BuddyBackupRestoreService {
                         type: existing.record.type,
                         current: existing.details,
                         backup: details,
-                        mode: job.request.mode === 'keep' ? 'fill' : 'replace',
-                        people: manifest.library.people,
+                        mode: job.request.mode,
+                        people: library.people,
                       },
                       context,
                     );
@@ -896,7 +1020,7 @@ export class BuddyBackupRestoreService {
                           null,
                         sha256: file.sha256,
                         size: file.size,
-                        people: manifest.library.people,
+                        people: library.people,
                       },
                       context,
                     );
@@ -954,7 +1078,9 @@ export class BuddyBackupRestoreService {
             }
             for (const assetId of ids) {
               const motion = manifest.assetLinks?.[assetId]?.livePhotoVideoId;
-              if (!motion) continue;
+              if (!motion || (job.request.mode === 'keep' && job.owner.current[assetId])) {
+                continue;
+              }
               const original = plan.files.find((entry) => entry.assetId === assetId && entry.role === 'original')!;
               await this.guarded(
                 operation,
@@ -999,11 +1125,22 @@ export class BuddyBackupRestoreService {
                   if (current.length !== members.length || current.some((item) => item.ownerId !== ownerId))
                     throw new Error('Buddy restore relationship ownership changed');
                   const queued: OwnerRestoreDetailsContext['jobs'] = [];
-                  const context = { db: trx, ownerId, jobs: queued };
-                  for (const [albumId, album] of Object.entries(manifest.library.albums)) {
-                    if (album.ownerId !== ownerId) continue;
-                    const selected = members.filter((id) =>
-                      manifest.library.assets[id].details?.albums.some((entry) => entry.id === albumId),
+                  const library = buddyLibraryForOwner(manifest, ownerId);
+                  const context: OwnerRestoreDetailsContext = {
+                    db: trx,
+                    ownerId,
+                    jobs: queued,
+                    buddyPeople: true,
+                    buddyPeopleMode: job.request.mode,
+                  };
+                  for (const [albumId, album] of Object.entries(library.albums)) {
+                    if (album.ownerId !== ownerId || (manifest.metadata && !job.albums?.albums[albumId])) {
+                      continue;
+                    }
+                    const selected = members.filter(
+                      (id) =>
+                        (job.request.mode === 'replace' || !job.owner.current[id]) &&
+                        manifest.library.assets[id].details?.albums.some((entry) => entry.id === albumId),
                     );
                     if (selected.length === 0) continue;
                     const owned = await trx
@@ -1015,7 +1152,11 @@ export class BuddyBackupRestoreService {
                       .executeTakeFirst();
                     if (!owned) continue;
                     await this.details.restoreAlbum({ albumId, album, memberIds: selected }, context);
-                    if (album.coverAssetId && selected.includes(album.coverAssetId)) {
+                    if (
+                      album.coverAssetId &&
+                      selected.includes(album.coverAssetId) &&
+                      (job.request.mode === 'replace' || job.albums?.albums[albumId]?.before === null)
+                    ) {
                       let cover = trx
                         .updateTable('album')
                         .set({ albumThumbnailAssetId: album.coverAssetId })
@@ -1025,7 +1166,7 @@ export class BuddyBackupRestoreService {
                     }
                   }
                   const stacks = members
-                    .filter((id) => job.request.mode === 'replace' || !current.find((item) => item.id === id)?.stackId)
+                    .filter((id) => job.request.mode === 'replace' || !job.owner.current[id])
                     .map((assetId) => ({
                       assetId,
                       ownerId,
