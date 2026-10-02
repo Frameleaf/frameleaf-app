@@ -211,12 +211,11 @@ const metadataFields = [
     icon: mdiStarOutline,
     titleKey: 'rating',
     keys: ['rating'],
-    // eslint-disable-next-line eqeqeq
     render: (asset, $t) => {
       const rating = getExifRating(asset.exifInfo);
       return rating === -1
         ? $t('frameleaf_library_rating_rejected')
-        : rating == null
+        : rating === null
           ? $t('unknown')
           : `${rating} stars`;
     },
