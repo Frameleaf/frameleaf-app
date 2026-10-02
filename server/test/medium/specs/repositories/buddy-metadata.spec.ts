@@ -180,6 +180,7 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
       const { asset } = await ctx.newAsset({
         ownerId: owner.id,
         originalPath: path,
+        originalFileName: 'original.jpg',
         checksum,
         checksumAlgorithm: ChecksumAlgorithm.sha256File,
         isFavorite: false,
@@ -244,7 +245,10 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
         jobs: { queueAll: () => Promise.resolve() },
         // Only source transport is substituted. Files, owner/PIN/claim checks and metadata publication remain real.
         backup: { keyring: () => Promise.resolve(ring) },
-        open: () => Promise.resolve({ manifest, reader: { ring, download: (_manifest: unknown, _hash: string, target: string) => writeFile(target, bytes) } }),
+        open: () => Promise.resolve({ manifest, reader: { ring, download: async (_manifest: unknown, _hash: string, target: string) => {
+          await writeFile(target, bytes);
+          return { sha256: checksum.toString('hex'), size: bytes.length };
+        } } }),
         tick: () => {},
       }) as BuddyBackupRestoreService;
       const auth = { user: owner, session: { id: session.id, hasElevatedPermission: true } } as AuthDto;

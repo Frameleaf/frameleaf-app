@@ -567,7 +567,9 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         configurationFiles: [sourceConfig.path],
       };
       const { capture, backups, keys } = fixture();
-      const { manifest } = await capture.capture(options());
+      const input = options();
+      const captured = await capture.capture(input);
+      const { manifest } = captured;
       expect(manifest.settings.buddy).toEqual({ version: 1, settings });
       const destination = {
         ...settings,
@@ -609,7 +611,20 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         join(directory, 'prepared.json'),
         JSON.stringify({ version: 1, scope, mode, manifest, files: [] }),
       );
-      await writeFile(join(directory, 'replacement.json'), JSON.stringify({ keys: [], metadata: [] }));
+      if (scope === 'server') {
+        // Use the real preimage writer: an empty key list is never produced by server preparation.
+        const dump = manifest.library.database!;
+        const staged = join(directory, 'database.sql.gz');
+        await writeFile(staged, await restoreBytes(captured, input.runId, dump.sha256));
+        // The fixture's dump process supplies synthetic bytes; prepare still verifies their hash and size.
+        backups.verifyDatabaseBackup = vi.fn<DatabaseBackupService['verifyDatabaseBackup']>().mockResolvedValue();
+        expect(await recovery.prepare(id)).toBe(`buddy-restore-${id}-${basename(dump.key)}`);
+        expect(backups.verifyDatabaseBackup).toHaveBeenCalledWith(staged);
+        const replacement = JSON.parse(await readFile(join(directory, 'replacement.json'), 'utf8'));
+        expect(replacement.keys).toEqual(expect.arrayContaining([
+          SystemMetadataKey.FrameleafInstance, SystemMetadataKey.FrameleafServerId, SystemMetadataKey.FrameleafCloudLink,
+        ]));
+      }
       const restore = vi.fn(async () => {});
       const run = () =>
         scope === 'settings'
