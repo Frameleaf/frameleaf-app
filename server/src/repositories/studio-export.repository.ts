@@ -976,11 +976,24 @@ export class StudioExportRepository {
   async markOutputRemoved(id: string, unlink: (version: StudioExportVersion) => Promise<void>): Promise<boolean> {
     // Preserve the public writer's handoff refusal even when there is no removable output.
     await this.write(async () => {});
-    const version = await this.db.selectFrom('studio_export_version').selectAll().where('id', '=', id).executeTakeFirst();
+    const version = await this.db
+      .selectFrom('studio_export_version')
+      .selectAll()
+      .where('id', '=', id)
+      .executeTakeFirst();
     if (!version?.outputPath) return false;
-    const result = await new PhysicalFileRepository(this.db).deleteUnreferencedPath(version.outputPath,
-      () => unlink(version), { retiredStudioExport: { id: version.id, ownerId: version.ownerId,
-        checksum: version.outputChecksum, sizeBytes: version.outputSizeInBytes } });
+    const result = await new PhysicalFileRepository(this.db).deleteUnreferencedPath(
+      version.outputPath,
+      () => unlink(version),
+      {
+        retiredStudioExport: {
+          id: version.id,
+          ownerId: version.ownerId,
+          checksum: version.outputChecksum,
+          sizeBytes: version.outputSizeInBytes,
+        },
+      },
+    );
     return result.deleted;
   }
 

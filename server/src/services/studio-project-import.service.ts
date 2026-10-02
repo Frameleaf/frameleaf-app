@@ -16,8 +16,12 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioProjectImport, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
+import {
+  assertOwnerRestoreFile,
+  assertOwnerRestorePath,
+  captureOwnerRestoreFile,
+} from 'src/utils/cloud-backup-owner-path.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
-import { assertOwnerRestoreFile, assertOwnerRestorePath, captureOwnerRestoreFile } from 'src/utils/cloud-backup-owner-path.js';
 import {
   STUDIO_IMPORT_MAX_BYTES,
   STUDIO_IMPORT_TEXT_LIMITS,
@@ -27,8 +31,8 @@ import {
   studioImportKind,
   validateStudioImportText,
 } from 'src/utils/studio-imports.js';
-import { isStudioUuid } from 'src/utils/studio-resources.js';
 import { isManagedStudioImportPath } from 'src/utils/studio-managed-paths.js';
+import { isStudioUuid } from 'src/utils/studio-resources.js';
 
 const IMPORT_FOLDER = 'studio-imports';
 /** An upload older than this in the incoming folder belongs to a request that never finished. */
@@ -201,8 +205,9 @@ export class StudioProjectImportService {
           if (!isManagedStudioImportPath(item))
             throw new Error('Studio import cleanup path is not a declared managed file');
           await assertOwnerRestorePath([StorageCore.getBaseFolder(StorageFolder.Exports)], item.path);
-          const evidence = await captureOwnerRestoreFile(item.path,
-            async (path) => (await this.crypto.hashFile(path, 'sha256')).toString('hex'));
+          const evidence = await captureOwnerRestoreFile(item.path, async (path) =>
+            (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
+          );
           if (evidence.identity && (evidence.sha256 !== item.checksum || evidence.size !== BigInt(item.sizeBytes)))
             throw new Error('Studio import cleanup file identity changed');
           await assertOwnerRestoreFile(item.path, evidence.identity);

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import { extname, join } from 'node:path';
-import { StorageCore } from 'src/cores/storage.core.js';
-import { AssetFileType, AssetType, ChecksumAlgorithm, StorageFolder } from 'src/enum.js';
+import { z } from 'zod';
 import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
 import type { CloudBackupRestoreFile } from 'src/services/cloud-backup-restore.js';
-import { getEditedMasterLineagePath, EDITED_MASTER_LINEAGE_SUFFIX } from 'src/utils/media-policy.js';
-import { z } from 'zod';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { AssetFileType, AssetType, ChecksumAlgorithm, StorageFolder } from 'src/enum.js';
+import { EDITED_MASTER_LINEAGE_SUFFIX, getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 
 const uuid = z.uuid();
 const hex = z.preprocess(
@@ -21,7 +21,11 @@ const date = z.string().transform((value, ctx) => {
   }
   return parsed.toISOString();
 });
-const path = z.string().min(1).max(4096).refine((value) => !value.includes('\0'));
+const path = z
+  .string()
+  .min(1)
+  .max(4096)
+  .refine((value) => !value.includes('\0'));
 const json = z.record(z.string(), z.unknown());
 const edits = z.array(z.object({ action: z.string().min(1), parameters: json })).max(10_000);
 const identity = { id: uuid, assetId: uuid, ownerId: uuid, createdAt: date };
@@ -123,41 +127,62 @@ export const buddyAssetFidelitySchema = z.object({
 });
 export type BuddyAssetFidelity = z.infer<typeof buddyAssetFidelitySchema>;
 
-export const buddyFidelityPaths = (state: BuddyAssetFidelity) => [
-  ...state.videoVersions.flatMap((row) => [row.masterPath, row.proxyPath, ...row.files.map((file) => file.path)]),
-  ...state.developRevisions.flatMap((row) => [row.masterPath, row.previewPath]),
-  ...state.artifacts.map((row) => row.path),
-  ...state.restorations.flatMap((row) => [row.resultPath, row.resultPreviewPath]),
-  ...state.projection.map((row) => row.path),
-].filter((value): value is string => !!value);
+export const buddyFidelityPaths = (state: BuddyAssetFidelity) =>
+  [
+    ...state.videoVersions.flatMap((row) => [row.masterPath, row.proxyPath, ...row.files.map((file) => file.path)]),
+    ...state.developRevisions.flatMap((row) => [row.masterPath, row.previewPath]),
+    ...state.artifacts.map((row) => row.path),
+    ...state.restorations.flatMap((row) => [row.resultPath, row.resultPreviewPath]),
+    ...state.projection.map((row) => row.path),
+  ].filter((value): value is string => !!value);
 
 export const readBuddyAssetFidelity = (manifest: BuddyManifest, assetId: string): BuddyAssetFidelity | null => {
   if (!manifest.assetFidelity) return null; // Earlier snapshots retain their original restore semantics.
   const state = buddyAssetFidelitySchema.parse(manifest.assetFidelity[assetId]);
   const asset = manifest.library.assets[assetId];
-  if (state.assetId !== assetId || state.ownerId !== asset?.owner ||
-      state.source.sha256 !== asset.files.find((file) => file.role === 'original')?.sha256)
+  if (
+    state.assetId !== assetId ||
+    state.ownerId !== asset?.owner ||
+    state.source.sha256 !== asset.files.find((file) => file.role === 'original')?.sha256
+  )
     throw new Error('Buddy version source binding changed');
-  if (state.source.checksum.length !== (state.source.checksumAlgorithm === ChecksumAlgorithm.sha256File ? 64 : 40) ||
-      (state.source.checksumAlgorithm === ChecksumAlgorithm.sha256File && state.source.checksum !== state.source.sha256))
+  if (
+    state.source.checksum.length !== (state.source.checksumAlgorithm === ChecksumAlgorithm.sha256File ? 64 : 40) ||
+    (state.source.checksumAlgorithm === ChecksumAlgorithm.sha256File && state.source.checksum !== state.source.sha256)
+  )
     throw new Error('Buddy version checksum binding changed');
-  for (const row of [...state.videoVersions, ...state.developRevisions, ...state.artifacts,
-    ...state.developExports, ...state.restorations]) {
+  for (const row of [
+    ...state.videoVersions,
+    ...state.developRevisions,
+    ...state.artifacts,
+    ...state.developExports,
+    ...state.restorations,
+  ]) {
     if (row.assetId !== assetId || row.ownerId !== state.ownerId) throw new Error('Buddy version ownership changed');
   }
   const files = new Map(state.files.map((file) => [file.path, file]));
   const required = new Set(buddyFidelityPaths(state));
-  const allowed = new Set([...required, ...[...required].map(getEditedMasterLineagePath)]);
-  if (files.size !== state.files.length || [...required].some((path) => !files.has(path)) ||
-      [...files.keys()].some((path) => !allowed.has(path)))
+  const allowed = new Set([...required, ...[...required].map((path) => getEditedMasterLineagePath(path))]);
+  if (
+    files.size !== state.files.length ||
+    [...required].some((path) => !files.has(path)) ||
+    files.keys().some((path) => !allowed.has(path))
+  )
     throw new Error('Buddy version file closure is incomplete');
   for (const file of files.values()) {
     if (manifest.contents[file.sha256]?.bytes !== file.size) throw new Error('Buddy version content is unavailable');
   }
   for (const id of [state.videoSelection?.currentVersionId, state.videoSelection?.requestedVersionId]) {
-    if (id && !state.videoVersions.some((row) => row.id === id)) throw new Error('Buddy video selection is unavailable');
+    if (id && state.videoVersions.every((row) => row.id !== id))
+      throw new Error('Buddy video selection is unavailable');
   }
-  for (const rows of [state.videoVersions, state.developRevisions, state.artifacts, state.developExports, state.restorations])
+  for (const rows of [
+    state.videoVersions,
+    state.developRevisions,
+    state.artifacts,
+    state.developExports,
+    state.restorations,
+  ])
     if (new Set(rows.map((row) => row.id)).size !== rows.length) throw new Error('Duplicate Buddy version identity');
   for (const rows of [state.developRevisions, state.restorations])
     if (rows.filter((row) => row.isCurrent).length > 1) throw new Error('Ambiguous Buddy version selection');
@@ -165,9 +190,13 @@ export const readBuddyAssetFidelity = (manifest: BuddyManifest, assetId: string)
     if (files.get(artifact.path)?.sha256 !== artifact.id || files.get(artifact.path)?.size !== artifact.bytes)
       throw new Error('Buddy develop artifact binding changed');
   for (const revision of state.developRevisions) {
-    if (revision.renditionChecksum && revision.masterPath && files.get(revision.masterPath)?.sha256 !== revision.renditionChecksum)
+    if (
+      revision.renditionChecksum &&
+      revision.masterPath &&
+      files.get(revision.masterPath)?.sha256 !== revision.renditionChecksum
+    )
       throw new Error('Buddy develop rendition binding changed');
-    if (revision.exportId && !state.developExports.some((row) => row.id === revision.exportId))
+    if (revision.exportId && state.developExports.every((row) => row.id !== revision.exportId))
       throw new Error('Buddy develop export is unavailable');
     // Disabled masks and cleanup operations remain editable after restore, so their artifacts
     // belong to the closure too. Render-only dependency helpers intentionally omit those.
@@ -177,8 +206,11 @@ export const readBuddyAssetFidelity = (manifest: BuddyManifest, assetId: string)
     ] as const) {
       for (const item of Array.isArray(list) ? list : []) {
         const id: unknown = item && typeof item === 'object' ? item[field] : undefined;
-        if (id !== undefined && id !== null &&
-          !state.artifacts.some((artifact) => artifact.id === id && artifact.kind === kind))
+        if (
+          id !== undefined &&
+          id !== null &&
+          state.artifacts.every((artifact) => !(artifact.id === id && artifact.kind === kind))
+        )
           throw new Error('Buddy develop recipe artifact closure is incomplete');
       }
     }
@@ -191,24 +223,33 @@ export const buddyRestoreChecksum = (
   state: BuddyAssetFidelity | null,
   current: { checksum: Buffer; checksumAlgorithm: ChecksumAlgorithm },
   sha256: string,
-) => state?.source.sha256 === sha256 && state.source.checksum === current.checksum.toString('hex') &&
-    state.source.checksumAlgorithm === current.checksumAlgorithm
-  ? current
-  : { checksum: Buffer.from(sha256, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File };
+) =>
+  state?.source.sha256 === sha256 &&
+  state.source.checksum === current.checksum.toString('hex') &&
+  state.source.checksumAlgorithm === current.checksumAlgorithm
+    ? current
+    : { checksum: Buffer.from(sha256, 'hex'), checksumAlgorithm: ChecksumAlgorithm.sha256File };
 
 /** Copy retained versions privately; a scoped restore never overwrites a live version's shared path. */
 export const buddyFidelityFiles = (manifest: BuddyManifest, assetId: string): CloudBackupRestoreFile[] => {
   const state = readBuddyAssetFidelity(manifest, assetId);
   if (!state) return [];
-  const directory = join(StorageCore.getNestedFolder(StorageFolder.Thumbnails, state.ownerId, assetId), assetId,
-    'buddy-versions', uuid.parse(manifest.snapshotId));
+  const directory = join(
+    StorageCore.getNestedFolder(StorageFolder.Thumbnails, state.ownerId, assetId),
+    assetId,
+    'buddy-versions',
+    uuid.parse(manifest.snapshotId),
+  );
   const target = (path: string): string => {
     if (path.endsWith(EDITED_MASTER_LINEAGE_SUFFIX)) {
       const master = path.slice(0, -EDITED_MASTER_LINEAGE_SUFFIX.length);
-      if (!state.files.some((file) => file.path === master)) throw new Error('Buddy lineage master is unavailable');
+      if (state.files.every((file) => file.path !== master)) throw new Error('Buddy lineage master is unavailable');
       return getEditedMasterLineagePath(target(master));
     }
-    return join(directory, `${createHash('sha256').update(path).digest('hex')}${extname(path).replace(/[^a-zA-Z0-9.]/g, '')}`);
+    return join(
+      directory,
+      `${createHash('sha256').update(path).digest('hex')}${extname(path).replaceAll(/[^a-zA-Z0-9.]/g, '')}`,
+    );
   };
   return state.files.map((file, index) => ({
     fileKey: `${assetId}:version:${String(index).padStart(6, '0')}`,

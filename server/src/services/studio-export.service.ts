@@ -7,8 +7,8 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
-import { StorageCore } from 'src/cores/storage.core.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
   StudioExportCreateDto,
@@ -64,9 +64,12 @@ import { AssetRestorationService } from 'src/services/asset-restoration.service.
 import { mapOperation } from 'src/services/media-operation.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioAuthorizedEntry, StudioResourceService } from 'src/services/studio-resource.service.js';
+import {
+  assertOwnerRestoreFile,
+  assertOwnerRestorePath,
+  captureOwnerRestoreFile,
+} from 'src/utils/cloud-backup-owner-path.js';
 import { getConfig } from 'src/utils/config.js';
-import { assertOwnerRestoreFile, assertOwnerRestorePath, captureOwnerRestoreFile } from 'src/utils/cloud-backup-owner-path.js';
-import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
@@ -98,6 +101,7 @@ import {
   studioExportProjectPath,
   studioExportStagingFolder,
 } from 'src/utils/studio-export.js';
+import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
 import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
 import {
   STUDIO_DOLBY_TOOLS_ID,
@@ -1251,11 +1255,18 @@ export class StudioExportService {
         await this.repository.markOutputRemoved(version.id, async (current) => {
           if (!current.outputPath || !isManagedStudioExportPath({ ...current, outputPath: current.outputPath }))
             throw new Error('Studio export cleanup path is not a declared managed file');
-          await assertOwnerRestorePath([StorageCore.getFolderLocation(StorageFolder.Exports, current.ownerId)], current.outputPath);
-          const evidence = await captureOwnerRestoreFile(current.outputPath,
-            async (path) => (await this.crypto.hashFile(path, 'sha256')).toString('hex'));
-          if (evidence.identity && ((current.outputChecksum && evidence.sha256 !== current.outputChecksum.toString('hex')) ||
-            (current.outputSizeInBytes !== null && evidence.size !== BigInt(current.outputSizeInBytes))))
+          await assertOwnerRestorePath(
+            [StorageCore.getFolderLocation(StorageFolder.Exports, current.ownerId)],
+            current.outputPath,
+          );
+          const evidence = await captureOwnerRestoreFile(current.outputPath, async (path) =>
+            (await this.crypto.hashFile(path, 'sha256')).toString('hex'),
+          );
+          if (
+            evidence.identity &&
+            ((current.outputChecksum && evidence.sha256 !== current.outputChecksum.toString('hex')) ||
+              (current.outputSizeInBytes !== null && evidence.size !== BigInt(current.outputSizeInBytes)))
+          )
             throw new Error('Studio export cleanup file identity changed');
           await assertOwnerRestoreFile(current.outputPath, evidence.identity);
           await this.storage.unlink(current.outputPath);

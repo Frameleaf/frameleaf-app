@@ -760,7 +760,11 @@ export class StudioProjectRepository {
   }
 
   /** Orphan rows remain the retry intent until their exact registered files can be removed. */
-  async deleteImports(projectId: string, ownerId: string, unlink: (item: StudioProjectImport) => Promise<void>): Promise<void> {
+  async deleteImports(
+    projectId: string,
+    ownerId: string,
+    unlink: (item: StudioProjectImport) => Promise<void>,
+  ): Promise<void> {
     if (!(await canWriteFork(this.db))) {
       return;
     }
@@ -775,9 +779,11 @@ export class StudioProjectRepository {
     for (const item of rows) {
       try {
         await physical.deleteUnreferencedPath(item.path, () => unlink(item), { orphanStudioImport: item });
-      } catch (error) { failures.push(error); }
+      } catch (error) {
+        failures.push(error);
+      }
     }
-    if (failures.length) throw new AggregateError(failures, 'Some Studio import cleanup is waiting for retry');
+    if (failures.length > 0) throw new AggregateError(failures, 'Some Studio import cleanup is waiting for retry');
   }
 
   /** One import of a live project, or undefined. */

@@ -5,6 +5,8 @@ import { constants } from 'node:fs';
 import { open, readFile, readdir, realpath, rm, statfs } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { FrameleafCloudBackup } from 'src/types.js';
+import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
+import type { BuddyStudioSnapshot } from 'src/utils/buddy-backup-studio.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -15,11 +17,10 @@ import {
   SystemMetadataKey,
   UserMetadataKey,
 } from 'src/enum.js';
-import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-metadata.repository.js';
-import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
 import { BuddyBackupFidelityRepository } from 'src/repositories/buddy-backup-fidelity.repository.js';
+import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-metadata.repository.js';
 import { BuddyBackupStudioRepository } from 'src/repositories/buddy-backup-studio.repository.js';
-import type { BuddyStudioSnapshot } from 'src/utils/buddy-backup-studio.js';
+import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -32,7 +33,7 @@ import {
   decryptBuddyBlock,
   encryptBuddyBlock,
 } from 'src/utils/buddy-backup-crypto.js';
-import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
+import { type BuddyAssetFidelity, readBuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
 import { type BuddyReceipt, BuddyVault, createBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import {
@@ -44,7 +45,6 @@ import {
 } from 'src/utils/cloud-backup.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
-import { readBuddyAssetFidelity, type BuddyAssetFidelity } from 'src/utils/buddy-backup-fidelity.js';
 
 export type BuddyContent = { blocks: string[]; keyVersion: number; bytes: number };
 export type BuddyManifest = {
@@ -449,7 +449,9 @@ export class BuddyBackupCaptureService {
                   manifest.assetFidelity![asset.id] = await fidelity.capture(
                     asset.id,
                     files[0].sha256,
-                    manifest.assetFiles[asset.id].filter((file) => file.isEdited).map((file) => ({ ...file, isEdited: true as const })),
+                    manifest.assetFiles[asset.id]
+                      .filter((file) => file.isEdited)
+                      .map((file) => ({ ...file, isEdited: true as const })),
                     metadata.details.edits,
                   );
                   for (const album of metadata.details.albums) albums.add(album.id);
@@ -469,10 +471,12 @@ export class BuddyBackupCaptureService {
                 manifest.library.profiles[profile.userId] = await captureFile(profile.path, 'profile');
               for (const path of new Set(dependencies.map((entry) => entry.path).filter(Boolean)))
                 manifest.dependencies.push(await captureFile(path, 'project'));
-              const inventory = new Map([
-                ...Object.values(manifest.library.assets).flatMap((asset) => asset.files),
-                ...manifest.dependencies,
-              ].map((file) => [file.path, file]));
+              const inventory = new Map(
+                [
+                  ...Object.values(manifest.library.assets).flatMap((asset) => asset.files),
+                  ...manifest.dependencies,
+                ].map((file) => [file.path, file]),
+              );
               for (const state of Object.values(manifest.assetFidelity!)) {
                 fidelity.bindFiles(state, inventory);
                 readBuddyAssetFidelity(manifest, state.assetId);
