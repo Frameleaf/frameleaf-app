@@ -80,7 +80,8 @@ A future Clean Up method stays opaque in the envelope, exactly like a future mas
 
 - **Normalization:** EXIF orientation is applied, metadata is dropped, and the bitmap is stored as an 8-bit PNG (greyscale for a mask, RGBA for a fill).
 - **Id:** the returned `id` is the SHA-256 of that PNG, so uploading the same bitmap again returns the same id.
-- **Limits:** an upload is at most 64 MiB. A mask is never larger than the original. A fill is at most 4,096 pixels a side and 16 megapixels. A photo keeps at most 64 artifacts. Artifacts count against the owner's storage quota when an upload is checked.
+- **Limits:** an upload is at most 64 MiB. A mask is never larger than the original. A fill is at most 4,096 pixels a side and 16 megapixels. A photo keeps at most 64 artifacts; an upload beyond that is refused with `develop_artifact_limit`, however many arrive at once.
+- **Storage quota:** a stored artifact's size is added to its owner's storage usage, like a photo's, so later photo uploads count it; an upload that would pass the owner's quota is refused with `develop_artifact_quota`. Uploading the same bitmap again is not counted twice, and the size leaves the usage when the artifact is released.
 - **Storage:** artifacts are kept in the thumbnails folder beside the photo's rendered versions (`<thumbs>/<owner>/…/<asset>_develop_artifact_<id>.png`) and recorded in the `immich_fork.asset_develop_artifact` table. The name comes from the photo and the id, never from a path a client chose.
 - **Backups:** unlike thumbnails, artifacts **cannot be regenerated**: a client computed them. Back them up with the rest of the thumbnails folder. The integrity check never reports them as untracked.
 - **Release:** artifacts are released when the photo is deleted. An artifact that no saved version of its photo references is released after seven days.

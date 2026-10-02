@@ -83,6 +83,9 @@ const referencedArtifacts = (recipe: AssetDevelopRecipe): string[] => {
   return [...ids];
 };
 
+/** FL-233: a photo keeps at most this many develop artifacts. */
+export const DEVELOP_ARTIFACT_PER_ASSET = 64;
+
 /** FL-233: a stored develop artifact (fork migration 0000000000212). */
 export type AssetDevelopArtifact = {
   assetId: string;
@@ -342,23 +345,21 @@ export class AssetDevelopRepository {
     return rows.map((row) => ({ ...row, bytes: Number(row.bytes) }));
   }
 
-  /** How many artifacts an asset has, and the bytes its owner's artifacts take in all. */
-  async getArtifactUsage(assetId: string, ownerId: string): Promise<{ assetCount: number; ownerBytes: number }> {
-    const { rows } = await sql<{ assetCount: string; ownerBytes: string }>`
-      SELECT
-        (SELECT count(*) FROM ${ARTIFACTS} WHERE "assetId" = ${assetId}::uuid) AS "assetCount",
-        (SELECT COALESCE(sum(bytes), 0) FROM ${ARTIFACTS} WHERE "ownerId" = ${ownerId}::uuid) AS "ownerBytes"
-    `.execute(this.db);
-    return { assetCount: Number(rows[0]?.assetCount ?? 0), ownerBytes: Number(rows[0]?.ownerBytes ?? 0) };
-  }
-
   /**
    * Record a stored artifact. `true` when it is new; `false` when the asset already had it (the
    * same bitmap uploaded again, which restarts its grace period). Refused while fork writes are.
+   *
+   * FL-304: a new artifact is counted against the photo's limit and charged to its owner's storage
+   * usage in the transaction that inserts it. Uploads for one photo wait for each other, and the
+   * owner's usage only rises while it stays within the quota, so uploads sent at the same time can
+   * pass neither; a refused one leaves no row.
    */
   async addArtifact(artifact: Omit<AssetDevelopArtifact, 'createdAt'>): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
       await lockForkWrites(trx, 'An edit cannot be saved while the server is being handed over');
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_develop_artifact:${artifact.assetId}`}, 0))`.execute(
+        trx,
+      );
       const { rows } = await sql<{ inserted: boolean }>`
         INSERT INTO ${ARTIFACTS} ("assetId", id, "ownerId", kind, path, bytes, width, height)
         VALUES (
@@ -368,7 +369,32 @@ export class AssetDevelopRepository {
         ON CONFLICT ("assetId", id) DO UPDATE SET "createdAt" = clock_timestamp()
         RETURNING (xmax = 0) AS inserted
       `.execute(trx);
-      return !!rows[0]?.inserted;
+      if (!rows[0]?.inserted) {
+        return false;
+      }
+      const count = await sql<{ count: string }>`
+        SELECT count(*) AS count FROM ${ARTIFACTS} WHERE "assetId" = ${artifact.assetId}::uuid
+      `.execute(trx);
+      if (Number(count.rows[0].count) > DEVELOP_ARTIFACT_PER_ASSET) {
+        throw new BadRequestException({
+          message: `This photo has as many edit masks and fills as it may keep (${DEVELOP_ARTIFACT_PER_ASSET}); ones no saved version uses are released a week after their last use`,
+          code: 'develop_artifact_limit',
+        });
+      }
+      // the artifact row first, the owner's row second: the order `releaseArtifacts` takes them in
+      const charged = await trx
+        .updateTable('user')
+        .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + ${artifact.bytes}` })
+        .where('id', '=', artifact.ownerId)
+        .where(
+          sql<boolean>`("quotaSizeInBytes" IS NULL OR "quotaUsageInBytes" + ${artifact.bytes} <= "quotaSizeInBytes")`,
+        )
+        .returning('id')
+        .executeTakeFirst();
+      if (!charged) {
+        throw new BadRequestException({ message: 'Your storage is full', code: 'develop_artifact_quota' });
+      }
+      return true;
     });
   }
 
@@ -376,7 +402,8 @@ export class AssetDevelopRepository {
    * Release artifacts and queue their files' deletion in the same transaction, holding the files'
    * path locks: those of removed assets (or of `assetId` once it is removed), and those no saved
    * version of their asset references any more after `unreferencedBefore`. Nothing is released while
-   * fork writes are refused. Returns the released files.
+   * fork writes are refused. FL-304: their bytes leave their owners' storage usage in that
+   * transaction too. Returns the released files.
    */
   async releaseArtifacts(
     queue: (files: string[]) => Promise<void>,
@@ -386,7 +413,7 @@ export class AssetDevelopRepository {
       if (!(await canWriteFork(tx))) {
         return [];
       }
-      const { rows } = await sql<{ path: string }>`
+      const { rows } = await sql<{ path: string; ownerId: string; bytes: string }>`
         DELETE FROM ${ARTIFACTS} artifact
         WHERE (
           NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = artifact."assetId")
@@ -403,8 +430,21 @@ export class AssetDevelopRepository {
           }
         )
         ${options.assetId ? sql`AND artifact."assetId" = ${options.assetId}::uuid` : sql``}
-        RETURNING artifact.path
+        RETURNING artifact.path, artifact."ownerId", artifact.bytes
       `.execute(tx);
+      const released = new Map<string, number>();
+      for (const { ownerId, bytes } of rows) {
+        released.set(ownerId, (released.get(ownerId) ?? 0) + Number(bytes));
+      }
+      // one owner at a time in a fixed order; never below zero, as an artifact stored before FL-304
+      // was not charged until the nightly usage sync counted it
+      for (const [ownerId, bytes] of [...released].toSorted(([a], [b]) => a.localeCompare(b))) {
+        await tx
+          .updateTable('user')
+          .set({ quotaUsageInBytes: sql`GREATEST("quotaUsageInBytes" - ${bytes}, 0)` })
+          .where('id', '=', ownerId)
+          .execute();
+      }
       const files = [...new Set(rows.map(({ path }) => path))];
       if (files.length > 0) {
         for (const path of files.toSorted()) {
