@@ -211,7 +211,13 @@ export const isSettingsAreaId = (value: string | null | undefined): value is Set
   SETTINGS_AREAS.some((area) => area.id === value);
 
 /** Areas that are screens of their own rather than directories of settings sections (FL-79). */
-export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze(['overview', 'analytics', 'backups', 'utilities', 'history']);
+export const SCREEN_AREAS: readonly SettingsAreaId[] = Object.freeze([
+  'overview',
+  'analytics',
+  'backups',
+  'utilities',
+  'history',
+]);
 
 /** Areas whose one section opens directly, as the template's `navigate()` does for them. */
 export const DIRECT_SECTION: Partial<Record<SettingsAreaId, string>> = Object.freeze({
