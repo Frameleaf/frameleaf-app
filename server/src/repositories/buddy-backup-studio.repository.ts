@@ -583,7 +583,9 @@ export class BuddyBackupStudioRepository {
       sql` AND `,
     );
     const inserted = await sql`INSERT INTO ${sql.table(table)} (${sql.join(columns.map((column) => sql.ref(column)))})
-      VALUES (${sql.join(columns.map((column) => value(column)))}) ON CONFLICT DO NOTHING RETURNING ${sql.ref(keys[0])}`.execute(this.db);
+      VALUES (${sql.join(columns.map((column) => value(column)))}) ON CONFLICT DO NOTHING RETURNING ${sql.ref(keys[0])}`.execute(
+      this.db,
+    );
     const stored = await sql<{ record: Row }>`SELECT ${recordJson(table)} AS record FROM ${sql.table(table)} item
       WHERE ${where} FOR UPDATE`.execute(this.db);
     if (!stored.rows[0]) throw new Error('Buddy Studio revision identity conflicts with existing history');

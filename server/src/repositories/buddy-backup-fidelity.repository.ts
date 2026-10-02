@@ -431,7 +431,9 @@ export class BuddyBackupFidelityRepository {
       sql` AND `,
     );
     const result = await sql`INSERT INTO ${sql.table(table)} (${sql.join(columns.map((column) => sql.ref(column)))})
-      VALUES (${sql.join(columns.map((column) => value(column)))}) ON CONFLICT DO NOTHING RETURNING id`.execute(this.db);
+      VALUES (${sql.join(columns.map((column) => value(column)))}) ON CONFLICT DO NOTHING RETURNING id`.execute(
+      this.db,
+    );
     const stored = await sql<{ record: Row }>`SELECT to_jsonb(item) AS record FROM ${sql.table(table)} item
       WHERE ${where} FOR UPDATE`.execute(this.db);
     if (!stored.rows[0]) throw new Error('Buddy version revision identity conflicts with a current version');
