@@ -54,9 +54,9 @@ export const BuddyStatusSchema = z.object({
   lastVerifiedAt: z.string().nullable(),
   run: run.nullable(),
   connection: z.string().nullable(),
-  transferMbps: z.number(),
-  pendingObjects: z.number(),
-  availableBytes: z.number().nullable(),
+  transferMbps: z.number().meta({ format: 'double' }),
+  pendingObjects: z.number().int().nonnegative(),
+  availableBytes: z.number().int().nonnegative().nullable(),
   capacityUpdatedAt: z.string().nullable(),
   hosting: z.object({ committedBytes: z.number(), reservedBytes: z.number(), quotaBytes: z.number() }),
 });

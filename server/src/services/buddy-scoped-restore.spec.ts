@@ -93,7 +93,10 @@ it.each([
   });
   const restore = CloudBackupRestorer.prototype.restore;
   // Isolate the actual Buddy file publisher from the separately tested database metadata finalizer.
-  const restorer = vi.spyOn(CloudBackupRestorer.prototype, 'restore').mockImplementation(function (options) {
+  const restorer = vi.spyOn(CloudBackupRestorer.prototype, 'restore').mockImplementation(function (
+    this: CloudBackupRestorer,
+    options,
+  ) {
     // eslint-disable-next-line unicorn/no-this-outside-of-class -- Preserve the real restorer instance in this wrapper.
     return restore.call(this, { ...options, library: (result) => Promise.resolve(result) });
   });
