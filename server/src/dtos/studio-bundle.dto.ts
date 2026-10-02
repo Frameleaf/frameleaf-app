@@ -57,7 +57,7 @@ const StudioBundleSourceResolutionSchema = z
 const StudioBundleSourceSchema = z
   .object({
     key: z.string().describe('Mapping key for the import request'),
-    kind: z.string().describe('`library-asset` or `edited-master`'),
+    kind: z.string().describe('`library-asset`, `edited-master` or `project-import` (a file kept with the project)'),
     id: z.string().describe('Identifier on the exporting server'),
     mode: StudioBundleSourceModeSchema,
     fileName: z.string().nullable(),
@@ -121,7 +121,11 @@ const StudioBundleMissingSourceSchema = z
     kind: z.string(),
     id: z.string(),
     fileName: z.string().nullable(),
-    embedded: z.boolean().describe('The bundle carries a verified copy that can be added to the library later'),
+    embedded: z
+      .boolean()
+      .describe(
+        'The bundle carries a verified copy that was not added: library media, or a project file that failed its checks',
+      ),
   })
   .meta({ id: 'StudioBundleMissingSourceDto' });
 

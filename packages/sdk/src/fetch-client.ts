@@ -10016,7 +10016,7 @@ export type StudioBundleExportResultDto = {
     sizeBytes: string;
 };
 export type StudioBundleMissingSourceDto = {
-    /** The bundle carries a verified copy that can be added to the library later */
+    /** The bundle carries a verified copy that was not added: library media, or a project file that failed its checks */
     embedded: boolean;
     fileName: string | null;
     id: string;
@@ -10060,7 +10060,7 @@ export type StudioBundleSourceDto = {
     id: string;
     /** Mapping key for the import request */
     key: string;
-    /** `library-asset` or `edited-master` */
+    /** `library-asset`, `edited-master` or `project-import` (a file kept with the project) */
     kind: string;
     mode: StudioBundleSourceMode;
     resolution: StudioBundleSourceResolution;

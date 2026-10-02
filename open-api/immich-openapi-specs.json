@@ -87549,7 +87549,7 @@
       "StudioBundleMissingSourceDto": {
         "properties": {
           "embedded": {
-            "description": "The bundle carries a verified copy that can be added to the library later",
+            "description": "The bundle carries a verified copy that was not added: library media, or a project file that failed its checks",
             "type": "boolean"
           },
           "fileName": {
@@ -87680,7 +87680,7 @@
             "type": "string"
           },
           "kind": {
-            "description": "`library-asset` or `edited-master`",
+            "description": "`library-asset`, `edited-master` or `project-import` (a file kept with the project)",
             "type": "string"
           },
           "mode": {
