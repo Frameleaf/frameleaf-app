@@ -130,6 +130,9 @@ const getLensModel = (exifTags: ImmichTags): string | null => {
   return lensModel || null;
 };
 
+const getCameraString = (...values: unknown[]): string | null =>
+  values.map((value) => (typeof value === 'string' ? value.trim() : '')).find(Boolean) ?? null;
+
 type ImmichTagsWithFaces = ImmichTags & { RegionInfo: NonNullable<ImmichTags['RegionInfo']> };
 
 type Dates = {
@@ -289,10 +292,21 @@ export class MetadataService extends BaseService {
       colorspace: exifTags.ColorSpace === undefined ? null : String(exifTags.ColorSpace),
 
       // camera
-      make:
-        exifTags.Make ?? exifTags.Device?.Manufacturer ?? exifTags.AndroidMake ?? (exifTags.DeviceManufacturer || null),
-      model:
-        exifTags.Model ?? exifTags.Device?.ModelName ?? exifTags.AndroidModel ?? (exifTags.DeviceModelName || null),
+      make: getCameraString(
+        exifTags.Make,
+        exifTags.Device?.Manufacturer,
+        exifTags.AndroidMake,
+        exifTags.DeviceManufacturer,
+      ),
+      model: getCameraString(
+        exifTags.Model,
+        exifTags.Device?.ModelName,
+        exifTags.AndroidModel,
+        exifTags.DeviceModelName,
+        // Recorded DNG/XMP/container identities, including models newer than any camera catalogue.
+        exifTags.UniqueCameraModel,
+        exifTags.CameraModel,
+      ),
       fps: video?.frameRate ?? validate(Number(exifTags.VideoFrameRate!)),
       iso: validate(exifTags.ISO) as number,
       exposureTime: exifTags.ExposureTime ?? null,
