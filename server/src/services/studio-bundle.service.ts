@@ -4,11 +4,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';
-import { pipeline } from 'node:stream/promises';
+import { finished as streamFinished, pipeline } from 'node:stream/promises';
 import { isDeepStrictEqual } from 'node:util';
+import type { Writable } from 'node:stream';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -30,7 +32,7 @@ import { ImmichReadStream, StorageRepository } from 'src/repositories/storage.re
 import { StudioBundleUpload, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
-import { StudioProjectImportService } from 'src/services/studio-project-import.service.js';
+import { StudioProjectImportService, studioImportIncomingFolder } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { StudioResourceService } from 'src/services/studio-resource.service.js';
 import { isLockedRow } from 'src/utils/locked.js';
@@ -62,6 +64,7 @@ import {
   checkStudioBundleProject,
   digestZipEntry,
   isBundleExportDownloadable,
+  isStudioBundleImportAlias,
   parseBundleExportResult,
   parseBundleExportSnapshot,
   parseBundleImportResult,
@@ -73,6 +76,7 @@ import {
   selectStudioSequences,
   serializeStudioBundleProject,
   studioBundleFileName,
+  studioBundleImportSources,
   studioBundleSourceKeys,
   studioChecksumSha256,
   studioSequenceSubsetProblem,
@@ -171,8 +175,12 @@ type RunningJob = { operation: MediaOperation; claimToken: string };
  *   shared media and never Locked media, whatever the worker itself could read. What an import may
  *   relink to is resolved for the importer, at submit and again when the job runs.
  * - **Originals are never overwritten.** An export only reads library files; an import only writes
- *   a new project. Embedded copies are verified and reported, and adopting them into the library is
- *   FL-105's, through the upload path, never by writing over anything.
+ *   a new project. Embedded copies of library media are verified and reported, never written into
+ *   the library.
+ * - **Files kept with the project travel with it (FL-105).** An export copies the project's imports
+ *   when media is asked for, and an import keeps each one with the new project under the same id,
+ *   through the same checks as an upload: the type is read from the bytes again, nothing the bundle
+ *   says about a file is believed, and a file that fails is left out and reported.
  * - **The graph stays opaque.** It leaves as the stored revision, byte for byte, and comes back with
  *   only its source ids relinked.
  * - **Retention is bounded.** An uploaded bundle is kept for {@link STUDIO_BUNDLE_UPLOAD_TTL_HOURS}
@@ -307,6 +315,15 @@ export class StudioBundleService {
       }
     }
 
+    // FL-105: the files kept with the project travel with it. A whole project names all of them, a
+    // subset the ones its sequences place (a clip names a kept file by id, under whatever key).
+    const placed = sequenceIds
+      ? new Set(extractStudioResourceReferences(exportGraph).references.map((reference) => reference.id))
+      : null;
+    const imports = (await this.projects.listImportDeclarations(authorized.project.id))
+      .map((item) => item.id)
+      .filter((id) => !placed || placed.has(id));
+
     const snapshot: StudioBundleExportSnapshot = {
       kind: 'studio-bundle-export',
       projectId: authorized.project.id,
@@ -314,6 +331,7 @@ export class StudioBundleService {
       digest: authorized.revision.digest,
       includeMedia: dto.includeMedia === true,
       embed: embed.values().toArray(),
+      imports,
       sequenceIds,
       requestedSequenceIds: dto.sequenceIds ? [...new Set(dto.sequenceIds)].sort() : null,
       requestKey: dto.requestKey ?? null,
@@ -518,6 +536,9 @@ export class StudioBundleService {
       const source = byKey.get(key);
       if (!source) {
         throw new BadRequestException(`The bundle has no source ${key.slice(0, 80)}`);
+      }
+      if (source.kind === StudioResourceKind.ProjectImport) {
+        throw new BadRequestException('A file kept with the project travels with it and cannot be replaced');
       }
       mapping[key] = assetId;
     }
@@ -738,6 +759,9 @@ export class StudioBundleService {
       backgroundRunner: true,
     });
     const entries = new Map(resolution.manifest.entries.map((entry) => [entry.key, entry]));
+    const named = new Set(snapshot.imports);
+    const keptFiles =
+      named.size > 0 ? (await this.projects.listImports(project.id)).filter((item) => named.has(item.id)) : [];
 
     const keys = studioBundleSourceKeys(envelope.graph);
     // Only UUIDs can name a library row; any other identifier simply resolves to nothing.
@@ -802,6 +826,41 @@ export class StudioBundleService {
           contentType,
         });
       }
+    }
+
+    // FL-105: the files kept with the project, named by the submit. They are the owner's own and
+    // only the owner exports, so each is copied when media was asked for; otherwise it is listed
+    // with its digest so the import can say what is missing. The entry is named by the import id
+    // and the extension the upload gave it, never by the name the file was uploaded with.
+    for (const item of keptFiles) {
+      const source = {
+        key: studioReferenceKey({ kind: StudioResourceKind.ProjectImport, id: item.id }),
+        kind: StudioResourceKind.ProjectImport,
+        id: item.id,
+        sha256: item.checksum,
+        fileName: item.fileName,
+        contentType: item.contentType,
+      };
+      if (!snapshot.includeMedia) {
+        sources.push({ ...source, mode: 'reference', path: null, bytes: null });
+        continue;
+      }
+      const { size } = await this.storage.stat(item.path);
+      totalBytes += size;
+      if (totalBytes > STUDIO_BUNDLE_MAX_BYTES - 64 * 1024 * 1024) {
+        throw new BundleJobError(
+          'bundle_too_large',
+          'The media in this project is too large for one bundle; export it without media',
+        );
+      }
+      const sha256 = (await this.crypto.hashFile(item.path, 'sha256')).toString('hex');
+      if (sha256 !== item.checksum || size !== item.sizeBytes) {
+        throw new BundleJobError('bundle_import_changed', 'A file kept with this project no longer matches its record');
+      }
+      const entryName = bundleMediaEntryName({ kind: source.kind, id: item.id, fileName: basename(item.path) });
+      media[entryName] = { sha256, bytes: size };
+      embeds.push({ path: item.path, entryName });
+      sources.push({ ...source, mode: 'embedded', path: entryName, bytes: size });
     }
 
     const projectBytes = serializeStudioBundleProject(envelope);
@@ -924,8 +983,22 @@ export class StudioBundleService {
       ) {
         throw new BundleJobError('bundle_recovery_unavailable', 'The existing import cannot be recovered');
       }
+      // The files kept with the project may not all have been kept before the first attempt
+      // stopped. Keeping one twice answers with the stored file, so this is safe to repeat.
+      const recovered = parseBundleImportResult(result);
+      const retried = await this.projects.getUpload(snapshot.uploadId, operation.ownerId);
+      const actor = retried ? await this.authFor(operation.ownerId, { elevated: false }) : null;
+      if (
+        retried &&
+        actor &&
+        (await this.crypto.hashFile(retried.path, 'sha256')).toString('hex') === snapshot.digest
+      ) {
+        const refused = await this.keepCarriedImports(actor, retried.path, this.storedManifest(retried), existing.id);
+        const listed = new Set(recovered.missing.map((item) => item.key));
+        recovered.missing.push(...refused.filter((item) => !listed.has(item.key)));
+      }
       await this.projects.markUploadConsumed(snapshot.uploadId);
-      await this.finish(operation.id, claimToken, { ...parseBundleImportResult(result), projectId: existing.id }, 1);
+      await this.finish(operation.id, claimToken, { ...recovered, projectId: existing.id }, 1);
       return;
     }
 
@@ -954,7 +1027,16 @@ export class StudioBundleService {
     const { manifest, envelope, embeddedVerified } = verified;
 
     // Relink: the importer's choices, re-checked now, and originals that already resolve for them.
-    const byKey = new Map(manifest.sources.map((source) => [source.key, source]));
+    // Files kept with the project are not relinked: they come with the bundle or are missing. A
+    // library source that is one of them under its media id is left to the file's own source unless
+    // the importer chose a stand-in for it.
+    const carried = studioBundleImportSources(manifest.sources);
+    const relinkable = manifest.sources.filter(
+      (source) =>
+        source.kind !== StudioResourceKind.ProjectImport &&
+        (!isStudioBundleImportAlias(source, carried) || source.key in snapshot.mapping),
+    );
+    const byKey = new Map(relinkable.map((source) => [source.key, source]));
     const chosen = Object.entries(snapshot.mapping).filter(
       ([key, assetId]) => byKey.has(key) && byKey.get(key)!.id !== assetId,
     );
@@ -971,8 +1053,8 @@ export class StudioBundleService {
       throw new BundleJobError('bundle_relink_unavailable', 'A chosen relink target is no longer available');
     }
     const mapping = Object.fromEntries(chosen);
-    const resolvable = await this.authorizedKeys(owner, upload.id, manifest.sources);
-    const plan = planStudioBundleRelink(manifest.sources, { mapping, resolvable });
+    const resolvable = await this.authorizedKeys(owner, upload.id, relinkable);
+    const plan = planStudioBundleRelink(relinkable, { mapping, resolvable });
 
     const relinkMap = new Map<string, string>();
     for (const step of plan) {
@@ -998,6 +1080,12 @@ export class StudioBundleService {
           embedded: source.mode === 'embedded',
         };
       });
+    // A kept file the bundle only names cannot be re-created here.
+    for (const source of carried.values()) {
+      if (source.mode !== 'embedded') {
+        missing.push({ key: source.key, kind: source.kind, id: source.id, fileName: source.fileName, embedded: false });
+      }
+    }
 
     const prepared: StudioBundleImportResult = {
       projectId: null,
@@ -1024,10 +1112,14 @@ export class StudioBundleService {
         requestKey: `bundle-import:${operation.id}`,
       },
     });
+    // FL-105: keep the bundle's project files with the new project. One the checks refuse is left
+    // out and reported; the project is still the importer's to open.
+    const refused = await this.keepCarriedImports(owner, upload.path, manifest, project.id);
     await this.projects.markUploadConsumed(upload.id);
 
     const result: StudioBundleImportResult = {
       ...prepared,
+      missing: [...missing, ...refused],
       projectId: project.id,
     };
 
@@ -1157,6 +1249,81 @@ export class StudioBundleService {
     }
 
     return { manifest: read.manifest, envelope: read.envelope, embeddedVerified: names.length };
+  }
+
+  /**
+   * Keep the project files a bundle carries with the project the import created (FL-105).
+   *
+   * Each embedded copy is written out under a random name in the importer's own incoming folder
+   * while its digest is checked again, then handed to the upload path, which reads the type from
+   * the bytes, runs every check an upload gets (size, quota, graphics scan, caption and LUT
+   * validation) and stores it as `<import id><extension>`. Nothing the manifest says about the file
+   * reaches the disk: its name is a label and its type only settles what the bytes leave open, as
+   * a browser's does. Returns the files the checks refused; anything else that fails throws.
+   */
+  private async keepCarriedImports(
+    owner: AuthDto,
+    bundlePath: string,
+    manifest: StudioBundleManifest,
+    projectId: string,
+  ): Promise<StudioBundleMissingSource[]> {
+    const carried = studioBundleImportSources(manifest.sources)
+      .values()
+      .filter((source) => source.mode === 'embedded')
+      .toArray();
+    if (carried.length === 0) {
+      return [];
+    }
+    const refused: StudioBundleMissingSource[] = [];
+    const folder = studioImportIncomingFolder(owner.user.id);
+    this.storage.mkdirSync(folder);
+
+    await this.withArchive(bundlePath, async (source) => {
+      const directory = await readZipDirectory(source);
+      for (const item of carried) {
+        const name = item.path ?? '';
+        const entry = directory.byName.get(name);
+        const expected = manifest.files[name];
+        if (!entry || !expected) {
+          throw new BundleJobError('bundle_entry_missing', `${name.slice(0, 80)} is listed but not in the file`);
+        }
+        const staged = join(folder, `${randomUUID()}.upload`);
+        const output: Writable = this.storage.createWriteStream(staged);
+        try {
+          const actual = await digestZipEntry(source, entry, {
+            onData: (chunk) =>
+              new Promise<void>((resolve, reject) =>
+                output.write(chunk, (error) => (error ? reject(error) : resolve())),
+              ),
+          });
+          output.end();
+          await streamFinished(output);
+          if (actual.sha256 !== expected.sha256 || actual.bytes !== expected.bytes) {
+            throw new BundleJobError('bundle_digest_mismatch', `${name.slice(0, 80)} does not match its digest`);
+          }
+        } catch (error) {
+          output.destroy();
+          await this.storage.unlink(staged);
+          throw error;
+        }
+        try {
+          // The upload path removes the staged file itself when it refuses it.
+          await this.imports.upload(owner, projectId, item.id, {
+            path: staged,
+            size: expected.bytes,
+            mimetype: item.contentType ?? '',
+            originalname: item.fileName ?? '',
+          } as Express.Multer.File);
+        } catch (error) {
+          if (!(error instanceof BadRequestException || error instanceof PayloadTooLargeException)) {
+            throw error;
+          }
+          this.logger.warn(`Studio bundle import: project file ${item.id} was not kept: ${errorMessage(error)}`);
+          refused.push({ key: item.key, kind: item.kind, id: item.id, fileName: item.fileName, embedded: true });
+        }
+      }
+    });
+    return refused;
   }
 
   /**
@@ -1321,9 +1488,20 @@ export class StudioBundleService {
     upload: StudioBundleUpload,
     manifest: StudioBundleManifest,
   ): Promise<StudioBundleUploadDto> {
-    const kept = await this.authorizedKeys(auth, upload.id, manifest.sources);
+    // Files kept with the project come with the bundle or not at all: never matched to library
+    // items, and not listed a second time under the media id a clip places them by.
+    const carried = studioBundleImportSources(manifest.sources);
+    const relinkable = manifest.sources.filter(
+      (source) => source.kind !== StudioResourceKind.ProjectImport && !isStudioBundleImportAlias(source, carried),
+    );
+    const kept = await this.authorizedKeys(auth, upload.id, relinkable);
+    for (const source of carried.values()) {
+      if (source.mode === 'embedded') {
+        kept.add(source.key);
+      }
+    }
 
-    const wanted = manifest.sources.filter((source) => !kept.has(source.key) && source.sha256);
+    const wanted = relinkable.filter((source) => !kept.has(source.key) && source.sha256);
     const candidates = new Map<string, string>();
     if (wanted.length > 0) {
       const rows = await this.assets.getByChecksums(
@@ -1352,7 +1530,7 @@ export class StudioBundleService {
       }
     }
 
-    const sources: StudioBundleSourceDto[] = manifest.sources.map((source) => {
+    const sources: StudioBundleSourceDto[] = [...relinkable, ...carried.values()].map((source) => {
       const suggested = candidates.get(source.key) ?? null;
       return {
         key: source.key,
