@@ -178,7 +178,7 @@ test.describe('Buddy Backup production Command Center (FL-310)', () => {
       await expect(dialog.getByLabel('Storage to offer (GiB)', { exact: true })).toHaveValue('500');
       await expect(dialog.getByLabel('Upload limit (Mbit/s)', { exact: true })).toHaveValue('20');
       await expect(dialog.getByLabel('Download limit (Mbit/s)', { exact: true })).toHaveValue('20');
-      await expect(dialog.getByLabel('Schedule', { exact: true })).toHaveValue('0 2 * * *');
+      await expect(dialog.getByRole('combobox', { name: 'Schedule', exact: true })).toHaveValue('0 2 * * *');
       await expect(dialog.getByLabel('Transfer window starts', { exact: true })).toHaveValue('00:00');
       await expect(dialog.getByLabel('Ends', { exact: true })).toHaveValue('00:00');
       await expect(dialog.getByRole('button', { name: 'Save hosting settings' })).toBeDisabled();
