@@ -17,8 +17,13 @@
  *
  * Device pixel ratio 2 is measured and reported, not required to be identical: there the browser
  * rasterises the DOM player at twice the project resolution while the rendered canvas keeps
- * project resolution, so an edge is filtered differently whatever the placement. Closing that
- * needs a decision on the preview render size, not a placement change.
+ * project resolution, so an edge is filtered differently whatever the placement.
+ *
+ * Decision (FL-100, October 2, 2026): at device pixel ratio 2 the preview canvas stays at
+ * project resolution. Rendering it at device resolution would cost four times the pixels per
+ * frame, so the difference in the edge pixel is accepted there. Do not raise the preview render
+ * size to close it. The checks below still hold at ratio 2: the canvas centre is the project
+ * raster and any difference stays within one device pixel of the edge.
  *
  *   STUDIO_TEST_ORIGIN=http://127.0.0.1:<vite port of keyframe-browser.config.mjs> \
  *   STUDIO_TEST_EVIDENCE=<directory> node studio/tools/edge-parity.browser.mjs
