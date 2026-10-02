@@ -1,4 +1,4 @@
-import type { BuddyStatusDto } from '@immich/sdk';
+import { State as BuddyPairingState, type BuddyStatusDto } from '@immich/sdk';
 import { buddyBackupPresentation } from './buddy-backup';
 
 const paired = (): BuddyStatusDto => ({
@@ -19,7 +19,7 @@ const paired = (): BuddyStatusDto => ({
     includeDerived: false,
     configurationFiles: [],
   },
-  pairing: { version: 1, pairId: 'pair', state: 'active', readUntil: null, vaults: [] },
+  pairing: { version: 1, pairId: 'pair', state: BuddyPairingState.Active, readUntil: null, vaults: [] },
   recoveryVerified: true,
   keyFingerprint: 'verified-key',
   lastCompleteAt: null,
@@ -49,7 +49,7 @@ describe('Buddy backup controls and recovery presentation', () => {
 
   it('never reopens a blocked pairing after its key is verified', () => {
     const status = paired();
-    status.pairing!.state = 'blocked';
+    status.pairing!.state = BuddyPairingState.Blocked;
     expect(buddyBackupPresentation(status, true, true)).toMatchObject({
       outgoing: 'frameleaf_backup_blocked',
       incoming: 'frameleaf_backup_blocked',
@@ -60,7 +60,7 @@ describe('Buddy backup controls and recovery presentation', () => {
 
   it('allows only reads during the recovery window and closes them at the deadline', () => {
     const status = paired();
-    status.pairing!.state = 'ended';
+    status.pairing!.state = BuddyPairingState.Ended;
     status.pairing!.readUntil = '2026-11-01T00:00:00Z';
     expect(buddyBackupPresentation(status, true, false, Date.parse('2026-10-31T23:59:59Z'))).toMatchObject({
       send: false,
@@ -114,7 +114,7 @@ describe('Buddy backup controls and recovery presentation', () => {
   it('offers no transfers or restores before pairing is authorized', () => {
     expect(buddyBackupPresentation(null, true, true)).toMatchObject({ write: false, send: false, read: false });
     const status = paired();
-    status.pairing!.state = 'pending';
+    status.pairing!.state = BuddyPairingState.Pending;
     expect(buddyBackupPresentation(status, true, true)).toMatchObject({ write: false, send: false, read: false });
   });
 });

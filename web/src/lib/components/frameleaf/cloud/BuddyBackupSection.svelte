@@ -11,6 +11,8 @@
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
+    Action as BuddyControlAction,
+    Action2 as BuddyRelationshipAction,
     getBuddyBackupStatus,
     checkBuddyBackupCoverage,
     type BuddyPreflightDto,
@@ -95,14 +97,14 @@
     if (s) {
       directory = s.directory;
       quotaGiB = s.quotaBytes / 1024 ** 3;
-      upload = s.uploadMbps;
-      download = s.downloadMbps;
-      schedule = s.schedule;
+      upload = s.uploadMbps ?? 20;
+      download = s.downloadMbps ?? 20;
+      schedule = s.schedule ?? '0 2 * * *';
       timezone = s.timezone;
-      windowStart = s.windowStart;
-      windowEnd = s.windowEnd;
-      configurationFiles = s.configurationFiles.join('\n');
-      includeDerived = s.includeDerived;
+      windowStart = s.windowStart ?? '00:00';
+      windowEnd = s.windowEnd ?? '00:00';
+      configurationFiles = (s.configurationFiles ?? []).join('\n');
+      includeDerived = s.includeDerived ?? false;
     }
   };
   const checkCoverage = async () => {
@@ -251,9 +253,7 @@
         ? $t('frameleaf_buddy_recovery_kit_imported_your_restore_points_are_available_below')
         : $t('frameleaf_buddy_your_saved_recovery_kit_is_verified');
     });
-  const control = (
-    value: 'start' | 'pause-sending' | 'resume-sending' | 'pause-receiving' | 'resume-receiving' | 'verify',
-  ) =>
+  const control = (value: BuddyControlAction) =>
     action(async () => {
       status = await controlBuddyBackup({ buddyControlDto: { action: value } });
     });
@@ -264,9 +264,13 @@
         setup = true;
         step = 3;
       } else if (confirmAction === 'restart') {
-        status = await controlBuddyBackup({ buddyControlDto: { action: 'restart' } });
+        status = await controlBuddyBackup({ buddyControlDto: { action: BuddyControlAction.Restart } });
       } else if (confirmAction) {
-        status = await changeBuddyRelationship({ buddyRelationshipDto: { action: confirmAction } });
+        status = await changeBuddyRelationship({
+          buddyRelationshipDto: {
+            action: confirmAction === 'end' ? BuddyRelationshipAction.End : BuddyRelationshipAction.Block,
+          },
+        });
       }
       confirmAction = null;
       await load();
@@ -380,18 +384,24 @@
             {#if status.run.error}<p role="status">{status.run.error}</p>{/if}
           {/if}
           <div class="actions">
-            <Button variant="primary" disabled={busy || !presentation.send} onclick={() => control('start')}
-              >{$t('frameleaf_buddy_back_up_now')}</Button
+            <Button
+              variant="primary"
+              disabled={busy || !presentation.send}
+              onclick={() => control(BuddyControlAction.Start)}>{$t('frameleaf_buddy_back_up_now')}</Button
             >
             <Button
               disabled={busy || (!!status.settings?.pausedSending && !presentation.send)}
-              onclick={() => control(status?.settings?.pausedSending ? 'resume-sending' : 'pause-sending')}
+              onclick={() =>
+                control(
+                  status?.settings?.pausedSending ? BuddyControlAction.ResumeSending : BuddyControlAction.PauseSending,
+                )}
               >{status.settings?.pausedSending
                 ? $t('frameleaf_buddy_resume_sending')
                 : $t('frameleaf_buddy_pause_sending')}</Button
             >
-            <Button disabled={busy || !presentation.read || !status.lastCompleteAt} onclick={() => control('verify')}
-              >{$t('frameleaf_buddy_verify_recovery')}</Button
+            <Button
+              disabled={busy || !presentation.read || !status.lastCompleteAt}
+              onclick={() => control(BuddyControlAction.Verify)}>{$t('frameleaf_buddy_verify_recovery')}</Button
             >
             <Button
               disabled={busy}
@@ -469,7 +479,12 @@
           >
           {#if status.configured}<Button
               disabled={busy || (!!status.settings?.pausedReceiving && !presentation.write)}
-              onclick={() => control(status?.settings?.pausedReceiving ? 'resume-receiving' : 'pause-receiving')}
+              onclick={() =>
+                control(
+                  status?.settings?.pausedReceiving
+                    ? BuddyControlAction.ResumeReceiving
+                    : BuddyControlAction.PauseReceiving,
+                )}
               >{status.settings?.pausedReceiving
                 ? $t('frameleaf_buddy_resume_receiving')
                 : $t('frameleaf_buddy_pause_receiving')}</Button
@@ -769,7 +784,9 @@
         onclick={() =>
           action(async () => {
             if (status?.pairing?.state !== 'active') {
-              status = await changeBuddyRelationship({ buddyRelationshipDto: { action: 'confirm' } });
+              status = await changeBuddyRelationship({
+                buddyRelationshipDto: { action: BuddyRelationshipAction.Confirm },
+              });
             }
             step = 3;
           })}>{$t('frameleaf_buddy_confirm_agreement')}</Button
@@ -801,7 +818,7 @@
         onclick={() =>
           action(async () => {
             await testBuddyBackup();
-            status = await controlBuddyBackup({ buddyControlDto: { action: 'start' } });
+            status = await controlBuddyBackup({ buddyControlDto: { action: BuddyControlAction.Start } });
             setup = false;
             notice = $t('frameleaf_buddy_the_encrypted_connection_is_verified_your_initial_backup_is_queued');
           })}>{$t('frameleaf_buddy_verify_connection_start_backup')}</Button

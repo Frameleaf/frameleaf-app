@@ -1,3 +1,4 @@
+import { State as BuddyPairingState } from '@immich/sdk';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -36,7 +37,7 @@ describe('Backup operational summary', () => {
     state.getBuddyBackupStatus.mockReset().mockResolvedValue({
       enabled: true,
       configured: true,
-      pairing: { state: 'active' },
+      pairing: { state: BuddyPairingState.Active },
       recoveryVerified: true,
       keyFingerprint: 'key',
       settings: { pausedSending: false, pausedReceiving: false },
