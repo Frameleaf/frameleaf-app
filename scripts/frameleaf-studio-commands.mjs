@@ -1333,11 +1333,13 @@ export const catalogue = [
  * link to a command the catalogue does not have. Each link was reviewed by the row's owner.
  */
 export const nonCommandRows = [
-  // FL-98: the bento layout (bento-layout.ts) arranges the selected items by writing their
-  // transforms.
+  // FL-98: the bento layout (bento-layout.ts) arranges the selected items on the canvas by
+  // writing their transforms, as one undoable edit (applyBentoLayout). It is a graph change; it
+  // is listed here because it has no command of its own. Only the saved custom presets
+  // (bento-presets-store.ts) are a client preference.
   {
     id: 'extra.bento',
-    reason: 'Panel layout preset; a client preference, not a graph change.',
+    reason: 'Arranges the selected clips on the canvas by writing their transforms; it has no command of its own.',
     commands: ['clip.setTransform'],
   },
   {
