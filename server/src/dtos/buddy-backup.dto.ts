@@ -99,6 +99,7 @@ export const BuddyBrowseSchema = z.object({
 export const BuddyRestoreResponseSchema = z.object({
   operationId: z.string().nullable(),
   items: z.number(),
+  metadataItems: z.number().int().nonnegative().optional(),
   bytes: z.number(),
   conflicts: z.number(),
   mode: z.enum(['keep', 'replace']),
