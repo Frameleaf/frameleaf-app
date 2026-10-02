@@ -203,6 +203,18 @@ jobs:
           version: 2026.7.12
       - name: Run ci-unit
         run: mise run ci-unit
+      - name: Capture automatic web formatting fixes
+        if: failure()
+        run: |
+          timeout 15m pnpm format:fix || true
+          git diff --binary -- . > "$RUNNER_TEMP/web-format.patch"
+      - name: Archive automatic web formatting fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: web-format-autofix
+          path: ${{ runner.temp }}/web-format.patch
+          retention-days: 7
     timeout-minutes: 60
   i18n-tests:
     name: Test i18n
