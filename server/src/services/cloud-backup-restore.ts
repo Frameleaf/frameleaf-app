@@ -8,6 +8,7 @@ import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositor
 import { CloudBackupBucket, CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
 import { assertOwnerRestoreFile, captureOwnerRestoreFile } from 'src/utils/cloud-backup-owner-path.js';
 import { CloudBackupManifest, objectKey } from 'src/utils/cloud-backup.js';
+import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
 
@@ -32,7 +33,13 @@ export type OwnerRestorePublisher = (
   file: CloudBackupRestoreFile,
   staged: string,
   publish: () => Promise<'written' | 'skipped' | 'replaced'>,
+  phase?: 'inspect' | 'publish',
 ) => Promise<'written' | 'skipped' | 'replaced'>;
+export type BackupObjectReader = (
+  key: string,
+  destination: string,
+  sha256: string,
+) => Promise<{ size: number; sha256: string }>;
 
 export type CloudBackupRestoreSnapshot = {
   version: 1;
@@ -223,14 +230,17 @@ export const restorePlan = (options: {
  */
 export class CloudBackupRestorer {
   constructor(
-    private store: CloudBackupStoreRepository,
+    private store: Pick<CloudBackupStoreRepository, 'download'> | null,
     private storage: StorageRepository,
     private crypto: CryptoRepository,
     private logger: LoggingRepository,
   ) {}
 
   async restore(options: {
-    bucket: CloudBackupBucket;
+    bucket?: CloudBackupBucket;
+    read?: BackupObjectReader;
+    /** Stage on the target volume so external-library publication remains an atomic rename. */
+    stageBesideTarget?: boolean;
     manifest: CloudBackupManifest;
     scope: CloudBackupRestoreScope;
     files: CloudBackupRestoreFile[];
@@ -244,6 +254,8 @@ export class CloudBackupRestorer {
     library?: (result: CloudBackupRestoreResult) => Promise<CloudBackupRestoreResult>;
     /** Owner-only mode: stage and verify before invoking a current authorization/target guard. */
     publish?: OwnerRestorePublisher;
+    /** Persist verified file evidence before advancing a destination-specific cursor. */
+    completedFile?: (file: CloudBackupRestoreFile, outcome: 'written' | 'skipped' | 'replaced') => Promise<void>;
   }): Promise<CloudBackupRestoreResult | null> {
     const { bucket, manifest, scope, files, checkpoint } = options;
     const database = scope === 'database' || scope === 'library' ? manifest.database : null;
@@ -263,6 +275,7 @@ export class CloudBackupRestorer {
       for (let at = 0; at < pending.length; at += RESTORE_BATCH) {
         for (const file of pending.slice(at, at + RESTORE_BATCH)) {
           const outcome = await this.restoreFile(bucket, objectKey(file.sha256), file, options);
+          await options.completedFile?.(file, outcome);
           result = {
             ...result,
             cursor: file.fileKey,
@@ -333,21 +346,36 @@ export class CloudBackupRestorer {
    * is moved aside and the object is downloaded and verified in its place.
    */
   private async restoreFile(
-    bucket: CloudBackupBucket,
+    bucket: CloudBackupBucket | undefined,
     key: string,
     file: CloudBackupRestoreFile,
-    options: { mediaLocation: string; operationId: string; publish?: OwnerRestorePublisher },
+    options: {
+      mediaLocation: string;
+      operationId: string;
+      publish?: OwnerRestorePublisher;
+      read?: BackupObjectReader;
+      stageBesideTarget?: boolean;
+    },
   ): Promise<'written' | 'skipped' | 'replaced'> {
+    const download: BackupObjectReader =
+      options.read ??
+      ((object, destination, sha256) => {
+        if (!this.store || !bucket) throw new Error('Backup reader unavailable');
+        return this.store.download(bucket.connection, object, bucket.bucketKey, destination, sha256);
+      });
     if (options.publish) {
-      const staged = join(options.mediaLocation, RESTORE_FOLDER, options.operationId, 'staging', randomUUID());
+      if (options.stageBesideTarget) await options.publish(file, '', () => Promise.resolve('skipped'), 'inspect');
+      const staged = options.stageBesideTarget
+        ? join(dirname(file.target), `.buddy-restore-${randomUUID()}.tmp`)
+        : join(options.mediaLocation, RESTORE_FOLDER, options.operationId, 'staging', randomUUID());
       this.storage.mkdirSync(dirname(staged));
       try {
-        const downloaded = await this.store.download(bucket.connection, key, bucket.bucketKey, staged, file.sha256);
+        const downloaded = await download(key, staged, file.sha256);
         if (downloaded.size !== file.size || downloaded.sha256 !== file.sha256) {
           throw new Error('Owner restore staging size or checksum mismatch');
         }
         // Preflight is not a file outcome and must never enter checkpoint/result accounting.
-        await options.publish(file, staged, () => Promise.resolve('skipped'));
+        await options.publish(file, staged, () => Promise.resolve('skipped'), 'inspect');
         const evidence = await captureOwnerRestoreFile(file.target, async (target) =>
           (await this.crypto.hashFile(target, 'sha256')).toString('hex'),
         );
@@ -356,26 +384,33 @@ export class CloudBackupRestorer {
         );
         if (stagedEvidence.sha256 !== file.sha256 || stagedEvidence.size !== BigInt(file.size))
           throw new Error('Owner restore staging size or checksum mismatch');
-        return await options.publish(file, staged, async () => {
-          await assertOwnerRestoreFile(staged, stagedEvidence.identity);
-          await assertOwnerRestoreFile(file.target, evidence.identity);
-          const present = evidence.sha256;
-          if (present === file.sha256) return 'skipped';
-          if (present !== null) {
-            // Each owner replacement keeps its own aside copy, including a replay of the same operation.
-            await this.moveAside(
-              file.target,
-              options.mediaLocation,
-              join(options.operationId, file.assetId ?? 'item', randomUUID()),
-            );
-          }
-          this.storage.mkdirSync(dirname(file.target));
-          await assertOwnerRestoreFile(file.target, null);
-          await assertOwnerRestoreFile(staged, stagedEvidence.identity);
-          await this.storage.rename(staged, file.target);
-          await assertOwnerRestoreFile(file.target, stagedEvidence.identity, true);
-          return present === null ? 'written' : 'replaced';
-        });
+        return await options.publish(
+          file,
+          staged,
+          async () => {
+            await assertOwnerRestoreFile(staged, stagedEvidence.identity);
+            await assertOwnerRestoreFile(file.target, evidence.identity);
+            const present = evidence.sha256;
+            if (present === file.sha256) return 'skipped';
+            if (present !== null) {
+              // Each owner replacement keeps its own aside copy, including a replay of the same operation.
+              await this.moveAside(
+                file.target,
+                options.mediaLocation,
+                join(options.operationId, file.assetId ?? 'item', randomUUID()),
+                options.stageBesideTarget,
+              );
+            }
+            this.storage.mkdirSync(dirname(file.target));
+            await assertOwnerRestoreFile(file.target, null);
+            await assertOwnerRestoreFile(staged, stagedEvidence.identity);
+            await this.storage.rename(staged, file.target);
+            if (options.stageBesideTarget) await flushBuddyDirectory(dirname(file.target));
+            await assertOwnerRestoreFile(file.target, stagedEvidence.identity, true);
+            return present === null ? 'written' : 'replaced';
+          },
+          'publish',
+        );
       } finally {
         // A refused guard must never leave verified bytes at the public/current destination.
         if (await this.storage.checkFileExists(staged)) await this.storage.unlink(staged);
@@ -390,7 +425,7 @@ export class CloudBackupRestorer {
     }
     this.storage.mkdirSync(dirname(file.target));
     try {
-      await this.store.download(bucket.connection, key, bucket.bucketKey, file.target, file.sha256);
+      await download(key, file.target, file.sha256);
     } catch (error) {
       if (error instanceof CloudBackupStoreError && error.status === 404) {
         throw new Error(`The backup copy of ${key} is missing from the bucket. The restore stopped before it.`, {
@@ -415,9 +450,11 @@ export class CloudBackupRestorer {
   }
 
   /** Move a file that is in the way to the replaced folder, keeping its path below the media folder. */
-  private async moveAside(path: string, mediaLocation: string, operationId: string) {
+  private async moveAside(path: string, mediaLocation: string, operationId: string, besideTarget = false) {
     const below = isInside(mediaLocation, path) ? relative(resolve(mediaLocation), resolve(path)) : basename(path);
-    const target = join(mediaLocation, RESTORE_REPLACED_FOLDER, operationId, below);
+    const target = besideTarget
+      ? join(dirname(path), `.${basename(path)}.buddy-rollback-${randomUUID()}`)
+      : join(mediaLocation, RESTORE_REPLACED_FOLDER, operationId, below);
     this.storage.mkdirSync(dirname(target));
     try {
       await this.storage.rename(path, target);
@@ -428,6 +465,7 @@ export class CloudBackupRestorer {
       await this.storage.copyFile(path, target);
       await this.storage.unlink(path);
     }
+    if (besideTarget) await flushBuddyDirectory(dirname(path));
     this.logger.log(`Cloud backup restore ${operationId}: moved ${path} aside to ${target}`);
   }
 }

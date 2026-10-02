@@ -13,6 +13,7 @@ import { anyUuid, asUuid } from 'src/utils/database.js';
 type PhysicalFile = Selectable<PhysicalFileTable>;
 
 export const PHYSICAL_FILE_HANDOFF_REFUSAL = 'Shared files cannot change during database handoff';
+export const BUDDY_CAPTURE_LOCK = -311;
 
 /**
  * Takes the transaction-scoped advisory lock that guards one file path against concurrent reference
@@ -21,6 +22,7 @@ export const PHYSICAL_FILE_HANDOFF_REFUSAL = 'Shared files cannot change during 
  * Postgres builtin. A caller taking several paths takes them in sorted order.
  */
 export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> => {
+  await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(db);
   const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
   await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
 };
@@ -1017,6 +1019,8 @@ export class PhysicalFileRepository {
     // intermediate (FL-97; its row goes before its file is queued), and a develop artifact (FL-233:
     // released with its row, so a re-upload that records the same file again keeps it).
     const retainedRefs = await sql<{ count: string }>`SELECT count(*) FROM (
+      SELECT 1 FROM immich_fork.buddy_backup_reference reference WHERE reference.path = ${path} AND NOT reference.released
+      UNION ALL
       SELECT 1 FROM immich_fork.asset_physical_file mapping
       JOIN public.asset asset ON asset.id = mapping."assetId"
       WHERE mapping."upstreamPath" = ${path}
@@ -1067,38 +1071,73 @@ export class PhysicalFileRepository {
     assetId: string,
     ownerId: string,
     callback: () => Promise<T>,
+    derivative?: { type: AssetFileType; isEdited: boolean },
   ): Promise<T> {
     const execute = async (trx: Transaction<DB>) => {
-      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
-      const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
-      const lock = await sql<{
-        locked: boolean;
-      }>`SELECT pg_try_advisory_xact_lock(${key.toString()}::bigint) AS locked`.execute(trx);
-      if (!lock.rows[0]?.locked) throw new Error('Owner restore destination is changing');
-      const physical = await trx.selectFrom('physical_file').select('id').where('path', '=', path).executeTakeFirst();
-      const references = await this.countPathReferencesIn(trx, path, physical?.id);
-      const own = await trx
-        .selectFrom('asset')
-        .select('id')
-        .where('id', '=', assetId)
-        .where('ownerId', '=', ownerId)
-        .where('originalPath', '=', path)
-        .executeTakeFirst();
-      const ownFiles = await trx
-        .selectFrom('asset_file')
-        .innerJoin('asset', 'asset.id', 'asset_file.assetId')
-        .select('asset_file.assetId')
-        .where('asset_file.assetId', '=', assetId)
-        .where('asset.ownerId', '=', ownerId)
-        .where('asset_file.path', '=', path)
-        .where('asset_file.type', '=', AssetFileType.Sidecar)
-        .execute();
-      // Any other original, derivative, history or orphan reference refuses publication, even same-owner.
-      if (references > (own ? 1 : 0) + ownFiles.length || (physical && !own))
-        throw new Error('Owner restore destination unavailable');
+      const access = await this.ownerRestorePathAccess(trx, path, assetId, ownerId, derivative);
+      if (!access.mutable) throw new Error('Owner restore destination unavailable');
       return callback();
     };
     return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
+  }
+
+  /** Inspection has no mutation callback. A supplied transaction keeps the path lock for its metadata checks. */
+  async inspectOwnerRestorePath(
+    path: string,
+    assetId: string,
+    ownerId: string,
+    derivative?: { type: AssetFileType; isEdited: boolean },
+  ): Promise<void> {
+    const execute = async (trx: Transaction<DB>) => {
+      const access = await this.ownerRestorePathAccess(trx, path, assetId, ownerId, derivative);
+      if (!access.inspectable) throw new Error('Owner restore destination unavailable');
+    };
+    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
+  }
+
+  private async ownerRestorePathAccess(
+    trx: Transaction<DB>,
+    path: string,
+    assetId: string,
+    ownerId: string,
+    derivative?: { type: AssetFileType; isEdited: boolean },
+  ) {
+    await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
+    const barrier = await sql<{
+      locked: boolean;
+    }>`SELECT pg_try_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint) AS locked`.execute(trx);
+    if (!barrier.rows[0]?.locked) throw new Error('Backup is capturing file ownership; retry this restore');
+    const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
+    const lock = await sql<{
+      locked: boolean;
+    }>`SELECT pg_try_advisory_xact_lock(${key.toString()}::bigint) AS locked`.execute(trx);
+    if (!lock.rows[0]?.locked) throw new Error('Owner restore destination is changing');
+    const physical = await trx.selectFrom('physical_file').select('id').where('path', '=', path).executeTakeFirst();
+    const references = await this.countPathReferencesIn(trx, path, physical?.id);
+    const own = await trx
+      .selectFrom('asset')
+      .select('id')
+      .where('id', '=', assetId)
+      .where('ownerId', '=', ownerId)
+      .where('originalPath', '=', path)
+      .executeTakeFirst();
+    const ownFiles = await trx
+      .selectFrom('asset_file')
+      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+      .select(['asset_file.assetId', 'asset_file.physicalFileId'])
+      .where('asset_file.assetId', '=', assetId)
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset_file.path', '=', path)
+      .where('asset_file.type', '=', derivative?.type ?? AssetFileType.Sidecar)
+      .$if(!!derivative, (query) => query.where('asset_file.isEdited', '=', derivative!.isEdited))
+      .execute();
+    // Any other original, derivative, history or orphan reference refuses publication, even same-owner.
+    return {
+      inspectable: (!physical && references === 0) || !!own || ownFiles.length > 0,
+      mutable:
+        references <= (own ? 1 : 0) + ownFiles.length &&
+        (!physical || !!own || ownFiles.some((file) => derivative && file.physicalFileId === physical.id)),
+    };
   }
 
   /**
@@ -1142,6 +1181,9 @@ export class PhysicalFileRepository {
 
       const references = await this.countPathReferencesIn(trx, path, physicalFile?.id);
       if (references > 0) {
+        await sql`UPDATE immich_fork.buddy_backup_reference SET "deleteRequested" = true WHERE path = ${path} AND NOT released`.execute(
+          trx,
+        );
         return { deleted: false, references };
       }
 
