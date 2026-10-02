@@ -4,7 +4,7 @@
   "description": "Command Line Interface (CLI) for Frameleaf",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/immich-app/immich.git",
+    "url": "git+https://github.com/Frameleaf/frameleaf-app.git",
     "directory": "packages/cli"
   },
   "type": "module",
