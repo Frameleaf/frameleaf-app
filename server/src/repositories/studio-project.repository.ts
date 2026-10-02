@@ -11,6 +11,7 @@ import {
   lockPublicForkWrites,
   withPublicForkWrites,
 } from 'src/repositories/fork-write-guard.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   StudioBundleUploadTable,
@@ -758,16 +759,25 @@ export class StudioProjectRepository {
     return rows;
   }
 
-  /** Forget every import of a project that no longer exists; a live project's are never touched. */
-  async deleteImports(projectId: string): Promise<void> {
+  /** Orphan rows remain the retry intent until their exact registered files can be removed. */
+  async deleteImports(projectId: string, ownerId: string, unlink: (item: StudioProjectImport) => Promise<void>): Promise<void> {
     if (!(await canWriteFork(this.db))) {
       return;
     }
-    await sql`
-      DELETE FROM immich_fork.studio_project_import item
-      WHERE item."projectId" = ${projectId}::uuid
+    const { rows } = await sql<StudioProjectImport>`
+      SELECT ${studioImportColumns} FROM immich_fork.studio_project_import item
+      WHERE item."projectId" = ${projectId}::uuid AND item."ownerId" = ${ownerId}::uuid
         AND NOT EXISTS (SELECT 1 FROM studio_project project WHERE project.id = item."projectId")
+      ORDER BY item.path, item.id
     `.execute(this.db);
+    const physical = new PhysicalFileRepository(this.db);
+    const failures: unknown[] = [];
+    for (const item of rows) {
+      try {
+        await physical.deleteUnreferencedPath(item.path, () => unlink(item), { orphanStudioImport: item });
+      } catch (error) { failures.push(error); }
+    }
+    if (failures.length) throw new AggregateError(failures, 'Some Studio import cleanup is waiting for retry');
   }
 
   /** One import of a live project, or undefined. */

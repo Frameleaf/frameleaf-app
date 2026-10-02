@@ -72,7 +72,7 @@ const writers: Writer[] = [
     message: STUDIO_EXPORT_HANDOFF_REFUSAL,
     table: 'studio_export_version',
     write: (db) =>
-      new StudioExportRepository(db, undefined as never, undefined as never, undefined as never).markOutputRemoved(id),
+      new StudioExportRepository(db, undefined as never, undefined as never, undefined as never).markOutputRemoved(id, async () => {}),
   },
   {
     repository: 'preservation: create a package',

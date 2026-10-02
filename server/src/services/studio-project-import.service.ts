@@ -17,6 +17,7 @@ import { StudioProjectImport, StudioProjectRepository } from 'src/repositories/s
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { assertOwnerRestoreFile, assertOwnerRestorePath, captureOwnerRestoreFile } from 'src/utils/cloud-backup-owner-path.js';
 import {
   STUDIO_IMPORT_MAX_BYTES,
   STUDIO_IMPORT_TEXT_LIMITS,
@@ -27,6 +28,7 @@ import {
   validateStudioImportText,
 } from 'src/utils/studio-imports.js';
 import { isStudioUuid } from 'src/utils/studio-resources.js';
+import { isManagedStudioImportPath } from 'src/utils/studio-managed-paths.js';
 
 const IMPORT_FOLDER = 'studio-imports';
 /** An upload older than this in the incoming folder belongs to a request that never finished. */
@@ -191,18 +193,25 @@ export class StudioProjectImportService {
    * Studio lifecycle sweep.
    */
   async sweep(now: Date = new Date()): Promise<void> {
-    // Files first, rows after: a folder that cannot be removed now keeps its rows for the next sweep.
+    // Each registered path is guarded separately. Never remove an entire folder: it can hold
+    // capture-pinned bytes or unknown files, and restored imports live outside studio-imports.
     for (const orphan of await this.projects.listOrphanImportProjects()) {
       try {
-        await this.storage.unlinkDir(studioImportProjectFolder(orphan.ownerId, orphan.projectId), {
-          recursive: true,
-          force: true,
+        await this.projects.deleteImports(orphan.projectId, orphan.ownerId, async (item) => {
+          if (!isManagedStudioImportPath(item))
+            throw new Error('Studio import cleanup path is not a declared managed file');
+          await assertOwnerRestorePath([StorageCore.getBaseFolder(StorageFolder.Exports)], item.path);
+          const evidence = await captureOwnerRestoreFile(item.path,
+            async (path) => (await this.crypto.hashFile(path, 'sha256')).toString('hex'));
+          if (evidence.identity && (evidence.sha256 !== item.checksum || evidence.size !== BigInt(item.sizeBytes)))
+            throw new Error('Studio import cleanup file identity changed');
+          await assertOwnerRestoreFile(item.path, evidence.identity);
+          await this.storage.unlink(item.path);
         });
       } catch (error) {
         this.logger.warn(`Could not remove the imports of deleted Studio project ${orphan.projectId}: ${error}`);
         continue;
       }
-      await this.projects.deleteImports(orphan.projectId);
     }
     const exports = StorageCore.getBaseFolder(StorageFolder.Exports);
     for (const ownerId of await this.storage.readdir(exports).catch(() => [] as string[])) {
