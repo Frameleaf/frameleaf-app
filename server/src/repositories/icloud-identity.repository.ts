@@ -221,6 +221,8 @@ export class ICloudIdentityRepository {
         INSERT INTO immich_fork.icloud_claim ("ownerId", "cplAssetRecordName", holder, "expiresAt")
         SELECT ${ownerId}::uuid, name, ${holder}, clock_timestamp() + make_interval(secs => ${ttlSec})
         FROM unnest(${names}::text[]) AS name
+        -- one lock order for every caller: two devices claiming overlapping items cannot deadlock
+        ORDER BY name
         ON CONFLICT ("ownerId", "cplAssetRecordName") DO UPDATE
           SET holder = excluded.holder,
             "expiresAt" = least(
