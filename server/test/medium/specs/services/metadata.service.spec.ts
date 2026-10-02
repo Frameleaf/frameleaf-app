@@ -52,6 +52,7 @@ const setup = (db?: Kysely<DB>) => {
     mock: [EventRepository, StorageRepository, LoggingRepository, MapRepository],
   });
 
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
   ctx
     .getMock(MapRepository)
     .reverseGeocode.mockResolvedValue({ country: 'File country', state: 'File state', city: 'File city' });
