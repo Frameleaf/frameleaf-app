@@ -80,7 +80,7 @@ const createRunFixture = async (directory: string) => {
     pauseRequestedAt: null,
     result: {},
     snapshot: { version: 1, task: 'backup', pairId: pairing.pairId, vaultId: ring.vaultId, keyVersion: 1 },
-  } as MediaOperation;
+  } as unknown as MediaOperation;
   const state: BuddyState = {
     version: 1,
     settings: {
