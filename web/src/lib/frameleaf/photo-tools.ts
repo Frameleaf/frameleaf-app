@@ -234,6 +234,15 @@ export function presetSettingsFrom(source: Partial<PresetSettings> | DevelopPres
   };
 }
 
+const PRESET_KEYS: ReadonlySet<string> = new Set([...DEVELOP_KEYS, 'preset', 'presetStrength', 'masks']);
+
+/**
+ * FL-304: what a preset holds that this editor has no control for (Brilliance, or a setting newer
+ * than this build). Applied with the preset and carried in the recipe, like any field it cannot show.
+ */
+export const presetExtras = (settings: DevelopPresetSettingsDto): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(settings).filter(([key]) => !PRESET_KEYS.has(key)));
+
 /** True when the draft already carries exactly the preset's settings (so the preset shows as applied). */
 /**
  * FL-233: the wire shape of a preset. Its masks are the radial and linear kinds this editor draws,
