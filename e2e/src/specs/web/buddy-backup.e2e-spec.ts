@@ -38,10 +38,15 @@ const recordScreen = async (page: Page, info: TestInfo, name: string, selector: 
     }),
     contentType: 'image/png',
   });
-  const overflow = await page.locator(`html, .cc-main, ${selector}`).evaluateAll((elements) =>
-    elements.map((element) => ({ tag: element.tagName, overflow: element.scrollWidth - element.clientWidth })),
-  );
-  expect(overflow.filter((item) => item.overflow > 1), `${name}: horizontal overflow`).toEqual([]);
+  const overflow = await page
+    .locator(`html, .cc-main, ${selector}`)
+    .evaluateAll((elements) =>
+      elements.map((element) => ({ tag: element.tagName, overflow: element.scrollWidth - element.clientWidth })),
+    );
+  expect(
+    overflow.filter((item) => item.overflow > 1),
+    `${name}: horizontal overflow`,
+  ).toEqual([]);
   const { violations } = await new AxeBuilder({ page }).include(selector).withRules(['color-contrast']).analyze();
   expect(
     violations.map(({ id, nodes }) => ({ id, targets: nodes.map(({ target }) => target) })),
