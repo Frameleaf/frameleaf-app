@@ -6,8 +6,10 @@
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
   import BuddyRestoreSection from '$lib/components/frameleaf/cloud/BuddyRestoreSection.svelte';
   import { buddyBackupPresentation } from '$lib/frameleaf/buddy-backup';
+  import { formatDateTime } from '$lib/frameleaf/cloud-ml';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { cloudManager } from '$lib/managers/cloud-manager.svelte';
+  import { locale } from '$lib/stores/preferences.store';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -73,7 +75,7 @@
   const mine = $derived(status?.pairing?.vaults.find((vault) => vault.sourceInstanceId === status?.instanceId));
   const hosted = $derived(status?.pairing?.vaults.find((vault) => vault.destinationInstanceId === status?.instanceId));
   const formatTime = (value: string | null | undefined) =>
-    value ? new Date(value).toLocaleString() : $t('frameleaf_buddy_not_yet');
+    value ? formatDateTime(value, $locale) : $t('frameleaf_buddy_not_yet');
   const bytes = (value: number) => getByteUnitString(value);
   const action = async (run: () => Promise<void>) => {
     busy = true;
@@ -584,7 +586,9 @@
     <dl class="facts">
       <div>
         <dt>{$t('frameleaf_buddy_original_estimate')}</dt>
-        <dd>{bytes(coverage.originalBytes)} · {coverage.items.toLocaleString()} {$t('frameleaf_buddy_items')}</dd>
+        <dd>
+          {bytes(coverage.originalBytes)} · {coverage.items.toLocaleString($locale)} {$t('frameleaf_buddy_items')}
+        </dd>
       </div>
       <div>
         <dt>{$t('frameleaf_buddy_database_estimate')}</dt>

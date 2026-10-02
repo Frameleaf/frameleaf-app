@@ -3,6 +3,8 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import CloudCard from '$lib/components/frameleaf/cloud/CloudCard.svelte';
+  import { formatDateTime } from '$lib/frameleaf/cloud-ml';
+  import { locale } from '$lib/stores/preferences.store';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -190,7 +192,7 @@
             })}
         >
           {#each snapshots as snapshot (snapshot.id)}<option value={snapshot.id}
-              >{new Date(snapshot.createdAt).toLocaleString()}</option
+              >{formatDateTime(snapshot.createdAt, $locale)}</option
             >{/each}
         </select></label
       >

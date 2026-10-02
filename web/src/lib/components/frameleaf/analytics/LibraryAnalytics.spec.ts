@@ -1,5 +1,5 @@
 import { AnalyticsCameraKind, AnalyticsScopeKind, AnalyticsState } from '@immich/sdk';
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import LibraryAnalytics from '$lib/components/frameleaf/analytics/LibraryAnalytics.svelte';
 import { analyticsInsightsFixture, analyticsReportFixture } from '$lib/frameleaf/analytics.fixture';
@@ -133,8 +133,11 @@ describe('LibraryAnalytics', () => {
   });
 
   it('exports the CSV in the browser without any request', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
     render(LibraryAnalytics, { scopes, report: analyticsReportFixture() });
+    const summary = screen.getByRole('region', { name: 'Backup & hosting' });
+    await waitFor(() => expect(summary).toHaveAttribute('aria-busy', 'false'));
+    // Initial summary status requests are separate from the browser-only export action.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
     await fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }));
     expect(downloadBlob).toHaveBeenCalledTimes(1);
     const [blob, name] = downloadBlob.mock.calls[0] as [Blob, string];
