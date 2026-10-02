@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AssetFileType,
   AssetPathType,
@@ -17,8 +18,8 @@ import {
 } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BuddyBackupRepository, type BuddySettings } from 'src/repositories/buddy-backup.repository.js';
-import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BUDDY_CAPTURE_LOCK, PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -26,11 +27,11 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { BuddyBackupCaptureService, type BuddyCapture } from 'src/services/buddy-backup-capture.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
-import { BUDDY_BLOCK_BYTES, decryptBuddyBlock, type BuddyKeyring } from 'src/utils/buddy-backup-crypto.js';
+import { BUDDY_BLOCK_BYTES, type BuddyKeyring, decryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
+import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
-import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
 
 // CI's temporary volume may be below the production 10 GiB/10% reserve. Keep all file I/O real;
 // only supply enough reported free space for these small fixtures when that reserve would reject them.
@@ -59,6 +60,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'buddy-capture-medium-')));
     for (const directory of ['identity', 'vault', 'source']) await mkdir(join(root, directory));
+    StorageCore.setMediaLocation(join(root, 'source'));
     db = await getActiveForkKyselyDB();
     ({ ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] }));
     ownerId = (await ctx.newUser()).user.id;
@@ -89,6 +91,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
   }, 30_000);
 
   afterEach(async () => {
+    StorageCore.reset();
     vi.unstubAllEnvs();
     await db?.destroy();
     if (root) await rm(root, { recursive: true, force: true });
@@ -353,7 +356,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
               return [];
             },
           );
-          if (staged.length) throw new Error('Interrupted after staging a block');
+          if (staged.length > 0) throw new Error('Interrupted after staging a block');
         },
       }),
     ).rejects.toThrow('Interrupted after staging a block');
@@ -474,9 +477,9 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
 
     // Retained history permits inspection/no-op restore but still forbids replacing shared bytes.
     await sql`INSERT INTO immich_fork.video_edit_version
-      ("assetId", "ownerId", "sourcePath", "sourceChecksum", recipe, purpose, status, "masterPath")
+      ("assetId", "ownerId", "sourcePath", "sourceChecksum", recipe, purpose, status, "masterPath", "proxyPath")
       VALUES (${own.asset.id}::uuid, ${ownerId}::uuid, ${own.path}, ${own.asset.checksum},
-        '[]'::jsonb, 'save', 'ready', ${output.path})`.execute(db);
+        '[]'::jsonb, 'save', 'ready', ${output.path}, ${output.path + '.proxy.mp4'})`.execute(db);
     await physical.inspectOwnerRestorePath(output.path, own.asset.id, ownerId, derivative);
     await expect(
       physical.withOwnerRestorePath(

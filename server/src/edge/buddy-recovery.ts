@@ -3,7 +3,7 @@ import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import z from 'zod';
 import type { FrameleafRemoteEnrollment } from 'src/types.js';
-import { relayTokenResponseSchema, type RelayTokenResponse } from 'src/utils/frameleaf-relay.js';
+import { type RelayTokenResponse, relayTokenResponseSchema } from 'src/utils/frameleaf-relay.js';
 
 // Pairing and recovery token fields mirror Frameleaf/frameleaf-cloud's Apache-2.0
 // packages/contracts/src/{buddy/index,remote/relay}.ts (FC-100, version 1).
@@ -69,6 +69,8 @@ export const readBuddyRecovery = async (
       if (!stat.isFile() || stat.size > 256 * 1024) {
         return null;
       }
+      // eslint-disable-next-line unicorn/consistent-json-file-read -- FileHandle.readFile takes encoding as its first argument.
+      const content = await file.readFile('utf8');
       const state = z
         .object({
           version: z.literal(1),
@@ -85,7 +87,7 @@ export const readBuddyRecovery = async (
             .nullable()
             .optional(),
         })
-        .parse(JSON.parse(await file.readFile('utf8')));
+        .parse(JSON.parse(content));
       const pair = state.pairing;
       if (!pair || (pair.state !== 'active' && !(pair.state === 'ended' && Date.parse(pair.readUntil!) > now))) {
         return null;
@@ -114,12 +116,12 @@ export const readBuddyRecovery = async (
 
 /** A direct candidate may have a mapped port. The Host must still name its exact TLS SNI. */
 export const buddyAuthorityMatches = (authority: string | undefined, servername: string | null) => {
-  const [host, port, extra] = (authority ?? '').split(':');
+  const [host, port, extra] = (authority ?? '').split(':', 3);
   return (
     !!servername &&
     host === servername &&
     extra === undefined &&
-    (port === undefined || (/^[1-9][0-9]{0,4}$/.test(port) && Number(port) <= 65535))
+    (port === undefined || (/^[1-9][0-9]{0,4}$/.test(port) && Number(port) <= 65_535))
   );
 };
 
@@ -183,7 +185,7 @@ export const buddyRelayPurposeProblem = (
   now: number,
 ): string | null => {
   try {
-    const [header, payload] = answer.token.split('.');
+    const [header, payload] = answer.token.split('.', 2);
     const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!scope) {
       return ['purpose', 'pairId', 'vaultId', 'sourceInstanceId'].some((key) => key in claims)

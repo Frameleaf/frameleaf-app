@@ -1,11 +1,12 @@
+/* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
-import type { CloudBackupManifestFile } from './cloud-backup.ts';
 import { BUDDY_ID, BUDDY_UUID } from './buddy-backup-crypto.ts';
 import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from './buddy-backup-vault.ts';
+import type { CloudBackupManifestFile } from './cloud-backup.ts';
+import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
 
 export type BuddyRecovery = {
   version: 1;
@@ -75,7 +76,9 @@ export const readBuddyRecovery = async (root: string, id: string): Promise<Buddy
   let plan: BuddyRecovery;
   try {
     if ((await file.stat()).size > 1024 ** 3) throw new Error('Recovery manifest exceeds its limit');
-    plan = JSON.parse(await file.readFile('utf8'));
+    // eslint-disable-next-line unicorn/consistent-json-file-read -- FileHandle.readFile takes encoding as its first argument.
+    const content = await file.readFile('utf8');
+    plan = JSON.parse(content);
   } finally {
     await file.close();
   }
@@ -91,6 +94,7 @@ export const readBuddyRecovery = async (root: string, id: string): Promise<Buddy
         typeof file.path !== 'string' ||
         !BUDDY_ID.test(file.sha256) ||
         !Number.isSafeInteger(file.size) ||
+        // eslint-disable-next-line unicorn/no-impossible-length-comparison -- This is untrusted JSON, not a Map or Set.
         file.size < 0,
     )
   )
@@ -151,7 +155,7 @@ export class BuddyRecoveryFiles {
         throw new Error('Conflicting recovery paths');
       paths.set(file.path, file);
     }
-    const files = [...paths.values()];
+    const files = paths.values().toArray();
     // Verify the entire plan before the first write; unavailable mounts never produce partial success.
     for (const file of files) {
       await this.assert();
@@ -211,16 +215,16 @@ export class BuddyRecoveryFiles {
           if (error.code !== 'ENOENT') throw error;
           return null;
         });
-        if (!backup) {
+        if (backup) {
+          const prior = await buddyFileHash(entry.rollback);
+          if (prior.sha256 !== entry.previous || prior.size !== entry.previousSize || current)
+            throw new Error('Recovery rollback copy or target changed');
+        } else {
           if (evidence?.sha256 !== entry.previous || evidence.size !== entry.previousSize)
             throw new Error('Recovery target changed after confirmation');
           await this.assert();
           await rename(file.path, entry.rollback);
           await flushBuddyDirectory(dirname(file.path));
-        } else {
-          const prior = await buddyFileHash(entry.rollback);
-          if (prior.sha256 !== entry.previous || prior.size !== entry.previousSize || current)
-            throw new Error('Recovery rollback copy or target changed');
         }
       }
       await createBuddyDirectory(dirname(file.path));

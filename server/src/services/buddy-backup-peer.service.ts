@@ -5,16 +5,17 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { Request, Response } from 'express';
-import type { Transaction } from 'kysely';
-import type { DB } from 'src/schema/index.js';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { readFile, statfs } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import z from 'zod';
+import type { Request, Response } from 'express';
+import type { Transaction } from 'kysely';
 import type { FrameleafRequest } from 'src/middleware/frameleaf-via.middleware.js';
+import type { DB } from 'src/schema/index.js';
+import type { BuddyReceipt, BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -25,10 +26,9 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { BUDDY_BLOCK_BYTES, BUDDY_SEALED_OVERHEAD } from 'src/utils/buddy-backup-crypto.js';
 import { BuddyJwks, verifyBuddyGrant, verifyBuddyProof } from 'src/utils/buddy-backup-protocol.js';
 import { BuddyVault, buddyDigest, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
-import type { BuddyReceipt, BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
 import { BuddyGrantClaims, BuddyGrantResponse, BuddyPairing } from 'src/utils/frameleaf-buddy.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 
 export type BuddyPeerAccess = {
   grant: BuddyGrantClaims;
@@ -84,10 +84,10 @@ export class BuddyBackupPeerService {
   async cloud<T extends z.ZodType>(schema: T, path: string, body?: unknown) {
     const target = await this.cloudTarget();
     return this.frameleafCloudRepository.requestJson(schema, {
-      url: new URL(`/v1/buddy/${path}`, target.api).toString(),
+      url: new URL(`/v1/buddy/${path}`, target.api).href,
       method: body === undefined ? 'GET' : 'POST',
       dpop: target.token,
-      ...(body === undefined ? {} : { body }),
+      ...(body !== undefined && { body }),
     });
   }
 
@@ -98,18 +98,16 @@ export class BuddyBackupPeerService {
         (state) => ({
           ...state,
           pairing,
-          ...(state.pairing?.pairId !== pairing?.pairId
-            ? {
-                recoveryVerified: false,
-                probeVerified: false,
-                nextScheduledAt: null,
-                lastCompleteAt: null,
-                lastVerifiedAt: null,
-                lastSequence: 0,
-                protectionStartedAt: null,
-                run: null,
-              }
-            : {}),
+          ...(state.pairing?.pairId !== pairing?.pairId && {
+            recoveryVerified: false,
+            probeVerified: false,
+            nextScheduledAt: null,
+            lastCompleteAt: null,
+            lastVerifiedAt: null,
+            lastSequence: 0,
+            protectionStartedAt: null,
+            run: null,
+          }),
         }),
         trx,
       ),
@@ -183,7 +181,7 @@ export class BuddyBackupPeerService {
     try {
       const target = await this.cloudTarget();
       const jwks = await this.frameleafCloudRepository.requestJson(BuddyJwks, {
-        url: new URL('/v1/buddy/jwks', target.api).toString(),
+        url: new URL('/v1/buddy/jwks', target.api).href,
         dpop: target.token,
       });
       keys = { issuer: target.api, jwks };
@@ -405,7 +403,7 @@ export class BuddyBackupPeerService {
         if (response.destroyed) return;
         const chunk = bytes.subarray(offset, offset + 64 * 1024);
         await this.throttle(access, chunk.length, 'read');
-        const writable = await this.dispatch(access, 'read', async () => response.write(chunk));
+        const writable = await this.dispatch(access, 'read', () => Promise.resolve(response.write(chunk)));
         if (!writable)
           await once(response, 'drain', {
             signal: AbortSignal.timeout(Math.max(1, access.grant.exp * 1000 - Date.now())),

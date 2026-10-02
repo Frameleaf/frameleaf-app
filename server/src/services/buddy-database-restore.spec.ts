@@ -14,8 +14,8 @@ describe('Buddy database recovery fence', () => {
       createGunzip: () => new PassThrough(),
     };
     const database = {
-      isCertifiedReturnStartup: async () => false,
-      detectMigrationMode: async () => 'legacy',
+      isCertifiedReturnStartup: () => Promise.resolve(false),
+      detectMigrationMode: () => Promise.resolve('legacy'),
       runMigrations: vi.fn(),
       runForkMigrations: vi.fn(),
     };
@@ -38,7 +38,7 @@ describe('Buddy database recovery fence', () => {
       {} as never,
       process as never,
       database as never,
-      { hasAdmin: async () => healthy } as never,
+      { hasAdmin: () => Promise.resolve(healthy) } as never,
       undefined as never,
       undefined as never,
       { checkApiHealth: vi.fn() } as never,
@@ -70,8 +70,9 @@ describe('Buddy database recovery fence', () => {
   it('aborts on lock loss before migrations or rollback can mutate again', async () => {
     const { service, database } = candidate();
     let checks = 0;
-    const assert = async () => {
-      if (++checks >= 4) throw new Error('maintenance lock lost');
+    const assert = () => {
+      if (++checks >= 4) return Promise.reject(new Error('maintenance lock lost'));
+      return Promise.resolve();
     };
     await expect(
       service.restoreDatabaseBackup('development-filename.sql', undefined, { fence: { backendPid: 7310, assert } }),

@@ -7,8 +7,9 @@ vi.mock('kysely', async (original) => {
     (strings: TemplateStringsArray, ...parameters: unknown[]) =>
       strings[0].includes('pg_advisory_xact_lock')
         ? {
-            execute: async (trx: { locks: number }) => {
+            execute: (trx: { locks: number }) => {
               trx.locks++;
+              return Promise.resolve();
             },
           }
         : actual.sql(strings, ...parameters),
@@ -43,9 +44,9 @@ describe('Buddy transaction admission', () => {
         (vaultTransaction) =>
           repository.locked(
             'state',
-            async (stateTransaction) => {
+            (stateTransaction) => {
               expect(stateTransaction).toBe(transaction);
-              return 'acknowledged';
+              return Promise.resolve('acknowledged');
             },
             vaultTransaction,
           ),

@@ -36,33 +36,65 @@ test('expiry or learned revocation at the publication boundary leaves no committ
     const receipt = BuddyVault.receipt('d'.repeat(64), bytes);
     const capacity = { quotaBytes: 10_000, freeBytes: 100e9, totalBytes: 200e9 };
     await vault.reserve(receipt, capacity);
-    await assert.rejects(vault.put(receipt, bytes, capacity, async () => { throw new Error('revoked'); }), /revoked/);
+    await assert.rejects(
+      vault.put(receipt, bytes, capacity, async () => {
+        throw new Error('revoked');
+      }),
+      /revoked/,
+    );
     assert.deepEqual(await vault.inventory([receipt.id]), []);
     assert.equal((await vault.usage()).reservedBytes, bytes.length);
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('vault plus recovery kit restores verified files without the source index and rejects snapshot substitution', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'buddy-recovery-'));
   try {
-    const vaultId = randomUUID(); const key = randomBytes(32); const id = randomUUID();
+    const vaultId = randomUUID();
+    const key = randomBytes(32);
+    const id = randomUUID();
     const ring = { version: 1, vaultId, current: 1, keys: { 1: key.toString('base64url') } };
     const vault = new BuddyVault(directory, vaultId);
     const plain = Buffer.from('recover this original after losing the source database');
     const sha256 = (await import('node:crypto')).createHash('sha256').update(plain).digest('hex');
     const block = buddyObjectId(key, vaultId, plain);
-    const manifest = { version: 1, vaultId, snapshotId: id, sequence: 1, previous: null,
-      library: { version: 2, assets: {} }, contents: { [sha256]: { blocks: [block], bytes: plain.length, keyVersion: 1 } } };
-    const metadata = Buffer.from(JSON.stringify(manifest)); const manifestId = buddyObjectId(key, vaultId, metadata);
+    const manifest = {
+      version: 1,
+      vaultId,
+      snapshotId: id,
+      sequence: 1,
+      previous: null,
+      library: { version: 2, assets: {} },
+      contents: { [sha256]: { blocks: [block], bytes: plain.length, keyVersion: 1 } },
+    };
+    const metadata = Buffer.from(JSON.stringify(manifest));
+    const manifestId = buddyObjectId(key, vaultId, metadata);
     const capacity = { quotaBytes: 10_000, freeBytes: 100e9, totalBytes: 200e9 };
     const receipts = [];
-    for (const [object, bytes] of [[block, plain], [manifestId, metadata]]) {
+    for (const [object, bytes] of [
+      [block, plain],
+      [manifestId, metadata],
+    ]) {
       const sealed = encryptBuddyBlock(key, { vaultId, id: object, keyVersion: 1 }, bytes);
-      const receipt = BuddyVault.receipt(object, sealed); receipts.push(receipt);
+      const receipt = BuddyVault.receipt(object, sealed);
+      receipts.push(receipt);
       await vault.put(receipt, sealed, capacity);
     }
-    const envelope = { snapshot: { version: 1, vaultId, id, sequence: 1, previous: null, keyVersion: 1,
-      manifest: [manifestId], objects: receipts }, signature: '' };
+    const envelope = {
+      snapshot: {
+        version: 1,
+        vaultId,
+        id,
+        sequence: 1,
+        previous: null,
+        keyVersion: 1,
+        manifest: [manifestId],
+        objects: receipts,
+      },
+      signature: '',
+    };
     await rm(join(directory, vaultId, 'catalog.json'));
     const recoveredVault = new BuddyVault(directory, vaultId);
     const reader = new BuddyBackupReader(ring, envelope, (id) => recoveredVault.read(id));
@@ -70,8 +102,15 @@ test('vault plus recovery kit restores verified files without the source index a
     const target = join(directory, 'restored', 'original');
     await reader.download(decoded, sha256, target);
     assert.deepEqual(await readFile(target), plain);
-    await assert.rejects(new BuddyBackupReader(ring, { ...envelope, snapshot: { ...envelope.snapshot, id: randomUUID() } }, (id) => recoveredVault.read(id)).manifest(), /binding/);
-  } finally { await rm(directory, { recursive: true, force: true }); }
+    await assert.rejects(
+      new BuddyBackupReader(ring, { ...envelope, snapshot: { ...envelope.snapshot, id: randomUUID() } }, (id) =>
+        recoveredVault.read(id),
+      ).manifest(),
+      /binding/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('snapshot commits account for metadata and accept an immutable lost-ack retry after grant renewal', async () => {
@@ -86,10 +125,22 @@ test('snapshot commits account for metadata and accept an immutable lost-ack ret
     const receipt = BuddyVault.receipt('c'.repeat(64), bytes);
     const capacity = { quotaBytes: 10_000, freeBytes: 100e9, totalBytes: 200e9 };
     await vault.put(receipt, bytes, capacity);
-    const snapshot = { version: 1, vaultId, id: randomUUID(), sequence: 1, previous: null,
-      createdAt: new Date(now).toISOString(), retainUntil: new Date(now + 31 * 86400_000).toISOString(),
-      keyVersion: 1, manifest: [receipt.id], objects: [receipt] };
-    const envelope = { snapshot, signature: sign(null, buddySnapshotBytes(snapshot), privateKey).toString('base64url') };
+    const snapshot = {
+      version: 1,
+      vaultId,
+      id: randomUUID(),
+      sequence: 1,
+      previous: null,
+      createdAt: new Date(now).toISOString(),
+      retainUntil: new Date(now + 31 * 86400_000).toISOString(),
+      keyVersion: 1,
+      manifest: [receipt.id],
+      objects: [receipt],
+    };
+    const envelope = {
+      snapshot,
+      signature: sign(null, buddySnapshotBytes(snapshot), privateKey).toString('base64url'),
+    };
     await vault.commit(envelope, jwk, now, capacity);
     await vault.commit(envelope, jwk, now + 301_000, capacity);
     assert.equal((await vault.snapshots())[0].id, snapshot.id);
@@ -97,8 +148,14 @@ test('snapshot commits account for metadata and accept an immutable lost-ack ret
     const usage = await vault.usage();
     assert(usage.committedBytes >= bytes.length + Buffer.byteLength(JSON.stringify(envelope)));
     const next = { ...snapshot, id: randomUUID(), sequence: 2, previous: snapshot.id };
-    const nextEnvelope = { snapshot: next, signature: sign(null, buddySnapshotBytes(next), privateKey).toString('base64url') };
-    await assert.rejects(vault.commit(nextEnvelope, jwk, now, { ...capacity, quotaBytes: usage.committedBytes + 1 }), /quota/);
+    const nextEnvelope = {
+      snapshot: next,
+      signature: sign(null, buddySnapshotBytes(next), privateKey).toString('base64url'),
+    };
+    await assert.rejects(
+      vault.commit(nextEnvelope, jwk, now, { ...capacity, quotaBytes: usage.committedBytes + 1 }),
+      /quota/,
+    );
     await rm(join(directory, vaultId, 'catalog.json'));
     assert.deepEqual(await new BuddyVault(directory, vaultId).usage(), usage);
     const storedPath = join(directory, vaultId, 'snapshots', snapshot.id);
@@ -109,7 +166,9 @@ test('snapshot commits account for metadata and accept an immutable lost-ack ret
     await utimes(join(directory, vaultId, 'objects', receipt.id.slice(0, 2), receipt.id), old, old);
     await assert.rejects(vault.prune(now + 70 * 86400_000), /snapshot envelope/);
     assert.deepEqual(await vault.read(receipt.id), bytes);
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('durable reservations, lost acknowledgements and catalog loss preserve quota and immutable ciphertext', async () => {
@@ -144,13 +203,18 @@ test('durable reservations, lost acknowledgements and catalog loss preserve quot
   }
 });
 
-
 test('passphrase escrow round-trips only for its vault and authentic passphrase', async () => {
-  const { createBuddyKeyring, wrapBuddyKeyring, unwrapBuddyKeyring, parseBuddyKeyring } = await import('../../src/utils/buddy-backup-crypto.ts');
+  const { createBuddyKeyring, wrapBuddyKeyring, unwrapBuddyKeyring, parseBuddyKeyring } =
+    await import('../../src/utils/buddy-backup-crypto.ts');
   const ring = createBuddyKeyring(randomUUID());
   const escrow = await wrapBuddyKeyring(ring, 'a long test recovery phrase');
   assert.deepEqual(await unwrapBuddyKeyring(escrow, 'a long test recovery phrase'), ring);
   await assert.rejects(unwrapBuddyKeyring(escrow, 'the wrong recovery phrase'));
   await assert.rejects(unwrapBuddyKeyring({ ...escrow, vaultId: randomUUID() }, 'a long test recovery phrase'));
-  assert.throws(() => parseBuddyKeyring({ ...ring, keys: Object.fromEntries(Array.from({ length: 129 }, (_, i) => [i + 1, ring.keys[1]])) }, ring.vaultId));
+  assert.throws(() =>
+    parseBuddyKeyring(
+      { ...ring, keys: Object.fromEntries(Array.from({ length: 129 }, (_, i) => [i + 1, ring.keys[1]])) },
+      ring.vaultId,
+    ),
+  );
 });

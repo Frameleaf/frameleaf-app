@@ -2,11 +2,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
+import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
+import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
 
 const fixture = vi.hoisted(() => ({ media: '', rows: [] as unknown[] }));
 vi.mock('src/constants.js', () => ({ serverVersion: '2.6.0' }));
@@ -14,7 +14,7 @@ vi.mock('src/cores/storage.core.js', () => ({ StorageCore: { getMediaLocation: (
 vi.mock('src/repositories/buddy-backup.repository.js', () => ({ BuddyBackupRepository: class {} }));
 vi.mock('src/repositories/config.repository.js', () => ({ ConfigRepository: class {} }));
 vi.mock('src/services/database-backup.service.js', () => ({ DatabaseBackupService: class {} }));
-vi.mock('kysely', () => ({ sql: () => ({ execute: async () => ({ rows: fixture.rows }) }) }));
+vi.mock('kysely', () => ({ sql: () => ({ execute: () => Promise.resolve({ rows: fixture.rows }) }) }));
 vi.mock('src/utils/buddy-backup-vault.js', async (importOriginal) => {
   const vault = await importOriginal<typeof import('src/utils/buddy-backup-vault.js')>();
   return { ...vault, flushBuddyDirectory: vi.fn(vault.flushBuddyDirectory) };
@@ -69,7 +69,7 @@ describe('Buddy recovery crash barriers', () => {
     const repository = {
       root: () => join(root, 'identity', 'buddy'),
       db: database,
-      state: async () => ({ settings: { directory: join(root, 'vault'), configurationFiles: [target] } }),
+      state: () => Promise.resolve({ settings: { directory: join(root, 'vault'), configurationFiles: [target] } }),
     };
     service = new BuddyBackupRecoveryService(
       repository as never,
@@ -159,8 +159,9 @@ describe('Buddy recovery crash barriers', () => {
       },
     });
     await expect(
-      service.settings(id, async () => {
-        if (committed) throw new Error('simulated power loss');
+      service.settings(id, () => {
+        if (committed) return Promise.reject(new Error('simulated power loss'));
+        return Promise.resolve();
       }),
     ).rejects.toThrow('power loss');
     const original = await readFile(join(directory, 'settings-rollback.json'));

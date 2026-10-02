@@ -53,7 +53,9 @@ describe('Buddy recovery edge boundary', () => {
     }
     expect(buddyBackupRequestAllowed(paid, 'PUT', path + 'objects/' + 'a'.repeat(64), NOW)).toBe(true);
     expect(buddyBackupRequestAllowed(paid, 'DELETE', path + 'snapshots', NOW)).toBe(false);
-    expect(buddyBackupRequestAllowed(paid, 'POST', path.replace(VAULT, OTHER_VAULT) + 'snapshots', NOW)).toBe(false);
+    expect(buddyBackupRequestAllowed(paid, 'POST', path.replace(VAULT, () => OTHER_VAULT) + 'snapshots', NOW)).toBe(
+      false,
+    );
     expect(buddyBackupRequestAllowed({ ...paid, writeAllowed: undefined }, 'POST', path + 'snapshots', NOW)).toBe(
       false,
     );
@@ -84,7 +86,7 @@ describe('Buddy recovery edge boundary', () => {
       path + 'snapshots//' + PAIR,
       path + 'objects/' + 'a'.repeat(63),
       path + 'objects/' + 'A'.repeat(64),
-      path.replace(VAULT, OTHER_VAULT) + 'snapshots',
+      path.replace(VAULT, () => OTHER_VAULT) + 'snapshots',
       `https://${HOST}${path}snapshots`,
     ]) {
       expect(buddyRecoveryRequestAllowed(access, 'GET', target, HOST, NOW)).toBe(false);
@@ -194,7 +196,7 @@ describe('Buddy recovery edge boundary', () => {
       { exp: iat + 301 },
       { exp: iat },
       { lim: { conns: 500 } },
-      { thr: { bps: 99999999999, burst: 4194304 } },
+      { thr: { bps: 99_999_999_999, burst: 4_194_304 } },
     ]) {
       expect(check(change)).not.toBeNull();
     }

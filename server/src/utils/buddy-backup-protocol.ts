@@ -1,8 +1,8 @@
 import { createHash, createPublicKey, verify } from 'node:crypto';
+import z from 'zod';
+import { type BuddySignedSnapshot, buddySnapshotBytes } from 'src/utils/buddy-backup-vault.js';
 import { BuddyGrantClaims, BuddyGrantHeader } from 'src/utils/frameleaf-buddy.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
-import z from 'zod';
-import { buddySnapshotBytes, type BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
 
 export const buddyCommitReceipt = (envelope: BuddySignedSnapshot) => ({
   snapshotId: envelope.snapshot.id,
@@ -35,7 +35,7 @@ const proofClaims = z.strictObject({
 
 const decode = (token: string) => {
   if (token.length > 8192 || !/^[\w-]+\.[\w-]+\.[\w-]+$/.test(token)) throw new Error('Invalid Buddy authorization');
-  const [header, payload, signature] = token.split('.');
+  const [header, payload, signature] = token.split('.', 3);
   return {
     header: JSON.parse(Buffer.from(header, 'base64url').toString()),
     payload: JSON.parse(Buffer.from(payload, 'base64url').toString()),
@@ -79,7 +79,7 @@ export const verifyBuddyProof = (
   if (
     ed25519Thumbprint(header.jwk) !== grant.cnf.jkt ||
     claims.htm !== method ||
-    claims.htu !== target.toString() ||
+    claims.htu !== target.href ||
     Math.abs(claims.iat * 1000 - now) > 60_000 ||
     claims.ath !== createHash('sha256').update(token).digest('base64url') ||
     !verify(null, jwt.input, createPublicKey({ key: header.jwk, format: 'jwk' }), jwt.signature)

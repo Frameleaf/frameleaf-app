@@ -98,6 +98,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000211-FrameleafAccountAccess' },
       { name: '0000000000212-AssetDevelopArtifacts' },
       { name: '0000000000213-ICloudSourceIdentity' },
+      { name: '0000000000214-BuddyBackupReferences' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',

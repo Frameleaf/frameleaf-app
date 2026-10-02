@@ -5,19 +5,21 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { sql, type Transaction } from 'kysely';
+import { type Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir, rm, statfs } from 'node:fs/promises';
 import { join } from 'node:path';
-import { gt, coerce } from 'semver';
+import { coerce, gt } from 'semver';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { BuddyRestoreDto } from 'src/dtos/buddy-backup.dto.js';
+import type { DB } from 'src/schema/index.js';
+import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { BuddyRestoreDto } from 'src/dtos/buddy-backup.dto.js';
 import {
-  AssetStatus,
   AlbumUserRole,
+  AssetStatus,
   ChecksumAlgorithm,
   DatabaseLock,
   ImmichWorker,
@@ -33,42 +35,40 @@ import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperationRepository, type MediaOperation } from 'src/repositories/media-operation.repository.js';
+import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
-import type { DB } from 'src/schema/index.js';
-import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
-import { MaintenanceService } from 'src/services/maintenance.service.js';
-import { buddyFileHash } from 'src/utils/buddy-backup-recovery.js';
-import { BUDDY_UUID } from 'src/utils/buddy-backup-crypto.js';
-import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
+import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import {
   CloudBackupDetailsService,
   type OwnerRestoreDetailsContext,
 } from 'src/services/cloud-backup-details.service.js';
 import {
+  type CloudBackupRestoreFile,
+  type CloudBackupRestoreSnapshot,
   CloudBackupRestorer,
   emptyRestoreResult,
   restorePlan,
-  type CloudBackupRestoreFile,
-  type CloudBackupRestoreSnapshot,
 } from 'src/services/cloud-backup-restore.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { MaintenanceService } from 'src/services/maintenance.service.js';
 import { BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
+import { BUDDY_UUID } from 'src/utils/buddy-backup-crypto.js';
 import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
-import { writeBuddyFile, type BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
+import { buddyFileHash } from 'src/utils/buddy-backup-recovery.js';
+import { type BuddySignedSnapshot, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import {
+  assertOwnerRestoreFile,
+  assertOwnerRestorePath,
+  captureOwnerRestoreFile,
+} from 'src/utils/cloud-backup-owner-path.js';
 import {
   checkOwnerRestoreItems,
   ownerRestoreHash,
   readBackupAssetRecord,
 } from 'src/utils/cloud-backup-owner-restore.js';
 import { ownerBackupHistoryPage } from 'src/utils/cloud-backup-owner.js';
-import {
-  assertOwnerRestoreFile,
-  assertOwnerRestorePath,
-  captureOwnerRestoreFile,
-} from 'src/utils/cloud-backup-owner-path.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 
 type RestoreJob = {
   version: 1;
@@ -192,7 +192,7 @@ export class BuddyBackupRestoreService {
     );
     const state = await this.repository.state();
     if ((list[0]?.sequence ?? 0) < state.lastSequence) throw new Error('Buddy snapshot rollback detected');
-    if (!list.some((entry) => entry.id === snapshotId)) throw new NotFoundException('Backup unavailable');
+    if (list.every((entry) => entry.id !== snapshotId)) throw new NotFoundException('Backup unavailable');
     const envelope = await client.request<BuddySignedSnapshot>('GET', `snapshots/${snapshotId}`);
     const ring = await this.backup.keyring();
     const reader = new BuddyBackupReader(ring, envelope, (id) => client.request<Buffer>('GET', `objects/${id}`));
@@ -246,7 +246,7 @@ export class BuddyBackupRestoreService {
     const current = await this.auth(auth);
     const visible = [];
     for (const snapshot of page)
-      if ((await this.visible(current, (await this.open(snapshot.id)).manifest)).length) visible.push(snapshot);
+      if ((await this.visible(current, (await this.open(snapshot.id)).manifest)).length > 0) visible.push(snapshot);
     await this.auth(auth);
     return { snapshots: visible, nextOffset };
   }
@@ -272,7 +272,7 @@ export class BuddyBackupRestoreService {
           const members = Object.entries(manifest.library.assets).filter(
             ([assetId, asset]) => permitted.has(assetId) && asset.details?.albums.some((entry) => entry.id === id),
           );
-          return members.length ? [{ id, name: album.name, items: members.length }] : [];
+          return members.length > 0 ? [{ id, name: album.name, items: members.length }] : [];
         }),
     };
   }
@@ -486,11 +486,12 @@ export class BuddyBackupRestoreService {
         (current.ownerId !== ownerId || (file.role === 'original' && current.originalPath !== file.target))
       )
         throw new Error('Buddy restore destination changed');
-      const roots = [StorageCore.getFolderLocation(StorageFolder.Upload, ownerId), StorageCore.getLibraryFolder(owner)];
-      roots.push(
+      const roots = [
+        StorageCore.getFolderLocation(StorageFolder.Upload, ownerId),
+        StorageCore.getLibraryFolder(owner),
         StorageCore.getFolderLocation(StorageFolder.Thumbnails, ownerId),
         StorageCore.getFolderLocation(StorageFolder.EncodedVideo, ownerId),
-      );
+      ];
       const external = manifest.assetLinks?.[assetId];
       if (external?.isExternal) {
         if (!job.admin || !external.libraryId || (current && current.libraryId !== external.libraryId))
@@ -614,7 +615,7 @@ export class BuddyBackupRestoreService {
 
   /** Written before the metadata transaction commits; dispatched only after the complete restore verifies. */
   private async saveRestoreJobs(operationId: string, assetId: string, jobs: OwnerRestoreDetailsContext['jobs']) {
-    if (!jobs.length) return;
+    if (jobs.length === 0) return;
     if (!BUDDY_UUID.test(operationId) || !BUDDY_UUID.test(assetId)) throw new Error('Invalid restore job identity');
     const path = join(this.repository.root(), 'restores', operationId, 'jobs', `${assetId}.json`);
     const previous = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
@@ -622,7 +623,10 @@ export class BuddyBackupRestoreService {
       return '[]';
     });
     const pending = [...JSON.parse(previous), ...jobs];
-    await writeBuddyFile(path, JSON.stringify([...new Map(pending.map((job) => [JSON.stringify(job), job])).values()]));
+    await writeBuddyFile(
+      path,
+      JSON.stringify(new Map(pending.map((job) => [JSON.stringify(job), job])).values().toArray()),
+    );
   }
 
   private async drainRestoreJobs() {
@@ -636,7 +640,7 @@ export class BuddyBackupRestoreService {
       if (!BUDDY_UUID.test(id)) continue;
       const directory = join(root, id, 'jobs');
       const files = await names(directory);
-      if (!files.length) continue;
+      if (files.length === 0) continue;
       const operation = await this.operations.getOfKind(id, MediaOperationKind.BuddyRestore);
       if (operation?.status !== MediaOperationStatus.Completed || operation.claimToken) continue;
       for (const file of files) {
@@ -655,10 +659,9 @@ export class BuddyBackupRestoreService {
 
   private async run(operation: MediaOperation, token: string) {
     const job = operation.snapshot as unknown as RestoreJob;
-    const heartbeat = setInterval(
-      () => this.operations.heartbeat(operation.id, token, LEASE_MS).catch(() => false),
-      LEASE_MS / 4,
-    );
+    const heartbeat = setInterval(() => {
+      void this.operations.heartbeat(operation.id, token, LEASE_MS).catch(() => false);
+    }, LEASE_MS / 4);
     try {
       await this.binding(job);
       const { reader, manifest } = await this.open(job.request.snapshotId);
@@ -784,7 +787,7 @@ export class BuddyBackupRestoreService {
                 manifest,
                 snapshot,
                 file,
-                async () => 'skipped' as const,
+                () => Promise.resolve('skipped' as const),
                 true,
               );
             const evidence = await captureOwnerRestoreFile(file.target, async (path) =>
@@ -910,9 +913,8 @@ export class BuddyBackupRestoreService {
                 },
                 true,
               );
-              for (const restored of plan.files.filter(
-                (entry) => entry.assetId === assetId && entry.role !== 'original',
-              )) {
+              for (const restored of plan.files) {
+                if (restored.assetId !== assetId || restored.role === 'original') continue;
                 const source = manifest.library.assets[assetId].files[Number(restored.fileKey.split(':').at(-1))];
                 const metadata = manifest.assetFiles?.[assetId]?.find((entry) => entry.path === source.path);
                 if (!metadata) continue;
@@ -1003,7 +1005,7 @@ export class BuddyBackupRestoreService {
                     const selected = members.filter((id) =>
                       manifest.library.assets[id].details?.albums.some((entry) => entry.id === albumId),
                     );
-                    if (!selected.length) continue;
+                    if (selected.length === 0) continue;
                     const owned = await trx
                       .selectFrom('album_user')
                       .select('userId')

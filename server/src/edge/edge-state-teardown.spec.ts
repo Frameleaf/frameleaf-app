@@ -73,8 +73,9 @@ describe('Buddy-only edge teardown', () => {
         },
       } as unknown as EdgeDirectService;
       const relay = {
-        stop: async () => {
+        stop: () => {
           relayStopped = true;
+          return Promise.resolve();
         },
       } as unknown as EdgeRelayService;
       const state = new EdgeStateService(

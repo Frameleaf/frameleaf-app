@@ -16,9 +16,9 @@ import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-res
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
 import { BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
+import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
-import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
 import { ClusterGroupRepository } from 'src/repositories/cluster-group.repository.js';

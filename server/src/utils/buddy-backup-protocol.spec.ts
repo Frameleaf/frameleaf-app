@@ -1,8 +1,8 @@
 import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
-import { buddyDigest } from 'src/utils/buddy-backup-vault.js';
-import { assertBuddyCommitReceipt, buddyCommitReceipt, verifyBuddyResponse } from 'src/utils/buddy-backup-protocol.js';
 import type { BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
 import type { BuddyGrantClaims } from 'src/utils/frameleaf-buddy.js';
+import { assertBuddyCommitReceipt, buddyCommitReceipt, verifyBuddyResponse } from 'src/utils/buddy-backup-protocol.js';
+import { buddyDigest } from 'src/utils/buddy-backup-vault.js';
 
 it('refuses a real reservation acknowledgement replayed for a later commit under the same grant', () => {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');

@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { open, readdir, readFile, realpath, rm, statfs } from 'node:fs/promises';
+import { open, readFile, readdir, realpath, rm, statfs } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import type { FrameleafCloudBackup } from 'src/types.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -20,21 +21,20 @@ import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repo
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
-import type { FrameleafCloudBackup } from 'src/types.js';
 import {
   BUDDY_BLOCK_BYTES,
+  type BuddyKeyring,
   buddyObjectId,
   decryptBuddyBlock,
   encryptBuddyBlock,
-  type BuddyKeyring,
 } from 'src/utils/buddy-backup-crypto.js';
-import { BuddyVault, createBuddyDirectory, writeBuddyFile, type BuddyReceipt } from 'src/utils/buddy-backup-vault.js';
+import { type BuddyReceipt, BuddyVault, createBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import {
   CLOUD_BACKUP_MANIFEST_FORMAT,
-  keyFingerprint,
-  parseBackupKey,
   type CloudBackupManifest,
   type CloudBackupManifestFile,
+  keyFingerprint,
+  parseBackupKey,
 } from 'src/utils/cloud-backup.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
@@ -134,11 +134,11 @@ export class BuddyBackupCaptureService {
         Buffer.from(journal.nonce, 'base64url'),
       );
       if (encrypted.length !== journal.bytes || BuddyVault.receipt(id, encrypted).digest !== journal.digest)
-        throw new Error('Buddy encryption journal does not match the immutable source object');
+        throw new Error('Buddy encryption journal does not match the immutable source object', { cause: error });
       await createBuddyDirectory(dirname(path));
       const fs = await statfs(this.repository.root());
       if (fs.bavail * fs.bsize - encrypted.length < Math.max(10 * 1024 ** 3, fs.blocks * fs.bsize * 0.1))
-        throw new Error('Local Buddy staging needs more free disk space');
+        throw new Error('Local Buddy staging needs more free disk space', { cause: error });
       await writeBuddyFile(path, encrypted, true);
     }
     return BuddyVault.receipt(id, encrypted);
@@ -288,7 +288,7 @@ export class BuddyBackupCaptureService {
             if (
               claim &&
               claim.keyMode !== 'own-memory' &&
-              !manifest.cloudBackupKeys.some((key) => key.fingerprint === claim.keyFingerprint)
+              manifest.cloudBackupKeys.every((key) => key.fingerprint !== claim.keyFingerprint)
             )
               throw new Error('Stored Cloud Backup recovery key is missing');
             const dependencies = (await dependencyPaths.execute(trx)).rows;
@@ -318,12 +318,10 @@ export class BuddyBackupCaptureService {
           UNION SELECT "profileImagePath" AS path FROM public.user WHERE "profileImagePath" <> '' AND "deletedAt" IS NULL`.execute(
               trx,
             );
-            for (const path of new Set(
-              [...required.rows, ...dependencies]
-                .map((entry) => entry.path)
-                .filter(Boolean)
-                .concat(configurationPaths),
-            )) {
+            for (const path of new Set([
+              ...[...required.rows, ...dependencies].map((entry) => entry.path).filter(Boolean),
+              ...configurationPaths,
+            ])) {
               const canonical = await realpath(path);
               if (inside(hostRoot, canonical) || inside(sourceRoot, canonical))
                 throw new Error('A backup contains a Buddy vault or server identity files');
@@ -381,7 +379,7 @@ export class BuddyBackupCaptureService {
                   includeThumbs: settings.includeDerived,
                   includeEncodedVideo: settings.includeDerived,
                 });
-                if (!assets.length) break;
+                if (assets.length === 0) break;
                 const details = await index.getAssetDetails(assets.map((asset) => asset.id));
                 const originals = await trx
                   .selectFrom('asset')
@@ -411,7 +409,7 @@ export class BuddyBackupCaptureService {
                     .where('isEdited', '=', true)
                     .execute();
                   for (const file of edited)
-                    if (!files.some((entry) => entry.path === file.path))
+                    if (files.every((entry) => entry.path !== file.path))
                       files.push(await captureFile(file.path, file.type));
                   manifest.assetLinks[asset.id] = {
                     livePhotoVideoId: original.livePhotoVideoId,
@@ -442,7 +440,7 @@ export class BuddyBackupCaptureService {
                 afterId = assets.at(-1)!.id;
               }
               manifest.library.albums = Object.fromEntries(await index.getAlbumRecords([...albums]));
-              manifest.library.people = Object.fromEntries(await index.getPersonRecords([...people.values()]));
+              manifest.library.people = Object.fromEntries(await index.getPersonRecords(people.values().toArray()));
               for (const profile of await index.listProfileImages())
                 manifest.library.profiles[profile.userId] = await captureFile(profile.path, 'profile');
               for (const path of new Set(dependencies.map((entry) => entry.path).filter(Boolean)))
@@ -467,7 +465,7 @@ export class BuddyBackupCaptureService {
       objects.set(receipt.id, receipt);
       manifestBlocks.push(receipt.id);
     }
-    const capture = { manifest, manifestBlocks, objects: [...objects.values()] };
+    const capture = { manifest, manifestBlocks, objects: objects.values().toArray() };
     await writeBuddyFile(join(this.runDirectory(options.runId), 'capture.json'), JSON.stringify(capture), true);
     return capture;
   }

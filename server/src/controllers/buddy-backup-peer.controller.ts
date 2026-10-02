@@ -1,11 +1,11 @@
 import { BadRequestException, Controller, Get, HttpException, Param, Post, Put, Req, Res } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
-import type { Request, Response } from 'express';
 import z from 'zod';
+import type { Request, Response } from 'express';
+import type { BuddyReceipt, BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
 import { BuddyBackupPeerService, type BuddyPeerAccess } from 'src/services/buddy-backup-peer.service.js';
 import { BUDDY_ID, BUDDY_UUID } from 'src/utils/buddy-backup-crypto.js';
-import type { BuddyReceipt, BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
 import { buddyCommitReceipt } from 'src/utils/buddy-backup-protocol.js';
 
 @ApiExcludeController()

@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { RemoteConnectionSchema as Connection } from 'src/dtos/frameleaf-remote-access.dto.js';
 import { relayTokenResponseSchema as RelayTokenResponse } from 'src/utils/frameleaf-relay.js';
+
 const RelayConfirmationKey = z.strictObject({
   kty: z.literal('OKP'),
   crv: z.literal('Ed25519'),
@@ -147,7 +148,7 @@ export const BuddyEscrowRequest = z.strictObject({
   blob: z
     .string()
     .min(64)
-    .max(32768)
+    .max(32_768)
     .regex(/^[A-Za-z0-9_-]+$/),
 });
 export const BuddyRecoveryRelayRequest = z.strictObject({ version: BuddyVersion, pairId: z.uuid(), vaultId: z.uuid() });

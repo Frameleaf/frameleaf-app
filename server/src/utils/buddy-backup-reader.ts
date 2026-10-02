@@ -1,15 +1,16 @@
+/* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
 import { createHash, randomUUID } from 'node:crypto';
 import { open, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
-import { BUDDY_ID, decryptBuddyBlock, type BuddyKeyring } from './buddy-backup-crypto.ts';
+import { BUDDY_ID, type BuddyKeyring, decryptBuddyBlock } from './buddy-backup-crypto.ts';
 import {
+  type BuddyReceipt,
+  type BuddySignedSnapshot,
   buddyDigest,
   createBuddyDirectory,
   flushBuddyDirectory,
-  type BuddyReceipt,
-  type BuddySignedSnapshot,
 } from './buddy-backup-vault.ts';
+import type { BuddyManifest } from '../services/buddy-backup-capture.service.ts';
 
 /** Both peer recovery and offline recovery use this authenticated reader; it has no Cloud dependency. */
 export class BuddyBackupReader {
@@ -51,7 +52,7 @@ export class BuddyBackupReader {
     const chunks: Buffer[] = [];
     let length = 0;
     const { snapshot } = this.envelope;
-    if (!Array.isArray(snapshot.manifest) || snapshot.manifest.length < 1 || snapshot.manifest.length > 128)
+    if (!Array.isArray(snapshot.manifest) || snapshot.manifest.length === 0 || snapshot.manifest.length > 128)
       throw new Error('Buddy recovery manifest exceeds its limit');
     for (const id of snapshot.manifest) {
       const chunk = await this.block(id, snapshot.keyVersion);

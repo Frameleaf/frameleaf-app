@@ -1,10 +1,10 @@
 import { Readable } from 'node:stream';
 import type z from 'zod';
-import { BuddyGrantResponse } from 'src/utils/frameleaf-buddy.js';
-import { createDpopProof, type FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
-import { verifyBuddyResponse } from 'src/utils/buddy-backup-protocol.js';
 import { BUDDY_BLOCK_BYTES, BUDDY_SEALED_OVERHEAD } from 'src/utils/buddy-backup-crypto.js';
+import { verifyBuddyResponse } from 'src/utils/buddy-backup-protocol.js';
 import { BuddyVault } from 'src/utils/buddy-backup-vault.js';
+import { BuddyGrantResponse } from 'src/utils/frameleaf-buddy.js';
+import { type FrameleafKeySigner, createDpopProof } from 'src/utils/frameleaf-dpop.js';
 
 export class BuddyPeerUnavailable extends Error {
   constructor(
@@ -32,7 +32,7 @@ export class BuddyBackupClient {
     for (const candidate of grant.connections) {
       const origin = new URL(candidate.uri);
       if (origin.protocol !== 'https:' || origin.username || origin.password || origin.search || origin.hash) continue;
-      const url = new URL(`/api/buddy/v1/vaults/${grant.claims.vaultId}/${path}`, origin).toString();
+      const url = new URL(`/api/buddy/v1/vaults/${grant.claims.vaultId}/${path}`, origin).href;
       try {
         for (let attempt = 0; attempt < 2; attempt++) {
           const proof = createDpopProof(this.signer(), {
@@ -41,7 +41,7 @@ export class BuddyBackupClient {
             accessToken: grant.token,
             nonce: this.nonces.get(origin.origin),
           });
-          const requestId = (JSON.parse(Buffer.from(proof.split('.')[1], 'base64url').toString()) as { jti: string })
+          const requestId = (JSON.parse(Buffer.from(proof.split('.', 2)[1], 'base64url').toString()) as { jti: string })
             .jti;
           const headers: Record<string, string> = { Authorization: `DPoP ${grant.token}`, DPoP: proof };
           let payload: string | Readable | undefined;
@@ -70,7 +70,7 @@ export class BuddyBackupClient {
             body: payload as BodyInit | undefined,
             redirect: 'error' as const,
             signal: AbortSignal.timeout(Math.min(remaining, block ? 240_000 : 60_000)),
-            ...(block ? { duplex: 'half' } : {}),
+            ...(block && { duplex: 'half' }),
           };
           const response = await fetch(url, options);
           const nonce = response.headers.get('dpop-nonce');

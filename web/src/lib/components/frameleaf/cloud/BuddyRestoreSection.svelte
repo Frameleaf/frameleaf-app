@@ -81,13 +81,18 @@
       preview = null;
       confirmation = '';
       open = true;
-      if (chosen) await browse();
+      if (chosen) {
+        await browse();
+      }
     });
   const older = () =>
     act(async () => {
-      if (nextOffset === null) return;
+      if (nextOffset === null) {
+        return;
+      }
       const page = await (admin ? listBuddyBackupSnapshots : listOwnBuddySnapshots)({ offset: nextOffset });
-      snapshots = [...snapshots, ...page.snapshots];
+      const known = new Set(snapshots.map((snapshot) => snapshot.id));
+      snapshots = [...snapshots, ...page.snapshots.filter((snapshot) => !known.has(snapshot.id))];
       nextOffset = page.nextOffset;
       if (!chosen && snapshots[0]) {
         chosen = snapshots[0].id;
@@ -97,8 +102,9 @@
   const poll = async (id: string) => {
     try {
       progress = await (admin ? getBuddyRestoreStatus : getOwnBuddyRestoreStatus)({ id });
-      if (!['completed', 'failed', 'cancelled'].includes(progress.state))
+      if (!['completed', 'failed', 'cancelled'].includes(progress.state)) {
         timer = setTimeout(() => void poll(id), 15_000);
+      }
     } catch {
       failure = $t('frameleaf_buddy_restore_status_is_unavailable_unlock_your_pin_and_refresh_the_verified_checkpoint');
     }
@@ -108,8 +114,8 @@
       const buddyRestoreDto = {
         snapshotId: chosen,
         scope,
-        ...(scope === 'asset' ? { assetIds: selected } : {}),
-        ...(scope === 'album' ? { albumId: album } : {}),
+        ...(scope === 'asset' && { assetIds: selected }),
+        ...(scope === 'album' && { albumId: album }),
         mode,
         confirm,
       } as BuddyRestoreDto;
@@ -121,7 +127,9 @@
     });
   const apply = () =>
     act(async () => {
-      if (!progress?.recoveryId || confirmation !== 'RESTORE') return;
+      if (!progress?.recoveryId || confirmation !== 'RESTORE') {
+        return;
+      }
       const result = await applyBuddyRecovery({ buddyApplyDto: { operationId: progress.recoveryId, confirm: true } });
       location.assign(`/maintenance?token=${encodeURIComponent(result.jwt)}`);
     });
@@ -168,7 +176,7 @@
       <p role="status">{progress.state} · {Math.round(progress.progress ?? 0)}%</p>
       <progress max="100" value={progress.progress ?? 0} aria-label={$t('frameleaf_buddy_restore_progress')}></progress>
       <p>{$t('frameleaf_buddy_you_can_close_this_dialog_verified_progress_survives_a_server_restart')}</p>
-    {:else if !snapshots.length}<p>
+    {:else if snapshots.length === 0}<p>
         {$t('frameleaf_buddy_no_accessible_complete_restore_points_are_available_check_your_buddy_s_connection')}
       </p>
     {:else}
@@ -181,7 +189,7 @@
               await browse();
             })}
         >
-          {#each snapshots as snapshot}<option value={snapshot.id}
+          {#each snapshots as snapshot (snapshot.id)}<option value={snapshot.id}
               >{new Date(snapshot.createdAt).toLocaleString()}</option
             >{/each}
         </select></label
@@ -199,13 +207,13 @@
       {#if scope === 'album'}<label
           >{$t('frameleaf_buddy_album')}<select bind:value={album} onchange={() => (preview = null)}
             ><option value="">{$t('frameleaf_buddy_choose_an_album')}</option>
-            {#each items?.albums ?? [] as entry}<option value={entry.id}>{entry.name} ({entry.items})</option
+            {#each items?.albums ?? [] as entry (entry.id)}<option value={entry.id}>{entry.name} ({entry.items})</option
               >{/each}</select
           ></label
         >
       {:else if scope === 'asset'}
         <div class="items" role="group" aria-label={$t('frameleaf_buddy_items_to_restore')}>
-          {#each items?.items ?? [] as item}<label class="item"
+          {#each items?.items ?? [] as item (item.id)}<label class="item"
               ><input
                 type="checkbox"
                 checked={selected.includes(item.id)}
@@ -269,7 +277,7 @@
         </div>
       {:else}<Button
           variant="primary"
-          disabled={busy || (scope === 'asset' && !selected.length) || (scope === 'album' && !album)}
+          disabled={busy || (scope === 'asset' && selected.length === 0) || (scope === 'album' && !album)}
           onclick={() => request(false)}>{$t('frameleaf_buddy_preview_restore')}</Button
         >{/if}
     {/if}
