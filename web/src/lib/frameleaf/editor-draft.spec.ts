@@ -215,7 +215,7 @@ it('carries native Brilliance, brush and bitmap masks and Clean Up through a web
 
 it("saves a preset's Brilliance with the photo, one undo step back from it (FL-304)", () => {
   const draft = createDraft({ version: 1, brilliance: 10, contrast: 5 });
-  const applied = changeDraft(draft, { contrast: 20, opaqueRecipe: { ...draft.recipe.opaqueRecipe, brilliance: 40 } });
+  const applied = changeDraft(draft, { contrast: 20, opaqueRecipe: { ...draft.recipe.opaqueRecipe!, brilliance: 40 } });
   expect(toServerRecipe(applied.recipe)).toMatchObject({ contrast: 20, brilliance: 40 });
   expect(toServerRecipe(undoDraft(applied).recipe)).toMatchObject({ contrast: 5, brilliance: 10 });
 });
