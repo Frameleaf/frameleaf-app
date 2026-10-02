@@ -6,7 +6,9 @@ import { automock } from 'test/utils.js';
 describe('metadata reads', () => {
   let sut: MetadataRepository;
   beforeEach(() => {
-    sut = new MetadataRepository(automock(LoggingRepository, { args: [, { getEnv: () => ({}) }], strict: false }));
+    sut = new MetadataRepository(
+      automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false }),
+    );
   });
   afterEach(async () => {
     vi.restoreAllMocks();
