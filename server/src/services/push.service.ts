@@ -44,6 +44,8 @@ import {
   liveActivityStateOf,
   pushTtlSec,
 } from 'src/utils/frameleaf-push.js';
+import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import { parsePushPublicKey, pushKeyFingerprint, sealPushEnvelope } from 'src/utils/push-crypto.js';
 
 /** How long a phone backup may go without a reported success before the device is woken. */
@@ -383,10 +385,10 @@ export class PushService {
     });
   }
 
-  /** A member left, or was taken out of, an album or shared space: their access ended. */
+  /** A member was taken out of an album or shared space: their access ended. Leaving by oneself is silent. */
   @OnEvent({ name: 'AlbumUserRemove' })
-  async onAlbumUserRemove({ albumId, userId }: ArgOf<'AlbumUserRemove'>) {
-    if (!(await this.isLinked())) {
+  async onAlbumUserRemove({ albumId, userId, removedById }: ArgOf<'AlbumUserRemove'>) {
+    if (removedById === userId || !(await this.isLinked())) {
       return;
     }
     const album = await this.albumInfo(albumId);
@@ -429,9 +431,19 @@ export class PushService {
       return JobStatus.Skipped;
     }
 
-    const safeAssetIds = await this.devices.getPreviewSafeAssetIds([...new Set(notice.assetIds)]);
+    // a recipient's hidden people, pets and tags hide an item from that recipient's push alone (FL-293)
+    const assetIds = [...new Set(notice.assetIds)];
+    const safeForAll = await this.devices.getPreviewSafeAssetIds(assetIds);
+    const safeAssetIds = new Map<string, Set<string>>();
+    for (const userId of new Set(devices.map((device) => device.userId))) {
+      const hiddenContent = safeForAll.size > 0 ? await this.hiddenContentOf(userId) : undefined;
+      safeAssetIds.set(
+        userId,
+        hiddenContent ? await this.devices.getPreviewSafeAssetIds(assetIds, hiddenContent) : safeForAll,
+      );
+    }
     const sentAt = new Date().toISOString();
-    let planned = devices.flatMap((device) => this.plan(device, notice, safeAssetIds, sentAt));
+    let planned = devices.flatMap((device) => this.plan(device, notice, safeAssetIds.get(device.userId)!, sentAt));
     if (notice.retry) {
       const wanted = new Set(notice.retry.targets);
       planned = planned.filter((entry) => wanted.has(deliveryKeyOf(entry)));
@@ -660,6 +672,13 @@ export class PushService {
       return;
     }
     await this.jobRepository.queue({ name: JobName.PushDeliver, data: { notice } });
+  }
+
+  /** The recipient's hidden people, pets and tags (the Locked rules), as every ordinary read applies them. */
+  private async hiddenContentOf(userId: string): Promise<HiddenContentFilter | undefined> {
+    const { suppression } = getPreferences(await this.userRepository.getMetadata(userId)).privacy;
+    const filter = { userId, includeNsfw: false, ...suppression };
+    return hasHiddenContentFilter(filter) ? filter : undefined;
   }
 
   private async albumInfo(id: string) {
