@@ -1,0 +1,202 @@
+Subject: Copy preview padding without filtering transparent neighbors
+
+Freecut MIT adaptation (FL-100). Preserve the central preview copy and
+caller context state; only boundary-pixel duplication disables smoothing.
+The disposal regression checks state restoration on an edge-copy error.
+This patch does not resolve the independent interior DOM/raster disparity.
+
+diff --git a/src/features/preview/utils/preview-display-canvas.ts b/src/features/preview/utils/preview-display-canvas.ts
+--- a/src/features/preview/utils/preview-display-canvas.ts
++++ b/src/features/preview/utils/preview-display-canvas.ts
+@@ -106,70 +106,88 @@
+   displayCtx.clearRect(0, 0, displayCanvas.width, displayCanvas.height)
+   displayCtx.drawImage(source, padX, padY, contentWidth, contentHeight)
+ 
+-  if (padY > 0) {
+-    displayCtx.drawImage(displayCanvas, padX, padY, contentWidth, 1, padX, 0, contentWidth, padY)
+-    displayCtx.drawImage(
+-      displayCanvas,
+-      padX,
+-      padY + contentHeight - 1,
+-      contentWidth,
+-      1,
+-      padX,
+-      padY + contentHeight,
+-      contentWidth,
+-      padY,
+-    )
+-  }
+-  if (padX > 0) {
+-    displayCtx.drawImage(displayCanvas, padX, padY, 1, contentHeight, 0, padY, padX, contentHeight)
+-    displayCtx.drawImage(
+-      displayCanvas,
+-      padX + contentWidth - 1,
+-      padY,
+-      1,
+-      contentHeight,
+-      padX + contentWidth,
+-      padY,
+-      padX,
+-      contentHeight,
+-    )
+-  }
+-
+-  if (padX > 0 && padY > 0) {
+-    displayCtx.drawImage(displayCanvas, padX, padY, 1, 1, 0, 0, padX, padY)
+-    displayCtx.drawImage(
+-      displayCanvas,
+-      padX + contentWidth - 1,
+-      padY,
+-      1,
+-      1,
+-      padX + contentWidth,
+-      0,
+-      padX,
+-      padY,
+-    )
+-    displayCtx.drawImage(
+-      displayCanvas,
+-      padX,
+-      padY + contentHeight - 1,
+-      1,
+-      1,
+-      0,
+-      padY + contentHeight,
+-      padX,
+-      padY,
+-    )
+-    displayCtx.drawImage(
+-      displayCanvas,
+-      padX + contentWidth - 1,
+-      padY + contentHeight - 1,
+-      1,
+-      1,
+-      padX + contentWidth,
+-      padY + contentHeight,
+-      padX,
+-      padY,
+-    )
++  // Edge padding duplicates boundary pixels; filtering would sample transparent
++  // neighbors outside each one-pixel strip. Keep the central copy unchanged.
++  displayCtx.save()
++  try {
++    displayCtx.imageSmoothingEnabled = false
++    if (padY > 0) {
++      displayCtx.drawImage(displayCanvas, padX, padY, contentWidth, 1, padX, 0, contentWidth, padY)
++      displayCtx.drawImage(
++        displayCanvas,
++        padX,
++        padY + contentHeight - 1,
++        contentWidth,
++        1,
++        padX,
++        padY + contentHeight,
++        contentWidth,
++        padY,
++      )
++    }
++    if (padX > 0) {
++      displayCtx.drawImage(
++        displayCanvas,
++        padX,
++        padY,
++        1,
++        contentHeight,
++        0,
++        padY,
++        padX,
++        contentHeight,
++      )
++      displayCtx.drawImage(
++        displayCanvas,
++        padX + contentWidth - 1,
++        padY,
++        1,
++        contentHeight,
++        padX + contentWidth,
++        padY,
++        padX,
++        contentHeight,
++      )
++    }
++
++    if (padX > 0 && padY > 0) {
++      displayCtx.drawImage(displayCanvas, padX, padY, 1, 1, 0, 0, padX, padY)
++      displayCtx.drawImage(
++        displayCanvas,
++        padX + contentWidth - 1,
++        padY,
++        1,
++        1,
++        padX + contentWidth,
++        0,
++        padX,
++        padY,
++      )
++      displayCtx.drawImage(
++        displayCanvas,
++        padX,
++        padY + contentHeight - 1,
++        1,
++        1,
++        0,
++        padY + contentHeight,
++        padX,
++        padY,
++      )
++      displayCtx.drawImage(
++        displayCanvas,
++        padX + contentWidth - 1,
++        padY + contentHeight - 1,
++        1,
++        1,
++        padX + contentWidth,
++        padY + contentHeight,
++        padX,
++        padY,
++      )
++    }
++  } finally {
++    displayCtx.restore()
+   }
+ }
+ 
+diff --git a/src/features/preview/utils/preview-display-canvas.test.ts b/src/features/preview/utils/preview-display-canvas.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/preview/utils/preview-display-canvas.test.ts
+@@ -0,0 +1,34 @@
++import { describe, expect, it, vi } from 'vite-plus/test'
++import { drawSourceToPreviewDisplayCanvas } from './preview-display-canvas'
++
++describe('preview display edge-copy cleanup', () => {
++  it('restores the caller smoothing state and rethrows an edge-copy failure', () => {
++    const failure = new Error('edge-copy failure')
++    const state = { imageSmoothingEnabled: true, imageSmoothingQuality: 'high' }
++    const saved: (typeof state)[] = []
++    const drawImage = vi
++      .fn()
++      .mockImplementationOnce(() => {})
++      .mockImplementation(() => {
++        throw failure
++      })
++    const ctx = Object.assign(state, {
++      clearRect: vi.fn(),
++      drawImage,
++      save: vi.fn(() => saved.push({ ...state })),
++      restore: vi.fn(() => Object.assign(state, saved.pop())),
++    })
++    const display = { width: 3, height: 3 } as HTMLCanvasElement
++    const source = { width: 1, height: 1 } as OffscreenCanvas
++
++    expect(() =>
++      drawSourceToPreviewDisplayCanvas(ctx as unknown as CanvasRenderingContext2D, display, source),
++    ).toThrow(failure)
++    expect(drawImage).toHaveBeenCalledTimes(2)
++    expect(ctx.save).toHaveBeenCalledTimes(1)
++    expect(ctx.restore).toHaveBeenCalledTimes(1)
++    expect(saved).toHaveLength(0)
++    expect(state.imageSmoothingEnabled).toBe(true)
++    expect(state.imageSmoothingQuality).toBe('high')
++  })
++})
