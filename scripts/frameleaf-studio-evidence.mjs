@@ -71,20 +71,18 @@ const DEFAULT_AXIS = "chromium";
  *   and above-range numbers, unknown select options, non-boolean flags and undeclared keys each
  *   draw exactly as their declared meaning (engine patch 0039), and an unknown effect id passes
  *   the input through. EFFECTS_MATRIX_REPORT carries them as effects[].invalid.
- * - transition (transition-matrix.browser.mjs): four of five. normal and extreme come from the
+ * - transition (transition-matrix.browser.mjs): all five. normal and extreme come from the
  *   per-transition pipeline results (SDR/HDR route boundaries and parity, per the file's header
- *   comment). animated and composed come from the per-transition production-renderer cases
- *   (FL-99): progress follows the timeline (a 19-frame window draws at every second frame what
- *   the 10-frame window draws at every frame) and a participant's opacity keyframed through the
- *   keyframe resolver draws as its static values; a screen blend stacked over the transition.
- *   TRANSITION_MATRIX_REPORT carries them as `report.cases` [{ id, case, ... }].
- *   invalid is NOT claimed. The matrix measures the invalid inputs the engine gives a meaning to
- *   (unknown direction, timing and transition id, out-of-range alignment, fractional duration,
- *   undeclared property) and reports them as `invalid` with `complete: false`. A non-finite
- *   duration or alignment and a transition's own parameter values (NaN, out of range, not a
- *   number) have no declared meaning in the engine yet: the first keeps the outgoing clip on
- *   screen for the whole incoming clip, the second reaches the shader unchecked. Claim invalid
- *   only once the engine sanitises both and the matrix measures them.
+ *   comment). animated, composed and invalid come from the per-transition production-renderer
+ *   cases (FL-99): progress follows the timeline (a 19-frame window draws at every second frame
+ *   what the 10-frame window draws at every frame) and a participant's opacity keyframed through
+ *   the keyframe resolver draws as its static values; a screen blend stacked over the transition;
+ *   and each invalid input draws exactly as its declared meaning (engine patch 0048): a duration
+ *   or alignment that is not a finite number as its default, a declared parameter that is not a
+ *   finite number as its default and one outside its range as the bound, an undeclared property
+ *   ignored unless it is a finite number, an unknown direction as from-left, an unknown timing as
+ *   linear and an unknown transition id as a hard cut, the same on the preview surface as in
+ *   export. TRANSITION_MATRIX_REPORT carries them as `report.cases` [{ id, case, ... }].
  * - blend (blend-matrix.browser.mjs): all five. normal and extreme come from the per-mode
  *   pipeline results (pinned SDR formula on both routes; extended-range base, branch points and
  *   translucent alpha). animated, composed and invalid come from the per-mode production-renderer
@@ -97,7 +95,7 @@ export const FAMILY_CASE_COVERAGE = {
   chromium: {
     blend: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
     effect: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
-    transition: new Set(["normal", "extreme", "animated", "composed"]),
+    transition: new Set(["normal", "extreme", "animated", "composed", "invalid"]),
   },
 };
 

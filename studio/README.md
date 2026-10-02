@@ -154,11 +154,23 @@ Hosted regressions:
   including Freecut's stylised SDR endpoints for chromatic, sparkles, liquid distort
   and light leak. Each transition also runs through the production renderer on a cut
   between two image clips: progress follows the timeline, a participant's keyframed
-  opacity draws as its static values, and a blended layer stacks over the result. The
-  invalid inputs the engine gives a meaning to are checked too (unknown direction,
-  timing and transition id, out-of-range alignment, fractional duration). A non-finite
-  duration or alignment and a transition's own parameter values are not sanitised by
-  the engine yet, so the transition rows' invalid case stays open.
+  opacity draws as its static values, and a blended layer stacks over the result.
+  Every invalid input draws as its declared meaning, the same on the preview surface
+  as in export.
+
+Patch 0048 gives a transition's invalid inputs that meaning (FL-99), by the rule patch
+0039 set for effect parameters: a finite number outside its declared range is clamped to
+the range, and a value that is not a finite number falls back to the declared default.
+A duration that is not a finite number draws as the transition type's default 30 frames
+(it used to leave the outgoing clip on screen for the whole incoming clip); an alignment
+that is not a finite number draws centred on the cut. A declared numeric parameter is
+clamped to its range or drawn as its default, a declared colour that is not three finite
+numbers as its default, and a property the transition does not declare is dropped unless
+it is a finite number. The check lives in the transition planner
+(`shared/timeline/transitions/transition-inputs.ts`), which every preview and export
+renderer and the audio crossfade read their windows and transitions from, so no
+transition carries its own. Finite durations keep their whole frames and are not held to
+a transition's editing minimum and maximum, and finite colour components are not clamped.
 
 The existing compositor, transition and nested regressions now cover both project
 ranges. Everything passes on SwiftShader (CI) and Apple Metal.
