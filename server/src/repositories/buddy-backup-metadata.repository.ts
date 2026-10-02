@@ -16,18 +16,20 @@ export class BuddyBackupMetadataRepository {
     if (ids?.length === 0) {
       return new Map<string, { album: BuddyAlbum; deleted: boolean }>();
     }
-    let query = this.db.selectFrom('album').select([
-      'id',
-      'albumName',
-      'description',
-      'albumThumbnailAssetId',
-      'order',
-      'parentId',
-      'kind',
-      'icon',
-      'sortOrder',
-      'deletedAt',
-    ]);
+    let query = this.db
+      .selectFrom('album')
+      .select([
+        'id',
+        'albumName',
+        'description',
+        'albumThumbnailAssetId',
+        'order',
+        'parentId',
+        'kind',
+        'icon',
+        'sortOrder',
+        'deletedAt',
+      ]);
     if (ids) {
       query = query.where('id', 'in', ids);
     }
@@ -44,7 +46,11 @@ export class BuddyBackupMetadataRepository {
     let ownersQuery = this.db
       .selectFrom('album_user')
       .select(['albumId', 'userId'])
-      .where('albumId', 'in', rows.map(({ id }) => id))
+      .where(
+        'albumId',
+        'in',
+        rows.map(({ id }) => id),
+      )
       .where('role', '=', AlbumUserRole.Owner);
     if (lock) {
       ownersQuery = ownersQuery.forShare().noWait();
@@ -108,7 +114,9 @@ export class BuddyBackupMetadataRepository {
         metadata.peopleByOwner[person.ownerId][person.personGroupId] = {
           ownerId: person.ownerId,
           name: person.name,
-          birthDate: person.birthDate ? new Date(person.birthDate as unknown as string).toISOString().slice(0, 10) : null,
+          birthDate: person.birthDate
+            ? new Date(person.birthDate as unknown as string).toISOString().slice(0, 10)
+            : null,
           isHidden: person.isHidden,
           isFavorite: person.isFavorite,
         };
@@ -246,7 +254,8 @@ export class BuddyBackupMetadataRepository {
         throw new Error('Buddy restore album unavailable');
       }
       const changed = row
-        ? buddyAlbumState(row.album) !== buddyAlbumState(after) && (!before || buddyAlbumState(row.album) !== buddyAlbumState(before))
+        ? buddyAlbumState(row.album) !== buddyAlbumState(after) &&
+          (!before || buddyAlbumState(row.album) !== buddyAlbumState(before))
         : !!before;
       if (changed) {
         throw new Error('Buddy restore album changed');
@@ -254,7 +263,19 @@ export class BuddyBackupMetadataRepository {
       if (row) {
         await this.assertLegacyStructure(id, row.album);
       }
-      if (!row) {
+      if (row) {
+        await trx
+          .updateTable('album')
+          .set({
+            albumName: after.name,
+            description: after.description,
+            order: after.order as AssetOrder,
+            icon: after.icon,
+            sortOrder: after.sortOrder,
+          })
+          .where('id', '=', id)
+          .execute();
+      } else {
         await albums.create(
           {
             id,
@@ -271,18 +292,6 @@ export class BuddyBackupMetadataRepository {
           [{ userId: after.ownerId, role: AlbumUserRole.Owner }],
           after.ownerId,
         );
-      } else {
-        await trx
-          .updateTable('album')
-          .set({
-            albumName: after.name,
-            description: after.description,
-            order: after.order as AssetOrder,
-            icon: after.icon,
-            sortOrder: after.sortOrder,
-          })
-          .where('id', '=', id)
-          .execute();
       }
       await this.parent(after, plan, true);
       const parentId = row?.album.parentId ?? null;
@@ -326,7 +335,11 @@ export class BuddyBackupMetadataRepository {
         .forShare()
         .noWait()
         .executeTakeFirst();
-      let userQuery = trx.selectFrom('user').select('id').where('id', '=', owner.ownerId).where('deletedAt', 'is', null);
+      let userQuery = trx
+        .selectFrom('user')
+        .select('id')
+        .where('id', '=', owner.ownerId)
+        .where('deletedAt', 'is', null);
       if (admin) {
         userQuery = userQuery.where('isAdmin', '=', true);
       }

@@ -95,7 +95,7 @@ export const readBuddyMetadata = (value: unknown): BuddyMetadata | undefined => 
       (album.coverAssetId !== null && !uuid(album.coverAssetId)) ||
       !['asc', 'desc'].includes(album.order as string) ||
       !Array.isArray(album.sharedUsers) ||
-      album.sharedUsers.length !== 0 ||
+      album.sharedUsers.length > 0 ||
       !['album', 'collection', 'space'].includes(album.kind as string) ||
       (album.icon !== null && !text(album.icon, 80)) ||
       (album.sortOrder !== null && (typeof album.sortOrder !== 'number' || !Number.isFinite(album.sortOrder))) ||
@@ -103,7 +103,11 @@ export const readBuddyMetadata = (value: unknown): BuddyMetadata | undefined => 
     ) {
       throw new Error('Invalid Buddy album record');
     }
-    if (album.parentId && albums[album.parentId as string] && record(albums[album.parentId as string]).kind !== 'collection') {
+    if (
+      album.parentId &&
+      albums[album.parentId as string] &&
+      record(albums[album.parentId as string]).kind !== 'collection'
+    ) {
       throw new Error('Invalid Buddy album parent');
     }
   }
@@ -111,7 +115,10 @@ export const readBuddyMetadata = (value: unknown): BuddyMetadata | undefined => 
 };
 
 /** The same owner view feeds preview hashes, item checks and details publication. Never use another owner's name. */
-export const buddyLibraryForOwner = ({ library, metadata }: MetadataManifest, ownerId: string): CloudBackupManifest => ({
+export const buddyLibraryForOwner = (
+  { library, metadata }: MetadataManifest,
+  ownerId: string,
+): CloudBackupManifest => ({
   ...library,
   people: metadata
     ? (metadata.peopleByOwner[ownerId] ?? {})
@@ -162,11 +169,14 @@ export const selectBuddyAlbumIds = (
       }
     }
   }
-  for (const id of selected) {
+  const pending = selected.values().toArray();
+  for (let index = 0; index < pending.length; index++) {
+    const id = pending[index];
     const album = metadata.albums[id];
     const parent = album.parentId && metadata.albums[album.parentId];
-    if (parent && parent.ownerId === album.ownerId) {
+    if (parent && parent.ownerId === album.ownerId && !selected.has(album.parentId!)) {
       selected.add(album.parentId!);
+      pending.push(album.parentId!);
     }
   }
   return [...selected].sort((left, right) => left.localeCompare(right));
@@ -185,9 +195,17 @@ export const buddyAlbumState = (album: BuddyAlbum) =>
     album.sortOrder,
   ]);
 
-export const assertBuddyAlbumPlan = (metadata: BuddyMetadata, plan: BuddyAlbumPlan, ids: string[], mode: 'keep' | 'replace') => {
+export const assertBuddyAlbumPlan = (
+  metadata: BuddyMetadata,
+  plan: BuddyAlbumPlan,
+  ids: string[],
+  mode: 'keep' | 'replace',
+) => {
   const compare = (left: string, right: string) => left.localeCompare(right);
-  if (plan.version !== 1 || JSON.stringify(Object.keys(plan.albums).sort(compare)) !== JSON.stringify([...ids].sort(compare))) {
+  if (
+    plan.version !== 1 ||
+    JSON.stringify(Object.keys(plan.albums).sort(compare)) !== JSON.stringify([...ids].sort(compare))
+  ) {
     throw new Error('Buddy restore album selection changed');
   }
   for (const [id, { before, after }] of Object.entries(plan.albums)) {
