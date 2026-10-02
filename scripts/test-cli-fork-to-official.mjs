@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { setTimeout } from 'node:timers/promises';
 
 const root = new URL('../', import.meta.url).pathname;
 const composeFiles = ['-f', join(root, 'e2e/docker-compose.fork-roundtrip.yml'), '-f', join(root, 'e2e/docker-compose.cli-migrate.yml')];
@@ -69,7 +68,7 @@ const run = async () => {
     } catch (error) {
       if (attempt === 5) throw error;
       console.error(`docker pull failed (attempt ${attempt}/5); retrying in ${attempt * 15}s`);
-      await setTimeout(attempt * 15_000);
+      await new Promise((resolve) => setTimeout(resolve, attempt * 15_000));
     }
   }
   const digest = execFileSync('docker', ['image', 'inspect', `ghcr.io/immich-app/immich-server:${tag}`, '--format', '{{index .RepoDigests 0}}'], { encoding: 'utf8' }).trim();
