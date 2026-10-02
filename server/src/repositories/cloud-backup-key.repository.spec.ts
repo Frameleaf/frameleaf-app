@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
@@ -32,6 +32,18 @@ describe(CloudBackupKeyRepository.name, () => {
 
   afterEach(async () => {
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it('enumerates only bounded regular backup-key files and never captures server identity', async () => {
+    await sut.write(directory, 'ABCD-1234', content('key'));
+    await writeFile(join(directory, 'instance-key.pem'), 'private instance identity');
+    expect(await sut.readAll(directory)).toEqual([{ fingerprint: 'ABCD-1234', content: content('key') }]);
+    const other = join(directory, 'cloud-backup-FFFF-0000.key');
+    await symlink(join(directory, 'instance-key.pem'), other);
+    await expect(sut.readAll(directory)).rejects.toThrow();
+    await rm(other);
+    await writeFile(other, 'x'.repeat(16_385));
+    await expect(sut.readAll(directory)).rejects.toThrow('unavailable');
   });
 
   it('writes a 0600 key file once, reads it back, and leaves no staging file', async () => {
