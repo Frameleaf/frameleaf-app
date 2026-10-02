@@ -1912,6 +1912,39 @@ describe(MetadataService.name, () => {
         exif: { Make: '1', Model: '2', DeviceManufacturer: '3', DeviceModelName: '4' },
         expected: { make: '1', model: '2' },
       },
+      {
+        exif: { Make: ' ', Model: '', Device: { Manufacturer: ' Apple ', ModelName: ' iPhone 16 Pro ' } },
+        expected: { make: 'Apple', model: 'iPhone 16 Pro' },
+      },
+      {
+        exif: {
+          Make: '',
+          Model: ' ',
+          Device: { Manufacturer: '', ModelName: ' ' },
+          AndroidMake: 'Google',
+          AndroidModel: 'Pixel 9',
+        },
+        expected: { make: 'Google', model: 'Pixel 9' },
+      },
+      {
+        exif: { Make: 'NIKON', UniqueCameraModel: 'NIKON Z 8' },
+        expected: { make: 'NIKON', model: 'NIKON Z 8' },
+      },
+      { exif: { CameraModel: 'Phase One IQ4 150MP' }, expected: { make: null, model: 'Phase One IQ4 150MP' } },
+      {
+        exif: { Model: 'FutureCam 9000', UniqueCameraModel: 'Alternate', CameraModel: 'Other' },
+        expected: { make: null, model: 'FutureCam 9000' },
+      },
+      {
+        exif: {
+          CanonModelID: 'EOS Rebel T3i / 600D / Kiss X5',
+          SonyModelID: 'DSLR-A380/A390',
+          ImageWidth: 6000,
+          ImageHeight: 4000,
+        },
+        expected: { make: null, model: null },
+      },
+      { exif: { Make: ' ', Model: '' }, expected: { make: null, model: null } },
     ])('should read camera make and model $exif -> $expected', async ({ exif, expected }) => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -1923,6 +1956,18 @@ describe(MetadataService.name, () => {
           exif: expect.objectContaining(expected),
           lockedPropertiesBehavior: 'skip',
         }),
+      );
+    });
+
+    it('reads a recorded camera model from a sidecar when the original has no camera metadata', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Sidecar }).build();
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mockReadTags({}, { CameraModel: 'Hasselblad X2D 100C' });
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ make: null, model: 'Hasselblad X2D 100C' }) }),
       );
     });
 
