@@ -130,6 +130,16 @@ jobs:
           node studio/tools/scopes.browser.mjs
           node studio/tools/scope-hdr-capture.browser.mjs
           node studio/tools/preview-padding.browser.mjs
+          # FL-100: the linked Edit-axis keyframe fixture runs on the adapter's fixture pages, served
+          # by the engine's own toolchain on the fixture's default port.
+          (cd studio/adapters/web && exec setsid ../../engine/node_modules/.bin/vp dev --config test/keyframe-browser.config.mjs --host 127.0.0.1 --port 5199 --strictPort) > "$RUNNER_TEMP/studio-keyframe-vite.log" 2>&1 &
+          keyframe_server_pid=$!
+          trap 'kill -- -"$keyframe_server_pid" -"$server_pid" 2>/dev/null || true; wait "$keyframe_server_pid" "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:5199/studio-engine/test/linked-edit-axis.browser.html > /dev/null; then break; fi
+            sleep 1
+          done
+          STUDIO_TEST_EVIDENCE="$RUNNER_TEMP/linked-edit-axis" node studio/tools/linked-edit-axis.browser.mjs
       # FL-112 (STU-405): record exactly which conformance.json chromium-axis cases this run's own
       # software-WebGPU browser matrix covers, from the reports the step above just wrote - not from
       # any developer machine's GPU. Fails the job (via the tracked-file diff) if conformance.json
