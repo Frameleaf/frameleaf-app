@@ -298,175 +298,194 @@
         {$t('frameleaf_buddy_new_buddy_backups_are_not_enabled_on_this_server_existing_restore_points_remain_av')}
       </p>{/if}
     {#if showStatus || !status.pairing}
-    <CloudCard
-      title={$t('frameleaf_buddy_my_backup')}
-      description={$t(
-        'frameleaf_buddy_an_encrypted_copy_of_your_library_on_your_buddy_s_frameleaf_server_cloud_backup_ca',
-      )}
-      status={$t(presentation.outgoing)}
-      tone={!presentation.send || status.run?.state === 'incomplete' ? 'warning' : status.lastCompleteAt ? 'ok' : 'muted'}
-    >
-      {#if !status.pairing}
-        {#if !linked}<p class="fc-notice">{$t('frameleaf_buddy_link_required')}</p>
-        {:else if !entitled}<p class="fc-notice">{$t('frameleaf_buddy_subscription_required')}</p>{/if}
-        <p class="explain">
-          {$t('frameleaf_buddy_pair_two_cloud_linked_frameleaf_servers_each_owner_chooses_how_much_storage_to_off')}
-        </p>
-        <Button variant="primary" disabled={busy || !status.enabled || !entitled} onclick={beginSetup}
-          >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
-        >
-      {:else}
-        <dl class="facts">
-          <div>
-            <dt>{$t('frameleaf_buddy_last_complete_restore_point')}</dt>
-            <dd>{formatTime(status.lastCompleteAt)}</dd>
-          </div>
-          <div>
-            <dt>{$t('frameleaf_buddy_last_successful_recovery_check')}</dt>
-            <dd>{formatTime(status.lastVerifiedAt)}</dd>
-          </div>
-          <div>
-            <dt>{$t('frameleaf_buddy_storage_offered_by_your_buddy')}</dt>
-            <dd>{bytes(mine?.quotaBytes ?? 0)}</dd>
-          </div>
-          <div>
-            <dt>{$t('frameleaf_buddy_connection')}</dt>
-            <dd>{status.connection ?? $t('frameleaf_buddy_waiting_for_a_transfer')}</dd>
-          </div>
-          <div>
-            <dt>{$t('frameleaf_buddy_transfer_speed')}</dt>
-            <dd>{status.transferMbps.toFixed(1)} Mbit/s</dd>
-          </div>
-          <div>
-            <dt>{$t('frameleaf_buddy_objects_pending')}</dt>
-            <dd>{status.pendingObjects}</dd>
-          </div>
-          <div>
-            <dt>{$t('frameleaf_buddy_reported_available_capacity')}</dt>
-            <dd>
-              {status.availableBytes === null
-                ? $t('frameleaf_buddy_waiting_for_your_buddy_s_report')
-                : bytes(status.availableBytes)}
-            </dd>
-          </div>
-          <div>
-            <dt>{$t('frameleaf_buddy_recovery_kit')}</dt>
-            <dd>
-              {status.recoveryVerified
-                ? $t('frameleaf_buddy_saved_and_verified')
-                : $t('frameleaf_buddy_verification_required')}
-            </dd>
-          </div>
-        </dl>
-        {#if status.run}
-          <progress
-            max={status.run.objects || 1}
-            value={status.run.uploadedObjects}
-            aria-label={$t('frameleaf_buddy_backup_progress')}
-          ></progress>
-          <p>
-            {$t('frameleaf_buddy_checked_of_total_objects_checked_sent_sent', {
-              values: {
-                checked: status.run.uploadedObjects,
-                total: status.run.objects,
-                sent: bytes(status.run.uploadedBytes),
-              },
-            })}
+      <CloudCard
+        title={$t('frameleaf_buddy_my_backup')}
+        description={$t(
+          'frameleaf_buddy_an_encrypted_copy_of_your_library_on_your_buddy_s_frameleaf_server_cloud_backup_ca',
+        )}
+        status={$t(presentation.outgoing)}
+        tone={!presentation.send || status.run?.state === 'incomplete'
+          ? 'warning'
+          : status.lastCompleteAt
+            ? 'ok'
+            : 'muted'}
+      >
+        {#if !status.pairing}
+          {#if !linked}<p class="fc-notice">{$t('frameleaf_buddy_link_required')}</p>
+          {:else if !entitled}<p class="fc-notice">{$t('frameleaf_buddy_subscription_required')}</p>{/if}
+          <p class="explain">
+            {$t('frameleaf_buddy_pair_two_cloud_linked_frameleaf_servers_each_owner_chooses_how_much_storage_to_off')}
           </p>
-          {#if status.run.error}<p role="status">{status.run.error}</p>{/if}
+          <Button variant="primary" disabled={busy || !status.enabled || !entitled} onclick={beginSetup}
+            >{$t('frameleaf_buddy_set_up_buddy_backup')}</Button
+          >
+        {:else}
+          <dl class="facts">
+            <div>
+              <dt>{$t('frameleaf_buddy_last_complete_restore_point')}</dt>
+              <dd>{formatTime(status.lastCompleteAt)}</dd>
+            </div>
+            <div>
+              <dt>{$t('frameleaf_buddy_last_successful_recovery_check')}</dt>
+              <dd>{formatTime(status.lastVerifiedAt)}</dd>
+            </div>
+            <div>
+              <dt>{$t('frameleaf_buddy_storage_offered_by_your_buddy')}</dt>
+              <dd>{bytes(mine?.quotaBytes ?? 0)}</dd>
+            </div>
+            <div>
+              <dt>{$t('frameleaf_buddy_connection')}</dt>
+              <dd>{status.connection ?? $t('frameleaf_buddy_waiting_for_a_transfer')}</dd>
+            </div>
+            <div>
+              <dt>{$t('frameleaf_buddy_transfer_speed')}</dt>
+              <dd>{status.transferMbps.toFixed(1)} Mbit/s</dd>
+            </div>
+            <div>
+              <dt>{$t('frameleaf_buddy_objects_pending')}</dt>
+              <dd>{status.pendingObjects}</dd>
+            </div>
+            <div>
+              <dt>{$t('frameleaf_buddy_reported_available_capacity')}</dt>
+              <dd>
+                {status.availableBytes === null
+                  ? $t('frameleaf_buddy_waiting_for_your_buddy_s_report')
+                  : bytes(status.availableBytes)}
+              </dd>
+            </div>
+            <div>
+              <dt>{$t('frameleaf_buddy_recovery_kit')}</dt>
+              <dd>
+                {status.recoveryVerified
+                  ? $t('frameleaf_buddy_saved_and_verified')
+                  : $t('frameleaf_buddy_verification_required')}
+              </dd>
+            </div>
+          </dl>
+          {#if status.run}
+            <progress
+              max={status.run.objects || 1}
+              value={status.run.uploadedObjects}
+              aria-label={$t('frameleaf_buddy_backup_progress')}
+            ></progress>
+            <p>
+              {$t('frameleaf_buddy_checked_of_total_objects_checked_sent_sent', {
+                values: {
+                  checked: status.run.uploadedObjects,
+                  total: status.run.objects,
+                  sent: bytes(status.run.uploadedBytes),
+                },
+              })}
+            </p>
+            {#if status.run.error}<p role="status">{status.run.error}</p>{/if}
+          {/if}
+          <div class="actions">
+            <Button variant="primary" disabled={busy || !presentation.send} onclick={() => control('start')}
+              >{$t('frameleaf_buddy_back_up_now')}</Button
+            >
+            <Button
+              disabled={busy || (!!status.settings?.pausedSending && !presentation.send)}
+              onclick={() => control(status?.settings?.pausedSending ? 'resume-sending' : 'pause-sending')}
+              >{status.settings?.pausedSending
+                ? $t('frameleaf_buddy_resume_sending')
+                : $t('frameleaf_buddy_pause_sending')}</Button
+            >
+            <Button disabled={busy || !presentation.read || !status.lastCompleteAt} onclick={() => control('verify')}
+              >{$t('frameleaf_buddy_verify_recovery')}</Button
+            >
+            <Button
+              disabled={busy}
+              onclick={() => {
+                setup = true;
+                step = status?.pairing?.state === 'pending' ? 2 : 3;
+              }}>{$t('frameleaf_buddy_recovery_kit_pairing')}</Button
+            >
+          </div>
         {/if}
-        <div class="actions">
-          <Button
-            variant="primary"
-            disabled={busy || !presentation.send}
-            onclick={() => control('start')}>{$t('frameleaf_buddy_back_up_now')}</Button
-          >
-          <Button
-            disabled={busy || (!!status.settings?.pausedSending && !presentation.send)}
-            onclick={() => control(status?.settings?.pausedSending ? 'resume-sending' : 'pause-sending')}
-            >{status.settings?.pausedSending
-              ? $t('frameleaf_buddy_resume_sending')
-              : $t('frameleaf_buddy_pause_sending')}</Button
-          >
-          <Button disabled={busy || !presentation.read || !status.lastCompleteAt} onclick={() => control('verify')}
-            >{$t('frameleaf_buddy_verify_recovery')}</Button
-          >
-          <Button
-            disabled={busy}
-            onclick={() => {
-              setup = true;
-              step = status?.pairing?.state === 'pending' ? 2 : 3;
-            }}>{$t('frameleaf_buddy_recovery_kit_pairing')}</Button
-          >
-        </div>
-      {/if}
-    </CloudCard>
-
+      </CloudCard>
     {/if}
 
     {#if showRecovery}
       {#if presentation.read}<BuddyRestoreSection admin />
       {:else}<p class="fc-notice">{$t('frameleaf_backup_recovery_unavailable')}</p>{/if}
-      <CloudCard title={$t('frameleaf_backup_replacement')} description={$t('frameleaf_backup_replacement_description')}>
-        <p><a href="https://frameleaf.cloud/buddy" target="_blank" rel="noreferrer">{$t('frameleaf_buddy_open_buddy_backup_in_your_cloud_account')}</a></p>
-        <Button disabled={busy} onclick={() => action(async () => { status = await refreshBuddyBackup(); })}>{$t('frameleaf_backup_refresh_authorization')}</Button>
+      <CloudCard
+        title={$t('frameleaf_backup_replacement')}
+        description={$t('frameleaf_backup_replacement_description')}
+      >
+        <p>
+          <a href="https://frameleaf.cloud/buddy" target="_blank" rel="noreferrer"
+            >{$t('frameleaf_buddy_open_buddy_backup_in_your_cloud_account')}</a
+          >
+        </p>
+        <Button
+          disabled={busy}
+          onclick={() =>
+            action(async () => {
+              status = await refreshBuddyBackup();
+            })}>{$t('frameleaf_backup_refresh_authorization')}</Button
+        >
       </CloudCard>
     {/if}
 
     {#if showStatus || showControls}
-
-    <CloudCard
-      title={$t('frameleaf_buddy_hosting_for_my_buddy')}
-      description={$t(
-        'frameleaf_buddy_only_encrypted_storage_is_visible_here_your_buddy_s_filenames_albums_and_photos_st',
-      )}
-      status={$t(presentation.incoming)}
-    >
-      <dl class="facts">
-        <div>
-          <dt>{$t('frameleaf_buddy_disk_used')}</dt>
-          <dd>{bytes(status.hosting.committedBytes)}</dd>
+      <CloudCard
+        title={$t('frameleaf_buddy_hosting_for_my_buddy')}
+        description={$t(
+          'frameleaf_buddy_only_encrypted_storage_is_visible_here_your_buddy_s_filenames_albums_and_photos_st',
+        )}
+        status={$t(presentation.incoming)}
+      >
+        <dl class="facts">
+          <div>
+            <dt>{$t('frameleaf_buddy_disk_used')}</dt>
+            <dd>{bytes(status.hosting.committedBytes)}</dd>
+          </div>
+          <div>
+            <dt>{$t('frameleaf_buddy_reserved_for_transfers')}</dt>
+            <dd>{bytes(status.hosting.reservedBytes)}</dd>
+          </div>
+          <div>
+            <dt>{$t('frameleaf_buddy_storage_you_offer')}</dt>
+            <dd>{bytes(hosted?.quotaBytes ?? status.hosting.quotaBytes)}</dd>
+          </div>
+          <div>
+            <dt>{$t('frameleaf_buddy_retention')}</dt>
+            <dd>{$t('frameleaf_buddy_30_days_12_monthly_points_and_the_latest_complete_backup')}</dd>
+          </div>
+        </dl>
+        {#if (hosted?.quotaBytes ?? status.hosting.quotaBytes) > 0}<meter
+            min="0"
+            max={hosted?.quotaBytes ?? status.hosting.quotaBytes}
+            value={status.hosting.committedBytes + status.hosting.reservedBytes}
+            aria-label={$t('frameleaf_backup_hosting_meter')}
+          ></meter>{/if}
+        <div class="actions">
+          <Button
+            disabled={busy}
+            onclick={() => {
+              editSettings();
+              settingsOpen = true;
+            }}>{$t('frameleaf_buddy_hosting_transfer_settings')}</Button
+          >
+          {#if status.configured}<Button
+              disabled={busy || (!!status.settings?.pausedReceiving && !presentation.write)}
+              onclick={() => control(status?.settings?.pausedReceiving ? 'resume-receiving' : 'pause-receiving')}
+              >{status.settings?.pausedReceiving
+                ? $t('frameleaf_buddy_resume_receiving')
+                : $t('frameleaf_buddy_pause_receiving')}</Button
+            >{/if}
         </div>
-        <div>
-          <dt>{$t('frameleaf_buddy_reserved_for_transfers')}</dt>
-          <dd>{bytes(status.hosting.reservedBytes)}</dd>
-        </div>
-        <div>
-          <dt>{$t('frameleaf_buddy_storage_you_offer')}</dt>
-          <dd>{bytes(hosted?.quotaBytes ?? status.hosting.quotaBytes)}</dd>
-        </div>
-        <div>
-          <dt>{$t('frameleaf_buddy_retention')}</dt>
-          <dd>{$t('frameleaf_buddy_30_days_12_monthly_points_and_the_latest_complete_backup')}</dd>
-        </div>
-      </dl>
-      {#if (hosted?.quotaBytes ?? status.hosting.quotaBytes) > 0}<meter
-        min="0" max={hosted?.quotaBytes ?? status.hosting.quotaBytes}
-        value={status.hosting.committedBytes + status.hosting.reservedBytes}
-        aria-label={$t('frameleaf_backup_hosting_meter')}
-      ></meter>{/if}
-      <div class="actions">
-        <Button
-          disabled={busy}
-          onclick={() => {
-            editSettings();
-            settingsOpen = true;
-          }}>{$t('frameleaf_buddy_hosting_transfer_settings')}</Button
-        >
-        {#if status.configured}<Button
-            disabled={busy || (!!status.settings?.pausedReceiving && !presentation.write)}
-            onclick={() => control(status?.settings?.pausedReceiving ? 'resume-receiving' : 'pause-receiving')}
-            >{status.settings?.pausedReceiving
-              ? $t('frameleaf_buddy_resume_receiving')
-              : $t('frameleaf_buddy_pause_receiving')}</Button
-          >{/if}
-      </div>
-    </CloudCard>
-
+      </CloudCard>
     {/if}
 
     {#if showStatus && status.pairing}
-      <p><a href={commandCenterUrl('backups', undefined, { backupView: 'restore' })}>{$t('frameleaf_backup_recover')}</a> · <a href={commandCenterUrl('backups', undefined, { backupView: 'controls' })}>{$t('frameleaf_backup_controls')}</a></p>
+      <p>
+        <a href={commandCenterUrl('backups', undefined, { backupView: 'restore' })}>{$t('frameleaf_backup_recover')}</a>
+        ·
+        <a href={commandCenterUrl('backups', undefined, { backupView: 'controls' })}
+          >{$t('frameleaf_backup_controls')}</a
+        >
+      </p>
     {/if}
 
     {#if status.pairing && (showControls || showRecovery)}<details open>
@@ -475,19 +494,23 @@
           {$t('frameleaf_buddy_ending_a_pairing_stops_uploads_and_keeps_restore_access_for_30_days_blocking_revok')}
         </p>
         {#if showControls}<div class="actions">
-          <Button disabled={busy || !presentation.send} onclick={() => (confirmAction = 'restart')}
-            >{$t('frameleaf_buddy_restart_incomplete_backup')}</Button
-          >
-          <Button disabled={busy || !presentation.send} onclick={() => (confirmAction = 'rotate')}
-            >{$t('frameleaf_buddy_rotate_encryption_key')}</Button
-          >
-          <Button variant="danger" disabled={busy || status.pairing.state === 'ended' || status.pairing.state === 'blocked'} onclick={() => (confirmAction = 'end')}
-            >{$t('frameleaf_buddy_end_pairing')}</Button
-          >
-          <Button variant="danger" disabled={busy || status.pairing.state === 'blocked'} onclick={() => (confirmAction = 'block')}
-            >{$t('frameleaf_buddy_block_access_now')}</Button
-          >
-        </div>{/if}
+            <Button disabled={busy || !presentation.send} onclick={() => (confirmAction = 'restart')}
+              >{$t('frameleaf_buddy_restart_incomplete_backup')}</Button
+            >
+            <Button disabled={busy || !presentation.send} onclick={() => (confirmAction = 'rotate')}
+              >{$t('frameleaf_buddy_rotate_encryption_key')}</Button
+            >
+            <Button
+              variant="danger"
+              disabled={busy || status.pairing.state === 'ended' || status.pairing.state === 'blocked'}
+              onclick={() => (confirmAction = 'end')}>{$t('frameleaf_buddy_end_pairing')}</Button
+            >
+            <Button
+              variant="danger"
+              disabled={busy || status.pairing.state === 'blocked'}
+              onclick={() => (confirmAction = 'block')}>{$t('frameleaf_buddy_block_access_now')}</Button
+            >
+          </div>{/if}
         <label
           >{$t('frameleaf_buddy_import_a_saved_recovery_kit')}<input
             type="file"
@@ -822,7 +845,9 @@
     align-items: start;
     gap: 1rem;
   }
-  .status-grid > p { grid-column: 1 / -1; }
+  .status-grid > p {
+    grid-column: 1 / -1;
+  }
   .buddy :global(.fc-card) {
     margin-bottom: 1rem;
   }
