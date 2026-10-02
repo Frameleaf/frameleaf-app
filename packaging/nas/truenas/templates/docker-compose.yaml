@@ -53,14 +53,10 @@
 {% endfor %}
 
 {% do server_container.add_port(values.network.web_port) %}
-{% do server_container.add_port(values.network.api_metrics_port) %}
-{% do server_container.add_port(values.network.microservices_metrics_port) %}
 
 {% do server_container.environment.add_env("NODE_ENV", "production") %}
 {% do server_container.environment.add_env("FRAMELEAF_LOG_LEVEL", values.frameleaf.log_level) %}
 {% do server_container.environment.add_env("FRAMELEAF_PORT", values.network.web_port.port_number) %}
-{% do server_container.environment.add_env("IMMICH_API_METRICS_PORT", values.network.api_metrics_port.port_number) %}
-{% do server_container.environment.add_env("IMMICH_MICROSERVICES_METRICS_PORT", values.network.microservices_metrics_port.port_number) %}
 {% do server_container.environment.add_env("DB_USERNAME", values.consts.db_user) %}
 {% do server_container.environment.add_env("DB_PASSWORD", values.frameleaf.db_password) %}
 {% do server_container.environment.add_env("DB_HOSTNAME", values.consts.pgvecto_container_name) %}

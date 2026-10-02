@@ -143,6 +143,10 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     // FL-291: the stop timeout must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default)
     assert(unraidServer.includes('<ExtraParams>--stop-timeout=10</ExtraParams>'));
     assert(read('truenas/ix-dev/community/frameleaf/templates/docker-compose.yaml').includes('server_container.set_grace_period(10)'));
+    // FL-300: Frameleaf serves no metrics, so the app neither asks for metrics ports nor sets their variables
+    for (const name of ['questions.yaml', 'templates/docker-compose.yaml', 'templates/test_values/basic-values.yaml']) {
+      assert(!/metrics/i.test(read(`truenas/ix-dev/community/frameleaf/${name}`)), `${name} still mentions metrics`);
+    }
     assert.match(unraidServer, /<Config Name="Machine learning" Target="FRAMELEAF_MACHINE_LEARNING_ENABLED" Default=""[^>]*><\/Config>/);
     assert(read('unraid/templates/frameleaf-ml.xml').includes(nas.images.machineLearning));
     const values = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');

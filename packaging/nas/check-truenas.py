@@ -26,6 +26,9 @@ for enabled in (False, True):
     result = json.loads(template.render(values=candidate, ix_lib=SimpleNamespace(base=SimpleNamespace(render=render))))
     assert result["services"]["server"]["environment"]["FRAMELEAF_MACHINE_LEARNING_ENABLED"] == str(enabled).lower()
     assert ("machine-learning" in result["services"]) == enabled
+    # FL-300: no metrics ports are asked for, published or passed to the server
+    assert not any("METRICS" in name for name in result["services"]["server"]["environment"])
+    assert "api_metrics_port" not in candidate["network"] and "microservices_metrics_port" not in candidate["network"]
     postgres = result["services"]["pgvecto"]
     assert postgres["environment"]["PGDATA"] == "/var/lib/postgresql/14/docker"
     assert postgres["user"] == "999:999"
