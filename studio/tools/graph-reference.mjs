@@ -184,7 +184,9 @@ function trimmedEnd(state, clip, amount) {
   const next = { ...clip, durationInFrames: clip.durationInFrames + amount };
   if (isMedia(clip)) {
     const start = clip.sourceStart ?? 0;
-    const moved = Math.max(start + 1, (clip.sourceEnd ?? start + source(state, clip, clip.durationInFrames)) + source(state, clip, amount));
+    // A clip with no sourceEnd gets one from its new length; otherwise the end moves with the trim.
+    const asked = clip.sourceEnd === undefined ? start + source(state, clip, next.durationInFrames) : clip.sourceEnd + source(state, clip, amount);
+    const moved = Math.max(start + 1, asked);
     next.sourceEnd = clip.sourceDuration === undefined ? moved : Math.min(clip.sourceDuration, moved);
   }
   return next;
