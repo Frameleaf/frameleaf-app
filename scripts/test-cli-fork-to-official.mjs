@@ -112,6 +112,12 @@ const main = async () => {
 
 try {
   await run();
+} catch (error) {
+  // the containers are removed below: what the servers said is the only evidence of a failure
+  try {
+    compose('logs', '--no-color', '--tail', '200', 'fork-server', 'official-server');
+  } catch { /* the stack never came up */ }
+  throw error;
 } finally {
   compose('down', '--volumes', '--remove-orphans');
 }
