@@ -23,6 +23,8 @@ The page is delivered in four parts:
 | 3    | FL-308 (NAPI-019) | Effects, transitions, keyframes, easing, blends and parameter schemas.          |
 | 4    | FL-309 (NAPI-020) | Compositions, titles, sequence and project settings, and full command coverage. |
 
+Sections 1 to 11 are part 1. Part 2 is section 12. Section numbers never change: later parts add sections after it.
+
 ## 1. Where the graph lives
 
 A Studio project's head revision carries an **envelope** (OpenAPI `StudioProjectEnvelopeDto`):
@@ -73,7 +75,7 @@ A graph is one JSON object: Freecut's project document. `studio/graph-schema-v1.
 | `masterBusMuted`                              | boolean        | `false` by default.                                                             |
 | `busAudioEq`                                  | object         | Optional.                                                                       |
 | `currentFrame`, `zoomLevel`, `scrollPosition` | number         | View state the engine writes back as it read it. Commands do not change them.   |
-| `inPoint`, `outPoint`                         | integer frame  | Optional.                                                                       |
+| `inPoint`, `outPoint`                         | integer frame  | Optional. Clamped to the timeline's extent (12.2.7).                            |
 | `markers`                                     | array          | Present only when non-empty.                                                    |
 | `transitions`                                 | array          | Present only when non-empty.                                                    |
 | `keyframes`                                   | array          | Present only when non-empty. One entry per animated item.                       |
@@ -82,7 +84,7 @@ A graph is one JSON object: Freecut's project document. `studio/graph-schema-v1.
 
 The timeline object is closed: the engine rebuilds it from its stores, so a field not listed here is **dropped** on the next edit. Native clients must not add timeline fields.
 
-**Track.** `id`, `name`, `kind` (`video` or `audio`), `height`, `locked`, `syncLock`, `visible`, `muted`, `solo`, `volume` (track gain in dB, −60 to 12), `order`, and `items`, which is always an empty array in a stored graph (items live in `timeline.items`). In normal form `height` is always `100`: it is a local view preference that the engine resets on load. Optional fields: `audioEq`, `color`, `parentTrackId`, `isGroup`, `isCollapsed`.
+**Track.** `id`, `name`, `kind` (`video` or `audio`), `height`, `locked`, `syncLock`, `visible`, `muted`, `solo`, `volume` (track gain in dB, −60 to 12), `order`, and `items`, which is always an empty array in a stored graph (items live in `timeline.items`). In normal form `height` is always `100`: it is a local view preference that the engine resets on load. Optional fields: `audioEq`, `color`, `parentTrackId`, `isGroup`, `isCollapsed`. Tracks are stored in ascending `order`, and names of the form `V1` or `A1` are derived from position (12.2.8).
 
 **Marker.** `{ id, frame, color }`, plus `label` only when it is non-empty. A marker added without a colour gets `#3B82F6`.
 
@@ -104,7 +106,7 @@ Every item has `id`, `trackId`, `from` (first frame, integer, at least 0), `dura
 
 Source fields of a media clip are integer frames counted at `sourceFps`, the source's own rate, not the project's (section 3.4): `sourceStart`, `sourceEnd` and `sourceDuration`. `trimStart` and `trimEnd` are legacy counters. They are written as `0` when a clip is placed and must be preserved as found.
 
-Common optional fields: `originId` (lineage shared by the parts of a split clip), `linkedGroupId` (shared by linked audio and video), `transform`, `crop`, `cornerPin`, `effects`, `blendMode`, `volume`, fades, audio EQ fields, `speed`, `motionModifiers`, `motionLayers` and `transformParent`. Parts 2 to 4 specify the commands that write them. The schema lists their types and ranges.
+Common optional fields: `originId` (lineage shared by the parts of a split clip), `linkedGroupId` (shared by linked audio and video), `transform`, `crop`, `cornerPin`, `effects`, `blendMode`, `volume`, fades, audio EQ fields, `speed`, `motionModifiers`, `motionLayers` and `transformParent`. Parts 2 to 4 specify the commands that write them. The schema lists their types and ranges. Part 2 also reads and writes `embeddedAudioMuted` (set on a video that was unlinked from its sound, 12.6.1) and reads `textRole` and `captionSource` on text items (attached captions, 12.2.1).
 
 `generatedId` replaces `mediaId` on an item that shows Frameleaf-generated media (for example a reversed conform). Such an item never carries `mediaId`, `src`, `audioSrc`, `thumbnailUrl`, `waveformData` or any `reverseConform*` field in a stored graph.
 
@@ -129,11 +131,13 @@ Loading normalises as follows:
 - `speed` is clamped to 0.1..10, `volume` to −60..12, and fades to at least 0.
 - `transform.rotation` is reduced to 0..360, `transform.opacity` is clamped to 0..1, and `transform.cornerRadius` to at least 0.
 - Overlapping items on one track are repaired by pushing the later one to the end of the earlier one, unless a transition joins them.
+- Tracks are written in ascending `order`, and classic `V`/`A` names are renumbered by position (12.2.8, fixture `normal-form/tracks-sorted-and-renamed`).
+- `inPoint` and `outPoint` are clamped to the timeline's extent (12.2.7, fixture `normal-form/in-out-clamped`).
 - Empty `transitions`, `keyframes` and `markers` arrays are removed.
 
 Fixture `normal-form/normalises-a-hand-written-graph` shows each rule.
 
-**Native rule.** A native client edits only graphs in normal form, which is every graph the web engine or a conforming native client has saved. It must not write a graph that is not in normal form. If it receives a graph whose `schemaVersion` is not `15`, or which lacks `metadata.frameRate`, it must open it read-only and ask the person to open it once on the web. Version migrations are implementation-defined, and this protocol does not specify them.
+**Native rule.** A native client edits only graphs in normal form, which is every graph the web engine or a conforming native client has saved. It must not write a graph that is not in normal form. If it receives a graph whose `schemaVersion` is not `15`, or which lacks `metadata.frameRate`, it must open it read-only and ask the person to open it once on the web. Version migrations are implementation-defined, and this protocol does not specify them. The web engine itself can save a graph outside normal form in the few cases section 11 lists (an overlap, a speed above 10, a clip gain or a rotation out of range). A native client opens such a graph read-only too.
 
 ## 3. Time, duration and rate
 
@@ -216,7 +220,7 @@ Each id consumes 16 outputs. `vectors.uuids` in the fixtures gives the first ids
 
 ### 4.3 Which draw goes where
 
-Each applied fixture records, for each envelope, its `draws`: draw number `n`, the id, and every graph path that holds it. Draws that a command makes but does not keep are listed with no paths. They still consume their 16 outputs, and a native client must skip them in the same order. Parts 2 to 4 give the draw order for each command in prose. The fixtures are authoritative where the two differ.
+Each applied fixture records, for each envelope, its `draws`: draw number `n`, the id, and every graph path that holds it. Draws that a command makes but does not keep are listed with no paths. They still consume their 16 outputs, and a native client must skip them in the same order. Parts 2 to 4 give the draw order for each command in prose. The fixtures are authoritative where the two differ. A track that a command creates has the id `track-` followed by the drawn id; `draws` lists that draw at the track's `id` path.
 
 For example, `clip.add` of a video with sound (fixture `ids/clip-add-draws`) draws the shared `originId` first, then the shared `linkedGroupId`, then the video item's `id`, then the audio item's `id`.
 
@@ -224,11 +228,11 @@ The engine also fixes its clock to the envelope's `issuedAt` while it applies it
 
 ## 5. Ordering and overlap
 
-- **Array order is data.** The engine writes `timeline.items` in its own order: existing items keep their positions, and items a command creates are appended in the order the command creates them. Removed items leave no gap. Tracks are written in stored order. Each command's rules (parts 2 to 4) say where its new entries go, and the fixtures fix it exactly.
+- **Array order is data.** The engine writes `timeline.items` in its own order: existing items keep their positions, and items a command creates are appended in the order the command creates them. Removed items leave no gap. Tracks are written in ascending `order` (12.2.8). Each command's rules (parts 2 to 4) say where its new entries go, and the fixtures fix it exactly.
 - **Compositing order** is the track `order` value, ascending: the lowest `order` is the top layer. `order` may be fractional (`track.add` at an index between two tracks takes the midpoint).
-- **No overlap on a track.** Two items on one track never share a frame, unless a transition joins them (part 3). Commands that would create an overlap are refused (`failed`, "... would overlap ..."), or they place, trim or ripple so that none results, as each command's rules state. Loading a graph that has an overlap repairs it (2.6). A native client must never save one.
-- **Linked items** share a `linkedGroupId`: normally a video and its sound. Unless a command says otherwise, an edit to one applies to every item in its linked group.
-- **Locked tracks.** A command never changes an item on a track with `locked: true`. A command that would do so is refused (`failed`), as each command states.
+- **No overlap on a track.** Two items on one track never share a frame, unless a transition joins them (part 3). Commands that would create an overlap are refused (`failed`, "... would overlap ..."), or they place, trim or ripple so that none results, as each command's rules state. `clip.move` is the exception: it does not check (12.3.3). Loading a graph that has an overlap repairs it (2.6). A native client must never save one.
+- **Linked items** share a `linkedGroupId`: normally a video and its sound. How far an edit to one reaches the others differs by command: 12.2.1 defines linked groups, synchronised clips and attached captions, and each command states what it does with them.
+- **Locked tracks.** A track with `locked: true` is meant to be left alone, but the engine enforces that command by command, and several commands do not check (12.2.2). A native client treats a lock as binding for every command.
 
 ## 6. Canonical serialisation and digests
 
@@ -294,7 +298,7 @@ A save's `commands` are the envelopes that produced the graph, in order, up to 5
 
 The catalogue has 73 commands with `mutatesGraph: true`.
 
-- **Engine (48):** the engine gives them meaning. Their mutation rules are in parts 2 to 4.
+- **Engine (48):** the engine gives them meaning. Their mutation rules are in parts 2 to 4. Part 2 is section 12.
 - **Host (2):** `history.undo` and `history.redo` are answered by the host's history (section 9).
 - **Bundle (1):** `project.importBundle` creates a new project from an uploaded bundle through the bundle import API. It does not change the open graph.
 - **Not implemented (22):** the remaining 22 are refused by the engine as `not-implemented` (8.2).
@@ -310,7 +314,7 @@ The catalogue has 73 commands with `mutatesGraph: true`.
 | Bundle import                                    | `project.importBundle`                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Not implemented                                  | `captions.set`, `clip.setAudio`, `clip.setBlendMode`, `clip.setCrop`, `clip.setGrade`, `clip.setMask`, `effect.reorder`, `effect.update`, `lottie.update`, `media.import`, `media.relink`, `media.remove`, `project.rename`, `project.setMasterAudio`, `project.setSettings`, `sequence.add`, `sequence.duplicate`, `sequence.remove`, `sequence.setActive`, `sequence.setFields`, `track.setAudio`, `voiceover.add`                                |
 
-`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86).
+`music.add` is an engine command that is always refused at this revision (`failed`): the bundled music catalogue is rights-blocked (FL-86, 12.8.4). The engine implements the other 27 part 2 commands in full, with one exception inside `clip.update`: its `muted` patch field is refused as `not-implemented` (12.6.2).
 
 ### 8.2 Not-implemented commands
 
@@ -339,7 +343,7 @@ The `history` scripts in the fixtures replay sequences of commands, undos and re
 | `seeds`         | Hand-written starting graphs, possibly not in normal form.                                         |
 | `bases`         | `seed` + `setup` envelopes → the engine's `graph` and `digest`. Cases start from a base's `graph`. |
 | `vectors`       | `canonicalJson`, `uuids` and `frames` test vectors.                                                |
-| `cases`         | `base`, `media`, an `envelopes` batch → `expect`.                                                  |
+| `cases`         | `base`, `media`, an `envelopes` batch → `expect`. `outsideNormalForm` marks the cases below.       |
 | `history`       | `base` + `steps` (command, undo or redo) → one outcome per step (section 9).                       |
 | `commandStatus` | Each graph-changing command's status and owning story.                                             |
 
@@ -348,26 +352,951 @@ A case's `expect` is one of:
 - `{ "status": "applied", "graph", "digest", "envelopeDigest", "fixedPoint", "clockIndependent", "draws" }`: the graph is the full expected graph, and `draws` lists each envelope's id draws (4.3). `fixedPoint` records that an empty batch returns the graph unchanged (2.6). `clockIndependent` records that the same batch with a different `issuedAt` gives the same graph (4.3).
 - `{ "status": "rejected", "index", "reason", "detail" }`.
 
+A case with `"outsideNormalForm": true` records an edit the engine **accepts but should not**: its `graph` is not in normal form, so `fixedPoint` is `false` and the graph breaks the schema or the no-overlap rule of section 5. Section 11 lists these edits. They are recorded so that the engine's behaviour is pinned, not so that a native client copies it.
+
 **Running them natively.** For each case, load the base graph, apply the envelopes with the case's media records, and compare the result:
 
 - An applied case must give the expected graph, compared by graph digest, and the expected ids.
 - A rejected case must be refused at the same index with the same reason, leaving the graph untouched.
+- A case marked `outsideNormalForm` must be **refused** by a native client at the index of its last envelope, leaving the graph untouched. A native client never produces its graph.
 
 Run the vectors first: id generation and canonical JSON must be right before any graph can match.
 
 **Drift.** Two checks keep this page and the engine together:
 
 - The engine replay runs in the Studio engine workflow. It recomputes every answer, fails on any difference, and checks that a second run gives identical answers.
-- `studio/tools/graph-protocol.test.mjs` runs in the Scripts unit tests on every pull request, without the engine. It re-derives every digest, id draw and rounding answer from an independent implementation of sections 3, 4 and 6, and validates every graph against the schema.
+- `studio/tools/graph-protocol.test.mjs` runs in the Scripts unit tests on every pull request, without the engine. It re-derives every digest, id draw and rounding answer from an independent implementation of sections 3, 4 and 6, and validates every graph against the schema. For part 2 it also checks the rules of section 12 that can be computed from a graph alone: no overlap, track order and names, in and out points, the transitions repair keeps, split and trim source frames, retimed length and speed, and that every part 2 command has applied and rejected cases.
 
 A change to the engine that alters any answer fails the first check. A hand edit of any answer fails the second.
 
 ## 11. Implementation-defined behaviour
 
-| Behaviour                                                                                | Native rule                                                                    |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Version migrations of graphs below `schemaVersion` 15 (2.6).                             | Open read-only; ask the person to open the project on the web once.            |
-| Unknown timeline fields are dropped (2.3).                                               | Never add timeline fields.                                                     |
-| Undo past the session restores `head − 1`, whose content depends on autosave timing (9). | Keep a session history; go past it only through the server's revision restore. |
-| Negative half-frame deltas round towards positive infinity (3.3).                        | Use the section 3.3 formula exactly.                                           |
-| The engine accepts unreduced rationals; the server does not (3.1).                       | Always send reduced rationals.                                                 |
+Each row is engine behaviour that is accidental or inconsistent, with the rule a native client follows. Rows of part 2 name the section that states them and a fixture that pins them.
+
+Two kinds of native rule appear. **Refuse** means the engine accepts an edit whose result is not in normal form: a native client must refuse the edit and never write that graph (the fixtures mark these `outsideNormalForm`). **Reproduce** means the result is a valid graph, however odd: a native client that applies the edit must produce exactly the engine's graph. Some of those edits a native client should also not offer; the rule says so.
+
+| Behaviour                                                                                                                            | Native rule                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| Version migrations of graphs below `schemaVersion` 15 (2.6).                                                                         | Open read-only; ask the person to open the project on the web once.                                 |
+| Unknown timeline fields are dropped (2.3).                                                                                           | Never add timeline fields.                                                                          |
+| Undo past the session restores `head − 1`, whose content depends on autosave timing (9).                                             | Keep a session history; go past it only through the server's revision restore.                      |
+| Negative half-frame deltas round towards positive infinity (3.3).                                                                    | Use the section 3.3 formula exactly.                                                                |
+| The engine accepts unreduced rationals; the server does not (3.1).                                                                   | Always send reduced rationals.                                                                      |
+| Nine clip commands do not check locks, and three check only part of what they change (12.2.2).                                       | Treat a lock as binding for every command. Reproduce the fixtures.                                  |
+| `clip.move` does not check overlap (12.3.3, `clip.move/overlap-is-not-checked`).                                                     | **Refuse** a move onto a place that is taken.                                                       |
+| `clip.move` does not check the destination track's kind (12.3.3).                                                                    | Move visual clips to video tracks and audio clips to audio tracks only. Reproduce.                  |
+| `clip.setSpeed` accepts speeds from 10 to 16 that loading clamps to 10 (12.4.5, `clip.setSpeed/above-ten`).                          | **Refuse** a speed above 10.                                                                        |
+| `clip.update` stores a `volume` outside −60..12 that loading clamps (12.6.2, `clip.update/volume-is-not-clamped`).                   | **Refuse** a `volume` outside −60..12.                                                              |
+| `clip.setTransform` stores a `rotation` outside 0..360 that loading reduces (12.6.3, `clip.setTransform/rotation-is-not-reduced`).   | Reduce `rotation` to 0..360 before sending; **refuse** one outside it.                              |
+| `clip.setTransform` gives an audio clip a transform (12.6.3).                                                                        | Do not send one for an audio clip. Reproduce.                                                       |
+| Transition repair keeps a transition whenever its incoming clip starts before its outgoing clip ends (12.2.6).                       | Apply the repair rules literally. Reproduce.                                                        |
+| A transition is repaired only when a command changes one of its clips (12.2.6).                                                      | Do not re-check other transitions.                                                                  |
+| A ripple delete removes clips that a shifted linked clip would land on (12.3.2, `clip.delete/ripple-unsynced-companion-covers`).     | Reproduce.                                                                                          |
+| A ripple trim does not move the linked clips of the clips it shifts; a ripple delete does (12.4.1).                                  | Reproduce both.                                                                                     |
+| `track.closeGap` with `at` ripples sync-locked tracks and ignores linked clips; without `at` it does the opposite (12.7.5).          | Reproduce both.                                                                                     |
+| A ripple that cuts a linked clip on a sync-locked track splits it alone, so its halves lose their `linkedGroupId` (12.2.3).          | Reproduce. The halves stay linked by the legacy link (12.2.1).                                      |
+| The surviving tail of a clip whose head a ripple or an overwrite removes has a new id (12.2.3, 12.5.4).                              | Reproduce the ids. Do not assume an id names the same footage after such an edit.                   |
+| `clip.overwrite` removes every caption attached to a clip when the part that keeps the clip's id is covered (12.5.4).                | Reproduce.                                                                                          |
+| `clip.overwrite` clamps in and out points to the extent the timeline has in the middle of the edit (12.5.4).                         | Clamp after the covered parts are removed, then again at the end.                                   |
+| `clip.insert` cuts a linked clip on a locked track with its group and then leaves it behind (12.5.3).                                | Do not insert across a linked group that has a clip on a locked track. Reproduce.                   |
+| `clip.setSpeed` stores a speed derived from the rounded length in floating point, not the payload's rate (12.4.5).                   | Compute it in doubles in the stated order.                                                          |
+| `clip.setSpeed` ripples its own tracks and linked clips but not sync-locked tracks, and does not lock-check what it pushes (12.4.5). | Reproduce.                                                                                          |
+| `clip.add` places a video whose rate has no exact reading (12.3.1).                                                                  | Do not place such media.                                                                            |
+| The halves of a split still cannot be joined (12.5.5, `clip.join/rejects-still-parts`).                                              | Do not offer join for stills.                                                                       |
+| `clip.setLink` links any clips and merges whole groups (12.6.1).                                                                     | Link only a video with an audio clip of the same media, start, length and source window. Reproduce. |
+| `clip.setTransformParent` refuses a request that changes nothing as `failed`; every other command applies it (12.6.4).               | Do not send one.                                                                                    |
+| `clip.setTransformParent` poses of animated or already-parented clips come from floating-point matrix arithmetic (12.6.4).           | Until part 3, attach only clips with no keyframes, expressions, modifiers or parent.                |
+| Classic track names are derived from position, so `track.add` discards one and `track.set` refuses one (12.2.8, 12.7.1, 12.7.4).     | Do not send a classic name.                                                                         |
+| `clip.split` reads a `linkedSelectionEnabled` field the catalogue does not list (12.3.4).                                            | Never send it.                                                                                      |
+| Clips with `isReversed: true` follow rules this protocol does not specify (12.2.4).                                                  | Do not trim, split, slip, slide, roll, retime or join a reversed clip.                              |
+| Source-frame conversions inside commands use floating point; payload conversions are exact (12.2.4).                                 | Use the two formulas of 12.2.4 in doubles, in the order written.                                    |
+
+## 12. Part 2: clips, timeline edits, tracks and markers
+
+This section gives the mutation rules of the 28 commands of FL-307 (NAPI-018). The engine implements all of them at this revision. `music.add` is implemented as a refusal (12.8.4).
+
+| Commands                                                                                  | Section |
+| ----------------------------------------------------------------------------------------- | ------- |
+| `clip.add`, `clip.delete`, `clip.move`, `clip.split`                                      | 12.3    |
+| `clip.trimStart`, `clip.trimEnd`, `clip.roll`, `clip.slip`, `clip.slide`, `clip.setSpeed` | 12.4    |
+| `clip.push`, `clip.reorder`, `clip.insert`, `clip.overwrite`, `clip.join`                 | 12.5    |
+| `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent`             | 12.6    |
+| `track.add`, `track.remove`, `track.reorder`, `track.set`, `track.closeGap`               | 12.7    |
+| `marker.add`, `marker.update`, `marker.remove`, `music.add`                               | 12.8    |
+
+Every command has fixtures named `<command>/<case>` in `studio/graph-conformance-v1.json`, both applied and rejected (`music.add` has only rejected ones). Where this prose and a fixture differ, the fixture is right and this page has a defect.
+
+### 12.1 How to read the rules
+
+- A **clip** is an item of the main timeline (`timeline.items`). Commands address clips of the main timeline only. An id of a clip inside a composition is unknown to them (fixture `clip.move/rejects-clip-inside-composition`).
+- `end(c)` is `c.from + c.durationInFrames`: the first frame after the clip. A clip **spans** frame `f` when `c.from < f < end(c)`.
+- Each command lists its **refusals in the order the engine checks them**. The first that applies decides the reason. A native client must report the same reason.
+- These refusals are common to every command and are not repeated: a required string field that is missing, empty or not a string is `invalid`; a `clipId` that names no clip, and a `trackId` that names no track, is `invalid`; a time field is checked as section 3.3 says.
+- After its checks, a command applies its edit and then **verifies the result**. Where the engine could not make the edit exactly as asked, the command is refused as `failed` and nothing changes. So limits below are stated as conditions: when one does not hold, the command is `failed`.
+- A command that asks for what is already so is **applied and changes nothing**, unless its rules say otherwise.
+- Each command states five consequences: **Linked** clips, **Locks**, **Sync lock**, **Overlap** and **Transitions**. "None" means the command neither reads nor changes that.
+- **Draws** lists the ids the command mints, in order (section 4.3).
+
+### 12.2 Shared rules
+
+#### 12.2.1 Linked clips
+
+- The **linked group** of a clip `c` is every item with `c`'s `linkedGroupId`. A clip with no `linkedGroupId` has a **legacy link**: if it is a video or audio clip with an `originId` and a `mediaId`, its group is itself plus every clip of the other kind (audio for video, video for audio) with the same `originId`, the same `mediaId`, the same `from` and the same `durationInFrames`. Otherwise its group is itself alone. Fixtures `clip.move/legacy-linked-pair` and `clip.move/legacy-link-ends-when-extents-differ`.
+- The **synchronised** clips of `c` are the members of its linked group that have the same `from`, `durationInFrames`, `sourceStart`, `sourceEnd` and speed as `c` (an absent `speed` is 1; an absent source field equals only another absent one). `c` is always one of them.
+- The **attached captions** of a clip that is not a text item are the text items with `captionSource.clipId` equal to its id. Captions are made by caption features outside this protocol's commands. A native client never creates them, and must carry them through as these rules say.
+- The **linked set** of some clips is those clips, every member of their linked groups, and the attached captions of all of these.
+- The engine has a linked-selection switch. It is **on** when a command runs, except where a command's rules turn it off. With it off, the linked set of some clips is those clips and their attached captions only.
+
+#### 12.2.2 Locks
+
+A track with `locked: true` is locked. Lock checking is **per command and is not uniform**:
+
+| Lock checking                                     | Commands                                                                                                                                                 |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Refuse when any clip they would change is locked  | `clip.roll`, `clip.slip`, `clip.slide`, `clip.push`, `clip.join`, `clip.reorder`, `clip.overwrite`, `track.closeGap`, `track.remove`                     |
+| Check some of what they change (see each command) | `clip.move`, `clip.setSpeed`, `clip.insert`                                                                                                              |
+| Check nothing                                     | `clip.add`, `clip.delete`, `clip.split`, `clip.trimStart`, `clip.trimEnd`, `clip.setLink`, `clip.update`, `clip.setTransform`, `clip.setTransformParent` |
+
+The last two rows are **implementation-defined**: the engine's own editor never lets a person edit a locked track, so its edit actions were never guarded, and the command layer guards only some of them. **Native rule:** a native client treats a lock as binding for every command. It must not issue a command that would add, remove or change a clip on a locked track, including through a linked clip or a ripple. Given such an envelope in a fixture, a conforming implementation still produces the engine's graph.
+
+Track commands (`track.set`, `track.reorder`) may change a locked track itself. That is how a track is unlocked.
+
+#### 12.2.3 Sync lock and ripple
+
+A track is **sync-enabled** when it is not locked and its `syncLock` is not `false`. A ripple edit changes the tracks it edits directly (its **edited tracks**) and then keeps every other sync-enabled track in step, in stored track order, by one of two procedures. A track that is locked or has `syncLock: false` is left exactly as it is.
+
+**Remove an interval `[a, b)` from a track.** For each clip on the track that shares a frame with the interval, in order of `from`:
+
+| The clip                                   | What happens                                                                                                                   |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| lies inside (`from ≥ a` and `end ≤ b`)     | It is removed, with its transitions and keyframes.                                                                             |
+| spans the interval (`from < a`, `end > b`) | It is split at `a`, then its right part is split at `b`. The middle part is removed. Two ids are drawn; the first is not kept. |
+| starts before only (`from < a < end ≤ b`)  | It is split at `a` and the right part is removed. One id is drawn and not kept.                                                |
+| ends after only (`a ≤ from < b < end`)     | It is split at `b` and the left part is removed. The left part keeps the clip's id, so **the surviving tail has a new id**.    |
+
+Then every clip on the track with `from ≥ b` moves left by `b − a`. Several intervals are merged where they touch, sorted, and removed in order, each one measured after the earlier removals.
+
+**Open a gap of `n` frames at frame `c` on a track.** Each clip that spans `c` is split at `c` (one id drawn each, in order of `from`). Then every clip on the track with `from ≥ c` moves right by `n`.
+
+Each split here is the split of 12.2.5 applied to that clip **alone**. A clip with a `linkedGroupId` that is cut this way therefore loses it on both halves (fixture `clip.delete/ripple-linked-clip-cut-alone-loses-group`). The halves of a video and its sound cut at the same frames stay linked by the legacy link.
+
+Fixtures: `clip.delete/ripple-sync-lock-cuts-head`, `…-cuts-middle`, `…-removes-covered`, `…-off`, `clip.delete/ripple-locked-track-untouched`, `clip.trimEnd/ripple-earlier`, `clip.trimEnd/ripple-later`, `clip.insert/sync-locked-track-opens-gap`.
+
+#### 12.2.4 Source frames
+
+Video, audio and composition clips are **media clips**: they carry a source window `[sourceStart, sourceEnd)` in source frames, inside `[0, sourceDuration)`. Stills, titles and every other type are not media clips for these rules, even though a still carries source fields (12.3.1): trimming and splitting a still changes only `from` and `durationInFrames`.
+
+Two conversions are used. Both are computed in IEEE-754 double precision, in the order written. `fps` is `metadata.fps`, `sourceFps` is the clip's stored `sourceFps` (or `fps` when absent) and `speed` is the clip's `speed` (or 1):
+
+```text
+toSource(n)   = floor( ((n / fps) * sourceFps) * speed + 0.5 )     timeline frames -> source frames
+toTimeline(s) = floor( ((s / sourceFps) * fps) / speed )           source frames -> timeline frames
+```
+
+`toSource` rounds to the nearest source frame with halves towards positive infinity, for negative `n` too. These are the engine's floating-point rules, not the exact rational rule of section 3.3. That rule applies only to payload values.
+
+**Trim the start by `a` frames** (`a > 0` shortens): `from` and `sourceStart` grow, `durationInFrames` shrinks.
+
+```text
+from += a        durationInFrames -= a        sourceStart += toSource(a)     (media clips)
+```
+
+Limits: `durationInFrames − a ≥ 1`, and for a media clip `−a ≤ toTimeline(sourceStart)`.
+
+**Trim the end by `a` frames** (`a > 0` lengthens):
+
+```text
+durationInFrames += a        sourceEnd = min(sourceDuration, max(sourceStart + 1, sourceEnd + toSource(a)))     (media clips)
+```
+
+Limits: `durationInFrames + a ≥ 1`, and for a media clip with a `sourceDuration`, `durationInFrames + a ≤ toTimeline(sourceDuration − sourceStart)`.
+
+A clip with `isReversed: true` follows mirrored rules that this protocol does not specify. **Native rule:** a native client must not trim, split, slip, slide, roll, retime or join a reversed clip.
+
+#### 12.2.5 Splitting a clip
+
+Splitting clip `c` at frame `s` (which `c` must span) gives two clips:
+
+- The **left** half keeps `c`'s id and its place in `timeline.items`, with `durationInFrames = s − from`.
+- The **right** half has a newly drawn id, `from = s` and the rest of the length. It is appended to `timeline.items`.
+- Both get `originId = c.originId`, or `c.id` when `c` had none. Every other field is copied to both halves unchanged.
+- For a media clip, with `L` and `R` the two lengths: the left half has `sourceStart` (written as `0` if it was absent) and `sourceEnd = sourceStart + toSource(L)`. The right half starts there and has `sourceEnd = sourceStart + toSource(L + R)`, computed from the original `sourceStart`. The original `sourceEnd` is not copied.
+- A transition out of `c` (`leftClipId` = `c`) now leaves from the right half. A transition into `c` stays with the left half.
+
+When several clips are split **together** (a linked group), the right halves are drawn in the clips' order in `timeline.items`. Then, if two or more of them had a `linkedGroupId`, two more ids are drawn: every left half gets the first as its `linkedGroupId` and every right half the second. If exactly one of them had a `linkedGroupId`, both of its halves lose it. Keyframes are specified in part 3.
+
+A clip cannot be split inside a transition it takes part in. For a transition of `d` frames (`alignment` 0.5 unless part 3 says otherwise), with `p = floor(d × alignment)`: the outgoing clip cannot be split in its last `p` frames, and the incoming clip cannot be split in its first `d − p` frames.
+
+#### 12.2.6 Transition repair
+
+Transitions are specified in part 3. Part 2 commands never create one, but they move and resize the clips that transitions join. After a command, the engine **repairs** each transition whose outgoing clip (`leftClipId`, `L`) or incoming clip (`rightClipId`, `R`) the command **changed**. A transition that names no changed clip is not looked at, even if it would fail. Each command says which clips count as changed. With `E = end(L)`:
+
+1. If `L` or `R` no longer exists, the transition is removed. Commands that delete clips remove their transitions first.
+2. If the clips are on different tracks, it is removed.
+3. If `|E − R.from| ≤ 1` the clips **meet**. Otherwise, if `R.from < E` they **overlap**. Otherwise (`R.from > E + 1`) the transition is removed.
+4. If either clip is not a video, image or composition item, it is removed.
+5. **Meet:** let `M` be the longest length the clips' handles allow (below). If `M ≤ 0` the transition is removed. If `durationInFrames > M` it becomes `M`.
+6. **Overlap:** let `O = E − R.from`. If `O < durationInFrames`, the length becomes `max(2, O)` when that is shorter than both clips, and the transition is removed when it is not. Otherwise, if `durationInFrames` is not shorter than both clips, it becomes `max(2, min(L, R lengths) − 1)`.
+
+Transitions that pass unchanged keep their order in `timeline.transitions`. Transitions whose length was changed are moved after them, in their own order. When the list becomes empty the key is removed.
+
+`M` is the largest `d` from 1 to `min(L, R lengths) − 1` for which `d − floor(d × alignment)` frames fit in `L`'s tail handle and `floor(d × alignment)` frames fit in `R`'s head handle. The tail handle of a video or composition clip is `toTimeline(sourceDuration − sourceEnd)`, and its head handle is `toTimeline(sourceStart)`. A still has unlimited handles.
+
+Rule 3 is **implementation-defined**: the overlap branch exists for projects made before transitions were cut-centred, and it accepts any incoming clip that starts before the outgoing clip ends, however far apart the clips now are. A transition therefore survives when its outgoing clip is moved later, or the clips swap places (fixtures `clip.move/transition-survives-outgoing-clip-moved-later`, `clip.reorder/transition-survives-out-of-order`), and is removed only when the incoming clip starts more than one frame after the outgoing clip ends (`clip.move/removes-transition`). **Native rule:** apply rules 1 to 6 literally. Do not remove a transition that they keep.
+
+When both clips of a transition move in one command and end on one track, the transition's `trackId` becomes that track.
+
+#### 12.2.7 In and out points
+
+`timeline.inPoint` and `timeline.outPoint` are clamped to the timeline's extent. Let `last` be the greatest `end(c)` over all clips (0 with no clips) and `max = max(last, floor(10 × fps), 1)`:
+
+- `inPoint` is clamped to `0..max` and `outPoint` to `1..max`.
+- If both are set and `inPoint ≥ outPoint` after that: when `inPoint ≥ max` they become `max − 1` and `max`; otherwise `outPoint` becomes `min(max, inPoint + 1)`.
+
+Loading a graph applies this (it is part of normal form, fixture `normal-form/in-out-clamped`). A command applies it again **each time `last` changes while the command runs**. For every command but one this equals clamping once to the final extent (fixture `clip.delete/clamps-in-out-points`). `clip.overwrite` first removes what it covers and then places its clip, so it clamps to the smaller extent in between (12.5.4). A command that does not change `last` leaves both points alone.
+
+#### 12.2.8 Tracks: order and names
+
+- `timeline.tracks` is always written in ascending `order`. Tracks with equal `order` keep their relative order.
+- **Classic names.** A video track whose name is `V` followed by digits, or an audio track whose name is `A` followed by digits (either case), has a classic name. Classic names are **derived from position** and rewritten whenever a command writes the track list (every track command, and `clip.add`, `clip.insert` and `clip.overwrite` when they create an audio track), and on load. Among the video tracks with classic names, the one with the greatest `order` is `V1`, the next `V2`, and so on upwards. Among the audio tracks with classic names, the one with the least `order` is `A1`, the next `A2`, and so on downwards. A track with any other name keeps it and takes no number.
+- Loading applies both rules (fixture `normal-form/tracks-sorted-and-renamed`).
+- A track a command creates is `{ id, name, kind, height: 100, locked: false, syncLock: true, visible: true, muted: false, solo: false, volume: 0, order, items: [] }`. Its `id` is `track-` followed by a drawn id. Its first name is `V` or `A` followed by the smallest positive number no classic name of that kind uses, before the renumbering above.
+
+### 12.3 Placing, deleting, moving and splitting
+
+#### 12.3.1 `clip.add`
+
+Places library media on a video track at its natural or a given length. Payload: `assetId`, `trackId`, `at`, optional `duration`, optional `kind`.
+
+**Refusals, in order**
+
+1. `trackId` names no track: `invalid`.
+2. `at` is not a valid non-negative time: `invalid`.
+3. `duration` is given and rounds to less than one frame: `invalid`.
+4. `assetId` has no media record: `invalid`.
+5. The record's `mimeType` is neither `image/*` nor `video/*`: `invalid`.
+6. `kind` is given and is not the media's kind. A still accepts `image` and `photo`; a video accepts `video`: `invalid`.
+7. The track's `kind` is not `video`: `invalid`.
+8. The media is a video and `duration` is longer than its natural length: `invalid`.
+9. The place is taken (below): `failed`.
+
+**Effect.** With `fps` the project rate as a number and `rate` the record's `fps`:
+
+- The **natural length** is `round(record.duration × fps)` frames. When that is 0, it is `3 × fps` for a still and `fps` for a video, rounded to a whole frame. The clip's `durationInFrames` is `duration` in frames when given, else the natural length.
+- A video whose record has an `audioCodec` also places a **linked audio clip** of the same `from` and length on the audio track with the least `order`. When the graph has no audio track, one is created first with `order = max(0, greatest order) + 1` (12.2.8).
+- The items are appended to `timeline.items`, video (or still) first, then audio.
+
+Fields of a placed item:
+
+| Field                         | Value                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `id`, `originId`              | Drawn. The audio clip shares the video's `originId`.                                                                            |
+| `linkedGroupId`               | Drawn, shared by the pair. Absent when no audio clip is placed.                                                                 |
+| `type`                        | `video`, `image` or `audio`.                                                                                                    |
+| `trackId`, `from`             | As placed. `durationInFrames` as above.                                                                                         |
+| `label`                       | The record's `fileName`.                                                                                                        |
+| `mediaId`                     | The asset id.                                                                                                                   |
+| `src`                         | `""`.                                                                                                                           |
+| `sourceFps`                   | `rate` rounded to three decimals (29.97002997 becomes 29.97). For a still (`rate` 0), `fps` rounded the same way.               |
+| `sourceDuration`              | Video and audio: `max(1, round(record.duration × rate))`. Still: `3 × fps`, rounded to a whole frame.                           |
+| `sourceStart`                 | `0`.                                                                                                                            |
+| `sourceEnd`                   | `min(sourceDuration, round(durationInFrames × r / fps))`, with `r` the unrounded `rate` (for a still, `fps`).                   |
+| `trimStart`, `trimEnd`        | `0`.                                                                                                                            |
+| `sourceWidth`, `sourceHeight` | The record's `width` and `height` (video and still only; absent when 0).                                                        |
+| `transform`                   | Video and still only: `{ x: 0, y: 0, width, height, rotation: 0 }`, the source fitted inside the canvas (12.6.3), each rounded. |
+
+**Consequences**
+
+- **Linked:** creates the linked pair above. Existing clips are not touched.
+- **Locks:** not checked, for the video track or the audio track (12.2.2). Fixtures `clip.add/locked-video-track-is-not-checked`, `clip.add/locked-audio-track-is-not-checked`.
+- **Sync lock:** none.
+- **Overlap:** an item that would share a frame with a clip on its track is refused (`failed`). This holds for the audio clip too, so a free place on the video track can still be refused (`clip.add/rejects-taken-place-for-linked-sound`).
+- **Transitions:** none.
+
+**Draws:** the new audio track's id (only when one is created), `originId`, `linkedGroupId` (only for a video with sound), the video or still id, the audio id.
+
+**Implementation-defined.** `clip.add` does not check that a video's rate has an exact reading (section 3.4). It places the clip, and every later command that converts source time on it (`clip.slip`, `clip.setSpeed`) is refused (fixtures `clip.add/inexact-source-rate-is-not-checked`, `clip.slip/rejects-inexact-source-rate`). **Native rule:** do not place such media.
+
+#### 12.3.2 `clip.delete`
+
+Removes clips, optionally closing the space they leave. Payload: `clipId` or `clipIds`, optional `ripple`.
+
+**Refusals, in order**
+
+1. Neither field names a clip: `clipIds` is absent and `clipId` is absent, or `clipIds` is empty, or a named id is not a string: `invalid`. When `clipIds` is an array, `clipId` is ignored.
+2. A named clip does not exist: `invalid`.
+
+**Effect.** The clips removed are the **linked set** of the named clips (12.2.1): the clips, their linked groups, and the attached captions of all of them. Their transitions and keyframes are removed with them.
+
+With `ripple: true`, further:
+
+1. The **edited tracks** are the tracks of the removed clips. Each surviving clip `x` has a **base shift**: the summed length of the removed clips on `x`'s track that end at or before `x.from`.
+2. For each surviving clip with a base shift above 0, every member `y` of its linked set moves left by that amount (the greatest, if several apply), **unless** `y` is on a track that is not edited and is sync-enabled. Those are moved by step 4 instead.
+3. **Covered clips.** A surviving clip that does not move, and that a moved clip on its track would now share a frame with, is removed too, with its linked set.
+4. Every sync-enabled track that is not an edited track has the removed clips' intervals removed (12.2.3).
+
+**Consequences**
+
+- **Linked:** linked clips and attached captions are deleted with the clip. With ripple, linked clips of shifted clips move with them.
+- **Locks:** not checked. A ripple removes and moves clips on locked edited tracks too (`clip.delete/locked-track-is-not-checked`, `clip.delete/ripple-locked-track-is-not-checked`). A locked track that is not edited is never rippled.
+- **Sync lock:** with ripple, step 4. Without ripple, none.
+- **Overlap:** without ripple, none can arise. With ripple, step 3 removes what would be overlapped. That is **implementation-defined**: it deletes a clip the person did not name (`clip.delete/ripple-unsynced-companion-covers`). **Native rule:** reproduce it.
+- **Transitions:** transitions of removed clips are removed. With ripple, the changed clips are the moved clips and the clips step 4 cut or moved. The clips that now meet are **not** joined by the removed clip's transition (`clip.delete/ripple-removes-transition`).
+
+**Draws:** none without ripple. With ripple, the ids of step 4's splits, track by track.
+
+In and out points are clamped (12.2.7).
+
+#### 12.3.3 `clip.move`
+
+Moves a clip to a new start, and optionally to another track. Payload: `clipId`, `start`, optional `trackId`, optional `linkedSelectionEnabled`.
+
+**Refusals, in order**
+
+1. `start` is not a valid non-negative time: `invalid`.
+2. `trackId` is given and is not a string, or `linkedSelectionEnabled` is given and is not a boolean: `invalid`.
+3. `trackId` names no track: `invalid`. It names a locked track: `failed`.
+4. The named clip is on a locked track: `failed`.
+5. A clip that would move would start before frame 0: `failed`.
+
+**Effect.** The moving clips are the linked set of the named clip, computed with linked selection **on** unless `linkedSelectionEnabled` is `false`, **minus** every clip on a locked track. Each moves by `start − clip.from` frames. Only the named clip takes the new `trackId`.
+
+**Consequences**
+
+- **Linked:** linked clips and attached captions move by the same amount and keep their tracks. With `linkedSelectionEnabled: false` only the clip and its attached captions move.
+- **Locks:** refusals 3 and 4. A linked clip or caption on a locked track is silently left behind (`clip.move/locked-companion-stays`).
+- **Sync lock:** none.
+- **Overlap:** **not checked. Implementation-defined.** The engine accepts a move onto a place that is taken and returns a graph that is not in normal form (`clip.move/overlap-is-not-checked`, marked `outsideNormalForm`). **Native rule:** a native client must refuse a move that would make any moving clip share a frame with a clip that does not move, on the track it ends on.
+- **Transitions:** the moving clips are changed (12.2.6).
+
+The engine does not check that the destination track's `kind` suits the clip (`clip.move/video-to-audio-track-is-not-checked`). **Native rule:** move visual clips to video tracks and audio clips to audio tracks only.
+
+**Draws:** none.
+
+#### 12.3.4 `clip.split`
+
+Cuts clips at a time. Payload: `at`, optional `clipIds`.
+
+**Refusals, in order**
+
+1. `at` is not a valid non-negative time: `invalid`.
+2. `clipIds` is given and is empty, is not an array, or holds a non-string: `invalid`. A named clip does not exist: `invalid`.
+3. With `clipIds`: a clip to split, or a member of its linked group, does not span `at`, or would be split inside a transition (12.2.5): `invalid`.
+4. Without `clipIds`: nothing was split: `invalid`.
+
+**Effect.**
+
+- **With `clipIds`:** the named clips are reduced to one per linked group (the first named). Each of these, with its whole linked group, is split together (12.2.5).
+- **Without `clipIds`:** every clip that spans `at` is a candidate, in `timeline.items` order, reduced to one per linked group. Each is split together with its linked group, **if** every member of the group spans `at` and none is inside a transition there. A group that fails this is skipped without error (`clip.split/skips-clips-in-a-transition`).
+
+**Consequences**
+
+- **Linked:** a linked group is split together or not at all. Its halves form two new linked groups. A clip that is alone in its linked group loses the group (`clip.split/unlinked-clip-loses-own-group`). Attached captions are not split and stay attached to the left half, which keeps the id.
+- **Locks:** not checked (`clip.split/locked-track-is-not-checked`).
+- **Sync lock:** none.
+- **Overlap:** none can arise.
+- **Transitions:** remapped as 12.2.5 says. No repair runs.
+
+**Draws:** for each group split, in order: the right halves' ids, then the two new `linkedGroupId`s when two or more of the clips had one.
+
+The engine also reads a `linkedSelectionEnabled` field on this command. The catalogue does not list it and the server refuses it, so a native client never sends it. Splitting always uses linked groups.
+
+### 12.4 Trimming and retiming
+
+#### 12.4.1 `clip.trimStart` and `clip.trimEnd`
+
+Move one edge of a clip. Payload: `clipId`, `start` (for `clip.trimStart`) or `end` (for `clip.trimEnd`), optional `ripple`.
+
+**Refusals, in order**
+
+1. The time is not valid or is negative: `invalid`.
+2. `clip.trimStart`: `start ≥ end(c)`. `clip.trimEnd`: `end ≤ c.from`: `invalid`.
+3. A limit below does not hold: `failed`.
+
+A `start` equal to `c.from`, or an `end` equal to `end(c)`, is applied and changes nothing. That check comes before refusal 2.
+
+**Effect without `ripple`.** Let `a = start − c.from` (trim the start by `a`) or `a = end − end(c)` (trim the end by `a`). The clip **and its synchronised clips** are each trimmed by `a` (12.2.4). Limits, for each of them:
+
+- the source and length limits of 12.2.4;
+- the edge may not pass the nearest edge of another clip on its track: an end may extend up to the next clip's `from`, a start back to the previous clip's `end`. Clips joined to it by a transition are ignored for this limit.
+
+When the trim shortened the clips, each **attached caption** is cut to the part that still lies inside its clip, or removed when nothing does (`clip.trimStart/attached-captions-are-cut`, `clip.trimEnd/attached-captions-are-cut`).
+
+**Effect with `ripple: true`.** The clip and its synchronised clips are the **trimmed clips**; their tracks are the edited tracks.
+
+- `clip.trimEnd`: each trimmed clip's end is trimmed by `a`. The **shift** is `a`.
+- `clip.trimStart`: each trimmed clip's start is trimmed by `a` and the clip is then moved back to its old `from`. So `from` is unchanged, the length changes by `−a` and `sourceStart` advances. The shift is `−a`.
+- On each trimmed clip's track, every other clip with `from ≥` the trimmed clip's **old end**, and the incoming clip of any transition out of it, moves by the shift.
+- Every sync-enabled track that is not edited follows (12.2.3). For a negative shift the interval `[old end + shift, old end)` is removed. For a positive shift a gap of `shift` frames is opened at the old end.
+
+Limits with ripple: the source and length limits of 12.2.4 (the neighbour limit does not apply), and every transition that touches a trimmed clip or a clip that shifts must still be valid for its present length afterwards (part 3). Attached captions are **not** cut by a ripple trim.
+
+**Consequences**
+
+- **Linked:** synchronised linked clips are trimmed with the clip. A linked clip that is not synchronised is not trimmed (`clip.trimEnd/unsynchronised-companion-stays`). With ripple, the linked clips of the clips that shift are **not** moved by the command. Only sync lock moves them (`clip.trimEnd/ripple-leaves-linked-clips-without-sync-lock`). That differs from `clip.delete` with ripple and is **implementation-defined**. **Native rule:** reproduce it.
+- **Locks:** not checked, for the clip, its synchronised clips or the clips a ripple shifts (`clip.trimStart/locked-track-is-not-checked`, `clip.trimEnd/locked-companion-is-not-checked`).
+- **Sync lock:** with ripple, as above. Without ripple, none.
+- **Overlap:** none can arise, except that the outgoing clip of a transition may be extended over its incoming clip. Section 5 allows that overlap (`clip.trimEnd/into-transition-partner`).
+- **Transitions:** without ripple the trimmed clips are changed, so a clip trimmed off its cut loses the transition (`clip.trimStart/removes-transition`, `clip.trimEnd/removes-transition`). With ripple the changed clips are the trimmed clips, every clip on their tracks that starts at or after a trimmed clip's `from`, and the clips sync lock cut or moved. A ripple keeps the clips at the cut, so the transition stays (`clip.trimEnd/ripple-keeps-transition`).
+
+**Draws:** none without ripple. With ripple, the ids of the sync-lock splits.
+
+In and out points are clamped (12.2.7).
+
+#### 12.4.2 `clip.roll`
+
+Moves the cut between a clip and the clip that follows it. Payload: `clipId` (the clip before the cut), `at` (the new time of the cut).
+
+**Refusals, in order**
+
+1. No clip on the same track has `from = end(c)`: `invalid`. The first such clip in `timeline.items` order is the **next clip**.
+2. `at` is not a valid non-negative time: `invalid`.
+3. `at ≤ c.from` or `at ≥ end(next)`: `invalid`.
+4. A clip of the linked sets of the two clips is on a locked track: `failed`.
+5. A limit below does not hold: `failed`.
+
+`at = end(c)` is applied and changes nothing. That check comes before refusal 3.
+
+**Effect.** With `d = at − end(c)`: `c`'s end is trimmed by `d` and the next clip's start is trimmed by `d` (12.2.4). If `c` has a synchronised linked clip and the next clip has one on the same track and of the same type, that pair is rolled by the same `d`. Limits: the source and length limits of 12.2.4 for each clip, and every transition that touches `c` or the next clip must still be valid afterwards (part 3).
+
+**Consequences**
+
+- **Linked:** one synchronised counterpart pair follows, as above.
+- **Locks:** refusal 4.
+- **Sync lock:** none. The timeline's length does not change.
+- **Overlap:** none can arise.
+- **Transitions:** the rolled clips are changed. A transition at the cut stays when its handles allow (`clip.roll/keeps-transition`); a roll that would starve it is refused (`clip.roll/rejects-starved-transition`).
+
+**Draws:** none.
+
+#### 12.4.3 `clip.slip`
+
+Moves a clip's source window without moving the clip. Payload: `clipId`, `delta` (signed, **source time**).
+
+**Refusals, in order**
+
+1. The clip is not a video, audio or composition item: `invalid`.
+2. The clip has no `sourceEnd`: `invalid`.
+3. `delta` is not a rational, or the clip's `sourceFps` has no exact reading (section 3.4): `invalid`.
+4. A clip of the clip's linked set is on a locked track: `failed`.
+5. A limit below does not hold: `failed`.
+
+`delta` becomes `d` source frames by section 3.3 at the clip's `sourceFps` (the project rate when absent). `d = 0` is applied and changes nothing; that check comes before refusal 4.
+
+**Effect.** The clip and each synchronised clip that has a `sourceEnd` get `sourceStart += d` and `sourceEnd += d`. Limits, for each of them: `sourceStart + d ≥ 0`; `sourceEnd + d ≤ sourceDuration` when it has one; and every transition that touches it must still be valid afterwards (part 3).
+
+**Consequences**
+
+- **Linked:** synchronised linked clips slip with the clip.
+- **Locks:** refusal 4, over the whole linked set, synchronised or not.
+- **Sync lock:** none.
+- **Overlap:** none.
+- **Transitions:** the slipped clips are changed. A slip that would leave a transition without handle is refused (`clip.slip/rejects-transition-handle`).
+
+**Draws:** none.
+
+#### 12.4.4 `clip.slide`
+
+Moves a clip between its neighbours, which take up the difference. Payload: `clipId`, `delta` (signed, sequence time).
+
+**Refusals, in order**
+
+1. `delta` is not a rational: `invalid`.
+2. The clip has neither neighbour: `invalid`. The **left neighbour** is the first clip in `timeline.items` order on its track with `end = c.from`; the **right neighbour** the first with `from = end(c)`.
+3. A clip of the linked sets of the clip and its neighbours is on a locked track: `failed`.
+4. A limit below does not hold: `failed`.
+
+`delta` becomes `d` frames at the project rate. `d = 0` is applied and changes nothing; that check comes before refusal 2.
+
+**Effect.**
+
+- The left neighbour's end is trimmed by `d` and the right neighbour's start is trimmed by `d` (12.2.4). The clip moves by `d`.
+- **Source continuity.** If both neighbours exist, the clip is a media clip with a `sourceEnd`, and both pairs (left, clip) and (clip, right) are joinable (12.5.5), the clip's source window also moves by `toSource(d)`, limited to the source as a slip is. The three then stay one continuous run of their source (`clip.slide/split-chain-keeps-continuity`). Otherwise the clip's source window is unchanged (`clip.slide/between-unrelated-clips`).
+- If the clip has a synchronised linked clip (the first other one), that clip slides by the same `d` between **its own** neighbours on its track, found the same way, and its source window moves by the same amount as the clip's.
+
+Limits: `c.from + d ≥ 0`; the source and length limits of 12.2.4 for each neighbour trim; the clip may not pass any other clip on its track; and every transition and keyframe the edit touches must still be valid afterwards (part 3).
+
+**Consequences**
+
+- **Linked:** one synchronised linked clip slides with the clip, with its own neighbours.
+- **Locks:** refusal 3.
+- **Sync lock:** none. The timeline's length does not change.
+- **Overlap:** none can arise.
+- **Transitions:** the clip, its neighbours, and the linked clip and its neighbours are changed.
+
+**Draws:** none.
+
+#### 12.4.5 `clip.setSpeed`
+
+Sets a clip's playback speed by changing its length. Payload: `clipId`, `speed` (a `rate`: the factor, where 2 is twice as fast).
+
+**Refusals, in order**
+
+1. The clip is not a video, audio or composition item: `invalid`.
+2. `speed` is not a rational with `num > 0`: `invalid`.
+3. `speed < 1/10` or `speed > 16`, compared exactly: `invalid`.
+4. The clip has no `sourceEnd`, or `sourceEnd − sourceStart < 1`: `invalid`.
+5. The clip's `sourceFps` has no exact reading: `invalid`.
+6. The new length rounds to less than one frame: `invalid`.
+7. A clip of the clip's linked set is on a locked track: `failed`.
+8. The clip could not take the length, a clip that had the same `from` and length before was not retimed with it, or two clips on a track of the linked set now share a frame: `failed`.
+
+**Effect.** Let `span = sourceEnd − sourceStart`.
+
+- The new length `D` is exact: `span / sourceRate / speed × projectRate`, rounded to the nearest frame with halves up, where `sourceRate` is the exact reading of `sourceFps` (the project rate when absent).
+- The stored `speed` is **derived from `D`**, in doubles, in this order: `(span × fps) / (D × sourceFps)`, then clamped to 0.1..16. It is not the payload's value: 7/3 on a 60-frame clip gives `D = 26` and `speed = 2.3076923076923075`. On a 30000/1001 project `fps` is `29.97002997002997` and a stored `sourceFps` is `29.97`, so 4/3 gives `1.3333346666680002` (`clip.setSpeed/ntsc`). A native client must reproduce these doubles exactly.
+- The clip and each synchronised clip get `durationInFrames = D` and the derived `speed`. `from`, `sourceStart` and `sourceEnd` do not change. `speed: 1` is written even on a clip that never had a speed (`clip.setSpeed/one-on-unretimed-clip`). Keyframes are rescaled (part 3).
+- **Ripple.** With `Δ = D − old length`, when `Δ ≠ 0`: on each track that holds a retimed clip, every other clip with `from ≥` the clip's old end moves by `Δ`, and its whole linked set moves with it, wherever those clips are. The incoming clip of a transition out of a retimed clip moves the same way.
+
+**Consequences**
+
+- **Linked:** synchronised linked clips are retimed together. Linked clips of the clips that move follow them (`clip.setSpeed/linked-clips-of-moved-clips-follow`).
+- **Locks:** refusal 7 covers the clip's linked set. The clips the ripple moves are **not** checked (`clip.setSpeed/ripple-moves-clips-on-locked-tracks`).
+- **Sync lock:** none. Sync-locked tracks do **not** follow this ripple (`clip.setSpeed/sync-locked-tracks-do-not-ripple`).
+- **Overlap:** refusal 8, on the tracks of the clip's linked set only.
+- **Transitions:** the retimed clips and the clips that moved are changed.
+
+**Draws:** none.
+
+**Implementation-defined.** A speed above 10 is accepted, but loading clamps `speed` to 0.1..10 (2.6), so the result is not in normal form (`clip.setSpeed/above-ten`, marked `outsideNormalForm`). **Native rule:** a native client must refuse a speed above 10.
+
+In and out points are clamped (12.2.7).
+
+### 12.5 Timeline edits
+
+#### 12.5.1 `clip.push`
+
+Moves a clip and everything after it, on every track. Payload: `clipId`, `delta` (signed, sequence time).
+
+**Refusals, in order**
+
+1. `delta` is not a rational: `invalid`.
+2. A moving clip is on a locked track: `failed`.
+3. A moving clip would start before frame 0: `failed`.
+4. A clip did not move as asked, or two clips on a track that holds a moving clip now share a frame: `failed`.
+
+`delta` becomes `d` frames at the project rate. `d = 0` is applied and changes nothing; that check comes before refusal 2.
+
+**Effect.** The moving clips are **every clip on every track** with `from ≥ c.from`. Each moves by `d`.
+
+**Consequences**
+
+- **Linked:** none. A linked clip moves only if it starts at or after the named clip.
+- **Locks:** refusal 2.
+- **Sync lock:** none. Tracks move whatever their `syncLock` (`clip.push/all-tracks`).
+- **Overlap:** refusal 4. A pull may use free space but may not run into a clip that does not move.
+- **Transitions:** the moving clips are changed (`clip.push/breaks-transition`).
+
+**Draws:** none. In and out points are clamped (12.2.7).
+
+#### 12.5.2 `clip.reorder`
+
+Gives a clip a new position among the clips of its track and re-flows the track. Payload: `trackId`, `clipId`, `index`.
+
+**Refusals, in order**
+
+1. The clip is not on the track: `invalid`.
+2. The track is locked: `failed`.
+3. `index` is not an integer: `invalid`. It is below 0 or not below the number of clips on the track: `invalid`.
+4. A linked clip that would move is on another, locked track: `failed`.
+5. A clip that would move would start before frame 0: `failed`.
+6. A clip did not move as asked, or two clips on a track that holds a moved clip now share a frame: `failed`.
+
+**Effect.** Order the track's clips by `from`, take the named clip out and put it back at `index`. The track then **re-flows**: its clips are laid end to end in the new order, starting at the `from` of the clip that was first before the command. Gaps between the track's clips close, even when the order did not change (`clip.reorder/closes-gaps`). Each clip of the track that moves takes its linked set with it by the same number of frames. A linked clip that is itself on the track takes its own re-flow position.
+
+**Consequences**
+
+- **Linked:** linked clips and attached captions follow by the same amount (`clip.reorder/linked-follow`).
+- **Locks:** refusals 2 and 4.
+- **Sync lock:** none.
+- **Overlap:** refusal 6 (`clip.reorder/rejects-companion-overlap`).
+- **Transitions:** the moved clips are changed. Because of rule 3 of 12.2.6 a transition survives when its clips swap places (`clip.reorder/transition-survives-out-of-order`) and is removed when its incoming clip lands after its outgoing clip's end (`clip.reorder/removes-transition`).
+
+**Draws:** none.
+
+#### 12.5.3 `clip.insert`
+
+Places a marked range of library media at a time and pushes everything from there on to make room. Payload: `assetId`, `trackId`, `at`, `sourceIn`, `sourceOut`.
+
+**Refusals, in order** (shared with `clip.overwrite`)
+
+1. `assetId` has no media record, or its `mimeType` is neither `image/*` nor `video/*`: `invalid`.
+2. `trackId` names no track, or a track whose `kind` is not `video`: `invalid`.
+3. The track is locked: `failed`.
+4. `at` is not a valid non-negative time: `invalid`.
+5. `sourceIn` or `sourceOut` is not a rational, or `sourceIn` is negative: `invalid`.
+6. `sourceOut − sourceIn`, computed exactly, is not positive, or is less than one project frame after rounding: `invalid`.
+7. For a video: its rate has no exact reading; or `sourceOut` in source frames is past `max(1, round(record.duration × rate))`; or the range is less than one source frame: `invalid`.
+8. For a video with sound: every audio track is locked: `failed`.
+
+and for `clip.insert` only:
+
+9. A clip that spans `at` on a destination track has a linked group that does not wholly span `at`: `failed`.
+10. Later clips could not make room, any two clips anywhere on the timeline now share a frame, or a placed clip did not land at `at`: `failed`.
+
+**The placed clips** (shared with `clip.overwrite`). The fields are those of `clip.add` (12.3.1), except:
+
+- `durationInFrames` is `sourceOut − sourceIn` in project frames (section 3.3).
+- For a video and its sound, `sourceStart` and `sourceEnd` are `sourceIn` and `sourceOut` in source frames (section 3.3 at the source's exact rate). For a still the range gives only the length.
+- The linked sound goes on the first audio track, in stored order, that is **not locked**. When the graph has no audio track, one is created as in `clip.add`.
+
+**Effect.** The **destination tracks** are the tracks of the placed clips.
+
+1. Every clip on a destination track that spans `at` is split there, together with its linked group (12.2.5), one group per clip in `timeline.items` order.
+2. Every clip on a destination track with `from ≥ at` moves right by the placed length. So does each member of their linked sets that starts at or after `at` and is on a track that is not a destination, not sync-enabled and not locked.
+3. Every sync-enabled track that is not a destination opens the same gap at `at` (12.2.3).
+4. The placed clips are appended to `timeline.items`.
+
+**Consequences**
+
+- **Linked:** a linked group is cut together (refusal 9). Linked clips follow their clip: by sync lock on a sync-enabled track, by step 2 on a track without sync lock (`clip.insert/companion-follows-without-sync-lock`). A linked clip on a locked track stays behind.
+- **Locks:** refusals 3 and 8. A locked track elsewhere is not rippled and does not refuse the edit (`clip.insert/locked-track-elsewhere-is-not-rippled`). Step 1 is not checked: a linked clip on a locked track is cut with its group and then left behind (`clip.insert/cuts-linked-clip-on-locked-track`).
+- **Sync lock:** step 3 (`clip.insert/sync-locked-track-opens-gap`, `clip.insert/sync-lock-off`).
+- **Overlap:** refusal 10.
+- **Transitions:** the clips that moved or were cut are changed, then the placed clips. A transition at a cut that the insert opens is removed (`clip.insert/breaks-transition`).
+
+**Draws:** the new audio track's id (when created), `originId`, `linkedGroupId` (video with sound), the video or still id, the audio id, then step 1's draws, then step 3's.
+
+#### 12.5.4 `clip.overwrite`
+
+Places a marked range of library media at a time, replacing whatever it covers. Payload and refusals 1 to 8: as `clip.insert`. Further:
+
+9. A covered clip could not be cut, or two clips on a destination track still share a frame: `failed`.
+
+**Effect.** The placed clips cover `[at, at + length)` on each destination track. On each destination track, video track first, for each clip that shares a frame with that range, in `timeline.items` order:
+
+1. If the clip starts before the range, it is split at the range's start. The right part is the covered part.
+2. If the covered part ends after the range, it is split at the range's end. The left part is the covered part.
+3. The covered part is removed, with linked selection **off**: its linked clips on other tracks stay as they are.
+
+These splits are plain: both halves keep the clip's `linkedGroupId`, and no linked group is re-made. Then the placed clips are appended.
+
+**Consequences**
+
+- **Linked:** linked clips on tracks the edit does not write to are left alone and stay linked to what survives (`clip.overwrite/leaves-linked-clips-on-other-tracks`). Attached captions follow the clip's **id**: when the part that keeps the id is removed, every caption attached to the clip is removed, even one that lies over a surviving part (`clip.overwrite/attached-captions`).
+- **Locks:** refusals 3 and 8.
+- **Sync lock:** none. Nothing ripples.
+- **Overlap:** refusal 9. The command exists to replace what overlaps.
+- **Transitions:** transitions of removed parts are removed. Every clip on a destination track is changed, then the placed clips.
+
+**Draws:** the placed clips' draws as in `clip.insert`, then one id per split, in the order above. A split whose new half is the covered part draws an id that is not kept.
+
+**Implementation-defined.** Removing the covered part of the timeline's last clip shortens the timeline before the new clip lengthens it again, and in and out points are clamped in between (12.2.7). They can end up clamped to an extent the timeline no longer has (`clip.overwrite/clamps-in-out-points-mid-edit`). **Native rule:** clamp the points to the extent after step 3 and before the placed clips are appended, then again to the final extent.
+
+#### 12.5.5 `clip.join`
+
+Joins contiguous parts of one source back into one clip. Payload: `clipIds`.
+
+Two clips are **joinable**, left then right, when all of these hold: they have the same `originId`; the same track; the same `mediaId` (or, for compositions, `compositionId`), which is present; `|end(left) − right.from| ≤ 1`; the same speed; and the source continues: `|leftSourceEnd − right.sourceStart| ≤ 0.5`, where `leftSourceEnd` is `left.sourceEnd`, or `left.sourceStart + left.durationInFrames × speed` when it has none, and an absent `sourceStart` is 0.
+
+**Refusals, in order**
+
+1. `clipIds` is not an array of strings, or names fewer than two different clips: `invalid`.
+2. A named clip does not exist: `invalid`.
+3. The clips, ordered by `from`, are not joinable pair by pair: `invalid`.
+4. A clip of the linked set of the named clips is on a locked track: `failed`.
+5. The parts did not join, or a member of the joined clip's linked group does not have its length: `failed`.
+
+**Effect.** The first clip (by `from`) absorbs the others one at a time. It keeps its id, its place in `timeline.items` and all its fields, with `durationInFrames = end(last) − first.from`, and `sourceEnd` and `trimEnd` taken from the last part. The other parts are removed, with their keyframes. At each step, if the two clips have synchronised linked clips on one track and of one type, that pair is joined the same way.
+
+**Consequences**
+
+- **Linked:** linked parts are joined with their clips, or the join is refused (`clip.join/rejects-unsynchronised-linked-clips`).
+- **Locks:** refusal 4.
+- **Sync lock:** none.
+- **Overlap:** none can arise.
+- **Transitions:** a transition that named a removed part now names the joined clip. A transition between two joined parts is removed (`clip.join/removes-transition`). The joined clips are changed.
+
+**Draws:** none.
+
+**Implementation-defined.** A still carries the source fields `clip.add` gave it, and a split copies them to both halves, so the halves of a split still never pass the source-continuity test and cannot be joined (`clip.join/rejects-still-parts`). **Native rule:** do not offer join for stills.
+
+### 12.6 Links and clip properties
+
+#### 12.6.1 `clip.setLink`
+
+Links or unlinks clips. Payload: `clipIds`, `linked`.
+
+**Refusals, in order**
+
+1. `clipIds` is empty, is not an array, or holds a non-string: `invalid`.
+2. `linked` is not a boolean: `invalid`.
+3. A named clip does not exist: `invalid`.
+4. `linked: true` with fewer than two different clips: `invalid`.
+5. `linked: true` and the named clips' linked groups together are exactly one existing linked group: `failed`.
+
+**Effect.**
+
+- **Link:** every member of the named clips' linked groups gets one newly drawn `linkedGroupId`. A video among them loses `embeddedAudioMuted`.
+- **Unlink:** every member of the named clips' linked groups that has a `linkedGroupId` gets **its own id** as its `linkedGroupId`, so it is alone in its group. A video whose group held an audio clip gets `embeddedAudioMuted: true`. Naming one clip of a group unlinks the whole group. Clips with no `linkedGroupId` are unchanged, and a legacy link (12.2.1) cannot be removed by this command.
+
+**Consequences**
+
+- **Linked:** this command is what defines linked groups.
+- **Locks:** not checked (`clip.setLink/locked-track-is-not-checked`).
+- **Sync lock, Overlap, Transitions:** none.
+
+**Draws:** one id for a link. None for an unlink.
+
+**Implementation-defined.** The engine links any clips, not only a video and its own sound (`clip.setLink/link-unrelated-clips`), and merges whole groups (`clip.setLink/link-merges-groups`). **Native rule:** link only a video clip with an audio clip of the same `mediaId`, `from`, length and source window.
+
+#### 12.6.2 `clip.update`
+
+Changes a clip's name, title properties, gain or transform. Payload: `clipId`, `patch`.
+
+| `patch` field | Applies to      | Writes                                                                                                                                                                              |
+| ------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`        | any clip        | `label`.                                                                                                                                                                            |
+| `text`        | titles (`text`) | `text`. The `label` is unchanged.                                                                                                                                                   |
+| `position`    | titles          | Two letters. The first is `t`, `m` or `b` and writes `verticalAlign` `top`, `middle` or `bottom`. The second is `l`, `c` or `r` and writes `textAlign` `left`, `center` or `right`. |
+| `style`       | titles          | The fields of the named title style (part 4, with `title.add`).                                                                                                                     |
+| `animation`   | titles          | `textMotion`, from the named title animation (part 4, with `title.add`).                                                                                                            |
+| `volume`      | video, audio    | `volume`, the clip's gain in dB, as given.                                                                                                                                          |
+| `transform`   | any clip        | As `clip.setTransform` (12.6.3), applied after the other fields.                                                                                                                    |
+| `muted`       | none            | Refused as `not-implemented`: clips have no mute. Mute the track or set the gain.                                                                                                   |
+
+**Refusals, in order**
+
+1. `patch` is not an object: `invalid`.
+2. `patch` has a field the table does not list: `invalid`.
+3. `name` is not a string: `invalid`.
+4. `text`, `style`, `position` or `animation` on a clip that is not a title: `invalid`.
+5. `text` is not a string; `style` names no title style; `position` is not one of the nine positions; `animation` names no title animation: `invalid`.
+6. `volume` on a clip that is not video or audio, or `volume` is not a finite number: `invalid`.
+7. `muted` is present: `not-implemented`.
+8. `transform` is not an object, or fails a `clip.setTransform` check.
+
+An empty `patch` is applied and changes nothing.
+
+**Consequences**
+
+- **Linked:** none. Only the named clip changes; its linked clips are not renamed or re-gained (`clip.update/name`).
+- **Locks:** not checked (`clip.update/locked-track-is-not-checked`).
+- **Sync lock, Overlap, Transitions:** none.
+
+**Draws:** none.
+
+Fixtures `clip.update/style-bold`, `…/style-minimal`, `…/style-lower-third` and `…/animation` record what three styles and one animation write. Part 4 specifies the whole vocabulary.
+
+**Implementation-defined.** `volume` is stored as given, but loading clamps it to −60..12 (2.6), so a value outside that range gives a graph that is not in normal form (`clip.update/volume-is-not-clamped`, marked `outsideNormalForm`). **Native rule:** refuse a `volume` outside −60..12.
+
+#### 12.6.3 `clip.setTransform`
+
+Sets a clip's position, scale, rotation and opacity. Payload: `clipId`, `transform` with any of `x`, `y`, `scale`, `rotation`, `opacity`.
+
+**Refusals, in order**
+
+1. `transform` is not an object: `invalid`.
+2. It has a field other than those five: `invalid`.
+3. `x`, `y`, `rotation` or `opacity` is not a finite number: `invalid`.
+4. `opacity` is below 0 or above 1: `invalid`.
+5. `scale` is not a finite number above 0: `invalid`.
+6. It changes nothing (it is empty): `invalid`.
+
+**Effect.** A clip with no `transform` object first gets an empty one. Then `x`, `y`, `rotation` and `opacity` are written as given, and `scale` writes `width` and `height`:
+
+```text
+fit    = min(canvasWidth / sourceWidth, canvasHeight / sourceHeight)
+width  = (sourceWidth × fit) × scale
+height = (sourceHeight × fit) × scale
+```
+
+computed in doubles in that order, without rounding. The source size is the clip's `sourceWidth` and `sourceHeight` for a video or still (the media record's size when the clip has none), `compositionWidth` and `compositionHeight` for a composition, and the canvas size for anything else. Other transform fields are kept.
+
+**Consequences**
+
+- **Linked:** none. Only the named clip changes.
+- **Locks:** not checked (`clip.setTransform/locked-track-is-not-checked`).
+- **Sync lock, Overlap, Transitions:** none.
+
+**Draws:** none.
+
+**Implementation-defined.**
+
+- `rotation` is stored as given, but loading reduces it to 0..360 (2.6), so a value outside that range gives a graph that is not in normal form (`clip.setTransform/rotation-is-not-reduced`, marked `outsideNormalForm`). **Native rule:** reduce `rotation` to 0..360 before sending.
+- An audio clip accepts a transform, which nothing reads (`clip.setTransform/audio-clip-is-not-checked`). **Native rule:** do not send one for an audio clip.
+
+Keyframed transforms are specified in part 3.
+
+#### 12.6.4 `clip.setTransformParent`
+
+Attaches a clip to a parent clip so that it follows the parent's transform, or detaches it. Payload: `clipId`, optional `parentId` (a clip id, or `null` or absent to detach).
+
+**Refusals, in order**
+
+1. `parentId` is present and is neither a string nor `null`: `invalid`.
+2. `parentId` names no clip: `invalid`.
+3. Any of these: `failed`.
+   - The child, or the parent, is an audio or adjustment item.
+   - The parent is the child.
+   - The parent depends on the child: following transform parents and property links (part 3) from the parent leads back to the child.
+   - The child already links its position, scale or rotation (part 3) to the parent or to one of the parent's own parents.
+   - **The request changes nothing:** the child's `transformParent.parentItemId` is already `parentId`, or a detach is asked for a child whose `transformParent` has no `parentItemId` or that has no `transformParent`.
+
+**Effect.** The child's `transformParent` becomes:
+
+```text
+{ parentItemId, parentReference, childLocalReference, childWorldReference }
+```
+
+Each reference is `{ x, y, width, height, rotation }`: a pose at the child's first frame (`child.from`).
+
+- `childLocalReference` is the child's own transform: its stored `transform`, with `x`, `y` and `rotation` 0 and the fitted size of 12.6.3 where a field is absent.
+- `childWorldReference` is the child's pose on the canvas at that frame. For a child with no `transformParent` it equals `childLocalReference`.
+- `parentReference` is the parent's pose on the canvas at that frame, found the same way.
+- A detach writes the same object without `parentItemId` and `parentReference`. The `transformParent` object stays; it now only pins the child's pose.
+
+**Consequences**
+
+- **Linked:** none.
+- **Locks:** not checked (`clip.setTransformParent/locked-track-is-not-checked`).
+- **Sync lock, Overlap, Transitions:** none.
+
+**Draws:** none.
+
+**Implementation-defined.**
+
+- A request that changes nothing is refused as `failed`, unlike every other command in this part (`clip.setTransformParent/same-parent`, `…/detach-unparented`). **Native rule:** do not send one.
+- For a child or parent that is keyframed, driven by an expression or a modifier, or already has a `transformParent`, the poses are the resolved, composed transforms at that frame. Their computation belongs to part 3 and uses floating-point matrix arithmetic. Fixture `clip.setTransformParent/reparent` records one case. **Native rule:** until part 3 specifies it, attach only clips that have none of those.
+
+### 12.7 Tracks
+
+#### 12.7.1 `track.add`
+
+Adds an empty track. Payload: `kind`, optional `index`, optional `name`.
+
+**Refusals:** `kind` is not `video` or `audio`; `index` is not an integer, is below 0 or is above the number of tracks; `name` is not a string. All `invalid`.
+
+**Effect.** The new track is created as 12.2.8 says. With the tracks sorted by `order`:
+
+| `index`               | `order` of the new track                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| absent, `kind: video` | `min(0, least order) − 1`: above every track.                                             |
+| absent, `kind: audio` | `max(0, greatest order) + 1`: below every track.                                          |
+| `0`                   | The first track's `order − 1`.                                                            |
+| the number of tracks  | The last track's `order + 1`.                                                             |
+| between               | The midpoint of the `order`s of the tracks at `index − 1` and `index`. May be a fraction. |
+
+A non-empty `name` replaces the first name. Then the list is sorted and classic names are renumbered (12.2.8). Adding a video track below `V1` therefore renames `V1` to `V2` (`track.add/index-between`).
+
+**Consequences:** Linked, Locks, Sync lock, Overlap and Transitions: none. No clip changes.
+
+**Draws:** one id; the track's `id` is `track-` followed by it.
+
+**Implementation-defined.** A `name` of the classic form is not kept: it is replaced by the position's name (`track.add/classic-name-is-renumbered`). **Native rule:** do not send a classic name.
+
+#### 12.7.2 `track.remove`
+
+Removes a track and its clips. Payload: `trackId`.
+
+**Refusals, in order**
+
+1. The track is locked: `failed`.
+2. It is the only track: `invalid`.
+
+**Effect.** The track's clips are removed with linked selection **off**, with their attached captions, transitions and keyframes. The track is removed and classic names are renumbered (12.2.8).
+
+**Consequences**
+
+- **Linked:** linked clips on other tracks stay and keep their `linkedGroupId` (`track.remove/with-clips`).
+- **Locks:** refusal 1.
+- **Sync lock:** none. Nothing ripples.
+- **Overlap:** none.
+- **Transitions:** transitions of the removed clips are removed.
+
+**Draws:** none. In and out points are clamped (12.2.7).
+
+#### 12.7.3 `track.reorder`
+
+Moves a track to a new position. Payload: `trackId`, `index`.
+
+**Refusals:** `index` is not an integer, is below 0, or is not below the number of tracks. All `invalid`.
+
+**Effect.** Order the tracks by `order`, take the track out and put it back at `index`. The tracks then take, in their new order, the **same set of `order` values** the list had, in ascending order. Classic names are renumbered (12.2.8). A track already at `index` is applied and changes nothing.
+
+**Consequences:** Linked, Sync lock, Overlap and Transitions: none. No clip changes. **Locks:** a locked track may be reordered (`track.reorder/locked-track`).
+
+**Draws:** none.
+
+#### 12.7.4 `track.set`
+
+Changes a track's properties. Payload: `trackId`, `patch` with any of `name`, `muted`, `locked`, `solo`, `visible`, `syncLock`, `gain`.
+
+**Refusals, in order**
+
+1. `patch` is not an object: `invalid`.
+2. It has a field other than those seven: `invalid`.
+3. It is empty: `invalid`.
+4. `name` is not a string, is blank, or is longer than 80 characters: `invalid`.
+5. `muted`, `locked`, `solo`, `visible` or `syncLock` is not a boolean: `invalid`.
+6. `gain` is not a finite number from −60 to 12: `invalid`.
+7. A value was not applied: `failed`.
+
+**Effect.** The flags are written as given. `gain` writes `volume` (dB). `name` writes `name`, and classic names are then renumbered (12.2.8).
+
+**Consequences:** Linked, Sync lock, Overlap and Transitions: none. No clip changes. **Locks:** a locked track may be changed, and unlocked (`track.set/unlock`).
+
+**Draws:** none.
+
+**Implementation-defined.** Because classic names are derived from position, a `name` of the track's own classic form that is not the position's name is renumbered away and the command is refused by refusal 7 (`track.set/rejects-classic-name`). The position's own name is accepted (`track.set/classic-name-of-position`), and so is a name of the other kind's form (`track.set/other-kinds-classic-name`). **Native rule:** do not send a classic name.
+
+#### 12.7.5 `track.closeGap`
+
+Closes one gap on a track, or all of them. Payload: `trackId`, optional `at`.
+
+A **gap** on a track is a run of free frames that ends where a clip starts: the space before the first clip, or between two clips. The space after the last clip is not a gap.
+
+**Refusals, in order**
+
+1. The track is locked: `failed`.
+2. Without `at`: a clip of the linked set of the track's clips is on a locked track: `failed`.
+3. With `at`: `at` is not a valid non-negative time, or no gap holds that frame: `invalid`.
+4. A clip did not move as asked: `failed`.
+
+**Effect with `at`.** Let the gap be `[a, b)`. Every clip on the track with `from ≥ b` moves left by `b − a`. Every other sync-enabled track has the interval `[a, b)` removed (12.2.3).
+
+**Effect without `at`.** The track's clips are packed from frame 0 in order of `from`: each clip moves left to the end of the one before it. Each clip that moves takes its linked set with it, by the greatest shift of any member of its linked group. Other tracks are not rippled.
+
+**Consequences**
+
+- **Linked:** without `at`, linked clips follow. With `at`, they do **not**: only sync lock moves other tracks (`track.closeGap/at-leaves-linked-clips-without-sync-lock`).
+- **Locks:** refusals 1 and 2.
+- **Sync lock:** with `at`, as above: clips on other sync-enabled tracks that lie in the gap's interval are **cut or removed** (`track.closeGap/at-removes-interval-from-sync-locked-tracks`). Without `at`, none.
+- **Overlap:** none can arise on the track. Without `at`, linked clips on other tracks are not checked.
+- **Transitions:** the moved clips, and the clips sync lock cut or moved, are changed.
+
+The two forms treating linked clips and sync lock differently is **implementation-defined**. **Native rule:** reproduce both.
+
+**Draws:** with `at`, the ids of the sync-lock splits. Without `at`, none. In and out points are clamped (12.2.7).
+
+### 12.8 Markers and music
+
+Markers are `timeline.markers`, in the order they were added. The list is not sorted by frame, two markers may share a frame, and the key is absent when the list is empty. Marker commands change nothing else: Linked, Locks, Sync lock, Overlap and Transitions are all **none** for the three of them.
+
+#### 12.8.1 `marker.add`
+
+Payload: `at`, optional `colour`, optional `name`.
+
+**Refusals, in order:** `at` is not a valid non-negative time; `colour` is not a string, or is not `#` and six hex digits (either case); `name` is not a string, or is longer than 120 characters. All `invalid`.
+
+**Effect.** Appends `{ id, frame, color, label }`: `frame` is `at` in frames, `color` is `colour` as given or `#3B82F6`, and `label` is `name`. An empty or absent `name` stores no `label`. The frame is not limited to the timeline's extent.
+
+**Draws:** the marker's id.
+
+#### 12.8.2 `marker.update`
+
+Payload: `markerId`, `patch` with any of `name`, `colour`, `at`.
+
+**Refusals, in order:** `markerId` names no marker; `patch` is not an object; it has another field; `name` is not a string or is longer than 120 characters; `colour` is not `#` and six hex digits; `at` is not a valid non-negative time; the patch is empty. All `invalid`.
+
+**Effect.** `name` replaces `label` (an empty name removes it), `colour` replaces `color` as given, and `at` replaces `frame`. The marker keeps its place in the list.
+
+**Draws:** none.
+
+#### 12.8.3 `marker.remove`
+
+Payload: `markerId`. **Refusal:** it names no marker: `invalid`. **Effect:** the marker is removed; the others keep their order. **Draws:** none.
+
+#### 12.8.4 `music.add`
+
+`music.add` is an engine command that is **always refused** as `failed` at this revision, before it reads its payload: the bundled music catalogue is rights-blocked (FL-86), so no `musicId` resolves. It changes nothing, and so has no linked, lock, sync-lock, overlap or transition consequence. **Native rule:** do not offer bundled music and never record `music.add` in a save. Fixtures `music.add/rejects-always`, `music.add/rejects-before-reading-payload`.
