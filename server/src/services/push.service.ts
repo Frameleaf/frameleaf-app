@@ -447,6 +447,10 @@ export class PushService {
       this.logger.warn(`Push ${notice.type} to ${planned.length} target(s) failed: ${errorMessage(error)}`);
       return JobStatus.Failed;
     }
+    if (!target) {
+      this.logger.debug(`Push ${notice.type} not delivered: no push gateway address (FRAMELEAF_PUSH_URL)`);
+      return JobStatus.Skipped;
+    }
 
     // one push per request, a few at a time; a failed request is the gateway's `retry` or a refusal
     const results: Array<{ entry: PlannedMessage; result: PushSendResult | 'rejected' }> = [];
@@ -699,7 +703,12 @@ export class PushService {
   private async gatewayTarget(instanceId: string, cloudUrl: string) {
     const document = await this.frameleafCloudRepository.discovery(cloudUrl);
     await loadInstanceIdentity(this.gatewayDeps());
-    return this.gateway.target(document, instanceId, this.instanceIdentityRepository.currentSigner());
+    return this.gateway.target(
+      document,
+      instanceId,
+      this.instanceIdentityRepository.currentSigner(),
+      this.configRepository.getEnv().frameleafCloud.pushUrl,
+    );
   }
 
   private requireUser(auth: AuthDto) {

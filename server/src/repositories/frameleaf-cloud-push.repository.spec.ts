@@ -27,18 +27,17 @@ describe(FrameleafCloudPushRepository.name, () => {
     ...overrides,
   });
 
-  const target = async () => {
+  const resolve = async (configured: string | null) => {
     const identity = new InstanceIdentityRepository();
     await identity.loadOrCreate(dir, null);
     const document = await cloudRepository.discovery(cloud.url);
-    return sut.target(document, 'instance-1', identity.currentSigner());
+    return sut.target(document, 'instance-1', identity.currentSigner(), configured);
   };
+  const target = async () => (await resolve(`${cloud.url}/push`))!;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'frameleaf-push-'));
     cloud = await startFakeCloud();
-    const discovery = cloud.discovery;
-    cloud.discovery = () => ({ ...discovery(), endpoints: { push: `${cloud.url}/push` } });
     cloud.on('POST /id/token', (answer) => tokenAnswer(answer, 'push-token'));
     cloudRepository = new FrameleafCloudRepository(LoggingRepository.create());
     sut = new FrameleafCloudPushRepository(cloudRepository);
@@ -60,7 +59,17 @@ describe(FrameleafCloudPushRepository.name, () => {
     expect(dpopTokenOf(sent)).toBeTruthy();
     expect(sent.dpop?.claims.htu).toBe(`${cloud.url}/push/v1/push/send`);
     const token = cloud.requests.find(({ path }) => path === '/id/token')!;
-    expect(token.form().get('resource')).toBe(`${cloud.url}/push`);
+    // the ordinary instance token: its audience is the API, only the proof names the push address
+    expect(token.form().get('resource')).toBe(`${cloud.url}/api`);
+  });
+
+  it('uses the address discovery names when none is configured, and is off without either (FL-293)', async () => {
+    await expect(resolve(null)).resolves.toBeNull();
+    const discovery = cloud.discovery;
+    cloud.discovery = () => ({ ...discovery(), endpoints: { push: `${cloud.url}/push` } });
+    cloudRepository = new FrameleafCloudRepository(LoggingRepository.create());
+    sut = new FrameleafCloudPushRepository(cloudRepository);
+    await expect(resolve(null)).resolves.toMatchObject({ url: `${cloud.url}/push/v1/push/send` });
   });
 
   it('reads every result the gateway gives', async () => {
