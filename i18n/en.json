@@ -7826,6 +7826,8 @@
   "frameleaf_render_workers_health_ready": "Ready",
   "frameleaf_render_workers_health_revoked": "Revoked",
   "frameleaf_render_workers_health_unreachable": "Unreachable",
+  "frameleaf_render_workers_kind_buddy_backup": "Buddy Backup",
+  "frameleaf_render_workers_kind_buddy_restore": "Buddy restore",
   "frameleaf_render_workers_kind_bulk": "Bulk operation",
   "frameleaf_render_workers_kind_cloud_backup": "Cloud backup",
   "frameleaf_render_workers_kind_cloud_description_batch": "Frameleaf Cloud descriptions",
