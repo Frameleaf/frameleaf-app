@@ -214,13 +214,15 @@ export function buddyStatus(state) {
             ? "Subscription expired · receiving paused"
             : state.scenario === "auth"
               ? "Authorization required"
-              : state.receivingPaused
-                ? "Receiving paused"
-                : state.scenario === "capacity"
-                  ? "Waiting for free space"
-                  : state.receivingActive
-                    ? "Receiving encrypted data"
-                    : "Ready to receive",
+              : state.scenario === "offline"
+                ? "Buddy offline"
+                : state.receivingPaused
+                  ? "Receiving paused"
+                  : state.scenario === "capacity"
+                    ? "Waiting for free space"
+                    : state.receivingActive
+                      ? "Receiving encrypted data"
+                      : "Ready to receive",
     alert: alerts[state.scenario] || null,
     canRestore:
       (state.paired || state.recoveryAttached) &&
@@ -252,7 +254,17 @@ export function unlockBuddyKey(state) {
 
 export function verifyBuddyRecovery(state, verifiedAt) {
   return buddyStatus(state).canRestore
-    ? { ...state, lastVerified: verifiedAt }
+    ? {
+        ...state,
+        lastVerified: verifiedAt,
+        scenario: state.scenario === "integrity" ? "current" : state.scenario,
+      }
+    : state;
+}
+
+export function completeBuddyReceive(state) {
+  return state.receivingActive && buddyStatus(state).canReceive
+    ? { ...state, receivingActive: false }
     : state;
 }
 
