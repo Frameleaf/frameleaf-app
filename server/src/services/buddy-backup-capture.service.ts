@@ -33,6 +33,7 @@ import {
   encryptBuddyBlock,
 } from 'src/utils/buddy-backup-crypto.js';
 import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
+import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
 import { type BuddyReceipt, BuddyVault, createBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import {
   CLOUD_BACKUP_MANIFEST_FORMAT,
@@ -75,6 +76,7 @@ export type BuddyManifest = {
     system: unknown;
     fork: Array<{ key: string; value: unknown }>;
     users: Array<{ userId: string; key: string; value: unknown }>;
+    buddy?: BuddySettingsSnapshot;
   };
 };
 export type BuddyCapture = { manifest: BuddyManifest; manifestBlocks: string[]; objects: BuddyReceipt[] };
@@ -194,7 +196,7 @@ export class BuddyBackupCaptureService {
       environment: { ...process.env },
       storageRoot: StorageCore.getMediaLocation(),
       storageRoots: [],
-      settings: { system: null, fork: [], users: [] },
+      settings: { system: null, fork: [], users: [], buddy: readBuddySettingsSnapshot({ version: 1, settings }) },
       library: {
         format: CLOUD_BACKUP_MANIFEST_FORMAT,
         version: 2,
