@@ -190,7 +190,7 @@
     margin: 0.75rem 0;
   }
   ul {
-    padding-left: 1.25rem;
+    padding-inline-start: 1.25rem;
     list-style: disc;
   }
   .action {
