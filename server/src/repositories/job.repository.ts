@@ -288,11 +288,16 @@ export class JobRepository {
       return;
     }
 
+    // FL-299: how long each step holds the stop (debug level)
+    const startedAt = performance.now();
+    const elapsed = () => `${Math.round(performance.now() - startedAt)} ms`;
+
     await Promise.all(
       workers.map((worker) =>
         worker.pause(true).catch((error) => this.logger.warn(`Unable to pause worker ${worker.name}: ${error}`)),
       ),
     );
+    this.logger.debug(`Stop: ${workers.length} job workers paused after ${elapsed()}`);
 
     if (this.running.size > 0) {
       this.logger.log(`Waiting up to ${graceMs / 1000} s for ${this.running.size} running job(s) to finish`);
@@ -305,10 +310,14 @@ export class JobRepository {
     }
 
     await Promise.all([...this.running].map((entry) => this.handBack(entry)));
+    this.logger.debug(`Stop: running jobs finished or handed back after ${elapsed()}`);
 
     await Promise.all(
       workers.map((worker) =>
-        worker.close().catch((error) => this.logger.warn(`Unable to close worker ${worker.name}: ${error}`)),
+        worker
+          .close()
+          .catch((error) => this.logger.warn(`Unable to close worker ${worker.name}: ${error}`))
+          .then(() => this.logger.debug(`Stop: job worker ${worker.name} closed after ${elapsed()}`)),
       ),
     );
   }

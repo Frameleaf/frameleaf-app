@@ -23,7 +23,12 @@ export async function bootstrap() {
   const jobRepository = app.get(JobRepository);
   const appRepository = app.get(AppRepository);
   appRepository.setCloseFn((graceMs) =>
-    closeGracefully({ stopJobs: (grace) => jobRepository.stopWorkers(grace), close: () => app.close(), graceMs }),
+    closeGracefully({
+      stopJobs: (grace) => jobRepository.stopWorkers(grace),
+      close: () => app.close(),
+      graceMs,
+      debug: (message) => logger.debug(message),
+    }),
   );
   stop = () => appRepository.stop(0);
 

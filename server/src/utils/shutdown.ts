@@ -29,6 +29,13 @@ export const getWorkerDeadlineMs = (graceMs: number, deadlineMs: number) =>
  */
 export const RESTART_BUDGET = { graceMs: 1000, workerDeadlineMs: 2000 } as const;
 
+/**
+ * FL-299: how long closing the database pool waits for queries still in flight before it closes their
+ * connections. Short, so a stop with nothing left to hand back ends in a second or two instead of
+ * running to the worker deadline behind one long query.
+ */
+export const DATABASE_CLOSE_TIMEOUT_SECONDS = 0.5;
+
 /** What the supervisor posts to a worker thread (microservices, maintenance) to stop it. */
 export const WORKER_STOP_MESSAGE = 'frameleaf:stop';
 
@@ -99,16 +106,34 @@ export const closeGracefully = async ({
   stopJobs,
   close,
   graceMs,
+  debug,
 }: {
   http?: Pick<HttpRequestTracker, 'drain'>;
   stopJobs?: (graceMs: number) => Promise<void>;
   close: () => Promise<void>;
   graceMs: number;
+  /** FL-299: how long each part of the stop took (debug level). */
+  debug?: (message: string) => void;
 }) => {
+  const timed = async (label: string, work: Promise<unknown> | undefined) => {
+    if (!work) {
+      return;
+    }
+    const startedAt = performance.now();
+    try {
+      await work;
+    } finally {
+      debug?.(`Stop: ${label} took ${Math.round(performance.now() - startedAt)} ms`);
+    }
+  };
+
   try {
-    await Promise.all([http?.drain(graceMs), stopJobs?.(graceMs)]);
+    await Promise.all([
+      timed('draining HTTP requests', http?.drain(graceMs)),
+      timed('stopping the job workers', stopJobs?.(graceMs)),
+    ]);
   } finally {
-    await close();
+    await timed('closing the application', close());
   }
 };
 

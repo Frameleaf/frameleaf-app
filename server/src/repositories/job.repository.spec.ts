@@ -378,6 +378,7 @@ describe(JobRepository.name, () => {
     });
 
     type FakeWorker = {
+      name: string;
       queueName: QueueName;
       processor: (job: unknown, token?: string) => Promise<void>;
       on: ReturnType<typeof vi.fn>;
@@ -420,6 +421,7 @@ describe(JobRepository.name, () => {
       order = [];
       mocks.worker.mockImplementation(function (queueName: QueueName, processor: FakeWorker['processor']) {
         const worker: FakeWorker = {
+          name: queueName,
           queueName,
           processor,
           on: vi.fn(),
@@ -475,6 +477,22 @@ describe(JobRepository.name, () => {
       for (const worker of workers) {
         expect(worker.close).toHaveBeenCalledTimes(1);
       }
+    });
+
+    it('reports each step at debug level, so a worker that does not close is the one missing (FL-299)', async () => {
+      workerFor(QueueName.Library).close.mockReturnValue(new Promise(() => {}));
+
+      void repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const messages = logger.debug.mock.calls.map(([message]) => message as string);
+      expect(messages).toContainEqual(expect.stringMatching(/^Stop: \d+ job workers paused after \d+ ms$/));
+      expect(messages).toContainEqual(
+        expect.stringMatching(/^Stop: running jobs finished or handed back after \d+ ms$/),
+      );
+      const closed = messages.filter((message) => /^Stop: job worker \w+ closed after \d+ ms$/.test(message));
+      expect(closed).toHaveLength(workers.length - 1);
+      expect(closed.some((message) => message.includes(` ${QueueName.Library} `))).toBe(false);
     });
 
     it('hands a job still running at the end of the grace period back to waiting before closing', async () => {

@@ -63,18 +63,37 @@ import {
   visibilityIs,
 } from 'src/utils/locked.js';
 import { fromChecksum } from 'src/utils/request.js';
+import { DATABASE_CLOSE_TIMEOUT_SECONDS } from 'src/utils/shutdown.js';
+
+/**
+ * FL-299: closing the pool (`Kysely.destroy()`, which the driver turns into `end()` with no timeout)
+ * waits for every query in flight, however long it runs. A stop reaches this after its running jobs and
+ * `AppShutdown` handlers are done, so whatever is still querying belongs to work the stop abandons (a
+ * boot-time import, the handler of a job already handed back). It gets
+ * {@link DATABASE_CLOSE_TIMEOUT_SECONDS} to finish, then its connection is closed, as the exit at the
+ * worker deadline would have closed it.
+ */
+export const boundPoolClose = <T extends { end: (options?: { timeout?: number }) => Promise<void> }>(
+  postgres: T,
+): T => {
+  const end = postgres.end.bind(postgres);
+  postgres.end = (options) => end({ timeout: DATABASE_CLOSE_TIMEOUT_SECONDS, ...options });
+  return postgres;
+};
 
 export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyConfig => {
   return {
     dialect: new PostgresJSDialect({
-      postgres: createPostgres({
-        connection,
-        onNotice: (notice: Notice) => {
-          if (notice['severity'] !== 'NOTICE') {
-            console.warn('Postgres notice:', notice);
-          }
-        },
-      }),
+      postgres: boundPoolClose(
+        createPostgres({
+          connection,
+          onNotice: (notice: Notice) => {
+            if (notice['severity'] !== 'NOTICE') {
+              console.warn('Postgres notice:', notice);
+            }
+          },
+        }),
+      ),
     }),
     log(event) {
       if (event.level !== 'error') {
