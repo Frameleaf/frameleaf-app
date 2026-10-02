@@ -22,6 +22,7 @@ import {
   buddyRecoveryTarget,
   readBuddyRecovery,
 } from 'src/utils/buddy-backup-recovery.js';
+import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
 import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { keyFingerprint, parseBackupKey } from 'src/utils/cloud-backup.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
@@ -51,8 +52,47 @@ export class BuddyBackupRecoveryService {
     }
   }
 
+  private async restoreBuddySettings(
+    saved: BuddySettingsSnapshot | undefined,
+    mode: 'keep' | 'replace',
+    assert: () => Promise<void>,
+  ) {
+    if (!saved || mode === 'keep') {
+      return;
+    }
+    await this.repository.locked('state', async () => {
+      await assert();
+      const state = await this.repository.state();
+      if (!state.settings) {
+        throw new Error('Configure replacement Buddy recovery storage first');
+      }
+      const source = saved.settings;
+      const settings = {
+        ...state.settings,
+        uploadMbps: source.uploadMbps,
+        downloadMbps: source.downloadMbps,
+        schedule: source.schedule,
+        timezone: source.timezone,
+        windowStart: source.windowStart,
+        windowEnd: source.windowEnd,
+        includeDerived: source.includeDerived,
+        pausedSending: state.settings.pausedSending || source.pausedSending,
+        pausedReceiving: state.settings.pausedReceiving || source.pausedReceiving,
+      };
+      await writeBuddyFile(
+        join(this.repository.root(), 'state.json'),
+        JSON.stringify({ ...state, settings, nextScheduledAt: null }),
+        false,
+        assert,
+      );
+      await assert();
+    });
+  }
+
   private async plan(id: string) {
     const plan = await readBuddyRecovery(this.repository.root(), id);
+    // Validate optional source preferences before prepare can stage a database or identity preimage.
+    const buddy = readBuddySettingsSnapshot(plan.manifest.settings?.buddy);
     const version = coerce(plan.manifest.frameleafVersion);
     if (!version || gt(version, serverVersion))
       throw new Error('Update Frameleaf to the backup version before recovery');
@@ -76,11 +116,11 @@ export class BuddyBackupRecoveryService {
         plan.scope === 'server' ? plan.manifest.storageRoots : [],
         settings?.configurationFiles ?? [],
       );
-    return plan;
+    return { plan, buddy };
   }
 
   async prepare(id: string) {
-    const plan = await this.plan(id);
+    const { plan } = await this.plan(id);
     if (plan.scope !== 'server' || !plan.manifest.library.database)
       throw new Error('A staged full server recovery is required');
     const source = join(this.repository.root(), 'recovery', id, 'database.sql.gz');
@@ -149,7 +189,7 @@ export class BuddyBackupRecoveryService {
     maintenance: MaintenanceModeState,
     assert: () => Promise<void>,
   ) {
-    const plan = await this.plan(id);
+    const { plan, buddy } = await this.plan(id);
     const settings = (await this.repository.state()).settings;
     if (!settings) throw new Error('Set up the replacement server recovery storage first');
     if (
@@ -212,13 +252,14 @@ export class BuddyBackupRecoveryService {
     }
     await files.verify(plan, roots, settings.configurationFiles);
     await this.restoreKeys(plan.manifest, assert);
+    await this.restoreBuddySettings(buddy, plan.mode, assert);
     await assert();
     await this.repository.update((state) => ({ ...state, run: null, nextScheduledAt: null }));
     await files.state('complete');
   }
 
   async settings(id: string, assert: () => Promise<void>) {
-    const plan = await this.plan(id);
+    const { plan, buddy } = await this.plan(id);
     if (plan.scope !== 'settings') throw new Error('A staged settings recovery is required');
     const settings = (await this.repository.state()).settings;
     if (!settings) throw new Error('Configure recovery storage first');
@@ -232,6 +273,7 @@ export class BuddyBackupRecoveryService {
     if (before === 'database-ready') {
       await files.verify(plan, [], settings.configurationFiles);
       await this.restoreKeys(plan.manifest, assert);
+      await this.restoreBuddySettings(buddy, plan.mode, assert);
       return files.state('complete');
     }
     const preimage = join(directory, 'settings-rollback.json');
@@ -286,6 +328,7 @@ export class BuddyBackupRecoveryService {
     await files.state('database-ready');
     await files.verify(plan, [], settings.configurationFiles);
     await this.restoreKeys(plan.manifest, assert);
+    await this.restoreBuddySettings(buddy, plan.mode, assert);
     await files.state('complete');
   }
 }

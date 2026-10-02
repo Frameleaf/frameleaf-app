@@ -40,6 +40,8 @@ Unlock with your PIN and choose a dated restore point. Owners can restore their 
 
 Full recovery stages and verifies the files before entering maintenance mode. Restore the original storage mounts, verify version compatibility, then apply the database and files. Recovery preserves the replacement server's Cloud identity and invalidates restored sessions and transient jobs. Maintenance remains active if recovery fails.
 
+Snapshots include Buddy's schedule, timezone, transfer windows and limits, pause flags and derived-file policy. Settings and server recovery with **Keep** preserve current Buddy preferences. **Replace** restores the operational preferences while preserving the replacement server's hosting directory, quota, declared configuration allowlist, identity, pairing and recovery checks. During replacement, a direction remains paused if either server's saved settings pause it. The source storage paths and quota remain encrypted reference data; they do not authorize a new hosting location or storage agreement. Older snapshots without these preferences remain recoverable.
+
 After subscription expiry, authenticated recovery remains available through restricted read-only Buddy routes. Ordinary remote access remains subject to its subscription policy. Ending a pairing normally leaves a 30-day recovery window; a security block revokes access immediately. Unlinking or Cloud failure does not silently erase a hosted vault.
 
 For a replacement server, sign in to Cloud, explicitly rebind the server in the Buddy account page, and import the recovery kit or unlock the escrow package locally. Rebinding revokes the old server identity.
