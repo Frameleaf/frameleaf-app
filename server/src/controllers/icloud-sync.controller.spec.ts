@@ -36,6 +36,7 @@ describe('iCloud API authorization and input boundaries', () => {
       {} as never,
       {} as never,
       logger as never,
+      {} as never,
     );
     context = await controllerSetup(ICloudSyncController, [{ provide: ICloudSyncService, useValue: service }]);
   });

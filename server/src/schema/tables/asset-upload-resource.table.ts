@@ -1,7 +1,7 @@
 import { Column, CreateDateColumn, ForeignKeyColumn, Index, PrimaryGeneratedColumn, Table } from '@immich/sql-tools';
 import type { Generated, Timestamp } from '@immich/sql-tools';
-import type { AssetMediaCreateDto } from 'src/dtos/asset-media.dto.js';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
+import type { AssetUploadMetadata } from 'src/utils/asset-upload-resource.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
 /** Keep orphaned file ownership after account deletion until the cleanup has completed. */
@@ -12,7 +12,7 @@ export class AssetUploadResourceTable {
   @ForeignKeyColumn(() => UserTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
   ownerId!: string | null;
   @Column({ type: 'jsonb' })
-  metadata!: AssetMediaCreateDto & { publication?: 'live-photo' };
+  metadata!: AssetUploadMetadata;
   @Column({ type: 'bytea' })
   expectedChecksum!: Buffer;
   @Column({ type: 'text' })

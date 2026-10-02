@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { MediaOperationDestination, MediaOperationKind, NotificationLevel, NotificationType } from 'src/enum.js';
-import { recordSyncIdentity } from 'src/repositories/icloud-identity.repository.js';
+import { recordSyncIdentity, releaseSyncClaim } from 'src/repositories/icloud-identity.repository.js';
 import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
@@ -1032,9 +1032,24 @@ export class ICloudSyncRepository {
       await cleanup();
       await sql`UPDATE immich_fork.icloud_resource SET status='finalized',"reservedBytes"=0,"leaseToken"=NULL,
         "leaseExpiresAt"=NULL,"lastError"=NULL,"updatedAt"=now() WHERE id=${resource.id}::uuid`.execute(db);
-      // FL-296: the item's source identity, so a device knows the server has it
+      // FL-296: the item's source identity, so a device knows the server has it; the item's claim
+      // goes with its last resource
       await recordSyncIdentity(db, resource.id);
+      await releaseSyncClaim(db, resource.id);
       return true;
+    });
+  }
+
+  /**
+   * FL-296: a device holds this item's claim, so the sync waits (no attempt counted) and looks again
+   * when the claim runs out; by then the device's upload is usually there to reuse.
+   */
+  async waitForClaim(resource: ICloudResource, until: Date): Promise<void> {
+    await this.active(async (db) => {
+      await sql`UPDATE immich_fork.icloud_resource SET status = 'pending', "lastError" = 'icloud_claimed',
+        "leaseToken" = NULL, "leaseExpiresAt" = NULL, "reservedBytes" = 0, "nextAttemptAt" = ${until},
+        "updatedAt" = now()
+        WHERE id = ${resource.id}::uuid AND "leaseToken" = ${resource.leaseToken}::uuid`.execute(db);
     });
   }
 
