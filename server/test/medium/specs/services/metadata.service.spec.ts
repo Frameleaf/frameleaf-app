@@ -4,7 +4,8 @@ import { PostgresJSDialect } from 'kysely-postgres-js';
 import { Stats } from 'node:fs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { mapExif, ExifResponseSchema } from 'src/dtos/exif.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFileType, JobStatus } from 'src/enum.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -88,6 +89,53 @@ describe(MetadataService.name, () => {
   });
 
   describe('handleMetadataExtraction', () => {
+    it('extracts a real metadata-free synthetic JPEG using local JPEGDigest', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        originalPath: resolve('test/fixtures/camera-metadata/synthetic.jpg'),
+      });
+      await sut.handleMetadataExtraction({ id: asset.id });
+      const evidence = (await ctx.get(AssetRepository).getMetadata(asset.id)).find(
+        (item) => item.key === 'camera-identification',
+      )?.value;
+      expect(evidence).toMatchObject({
+        version: 1,
+        recorded: null,
+        alternatives: [],
+        suggestion: {
+          method: 'jpeg-signature',
+          signature: expect.stringMatching(/^[a-f0-9]{32}/),
+          matches: expect.stringContaining('Independent JPEG Group'),
+        },
+      });
+      expect(
+        await ctx.database
+          .selectFrom('asset_exif')
+          .select(['make', 'model'])
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ make: null, model: null });
+    });
+
+    it.each([false, true])('roundtrips rejected XMP ratings and respects a catalog lock: %s', async (locked) => {
+      const { sut, ctx } = setup();
+      const { filePath } = await createTestFile({ Rating: -1 });
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: filePath });
+      if (locked) {
+        await ctx.newExif({ assetId: asset.id, rating: 4, lockedProperties: ['rating'] });
+      }
+      await sut.handleMetadataExtraction({ id: asset.id });
+      const exif = await ctx.database
+        .selectFrom('asset_exif')
+        .selectAll()
+        .where('assetId', '=', asset.id)
+        .executeTakeFirstOrThrow();
+      expect(ExifResponseSchema.parse(mapExif(exif)).rating).toBe(locked ? 4 : -1);
+    });
+
     it.each([true, false, null])(
       'keeps newer sidecar values after an unlock (initially locked: %s)',
       async (initiallyLocked) => {
