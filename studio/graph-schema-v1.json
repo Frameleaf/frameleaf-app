@@ -46,7 +46,7 @@
       "properties": {
         "width": { "type": "integer", "minimum": 1 },
         "height": { "type": "integer", "minimum": 1 },
-        "fps": { "type": "number", "exclusiveMinimum": 0 },
+        "fps": { "type": "number", "exclusiveMinimum": 0, "maximum": 120 },
         "frameRate": { "$ref": "#/$defs/positiveRational" },
         "backgroundColor": { "$ref": "#/$defs/hexColour" },
         "colorManagement": { "type": "object" }
@@ -496,6 +496,39 @@
       },
       "additionalProperties": false
     },
+    "compositionTrack": {
+      "description": "A track of a composition (14.2.1): unlike a track of the main timeline it lists a copy of its own clips. syncLock is present once the graph has settled (14.2.3).",
+      "type": "object",
+      "required": ["id", "name", "kind", "locked", "visible", "muted", "solo", "order", "syncLock", "volume", "items"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string" },
+        "kind": { "enum": ["video", "audio"] },
+        "locked": { "type": "boolean" },
+        "syncLock": { "type": "boolean" },
+        "visible": { "type": "boolean" },
+        "muted": { "type": "boolean" },
+        "solo": { "type": "boolean" },
+        "volume": { "type": "number" },
+        "order": { "type": "number" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/item" } }
+      },
+      "additionalProperties": true
+    },
+    "publishedControl": {
+      "description": "A control a group publishes (14.4.1).",
+      "type": "object",
+      "required": ["id", "name", "targetItemId", "property", "kind", "defaultValue"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "targetItemId": { "$ref": "#/$defs/id" },
+        "property": { "enum": ["text.text", "text.color", "shape.fillColor", "shape.strokeColor"] },
+        "kind": { "enum": ["text", "color"] },
+        "defaultValue": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "composition": {
       "type": "object",
       "required": ["id", "name", "editorKind", "items", "tracks", "fps", "width", "height", "durationInFrames"],
@@ -504,7 +537,7 @@
         "name": { "type": "string" },
         "editorKind": { "enum": ["sequence", "composite-2d"] },
         "items": { "type": "array", "items": { "$ref": "#/$defs/item" } },
-        "tracks": { "type": "array", "items": { "type": "object" } },
+        "tracks": { "type": "array", "items": { "$ref": "#/$defs/compositionTrack" } },
         "transitions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/transition" } },
         "keyframes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/itemKeyframes" } },
         "fps": { "type": "number", "exclusiveMinimum": 0 },
@@ -512,7 +545,15 @@
         "height": { "type": "integer", "minimum": 1 },
         "durationInFrames": { "type": "integer", "minimum": 0 },
         "backgroundColor": { "type": "string" },
-        "compositionControls": { "type": "object" },
+        "compositionControls": {
+          "type": "object",
+          "required": ["version", "controls"],
+          "properties": {
+            "version": { "const": 1 },
+            "controls": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/publishedControl" } }
+          },
+          "additionalProperties": false
+        },
         "markers": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/marker" } },
         "inPoint": { "$ref": "#/$defs/frame" },
         "outPoint": { "$ref": "#/$defs/frame" }
