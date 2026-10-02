@@ -4291,15 +4291,105 @@
       "mass": 1
     }
   },
-  "motionModifiers": {
-    "types": [
-      "float-drift",
-      "breath-pulse",
-      "micro-shake",
-      "sway",
-      "spin"
+  "properties": {
+    "scalar": [
+      "x",
+      "y",
+      "width",
+      "height",
+      "anchorX",
+      "anchorY",
+      "rotation",
+      "opacity",
+      "cornerRadius",
+      "cropLeft",
+      "cropRight",
+      "cropTop",
+      "cropBottom",
+      "cropSoftness",
+      "volume",
+      "textStyleScale",
+      "fontSize",
+      "lineHeight",
+      "textPadding",
+      "backgroundRadius",
+      "textShadowOffsetX",
+      "textShadowOffsetY",
+      "textShadowBlur",
+      "strokeWidth",
+      "trimPathStart",
+      "trimPathEnd",
+      "trimPathOffset",
+      "taperStartWidth",
+      "taperEndWidth",
+      "taperStartLength",
+      "taperEndLength"
+    ],
+    "vector": [
+      "position",
+      "scale",
+      "anchor"
+    ],
+    "expression": [
+      "x",
+      "y",
+      "width",
+      "height",
+      "anchorX",
+      "anchorY",
+      "rotation",
+      "opacity",
+      "cornerRadius",
+      "trimPathStart",
+      "trimPathEnd",
+      "trimPathOffset",
+      "taperStartWidth",
+      "taperEndWidth",
+      "taperStartLength",
+      "taperEndLength",
+      "position",
+      "scale",
+      "anchor"
     ]
   },
+  "motionModifiers": [
+    {
+      "id": "float-drift",
+      "channels": [
+        "x",
+        "y",
+        "rotation"
+      ]
+    },
+    {
+      "id": "breath-pulse",
+      "channels": [
+        "width",
+        "height",
+        "opacity"
+      ]
+    },
+    {
+      "id": "micro-shake",
+      "channels": [
+        "x",
+        "y",
+        "rotation"
+      ]
+    },
+    {
+      "id": "sway",
+      "channels": [
+        "rotation"
+      ]
+    },
+    {
+      "id": "spin",
+      "channels": [
+        "rotation"
+      ]
+    }
+  ],
   "textMotion": {
     "in": [
       "typewriter",
@@ -4370,5 +4460,5 @@
       "section": "13.8.5"
     }
   ],
-  "contentSha256": "e63c727bc9ea0c9cbc2448003b2c341e17137d580a71655ef5a7ef705f61d92b"
+  "contentSha256": "6f1bfb86baf24a628b10173763ded0b518297a558623d613b9ba87bf7046620a"
 }
