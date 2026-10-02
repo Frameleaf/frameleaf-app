@@ -7,7 +7,8 @@ export const BUDDY_SCENARIOS = {
   incremental: "Incremental backup",
   offline: "Buddy offline",
   quota: "Waiting for quota",
-  auth: "Subscription or link expired",
+  auth: "Cloud authorization needed",
+  subscription: "Subscription expired",
   key: "Recovery key needed",
   stale: "Backup overdue",
   capacity: "Hosting disk nearly full",
@@ -26,6 +27,7 @@ export function createBuddyState() {
     sendingPaused: false,
     receivingPaused: false,
     receivingActive: false,
+    recoveryAttached: false,
     hasRecoveryPoint: true,
     lastVerified: "30 Sep, 14:32",
     escrow: false,
@@ -68,6 +70,7 @@ export function previewBuddyScenario(state, scenario) {
     ...state,
     scenario,
     paired: scenario !== "unpaired",
+    recoveryAttached: false,
     sendingPaused: false,
     ...(["unpaired", "initial"].includes(scenario)
       ? { lastVerified: null }
@@ -139,8 +142,13 @@ export function buddyStatus(state) {
     ],
     auth: [
       "Reconnect Frameleaf Cloud",
-      "Both servers need an active subscription and a valid Cloud link. Existing encrypted data is kept.",
+      "Authorize your Cloud account to access this backup. Existing encrypted data is kept; an expired subscription does not prevent recovery.",
       "Review connection",
+    ],
+    subscription: [
+      "Subscription expired · transfers paused",
+      "New sending and hosting transfers need active subscriptions. You can still recover your existing backup with account authorization and your recovery kit.",
+      "Restore my backup",
     ],
     key: [
       "Recovery key needed",
@@ -190,31 +198,78 @@ export function buddyStatus(state) {
       state.scenario === "initial"
         ? Number(((state.outgoingGB * progress) / 100).toFixed(1))
         : state.outgoingGB,
-    label: state.sendingPaused
-      ? "Sending paused"
-      : BUDDY_SCENARIOS[state.scenario],
+    label:
+      !state.paired && state.recoveryAttached
+        ? "Recovery only"
+        : state.sendingPaused
+          ? "Sending paused"
+          : BUDDY_SCENARIOS[state.scenario],
     receiving: !state.paired
       ? "Not hosting"
       : state.scenario === "blocked"
         ? "Access blocked"
         : state.scenario === "ending"
           ? "Read window only"
-          : state.receivingPaused
-            ? "Receiving paused"
-            : state.scenario === "capacity"
-              ? "Waiting for free space"
-              : state.receivingActive
-                ? "Receiving encrypted data"
-                : "Ready to receive",
+          : state.scenario === "subscription"
+            ? "Subscription expired · receiving paused"
+            : state.scenario === "auth"
+              ? "Authorization required"
+              : state.receivingPaused
+                ? "Receiving paused"
+                : state.scenario === "capacity"
+                  ? "Waiting for free space"
+                  : state.receivingActive
+                    ? "Receiving encrypted data"
+                    : "Ready to receive",
     alert: alerts[state.scenario] || null,
     canRestore:
-      state.paired &&
+      (state.paired || state.recoveryAttached) &&
       state.hasRecoveryPoint &&
       !["blocked", "key", "auth", "offline"].includes(state.scenario),
+    canAttachRecovery: !["blocked", "auth", "offline"].includes(state.scenario),
+    canReceive:
+      state.paired &&
+      ![
+        "blocked",
+        "ending",
+        "auth",
+        "subscription",
+        "offline",
+        "capacity",
+      ].includes(state.scenario) &&
+      !state.receivingPaused,
     canSend:
       state.paired &&
       ["current", "stale", "initial", "incremental"].includes(state.scenario) &&
       !state.sendingPaused,
+  };
+}
+
+// Reading or checking a key must never restart a stopped partnership.
+export function unlockBuddyKey(state) {
+  return state.scenario === "key" ? { ...state, scenario: "current" } : state;
+}
+
+export function verifyBuddyRecovery(state, verifiedAt) {
+  return buddyStatus(state).canRestore
+    ? { ...state, lastVerified: verifiedAt }
+    : state;
+}
+
+export function attachBuddyRecovery(
+  state,
+  { cloudAuthorized, verificationCode },
+) {
+  if (
+    !buddyStatus(state).canAttachRecovery ||
+    !cloudAuthorized ||
+    verificationCode?.trim() !== SAMPLE_RECOVERY_KIT.verificationCode
+  )
+    return state;
+  return {
+    ...unlockBuddyKey(state),
+    recoveryAttached: true,
+    hasRecoveryPoint: true,
   };
 }
 
