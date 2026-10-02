@@ -234,6 +234,94 @@ describe(StudioProjectImportService.name, () => {
     await expect(readFile(file.path)).rejects.toThrow();
   });
 
+  describe('caption files and LUTs (FL-105)', () => {
+    const srt = '1\n00:00:01,000 --> 00:00:02,500\nHello\n';
+    const vtt = 'WEBVTT\n\n00:01.000 --> 00:02.500\nHello\n';
+    const cube = `TITLE "Warm"\nLUT_3D_SIZE 2\n${'0.5 0.25 1.0\n'.repeat(8)}`;
+
+    it.each([
+      ['a SubRip file', srt, 'application/x-subrip', 'captions', '.srt'],
+      ['a WebVTT file', vtt, 'text/vtt', 'captions', '.vtt'],
+      ['a .cube LUT', cube, 'text/x-cube-lut', 'lut', '.cube'],
+    ])('keeps %s under the type read from its bytes, not its name', async (_name, body, contentType, kind, ext) => {
+      const bytes = Buffer.from(body);
+      const file = await upload(bytes, 'video/mp4', '../../etc/clip.mp4');
+      const result = await sut.upload(auth(), PROJECT, IMPORT, file);
+
+      expect(projects.registerImport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentType,
+          checksum: createHash('sha256').update(bytes).digest('hex'),
+          // The stored path is the import id and the extension of what the file is; the name is a label.
+          path: join(studioImportProjectFolder(OWNER, PROJECT), `${IMPORT}${ext}`),
+          fileName: 'clip.mp4',
+          externalReferences: null,
+        }),
+      );
+      expect(result).toMatchObject({ kind, contentType });
+      expect(await readFile(join(directory, 'kept'))).toEqual(bytes);
+    });
+
+    it.each([
+      ['a SubRip file that turns into something else', `${srt}\n<html><script>alert(1)</script></html>\n`, 'x.srt'],
+      ['a WebVTT file with no captions', 'WEBVTT\n\nNOTE empty\n', 'x.vtt'],
+      [
+        'a WebVTT file whose styles load a file',
+        `WEBVTT\n\nSTYLE\n::cue{background:url(//t.example/p)}\n\n${vtt.slice(8)}`,
+        'x.vtt',
+      ],
+      ['a LUT with the wrong number of rows', `LUT_3D_SIZE 2\n${'0 0 0\n'.repeat(5)}`, 'x.cube'],
+      ['a 1D LUT', 'LUT_1D_SIZE 2\n0 0 0\n1 1 1\n', 'x.cube'],
+      ['plain text called a caption file', 'These are my notes.\n', 'x.srt'],
+      ['plain text called a LUT', 'These are my notes.\n', 'x.cube'],
+    ])('refuses %s and removes the upload', async (_name, body, name) => {
+      const file = await upload(Buffer.from(body), 'text/plain', name);
+      await expect(sut.upload(auth(), PROJECT, IMPORT, file)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(readFile(file.path)).rejects.toThrow();
+      expect(projects.registerImport).not.toHaveBeenCalled();
+    });
+
+    it('refuses a caption file or LUT that is not UTF-8', async () => {
+      for (const body of [srt, cube]) {
+        const file = await upload(Buffer.concat([Buffer.from(body), Buffer.from([0xe9, 0xff, 0x0a])]));
+        await expect(sut.upload(auth(), PROJECT, IMPORT, file)).rejects.toThrow(/must be UTF-8 text/);
+        await expect(readFile(file.path)).rejects.toThrow();
+      }
+      expect(projects.registerImport).not.toHaveBeenCalled();
+    });
+
+    it('refuses an oversized caption file or LUT before reading it', async () => {
+      const storage = (sut as unknown as { storage: StorageRepository }).storage;
+      const read = vi.spyOn(storage, 'readFile');
+      for (const [body, size] of [
+        [srt, 4 * 1024 * 1024 + 1],
+        [vtt, 4 * 1024 * 1024 + 1],
+        [cube, 16 * 1024 * 1024 + 1],
+      ] as const) {
+        const file = await upload(Buffer.from(body));
+        read.mockClear();
+        await expect(
+          sut.upload(auth(), PROJECT, IMPORT, { ...file, size } as Express.Multer.File),
+        ).rejects.toBeInstanceOf(PayloadTooLargeException);
+        // Only the head was read to tell what the file is; the body never was.
+        expect(read).toHaveBeenCalledTimes(1);
+        await expect(readFile(file.path)).rejects.toThrow();
+      }
+      expect(projects.registerImport).not.toHaveBeenCalled();
+    });
+
+    it('keeps a caption file at exactly the limit', async () => {
+      const filler = '\n2\n00:00:03,000 --> 00:00:04,000\nline\n\n';
+      const body = Buffer.alloc(4 * 1024 * 1024, ' ');
+      body.write(`${srt}\n`);
+      body.write(filler, body.length - filler.length);
+      await expect(sut.upload(auth(), PROJECT, IMPORT, await upload(body))).resolves.toMatchObject({
+        kind: 'captions',
+        sizeBytes: 4 * 1024 * 1024,
+      });
+    });
+  });
+
   it('removes the files of projects deleted for good and stale incoming uploads', async () => {
     const storage = (sut as unknown as { storage: StorageRepository }).storage;
     const unlink = vi.spyOn(storage, 'unlink').mockResolvedValue();
