@@ -100,7 +100,11 @@ describe(EdgeStateService.name, () => {
     });
     lockHeld = true;
     mocks.database.holdLock.mockImplementation(() =>
-      Promise.resolve({ verify: () => Promise.resolve(lockHeld), release: vi.fn(() => Promise.resolve()) }),
+      Promise.resolve({
+        backendPid: 123,
+        verify: () => Promise.resolve(lockHeld),
+        release: vi.fn(() => Promise.resolve()),
+      }),
     );
     mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ instanceId: INSTANCE_ID, kid: 'kid-1' } as never);
     mocks.instanceIdentity.currentSigner.mockReturnValue({ kid: 'kid-1' } as never);

@@ -194,9 +194,9 @@ export class BuddyBackupRecoveryService {
       await sql`DELETE FROM immich_fork.buddy_backup_reference`.execute(trx);
       await trx.deleteFrom('system_metadata').where('key', 'in', replacement.keys).execute();
       for (const row of replacement.metadata)
-        await sql`INSERT INTO system_metadata (key, value) VALUES (${row.key}, ${JSON.stringify(row.value)}::jsonb)
+        await sql`INSERT INTO system_metadata (key, value) VALUES (${row.key}, ${JSON.stringify(row.value)}::text::jsonb)
           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(trx);
-      await sql`INSERT INTO system_metadata (key, value) VALUES (${SystemMetadataKey.MaintenanceMode}, ${JSON.stringify(maintenance)}::jsonb)
+      await sql`INSERT INTO system_metadata (key, value) VALUES (${SystemMetadataKey.MaintenanceMode}, ${JSON.stringify(maintenance)}::text::jsonb)
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(trx);
     });
     const { bull } = this.config.getEnv();
@@ -263,17 +263,17 @@ export class BuddyBackupRecoveryService {
         const old = (previous.system ?? {}) as Record<string, unknown>;
         const restored = plan.manifest.settings.system as Record<string, unknown>;
         const merged = plan.mode === 'replace' ? restored : { ...restored, ...old };
-        await sql`INSERT INTO system_metadata (key, value) VALUES (${SystemMetadataKey.SystemConfig}, ${JSON.stringify(merged)}::jsonb)
+        await sql`INSERT INTO system_metadata (key, value) VALUES (${SystemMetadataKey.SystemConfig}, ${JSON.stringify(merged)}::text::jsonb)
           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(trx);
         for (const row of plan.manifest.settings.fork) {
-          await sql`INSERT INTO immich_fork.config (key, value) VALUES (${row.key}, ${JSON.stringify(row.value)}::jsonb)
+          await sql`INSERT INTO immich_fork.config (key, value) VALUES (${row.key}, ${JSON.stringify(row.value)}::text::jsonb)
             ON CONFLICT (key) DO UPDATE SET value = CASE WHEN ${plan.mode === 'replace'} THEN EXCLUDED.value ELSE immich_fork.config.value END`.execute(
             trx,
           );
         }
         for (const row of plan.manifest.settings.users) {
           if (!(await trx.selectFrom('user').select('id').where('id', '=', row.userId).executeTakeFirst())) continue;
-          await sql`INSERT INTO user_metadata ("userId", key, value) VALUES (${row.userId}::uuid, ${row.key}, ${JSON.stringify(row.value)}::jsonb)
+          await sql`INSERT INTO user_metadata ("userId", key, value) VALUES (${row.userId}::uuid, ${row.key}, ${JSON.stringify(row.value)}::text::jsonb)
             ON CONFLICT ("userId", key) DO UPDATE SET value = CASE WHEN ${plan.mode === 'replace'} THEN EXCLUDED.value ELSE user_metadata.value END`.execute(
             trx,
           );
