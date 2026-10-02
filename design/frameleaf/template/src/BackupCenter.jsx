@@ -16,6 +16,7 @@ import {
   unlockBuddyKey,
   verifyBuddyRecovery,
   attachBuddyRecovery,
+  completeBuddyReceive,
 } from "./buddy-backup.mjs";
 import "./backup-center.css";
 
@@ -579,18 +580,20 @@ export function BackupCenter({ onNavigate }) {
                         max={100}
                       />
                       <small>
-                        {state.receivingPaused
-                          ? "Receiving paused. Verified encrypted blocks are kept."
+                        {!status.canReceive
+                          ? `${status.receiving}. Verified encrypted blocks are kept; completion waits for receiving access.`
                           : "53 MB of 86 MB · no media details are shared"}
                       </small>
                       <Button
-                        disabled={state.receivingPaused}
-                        onClick={() =>
-                          update(
-                            { receivingActive: false },
-                            "Sample incoming transfer completed and verified as stored.",
-                          )
-                        }
+                        disabled={!status.canReceive}
+                        onClick={() => {
+                          const next = completeBuddyReceive(state);
+                          if (next !== state)
+                            update(
+                              next,
+                              "Sample incoming transfer completed and verified as stored.",
+                            );
+                        }}
                       >
                         Complete incoming sample
                       </Button>
