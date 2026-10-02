@@ -55,6 +55,20 @@ describe('owner and byte-validated iCloud identity attachment', () => {
     });
   });
 
+  it('refuses a replacement digest when the same identity still describes earlier bytes', async () => {
+    const { sut, auth, input, asset } = await setup();
+    expect(await sut.attachDevice(auth, input)).toBe(true);
+    await sql`
+      UPDATE immich_fork.icloud_source_identity SET "lastVerifiedAt" = now(), "lastAuditResult" = 'match'
+      WHERE "assetId" = ${asset.id}::uuid
+    `.execute(db);
+    const before = await sut.identities(input.ownerId, [input.parsed.cplAssetRecordName]);
+    const replacement = Buffer.alloc(32, 2);
+    await db.updateTable('asset').set({ checksum: replacement }).where('id', '=', asset.id).execute();
+    expect(await sut.attachDevice(auth, { ...input, sha256: replacement })).toBe(false);
+    expect(await sut.identities(input.ownerId, [input.parsed.cplAssetRecordName])).toEqual(before);
+  });
+
   it('rejects another owner and mismatched or unknown digests without writing identities', async () => {
     const { ctx, sut, auth, input, asset } = await setup();
     const { user: other } = await ctx.newUser();

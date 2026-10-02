@@ -370,7 +370,15 @@ export class ICloudIdentityRepository {
         return false;
       }
       await new ICloudIdentityRepository(tx).recordDevice(input);
-      return true;
+      // A repeated key keeps its existing proof; changed originals cannot claim that proof as attached.
+      const { rows } = await sql<{ sha256: Buffer }>`
+        SELECT sha256 FROM immich_fork.icloud_source_identity
+        WHERE "ownerId" = ${input.ownerId}::uuid AND "assetId" = ${input.assetId}::uuid
+          AND "cplAssetRecordName" = ${input.parsed.cplAssetRecordName}
+          AND role = ${input.role} AND "editVersion" = ${input.editVersion}
+        FOR SHARE
+      `.execute(tx);
+      return rows[0]?.sha256.equals(input.sha256) ?? false;
     });
   }
 
