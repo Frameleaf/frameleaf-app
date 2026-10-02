@@ -398,6 +398,1137 @@
         "x-immich-permission": "adminUser.read"
       }
     },
+    "/admin/buddy-backup": {
+      "get": {
+        "operationId": "getBuddyBackupStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get Buddy Backup and hosting status",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/control": {
+      "post": {
+        "operationId": "controlBuddyBackup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyControlDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start, pause, resume, restart or verify Buddy Backup",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/invitations": {
+      "post": {
+        "operationId": "inviteBackupBuddy",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyInviteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyInviteResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Invite a Cloud account to pair its Frameleaf server",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/invitations/accept": {
+      "post": {
+        "operationId": "acceptBackupBuddy",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyAcceptDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Accept a Buddy invitation with this hosting capacity",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/key": {
+      "post": {
+        "operationId": "generateBuddyRecoveryKit",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyKitDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Generate and return a new recovery kit once",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/key/escrow": {
+      "post": {
+        "operationId": "wrapBuddyRecoveryKit",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyEscrowWrapDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyEscrowDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Encrypt a recovery kit locally with a passphrase",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/key/escrow/import": {
+      "post": {
+        "operationId": "unlockBuddyRecoveryKit",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyEscrowImportDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Unlock and import an encrypted recovery package locally",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/key/import": {
+      "post": {
+        "operationId": "importBuddyRecoveryKit",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyKitDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Import a recovery kit on the rebound server",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/key/rotate": {
+      "post": {
+        "operationId": "rotateBuddyRecoveryKit",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyKitDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Rotate encryption while retaining historical keys",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/key/verify": {
+      "post": {
+        "operationId": "verifyBuddyRecoveryKit",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyKitDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Verify the recovery kit the owner saved",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/preflight": {
+      "post": {
+        "operationId": "checkBuddyBackupCoverage",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyPreflightRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyPreflightDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check backup size, storage and configuration coverage",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/probe": {
+      "post": {
+        "operationId": "testBuddyBackup",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyProbeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Verify an encrypted round trip",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/refresh": {
+      "post": {
+        "operationId": "refreshBuddyBackup",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Refresh the Cloud pairing",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/relationship": {
+      "post": {
+        "operationId": "changeBuddyRelationship",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyRelationshipDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Confirm, end, or immediately block a pairing",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/restore": {
+      "post": {
+        "operationId": "restoreBuddyBackup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyRestoreDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyRestoreResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview or start a verified restore",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/restore/apply": {
+      "post": {
+        "operationId": "applyBuddyRecovery",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyApplyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyApplyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply staged settings or server recovery in maintenance mode",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/restores": {
+      "get": {
+        "operationId": "getBuddyRestoreCheckpoint",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyRestoreCheckpointDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Resume the current owner restore or staged recovery",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/restores/{id}": {
+      "get": {
+        "operationId": "getBuddyRestoreStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyRestoreStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get restore or staging progress",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/settings": {
+      "put": {
+        "operationId": "configureBuddyBackup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddySettingsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Configure hosting, schedules and transfer limits",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/snapshots": {
+      "get": {
+        "operationId": "listBuddyBackupSnapshots",
+        "parameters": [
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddySnapshotListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List complete Buddy restore points",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/buddy-backup/snapshots/{id}": {
+      "get": {
+        "operationId": "browseBuddyBackup",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyBrowseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Browse a decrypted restore point",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloudBackup.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/cloud/backup": {
       "delete": {
         "description": "Stops backing up. The bucket, its backups and the key are kept.",
@@ -43541,6 +44672,286 @@
         "x-immich-permission": "asset.read"
       }
     },
+    "/users/me/buddy-backup/restore": {
+      "post": {
+        "operationId": "restoreOwnBuddyBackup",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuddyRestoreDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyRestoreResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Preview or restore own items or an album",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/buddy-backup/restores": {
+      "get": {
+        "operationId": "getOwnBuddyRestoreCheckpoint",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyRestoreCheckpointDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Resume an own Buddy restore",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/buddy-backup/restores/{id}": {
+      "get": {
+        "operationId": "getOwnBuddyRestoreStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyRestoreStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get own Buddy restore progress",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/buddy-backup/snapshots": {
+      "get": {
+        "operationId": "listOwnBuddySnapshots",
+        "parameters": [
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddySnapshotListDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List own accessible Buddy restore points",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/buddy-backup/snapshots/{id}": {
+      "get": {
+        "operationId": "browseOwnBuddyBackup",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 1000000,
+              "default": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuddyBrowseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Browse own accessible backed-up items and albums",
+        "tags": [
+          "Frameleaf Cloud backup (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/me/calendar-heatmap": {
       "get": {
         "description": "Retrieve activity counts for a specified period, in a calendar heatmap format.",
@@ -55954,6 +57365,1211 @@
         },
         "required": [
           "eq"
+        ],
+        "type": "object"
+      },
+      "BuddyAcceptDto": {
+        "additionalProperties": false,
+        "properties": {
+          "instanceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "quotaBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 10737418240,
+            "type": "integer"
+          },
+          "retention": {
+            "additionalProperties": false,
+            "properties": {
+              "days": {
+                "enum": [
+                  30
+                ],
+                "format": "double",
+                "type": "number"
+              },
+              "monthly": {
+                "enum": [
+                  12
+                ],
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "days",
+              "monthly"
+            ],
+            "type": "object"
+          },
+          "token": {
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              1
+            ],
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "instanceId",
+          "quotaBytes",
+          "retention",
+          "token",
+          "version"
+        ],
+        "type": "object"
+      },
+      "BuddyApplyDto": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirm",
+          "operationId"
+        ],
+        "type": "object"
+      },
+      "BuddyApplyResponseDto": {
+        "properties": {
+          "jwt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jwt"
+        ],
+        "type": "object"
+      },
+      "BuddyBrowseDto": {
+        "properties": {
+          "albums": {
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "items"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "bytes": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "id": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "ownerId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "bytes"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "nextOffset": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "albums",
+          "items",
+          "nextOffset"
+        ],
+        "type": "object"
+      },
+      "BuddyControlDto": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "start",
+              "pause-sending",
+              "resume-sending",
+              "pause-receiving",
+              "resume-receiving",
+              "restart",
+              "verify"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "BuddyEscrowDto": {
+        "additionalProperties": false,
+        "properties": {
+          "blob": {
+            "maxLength": 32768,
+            "minLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "vaultId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              1
+            ],
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "blob",
+          "vaultId",
+          "version"
+        ],
+        "type": "object"
+      },
+      "BuddyEscrowImportDto": {
+        "additionalProperties": false,
+        "properties": {
+          "escrow": {
+            "additionalProperties": false,
+            "properties": {
+              "blob": {
+                "maxLength": 32768,
+                "minLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              "vaultId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "version": {
+                "enum": [
+                  1
+                ],
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "version",
+              "vaultId",
+              "blob"
+            ],
+            "type": "object"
+          },
+          "passphrase": {
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          }
+        },
+        "required": [
+          "escrow",
+          "passphrase"
+        ],
+        "type": "object"
+      },
+      "BuddyEscrowWrapDto": {
+        "additionalProperties": false,
+        "properties": {
+          "passphrase": {
+            "maxLength": 1024,
+            "minLength": 12,
+            "type": "string"
+          }
+        },
+        "required": [
+          "passphrase"
+        ],
+        "type": "object"
+      },
+      "BuddyInviteDto": {
+        "additionalProperties": false,
+        "properties": {
+          "instanceId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "quotaBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 10737418240,
+            "type": "integer"
+          },
+          "retention": {
+            "additionalProperties": false,
+            "properties": {
+              "days": {
+                "enum": [
+                  30
+                ],
+                "format": "double",
+                "type": "number"
+              },
+              "monthly": {
+                "enum": [
+                  12
+                ],
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "days",
+              "monthly"
+            ],
+            "type": "object"
+          },
+          "targetAccountId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              1
+            ],
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "instanceId",
+          "quotaBytes",
+          "retention",
+          "targetAccountId",
+          "version"
+        ],
+        "type": "object"
+      },
+      "BuddyInviteResponseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "invitationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "token": {
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              1
+            ],
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "expiresAt",
+          "invitationId",
+          "token",
+          "version"
+        ],
+        "type": "object"
+      },
+      "BuddyKitDto": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "exclusiveMinimum": true,
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "keys": {
+            "additionalProperties": {
+              "pattern": "^[\\w-]{43}$",
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "vaultId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "version": {
+            "enum": [
+              1
+            ],
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "current",
+          "keys",
+          "vaultId",
+          "version"
+        ],
+        "type": "object"
+      },
+      "BuddyPreflightDto": {
+        "properties": {
+          "configurationFiles": {
+            "items": {
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "available"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "databaseBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hostingAvailableBytes": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mounts": {
+            "items": {
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "available"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "originalBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stagingAvailableBytes": {
+            "format": "double",
+            "type": "number"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "unknownSizes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configurationFiles",
+          "databaseBytes",
+          "hostingAvailableBytes",
+          "items",
+          "mounts",
+          "originalBytes",
+          "stagingAvailableBytes",
+          "timezone",
+          "unknownSizes"
+        ],
+        "type": "object"
+      },
+      "BuddyPreflightRequestDto": {
+        "additionalProperties": false,
+        "properties": {
+          "configurationFiles": {
+            "default": [],
+            "items": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "directory": {
+            "default": "",
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BuddyProbeResponseDto": {
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      },
+      "BuddyRelationshipDto": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "confirm",
+              "end",
+              "block"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "BuddyRestoreCheckpointDto": {
+        "properties": {
+          "operation": {
+            "nullable": true,
+            "properties": {
+              "error": {
+                "nullable": true,
+                "type": "string"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "phase": {
+                "type": "string"
+              },
+              "progress": {
+                "format": "double",
+                "nullable": true,
+                "type": "number"
+              },
+              "recoveryId": {
+                "nullable": true,
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "state",
+              "progress",
+              "phase",
+              "recoveryId",
+              "error"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "type": "object"
+      },
+      "BuddyRestoreDto": {
+        "additionalProperties": false,
+        "properties": {
+          "albumId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "assetIds": {
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "confirm": {
+            "default": false,
+            "type": "boolean"
+          },
+          "mode": {
+            "default": "keep",
+            "enum": [
+              "keep",
+              "replace"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "asset",
+              "album",
+              "library",
+              "settings",
+              "server"
+            ],
+            "type": "string"
+          },
+          "snapshotId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "snapshotId"
+        ],
+        "type": "object"
+      },
+      "BuddyRestoreResponseDto": {
+        "properties": {
+          "bytes": {
+            "format": "double",
+            "type": "number"
+          },
+          "conflicts": {
+            "format": "double",
+            "type": "number"
+          },
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "metadataItems": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "keep",
+              "replace"
+            ],
+            "type": "string"
+          },
+          "operationId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bytes",
+          "conflicts",
+          "items",
+          "mode",
+          "operationId",
+          "state"
+        ],
+        "type": "object"
+      },
+      "BuddyRestoreStatusDto": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "progress": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "recoveryId": {
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "id",
+          "phase",
+          "progress",
+          "recoveryId",
+          "state"
+        ],
+        "type": "object"
+      },
+      "BuddySettingsDto": {
+        "additionalProperties": false,
+        "properties": {
+          "configurationFiles": {
+            "default": [],
+            "items": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "directory": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          },
+          "downloadMbps": {
+            "default": 20,
+            "format": "double",
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "number"
+          },
+          "includeDerived": {
+            "default": false,
+            "type": "boolean"
+          },
+          "pausedReceiving": {
+            "default": false,
+            "type": "boolean"
+          },
+          "pausedSending": {
+            "default": false,
+            "type": "boolean"
+          },
+          "quotaBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 10737418240,
+            "type": "integer"
+          },
+          "schedule": {
+            "default": "0 2 * * *",
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "timezone": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "uploadMbps": {
+            "default": 20,
+            "format": "double",
+            "maximum": 10000,
+            "minimum": 1,
+            "type": "number"
+          },
+          "windowEnd": {
+            "default": "00:00",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          },
+          "windowStart": {
+            "default": "00:00",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "directory",
+          "quotaBytes",
+          "timezone"
+        ],
+        "type": "object"
+      },
+      "BuddySnapshotListDto": {
+        "properties": {
+          "nextOffset": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "snapshots": {
+            "items": {
+              "properties": {
+                "createdAt": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "keyVersion": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "sequence": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "createdAt",
+                "sequence",
+                "keyVersion"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "nextOffset",
+          "snapshots"
+        ],
+        "type": "object"
+      },
+      "BuddyStatusDto": {
+        "properties": {
+          "availableBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "capacityUpdatedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "connection": {
+            "nullable": true,
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "hosting": {
+            "properties": {
+              "committedBytes": {
+                "format": "double",
+                "type": "number"
+              },
+              "quotaBytes": {
+                "format": "double",
+                "type": "number"
+              },
+              "reservedBytes": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "committedBytes",
+              "reservedBytes",
+              "quotaBytes"
+            ],
+            "type": "object"
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "keyFingerprint": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastCompleteAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastVerifiedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "pairing": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "pairId": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "readUntil": {
+                "format": "date-time",
+                "nullable": true,
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "pending",
+                  "active",
+                  "ended",
+                  "blocked"
+                ],
+                "type": "string"
+              },
+              "vaults": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "destinationInstanceId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "destinationKey": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "crv": {
+                          "enum": [
+                            "Ed25519"
+                          ],
+                          "type": "string"
+                        },
+                        "kty": {
+                          "enum": [
+                            "OKP"
+                          ],
+                          "type": "string"
+                        },
+                        "x": {
+                          "pattern": "^[A-Za-z0-9_-]{43}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kty",
+                        "crv",
+                        "x"
+                      ],
+                      "type": "object"
+                    },
+                    "quotaBytes": {
+                      "maximum": 9007199254740991,
+                      "minimum": 10737418240,
+                      "type": "integer"
+                    },
+                    "retention": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "days": {
+                          "enum": [
+                            30
+                          ],
+                          "format": "double",
+                          "type": "number"
+                        },
+                        "monthly": {
+                          "enum": [
+                            12
+                          ],
+                          "format": "double",
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "days",
+                        "monthly"
+                      ],
+                      "type": "object"
+                    },
+                    "sourceInstanceId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    },
+                    "sourceKey": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "crv": {
+                          "enum": [
+                            "Ed25519"
+                          ],
+                          "type": "string"
+                        },
+                        "kty": {
+                          "enum": [
+                            "OKP"
+                          ],
+                          "type": "string"
+                        },
+                        "x": {
+                          "pattern": "^[A-Za-z0-9_-]{43}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kty",
+                        "crv",
+                        "x"
+                      ],
+                      "type": "object"
+                    },
+                    "vaultId": {
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "vaultId",
+                    "sourceInstanceId",
+                    "destinationInstanceId",
+                    "sourceKey",
+                    "destinationKey",
+                    "quotaBytes",
+                    "retention"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "version": {
+                "enum": [
+                  1
+                ],
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "version",
+              "pairId",
+              "state",
+              "readUntil",
+              "vaults"
+            ],
+            "type": "object"
+          },
+          "pendingObjects": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recoveryVerified": {
+            "type": "boolean"
+          },
+          "run": {
+            "nullable": true,
+            "properties": {
+              "error": {
+                "nullable": true,
+                "type": "string"
+              },
+              "finishedAt": {
+                "nullable": true,
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "objects": {
+                "format": "double",
+                "type": "number"
+              },
+              "startedAt": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "totalBytes": {
+                "format": "double",
+                "type": "number"
+              },
+              "uploadedBytes": {
+                "format": "double",
+                "type": "number"
+              },
+              "uploadedObjects": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "state",
+              "startedAt",
+              "finishedAt",
+              "uploadedBytes",
+              "totalBytes",
+              "objects",
+              "uploadedObjects",
+              "error"
+            ],
+            "type": "object"
+          },
+          "settings": {
+            "additionalProperties": false,
+            "nullable": true,
+            "properties": {
+              "configurationFiles": {
+                "default": [],
+                "items": {
+                  "maxLength": 4096,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              "directory": {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              "downloadMbps": {
+                "default": 20,
+                "format": "double",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "number"
+              },
+              "includeDerived": {
+                "default": false,
+                "type": "boolean"
+              },
+              "pausedReceiving": {
+                "default": false,
+                "type": "boolean"
+              },
+              "pausedSending": {
+                "default": false,
+                "type": "boolean"
+              },
+              "quotaBytes": {
+                "maximum": 9007199254740991,
+                "minimum": 10737418240,
+                "type": "integer"
+              },
+              "schedule": {
+                "default": "0 2 * * *",
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "timezone": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "uploadMbps": {
+                "default": 20,
+                "format": "double",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "number"
+              },
+              "windowEnd": {
+                "default": "00:00",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                "type": "string"
+              },
+              "windowStart": {
+                "default": "00:00",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "directory",
+              "quotaBytes",
+              "timezone"
+            ],
+            "type": "object"
+          },
+          "transferMbps": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "availableBytes",
+          "capacityUpdatedAt",
+          "configured",
+          "connection",
+          "enabled",
+          "hosting",
+          "instanceId",
+          "keyFingerprint",
+          "lastCompleteAt",
+          "lastVerifiedAt",
+          "pairing",
+          "pendingObjects",
+          "recoveryVerified",
+          "run",
+          "settings",
+          "transferMbps"
         ],
         "type": "object"
       },
@@ -69761,7 +72377,9 @@
           "cloud_description_batch",
           "cloud_ml_job",
           "cloud_backup",
-          "cloud_restore"
+          "cloud_restore",
+          "buddy_backup",
+          "buddy_restore"
         ],
         "type": "string"
       },
@@ -84792,6 +87410,12 @@
         "properties": {
           "action": {
             "$ref": "#/components/schemas/MaintenanceAction"
+          },
+          "buddyRecoveryId": {
+            "description": "A verified, locally staged Buddy recovery",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
           },
           "keepSafetyBackup": {
             "description": "Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails",

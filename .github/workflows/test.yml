@@ -278,6 +278,18 @@ jobs:
       - name: Run ci-unit
         run: mise run ci-unit
         if: ${{ !cancelled() }}
+      - name: Capture automatic E2E formatting fixes
+        if: failure()
+        run: |
+          timeout 5m pnpm format:fix || true
+          git diff --binary -- . > "$RUNNER_TEMP/e2e-format.patch"
+      - name: Archive automatic E2E formatting fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: e2e-format-autofix
+          path: ${{ runner.temp }}/e2e-format.patch
+          retention-days: 7
     timeout-minutes: 60
   server-medium-tests:
     name: Medium Tests (Server)
