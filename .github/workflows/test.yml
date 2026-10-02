@@ -58,6 +58,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -77,6 +79,7 @@ jobs:
       - name: Capture automatic server lint fixes
         if: failure()
         run: |
+          timeout 15m pnpm --filter immich format:fix || true
           timeout 15m pnpm --filter immich lint:fix || true
           git diff --binary > "$RUNNER_TEMP/server-lint.patch"
       - name: Archive automatic server lint fixes
@@ -166,12 +169,12 @@ jobs:
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile
       - name: Run linter
-        run: pnpm lint
+        run: pnpm exec eslint . --max-warnings 0 --concurrency 2
         if: ${{ !cancelled() }}
       - name: Capture automatic lint fixes
         if: failure()
         run: |
-          timeout 15m pnpm lint:fix || true
+          timeout 15m pnpm exec eslint . --max-warnings 0 --concurrency 2 --fix || true
           git diff --binary > "$RUNNER_TEMP/web-lint.patch"
       - name: Archive automatic lint fixes
         if: failure()
