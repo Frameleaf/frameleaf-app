@@ -20,10 +20,17 @@ import {
   TEXT_MOTION_LOOP_PRESET_IDS,
   TEXT_MOTION_OUT_PRESET_IDS,
 } from '@/shared/typography/text-motion/text-motion-preset-ids'
+import { createTextMotionEffect } from '@/shared/typography/text-motion/text-motion-presets'
+import { TEXT_STYLE_PRESET_IDS } from '@/shared/typography/text-style-preset-ids'
+import { buildTextScale, buildTextStylePresetUpdates } from '@/shared/typography/text-style-presets'
+import { PROJECT_TEMPLATES } from '@/features/projects/utils/validation'
+import { isAllowedProjectFps } from '@/features/projects/utils/project-fps'
 import {
   canonicalJson,
   EASINGS,
   MODIFIER_TYPES,
+  prototypeTitleAnimations,
+  prototypeTitleStyles,
   prototypeTransitions,
   transitionPresentationOf,
 } from '../src/canonical-commands'
@@ -82,8 +89,57 @@ const DIRECT_EDITS = [
   },
 ] as const
 
+/** Every canvas height `sequence.setSettings` accepts (14.6.1). */
+const CANVAS_HEIGHTS = Array.from({ length: 4320 - 240 + 1 }, (_, index) => 240 + index)
+const canvasOf = (height: number, width = 1920) => ({ width, height, fps: 30 })
+const SIZE_TOKENS = ['title', 'display', 'badge'] as const
+
+/**
+ * FL-309: the title styles as rules a native client can compute. The engine sizes a title's font
+ * from the canvas height through three size steps; everything else a style writes is constant. The
+ * steps and each style's step and multiplier are measured from the engine over every canvas height
+ * and must reproduce it exactly, so a change to a style or to the size steps changes the catalogue.
+ */
+function titleStyles() {
+  const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+  const stepAt = (token: (typeof SIZE_TOKENS)[number], height: number) => buildTextScale(canvasOf(height)).sizes[token]
+  const sizes = Object.fromEntries(
+    SIZE_TOKENS.map((token) => {
+      const min = Math.min(...CANVAS_HEIGHTS.map((height) => stepAt(token, height)))
+      const max = Math.max(...CANVAS_HEIGHTS.map((height) => stepAt(token, height)))
+      const fits = Array.from({ length: 999 }, (_, index) => (index + 1) / 1000).filter((factor) =>
+        CANVAS_HEIGHTS.every((height) => clamp(Math.round(height * factor), min, max) === stepAt(token, height)),
+      )
+      if (fits.length !== 1) throw new Error(`title size step ${token}: ${fits.length} factors fit`)
+      return [token, { heightFactor: fits[0]!, min, max }]
+    }),
+  ) as Record<(typeof SIZE_TOKENS)[number], { heightFactor: number; min: number; max: number }>
+
+  const presets = TEXT_STYLE_PRESET_IDS.map((id) => {
+    const at = (height: number, width?: number) =>
+      JSON.parse(JSON.stringify(buildTextStylePresetUpdates(id, canvasOf(height, width)))) as Record<string, unknown>
+    const { fontSize: _fontSize, ...fields } = at(1080)
+    // Only the font size follows the canvas, and only its height.
+    for (const [height, width] of [[240, 320], [1080, 1080], [2160, 3840], [4320, 7680]] as const) {
+      const { fontSize: _size, ...other } = at(height, width)
+      if (canonicalJson(other) !== canonicalJson(fields)) throw new Error(`title style ${id} depends on the canvas`)
+      if (at(height, width).fontSize !== at(height).fontSize) throw new Error(`title style ${id} depends on the canvas width`)
+    }
+    const candidates = SIZE_TOKENS.flatMap((size) =>
+      Array.from({ length: 2000 }, (_, index) => (index + 1) / 1000).map((multiplier) => ({ size, multiplier })),
+    ).filter(({ size, multiplier }) =>
+      CANVAS_HEIGHTS.every((height) => Math.round(stepAt(size, height) * multiplier) === at(height).fontSize),
+    )
+    if (candidates.length === 0) throw new Error(`title style ${id}: no size rule fits`)
+    // Several rules may give the same sizes; the one nearest a multiplier of 1 is published.
+    const [fontSize] = candidates.sort((a, b) => Math.abs(a.multiplier - 1) - Math.abs(b.multiplier - 1))
+    return { id, fontSize: fontSize!, fields }
+  })
+  return { aliases: { ...prototypeTitleStyles }, sizes, presets }
+}
+
 function build() {
-  const effects = [...GPU_EFFECT_REGISTRY.values()].map((effect) =>
+  const effects =[...GPU_EFFECT_REGISTRY.values()].map((effect) =>
     compact({
       id: effect.id,
       category: effect.category,
@@ -185,6 +241,28 @@ function build() {
       in: [...TEXT_MOTION_IN_PRESET_IDS],
       out: [...TEXT_MOTION_OUT_PRESET_IDS],
       loop: [...TEXT_MOTION_LOOP_PRESET_IDS],
+      // FL-309: what a title animation writes for each preset (14.3.1), with seed 0.
+      defaults: Object.fromEntries(
+        [...TEXT_MOTION_IN_PRESET_IDS, ...TEXT_MOTION_OUT_PRESET_IDS, ...TEXT_MOTION_LOOP_PRESET_IDS].map((id) => {
+          const { presetId: _presetId, seed: _seed, ...defaults } = createTextMotionEffect(id, 0)
+          return [id, defaults]
+        }),
+      ),
+    },
+    // FL-309: title styles and animations (14.3.1), and project templates and rates (14.6).
+    titleStyles: titleStyles(),
+    titleAnimations: { aliases: Object.fromEntries(Object.entries(prototypeTitleAnimations).map(([alias, slots]) => [alias, { ...slots }])) },
+    project: {
+      templates: PROJECT_TEMPLATES.map((template) => ({
+        id: template.id,
+        width: template.width,
+        height: template.height,
+        fps: template.fps,
+      })),
+      rates: Array.from({ length: 240 }, (_, index) => index + 1).filter((fps) => isAllowedProjectFps(fps)),
+      ntscRates: [24_000, 30_000, 48_000, 60_000, 120_000]
+        .filter((num) => isAllowedProjectFps(num / 1000))
+        .map((num) => ({ num, den: 1001 })),
     },
     directEdits: DIRECT_EDITS.map((entry) => ({ ...entry, fields: [...entry.fields] })),
   }
