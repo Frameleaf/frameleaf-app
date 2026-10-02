@@ -36,14 +36,18 @@
   const load = async () => {
     busy = true;
     const [buddyResult, cloudResult] = await Promise.allSettled([getBuddyBackupStatus(), getCloudBackupStatus()]);
-    if (disposed) return;
+    if (disposed) {
+      return;
+    }
     buddy = buddyResult.status === 'fulfilled' ? buddyResult.value : null;
     cloud = cloudResult.status === 'fulfilled' ? cloudResult.value : null;
     failed = buddyResult.status === 'rejected' || cloudResult.status === 'rejected';
     busy = false;
   };
   onMount(() => {
-    if (!authManager.user.isAdmin) return;
+    if (!authManager.user.isAdmin) {
+      return;
+    }
     const stop = cloudManager.listen();
     void load();
     return () => {
