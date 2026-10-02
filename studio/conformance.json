@@ -5154,7 +5154,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5200,7 +5200,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5246,7 +5246,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5292,7 +5292,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5338,7 +5338,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5384,7 +5384,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5430,7 +5430,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5476,7 +5476,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5522,7 +5522,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5568,7 +5568,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5614,7 +5614,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5660,7 +5660,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5706,7 +5706,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5752,7 +5752,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5798,7 +5798,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5844,7 +5844,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5890,7 +5890,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5936,7 +5936,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -5982,7 +5982,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -6028,7 +6028,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"
@@ -6074,7 +6074,7 @@
         },
         "chromium": {
           "status": "blocked",
-          "reason": "Missing chromium-axis case(s): animated, composed, invalid (FL-112)."
+          "reason": "Missing chromium-axis case(s): invalid (FL-112)."
         },
         "firefox": {
           "status": "not-tested"

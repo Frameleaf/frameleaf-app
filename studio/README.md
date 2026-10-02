@@ -151,7 +151,13 @@ Hosted regressions:
   float and rgba8 routes. It also checks HDR midpoint range and mirror symmetry of
   opposite directions. `transition-semantics.json` records these per transition,
   including Freecut's stylised SDR endpoints for chromatic, sparkles, liquid distort
-  and light leak.
+  and light leak. Each transition also runs through the production renderer on a cut
+  between two image clips: progress follows the timeline, a participant's keyframed
+  opacity draws as its static values, and a blended layer stacks over the result. The
+  invalid inputs the engine gives a meaning to are checked too (unknown direction,
+  timing and transition id, out-of-range alignment, fractional duration). A non-finite
+  duration or alignment and a transition's own parameter values are not sanitised by
+  the engine yet, so the transition rows' invalid case stays open.
 
 The existing compositor, transition and nested regressions now cover both project
 ranges. Everything passes on SwiftShader (CI) and Apple Metal.

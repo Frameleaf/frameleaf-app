@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  FAMILY_CASE_COVERAGE,
   applyCommandMatrixCoverage,
   applyFamilyCoverage,
   blockedAxisEntry,
@@ -53,6 +54,26 @@ test("missingCases lists every required case not in the covered set", () => {
 test("missingCases is empty once every required case is covered", () => {
   const all = new Set(["normal", "invalid", "animated", "extreme", "composed"]);
   assert.deepEqual(missingCases(fixture("blend.normal"), "chromium", all), []);
+});
+
+test("the transition family claims every chromium case its matrix measures in full, and the overlay names the one it cannot", async () => {
+  // transition-matrix.browser.mjs measures animated and composed for every transition. Its
+  // invalid case covers only the inputs the engine gives a meaning to, so invalid stays unclaimed.
+  assert.deepEqual(
+    [...FAMILY_CASE_COVERAGE.chromium.transition].sort(),
+    ["animated", "composed", "extreme", "normal"],
+  );
+  const overlay = JSON.parse(
+    await readFile(path.join(ROOT, "studio/conformance.json"), "utf8"),
+  );
+  const rows = overlay.rows.filter((row) => row.id.startsWith("transition."));
+  assert.equal(rows.length, 21);
+  for (const row of rows) {
+    assert.deepEqual(row.axes.chromium, {
+      status: "blocked",
+      reason: "Missing chromium-axis case(s): invalid (FL-112).",
+    });
+  }
 });
 
 test("blockedAxisEntry names the axis and the exact missing cases", () => {
