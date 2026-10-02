@@ -1,9 +1,16 @@
 /** Production Compose and Animate components, stores and history; no backend substitute. */
+import type { CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { i18n, i18nReady } from "@/i18n";
 import { CompositingTimeline } from "@/features/editor/components/compose-workspace/compositing-timeline";
 import { KeyframeGraphPanel } from "@/features/timeline/components/keyframe-graph-panel";
+import { Timeline } from "@/features/timeline/components/timeline";
+import { useSettingsStore } from "@/features/timeline/deps/settings";
+import {
+  getEditorLayout,
+  getEditorLayoutCssVars,
+} from "@/config/editor-layout";
 import { useUIShortcuts } from "@/features/timeline/hooks/shortcuts/use-ui-shortcuts";
 import { useItemsStore } from "@/features/timeline/stores/items-store";
 import { useCompositionsStore } from "@/features/timeline/stores/compositions-store";
@@ -68,7 +75,8 @@ const group: TimelineItem = {
   transform: { x: 0, y: 0, width: 128, height: 96, rotation: 0, opacity: 1 },
 };
 
-function mountEditorControls(surface: "compose" | "animate", reset = false) {
+type Surface = "compose" | "animate" | "edit";
+function mountEditorControls(surface: Surface, reset = false) {
   if (reset) {
     resetTimelineCompositionTestState();
     useCompositionNavigationStore.getState().resetToRoot();
@@ -119,8 +127,23 @@ function mountEditorControls(surface: "compose" | "animate", reset = false) {
   }
   flushSync(() => root.render(<Controls surface={surface} />));
 }
-function Controls({ surface }: { surface: "compose" | "animate" }) {
+function Controls({ surface }: { surface: Surface }) {
   useUIShortcuts({});
+  const density = useSettingsStore((settings) => settings.editorDensity);
+  // The Edit timeline docks the keyframe panel on its own scroll axis (linked Edit axis). The
+  // editor shell publishes its layout as CSS variables (editor.tsx); the timeline needs the same.
+  if (surface === "edit") {
+    return (
+      <div
+        className="flex h-full flex-col"
+        style={
+          getEditorLayoutCssVars(getEditorLayout(density)) as CSSProperties
+        }
+      >
+        <Timeline duration={2} />
+      </div>
+    );
+  }
   return surface === "compose" ? (
     <CompositingTimeline defaults={settings} />
   ) : (
@@ -234,7 +257,7 @@ Object.assign(window, {
       useTimelineCommandStore.getState().clearHistory();
     },
     // Fixture setup only. Subsequent interpolation and undo/redo use native production controls.
-    seedEasing: () => {
+    seedEasing: (surface: Surface = "animate") => {
       mountEditorControls("compose", true);
       useKeyframesStore.getState().setKeyframes([
         {
@@ -262,7 +285,7 @@ Object.assign(window, {
           ],
         },
       ]);
-      mountEditorControls("animate");
+      mountEditorControls(surface);
     },
     moveParent: (id: string, x: number) =>
       useItemsStore.getState()._updateItemTransform(id, { x }),
