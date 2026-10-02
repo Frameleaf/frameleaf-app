@@ -219,7 +219,12 @@
       "path": "patches/0043-hdr-raster-input.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "23c6c87a1e97deb59005dbe9bae52655a100a7fdadb1f9adc210df96cb39f54c"
+    },
+    {
+      "path": "patches/0045-hidden-overlay-displayed-frame.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "99ac43d1fa4f1717af2b12dda9f4934d8618fd34d38740e9e82bd8463579924e"
     }
   ],
-  "sourceSha256": "636fb58140ac8bd9c8d136ad3948ed70d790e17197ca143790861daf09a7b949"
+  "sourceSha256": "d4b5596a8e8f357bb3f05cf90af22238ac6f24b8097dc29edc44992852d39422"
 }
