@@ -185,6 +185,9 @@ describe('env aliases (FL-294)', () => {
       expect(message).toContain('IMMICH_PORT → FRAMELEAF_PORT');
       expect(message).toContain('IMMICH_LOG_LEVEL → FRAMELEAF_LOG_LEVEL');
       expect(message).toMatch(/deprecated/i);
+      expect(message).toContain(
+        'The old names still work in this major version and stop working in the next major release.',
+      );
       expect(message!.split('\n')).toHaveLength(1);
     });
   });

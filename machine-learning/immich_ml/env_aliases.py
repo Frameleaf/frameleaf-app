@@ -53,7 +53,10 @@ def deprecated_env_warning(deprecated: list[tuple[str, str]]) -> str | None:
     if not deprecated:
         return None
     pairs = ", ".join(f"{legacy} → {current}" for legacy, current in deprecated)
-    return f"Deprecated environment variable names in use; they still work, but rename them: {pairs}"
+    return (
+        f"Deprecated environment variable names in use; rename them: {pairs}. "
+        "The old names still work in this major version and stop working in the next major release."
+    )
 
 
 def read_env(env: Mapping[str, str], name: str, default: str = "") -> str:

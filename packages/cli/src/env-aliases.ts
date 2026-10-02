@@ -64,7 +64,9 @@ export const applyCliEnvAliases = (env: NodeJS.ProcessEnv, warn: (message: strin
   }
 
   if (deprecated.length > 0) {
-    warn(`Deprecated environment variable names in use; they still work, but rename them: ${deprecated.join(', ')}`);
+    warn(
+      `Deprecated environment variable names in use; rename them: ${deprecated.join(', ')}. The old names still work in this major version and stop working in the next major release.`,
+    );
   }
 
   return [];

@@ -26,6 +26,11 @@ describe('CLI env aliases (FL-294)', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('IMMICH_INSTANCE_URL → FRAMELEAF_INSTANCE_URL'));
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('IMMICH_API_KEY → FRAMELEAF_API_KEY'));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'The old names still work in this major version and stop working in the next major release.',
+      ),
+    );
   });
 
   it('does not warn when only new names are used', () => {
