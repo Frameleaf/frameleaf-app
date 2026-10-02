@@ -1,20 +1,23 @@
 /**
- * A reference implementation of parts 2 and 3 of the Studio graph protocol v1 (FL-307, FL-308),
- * written from sections 12 and 13 of `docs/docs/developer/studio-graph-protocol-v1.md` and the
- * parameter catalogue `studio/graph-parameters-v1.json` alone, without the engine.
+ * A reference implementation of parts 2, 3 and 4 of the Studio graph protocol v1 (FL-307, FL-308,
+ * FL-309), written from sections 12 to 14 of `docs/docs/developer/studio-graph-protocol-v1.md` and
+ * the parameter catalogue `studio/graph-parameters-v1.json` alone, without the engine.
  *
- * `graph-protocol.test.mjs` replays the conformance fixtures of both parts through it: if the
+ * `graph-protocol.test.mjs` replays the conformance fixtures of the three parts through it: if the
  * prose is not enough to reproduce the engine's graphs, ids and refusals, a fixture fails here. It
  * is what a native client implements, in the smallest form that passes; it is not shipped anywhere.
+ * It writes what the engine writes: for a case the fixtures mark `settlesOnLoad` that is the
+ * unsettled graph, which `settle` in `graph-protocol.mjs` brings to normal form (14.2.3).
  *
- * Not covered: what the prose defers to part 4 (title styles and animations of `clip.update`,
- * compositions), and what it declares engine arithmetic (13.1): the values of baked keyframes and
- * the poses of animated or already-parented clips. Those raise `Unspecified`.
+ * Not covered: what the page declares engine arithmetic (13.1), the values of baked keyframes and
+ * the poses of animated or already-parented clips, and the few things it leaves outside the
+ * protocol. Those raise `Unspecified`.
  */
 import { readFileSync } from 'node:fs';
 import {
   applyMarkerCommand,
   applyTrackCommand,
+  carryFrame,
   clampInOut,
   exactRate,
   firstTrackName,
@@ -50,13 +53,19 @@ const isRational = (value) =>
   !!value && typeof value === 'object' && Number.isSafeInteger(value.num) && Number.isSafeInteger(value.den) && value.den > 0;
 const unique = (ids) => [...new Set(ids)];
 
-/** The working state of one batch: the parts of the graph part 2 commands read and write. */
+/** The working state of one batch: the parts of the graph the commands read and write. */
 function open(graph, media) {
   const timeline = structuredClone(graph.timeline);
   return {
+    metadata: structuredClone(graph.metadata),
     fps: graph.metadata.fps,
     rate: graph.metadata.frameRate,
     canvas: { width: graph.metadata.width, height: graph.metadata.height },
+    // 14.2.1: loading gives every track of a composition its sync lock.
+    compositions: (timeline.compositions ?? []).map((composition) => ({
+      ...composition,
+      tracks: composition.tracks.map((track) => ({ ...track, syncLock: track.syncLock ?? true })),
+    })),
     media: new Map(media.map((record) => [record.id, record])),
     tracks: timeline.tracks,
     items: timeline.items,
@@ -70,14 +79,18 @@ function open(graph, media) {
 }
 
 function close(graph, state) {
-  const { transitions, keyframes, markers, inPoint, outPoint, ...rest } = state.timeline;
+  const { transitions, keyframes, markers, inPoint, outPoint, compositions, topLevelSequenceIds, ...rest } = state.timeline;
   const timeline = { ...rest, tracks: state.tracks, items: state.items };
+  if (state.compositions.length > 0) timeline.compositions = state.compositions.map(storedComposition);
+  // 14.2.1: a timeline tab that names no sequence left in the graph is dropped.
+  const tabs = (topLevelSequenceIds ?? []).filter((id) => state.compositions.some((composition) => composition.id === id && composition.editorKind !== 'composite-2d'));
+  if (tabs.length > 0) timeline.topLevelSequenceIds = tabs;
   if (state.transitions.length > 0) timeline.transitions = state.transitions;
   if (state.keyframes.length > 0) timeline.keyframes = state.keyframes.map(tidy);
   if (state.markers.length > 0) timeline.markers = state.markers;
   if (state.inPoint !== undefined) timeline.inPoint = state.inPoint;
   if (state.outPoint !== undefined) timeline.outPoint = state.outPoint;
-  return { ...graph, timeline };
+  return { ...graph, metadata: state.metadata, timeline };
 }
 
 /* 12.1: common refusals */
@@ -1127,24 +1140,31 @@ const commands = {
       if (typeof patch.text !== 'string') invalid('text must be a string');
       next.text = patch.text;
     }
-    if (patch.style !== undefined) throw new Unspecified('title styles are part 4');
+    let styled = next;
+    if (patch.style !== undefined) {
+      if (typeof patch.style !== 'string') invalid('style must be a string');
+      styled = withStyle(state, next, patch.style);
+    }
     if (patch.position !== undefined) {
       const match = typeof patch.position === 'string' ? /^([tmb])([lcr])$/.exec(patch.position) : null;
       if (!match) invalid('position: unknown title position');
-      next.verticalAlign = { t: 'top', m: 'middle', b: 'bottom' }[match[1]];
-      next.textAlign = { l: 'left', c: 'center', r: 'right' }[match[2]];
+      styled.verticalAlign = { t: 'top', m: 'middle', b: 'bottom' }[match[1]];
+      styled.textAlign = { l: 'left', c: 'center', r: 'right' }[match[2]];
     }
-    if (patch.animation !== undefined) throw new Unspecified('title animations are part 4');
+    if (patch.animation !== undefined) {
+      if (typeof patch.animation !== 'string') invalid('animation must be a string');
+      styled.textMotion = titleMotion(patch.animation);
+    }
     if (patch.volume !== undefined) {
       if (clip.type !== 'video' && clip.type !== 'audio') invalid('patch.volume applies to video and audio clips');
       if (typeof patch.volume !== 'number' || !Number.isFinite(patch.volume)) invalid('volume must be a number');
-      next.volume = patch.volume;
+      styled.volume = patch.volume;
     }
     if (patch.muted !== undefined) throw new Refusal('not-implemented', 'patch.muted: clips have no mute');
-    replace(state, next);
+    replace(state, styled);
     if (patch.transform !== undefined) {
       if (!patch.transform || typeof patch.transform !== 'object') invalid('patch.transform must be an object');
-      setTransform(state, next, patch.transform);
+      setTransform(state, styled, patch.transform);
     }
   },
 
@@ -2252,15 +2272,715 @@ Object.assign(commands, {
   },
 });
 
+/* ================================================================== */
+/* Part 4 (section 14): compositions, groups, titles and settings      */
+/* ================================================================== */
+
+/* 14.2: compositions */
+
+/** 14.2.1: a composition as it is stored: tracks in order, each listing its own items. */
+function storedComposition(composition) {
+  const tracks = composition.tracks
+    .map((track, index) => ({ track, index }))
+    .sort((a, b) => (a.track.order ?? 0) - (b.track.order ?? 0) || a.index - b.index)
+    .map(({ track }) => ({ ...track, items: composition.items.filter((item) => item.trackId === track.id) }));
+  const next = { ...composition, tracks };
+  for (const key of ['transitions', 'keyframes', 'markers']) if ((next[key]?.length ?? 0) === 0) delete next[key];
+  for (const key of ['inPoint', 'outPoint', 'backgroundColor', 'compositionControls']) if (next[key] === undefined || next[key] === null) delete next[key];
+  if (next.keyframes) next.keyframes = next.keyframes.map(tidy);
+  return next;
+}
+
+const compositionOf = (state, id) => state.compositions.find((composition) => composition.id === id);
+const isSoundClip = (item) => item.type === 'audio' && typeof item.compositionId === 'string' && item.compositionId.length > 0;
+/** 14.2.2: the sound clip that goes with a composition clip, and the other way round. */
+const soundCompanion = (items, clip) =>
+  clip.linkedGroupId
+    ? items.find((item) => item.id !== clip.id && isSoundClip(item) && item.linkedGroupId === clip.linkedGroupId && item.compositionId === clip.compositionId)
+    : undefined;
+const pictureCompanion = (items, clip) =>
+  clip.linkedGroupId
+    ? items.find((item) => item.type === 'composition' && item.linkedGroupId === clip.linkedGroupId && item.compositionId === clip.compositionId)
+    : undefined;
+
+/** 14.2.2: whether a list of clips on these tracks carries sound of its own. */
+function carriesSound(state, items, tracks, path = new Set()) {
+  const solo = tracks.some((track) => track.solo);
+  const heard = new Map(tracks.filter((track) => (solo ? track.solo === true : track.visible !== false) && !track.muted).map((track) => [track.id, track]));
+  const inside = (clip) => {
+    if (path.has(clip.compositionId)) return false;
+    const composition = compositionOf(state, clip.compositionId);
+    if (!composition) return false;
+    if ((clip.sourceStart ?? 0) !== 0 || (clip.speed ?? 1) !== 1) throw new Unspecified('sound of a trimmed or retimed composition clip (14.2.2)');
+    return carriesSound(state, composition.items, composition.tracks, new Set([...path, clip.compositionId]));
+  };
+  return items
+    .filter((item) => heard.has(item.trackId))
+    .some((item) => {
+      if (isSoundClip(item)) return inside(item);
+      if (item.type === 'composition') return !soundCompanion(items, item) && inside(item);
+      if (!item.mediaId) return false;
+      if (item.type === 'audio') return true;
+      if (item.type !== 'video' || item.embeddedAudioMuted) return false;
+      // A video with a linked audio clip leaves the sound to that clip.
+      return !linkedGroup({ items }, item).some((member) => member.id !== item.id && member.type === 'audio');
+    });
+}
+
+const kindOfTrack = (track, items) => track?.kind ?? (items.every((item) => item.type === 'audio') ? 'audio' : 'video');
+
+/** 14.2.2: gather clips into a new composition and put its clip (and sound clip) in their place. */
+function gather(state, name, requested, editorKind, draw) {
+  const linked = unique(unique(requested).flatMap((id) => linkedGroup(state, clipOf(state, id)).map((member) => member.id)));
+  const chosen = new Set(linked);
+  for (const item of state.items) {
+    if (!chosen.has(item.id)) continue;
+    const companion = item.type === 'composition' ? soundCompanion(state.items, item) : isSoundClip(item) ? pictureCompanion(state.items, item) : undefined;
+    if (companion) chosen.add(companion.id);
+  }
+  const gathered = state.items.filter((item) => chosen.has(item.id));
+  const start = Math.min(...gathered.map((item) => item.from));
+  const length = Math.max(...gathered.map(end)) - start;
+
+  const sourceTracks = unique(gathered.map((item) => item.trackId))
+    .map((id, index) => ({ id, index, track: state.tracks.find((track) => track.id === id) }))
+    .sort((a, b) => (a.track?.order ?? 0) - (b.track?.order ?? 0) || a.index - b.index);
+  const trackIds = new Map();
+  const tracks = sourceTracks.map(({ id, track }, index) => {
+    const onTrack = gathered.filter((item) => item.trackId === id);
+    const made = {
+      id: draw(),
+      name: track?.name ?? `Track ${index + 1}`,
+      kind: kindOfTrack(track, onTrack),
+      height: track?.height ?? 100,
+      locked: false,
+      visible: track?.visible ?? true,
+      muted: track?.muted ?? false,
+      solo: track?.solo ?? false,
+      volume: track?.volume ?? 0,
+      ...(track?.color === undefined ? {} : { color: track.color }),
+      order: index,
+    };
+    trackIds.set(id, made.id);
+    return made;
+  });
+  const itemIds = new Map();
+  const items = gathered.map((item) => {
+    const id = draw();
+    itemIds.set(item.id, id);
+    return { ...item, id, from: item.from - start, trackId: trackIds.get(item.trackId) };
+  });
+  const id = draw();
+  const transitions = state.transitions
+    .filter((transition) => chosen.has(transition.leftClipId) && chosen.has(transition.rightClipId))
+    .map((transition) => ({
+      ...transition,
+      id: draw(),
+      leftClipId: itemIds.get(transition.leftClipId),
+      rightClipId: itemIds.get(transition.rightClipId),
+      trackId: trackIds.get(transition.trackId) ?? transition.trackId,
+    }));
+  const keyframes = state.keyframes.filter((entry) => chosen.has(entry.itemId)).map((entry) => ({ ...entry, itemId: itemIds.get(entry.itemId) }));
+  const composition = {
+    id,
+    name,
+    editorKind,
+    items,
+    tracks,
+    transitions,
+    keyframes,
+    fps: state.fps,
+    width: state.canvas.width,
+    height: state.canvas.height,
+    durationInFrames: length,
+    ...(state.metadata.backgroundColor ? { backgroundColor: state.metadata.backgroundColor } : {}),
+  };
+  state.compositions.push(composition);
+
+  // Where the composition clip and its sound clip go.
+  const picture = items.some((item) => item.type !== 'audio');
+  const sound = carriesSound(state, items, tracks);
+  const tracksWith = (audio) => sourceTracks.filter(({ id: trackId }) => gathered.some((item) => item.trackId === trackId && (item.type === 'audio') === audio));
+  const pictureTrackId = picture ? (tracksWith(false).at(-1)?.id ?? null) : null;
+  let soundTrackId = null;
+  if (sound) {
+    soundTrackId = tracksWith(true).at(-1)?.id ?? null;
+    if (!soundTrackId) {
+      const audio = state.tracks.filter((track) => track.kind === 'audio').toSorted((a, b) => a.order - b.order);
+      const pictureTrack = state.tracks.find((track) => track.id === pictureTrackId);
+      const below = pictureTrack ? audio.find((track) => track.order > pictureTrack.order) : audio.at(-1);
+      if (below) soundTrackId = below.id;
+      else {
+        const anchor = pictureTrack ?? state.tracks.at(-1);
+        const made = newTrack(state, 'audio', anchor ? orderBeside(state.tracks, anchor, 'below') : 0, draw);
+        state.tracks = writeTracks([...state.tracks, made]);
+        soundTrackId = made.id;
+      }
+    }
+  }
+
+  removeClips(state, chosen);
+  const linkedGroupId = picture && sound ? draw() : undefined;
+  const window = { sourceStart: 0, sourceEnd: length, sourceDuration: length, sourceFps: state.fps, speed: 1 };
+  if (picture && pictureTrackId) {
+    state.items.push({
+      id: draw(),
+      type: 'composition',
+      trackId: pictureTrackId,
+      from: start,
+      durationInFrames: length,
+      label: name,
+      compositionId: id,
+      ...(linkedGroupId ? { linkedGroupId } : {}),
+      compositionWidth: composition.width,
+      compositionHeight: composition.height,
+      transform: { x: 0, y: 0, rotation: 0, opacity: 1 },
+      ...window,
+    });
+  }
+  if (sound && soundTrackId) {
+    state.items.push({
+      id: draw(),
+      type: 'audio',
+      trackId: soundTrackId,
+      from: start,
+      durationInFrames: length,
+      label: name,
+      compositionId: id,
+      ...(linkedGroupId ? { linkedGroupId } : {}),
+      src: '',
+      ...window,
+    });
+  }
+}
+
+/** 12.2.8: a track a command creates. */
+function newTrack(state, kind, order, draw) {
+  return {
+    id: `track-${draw()}`,
+    name: firstTrackName(state.tracks, kind),
+    kind,
+    height: 100,
+    locked: false,
+    syncLock: true,
+    visible: true,
+    muted: false,
+    solo: false,
+    volume: 0,
+    order,
+    items: [],
+  };
+}
+
+/** The order of a new track just above or below `anchor`. */
+function orderBeside(tracks, anchor, side) {
+  const sorted = tracks.toSorted((a, b) => a.order - b.order);
+  const at = sorted.findIndex((track) => track.id === anchor.id);
+  const neighbour = sorted[side === 'above' ? at - 1 : at + 1];
+  return neighbour ? (neighbour.order + anchor.order) / 2 : anchor.order + (side === 'above' ? -1 : 1);
+}
+
+const clipIdList = (payload, command) => {
+  const { clipIds } = payload;
+  if (!Array.isArray(clipIds) || clipIds.length === 0 || clipIds.some((id) => typeof id !== 'string')) invalid(`${command} needs clipIds`);
+  return clipIds;
+};
+
+/** 14.2.6: take a group apart. */
+function dissolve(state, wrapper, draw) {
+  const composition = compositionOf(state, wrapper.compositionId);
+  const soundWrapper = soundCompanion(state.items, wrapper);
+  const wrapperIds = [wrapper.id, soundWrapper?.id].filter(Boolean);
+  let tracks = state.tracks;
+  const nearest = (anchor, kind, side) =>
+    tracks
+      .filter((track) => track.kind === kind && (side === 'above' ? track.order < anchor.order : track.order > anchor.order))
+      .sort((a, b) => (side === 'above' ? b.order - a.order : a.order - b.order))[0];
+  const pictureAnchorId = wrapper.trackId;
+  let soundAnchorId = soundWrapper?.trackId ?? null;
+  if (!soundAnchorId) {
+    const anchor = tracks.find((track) => track.id === pictureAnchorId);
+    const found = nearest(anchor, 'audio', 'below');
+    if (found) soundAnchorId = found.id;
+    else {
+      // A track made here is kept only if another track is made too: its id is drawn either way.
+      const made = newTrack({ tracks }, 'audio', orderBeside(tracks, anchor, 'below'), draw);
+      tracks = [...tracks, made];
+      soundAnchorId = made.id;
+    }
+  }
+  const inner = composition.tracks.toSorted((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const kindOf = (track) => kindOfTrack(track, composition.items.filter((item) => item.trackId === track.id));
+  const trackIds = new Map();
+  const made = [];
+  const rest = state.items.filter((item) => !wrapperIds.includes(item.id));
+  const place = (group, anchorId, kind) => {
+    if (group.length === 0 || !anchorId) return;
+    const anchor = [...tracks, ...made].find((track) => track.id === anchorId);
+    if (!anchor) return;
+    const used = new Set(trackIds.values());
+    trackIds.set(group.at(-1).id, anchorId);
+    used.add(anchorId);
+    const above = [...tracks, ...made]
+      .filter((track) => track.id !== anchorId && track.kind === kind && track.order < anchor.order)
+      .sort((a, b) => b.order - a.order);
+    for (let index = group.length - 2; index >= 0; index--) {
+      const ranges = composition.items.filter((item) => item.trackId === group[index].id).map((item) => [item.from + wrapper.from, item.from + wrapper.from + item.durationInFrames]);
+      const free = above.find(
+        (track) => !used.has(track.id) && !rest.some((item) => item.trackId === track.id && ranges.some(([from, to]) => from < end(item) && item.from < to)),
+      );
+      if (free) {
+        trackIds.set(group[index].id, free.id);
+        used.add(free.id);
+        continue;
+      }
+      const id = draw();
+      trackIds.set(group[index].id, id);
+      used.add(id);
+      // The engine copies the inner track whole, so the new track lists the inner clips until the
+      // next load empties it (14.2.6): the graph settles on load.
+      const stray = composition.items.filter((item) => item.trackId === group[index].id);
+      made.push({ ...group[index], id, kind, order: anchor.order - (group.length - 1 - index) * 0.01, items: stray });
+    }
+  };
+  place(inner.filter((track) => kindOf(track) === 'video'), pictureAnchorId, 'video');
+  place(inner.filter((track) => kindOf(track) === 'audio'), soundAnchorId, 'audio');
+  if (made.length > 0) state.tracks = writeTracks([...tracks, ...made]);
+
+  // Each clip comes back through the window the group's clip shows.
+  const speed = wrapper.speed ?? 1;
+  const windowFps = wrapper.sourceFps ?? composition.fps;
+  const windowStart = wrapper.sourceStart ?? wrapper.trimStart ?? 0;
+  const windowEnd = wrapper.sourceEnd ?? windowStart + Math.round((wrapper.durationInFrames / state.fps) * windowFps * speed);
+  const shown = (frames) => Math.floor(((frames / windowFps) * state.fps) / speed);
+  const itemIds = new Map();
+  const restored = [];
+  for (const item of composition.items) {
+    const from = Math.max(item.from, windowStart);
+    const to = Math.min(end(item), windowEnd);
+    if (to <= from) continue;
+    const mapped = { ...item, from: wrapper.from + shown(from - windowStart), speed: (item.speed ?? 1) * speed };
+    mapped.durationInFrames = Math.max(1, shown(to - windowStart) - shown(from - windowStart));
+    if (isMedia(item)) {
+      const perFrame = (frames) => Math.round((frames / composition.fps) * (item.sourceFps ?? composition.fps) * (item.speed ?? 1));
+      mapped.sourceStart = (item.sourceStart ?? 0) + perFrame(from - item.from);
+      if (item.sourceEnd !== undefined) mapped.sourceEnd = Math.max(mapped.sourceStart + 1, item.sourceEnd - perFrame(end(item) - to));
+    }
+    mapped.id = draw();
+    itemIds.set(item.id, mapped.id);
+    mapped.trackId = trackIds.get(item.trackId) ?? pictureAnchorId ?? soundAnchorId ?? item.trackId;
+    restored.push(mapped);
+  }
+  const gone = new Set(wrapperIds);
+  state.items = [...state.items.filter((item) => !gone.has(item.id)), ...restored];
+  state.transitions = state.transitions.filter((transition) => !gone.has(transition.leftClipId) && !gone.has(transition.rightClipId));
+  const transitions = (composition.transitions ?? []).flatMap((transition) =>
+    itemIds.has(transition.leftClipId) && itemIds.has(transition.rightClipId)
+      ? [{ ...transition, id: draw(), leftClipId: itemIds.get(transition.leftClipId), rightClipId: itemIds.get(transition.rightClipId), trackId: trackIds.get(transition.trackId) ?? transition.trackId }]
+      : [],
+  );
+  if (transitions.length > 0) {
+    state.transitions = [...state.transitions, ...transitions];
+    repair(state, restored.map((item) => item.id));
+  }
+  state.keyframes = [...state.keyframes, ...(composition.keyframes ?? []).map((entry) => ({ ...entry, itemId: itemIds.get(entry.itemId) ?? entry.itemId }))];
+  const read = [state.items, ...state.compositions.filter((other) => other.id !== composition.id).map((other) => other.items)].some((items) =>
+    items.some((item) => item.compositionId === composition.id),
+  );
+  if (!read) state.compositions = state.compositions.filter((other) => other.id !== composition.id);
+}
+
+/* 14.3: titles */
+
+const STYLE_FIELDS_A_PRESET_MAY_OMIT = ['backgroundColor', 'textShadow', 'stroke'];
+
+/** 14.3.2: the fields a title style writes on this canvas, and those it removes. */
+function titleStyle(state, style) {
+  const named = catalogue.titleStyles.aliases[style] ?? style;
+  if (named === 'plain') return { set: { fontWeight: 'medium' }, remove: [] };
+  if (named === 'bold') return { set: { fontWeight: 'bold' }, remove: [] };
+  const preset = catalogue.titleStyles.presets.find((entry) => entry.id === named) ?? invalid(`style: unknown title style "${style}"`);
+  const step = catalogue.titleStyles.sizes[preset.fontSize.size];
+  const size = Math.min(step.max, Math.max(step.min, Math.round(state.canvas.height * step.heightFactor)));
+  const set = { ...preset.fields, fontSize: Math.round(size * preset.fontSize.multiplier) };
+  return { set, remove: STYLE_FIELDS_A_PRESET_MAY_OMIT.filter((field) => !(field in set)) };
+}
+const withStyle = (state, clip, style) => {
+  const { set, remove } = titleStyle(state, style);
+  return { ...without(clip, ...remove), ...set };
+};
+
+function titlePosition(position) {
+  const match = /^([tmb])([lcr])$/.exec(position) ?? invalid(`position: unknown title position "${position}"`);
+  return { verticalAlign: { t: 'top', m: 'middle', b: 'bottom' }[match[1]], textAlign: { l: 'left', c: 'center', r: 'right' }[match[2]] };
+}
+
+/** 14.3.3: the text motion a title animation writes. */
+function titleMotion(animation) {
+  const named = catalogue.titleAnimations.aliases[animation] ?? { in: animation };
+  if (!catalogue.textMotion.in.includes(named.in)) invalid(`animation: unknown title animation "${animation}"`);
+  const slot = (presetId) => ({ ...catalogue.textMotion.defaults[presetId], presetId, seed: 0 });
+  return { in: slot(named.in), ...(named.out && catalogue.textMotion.out.includes(named.out) ? { out: slot(named.out) } : {}) };
+}
+
+/* 14.5: carrying frames from one rate to another */
+
+const sameRate = (a, b) => {
+  const [x, y] = [exactRate(a), exactRate(b)];
+  return x && y ? BigInt(x.num) * BigInt(y.den) === BigInt(y.num) * BigInt(x.den) : a === b;
+};
+
+/** 14.5.2: the content of the main timeline or of a composition, carried to another rate. */
+function retimed(content, from, to) {
+  const carry = (frame) => carryFrame(frame, from, to);
+  const keyframeList = (keyframes) => {
+    const sorted = keyframes.toSorted((a, b) => a.frame - b.frame);
+    const out = [];
+    sorted.forEach((keyframe, index) => {
+      const frame = carry(keyframe.frame);
+      if (out.at(-1)?.frame === frame) {
+        // Two keyframes on one frame: the earlier stays, unless the later is the last of the group.
+        if (index === sorted.length - 1) out[out.length - 1] = { ...keyframe, frame };
+        return;
+      }
+      out.push({ ...keyframe, frame });
+    });
+    return out;
+  };
+  const items = content.items.map((item) => {
+    if (item.motionLayers?.length || item.effects?.some((effect) => effect.audioPulse) || item.reverseConformLocalStart !== undefined || item.isReversed)
+      throw new Unspecified('motion layers, audio pulses and reversed clips are outside this protocol');
+    const start = carry(item.from);
+    const next = { ...item, from: start, durationInFrames: Math.max(1, carry(end(item)) - start) };
+    const window = item.type !== 'composition' && !item.compositionId;
+    const reads = ['trimStart', 'trimEnd', 'sourceStart', 'sourceEnd', 'sourceDuration', 'offset'].some((field) => item[field] !== undefined);
+    if (reads && item.sourceFps === undefined && window) next.sourceFps = from;
+    if (item.sourceEnd !== undefined && window) {
+      const sourceStart = item.sourceStart ?? item.trimStart ?? 0;
+      const needed = Math.round((next.durationInFrames / to) * (next.sourceFps ?? from) * (item.speed ?? 1));
+      if (needed > item.sourceEnd - sourceStart) {
+        const wanted = sourceStart + needed;
+        next.sourceEnd = Math.max(item.sourceEnd, Math.min(wanted, item.sourceDuration ?? wanted));
+      }
+    }
+    if (item.motionModifiers) next.motionModifiers = item.motionModifiers.map((modifier) => ({ ...modifier, phaseFrames: carry(modifier.phaseFrames) }));
+    if (item.type === 'text' && item.textMotion) {
+      next.textMotion = Object.fromEntries(
+        Object.entries(item.textMotion).map(([slot, motion]) => [
+          slot,
+          ['in', 'out', 'loop'].includes(slot) && motion
+            ? {
+                ...motion,
+                durationFrames: Math.max(1, carry(motion.durationFrames)),
+                staggerFrames: carry(motion.staggerFrames),
+                ...(motion.offsetFrames !== undefined ? { offsetFrames: carry(motion.offsetFrames) } : {}),
+              }
+            : motion,
+        ]),
+      );
+    }
+    return next;
+  });
+  const next = { ...content, items: untangled(content.items, items, content.tracks) };
+  if (content.transitions) next.transitions = content.transitions.map((transition) => ({ ...transition, durationInFrames: Math.max(1, carry(transition.durationInFrames)) }));
+  if (content.keyframes) {
+    next.keyframes = content.keyframes.map((entry) => ({
+      ...entry,
+      properties: entry.properties.map((group) => ({ ...group, keyframes: keyframeList(group.keyframes) })),
+      ...(entry.vectorProperties ? { vectorProperties: entry.vectorProperties.map((group) => ({ ...group, keyframes: keyframeList(group.keyframes) })) } : {}),
+      ...(entry.propertyLinks ? { propertyLinks: entry.propertyLinks.map((link) => ({ ...link, timeOffsetFrames: carry(link.timeOffsetFrames) })) } : {}),
+    }));
+  }
+  if (content.markers) next.markers = content.markers.map((marker) => ({ ...marker, frame: carry(marker.frame) }));
+  for (const key of ['inPoint', 'outPoint', 'currentFrame']) if (typeof content[key] === 'number') next[key] = carry(content[key]);
+  if (content.durationInFrames !== undefined) next.durationInFrames = Math.max(1, carry(content.durationInFrames));
+  return next;
+}
+
+/** 14.5.3: clips that rounding pushed onto each other are moved apart, with what must move with them. */
+function untangled(before, after, tracks) {
+  const synced = new Set((tracks ?? []).filter((track) => !track.isGroup && !track.locked && track.syncLock !== false).map((track) => track.id));
+  const shift = before.map(() => 0);
+  const byTrack = new Map();
+  before.forEach((item, index) => byTrack.set(item.trackId, [...(byTrack.get(item.trackId) ?? []), index]));
+  for (const list of byTrack.values()) list.sort((a, b) => before[a].from - before[b].from || a - b);
+  const endOf = (index) => end(before[index]);
+  // A clip and the clips after it on its track that touched it, directly or in a chain.
+  const run = (index) => {
+    const list = byTrack.get(before[index].trackId);
+    const out = [index];
+    let reach = endOf(index);
+    for (const other of list.slice(list.indexOf(index) + 1)) {
+      if (before[other].from > reach) break;
+      out.push(other);
+      reach = Math.max(reach, endOf(other));
+    }
+    return out;
+  };
+  const movedWith = (index) => {
+    const starts = [index];
+    if (synced.has(before[index].trackId)) {
+      before.forEach((item, other) => {
+        if (item.from === before[index].from && item.trackId !== before[index].trackId && synced.has(item.trackId)) starts.push(other);
+      });
+    }
+    const moved = new Set();
+    while (starts.length > 0) {
+      for (const member of run(starts.pop())) {
+        if (moved.has(member)) continue;
+        moved.add(member);
+        const group = before[member].linkedGroupId;
+        if (!group) continue;
+        before.forEach((item, other) => {
+          if (item.linkedGroupId === group && !moved.has(other)) starts.push(other);
+        });
+      }
+    }
+    return moved;
+  };
+  for (let guard = 0; guard <= before.length * 4 + 8; guard++) {
+    let collision = null;
+    for (const list of byTrack.values()) {
+      let previous = null;
+      for (const index of list) {
+        const from = after[index].from + shift[index];
+        if (previous && before[index].from >= previous.beforeEnd && from < previous.afterEnd) {
+          collision = { index, frames: previous.afterEnd - from, with: previous.index };
+          break;
+        }
+        if (!previous || endOf(index) >= previous.beforeEnd) previous = { index, beforeEnd: endOf(index), afterEnd: from + after[index].durationInFrames };
+      }
+      if (collision) break;
+    }
+    if (!collision) return after.map((item, index) => (shift[index] === 0 ? item : { ...item, from: item.from + shift[index] }));
+    let moved = movedWith(collision.index);
+    if (moved.has(collision.with)) moved = new Set([...moved].filter((member) => before[member].from >= before[collision.index].from));
+    for (const member of moved) shift[member] += collision.frames;
+  }
+  throw new Unspecified('a retime that does not settle');
+}
+
+/** 14.6: canvas and rate of the main timeline or of one composition. */
+function applySettings(state, sequenceId, settings, timing) {
+  const to = settings.rate ? settings.rate.num / settings.rate.den : undefined;
+  const composition = compositionOf(state, sequenceId);
+  if (sequenceId === 'main' && composition) invalid('sequenceId: "main" names both the main timeline and a composition');
+  const timed = (content) => (content.items?.length ?? 0) > 0 || (content.markers?.length ?? 0) > 0 || (content.inPoint ?? null) !== null || (content.outPoint ?? null) !== null;
+  const policy = (what) => timing ?? invalid(`timing is required: ${what} has content`);
+  if (sequenceId === 'main') {
+    const from = state.fps;
+    if (!exactRate(from)) invalid('the project frame rate has no exact reading');
+    if (to !== undefined && !sameRate(to, from) && timed(state) && policy('the main timeline') === 'keep-time') {
+      const next = retimed(
+        { items: state.items, tracks: state.tracks, transitions: state.transitions, keyframes: state.keyframes, markers: state.markers, inPoint: state.inPoint, outPoint: state.outPoint, currentFrame: state.timeline.currentFrame },
+        from,
+        to,
+      );
+      Object.assign(state, { items: next.items, transitions: next.transitions, keyframes: next.keyframes, markers: next.markers, inPoint: next.inPoint, outPoint: next.outPoint });
+      state.timeline = { ...state.timeline, currentFrame: next.currentFrame };
+    }
+    state.metadata = {
+      ...state.metadata,
+      ...(settings.width === undefined ? {} : { width: settings.width }),
+      ...(settings.height === undefined ? {} : { height: settings.height }),
+      ...(settings.rate ? { fps: to, frameRate: { ...settings.rate } } : {}),
+    };
+  } else {
+    if (!composition) invalid(`sequenceId: sequence "${sequenceId}" does not exist`);
+    const from = composition.fps;
+    if (!exactRate(from)) invalid('the composition frame rate has no exact reading');
+    let changed = { ...composition };
+    if (to !== undefined && !sameRate(to, from)) {
+      const readBy = [state.items, ...state.compositions.map((other) => other.items)].some((items) => items.some((item) => item.compositionId === sequenceId));
+      const chosen = timed(composition) || readBy ? policy(`sequence "${sequenceId}"`) : undefined;
+      if (chosen === 'keep-frames' && readBy) invalid('a composition that clips read changes its rate with keep-time');
+      if (chosen === 'keep-time') {
+        changed = retimed(changed, from, to);
+        // The clips that show this composition read it in its own frames.
+        const readers = (items) =>
+          items.map((item) => {
+            if (item.compositionId !== sequenceId) return item;
+            const next = { ...item };
+            for (const field of ['trimStart', 'trimEnd', 'sourceStart', 'sourceEnd', 'sourceDuration', 'offset']) {
+              if (item[field] !== undefined) next[field] = carryFrame(item[field], from, to);
+            }
+            if (item.sourceFps !== undefined) next.sourceFps = to;
+            return next;
+          });
+        state.items = readers(state.items);
+        state.compositions = state.compositions.map((other) => ({ ...other, items: readers(other.items) }));
+        changed = { ...changed, items: readers(changed.items) };
+      }
+      changed.fps = to;
+    }
+    if (settings.width !== undefined) changed.width = settings.width;
+    if (settings.height !== undefined) changed.height = settings.height;
+    state.compositions = state.compositions.map((other) => (other.id === sequenceId ? changed : other));
+  }
+  state.fps = state.metadata.fps;
+  state.rate = state.metadata.frameRate;
+  state.canvas = { width: state.metadata.width, height: state.metadata.height };
+  // The engine reloads the graph it made: the in and out points are clamped at the new rate.
+  clamp(state);
+}
+
+const timingOf = (payload) => {
+  if (payload.timing !== undefined && !['keep-time', 'keep-frames'].includes(payload.timing)) invalid('timing must be keep-time or keep-frames');
+  return payload.timing;
+};
+
+Object.assign(commands, {
+  /* 14.2.4 */
+  'composition.add'(state, payload, draw) {
+    const name = text(payload, 'name');
+    const ids = clipIdList(payload, 'composition.add');
+    for (const id of ids) clipOf(state, id);
+    if (payload.trackId !== undefined || payload.at !== undefined) invalid('composition.add takes no trackId and no at');
+    gather(state, name, ids, 'sequence', draw);
+  },
+
+  /* 14.2.5 */
+  'clip.group'(state, payload, draw) {
+    const ids = clipIdList(payload, 'clip.group');
+    for (const id of ids) clipOf(state, id);
+    if (payload.name !== undefined && typeof payload.name !== 'string') invalid('name must be a string');
+    gather(state, payload.name ?? 'Group', ids, 'composite-2d', draw);
+  },
+
+  /* 14.2.6 */
+  'clip.ungroup'(state, payload, draw) {
+    const wrapper = namedClip(state, payload, 'groupId');
+    const composition = wrapper.type === 'composition' ? compositionOf(state, wrapper.compositionId) : undefined;
+    if (composition?.editorKind !== 'composite-2d') invalid('groupId is not a group');
+    dissolve(state, wrapper, draw);
+  },
+
+  /* 14.4.1 */
+  'composition.setPublishedControls'(state, payload, draw) {
+    const compositionId = text(payload, 'compositionId');
+    const composition = compositionOf(state, compositionId) ?? invalid(`compositionId: "${compositionId}" is not in the project`);
+    if (composition.editorKind !== 'composite-2d') invalid('only a group publishes controls');
+    if (!Array.isArray(payload.controls)) invalid('controls must be a list');
+    const asked = payload.controls.map((control) => {
+      if (!control || typeof control !== 'object') invalid('a control must be an object');
+      return { ...control, id: typeof control.id === 'string' && control.id ? control.id : draw() };
+    });
+    const trimmed = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+    const read = {
+      'text.text': (item) => (item.type === 'text' && !item.textSpans?.length ? item.text : null),
+      'text.color': (item) => (item.type === 'text' && !item.textSpans?.length ? item.color : null),
+      'shape.fillColor': (item) => (item.type === 'shape' && item.fillType !== 'linear' ? item.fillColor : null),
+      'shape.strokeColor': (item) => (item.type === 'shape' && item.strokeEnabled && item.strokeColor ? item.strokeColor : null),
+    };
+    const ids = new Set();
+    const targets = new Set();
+    const controls = asked.map((control) => {
+      const [id, name, targetItemId] = [trimmed(control.id), trimmed(control.name), trimmed(control.targetItemId)];
+      const target = composition.items.find((item) => item.id === targetItemId);
+      const value = target && read[control.property] ? read[control.property](target) : null;
+      const key = `${targetItemId}:${control.property}`;
+      if (!id || !name || !target || value === null || value === undefined || ids.has(id) || targets.has(key))
+        invalid('controls: each needs a name, a clip of this composition and a property it can drive, once');
+      ids.add(id);
+      targets.add(key);
+      return {
+        id,
+        name,
+        targetItemId,
+        property: control.property,
+        kind: control.property === 'text.text' ? 'text' : 'color',
+        defaultValue: typeof control.defaultValue === 'string' ? control.defaultValue : value,
+      };
+    });
+    state.compositions = state.compositions.map((other) =>
+      other.id === compositionId
+        ? controls.length > 0
+          ? { ...other, compositionControls: { version: 1, controls } }
+          : without(other, 'compositionControls')
+        : other,
+    );
+  },
+
+  /* 14.4.2 */
+  'composition.setControlOverrides'(state, payload) {
+    const clip = namedClip(state, payload, 'compositionClipId');
+    if (clip.type !== 'composition') invalid('compositionClipId is not a composition');
+    const controls = compositionOf(state, clip.compositionId)?.compositionControls?.controls ?? [];
+    const { overrides } = payload;
+    if (!plainObject(overrides)) invalid('overrides must be an object');
+    const colour = /^(#[0-9a-f]{3,4}|#[0-9a-f]{6}|#[0-9a-f]{8}|(rgb|rgba|hsl|hsla)\([0-9.,%\s/+-]+\))$/i;
+    for (const [id, value] of Object.entries(overrides)) {
+      const control = controls.find((entry) => entry.id === id) ?? invalid(`overrides: "${id}" is not a published control`);
+      if (typeof value !== 'string' || value.length > 2000) invalid(`overrides.${id} must be text`);
+      if (control.kind === 'color' && !colour.test(value.trim())) invalid(`overrides.${id} must be a colour`);
+    }
+    replace(state, Object.keys(overrides).length > 0 ? { ...clip, compositionControlOverrides: overrides } : without(clip, 'compositionControlOverrides'));
+  },
+
+  /* 14.3.1 */
+  'title.add'(state, payload, draw) {
+    const words = text(payload, 'text');
+    const from = time(state, payload, 'at');
+    const length = payload.duration === undefined ? framesOf({ num: 3, den: 1 }, state.rate) : time(state, payload, 'duration');
+    if (length < 1) invalid('duration must be at least one frame');
+    const track = state.tracks.find((candidate) => !candidate.isGroup && (candidate.kind ?? 'video') === 'video') ?? invalid('title.add: the project has no video track');
+    for (const field of ['style', 'position', 'animation']) {
+      if (payload[field] !== undefined && typeof payload[field] !== 'string') invalid(`${field} must be a string`);
+    }
+    let title = { id: draw(), type: 'text', trackId: track.id, from, durationInFrames: length, label: words.slice(0, 64), text: words, color: '#ffffff', fontSize: 80 };
+    if (payload.style) title = withStyle(state, title, payload.style);
+    if (payload.position) title = { ...title, ...titlePosition(payload.position) };
+    if (payload.animation) title = { ...title, textMotion: titleMotion(payload.animation) };
+    // A place that is taken: the title starts where the clips in its way end.
+    let start = Math.max(0, from);
+    for (const other of state.items.filter((item) => item.trackId === track.id).sort((a, b) => a.from - b.from)) {
+      if (end(other) <= start) continue;
+      if (other.from >= start + length) break;
+      start = end(other);
+    }
+    state.items.push({ ...title, from: start });
+  },
+
+  /* 14.6.1 */
+  'sequence.setSettings'(state, payload) {
+    const sequenceId = text(payload, 'sequenceId');
+    let rate;
+    if (payload.fps !== undefined) {
+      const { fps } = payload;
+      const exact = isRational(fps) && fps.num > 0 ? exactRate(fps.num / fps.den) : null;
+      const matches = exact && exact.num * fps.den === fps.num * exact.den;
+      const offered = exact && (exact.den === 1 ? catalogue.project.rates.includes(exact.num) : catalogue.project.ntscRates.some((entry) => entry.num === exact.num));
+      if (!matches || !offered) invalid('fps must be a project frame rate');
+      rate = exact;
+    }
+    const side = (name, least, most) => {
+      const value = payload[name];
+      if (value === undefined) return undefined;
+      if (!Number.isSafeInteger(value) || value < least || value > most) invalid(`${name} must be a whole number of pixels from ${least} to ${most}`);
+      return value;
+    };
+    const settings = { rate, width: side('width', 320, 7680), height: side('height', 240, 4320) };
+    if (!rate && settings.width === undefined && settings.height === undefined) invalid('sequence.setSettings needs fps, width or height');
+    applySettings(state, sequenceId, settings, timingOf(payload));
+  },
+
+  /* 14.6.2 */
+  'project.applyTemplate'(state, payload) {
+    const templateId = text(payload, 'templateId');
+    const template = catalogue.project.templates.find((entry) => entry.id === templateId) ?? invalid(`templateId: template "${templateId}" does not exist`);
+    applySettings(state, 'main', { rate: exactRate(template.fps), width: template.width, height: template.height }, timingOf(payload));
+  },
+});
+
 /**
- * Apply a batch of part 2 and part 3 envelopes to a graph in normal form, as section 7.2 says: all or nothing,
+ * Apply a batch of envelopes to a graph in normal form, as section 7.2 says: all or nothing,
  * with the first failing envelope's index and reason.
  */
 export function applyBatch(graph, envelopes, media = []) {
   const state = open(graph, media);
   for (const [index, envelope] of envelopes.entries()) {
     const command = commands[envelope.id];
-    if (!command) throw new Unspecified(`${envelope.id} is not a part 2 or part 3 command`);
+    if (!command) return { status: 'rejected', index, reason: 'not-implemented', detail: `${envelope.id} is not an engine command` };
     const before = lastFrame(state);
     try {
       command(state, envelope.payload ?? {}, uuidStream(`${envelope.idempotencyKey}:${index}`), envelope.id);
