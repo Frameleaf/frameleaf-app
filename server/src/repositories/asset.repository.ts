@@ -1742,6 +1742,16 @@ export class AssetRepository {
         await lockFilePath(tx, path);
       }
 
+      if (
+        forkSchema &&
+        (
+          await sql`SELECT 1 FROM immich_fork.buddy_backup_reference
+        WHERE path = ANY(${[move.from, move.source, move.to]}::text[]) AND NOT released LIMIT 1`.execute(tx)
+        ).rows.length
+      ) {
+        return 'deferred';
+      }
+
       const current = await this.readMovedFile(tx, move, forkSchema);
       if (!current) {
         await tx.deleteFrom('move_history').where('id', '=', asUuid(move.moveId)).execute();

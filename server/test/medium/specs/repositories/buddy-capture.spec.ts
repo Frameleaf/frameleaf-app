@@ -161,6 +161,12 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     const master = await file('edited-video.mp4');
     const proxy = await file('edited-video-proxy.mp4');
     const lineage = await file('edited-video.mp4.lineage.json');
+    const developed = await file('external-developed.jpg');
+    const developedPreview = await file('external-developed-preview.jpg');
+    await sql`INSERT INTO immich_fork.asset_develop_revision
+      ("assetId", "ownerId", revision, recipe, kind, status, "masterPath", "previewPath")
+      VALUES (${first.asset.id}::uuid, ${ownerId}::uuid, 1, '{}'::jsonb, 'external', 'rendered',
+        ${developed.path}, ${developedPreview.path})`.execute(db);
     await ctx.newAssetFile({ assetId: first.asset.id, type: AssetFileType.FullSize, path: still.path, isEdited: true });
     await db
       .insertInto('asset_restoration')
@@ -188,7 +194,20 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       VALUES (${video.asset.id}::uuid, ${ownerId}::uuid, ${video.path}, ${video.asset.checksum},
         '[]'::jsonb, 'save', 'ready', ${master.path}, ${proxy.path})`.execute(db);
     const run = options();
-    const expected = [first, later, video, restored, preview, still, stillLineage, master, proxy, lineage];
+    const expected = [
+      first,
+      later,
+      video,
+      restored,
+      preview,
+      still,
+      stillLineage,
+      master,
+      proxy,
+      lineage,
+      developed,
+      developedPreview,
+    ];
     const assets = ctx.get(AssetRepository);
     const movedPath = join(root, 'source', 'moved.jpg');
     const move = {
@@ -390,15 +409,32 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       ...derivative,
     });
     const publish = () => writeFile(output.path, 'restored owned derivative');
-    await expect(
-      physical.withOwnerRestorePath(output.path, own.asset.id, ownerId, publish),
-    ).rejects.toThrow('Owner restore destination unavailable');
+    await expect(physical.withOwnerRestorePath(output.path, own.asset.id, ownerId, publish)).rejects.toThrow(
+      'Owner restore destination unavailable',
+    );
     await expect(
       physical.withOwnerRestorePath(output.path, own.asset.id, ownerId, publish, { ...derivative, isEdited: false }),
     ).rejects.toThrow('Owner restore destination unavailable');
     expect(await readFile(output.path)).toEqual(output.bytes);
     await physical.withOwnerRestorePath(output.path, own.asset.id, ownerId, publish, derivative);
     expect(await readFile(output.path, 'utf8')).toBe('restored owned derivative');
+
+    // Retained history permits inspection/no-op restore but still forbids replacing shared bytes.
+    await sql`INSERT INTO immich_fork.video_edit_version
+      ("assetId", "ownerId", "sourcePath", "sourceChecksum", recipe, purpose, status, "masterPath")
+      VALUES (${own.asset.id}::uuid, ${ownerId}::uuid, ${own.path}, ${own.asset.checksum},
+        '[]'::jsonb, 'save', 'ready', ${output.path})`.execute(db);
+    await physical.inspectOwnerRestorePath(output.path, own.asset.id, ownerId, derivative);
+    await expect(
+      physical.withOwnerRestorePath(
+        output.path,
+        own.asset.id,
+        ownerId,
+        () => writeFile(output.path, 'must never replace retained history'),
+        derivative,
+      ),
+    ).rejects.toThrow('Owner restore destination unavailable');
+    await sql`DELETE FROM immich_fork.video_edit_version WHERE "assetId" = ${own.asset.id}::uuid`.execute(db);
 
     const other = await original('same-owner-other-asset.jpg');
     await ctx.newAssetFile({

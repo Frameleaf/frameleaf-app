@@ -19,6 +19,11 @@ import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
 import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.service.js';
 import { CloudBackupService } from 'src/services/cloud-backup.service.js';
+import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
+import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
+import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
+import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.service.js';
+import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { CloudMlBatchService } from 'src/services/cloud-ml-batch.service.js';
 import { CloudMlJobService } from 'src/services/cloud-ml-job.service.js';
 import { CloudMlService } from 'src/services/cloud-ml.service.js';
@@ -140,6 +145,11 @@ export const services = [
   CloudMlService,
   CloudBackupDetailsService,
   CloudBackupService,
+  BuddyBackupService,
+  BuddyBackupPeerService,
+  BuddyBackupCaptureService,
+  BuddyBackupRestoreService,
+  BuddyBackupRecoveryService,
   CloudMlBatchService,
   CloudMlJobService,
   FrameleafAuthService,
