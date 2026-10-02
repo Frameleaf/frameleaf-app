@@ -1,6 +1,14 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
-import { type PhotographyBrand, PhotographyBrandSaveDto } from 'src/dtos/photography-workspace.dto.js';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import sharp from 'sharp';
+import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
+import {
+  type PhotographyBrand,
+  PhotographyBrandSaveDto,
+  PhotographyBrandSchema,
+} from 'src/dtos/photography-workspace.dto.js';
 import { AssetType, AssetVisibility, CacheControl } from 'src/enum.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
@@ -11,22 +19,39 @@ import { SearchService } from 'src/services/search.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { factory, newUuid } from 'test/small.factory.js';
 
-const newBrand = (): PhotographyBrand => ({
-  name: 'North Studio',
-  tagline: 'Portraits',
-  email: 'studio@example.test',
-  phone: '',
-  logoInitials: 'NS',
-  logoAssetId: null,
-  color: '#577059',
-  background: '#f5f3ed',
-  textColor: '#263329',
-  font: 'editorial',
-  watermarkColor: '#ffffff',
-  watermarkOpacity: 45,
-  watermarkPosition: 'bottom-right',
-  watermarkSize: 6,
+let sourceDirectory: string;
+let sourceLogo: string;
+beforeAll(async () => {
+  sourceDirectory = await mkdtemp(join(tmpdir(), 'photography-brand-tests-'));
+  sourceLogo = join(sourceDirectory, 'logo.png');
+  await writeFile(
+    sourceLogo,
+    await sharp({ create: { width: 32, height: 24, channels: 4, background: '#ff550088' } })
+      .png()
+      .toBuffer(),
+  );
 });
+afterAll(async () => {
+  await rm(sourceDirectory, { recursive: true, force: true });
+});
+
+const newBrand = (): PhotographyBrand =>
+  PhotographyBrandSchema.parse({
+    name: 'North Studio',
+    tagline: 'Portraits',
+    email: 'studio@example.test',
+    phone: '',
+    logoInitials: 'NS',
+    logoAssetId: null,
+    color: '#577059',
+    background: '#f5f3ed',
+    textColor: '#263329',
+    font: 'editorial',
+    watermarkColor: '#ffffff',
+    watermarkOpacity: 45,
+    watermarkPosition: 'bottom-right',
+    watermarkSize: 6,
+  });
 const setup = () => {
   const auth = factory.auth({ session: { hasElevatedPermission: true } });
   const revision = newUuid();
@@ -42,7 +67,7 @@ const setup = () => {
     originalMimeType: 'image/png',
     originalFileName: 'logo.png',
     exifInfo: { latitude: 47, longitude: -122 },
-    originalPath: '/private/source/logo.png',
+    originalPath: sourceLogo,
   };
   const repository = {
     get: vi.fn().mockResolvedValue({ value: { shoots: [], brand }, updateId: revision }),
@@ -213,20 +238,104 @@ describe('private studio branding', () => {
     );
     expect(auth.session?.hasElevatedPermission).toBe(true);
   });
-  it('serves only the normal authorized unedited thumbnail and disables its immutable cache policy', async () => {
+  it('serves a validated transparent metadata-free PNG variant and cleans up after sending', async () => {
     const { sut, auth, logo, media } = setup();
-    const file = await sut.logoThumbnail(auth, logo.id);
-    expect(file).toMatchObject({
-      path: '/derived/logo.webp',
-      cacheControl: CacheControl.None,
-      fileName: 'studio-logo',
-    });
-    expect(media.viewThumbnail).toHaveBeenCalledWith(
-      expect.objectContaining({ session: expect.objectContaining({ hasElevatedPermission: false }) }),
-      logo.id,
-      { size: AssetMediaSize.THUMBNAIL, edited: false },
-    );
-    media.viewThumbnail.mockResolvedValue({ targetSize: 'original' } as never);
-    await expect(sut.logoThumbnail(auth, logo.id)).rejects.toBeInstanceOf(NotFoundException);
+    const file = await sut.logoThumbnail(auth, logo.id, 'light');
+    expect(file).toMatchObject({ contentType: 'image/png', cacheControl: CacheControl.None, fileName: 'studio-logo' });
+    const bytes = await readFile(file.path);
+    expect(await sharp(bytes).metadata()).toMatchObject({ hasAlpha: true, format: 'png' });
+    expect((await sharp(bytes).raw().toBuffer())[0]).toBe(255);
+    expect(media.viewThumbnail).not.toHaveBeenCalled();
+    file.release?.();
   });
+  it('rejects mislabeled/corrupt logo pixels before saving or exposing bytes', async () => {
+    const { sut, auth, brand, logo, revision, repository, search } = setup();
+    const path = join(sourceDirectory, 'mislabeled.png');
+    await writeFile(path, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><rect width="20" height="20"/></svg>'));
+    search.searchMetadata.mockResolvedValue({ assets: { items: [{ ...logo, originalPath: path }], nextCursor: null } });
+    await expect(
+      sut.saveBrand(auth, { expectedRevision: revision, brand: { ...brand, logoAssetId: logo.id } }),
+    ).rejects.toThrow('Logo must be');
+    await expect(sut.logoThumbnail(auth, logo.id)).rejects.toThrow('Logo must be');
+    expect(repository.saveBrand).not.toHaveBeenCalled();
+  });
+  it('normalizes old saved branding and preserves presets through a legacy save', async () => {
+    const { sut, auth, brand, revision, repository } = setup();
+    const preset = {
+      id: newUuid(),
+      name: 'Protected proofs',
+      version: 1,
+      watermark: PhotographyWatermarkSchema.parse({ text: 'Studio', pattern: 'tile' }),
+    };
+    const saved = { ...brand, watermarkPresets: [preset], proofWatermarkPresetId: preset.id };
+    repository.get.mockResolvedValue({ value: { shoots: [], brand: saved }, updateId: revision });
+    const {
+      watermarkPresets: _presets,
+      webWatermarkPresetId: _web,
+      proofWatermarkPresetId: _proof,
+      exportWatermarkPresetId: _export,
+      ...legacy
+    } = brand;
+    await sut.saveBrand(auth, PhotographyBrandSaveDto.schema.parse({ expectedRevision: revision, brand: legacy }));
+    expect(repository.saveBrand).toHaveBeenCalledWith(auth.user.id, saved, revision);
+    repository.get.mockResolvedValue({ value: { shoots: [], brand: legacy }, updateId: revision });
+    await expect(sut.getBrand(auth)).resolves.toMatchObject({
+      brand: {
+        watermarkPresets: [],
+        webWatermarkPresetId: null,
+        proofWatermarkPresetId: null,
+        exportWatermarkPresetId: null,
+      },
+    });
+  });
+  it('increments changed preset versions while independently selecting web/proof/export defaults', async () => {
+    const { sut, auth, brand, revision, repository } = setup();
+    const preset = {
+      id: newUuid(),
+      name: 'Web signature',
+      version: 1,
+      watermark: PhotographyWatermarkSchema.parse({ text: 'Studio' }),
+    };
+    repository.get.mockResolvedValue({
+      value: { shoots: [], brand: { ...brand, watermarkPresets: [preset] } },
+      updateId: revision,
+    });
+    const updated = {
+      ...brand,
+      watermarkPresets: [{ ...preset, watermark: { ...preset.watermark, opacity: 70 } }],
+      webWatermarkPresetId: preset.id,
+      proofWatermarkPresetId: preset.id,
+      exportWatermarkPresetId: null,
+    };
+    await sut.saveBrand(auth, { expectedRevision: revision, brand: updated });
+    expect(repository.saveBrand).toHaveBeenCalledWith(
+      auth.user.id,
+      { ...updated, watermarkPresets: [{ ...updated.watermarkPresets[0], version: 2 }] },
+      revision,
+    );
+    await expect(
+      sut.saveBrand(auth, {
+        expectedRevision: revision,
+        brand: { ...updated, watermarkPresets: [{ ...preset, version: 2 }] },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      sut.saveBrand(auth, { expectedRevision: revision, brand: { ...updated, webWatermarkPresetId: newUuid() } }),
+    ).rejects.toThrow('Unknown watermark preset');
+  });
+  it('requires an ordinary session and generates the actual renderer preview in both orientations', async () => {
+    const { sut, auth } = setup();
+    const watermark = PhotographyWatermarkSchema.parse({ text: 'Studio', font: 'script', pattern: 'tile' });
+    for (const orientation of ['portrait', 'landscape'] as const) {
+      const bytes = await sut.previewWatermark(auth, { watermark, orientation, background: 'light' });
+      expect(await sharp(bytes).metadata()).toMatchObject({
+        format: 'jpeg',
+        width: orientation === 'portrait' ? 480 : 720,
+        height: orientation === 'portrait' ? 720 : 480,
+      });
+    }
+    await expect(
+      sut.previewWatermark({ ...auth, session: undefined }, { watermark, orientation: 'portrait', background: 'dark' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  }, 15_000);
 });

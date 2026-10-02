@@ -6,12 +6,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import sharp from 'sharp';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
+import { PhotographyRenditionPreviewDto } from 'src/dtos/photography-rendition.dto.js';
 import {
   type PhotographyBrand,
   PhotographyBrandDto,
   PhotographyBrandSaveDto,
+  PhotographyBrandSchema,
   PhotographyLogoCandidatesDto,
   PhotographyPhotoQueryDto,
   PhotographyPhotosDto,
@@ -28,6 +33,11 @@ import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import {
+  preparePhotographyLogo,
+  readPhotographyLogo,
+  renderPhotographyRendition,
+} from 'src/utils/photography-rendition.js';
 
 @Injectable()
 export class PhotographyWorkspaceService {
@@ -48,7 +58,7 @@ export class PhotographyWorkspaceService {
   }
 
   private defaultBrand(auth: AuthDto): PhotographyBrand {
-    return {
+    return PhotographyBrandSchema.parse({
       name: auth.user.name,
       tagline: '',
       email: '',
@@ -63,7 +73,7 @@ export class PhotographyWorkspaceService {
       watermarkOpacity: 45,
       watermarkPosition: 'bottom-right',
       watermarkSize: 6,
-    };
+    });
   }
 
   private async logo(auth: AuthDto, id: string) {
@@ -92,7 +102,7 @@ export class PhotographyWorkspaceService {
     ) {
       throw new ForbiddenException('Logo is unavailable');
     }
-    return asset;
+    return readPhotographyLogo(asset.originalPath);
   }
 
   private async brandView(
@@ -100,17 +110,38 @@ export class PhotographyWorkspaceService {
     brand: PhotographyBrand,
     revision: string | null,
   ): Promise<PhotographyBrandDto> {
-    if (brand.logoAssetId) {
+    brand = PhotographyBrandSchema.parse(brand);
+    let logoUnavailable = false;
+    const unavailable = new Set<string>();
+    const ids = new Set([brand.logoAssetId, ...brand.watermarkPresets.map(({ watermark }) => watermark.logoAssetId)]);
+    for (const id of ids) {
+      if (!id) continue;
       try {
-        await this.logo(auth, brand.logoAssetId);
+        await this.logo(auth, id);
       } catch (error) {
-        if (!(error instanceof HttpException) || ![400, 403, 404].includes(error.getStatus())) {
-          throw error;
-        }
-        return { revision, brand: { ...brand, logoAssetId: null }, logoUnavailable: true };
+        if (!(error instanceof HttpException) || ![400, 403, 404].includes(error.getStatus())) throw error;
+        unavailable.add(id);
+        logoUnavailable = true;
       }
     }
-    return { revision, brand, logoUnavailable: false };
+    return {
+      revision,
+      brand: {
+        ...brand,
+        logoAssetId: brand.logoAssetId && unavailable.has(brand.logoAssetId) ? null : brand.logoAssetId,
+        watermarkPresets: brand.watermarkPresets.map((preset) => ({
+          ...preset,
+          watermark: {
+            ...preset.watermark,
+            logoAssetId:
+              preset.watermark.logoAssetId && unavailable.has(preset.watermark.logoAssetId)
+                ? null
+                : preset.watermark.logoAssetId,
+          },
+        })),
+      },
+      logoUnavailable,
+    };
   }
 
   async getBrand(auth: AuthDto): Promise<PhotographyBrandDto> {
@@ -126,11 +157,40 @@ export class PhotographyWorkspaceService {
     if ((stored?.updateId ?? null) !== dto.expectedRevision) {
       throw new ConflictException('Branding changed; reload before saving');
     }
+    const previous = stored?.value.brand ? PhotographyBrandSchema.parse(stored.value.brand) : this.defaultBrand(auth);
+    const supplied = dto.brand;
     const brand: PhotographyBrand = {
       ...dto.brand,
-      logoAssetId:
-        dto.brand.logoAssetId === undefined ? (stored?.value.brand?.logoAssetId ?? null) : dto.brand.logoAssetId,
+      logoAssetId: dto.brand.logoAssetId === undefined ? previous.logoAssetId : dto.brand.logoAssetId,
+      watermarkPresets: supplied.watermarkPresets === undefined ? previous.watermarkPresets : supplied.watermarkPresets,
+      webWatermarkPresetId:
+        supplied.webWatermarkPresetId === undefined ? previous.webWatermarkPresetId : supplied.webWatermarkPresetId,
+      proofWatermarkPresetId:
+        supplied.proofWatermarkPresetId === undefined
+          ? previous.proofWatermarkPresetId
+          : supplied.proofWatermarkPresetId,
+      exportWatermarkPresetId:
+        supplied.exportWatermarkPresetId === undefined
+          ? previous.exportWatermarkPresetId
+          : supplied.exportWatermarkPresetId,
     };
+    if (new Set(brand.watermarkPresets.map(({ id }) => id)).size !== brand.watermarkPresets.length)
+      throw new BadRequestException('Duplicate watermark presets');
+    for (const id of [brand.webWatermarkPresetId, brand.proofWatermarkPresetId, brand.exportWatermarkPresetId]) {
+      if (id && brand.watermarkPresets.every((preset) => preset.id !== id))
+        throw new BadRequestException('Unknown watermark preset default');
+    }
+    brand.watermarkPresets = brand.watermarkPresets.map((preset) => {
+      const old = previous.watermarkPresets.find(({ id }) => id === preset.id);
+      if (preset.version !== (old?.version ?? 1))
+        throw new ConflictException('Watermark preset changed; reload before saving');
+      const changed =
+        old && (old.name !== preset.name || JSON.stringify(old.watermark) !== JSON.stringify(preset.watermark));
+      return { ...preset, version: changed ? old.version + 1 : preset.version };
+    });
+    for (const { watermark } of brand.watermarkPresets) {
+      if (watermark.logoAssetId) await this.logo(safeAuth, watermark.logoAssetId);
+    }
     if (brand.logoAssetId) {
       try {
         await this.logo(safeAuth, brand.logoAssetId);
@@ -183,14 +243,47 @@ export class PhotographyWorkspaceService {
     };
   }
 
-  async logoThumbnail(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
-    const safeAuth = this.session(auth);
-    await this.logo(safeAuth, id);
-    const file = await this.media.viewThumbnail(safeAuth, id, { size: AssetMediaSize.THUMBNAIL, edited: false });
-    if ('targetSize' in file) {
-      throw new NotFoundException('Logo thumbnail is unavailable');
+  async logoBytes(auth: AuthDto, id: string): Promise<Buffer> {
+    return this.logo(this.session(auth), id);
+  }
+
+  async logoThumbnail(
+    auth: AuthDto,
+    id: string,
+    variant: 'original' | 'light' | 'dark' = 'original',
+  ): Promise<ImmichFileResponse> {
+    const variants = await preparePhotographyLogo(await this.logoBytes(auth, id));
+    const directory = await mkdtemp(join(tmpdir(), 'frameleaf-logo-'));
+    try {
+      const path = join(directory, 'logo.png');
+      await writeFile(path, variants[variant]);
+      return new ImmichFileResponse({
+        path,
+        contentType: 'image/png',
+        fileName: 'studio-logo',
+        cacheControl: CacheControl.None,
+        release: () => {
+          void rm(directory, { recursive: true, force: true });
+        },
+      });
+    } catch (error) {
+      await rm(directory, { recursive: true, force: true });
+      throw error;
     }
-    return new ImmichFileResponse({ ...file, fileName: 'studio-logo', cacheControl: CacheControl.None });
+  }
+
+  async previewWatermark(auth: AuthDto, input: PhotographyRenditionPreviewDto): Promise<Buffer> {
+    const safeAuth = this.session(auth);
+    const dto = PhotographyRenditionPreviewDto.schema.parse(input);
+    const width = dto.orientation === 'portrait' ? 480 : 720,
+      height = dto.orientation === 'portrait' ? 720 : 480;
+    const source = await sharp({
+      create: { width, height, channels: 3, background: dto.background === 'light' ? '#e8e4dc' : '#263329' },
+    })
+      .png()
+      .toBuffer();
+    const logo = dto.watermark.logoAssetId ? await this.logoBytes(safeAuth, dto.watermark.logoAssetId) : undefined;
+    return renderPhotographyRendition(source, dto.watermark, logo);
   }
 
   private async ownedAlbum(auth: AuthDto, albumId: string) {

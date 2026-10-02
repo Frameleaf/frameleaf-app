@@ -50,6 +50,7 @@ RUN . /etc/os-release && \
   # libjpeg62-turbo-dev is only for building libvips; the final image uses jpegli (/usr/local/lib/libjpeg.so.62)
   libjpeg62-turbo-dev \
   liblcms2-dev \
+  libpango1.0-dev \
   librsvg2-dev \
   libspng-dev \
   meson \
@@ -217,6 +218,8 @@ RUN . /etc/os-release && \
   libgomp1 \
   libgsf-1-114 \
   liblcms2-2 \
+  libpango-1.0-0 \
+  libpangocairo-1.0-0 \
   liblqr-1-0 \
   libltdl7 \
   libopenexr-3-1-30 \
@@ -449,6 +452,7 @@ FROM base-server-prod AS prod
 
 WORKDIR /usr/src/app
 ENV NODE_ENV=production \
+  FONTCONFIG_FILE=/usr/src/app/server/resources/fonts/fonts.conf \
   NVIDIA_DRIVER_CAPABILITIES=all \
   NVIDIA_VISIBLE_DEVICES=all
 
