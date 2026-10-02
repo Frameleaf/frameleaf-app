@@ -361,7 +361,7 @@ describe(EdgeStateService.name, () => {
       );
       relay.ensure.mockClear();
       await sut.tick(now + 20_000);
-      expect(proxy.configureRecovery).toHaveBeenLastCalledWith(null);
+      expect(proxy.configureRecovery).toHaveBeenLastCalledWith(null, true);
       expect(relay.ensure).not.toHaveBeenCalled();
       expect(relay.stop).toHaveBeenCalled();
     });
