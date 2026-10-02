@@ -125,7 +125,7 @@
         "sourceWidth": { "type": "number" },
         "sourceHeight": { "type": "number" },
         "transform": { "$ref": "#/$defs/transform" },
-        "transformParent": { "type": "object" },
+        "transformParent": { "$ref": "#/$defs/transformParent" },
         "crop": { "type": "object" },
         "cornerPin": { "type": "object" },
         "volume": { "type": "number", "minimum": -60, "maximum": 12 },
@@ -142,6 +142,14 @@
         "text": { "type": "string" },
         "color": { "type": "string" },
         "textMotion": { "type": "object" },
+        "textRole": { "const": "caption" },
+        "captionSource": {
+          "type": "object",
+          "required": ["clipId"],
+          "properties": { "clipId": { "$ref": "#/$defs/id" }, "mediaId": { "type": "string" }, "type": { "type": "string" } },
+          "additionalProperties": true
+        },
+        "embeddedAudioMuted": { "type": "boolean" },
         "compositionWidth": { "type": "number" },
         "compositionHeight": { "type": "number" },
         "compositionControlOverrides": { "type": "object", "additionalProperties": { "type": "string" } },
@@ -180,6 +188,29 @@
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "cornerRadius": { "type": "number", "minimum": 0 },
         "aspectRatioLocked": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "pose": {
+      "type": "object",
+      "required": ["x", "y", "width", "height", "rotation"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "rotation": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "transformParent": {
+      "type": "object",
+      "required": ["childLocalReference", "childWorldReference"],
+      "properties": {
+        "parentItemId": { "$ref": "#/$defs/id" },
+        "parentReference": { "$ref": "#/$defs/pose" },
+        "childLocalReference": { "$ref": "#/$defs/pose" },
+        "childWorldReference": { "$ref": "#/$defs/pose" }
       },
       "additionalProperties": true
     },
