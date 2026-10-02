@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { Kysely } from 'kysely';
+import { StudioExportScope, StudioExportVersionState } from 'src/enum.js';
 import {
   MEDIA_OPERATION_HANDOFF_REFUSAL,
   MediaOperationRepository,
@@ -10,7 +11,7 @@ import { STUDIO_EXPORT_HANDOFF_REFUSAL, StudioExportRepository } from 'src/repos
 import { STUDIO_PROJECT_HANDOFF_REFUSAL, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { TAKEOUT_HANDOFF_REFUSAL, TakeoutRepository } from 'src/repositories/takeout.repository.js';
 import { DB } from 'src/schema/index.js';
-import { forkGuardAnswer, scriptedKysely } from 'test/scripted-kysely.js';
+import { forkGuardAnswer, scriptedKysely, type ScriptedAnswer, type ScriptedQuery } from 'test/scripted-kysely.js';
 
 const id = '00000000-0000-4000-a000-000000000001';
 
@@ -19,6 +20,7 @@ type Writer = {
   message: string;
   table: string;
   write: (db: Kysely<DB>) => Promise<unknown>;
+  answer?: (query: ScriptedQuery) => ScriptedAnswer;
 };
 
 /**
@@ -71,6 +73,32 @@ const writers: Writer[] = [
     repository: 'Studio exports: remove an output',
     message: STUDIO_EXPORT_HANDOFF_REFUSAL,
     table: 'studio_export_version',
+    answer: ({ sql }) => {
+      if (sql.startsWith('select * from "studio_export_version"')) {
+        return {
+          rows: [
+            {
+              id,
+              ownerId: id,
+              projectId: id,
+              state: StudioExportVersionState.Failed,
+              scope: StudioExportScope.Project,
+              outputPath: `/data/exports/${id}/output.mp4`,
+              outputChecksum: Buffer.alloc(32, 1),
+              outputSizeInBytes: 10,
+              outputRemovedAt: null,
+            },
+          ],
+        };
+      }
+      if (sql.startsWith('select "id" from "studio_export_version"') && sql.endsWith('for update')) {
+        return { rows: [{ id }] };
+      }
+      if (sql.includes('count(')) {
+        // The retiring export is the only retained reference; every other reference count is zero.
+        return { rows: [{ count: sql.includes('public.studio_export_version') ? '1' : '0' }] };
+      }
+    },
     write: (db) =>
       new StudioExportRepository(db, undefined as never, undefined as never, undefined as never).markOutputRemoved(
         id,
@@ -133,17 +161,22 @@ describe('Frameleaf public-table writers during database handoff (FL-44)', () =>
     await expect(write(db)).rejects.toThrow(message);
   });
 
-  it.each(writers)('$repository takes the guard before it writes', async ({ table, write }) => {
-    const { db, queries } = scriptedKysely(forkGuardAnswer({ phase: 'active' }));
+  it.each(writers)('$repository takes the guard before it writes', async ({ table, write, answer }) => {
+    const guardAnswer = forkGuardAnswer({ phase: 'active' });
+    const { db, queries } = scriptedKysely((query) => guardAnswer(query) ?? answer?.(query));
 
     await write(db).catch(() => {
-      // the scripted database answers no rows; only the order of statements matters here
+      // Other writers receive no domain rows; inspect their issued SQL even when they reject.
     });
 
     const statements = queries.map(({ sql }) => sql);
-    const guard = statements.findIndex((sql) => sql.includes('FROM immich_fork.state WHERE id = 1 FOR SHARE'));
     const written = statements.findIndex((sql) => writesTo(sql, table));
-    expect(guard).toBeGreaterThan(0);
+    const transaction = statements.lastIndexOf('begin', written);
+    const guard = statements.findIndex(
+      (sql, index) => index > transaction && sql.includes('FROM immich_fork.state WHERE id = 1 FOR SHARE'),
+    );
+    expect(transaction).toBeGreaterThanOrEqual(0);
+    expect(guard).toBeGreaterThan(transaction);
     expect(written).toBeGreaterThan(guard);
   });
 });
