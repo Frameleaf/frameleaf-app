@@ -1,11 +1,15 @@
 /**
- * FL-306, FL-307: check the published Studio graph protocol against the engine's own answers without
- * the engine. `graph-protocol.mjs` implements the protocol's computable rules from the prose; every
- * engine-generated digest, identity draw and rounding answer in `studio/graph-conformance-v1.json`
- * must agree with it, and every graph there must satisfy `studio/graph-schema-v1.json`. For part 2
- * (FL-307) the rules of section 12 that a graph and a payload alone decide are re-derived too, and
- * `graph-reference.mjs`, a reference implementation written from section 12, replays every part 2
- * case: the prose must be enough to reproduce the engine's graphs, ids and refusals.
+ * FL-306, FL-307, FL-308: check the published Studio graph protocol against the engine's own answers
+ * without the engine. `graph-protocol.mjs` implements the protocol's computable rules from the
+ * prose; every engine-generated digest, identity draw and rounding answer in
+ * `studio/graph-conformance-v1.json` must agree with it, and every graph there must satisfy
+ * `studio/graph-schema-v1.json`. For part 2 (FL-307) the rules of section 12 that a graph and a
+ * payload alone decide are re-derived too. For part 3 (FL-308) the parameter catalogue
+ * `studio/graph-parameters-v1.json` is checked against its own digest and the command catalogue,
+ * and every effect, transition, easing, modifier and text motion in a graph must be one it lists.
+ * `graph-reference.mjs`, a reference implementation written from sections 12 and 13, replays every
+ * part 2 and part 3 case: the prose must be enough to reproduce the engine's graphs, ids and
+ * refusals.
  *
  * The engine replay itself (`studio/adapters/web/test/graph-conformance.test.ts`) runs in the
  * Studio engine workflow; this check runs in the Scripts unit tests on every pull request, so a
@@ -41,6 +45,7 @@ const fixtures = read('graph-conformance-v1.json');
 const schema = read('graph-schema-v1.json');
 const catalogue = read('frameleaf-studio-commands.json');
 const build = read('engine-build.json');
+const parameters = read('graph-parameters-v1.json');
 
 const graphs = () => [
   ...Object.entries(fixtures.bases).map(([name, base]) => [`base ${name}`, base.graph, base.digest]),
@@ -396,8 +401,10 @@ test('12.7.2: track.remove removes the track and its clips and leaves the other 
 });
 
 /**
- * The part 2 cases the reference implementation does not replay, each for a rule the prose defers
- * to a later part. A case that starts to need one of these must be added here on purpose.
+ * The cases the reference implementation does not replay. Six need a rule the prose defers to part
+ * 4. Six hold engine arithmetic (13.1): values from sines, arctangents and keyframe interpolation
+ * that the protocol does not fix to the last bit, which the fixtures mark `engineArithmetic`. A case
+ * that starts to need either must be added here on purpose.
  */
 const deferred = new Map([
   ['clip.move/rejects-clip-inside-composition', 'composition.add is specified in part 4'],
@@ -406,14 +413,170 @@ const deferred = new Map([
   ['clip.update/style-lower-third', 'title styles are specified in part 4'],
   ['clip.update/animation', 'title animations are specified in part 4'],
   ['clip.update/rejects-unknown-style', 'title styles are specified in part 4'],
-  ['clip.setTransformParent/detach', 'poses of already-parented clips are specified in part 3'],
-  ['clip.setTransformParent/reparent', 'poses of already-parented clips are specified in part 3'],
+  ['clip.setTransformParent/detach', 'engine arithmetic: the pose of an already-parented clip'],
+  ['clip.setTransformParent/reparent', 'engine arithmetic: the pose of an already-parented clip'],
+  ['clip.setTransformParent/animated-parent', 'engine arithmetic: the pose of a keyframed clip'],
+  ['property.bakeModifier/spin', 'engine arithmetic: baked keyframe values'],
+  ['property.bakeModifier/sway', 'engine arithmetic: baked keyframe values'],
+  ['property.bakeModifier/all-modifiers-over-keyframes', 'engine arithmetic: baked keyframe values'],
 ]);
 
-test('section 12 is enough to reproduce every part 2 case: graphs, ids and refusals', () => {
+/* Part 3 (FL-308): section 13 */
+
+const part3 = Object.entries(fixtures.commandStatus)
+  .filter(([, entry]) => entry.story === 'FL-308')
+  .map(([id]) => id)
+  .sort();
+const part3Cases = fixtures.cases.filter((entry) => entry.story === 'FL-308');
+const replayable = [...part2Cases, ...part3Cases];
+
+test('part 3 covers its 12 commands with applied and rejected cases', () => {
+  assert.deepEqual(part3, [
+    'clip.setKenBurns',
+    'clip.setTransition',
+    'effect.add',
+    'effect.remove',
+    'keyframe.add',
+    'keyframe.remove',
+    'keyframe.setEasing',
+    'keyframe.update',
+    'property.bakeModifier',
+    'property.setExpression',
+    'property.setModifier',
+    'text.setMotion',
+  ]);
+  for (const command of part3) {
+    const cases = part3Cases.filter((entry) => entry.id.startsWith(`${command}/`));
+    for (const entry of cases) assert.ok(entry.covers.includes(command), `${entry.id} does not cover ${command}`);
+    const count = (status) => cases.filter((entry) => entry.expect.status === status).length;
+    assert.ok(count('applied') > 0, `${command} has no applied case`);
+    assert.ok(count('rejected') > 0, `${command} has no rejected case`);
+  }
+});
+
+test('13.1: the cases marked engineArithmetic are exactly the ones the protocol leaves to the engine', () => {
+  const marked = fixtures.cases.filter((entry) => entry.engineArithmetic === true);
+  assert.deepEqual(
+    marked.map((entry) => entry.id).sort(),
+    [...deferred]
+      .filter(([, reason]) => reason.startsWith('engine arithmetic'))
+      .map(([id]) => id)
+      .sort(),
+  );
+  // Only an applied answer can hold such values; a refusal is always reproducible.
+  for (const entry of marked) assert.equal(entry.expect.status, 'applied', entry.id);
+});
+
+test('13.2: every effect, transition, easing, modifier and text motion in a graph is one the catalogue lists', () => {
+  const effects = new Set(parameters.effects.map((entry) => entry.id));
+  const transitions = new Set(parameters.transitions.map((entry) => entry.id));
+  const modifiers = new Set(parameters.motionModifiers.map((entry) => entry.id));
+  const easings = new Set(parameters.easing.types);
+  let checked = 0;
+  for (const [name, graph] of normalGraphs()) {
+    const { timeline } = graph;
+    if (!timeline) continue;
+    const clips = new Map(timeline.items.map((item) => [item.id, item]));
+    for (const item of timeline.items) {
+      // 13.2.2: an effect stack names catalogue effects, under ids unique on the clip.
+      const stack = item.effects ?? [];
+      assert.equal(new Set(stack.map((effect) => effect.id)).size, stack.length, `${name}: ${item.id} repeats an effect id`);
+      for (const { effect } of stack) {
+        if (effect.type === 'gpu-effect') assert.ok(effects.has(effect.gpuEffectType), `${name}: effect ${effect.gpuEffectType}`);
+        checked++;
+      }
+      // 13.6.2: at most one modifier of a type on a clip.
+      const types = (item.motionModifiers ?? []).map((modifier) => modifier.type);
+      assert.equal(new Set(types).size, types.length, `${name}: ${item.id} has two modifiers of one type`);
+      for (const type of types) assert.ok(modifiers.has(type), `${name}: modifier ${type}`);
+      // 13.7.1: each text motion slot holds a preset of that slot, with normalised values.
+      for (const [slot, motion] of Object.entries(item.textMotion ?? {})) {
+        assert.ok(parameters.textMotion[slot]?.includes(motion.presetId), `${name}: ${slot} text motion ${motion.presetId}`);
+        assert.ok(Number.isInteger(motion.durationFrames) && motion.durationFrames >= 1, `${name}: text motion duration`);
+        assert.ok(motion.intensity >= 0 && motion.intensity <= 2, `${name}: text motion intensity`);
+        checked++;
+      }
+      // 13.8.4: a blend mode is one of the catalogue's.
+      if (item.blendMode !== undefined) {
+        assert.ok(parameters.blendModes.some((mode) => mode.id === item.blendMode), `${name}: blend mode ${item.blendMode}`);
+      }
+    }
+    // 13.2.3: a transition names a catalogue presentation; a clip has at most one transition out of it and one into it.
+    const list = timeline.transitions ?? [];
+    for (const transition of list) {
+      assert.ok(transitions.has(transition.presentation), `${name}: transition ${transition.presentation}`);
+      assert.equal(transition.type, 'crossfade', name);
+      checked++;
+    }
+    for (const side of ['leftClipId', 'rightClipId']) {
+      const ids = list.map((transition) => transition[side]);
+      assert.equal(new Set(ids).size, ids.length, `${name}: two transitions share a ${side}`);
+    }
+    // 13.2.4: one entry per clip, for a clip of the timeline; keyframes in frame order, one per frame.
+    const entries = timeline.keyframes ?? [];
+    assert.equal(new Set(entries.map((entry) => entry.itemId)).size, entries.length, `${name}: two keyframes entries for one clip`);
+    for (const entry of entries) {
+      assert.ok(clips.has(entry.itemId), `${name}: keyframes of a clip that is not there (${entry.itemId})`);
+      const vector = entry.vectorProperties ?? [];
+      const names = [...entry.properties.map((group) => `scalar:${group.property}`), ...vector.map((group) => `vector:${group.property}`)];
+      assert.equal(new Set(names).size, names.length, `${name}: ${entry.itemId} lists a property twice`);
+      for (const group of [...entry.properties, ...vector]) {
+        const frames = group.keyframes.map((keyframe) => keyframe.frame);
+        assert.deepEqual(frames, [...new Set(frames)].sort((a, b) => a - b), `${name}: ${entry.itemId} ${group.property} frames`);
+        for (const keyframe of group.keyframes) {
+          assert.ok(easings.has(keyframe.easing), `${name}: easing ${keyframe.easing}`);
+          // 13.2.6: stored parameters belong to the easing they sit beside.
+          if (keyframe.easingConfig) {
+            assert.equal(keyframe.easingConfig.type, keyframe.easing, `${name}: easing parameters of another easing`);
+            assert.ok(keyframe.easing === 'cubic-bezier' ? keyframe.easingConfig.bezier : keyframe.easingConfig.spring, name);
+          }
+          checked++;
+        }
+      }
+      const targets = (entry.expressions ?? []).map((expression) => expression.targetProperty);
+      assert.equal(new Set(targets).size, targets.length, `${name}: two expressions on one property`);
+      for (const target of targets) assert.ok(parameters.properties.expression.includes(target), `${name}: expression on ${target}`);
+    }
+  }
+  assert.ok(checked >= 600, `only ${checked} entries were checked`);
+});
+
+test('13.7.2: a Ken Burns record names two keyframes each of x, y, width and height, at the first and last frame', () => {
+  let checked = 0;
+  for (const [name, graph] of normalGraphs()) {
+    for (const item of graph.timeline?.items ?? []) {
+      const record = item.frameleafKenBurns;
+      if (!record) continue;
+      assert.equal(item.type, 'image', name);
+      const entry = graph.timeline.keyframes.find((candidate) => candidate.itemId === item.id);
+      const last = Math.max(1, item.durationInFrames - 1);
+      const owned = ['x', 'y', 'width', 'height'].flatMap((property) =>
+        entry.properties.find((group) => group.property === property).keyframes.filter((keyframe) => record.keyframeIds.includes(keyframe.id)),
+      );
+      if (owned.length !== record.keyframeIds.length) continue; // a recorded keyframe was removed by hand afterwards
+      assert.deepEqual(
+        owned.map((keyframe) => keyframe.id),
+        record.keyframeIds,
+        `${name}: the record lists its keyframes in property order`,
+      );
+      assert.deepEqual(
+        owned.map((keyframe) => keyframe.frame),
+        [0, last, 0, last, 0, last, 0, last],
+        name,
+      );
+      // The move is uniform: the photo keeps its shape, so width and height scale together.
+      const [, , , , w0, w1, h0, h1] = owned.map((keyframe) => keyframe.value);
+      assert.ok(Math.abs(w0 / h0 - w1 / h1) < 1e-9, `${name}: the move changes the photo's shape`);
+      checked++;
+    }
+  }
+  assert.ok(checked >= 8, `only ${checked} records were checked`);
+});
+
+test('sections 12 and 13 are enough to reproduce every part 2 and part 3 case: graphs, ids and refusals', () => {
   const skipped = [];
   let replayed = 0;
-  for (const entry of part2Cases) {
+  for (const entry of replayable) {
     const base = fixtures.bases[entry.base];
     let outcome;
     try {
@@ -437,14 +600,13 @@ test('section 12 is enough to reproduce every part 2 case: graphs, ids and refus
     }
     replayed++;
   }
-  assert.deepEqual(skipped.sort(), [...deferred.keys()].sort(), 'the cases deferred to parts 3 and 4');
-  assert.equal(replayed, part2Cases.length - deferred.size);
-  assert.ok(replayed >= 350, `only ${replayed} cases were replayed`);
+  assert.deepEqual(skipped.sort(), [...deferred.keys()].sort(), 'the cases deferred to part 4 or left to the engine');
+  assert.equal(replayed, replayable.length - deferred.size);
+  assert.ok(replayed >= 750, `only ${replayed} cases were replayed`);
 });
 
 /* Part 3 (FL-308): the parameter catalogue */
 
-const parameters = read('graph-parameters-v1.json');
 /** Every key of every object in a JSON value. */
 const keysOf = (value, found = new Set()) => {
   if (Array.isArray(value)) for (const entry of value) keysOf(entry, found);
@@ -550,7 +712,7 @@ test('13.8: each direct edit names graph fields, and its command is one the engi
 });
 
 test('a refused batch leaves the graph it was given untouched', () => {
-  for (const entry of part2Cases.filter((candidate) => candidate.expect.status === 'rejected' && !deferred.has(candidate.id))) {
+  for (const entry of replayable.filter((candidate) => candidate.expect.status === 'rejected' && !deferred.has(candidate.id))) {
     const base = fixtures.bases[entry.base];
     const before = canonicalJson(base.graph);
     applyBatch(base.graph, entry.envelopes, fixtures.media[entry.media ?? base.media]);

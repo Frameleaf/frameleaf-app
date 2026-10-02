@@ -1,15 +1,17 @@
 /**
- * A reference implementation of part 2 of the Studio graph protocol v1 (FL-307), written from
- * section 12 of `docs/docs/developer/studio-graph-protocol-v1.md` alone, without the engine.
+ * A reference implementation of parts 2 and 3 of the Studio graph protocol v1 (FL-307, FL-308),
+ * written from sections 12 and 13 of `docs/docs/developer/studio-graph-protocol-v1.md` and the
+ * parameter catalogue `studio/graph-parameters-v1.json` alone, without the engine.
  *
- * `graph-protocol.test.mjs` replays the part 2 conformance fixtures through it: if the prose is
- * not enough to reproduce the engine's graphs, ids and refusals, a fixture fails here. It is what a
- * native client implements, in the smallest form that passes; it is not shipped anywhere.
+ * `graph-protocol.test.mjs` replays the conformance fixtures of both parts through it: if the
+ * prose is not enough to reproduce the engine's graphs, ids and refusals, a fixture fails here. It
+ * is what a native client implements, in the smallest form that passes; it is not shipped anywhere.
  *
- * Not covered, because the prose defers them to parts 3 and 4: title styles and animations
- * (`clip.update`), poses of animated or already-parented clips (`clip.setTransformParent`),
- * keyframe rescaling and keyframe limits, and commands of other parts inside a batch.
+ * Not covered: what the prose defers to part 4 (title styles and animations of `clip.update`,
+ * compositions), and what it declares engine arithmetic (13.1): the values of baked keyframes and
+ * the poses of animated or already-parented clips. Those raise `Unspecified`.
  */
+import { readFileSync } from 'node:fs';
 import {
   applyMarkerCommand,
   applyTrackCommand,
@@ -29,7 +31,10 @@ class Refusal extends Error {
     this.reason = reason;
   }
 }
-/** Raised for what parts 3 and 4 specify: the caller skips the case. */
+/** 13.2.1: the ids a graph may name. */
+const catalogue = JSON.parse(readFileSync(new URL('../graph-parameters-v1.json', import.meta.url), 'utf8'));
+
+/** Raised for what part 4 specifies and for engine arithmetic: the caller skips the case. */
 export class Unspecified extends Error {}
 
 const invalid = (detail) => {
@@ -68,7 +73,7 @@ function close(graph, state) {
   const { transitions, keyframes, markers, inPoint, outPoint, ...rest } = state.timeline;
   const timeline = { ...rest, tracks: state.tracks, items: state.items };
   if (state.transitions.length > 0) timeline.transitions = state.transitions;
-  if (state.keyframes.length > 0) timeline.keyframes = state.keyframes;
+  if (state.keyframes.length > 0) timeline.keyframes = state.keyframes.map(tidy);
   if (state.markers.length > 0) timeline.markers = state.markers;
   if (state.inPoint !== undefined) timeline.inPoint = state.inPoint;
   if (state.outPoint !== undefined) timeline.outPoint = state.outPoint;
@@ -258,7 +263,18 @@ function removeClips(state, ids) {
   const gone = new Set(ids);
   state.items = state.items.filter((item) => !gone.has(item.id));
   state.transitions = state.transitions.filter((transition) => !gone.has(transition.leftClipId) && !gone.has(transition.rightClipId));
-  state.keyframes = state.keyframes.filter((entry) => !gone.has(entry.itemId));
+  dropKeyframes(state, gone);
+}
+
+/** 13.2.4: an entry holds animation when it has a keyframe, an expression, a link or a separated vector. */
+const holdsAnimation = (entry) =>
+  entry.properties.some((group) => group.keyframes.length > 0) ||
+  (entry.vectorProperties ?? []).some((group) => group.keyframes.length > 0) ||
+  [entry.separatedVectorProperties, entry.propertyLinks, entry.expressions].some((list) => (list?.length ?? 0) > 0);
+
+/** 13.2.7: removing clips removes their entries, and every entry that holds no animation. */
+function dropKeyframes(state, gone) {
+  state.keyframes = state.keyframes.filter((entry) => !gone.has(entry.itemId) && holdsAnimation(entry));
 }
 
 /* 12.2.3: sync lock */
@@ -821,6 +837,15 @@ const commands = {
     const companion = synchronised(state, clip).find((member) => member.id !== clip.id);
     if (companion) slide(companion, neighbours(companion));
     if (!transitionsStayValid(state, preview)) failed('clip.slide: a transition blocks the slide');
+    // 13.2.7: scalar keyframes that are in play must stay inside their clip and outside transitions.
+    for (const [id, next] of preview) {
+      const before = clipOf(state, id);
+      const inPlay = (entryOf(state, id)?.properties ?? [])
+        .flatMap((group) => group.keyframes.map((keyframe) => keyframe.frame))
+        .filter((frame) => frame >= 0 && frame < before.durationInFrames && !inTransitionRegion(state, before, frame));
+      if (inPlay.some((frame) => frame >= next.durationInFrames || inTransitionRegion(state, next, frame)))
+        failed('clip.slide: a keyframe would fall outside its clip');
+    }
     for (const next of preview.values()) replace(state, next);
     repair(state, preview.keys());
   },
@@ -845,8 +870,8 @@ const commands = {
     const before = linked.map((id) => clipOf(state, id));
     const retimed = synchronised(state, clip);
     const oldEnd = end(clip);
-    if (state.keyframes.some((entry) => retimed.some((member) => member.id === entry.itemId))) throw new Unspecified('keyframe rescaling');
     for (const member of retimed) {
+      rescaleKeyframes(state, member.id, member.durationInFrames, length);
       const memberSpan = Math.max(1, (member.sourceEnd ?? member.sourceStart ?? 0) - (member.sourceStart ?? 0));
       const derived = (memberSpan * state.fps) / (length * (member.sourceFps ?? state.fps));
       replace(state, { ...member, durationInFrames: length, speed: Math.max(0.1, Math.min(16, derived)) });
@@ -1038,7 +1063,7 @@ const commands = {
           rightClipId: transition.rightClipId === right.id ? left.id : transition.rightClipId,
         }))
         .filter((transition) => transition.leftClipId !== transition.rightClipId);
-      state.keyframes = state.keyframes.filter((entry) => entry.itemId !== right.id);
+      dropKeyframes(state, new Set([right.id]));
     };
     for (const part of chain.slice(1)) {
       const [left, right] = [clipOf(state, first.id), clipOf(state, part.id)];
@@ -1145,9 +1170,10 @@ const commands = {
     if (
       child.transformParent ||
       parent?.transformParent ||
-      state.keyframes.some((entry) => [child.id, parent?.id].includes(entry.itemId))
+      state.keyframes.some((entry) => [child.id, parent?.id].includes(entry.itemId)) ||
+      [child, parent].some((clip) => (clip?.motionModifiers?.length ?? 0) > 0)
     ) {
-      throw new Unspecified('poses of animated or already-parented clips are part 3');
+      throw new Unspecified('poses of animated or already-parented clips are engine arithmetic (13.2.7)');
     }
     const pose = (clip) => {
       const size = fitted(state, clip);
@@ -1444,15 +1470,797 @@ function markers(state, payload, draw, id) {
   state.markers = applyMarkerCommand(state.markers, { id, payload }, state.rate, draw);
 }
 
+/* ================================================================== */
+/* Part 3 (section 13): effects, transitions, keyframes and animation  */
+/* ================================================================== */
+
+/* 13.2.4: keyframes entries */
+
+const entryOf = (state, itemId) => state.keyframes.find((entry) => entry.itemId === itemId);
+const isVector = (property) => catalogue.properties.vector.includes(property);
+const finite = (value, min = -Infinity, max = Infinity) => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+const plainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
+
+/** Replace a clip's entry (or add it at the end of the list). */
+function writeEntry(state, itemId, change) {
+  const index = state.keyframes.findIndex((entry) => entry.itemId === itemId);
+  const before = index < 0 ? { itemId, animationVersion: 2, properties: [] } : state.keyframes[index];
+  const after = change(before);
+  if (index < 0) state.keyframes.push(after);
+  else state.keyframes[index] = after;
+}
+
+/** Optional lists are written only when they hold something (13.2.4). */
+function tidy(entry) {
+  const next = { ...entry };
+  for (const key of ['propertyLinks', 'expressions', 'vectorProperties', 'separatedVectorProperties']) {
+    if ((next[key]?.length ?? 0) === 0) delete next[key];
+  }
+  return next;
+}
+
+/** 13.2.4: remove every entry that holds no animation. */
+const sweep = (state) => {
+  state.keyframes = state.keyframes.filter(holdsAnimation);
+};
+
+const byFrame = (keyframes) => keyframes.toSorted((a, b) => a.frame - b.frame);
+const without = (object, ...keys) => Object.fromEntries(Object.entries(object).filter(([key]) => !keys.includes(key)));
+
+/* 13.2.3: transition regions */
+
+function inTransitionRegion(state, clip, frame) {
+  let head = 0;
+  let tail = 0;
+  for (const transition of state.transitions) {
+    const part = portions(transition.durationInFrames, transition.alignment);
+    if (transition.leftClipId === clip.id) tail = part.left;
+    if (transition.rightClipId === clip.id) head = part.right;
+  }
+  if (head + tail > clip.durationInFrames) throw new Unspecified('two transition regions longer than their clip (13.2.3)');
+  return (head > 0 && frame < Math.min(head, clip.durationInFrames)) || (tail > 0 && frame >= Math.max(0, clip.durationInFrames - tail));
+}
+
+/** A payload time as a frame of the clip (13.2.4). */
+function clipFrame(state, clip, payload) {
+  const at = time(state, payload, 'at');
+  return { at, inside: at >= clip.from && at < end(clip), frame: at - clip.from };
+}
+
+/* 13.2.6: easing */
+
+const EASINGS = catalogue.easing.types;
+
+/* 13.2.7: keyframes under a retime */
+
+function rescaleKeyframes(state, itemId, oldLength, newLength) {
+  const entry = entryOf(state, itemId);
+  if (!entry || oldLength === newLength || oldLength <= 0 || newLength <= 0) return;
+  const factor = newLength / oldLength;
+  const scale = (keyframes) => {
+    const landed = new Map();
+    for (const keyframe of keyframes) {
+      const frame = Math.min(newLength - 1, Math.max(0, Math.round(keyframe.frame * factor)));
+      const there = landed.get(frame);
+      // Two keyframes on one frame: the one that was later stays.
+      if (!there || keyframe.frame > there.from) landed.set(frame, { from: keyframe.frame, keyframe: { ...keyframe, frame } });
+    }
+    return byFrame([...landed.values()].map((slot) => slot.keyframe));
+  };
+  writeEntry(state, itemId, (before) => ({
+    ...before,
+    properties: before.properties.map((group) => ({ ...group, keyframes: scale(group.keyframes) })),
+    ...(before.vectorProperties ? { vectorProperties: before.vectorProperties.map((group) => ({ ...group, keyframes: scale(group.keyframes) })) } : {}),
+  }));
+}
+
+/* 13.6.1: expressions */
+
+const EXPRESSION_LIMITS = { length: 2048, tokens: 512, depth: 64 };
+
+/** A fault of the frame, not of the expression: it does not refuse the command. */
+class FrameFault extends Error {}
+
+function tokensOf(source) {
+  if (source.length > EXPRESSION_LIMITS.length) throw new Error('too long');
+  const tokens = [];
+  let index = 0;
+  while (index < source.length) {
+    const character = source[index];
+    if (/\s/.test(character)) {
+      index++;
+      continue;
+    }
+    if (/[0-9.]/.test(character)) {
+      let stop = index;
+      while (stop < source.length && /[0-9.]/.test(source[stop])) stop++;
+      const text = source.slice(index, stop);
+      if (text.split('.').length > 2 || text === '.' || !Number.isFinite(Number(text))) throw new Error('invalid number');
+      tokens.push({ kind: 'number', text });
+      index = stop;
+    } else if (/[A-Za-z_]/.test(character)) {
+      let stop = index + 1;
+      while (stop < source.length && /[A-Za-z0-9_]/.test(source[stop])) stop++;
+      tokens.push({ kind: 'name', text: source.slice(index, stop) });
+      index = stop;
+    } else if (character === '"' || character === "'") {
+      let stop = index + 1;
+      let text = '';
+      while (stop < source.length && source[stop] !== character) {
+        if (source[stop] === '\\') stop++;
+        if (stop >= source.length) throw new Error('unterminated string');
+        text += source[stop];
+        stop++;
+      }
+      if (source[stop] !== character) throw new Error('unterminated string');
+      tokens.push({ kind: 'string', text });
+      index = stop + 1;
+    } else if ('+-*/(),[]'.includes(character)) {
+      tokens.push({ kind: 'mark', text: character });
+      index++;
+    } else throw new Error('unexpected character');
+    if (tokens.length > EXPRESSION_LIMITS.tokens) throw new Error('too many tokens');
+  }
+  tokens.push({ kind: 'end', text: '' });
+  return tokens;
+}
+
 /**
- * Apply a batch of part 2 envelopes to a graph in normal form, as section 7.2 says: all or nothing,
+ * Check an expression as 13.6.1 says: read it left to right with stand-in values, and return the
+ * kind of its result (`number` or `vector`), or `undefined` when a fault of the frame stopped the
+ * reading. Throws for an error of the expression.
+ */
+function expressionKind(source, vectorTarget) {
+  const tokens = tokensOf(source);
+  const standIn = (vector) => (vector ? { x: 1, y: 1 } : 1);
+  const vector = (value) => typeof value !== 'number';
+  const each = (left, right, operate) => {
+    if (vector(left) && vector(right)) return { x: operate(left.x, right.x), y: operate(left.y, right.y) };
+    if (vector(left)) return { x: operate(left.x, right), y: operate(left.y, right) };
+    if (vector(right)) return { x: operate(left, right.x), y: operate(left, right.y) };
+    return operate(left, right);
+  };
+  const one = (value, operate) => (vector(value) ? { x: operate(value.x), y: operate(value.y) } : operate(value));
+  const number = (value) => (vector(value) ? fail('a number is needed') : value);
+  const fail = (message) => {
+    throw new Error(message);
+  };
+  let index = 0;
+  let depth = 0;
+  const peek = () => tokens[index].text;
+  const take = (text) => (text !== undefined && tokens[index].text !== text ? fail(`expected ${text}`) : tokens[index++]);
+
+  const additive = () => {
+    let value = multiplicative();
+    while (peek() === '+' || peek() === '-') {
+      const subtract = take().text === '-';
+      const right = multiplicative();
+      value = each(value, right, subtract ? (a, b) => a - b : (a, b) => a + b);
+    }
+    return value;
+  };
+  const multiplicative = () => {
+    let value = unary();
+    while (peek() === '*' || peek() === '/') {
+      const divide = take().text === '/';
+      const right = unary();
+      if (divide && (vector(right) ? right.x === 0 || right.y === 0 : right === 0)) throw new FrameFault('division by zero');
+      value = each(value, right, divide ? (a, b) => a / b : (a, b) => a * b);
+    }
+    return value;
+  };
+  const unary = () => {
+    if (peek() === '+') {
+      take();
+      return unary();
+    }
+    if (peek() === '-') {
+      take();
+      return one(unary(), (value) => -value);
+    }
+    depth++;
+    if (depth > EXPRESSION_LIMITS.depth) fail('too deep');
+    try {
+      return primary();
+    } finally {
+      depth--;
+    }
+  };
+  const primary = () => {
+    const token = tokens[index];
+    if (token.kind === 'number') return Number(take().text);
+    if (token.text === '(' && token.kind === 'mark') {
+      take('(');
+      const value = additive();
+      take(')');
+      return value;
+    }
+    if (token.text === '[' && token.kind === 'mark') {
+      take('[');
+      const x = number(additive());
+      take(',');
+      const y = number(additive());
+      take(']');
+      return { x, y };
+    }
+    if (token.kind !== 'name') fail('a value is needed');
+    const name = take().text;
+    if (name === 'value' || name === 'preValue') return standIn(vectorTarget);
+    if (name === 'frame' || name === 'time') return 0;
+    if (peek() !== '(') fail('unknown name');
+    take('(');
+    if (name === 'prop') {
+      if (tokens[index].kind !== 'string') fail('a quoted clip id is needed');
+      take();
+      take(',');
+      if (tokens[index].kind !== 'string') fail('a quoted property is needed');
+      const property = take().text;
+      take(')');
+      if (!catalogue.properties.expression.includes(property)) fail('unknown property');
+      return standIn(isVector(property));
+    }
+    const values = [];
+    if (peek() !== ')') {
+      for (;;) {
+        values.push(additive());
+        if (peek() !== ',') break;
+        take(',');
+      }
+    }
+    take(')');
+    if (['abs', 'sin', 'cos'].includes(name)) {
+      if (values.length !== 1) fail('one argument is needed');
+      return one(values[0], { abs: Math.abs, sin: Math.sin, cos: Math.cos }[name]);
+    }
+    if (name === 'min' || name === 'max') {
+      if (values.length < 2) fail('two arguments are needed');
+      return values.slice(1).reduce((result, value) => each(result, value, name === 'min' ? Math.min : Math.max), values[0]);
+    }
+    if (name === 'clamp') {
+      if (values.length !== 3) fail('three arguments are needed');
+      return each(each(values[0], values[1], Math.max), values[2], Math.min);
+    }
+    if (name === 'lerp') {
+      if (values.length !== 3) fail('three arguments are needed');
+      const amount = number(values[2]);
+      return each(values[0], values[1], (from, to) => from + (to - from) * amount);
+    }
+    return fail('unknown function');
+  };
+
+  try {
+    const result = additive();
+    if (tokens[index].kind !== 'end') fail('unexpected token');
+    const parts = vector(result) ? [result.x, result.y] : [result];
+    if (parts.some((part) => !Number.isFinite(part))) return undefined;
+    return vector(result) ? 'vector' : 'number';
+  } catch (error) {
+    if (error instanceof FrameFault) return undefined;
+    throw error;
+  }
+}
+
+/* 13.6.2: procedural modifiers */
+
+const GAIN_CHANNELS = [...new Set(catalogue.motionModifiers.flatMap((type) => type.channels))];
+/** The channels a modifier drives: those of its type whose gain is above 0 (an absent gain is 1). */
+function drivenChannels(modifier) {
+  const type = catalogue.motionModifiers.find((entry) => entry.id === modifier.type);
+  return (type?.channels ?? []).filter((channel) => {
+    const gain = modifier.channelGains?.[channel];
+    return (finite(gain) ? Math.max(0, Math.min(2, gain)) : 1) > 0;
+  });
+}
+
+function modifierOf(value, draw) {
+  if (!plainObject(value)) invalid('modifier must be an object or null');
+  if (!catalogue.motionModifiers.some((type) => type.id === value.type)) invalid('modifier.type is not a modifier type');
+  if (!finite(value.amplitude, 0, 2)) invalid('modifier.amplitude must be in 0..2');
+  if (!finite(value.frequency, 0.01, 30)) invalid('modifier.frequency must be in 0.01..30');
+  const phaseFrames = value.phaseFrames ?? 0;
+  if (!finite(phaseFrames, 0, 1_000_000)) invalid('modifier.phaseFrames must be a whole, non-negative number');
+  const seed = value.seed ?? 1;
+  if (!finite(seed, -1_000_000, 1_000_000)) invalid('modifier.seed must be a number');
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') invalid('modifier.enabled must be a boolean');
+  let channelGains;
+  if (value.channelGains !== undefined) {
+    if (!value.channelGains || typeof value.channelGains !== 'object') invalid('modifier.channelGains must be an object');
+    channelGains = {};
+    for (const [channel, gain] of Object.entries(value.channelGains)) {
+      if (!GAIN_CHANNELS.includes(channel)) invalid(`modifier.channelGains: unknown channel ${channel}`);
+      if (!finite(gain, 0, 2)) invalid(`modifier.channelGains.${channel} must be in 0..2`);
+      channelGains[channel] = gain;
+    }
+  }
+  return {
+    version: 2,
+    id: typeof value.id === 'string' && value.id ? value.id : draw(),
+    type: value.type,
+    enabled: value.enabled !== false,
+    amplitude: value.amplitude,
+    frequency: value.frequency,
+    phaseFrames: Math.round(phaseFrames),
+    seed,
+    ...(channelGains ? { channelGains } : {}),
+  };
+}
+
+/* 13.7.1: text motion */
+
+function textMotionSlot(value, presets) {
+  if (!plainObject(value) || typeof value.presetId !== 'string' || !presets.includes(value.presetId)) return undefined;
+  const frames = (given, least, fallback) => (finite(given) ? Math.max(least, Math.round(given)) : fallback);
+  const offsetFrames = frames(value.offsetFrames, 0, 0);
+  const pick = (given, allowed, fallback) => (allowed.includes(given) ? given : fallback);
+  const unit = pick(value.unit, ['character', 'word', 'line', 'whole-clip'], undefined);
+  return {
+    presetId: value.presetId,
+    durationFrames: frames(value.durationFrames, 1, 12),
+    ...(offsetFrames > 0 ? { offsetFrames } : {}),
+    staggerFrames: frames(value.staggerFrames, 0, 0),
+    intensity: finite(value.intensity) ? Math.max(0, Math.min(2, value.intensity)) : 1,
+    order: pick(value.order, ['forward', 'backward', 'center', 'random'], 'forward'),
+    easing: pick(value.easing, ['linear', 'ease-in', 'ease-out', 'ease-in-out', 'overshoot'], 'ease-out'),
+    seed: finite(value.seed) ? Math.round(value.seed) : 0,
+    ...(unit ? { unit } : {}),
+  };
+}
+
+/* 13.7.2: Ken Burns */
+
+function kenBurnsRect(value, name) {
+  if (!value || typeof value !== 'object') invalid(`kenBurns.${name} must be { x, y, w, h }`);
+  for (const key of ['x', 'y', 'w', 'h']) if (!finite(value[key], 0, 1)) invalid(`kenBurns.${name}.${key} must be in 0..1`);
+  const { x, y, w, h } = value;
+  if (w < 0.2 || h < 0.2) invalid(`kenBurns.${name} must show at least a fifth of the photo`);
+  if (Math.abs(w - h) > 1e-9) invalid(`kenBurns.${name} must keep the frame's shape`);
+  if (x + w > 1 + 1e-9 || y + h > 1 + 1e-9) invalid(`kenBurns.${name} must lie inside the photo`);
+  return { x, y, w, h };
+}
+
+/** Add scalar keyframes as 13.5.1 does; returns the ids, or `null` when a transition region blocks one. */
+function addScalarKeyframes(state, clip, list, draw) {
+  if (list.some((entry) => inTransitionRegion(state, clip, entry.frame))) return null;
+  const ids = [];
+  for (const { property, frame, value, easing } of list) {
+    const id = draw();
+    writeEntry(state, clip.id, (before) => {
+      const group = before.properties.find((candidate) => candidate.property === property);
+      const fresh = { id, frame, value, easing };
+      if (!group) {
+        ids.push(id);
+        return { ...before, animationVersion: 2, properties: [...before.properties, { property, keyframes: [fresh] }] };
+      }
+      const there = group.keyframes.find((keyframe) => keyframe.frame === frame);
+      ids.push(there ? there.id : id);
+      const keyframes = there
+        ? group.keyframes.map((keyframe) => (keyframe === there ? { ...without(keyframe, 'easingConfig'), value, easing } : keyframe))
+        : byFrame([...group.keyframes, fresh]);
+      return { ...before, animationVersion: 2, properties: before.properties.map((candidate) => (candidate === group ? { ...group, keyframes } : candidate)) };
+    });
+  }
+  return ids;
+}
+
+const vectorOf = (value, name) => {
+  if (!value || typeof value !== 'object' || !finite(value.x, -1e9, 1e9) || !finite(value.y, -1e9, 1e9)) invalid(`${name} must be { x, y } numbers`);
+  return { x: value.x, y: value.y };
+};
+
+const idList = (payload) => {
+  const { keyframeIds } = payload;
+  if (!Array.isArray(keyframeIds) || keyframeIds.length === 0 || keyframeIds.some((id) => typeof id !== 'string')) invalid('keyframeIds is required');
+  return keyframeIds;
+};
+const groupOf = (state, clip, property) =>
+  (isVector(property) ? entryOf(state, clip.id)?.vectorProperties : entryOf(state, clip.id)?.properties)?.find((group) => group.property === property);
+const keyframeOf = (state, clip, property, id) =>
+  groupOf(state, clip, property)?.keyframes.find((keyframe) => keyframe.id === id) ?? invalid(`keyframe "${id}" is not on ${property}`);
+/** Rewrite the keyframes of one property group of a clip. */
+function writeGroup(state, clip, property, change, version) {
+  const list = isVector(property) ? 'vectorProperties' : 'properties';
+  writeEntry(state, clip.id, (before) => ({
+    ...before,
+    ...(version ? { animationVersion: 2 } : {}),
+    [list]: before[list].map((group) => (group.property === property ? { ...group, keyframes: change(group.keyframes) } : group)),
+  }));
+}
+
+Object.assign(commands, {
+  /* 13.3.1 */
+  'effect.add'(state, payload, draw) {
+    const clip = namedClip(state, payload);
+    const effect = text(payload, 'effect');
+    if (!catalogue.effects.some((entry) => entry.id === effect)) invalid(`effect: unknown effect "${effect}"`);
+    const params = payload.params ?? {};
+    if (typeof params !== 'object' || Array.isArray(params)) invalid('params must be an object');
+    const { index } = payload;
+    if (index !== undefined && (typeof index !== 'number' || !Number.isFinite(index))) invalid('index must be a number');
+    const before = clip.effects ?? [];
+    if (index !== undefined && (!Number.isInteger(index) || index < 0 || index > before.length)) invalid('index is outside the effect stack');
+    // The id is drawn for an audio clip too, and not kept.
+    const added = { id: draw(), effect: { type: 'gpu-effect', gpuEffectType: effect, params }, enabled: true };
+    if (clip.type === 'audio') return;
+    const effects = [...before];
+    effects.splice(index ?? before.length, 0, added);
+    replace(state, { ...clip, effects });
+  },
+
+  /* 13.3.2 */
+  'effect.remove'(state, payload) {
+    const clip = namedClip(state, payload);
+    const effectId = text(payload, 'effectId');
+    if (!(clip.effects ?? []).some((effect) => effect.id === effectId)) invalid(`effectId: "${effectId}" is not on this clip`);
+    replace(state, { ...clip, effects: clip.effects.filter((effect) => effect.id !== effectId) });
+  },
+
+  /* 13.4.1 */
+  'clip.setTransition'(state, payload, draw) {
+    const clip = namedClip(state, payload);
+    const existing = state.transitions.find((transition) => transition.leftClipId === clip.id);
+    const intent = payload.transition;
+    if (intent === null) {
+      if (existing) state.transitions = state.transitions.filter((transition) => transition !== existing);
+      return;
+    }
+    if (!intent || typeof intent !== 'object') invalid('transition must be an object or null');
+    if (typeof intent.type !== 'string') invalid('transition.type is required');
+    const presentation = catalogue.transitionAliases[intent.type] ?? intent.type;
+    if (!catalogue.transitions.some((entry) => entry.id === presentation)) invalid(`transition: unknown type "${intent.type}"`);
+    const length = time(state, intent, 'duration');
+    if (length < 1) invalid('transition.duration must be at least one frame');
+    if (existing) {
+      const left = clipOf(state, existing.leftClipId);
+      const right = state.items.find((item) => item.id === existing.rightClipId);
+      if (right && !transitionValid(state, left, right, { ...existing, durationInFrames: length })) {
+        // Nothing is written. Asking for the length it already has is not noticed as a failure.
+        if (existing.durationInFrames !== length) failed('clip.setTransition: the clips do not have enough handle for that length');
+        return;
+      }
+      state.transitions = state.transitions.map((transition) => (transition === existing ? { ...existing, durationInFrames: length, presentation } : transition));
+      return;
+    }
+    const next = state.items
+      .filter((item) => item.trackId === clip.trackId && item.id !== clip.id && item.from >= end(clip) - 1)
+      .sort((a, b) => a.from - b.from)[0];
+    if (!next) invalid('clip.setTransition: no clip follows this one on its track');
+    const refuse = () => failed('clip.setTransition: the clips cannot share a transition');
+    const most = Math.min(clip.durationInFrames, next.durationInFrames) - 1;
+    if (most < 1) refuse();
+    let fitted = Math.max(1, Math.min(length, most));
+    if (Math.abs(end(clip) - next.from) <= 1) {
+      const byHandles = longestByHandles(state, clip, next, 0.5);
+      if (byHandles < 1) refuse();
+      fitted = Math.min(fitted, byHandles);
+    }
+    const added = {
+      id: draw(),
+      leftClipId: clip.id,
+      rightClipId: next.id,
+      trackId: clip.trackId,
+      type: 'crossfade',
+      durationInFrames: fitted,
+      presentation,
+      timing: 'linear',
+      alignment: 0.5,
+    };
+    if (!transitionValid(state, clip, next, added)) refuse();
+    state.transitions = [...state.transitions, added];
+  },
+
+  /* 13.5.1 */
+  'keyframe.add'(state, payload, draw) {
+    const clip = namedClip(state, payload);
+    const property = text(payload, 'property');
+    const { frame, inside } = clipFrame(state, clip, payload);
+    const easingText = () => {
+      if (payload.easing !== undefined && typeof payload.easing !== 'string') invalid('easing must be a string');
+      return payload.easing;
+    };
+    if (isVector(property)) {
+      if (!inside) invalid('at must fall inside the clip');
+      const easing = easingText();
+      if (easing !== undefined && !EASINGS.includes(easing)) invalid('easing is not an easing type');
+      const value = vectorOf(payload.value, 'value');
+      const id = draw();
+      if (inTransitionRegion(state, clip, frame)) failed('keyframe.add: keyframes cannot be placed inside a transition');
+      const fresh = { id, frame, value, easing: easing ?? 'linear' };
+      writeEntry(state, clip.id, (before) => {
+        const groups = before.vectorProperties ?? [];
+        const group = groups.find((candidate) => candidate.property === property);
+        if (!group) return { ...before, animationVersion: 2, vectorProperties: [...groups, { property, keyframes: [fresh] }] };
+        const there = group.keyframes.find((keyframe) => keyframe.frame === frame);
+        // A keyframe on a taken frame is replaced whole and keeps the old id.
+        const keyframes = there
+          ? group.keyframes.map((keyframe) => (keyframe === there ? { ...fresh, id: there.id } : keyframe))
+          : byFrame([...group.keyframes, fresh]);
+        return { ...before, animationVersion: 2, vectorProperties: groups.map((candidate) => (candidate === group ? { ...group, keyframes } : candidate)) };
+      });
+      return;
+    }
+    const value = payload.value?.value;
+    if (!finite(value)) invalid('value must be { value: number }');
+    const easing = easingText();
+    if (!inside) invalid('at must fall inside the clip');
+    if (addScalarKeyframes(state, clip, [{ property, frame, value, easing: easing ?? 'linear' }], draw) === null)
+      failed('keyframe.add: keyframes cannot be placed inside a transition');
+  },
+
+  /* 13.5.2 */
+  'keyframe.remove'(state, payload) {
+    const clip = namedClip(state, payload);
+    const property = text(payload, 'property');
+    const ids = idList(payload);
+    for (const id of ids) keyframeOf(state, clip, property, id);
+    writeGroup(state, clip, property, (keyframes) => keyframes.filter((keyframe) => !ids.includes(keyframe.id)));
+    // Only a vector removal sweeps the entries that hold no animation (13.2.4).
+    if (isVector(property)) sweep(state);
+  },
+
+  /* 13.5.3 */
+  'keyframe.update'(state, payload) {
+    const clip = namedClip(state, payload);
+    const property = text(payload, 'property');
+    const vector = isVector(property);
+    if (!vector && (payload.temporalEase !== undefined || payload.spatial !== undefined))
+      invalid(`${property} keyframes take no velocity or path handles`);
+    const keyframe = keyframeOf(state, clip, property, text(payload, 'keyframeId'));
+    const changes = {};
+    if (payload.at !== undefined) {
+      const { frame, inside } = clipFrame(state, clip, payload);
+      if (!inside) invalid('at must fall inside the clip');
+      if (groupOf(state, clip, property).keyframes.some((other) => other.id !== keyframe.id && other.frame === frame))
+        invalid(`at: ${property} already has a keyframe there`);
+      changes.frame = frame;
+    }
+    if (payload.value !== undefined) {
+      if (vector) changes.value = vectorOf(payload.value, 'value');
+      else {
+        if (!finite(payload.value?.value)) invalid('value must be { value: number }');
+        changes.value = payload.value.value;
+      }
+    }
+    const cleared = [];
+    if (vector && payload.temporalEase !== undefined) {
+      const ease = payload.temporalEase;
+      if (ease === null) cleared.push('temporalEase');
+      else {
+        if (typeof ease !== 'object' || (ease.in === undefined && ease.out === undefined)) invalid('temporalEase must be { in?, out? } or null');
+        const handle = (value, name) => {
+          if (!value || typeof value !== 'object') invalid(`${name} must be { speed, influence }`);
+          if (!finite(value.speed, -1e9, 1e9)) invalid(`${name}.speed must be a number`);
+          if (!finite(value.influence, 0.1, 100)) invalid(`${name}.influence must be in 0.1..100`);
+          return { speed: value.speed, influence: value.influence };
+        };
+        changes.temporalEase = {
+          ...(ease.in !== undefined ? { in: handle(ease.in, 'temporalEase.in') } : {}),
+          ...(ease.out !== undefined ? { out: handle(ease.out, 'temporalEase.out') } : {}),
+        };
+      }
+    }
+    if (vector && payload.spatial !== undefined) {
+      if (property !== 'position') invalid('only position keyframes have path tangents');
+      const { spatial } = payload;
+      if (spatial === null) cleared.push('spatial');
+      else {
+        if (typeof spatial !== 'object') invalid('spatial must be { inTangent, outTangent, continuous? } or null');
+        if (spatial.continuous !== undefined && typeof spatial.continuous !== 'boolean') invalid('spatial.continuous must be a boolean');
+        const continuous = spatial.continuous === true;
+        let inTangent = spatial.inTangent === undefined ? undefined : vectorOf(spatial.inTangent, 'spatial.inTangent');
+        let outTangent = spatial.outTangent === undefined ? undefined : vectorOf(spatial.outTangent, 'spatial.outTangent');
+        if (continuous && inTangent && !outTangent) outTangent = { x: -inTangent.x, y: -inTangent.y };
+        if (continuous && outTangent && !inTangent) inTangent = { x: -outTangent.x, y: -outTangent.y };
+        if (!inTangent || !outTangent) invalid('spatial needs both tangents unless they are continuous');
+        if (continuous && (Math.abs(inTangent.x + outTangent.x) > 1e-9 || Math.abs(inTangent.y + outTangent.y) > 1e-9))
+          invalid('continuous tangents must mirror each other');
+        changes.spatial = { inTangent, outTangent, ...(continuous ? { continuous } : {}) };
+      }
+    }
+    if (Object.keys(changes).length + cleared.length === 0) invalid('keyframe.update needs something to change');
+    // A new frame inside a transition region writes nothing at all, the value included.
+    if (changes.frame !== undefined && inTransitionRegion(state, clip, changes.frame)) {
+      if (changes.frame !== keyframe.frame) failed('keyframe.update: keyframes cannot be moved inside a transition');
+      return;
+    }
+    writeGroup(
+      state,
+      clip,
+      property,
+      (keyframes) => byFrame(keyframes.map((entry) => (entry.id === keyframe.id ? { ...without(entry, ...cleared), ...changes } : entry))),
+      vector,
+    );
+  },
+
+  /* 13.5.4 */
+  'keyframe.setEasing'(state, payload) {
+    const clip = namedClip(state, payload);
+    const property = text(payload, 'property');
+    const ids = idList(payload);
+    for (const id of ids) keyframeOf(state, clip, property, id);
+    const easing = text(payload, 'easing');
+    if (!EASINGS.includes(easing)) invalid('easing is not an easing type');
+    let easingConfig;
+    if (easing === 'cubic-bezier') {
+      const points = ['x1', 'y1', 'x2', 'y2'].map((key) => payload.bezier?.[key]);
+      if (!points.every((point) => finite(point))) invalid('bezier must be { x1, y1, x2, y2 } numbers');
+      const [x1, y1, x2, y2] = points;
+      if (x1 < 0 || x1 > 1 || x2 < 0 || x2 > 1) invalid('bezier x1 and x2 must lie in 0..1');
+      easingConfig = { type: easing, bezier: { x1, y1, x2, y2 } };
+    } else if (easing === 'spring') {
+      const spring = { ...catalogue.easing.springDefault, ...(payload.spring ?? {}) };
+      for (const [key, [least, most]] of Object.entries({ tension: [0, 500], friction: [0, 100], mass: [0.1, 10] })) {
+        if (!finite(spring[key], least, most)) invalid(`spring.${key} must be in ${least}..${most}`);
+      }
+      easingConfig = { type: easing, spring };
+    } else if (payload.bezier !== undefined || payload.spring !== undefined) {
+      invalid(`${easing} takes no bezier or spring parameters`);
+    }
+    writeGroup(
+      state,
+      clip,
+      property,
+      (keyframes) =>
+        keyframes.map((keyframe) =>
+          ids.includes(keyframe.id) ? { ...without(keyframe, 'easingConfig'), easing, ...(easingConfig ? { easingConfig } : {}) } : keyframe,
+        ),
+      isVector(property),
+    );
+  },
+
+  /* 13.6.1 */
+  'property.setExpression'(state, payload) {
+    const clip = namedClip(state, payload);
+    const property = text(payload, 'property');
+    if (!catalogue.properties.expression.includes(property)) invalid(`property "${property}" cannot carry an expression`);
+    const source = payload.expression;
+    if (source === null) {
+      if (entryOf(state, clip.id)) {
+        writeEntry(state, clip.id, (before) => ({ ...before, expressions: (before.expressions ?? []).filter((entry) => entry.targetProperty !== property) }));
+      }
+      sweep(state);
+      return;
+    }
+    if (typeof source !== 'string' || !source.trim()) invalid('expression must be a string or null');
+    let kind;
+    try {
+      kind = expressionKind(source, isVector(property));
+    } catch (error) {
+      if (error instanceof Unspecified) throw error;
+      invalid(`expression: ${error.message}`);
+    }
+    if (kind !== undefined && (kind === 'vector') !== isVector(property)) invalid(`expression gives a ${kind}; ${property} needs the other`);
+    writeEntry(state, clip.id, (before) => ({
+      ...before,
+      animationVersion: 2,
+      expressions: [...(before.expressions ?? []).filter((entry) => entry.targetProperty !== property), { type: 'expression', targetProperty: property, source, enabled: true }],
+    }));
+  },
+
+  /* 13.6.2 */
+  'property.setModifier'(state, payload, draw) {
+    const clip = namedClip(state, payload);
+    const property = text(payload, 'property');
+    const present = clip.motionModifiers ?? [];
+    if (payload.modifier === null) {
+      const kept = present.filter((modifier) => !drivenChannels(modifier).includes(property));
+      if (kept.length === present.length) invalid(`no modifier drives ${property}`);
+      replace(state, { ...clip, motionModifiers: kept });
+      return;
+    }
+    const modifier = modifierOf(payload.modifier, draw);
+    if (!drivenChannels(modifier).includes(property)) invalid(`a ${modifier.type} modifier does not drive ${property}`);
+    replace(state, { ...clip, motionModifiers: [...present.filter((entry) => entry.type !== modifier.type), modifier] });
+  },
+
+  /* 13.6.3 */
+  'property.bakeModifier'(state, payload) {
+    const clip = namedClip(state, payload);
+    const property = text(payload, 'property');
+    const modifierId = text(payload, 'modifierId');
+    const modifier = (clip.motionModifiers ?? []).find((entry) => entry.id === modifierId);
+    if (!modifier) invalid(`modifierId: "${modifierId}" is not on this clip`);
+    if (!modifier.enabled) invalid('a disabled modifier contributes nothing to bake');
+    if (!drivenChannels(modifier).includes(property)) invalid(`a ${modifier.type} modifier does not drive ${property}`);
+    if ((clip.motionLayers ?? []).some((layer) => layer.enabled) || (clip.effects ?? []).some((effect) => effect.audioPulse?.enabled))
+      throw new Unspecified('motion layers and audio pulses are outside this protocol');
+    const sampled = clip.motionModifiers.filter((entry) => entry.enabled && entry.amplitude > 0);
+    const last = Math.max(0, clip.durationInFrames - 1);
+    if (sampled.length > 0 && sampled.some((entry) => drivenChannels(entry).length > 0) && last > 0) {
+      const step = Math.min(
+        ...sampled.map((entry) => Math.max(1, Math.round(state.fps / Math.max(0.01, entry.frequency * (entry.type === 'micro-shake' ? 1 : 6))))),
+      );
+      const frames = new Set([0, last]);
+      for (let frame = 0; frame <= last; frame += step) frames.add(frame);
+      // The engine notices a blocked keyframe by counting the clip's scalar keyframes afterwards, so
+      // keyframes of properties the bake does not replace can hide the block (13.6.3).
+      const replaced = new Set(sampled.flatMap(drivenChannels));
+      const others = (entryOf(state, clip.id)?.properties ?? [])
+        .filter((group) => !replaced.has(group.property))
+        .reduce((sum, group) => sum + group.keyframes.length, 0);
+      const free = [...frames].filter((frame) => !inTransitionRegion(state, clip, frame)).length;
+      if (others + free * replaced.size < frames.size * replaced.size)
+        failed('property.bakeModifier: keyframes cannot be placed inside a transition');
+      throw new Unspecified('baked keyframe values are engine arithmetic (13.6.3)');
+    }
+    // Nothing to sample: no keyframe is written, and every modifier of the clip is removed.
+    replace(state, { ...clip, motionModifiers: [] });
+  },
+
+  /* 13.7.1 */
+  'text.setMotion'(state, payload) {
+    const clip = namedClip(state, payload);
+    if (clip.type !== 'text') invalid('text.setMotion needs a text clip');
+    const { motion } = payload;
+    if (motion === null) {
+      replace(state, without(clip, 'textMotion'));
+      return;
+    }
+    if (!plainObject(motion)) invalid('motion must be an object or null');
+    const slots = Object.keys(motion);
+    if (slots.length === 0 || slots.some((slot) => !['in', 'out', 'loop'].includes(slot))) invalid('motion takes in, out and loop slots');
+    const textMotion = {};
+    for (const slot of ['in', 'out', 'loop']) {
+      if (!(slot in motion)) continue;
+      textMotion[slot] = textMotionSlot(motion[slot], catalogue.textMotion[slot]) ?? invalid(`motion.${slot} is not a valid ${slot} text motion`);
+    }
+    replace(state, { ...clip, textMotion });
+  },
+
+  /* 13.7.2 */
+  'clip.setKenBurns'(state, payload, draw) {
+    const clip = namedClip(state, payload);
+    if (clip.type !== 'image') invalid('Ken Burns moves a still photo');
+    const owned = new Set(clip.frameleafKenBurns?.keyframeIds ?? []);
+    const entry = entryOf(state, clip.id);
+    let move = null;
+    if (payload.kenBurns !== null) {
+      const candidate = payload.kenBurns;
+      if (!candidate || typeof candidate !== 'object') invalid('kenBurns must be { from, to } or null');
+      move = { from: kenBurnsRect(candidate.from, 'from'), to: kenBurnsRect(candidate.to, 'to') };
+      const foreign =
+        (entry?.properties ?? []).some(
+          (group) => ['x', 'y', 'width', 'height'].includes(group.property) && group.keyframes.some((keyframe) => !owned.has(keyframe.id)),
+        ) || (entry?.vectorProperties ?? []).some((group) => ['position', 'scale'].includes(group.property) && group.keyframes.length > 0);
+      if (foreign) invalid('the clip already animates its position or size');
+    }
+    if (entry) {
+      writeEntry(state, clip.id, (before) => ({
+        ...before,
+        properties: before.properties.map((group) => ({ ...group, keyframes: group.keyframes.filter((keyframe) => !owned.has(keyframe.id)) })),
+      }));
+    }
+    if (!move) {
+      replace(state, without(clip, 'frameleafKenBurns'));
+      return;
+    }
+    const size = fitted(state, clip);
+    const base = { x: clip.transform?.x ?? 0, y: clip.transform?.y ?? 0, width: clip.transform?.width ?? size.width, height: clip.transform?.height ?? size.height };
+    const last = Math.max(1, clip.durationInFrames - 1);
+    const pose = (rect) => {
+      const width = base.width / rect.w;
+      const height = base.height / rect.h;
+      return { width, height, x: base.x + (0.5 - (rect.x + rect.w / 2)) * width, y: base.y + (0.5 - (rect.y + rect.h / 2)) * height };
+    };
+    const [first, final] = [pose(move.from), pose(move.to)];
+    const list = ['x', 'y', 'width', 'height'].flatMap((property) => [
+      { property, frame: 0, value: first[property], easing: 'linear' },
+      { property, frame: last, value: final[property], easing: 'linear' },
+    ]);
+    const keyframeIds = addScalarKeyframes(state, clip, list, draw);
+    if (keyframeIds === null) failed('clip.setKenBurns: keyframes cannot be placed inside a transition');
+    replace(state, { ...clipOf(state, clip.id), frameleafKenBurns: { ...move, keyframeIds } });
+  },
+});
+
+/**
+ * Apply a batch of part 2 and part 3 envelopes to a graph in normal form, as section 7.2 says: all or nothing,
  * with the first failing envelope's index and reason.
  */
 export function applyBatch(graph, envelopes, media = []) {
   const state = open(graph, media);
   for (const [index, envelope] of envelopes.entries()) {
     const command = commands[envelope.id];
-    if (!command) throw new Unspecified(`${envelope.id} is not a part 2 command`);
+    if (!command) throw new Unspecified(`${envelope.id} is not a part 2 or part 3 command`);
     const before = lastFrame(state);
     try {
       command(state, envelope.payload ?? {}, uuidStream(`${envelope.idempotencyKey}:${index}`), envelope.id);
