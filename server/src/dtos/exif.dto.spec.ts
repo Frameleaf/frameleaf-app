@@ -15,17 +15,26 @@ describe('EXIF response projection', () => {
       bitsPerSample: 12,
       colorspace: 'Uncalibrated',
       profileDescription: 'Display P3',
-      rating: -1,
+      rating: null,
+      isRejected: true,
     });
   });
-  it('keeps unavailable technical facts nullable and accepts rejection', () => {
-    expect(ExifResponseSchema.parse({ rating: -1 })).toMatchObject({
-      rating: -1,
+  it('keeps the legacy response rating range positive or null', () => {
+    expect(ExifResponseSchema.parse({ rating: null })).toMatchObject({
+      rating: null,
+      isRejected: null,
       bitsPerSample: null,
       colorspace: null,
       profileDescription: null,
     });
-    expect(ExifResponseSchema.safeParse({ rating: -2 }).success).toBe(false);
-    expect(ExifResponseSchema.safeParse({ rating: 0 }).success).toBe(false);
+    for (const rating of [-2, -1, 0, 6]) {
+      expect(ExifResponseSchema.safeParse({ rating }).success).toBe(false);
+    }
+  });
+  it.each([null, 1, 2, 3, 4, 5])('projects non-rejected stored rating %s unchanged', (rating) => {
+    expect(ExifResponseSchema.parse(mapExif(AssetExifFactory.create({ rating })))).toMatchObject({
+      rating,
+      isRejected: false,
+    });
   });
 });

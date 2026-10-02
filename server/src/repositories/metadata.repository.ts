@@ -244,7 +244,7 @@ export class MetadataRepository {
   async readJpegSignature(path: string): Promise<CameraIdentification['suggestion']> {
     // Per-tag raw and print selectors collapse to one JSON key. Read each explicitly,
     // using the installed tool's table instead of importing or maintaining a camera catalogue.
-    const raw = await this.exiftool.readRaw<ImmichTags>(path, { readArgs: ['-JPEGDigest', '-n'] });
+    const raw = await this.exiftool.readRaw<Tags & { JPEGDigest?: string }>(path, { readArgs: ['-JPEGDigest', '-n'] });
     if (raw.errors?.length || raw.Error) {
       throw new Error([...(raw.errors ?? []), raw.Error].filter(Boolean).join('; '));
     }
@@ -252,7 +252,9 @@ export class MetadataRepository {
     if (!signature) {
       return null;
     }
-    const interpreted = await this.exiftool.readRaw<ImmichTags>(path, { readArgs: ['-JPEGDigest'] });
+    const interpreted = await this.exiftool.readRaw<Tags & { JPEGDigest?: string }>(path, {
+      readArgs: ['-JPEGDigest'],
+    });
     if (interpreted.errors?.length || interpreted.Error) {
       throw new Error([...(interpreted.errors ?? []), interpreted.Error].filter(Boolean).join('; '));
     }
