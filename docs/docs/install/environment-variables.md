@@ -284,6 +284,7 @@ Every `IMMICH_` variable in the table below still works as a deprecated alias of
 - If both names of a pair are set to different values, the server (and the machine learning service, and the CLI) refuses to start and names the pair.
 - At startup, a single warning lists the old names in use together with their new names.
 - An empty value counts as unset.
+- The old variable names, and the old command names described under [server commands](/administration/server-commands.md#how-to-run-a-command), still work for the whole of the current major version and stop working in the next major release of Frameleaf. No date is set for that release.
 
 | Deprecated name                      | Name to use                             | Read by                  |
 | :----------------------------------- | :-------------------------------------- | :----------------------- |

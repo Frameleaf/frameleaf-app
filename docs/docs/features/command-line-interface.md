@@ -26,7 +26,7 @@ If you can't install node/npm, there is also a Docker version available below.
 npm i -g @immich/cli
 ```
 
-The `@immich/cli` package provides the `frameleaf` command. The old command names (`immich`, and `immich-admin` and `immich-healthcheck` in the server image) still work as deprecated aliases of `frameleaf`, `frameleaf-admin` and `frameleaf-healthcheck`.
+The `@immich/cli` package provides the `frameleaf` command. The old command names (`immich`, and `immich-admin` and `immich-healthcheck` in the server image) still work as deprecated aliases of `frameleaf`, `frameleaf-admin` and `frameleaf-healthcheck`. They keep working for the whole of the current major version and stop working in the next major release of Frameleaf; no date is set for that release. The same rule applies to the [deprecated variable names](#deprecated-variable-names).
 
 NOTE: if you previously installed the legacy CLI, you will need to uninstall it first:
 

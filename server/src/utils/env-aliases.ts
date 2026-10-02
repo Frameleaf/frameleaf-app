@@ -134,7 +134,7 @@ export const deprecatedEnvWarning = (deprecated: Array<Pick<EnvAlias, 'legacy' |
   }
 
   const pairs = deprecated.map(({ legacy, current }) => `${legacy} → ${current}`).join(', ');
-  return `Deprecated environment variable names in use; they still work, but rename them: ${pairs}`;
+  return `Deprecated environment variable names in use; rename them: ${pairs}. The old names still work in this major version and stop working in the next major release.`;
 };
 
 /**
