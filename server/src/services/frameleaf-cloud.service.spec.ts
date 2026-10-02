@@ -665,6 +665,8 @@ describe(FrameleafCloudService.name, () => {
         },
       });
     const refusal = (code: string) => expect.objectContaining({ response: expect.objectContaining({ code }) });
+    const savedServerName = () =>
+      (metadata.get(SystemMetadataKey.SystemConfig) as { server?: { name?: string } } | undefined)?.server?.name;
 
     beforeEach(() => {
       mocks.user.getAdmin.mockResolvedValue(void 0);
@@ -688,11 +690,40 @@ describe(FrameleafCloudService.name, () => {
       expectRegistrationProof(register);
       expect(storedLink()).toMatchObject({ status: 'linked', accountId: 'account-1' });
       expect(JSON.stringify(storedLink())).not.toContain('fll_app_token_123');
+      expect(savedServerName()).toBe('Home Server');
       // the ticket is used up
       expect((metadata.get(SystemMetadataKey.FrameleafSetupCode) as { ticket?: unknown }).ticket).toBeUndefined();
       await expect(sut.claimNewServer({ ticket: TICKET, linkToken: 'fll_app_token_456' }, phone)).rejects.toEqual(
         refusal('setup_ticket_invalid'),
       );
+    });
+
+    it('leaves the server name as it was when Frameleaf Cloud does not link, and saves it on a retry that links (FL-304)', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, { server: { name: 'Before' } });
+      const dto = { ticket: TICKET, linkToken: 'fll_app_token_123', serverName: 'Home Server' };
+      withTicket();
+
+      for (const [answer, code] of [
+        [{ status: 401, body: { error: 'invalid_token' } }, 'setup_link_token_used'],
+        [{ status: 503, body: { error: 'unavailable' } }, 'setup_link_failed'],
+      ] as const) {
+        cloud.on('POST /api/v1/instances', () => answer);
+        await expect(
+          sut.claimNewServer({ ...dto, linkToken: `${dto.linkToken}_${answer.status}` }, phone),
+        ).rejects.toEqual(refusal(code));
+        // Frameleaf Cloud was asked under the chosen name, and nothing of it stayed on the server
+        expect(cloud.requests.findLast(({ path }) => path === '/api/v1/instances')!.json().name).toBe('Home Server');
+        expect(savedServerName()).toBe('Before');
+        expect(metadata.get(SystemMetadataKey.SystemConfigHistory)).toBeUndefined();
+        expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigUpdate', expect.anything());
+        expect(storedLink()?.status).not.toBe('linked');
+      }
+
+      // the same ticket, once Frameleaf Cloud links
+      serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
+      await expect(sut.claimNewServer(dto, phone)).resolves.toMatchObject({ instanceId: localInstanceId() });
+      expect(savedServerName()).toBe('Home Server');
+      expect(mocks.event.emit).toHaveBeenCalledWith('ConfigUpdate', expect.anything());
     });
 
     it('refuses without a valid ticket from the same device, over remote access, and once set up', async () => {
