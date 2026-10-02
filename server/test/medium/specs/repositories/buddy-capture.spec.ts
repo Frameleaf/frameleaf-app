@@ -79,10 +79,10 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     ring = { version: 1, vaultId: randomUUID(), current: 1, keys: { 1: randomBytes(32).toString('base64url') } };
     settings = {
       directory: join(root, 'vault'),
-      quotaBytes: 1024 ** 3,
+      quotaBytes: 20 * 1024 ** 3,
       uploadMbps: 10,
       downloadMbps: 10,
-      schedule: 'manual',
+      schedule: '0 2 * * *',
       timezone: 'UTC',
       windowStart: '00:00',
       windowEnd: '23:59',
@@ -542,6 +542,126 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       ).value,
     ).toEqual(maintenance);
   }, 20_000);
+
+  it.each([
+    { scope: 'settings', mode: 'keep' },
+    { scope: 'settings', mode: 'replace' },
+    { scope: 'server', mode: 'keep' },
+    { scope: 'server', mode: 'replace' },
+  ] as const)(
+    'captures all Buddy settings and safely recovers $scope with $mode',
+    async ({ scope, mode }) => {
+      const sourceConfig = await file('source.conf');
+      const destinationConfig = await file('destination.conf');
+      settings = {
+        ...settings,
+        quotaBytes: 60 * 1024 ** 3,
+        uploadMbps: 7,
+        downloadMbps: 9,
+        schedule: '0 4 * * *',
+        timezone: 'America/Edmonton',
+        windowStart: '02:00',
+        windowEnd: '07:00',
+        pausedReceiving: true,
+        includeDerived: true,
+        configurationFiles: [sourceConfig.path],
+      };
+      const { capture, backups, keys } = fixture();
+      const { manifest } = await capture.capture(options());
+      expect(manifest.settings.buddy).toEqual({ version: 1, settings });
+      const destination = {
+        ...settings,
+        directory: join(root, 'replacement-vault'),
+        quotaBytes: 20 * 1024 ** 3,
+        uploadMbps: 31,
+        downloadMbps: 32,
+        schedule: '0 2 * * *',
+        timezone: 'UTC',
+        windowStart: '00:00',
+        windowEnd: '00:00',
+        pausedSending: true,
+        pausedReceiving: false,
+        includeDerived: false,
+        configurationFiles: [destinationConfig.path],
+      };
+      await mkdir(destination.directory);
+      const authority = {
+        pairing: { pairId: randomUUID(), state: 'blocked' } as never,
+        recoveryVerified: false,
+        probeVerified: false,
+        lastSequence: 42,
+      };
+      await repository.update((state) => ({ ...state, settings: destination, ...authority }));
+      const identity = join(root, 'identity', 'instance-key.pem');
+      const grants = join(repository.root(), 'grant.json');
+      await writeFile(identity, 'replacement identity');
+      await writeFile(grants, 'replacement grant');
+      const recovery = new BuddyBackupRecoveryService(
+        repository,
+        { getEnv: () => ({ bull: { queues: [], config: {} } }) } as unknown as ConfigRepository,
+        backups,
+        keys,
+      );
+      const id = randomUUID();
+      const directory = join(repository.root(), 'recovery', id);
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        join(directory, 'prepared.json'),
+        JSON.stringify({ version: 1, scope, mode, manifest, files: [] }),
+      );
+      await writeFile(join(directory, 'replacement.json'), JSON.stringify({ keys: [], metadata: [] }));
+      const restore = vi.fn(async () => {});
+      const run = () =>
+        scope === 'settings'
+          ? recovery.settings(id, async () => {})
+          : recovery.restore(
+              id,
+              restore,
+              {
+                isMaintenanceMode: true,
+                action: { restoreBackupFilename: `buddy-restore-${id}-${basename(manifest.library.database!.key)}` },
+              } as never,
+              async () => {},
+            );
+      if (mode === 'replace') {
+        vi.spyOn(repository, 'locked').mockRejectedValueOnce(new Error('interrupted local settings write'));
+        await expect(run()).rejects.toThrow('interrupted local settings write');
+        expect(JSON.parse(await readFile(join(directory, 'publication.json'), 'utf8')).state).toBe('database-ready');
+      }
+      await run();
+      const restored = await repository.state();
+      expect(restored).toMatchObject(authority);
+      expect(restored.settings).toEqual(
+        mode === 'keep'
+          ? destination
+          : {
+              ...settings,
+              directory: destination.directory,
+              quotaBytes: destination.quotaBytes,
+              configurationFiles: destination.configurationFiles,
+              pausedSending: true,
+            },
+      );
+      expect(await readFile(identity, 'utf8')).toBe('replacement identity');
+      expect(await readFile(grants, 'utf8')).toBe('replacement grant');
+      await repository.update((state) => ({ ...state, settings: { ...state.settings!, uploadMbps: 333 } }));
+      await run();
+      expect((await repository.state()).settings!.uploadMbps).toBe(333);
+      expect(restore).toHaveBeenCalledTimes(scope === 'server' ? 1 : 0);
+    },
+    20_000,
+  );
+
+  it('rejects invalid Buddy capture preferences before pinning or staging backup files', async () => {
+    const { capture, backups } = fixture();
+    for (const invalid of [{ uploadMbps: 0 }, { schedule: 'manual' }]) {
+      const run = options();
+      await expect(capture.capture({ ...run, settings: { ...settings, ...invalid } })).rejects.toThrow();
+      expect(await references(run.runId)).toEqual([]);
+      expect(await capture.readCapture(run.runId)).toBeNull();
+    }
+    expect(backups.createDatabaseBackup).not.toHaveBeenCalled();
+  });
 
   it('reclaims an interrupted multi-block capture before capture.json exists', async () => {
     await original('large.jpg', Buffer.alloc(BUDDY_BLOCK_BYTES + 1, 7));

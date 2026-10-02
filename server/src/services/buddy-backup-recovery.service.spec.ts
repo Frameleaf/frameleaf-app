@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { BuddySettings, BuddyState } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
-import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
+import { flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
 
 const fixture = vi.hoisted(() => ({ media: '', rows: [] as unknown[] }));
@@ -17,7 +18,11 @@ vi.mock('src/services/database-backup.service.js', () => ({ DatabaseBackupServic
 vi.mock('kysely', () => ({ sql: () => ({ execute: () => Promise.resolve({ rows: fixture.rows }) }) }));
 vi.mock('src/utils/buddy-backup-vault.js', async (importOriginal) => {
   const vault = await importOriginal<typeof import('src/utils/buddy-backup-vault.js')>();
-  return { ...vault, flushBuddyDirectory: vi.fn(vault.flushBuddyDirectory) };
+  return {
+    ...vault,
+    flushBuddyDirectory: vi.fn(vault.flushBuddyDirectory),
+    writeBuddyFile: vi.fn(vault.writeBuddyFile),
+  };
 });
 
 describe('Buddy recovery crash barriers', () => {
@@ -27,6 +32,7 @@ describe('Buddy recovery crash barriers', () => {
   let target: string;
   let plan: any;
   let database: any;
+  let repository: any;
   let service: BuddyBackupRecoveryService;
   const assert = async () => {};
 
@@ -66,14 +72,48 @@ describe('Buddy recovery crash barriers', () => {
       selectFrom: vi.fn(() => query),
       transaction: () => ({ execute: async (run: (trx: any) => Promise<void>) => run(database) }),
     };
-    const repository = {
+    const settings: BuddySettings = {
+      directory: join(root, 'vault'),
+      quotaBytes: 20 * 1024 ** 3,
+      uploadMbps: 20,
+      downloadMbps: 20,
+      schedule: '0 2 * * *',
+      timezone: 'UTC',
+      windowStart: '00:00',
+      windowEnd: '00:00',
+      pausedSending: true,
+      pausedReceiving: false,
+      includeDerived: false,
+      configurationFiles: [target],
+    };
+    const state: BuddyState = {
+      version: 1,
+      settings,
+      pairing: { pairId: randomUUID(), state: 'blocked' } as never,
+      recoveryVerified: false,
+      probeVerified: false,
+      nextScheduledAt: '2026-10-03T02:00:00.000Z',
+      lastCompleteAt: null,
+      lastVerifiedAt: null,
+      lastSequence: 42,
+      run: null,
+    };
+    const statePath = join(root, 'identity', 'buddy', 'state.json');
+    await writeBuddyFile(statePath, JSON.stringify(state));
+    repository = {
       root: () => join(root, 'identity', 'buddy'),
       db: database,
-      state: () => Promise.resolve({ settings: { directory: join(root, 'vault'), configurationFiles: [target] } }),
+      state: async () => JSON.parse(await readFile(statePath, 'utf8')) as BuddyState,
+      locked: async (_name: string, run: () => Promise<void>) => run(),
+      update: async (change: (state: BuddyState) => BuddyState) => {
+        const next = change(await repository.state());
+        await writeBuddyFile(statePath, JSON.stringify(next));
+        return next;
+      },
     };
     service = new BuddyBackupRecoveryService(
       repository as never,
-      {} as never,
+      { getEnv: () => ({ bull: { queues: [], config: {} } }) } as never,
       {} as never,
       new CloudBackupKeyRepository(LoggingRepository.create()),
     );
@@ -174,5 +214,155 @@ describe('Buddy recovery crash barriers', () => {
     expect(await readFile(join(directory, 'settings-rollback.json'))).toEqual(original);
     await writeFile(target, 'corrupted');
     await expect(service.settings(id, assert)).rejects.toThrow('integrity');
+  });
+
+  const savedSettings = (root: string): BuddySettings => ({
+    directory: join(root, 'source-vault'),
+    quotaBytes: 60 * 1024 ** 3,
+    uploadMbps: 7,
+    downloadMbps: 9,
+    schedule: '0 4 * * *',
+    timezone: 'America/Edmonton',
+    windowStart: '02:00',
+    windowEnd: '07:00',
+    pausedSending: false,
+    pausedReceiving: true,
+    includeDerived: true,
+    configurationFiles: [join(root, 'source.conf')],
+  });
+
+  it.each(['keep', 'replace'] as const)('restores only safe Buddy preferences under %s', async (mode) => {
+    const before = await repository.state();
+    const saved = savedSettings(root);
+    plan.mode = mode;
+    plan.manifest.settings.buddy = { version: 1, settings: saved };
+    await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
+    const identity = join(root, 'identity', 'instance-key.pem');
+    const grants = join(repository.root(), 'grant.json');
+    await writeFile(identity, 'replacement identity');
+    await writeFile(grants, 'replacement grant');
+    await service.settings(id, assert);
+    const after = await repository.state();
+    const expected =
+      mode === 'keep'
+        ? before.settings
+        : {
+            ...saved,
+            directory: before.settings.directory,
+            quotaBytes: before.settings.quotaBytes,
+            configurationFiles: before.settings.configurationFiles,
+            pausedSending: true,
+          };
+    expect(after.settings).toEqual(expected);
+    expect({ ...after, settings: before.settings, nextScheduledAt: before.nextScheduledAt }).toEqual(before);
+    expect(await readFile(identity, 'utf8')).toBe('replacement identity');
+    expect(await readFile(grants, 'utf8')).toBe('replacement grant');
+  });
+
+  it('retries failed preferences writes and preserves edits after completion', async () => {
+    plan.manifest.settings.buddy = { version: 1, settings: savedSettings(root) };
+    await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
+    const vault = await vi.importActual<typeof import('src/utils/buddy-backup-vault.js')>(
+      'src/utils/buddy-backup-vault.js',
+    );
+    vi.mocked(writeBuddyFile).mockImplementation(async (...args) => {
+      if (args[0] === join(repository.root(), 'state.json')) {
+        vi.mocked(writeBuddyFile).mockImplementation(vault.writeBuddyFile);
+        throw new Error('simulated local preferences write failure');
+      }
+      await vault.writeBuddyFile(...args);
+    });
+    await expect(service.settings(id, assert)).rejects.toThrow('local preferences write failure');
+    expect(JSON.parse(await readFile(join(directory, 'publication.json'), 'utf8')).state).toBe('database-ready');
+    await service.settings(id, assert);
+    expect((await repository.state()).settings.uploadMbps).toBe(7);
+    await repository.update((state: BuddyState) => ({
+      ...state,
+      settings: { ...state.settings!, uploadMbps: 333, schedule: '0 8 * * *', pausedReceiving: false },
+    }));
+    await service.settings(id, assert);
+    expect((await repository.state()).settings).toMatchObject({
+      uploadMbps: 333,
+      schedule: '0 8 * * *',
+      pausedReceiving: false,
+    });
+  });
+
+  it('resumes server preferences at database-ready without repeating import', async () => {
+    plan.scope = 'server';
+    plan.manifest.settings.buddy = { version: 1, settings: savedSettings(root) };
+    await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
+    await writeFile(join(directory, 'publication.json'), JSON.stringify({ version: 2, state: 'database-ready' }));
+    await writeFile(join(directory, 'replacement.json'), JSON.stringify({ keys: [], metadata: [] }));
+    await writeFile(target, 'recovered');
+    database.deleteFrom = () => ({ execute: () => Promise.resolve() });
+    const restore = vi.fn();
+    const maintenance = {
+      isMaintenanceMode: true,
+      action: { restoreBackupFilename: `buddy-restore-${id}-dump.sql.gz` },
+    } as never;
+    const before = await repository.state();
+    await service.restore(id, restore, maintenance, assert);
+    expect((await repository.state()).settings).toMatchObject({
+      uploadMbps: 7,
+      pausedSending: true,
+      pausedReceiving: true,
+    });
+    expect((await repository.state()).pairing).toEqual(before.pairing);
+    expect((await repository.state()).recoveryVerified).toBe(false);
+    await repository.update((state: BuddyState) => ({ ...state, settings: { ...state.settings!, uploadMbps: 333 } }));
+    await service.restore(id, restore, maintenance, assert);
+    expect((await repository.state()).settings.uploadMbps).toBe(333);
+    expect(restore).not.toHaveBeenCalled();
+  });
+
+  it('checks the lease before local preferences publication and resumes safely', async () => {
+    plan.manifest.settings.buddy = { version: 1, settings: savedSettings(root) };
+    await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
+    const before = await repository.state();
+    const lease = async () => {
+      if ((await readdir(repository.root())).some((name) => name.startsWith('.tmp-'))) {
+        throw new Error('maintenance lease lost before preferences publication');
+      }
+    };
+    await expect(service.settings(id, lease)).rejects.toThrow('maintenance lease lost');
+    expect(await repository.state()).toEqual(before);
+    expect(JSON.parse(await readFile(join(directory, 'publication.json'), 'utf8')).state).toBe('database-ready');
+    expect((await readdir(repository.root())).some((name) => name.startsWith('.tmp-'))).toBe(false);
+    await service.settings(id, assert);
+    expect((await repository.state()).settings.uploadMbps).toBe(7);
+  });
+
+  it.each([
+    ['rate below minimum', { uploadMbps: 0 }],
+    ['rate above maximum', { downloadMbps: 10_001 }],
+    ['quota below minimum', { quotaBytes: 1024 ** 3 }],
+    ['unsafe quota', { quotaBytes: Number.MAX_SAFE_INTEGER + 1 }],
+    ['invalid cron', { schedule: 'manual' }],
+    ['invalid timezone', { timezone: 'Not/A_Timezone' }],
+    ['invalid window', { windowStart: '25:00' }],
+    ['invalid pause', { pausedSending: 'false' }],
+    ['configuration limit', { configurationFiles: Array.from({ length: 33 }, (_, index) => `/config/${index}`) }],
+    ['unknown authority field', { pairing: {} }],
+  ] as const)('rejects %s before publication or database writes', async (_name, invalid) => {
+    plan.manifest.settings.buddy = { version: 1, settings: { ...savedSettings(root), ...invalid } };
+    await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
+    await expect(service.settings(id, assert)).rejects.toThrow();
+    expect(database.selectFrom).not.toHaveBeenCalled();
+    await expect(readFile(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(join(directory, 'publication.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects an unsupported Buddy settings version before server preparation or database replacement', async () => {
+    plan.scope = 'server';
+    plan.manifest.settings.buddy = { version: 2, settings: savedSettings(root) };
+    await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
+    const restore = vi.fn();
+    await expect(service.prepare(id)).rejects.toThrow('version');
+    await expect(service.restore(id, restore, {} as never, assert)).rejects.toThrow('version');
+    expect(restore).not.toHaveBeenCalled();
+    expect(database.selectFrom).not.toHaveBeenCalled();
+    await expect(readFile(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readFile(join(directory, 'replacement.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
