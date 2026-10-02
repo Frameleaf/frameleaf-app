@@ -12,6 +12,9 @@ import type { MaintenanceModeState } from 'src/types.js';
 import { StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
+import { keyFingerprint, parseBackupKey } from 'src/utils/cloud-backup.js';
+import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import {
   BuddyRecoveryFiles,
@@ -30,7 +33,23 @@ export class BuddyBackupRecoveryService {
     private repository: BuddyBackupRepository,
     private config: ConfigRepository,
     private backups: DatabaseBackupService,
+    private keys: CloudBackupKeyRepository,
   ) {}
+
+  private async restoreKeys(manifest: BuddyManifest, assert: () => Promise<void>) {
+    for (const key of manifest.cloudBackupKeys ?? []) {
+      if (
+        typeof key.content !== 'string' ||
+        key.content.length > 16_384 ||
+        keyFingerprint(parseBackupKey(key.content)) !== key.fingerprint
+      )
+        throw new Error('Cloud Backup recovery key failed verification');
+      await assert();
+      await this.keys.write(dirname(this.repository.root()), key.fingerprint, key.content);
+      await flushBuddyDirectory(dirname(this.repository.root()));
+      await assert();
+    }
+  }
 
   private async plan(id: string) {
     const plan = await readBuddyRecovery(this.repository.root(), id);
@@ -144,7 +163,10 @@ export class BuddyBackupRecoveryService {
     const roots = plan.manifest.storageRoots;
     const files = new BuddyRecoveryFiles(this.repository.root(), id, assert);
     const before = await files.load();
-    if (before === 'complete') return files.verify(plan, roots, settings.configurationFiles);
+    if (before === 'complete') {
+      await files.verify(plan, roots, settings.configurationFiles);
+      return this.restoreKeys(plan.manifest, assert);
+    }
     await files.publish(plan, roots, settings.configurationFiles);
     if (before !== 'database-ready') {
       // Durable intent keeps a crash from reopening a database with half-published files.
@@ -180,6 +202,7 @@ export class BuddyBackupRecoveryService {
     const { bull } = this.config.getEnv();
     for (const { name } of bull.queues) {
       await assert();
+      if (!name) throw new Error('Recovery queue name is unavailable');
       const queue = new Queue(name, bull.config);
       try {
         await queue.obliterate({ force: true });
@@ -188,6 +211,7 @@ export class BuddyBackupRecoveryService {
       }
     }
     await files.verify(plan, roots, settings.configurationFiles);
+    await this.restoreKeys(plan.manifest, assert);
     await assert();
     await this.repository.update((state) => ({ ...state, run: null, nextScheduledAt: null }));
     await files.state('complete');
@@ -201,9 +225,13 @@ export class BuddyBackupRecoveryService {
     const files = new BuddyRecoveryFiles(this.repository.root(), id, assert);
     const directory = join(this.repository.root(), 'recovery', id);
     const before = await files.load();
-    if (before === 'complete') return files.verify(plan, [], settings.configurationFiles);
+    if (before === 'complete') {
+      await files.verify(plan, [], settings.configurationFiles);
+      return this.restoreKeys(plan.manifest, assert);
+    }
     if (before === 'database-ready') {
       await files.verify(plan, [], settings.configurationFiles);
+      await this.restoreKeys(plan.manifest, assert);
       return files.state('complete');
     }
     const preimage = join(directory, 'settings-rollback.json');
@@ -257,6 +285,7 @@ export class BuddyBackupRecoveryService {
     }
     await files.state('database-ready');
     await files.verify(plan, [], settings.configurationFiles);
+    await this.restoreKeys(plan.manifest, assert);
     await files.state('complete');
   }
 }

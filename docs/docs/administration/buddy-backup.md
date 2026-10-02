@@ -19,7 +19,7 @@ The default schedule is 02:00 in the source server's timezone. Sending and recei
 
 Backups capture originals, videos, Live Photo components, sidecars, edited outputs, retained project dependencies, metadata and a verified database dump. Every snapshot includes Frameleaf settings, user preferences, environment settings and the configuration files declared during setup, including secrets contained in those inputs and the database. Mount external libraries and declared configuration files before capture; inaccessible or changed required files stop a complete restore point from being published. This is not a whole operating-system image.
 
-The server identity directory and the backup recovery keys stored there are excluded. Keep an independent copy of each backup system's recovery kit or key, including Cloud Backup when both destinations are used.
+Locally stored Cloud Backup recovery keys are included in the encrypted snapshot and imported during settings or server recovery. The server identity credentials and Buddy recovery kit remain excluded; recovery preserves the replacement server's identity. Keys held only in memory are not captured. Keep an independent copy of each backup system's recovery kit or key, including Cloud Backup when both destinations are used.
 
 Only new or changed encrypted media objects are transferred after the initial backup. Metadata-only changes do not upload originals again. Received Buddy vaults, temporary transfer files and regenerable caches are excluded; thumbnails and transcoded media are optional.
 

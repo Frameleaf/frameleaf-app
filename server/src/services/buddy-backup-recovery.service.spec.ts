@@ -3,6 +3,10 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
+import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
+import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
 
 const fixture = vi.hoisted(() => ({ media: '', rows: [] as unknown[] }));
 vi.mock('src/constants.js', () => ({ serverVersion: '2.6.0' }));
@@ -11,6 +15,10 @@ vi.mock('src/repositories/buddy-backup.repository.js', () => ({ BuddyBackupRepos
 vi.mock('src/repositories/config.repository.js', () => ({ ConfigRepository: class {} }));
 vi.mock('src/services/database-backup.service.js', () => ({ DatabaseBackupService: class {} }));
 vi.mock('kysely', () => ({ sql: () => ({ execute: async () => ({ rows: fixture.rows }) }) }));
+vi.mock('src/utils/buddy-backup-vault.js', async (importOriginal) => {
+  const vault = await importOriginal<typeof import('src/utils/buddy-backup-vault.js')>();
+  return { ...vault, flushBuddyDirectory: vi.fn(vault.flushBuddyDirectory) };
+});
 
 describe('Buddy recovery crash barriers', () => {
   let root: string;
@@ -63,11 +71,52 @@ describe('Buddy recovery crash barriers', () => {
       db: database,
       state: async () => ({ settings: { directory: join(root, 'vault'), configurationFiles: [target] } }),
     };
-    service = new BuddyBackupRecoveryService(repository as never, {} as never, {} as never);
+    service = new BuddyBackupRecoveryService(
+      repository as never,
+      {} as never,
+      {} as never,
+      new CloudBackupKeyRepository(LoggingRepository.create()),
+    );
     await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it('restores stored Cloud Backup keys without restoring or overwriting instance credentials', async () => {
+    const key = Buffer.alloc(32, 42);
+    const fingerprint = keyFingerprint(key);
+    const content = JSON.stringify(
+      backupKeyFile({ key, instanceId: 'old-instance', bucket: 'test', mode: 'server', createdAt: new Date() }),
+    );
+    plan.manifest.cloudBackupKeys = [{ fingerprint, content }];
+    await writeFile(join(directory, 'prepared.json'), JSON.stringify(plan));
+    const identity = join(root, 'identity', 'instance-key.pem');
+    await writeFile(identity, 'replacement identity');
+    const vault = await vi.importActual<typeof import('src/utils/buddy-backup-vault.js')>(
+      'src/utils/buddy-backup-vault.js',
+    );
+    vi.mocked(flushBuddyDirectory).mockImplementation(async (directory) => {
+      if (directory === join(root, 'identity')) {
+        vi.mocked(flushBuddyDirectory).mockImplementation(vault.flushBuddyDirectory);
+        throw new Error('simulated directory flush failure');
+      }
+      await vault.flushBuddyDirectory(directory);
+    });
+    await expect(service.settings(id, assert)).rejects.toThrow('directory flush failure');
+    expect(vi.mocked(flushBuddyDirectory)).toHaveBeenLastCalledWith(join(root, 'identity'));
+    expect(JSON.parse(await readFile(join(directory, 'publication.json'), 'utf8')).state).toBe('database-ready');
+    await service.settings(id, assert);
+    const stored = join(root, 'identity', `cloud-backup-${fingerprint}.key`);
+    expect(await readFile(stored, 'utf8')).toBe(content);
+    expect(await readFile(identity, 'utf8')).toBe('replacement identity');
+    await rm(stored);
+    // A crash/restart or a missing key after completed publication must replay the import.
+    await service.settings(id, assert);
+    expect(await readFile(stored, 'utf8')).toBe(content);
+    await writeFile(stored, JSON.stringify({ key: Buffer.alloc(32, 7).toString('base64') }));
+    await expect(service.settings(id, assert)).rejects.toThrow('different backup key');
+    expect(await readFile(identity, 'utf8')).toBe('replacement identity');
   });
 
   it('rechecks complete recovery before allowing maintenance to end, without replacing the database again', async () => {
