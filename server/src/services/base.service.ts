@@ -18,6 +18,7 @@ import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -102,6 +103,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   ApiKeyRepository,
   AppRepository,
   AssetRepository,
+  AssetDevelopRepository,
   AssetEditRepository,
   AssetFileRepository,
   AssetJobRepository,
@@ -180,6 +182,7 @@ export class BaseService {
     protected apiKeyRepository: ApiKeyRepository,
     protected appRepository: AppRepository,
     protected assetRepository: AssetRepository,
+    protected assetDevelopRepository: AssetDevelopRepository,
     protected assetEditRepository: AssetEditRepository,
     protected assetFileRepository: AssetFileRepository,
     protected assetJobRepository: AssetJobRepository,
@@ -267,6 +270,7 @@ export class BaseService {
       ctx.apiKeyRepository,
       ctx.appRepository,
       ctx.assetRepository,
+      ctx.assetDevelopRepository,
       ctx.assetEditRepository,
       ctx.assetFileRepository,
       ctx.assetJobRepository,
@@ -334,6 +338,17 @@ export class BaseService {
     service.logger.setContext(BaseService.name);
 
     return service as InstanceType<T>;
+  }
+
+  /**
+   * FL-304: recount storage usage (of one user, or of all). Develop artifacts are charged to their
+   * owner, so the recount includes them wherever the fork schema can be used; elsewhere it is the
+   * official recount of the photos alone.
+   */
+  protected async syncUsage(id?: string) {
+    if (!(await this.assetDevelopRepository.syncUsage(id))) {
+      await this.userRepository.syncUsage(id);
+    }
   }
 
   /** FL-190: this server's public address for links it sends, or `undefined` (see `resolvePublicUrl`). */

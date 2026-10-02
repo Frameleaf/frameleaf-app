@@ -111,6 +111,7 @@ describe(AssetDevelopService.name, () => {
       getArtifacts: vi.fn().mockResolvedValue([]),
       addArtifact: vi.fn().mockResolvedValue(true),
       releaseArtifacts: vi.fn().mockResolvedValue([]),
+      syncUsage: vi.fn().mockResolvedValue(true),
       beginAttempt: vi.fn().mockImplementation((id: string) =>
         developRepository.get(id).then((row: AssetDevelopRevision) => ({
           ...row,
