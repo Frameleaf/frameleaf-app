@@ -9,7 +9,7 @@ Buddy Backup is initially disabled while beta qualification is completed. Enabli
 ## Set up a buddy
 
 1. Link both servers to Frameleaf Cloud. Both need an active subscription or its existing grace period for new backups.
-2. Open **Settings → Frameleaf Cloud → Backup → Buddy Backup**. Check library mounts, configuration coverage and estimated initial size.
+2. Open **Settings → Backup → Buddy controls**. The existing **Frameleaf Cloud → Backup** entry also opens the Backup Command Center. Check library mounts, configuration coverage and estimated initial size.
 3. Choose a dedicated hosting directory outside photo libraries, external import paths and the server identity directory. Set a hard capacity for the storage you offer. Your buddy can offer a different amount.
 4. Invite the buddy's Cloud account. Each owner confirms the account, server and reciprocal storage agreement.
 5. Download and re-import your recovery kit to verify it. Keep it somewhere independent of the original server. Optional Cloud escrow contains only a package encrypted locally using your passphrase; Cloud does not receive the passphrase.
@@ -25,7 +25,9 @@ Locally stored Cloud Backup recovery keys are included in the encrypted snapshot
 
 Only new or changed encrypted media objects are transferred after the initial backup. Metadata-only changes do not upload originals again. Received Buddy vaults, temporary transfer files and regenerable caches are excluded; thumbnails and transcoded media are optional.
 
-**My backup** reports the latest complete restore point separately from the latest successful restore verification. **Hosting for my buddy** shows storage usage and reservations without exposing the buddy's filenames, albums or media.
+**My backup** reports the latest complete restore point separately from the latest successful restore verification. **Hosting for my buddy** shows storage usage and reservations without exposing the buddy's filenames, albums or media. Overview and Analytics show these outgoing and incoming directions alongside Cloud Backup. Their server-wide operational snapshot is independent of library filters; refresh it to read the latest destination status.
+
+The Backup Command Center separates **Status**, **Cloud Backup**, **Buddy controls**, **Recover**, and **How it works**. Recovery opens your source server's backup only. The comparison describes the distinct encryption models: Cloud Backup uses provider-side SSE-C, while Buddy encrypts before transmission.
 
 - **Pause sending / receiving** keeps acknowledged progress. **Resume** continues it.
 - **Restart backup** abandons an incomplete run, scans again and reuses verified objects at the destination.
