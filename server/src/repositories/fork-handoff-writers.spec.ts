@@ -11,7 +11,7 @@ import { STUDIO_EXPORT_HANDOFF_REFUSAL, StudioExportRepository } from 'src/repos
 import { STUDIO_PROJECT_HANDOFF_REFUSAL, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { TAKEOUT_HANDOFF_REFUSAL, TakeoutRepository } from 'src/repositories/takeout.repository.js';
 import { DB } from 'src/schema/index.js';
-import { forkGuardAnswer, scriptedKysely, type ScriptedAnswer, type ScriptedQuery } from 'test/scripted-kysely.js';
+import { type ScriptedAnswer, type ScriptedQuery, forkGuardAnswer, scriptedKysely } from 'test/scripted-kysely.js';
 
 const id = '00000000-0000-4000-a000-000000000001';
 
