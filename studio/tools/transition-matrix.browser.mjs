@@ -10,7 +10,7 @@
 // - Every frame is finite and re-renders bit-identically.
 // - Per transition through the production renderer (clips, keyframes, frame scene,
 //   compositor): animated progress and a keyframed participant, a composed second
-//   blend, and the invalid inputs whose meaning the engine declares.
+//   blend, and invalid durations, alignments, parameters, directions, timings and ids.
 //   TRANSITION_MATRIX_REPORT carries them as report.cases [{ id, case, ... }].
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -162,17 +162,21 @@ try {
 //   composed: a screen-blended layer stacked over the transition: where it covers,
 //             the frame is screen(transition frame, layer); elsewhere it is the
 //             transition frame.
-//   invalid:  only the inputs whose meaning the engine declares: an unknown
-//             direction draws as from-left, an unknown timing as linear, an alignment
-//             below 0 or above 1 as 0 or 1, a fractional duration as its whole
-//             frames, an undeclared property is ignored, and an unknown transition id
-//             draws a hard cut.
-// The invalid case is not complete, so it is not claimed as conformance evidence
-// (FAMILY_CASE_COVERAGE in scripts/frameleaf-studio-evidence.mjs): a non-finite
-// duration or alignment keeps the outgoing clip on screen for the whole incoming
-// clip, and a transition's own parameters are packed unchecked (NaN, out-of-range and
-// non-number values reach the shader). Both need an engine change before they can be
-// measured against a declared meaning, as opacity and effect parameters were.
+//   invalid:  every invalid input draws exactly as its declared meaning, restated
+//             here rather than taken from the engine's sanitiser (engine patch 0048):
+//             - duration: not a finite number draws as the default 30 frames; zero or
+//               negative as one frame; a fraction as its whole frames;
+//             - alignment: not a finite number draws as the centred 0.5; below 0 or
+//               above 1 as 0 or 1;
+//             - a declared numeric parameter: not a finite number draws as its
+//               default, a finite number outside [min, max] as the bound; a declared
+//               colour that is not three finite numbers as its default;
+//             - a property the transition does not declare is ignored unless it is a
+//               finite number;
+//             - an unknown direction draws as from-left, an unknown timing as linear,
+//               and an unknown transition id draws a hard cut.
+//             Preview equals export: the renderer the preview's engine surface uses
+//             and the export renderer draw the invalid inputs pixel for pixel alike.
 const CASE_LAYER = [0.4, 0.8, 0.55];
 const RATE = { frames: [35, 38, 41, 44], slowFrames: [31, 37, 43, 49] };
 const caseBrowser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
@@ -277,9 +281,35 @@ window.__vite_plugin_react_preamble_installed__ = true
     const WINDOW = [35, 37, 38, 39, 40, 41, 42, 44];
     // Alignment 0 plays the window in the incoming clip (r = 40..49), 1 in the outgoing (r = 30..39).
     const ALIGNED = [30, 33, 36, 39, 40, 43, 46, 49];
+    // The default 30-frame centred window is r = 25..54; a one-frame window is r = 40.
+    const DEFAULTED = [20, 25, 32, 39, 40, 47, 54, 60];
+    const PARAMETERS = [37, 40, 42];
+    const DEFAULT_DURATION = 30;
+    // Properties no transition declares; some shaders read them all the same.
+    const UNDECLARED = { centerX: 'left', centerY: Number.NaN, samples: 'many', edgeSoftness: Number.POSITIVE_INFINITY,
+      outgoingDim: null, notAParameter: { nested: true } };
     const cases = [];
+    const invalidPairs = [];
     for (const id of GPU_TRANSITION_REGISTRY.keys()) {
       const transition = (extra = {}) => ({ presentation: id, ...extra });
+      const parameters = transitionRegistry.getDefinition(id)?.parameters ?? [];
+      const numeric = parameters.filter((parameter) => parameter.type === 'number');
+      const ranged = numeric.filter((parameter) => typeof parameter.min === 'number' && typeof parameter.max === 'number');
+      // One property set per kind of invalid value, over every declared parameter at once.
+      const properties = (value) => Object.fromEntries(parameters.map((parameter) => [parameter.key, value(parameter)])
+        .filter(([, v]) => v !== undefined));
+      const sets = {
+        defaults: properties((parameter) => parameter.defaultValue),
+        'not-finite': properties((parameter) => parameter.type === 'number' ? Number.NaN : [Number.NaN, 0.5, 0.5]),
+        infinite: properties((parameter) => parameter.type === 'number' ? Number.POSITIVE_INFINITY : [0.5, Number.NEGATIVE_INFINITY, 0.5]),
+        'not-a-number': properties((parameter) => parameter.type === 'number' ? 'abc' : 'red'),
+        'at-min': properties((parameter) => ranged.includes(parameter) ? parameter.min : undefined),
+        'below-range': properties((parameter) => ranged.includes(parameter) ? parameter.min - 1000 : undefined),
+        'at-max': properties((parameter) => ranged.includes(parameter) ? parameter.max : undefined),
+        'above-range': properties((parameter) => ranged.includes(parameter) ? parameter.max + 1000 : undefined),
+        undeclared: Object.fromEntries(Object.entries(UNDECLARED).filter(([key]) =>
+          !parameters.some((parameter) => parameter.key === key))),
+      };
       const frames = await renderPairs([
         { name: 'clips', frames: [20, 60] },
         { name: 'valid', transition: transition(), frames: WINDOW },
@@ -297,7 +327,27 @@ window.__vite_plugin_react_preamble_installed__ = true
         { name: 'alignment-0', transition: transition({ alignment: 0 }), frames: ALIGNED },
         { name: 'alignment-above', transition: transition({ alignment: 7 }), frames: ALIGNED },
         { name: 'alignment-1', transition: transition({ alignment: 1 }), frames: ALIGNED },
+        { name: 'alignment-nan', transition: transition({ alignment: Number.NaN }), frames: DEFAULTED },
+        { name: 'alignment-infinite', transition: transition({ alignment: Number.POSITIVE_INFINITY }), frames: DEFAULTED },
+        { name: 'alignment-text', transition: transition({ alignment: 'left' }), frames: DEFAULTED },
+        { name: 'alignment-centred', transition: transition({ alignment: 0.5 }), frames: DEFAULTED },
+        { name: 'duration-nan', transition: transition({ durationInFrames: Number.NaN }), frames: DEFAULTED },
+        { name: 'duration-infinite', transition: transition({ durationInFrames: Number.POSITIVE_INFINITY }), frames: DEFAULTED },
+        { name: 'duration-text', transition: transition({ durationInFrames: 'long' }), frames: DEFAULTED },
+        { name: 'duration-default', transition: transition({ durationInFrames: DEFAULT_DURATION }), frames: DEFAULTED },
+        { name: 'duration-0', transition: transition({ durationInFrames: 0 }), frames: DEFAULTED },
+        { name: 'duration-negative', transition: transition({ durationInFrames: -5 }), frames: DEFAULTED },
+        { name: 'duration-1', transition: transition({ durationInFrames: 1 }), frames: DEFAULTED },
+        { name: 'unset', transition: transition(), frames: PARAMETERS },
+        ...Object.entries(sets).map(([name, set]) => ({ name: `properties-${name}`,
+          transition: transition({ properties: set }), frames: PARAMETERS })),
       ]);
+      const drawsAs = (invalid, meaning) => identical(frames[invalid], frames[meaning]);
+      for (const [name, extra] of Object.entries({
+        'duration-nan': { durationInFrames: Number.NaN }, 'alignment-nan': { alignment: Number.NaN },
+        'properties-not-finite': { properties: sets['not-finite'] }, 'properties-below-range': { properties: sets['below-range'] },
+        'properties-above-range': { properties: sets['above-range'] }, 'properties-undeclared': { properties: sets.undeclared },
+      })) invalidPairs.push({ name: `${id}-${name}`, transition: transition(extra) });
       cases.push({ id, case: 'animated', gpuTransitionId: transitionRegistry.getRenderer(id)?.gpuTransitionId ?? null,
         clips: { outgoing: frames.clips[20], incoming: frames.clips[60] },
         progress: RATE.frames.map((r) => frames.valid[r]), slow: RATE.slowFrames.map((r) => frames.slow[r]),
@@ -306,14 +356,32 @@ window.__vite_plugin_react_preamble_installed__ = true
         unkeyed: { 35: frames.valid[35], 37: frames.valid[37] } });
       cases.push({ id, case: 'composed', second: 'screen', got: frames.layered,
         under: { 37: frames.valid[37], 40: frames.valid[40] } });
-      cases.push({ id, case: 'invalid', complete: false, declared: {
-        'unknown direction draws as from-left': identical(frames['direction-unknown'], frames['direction-left']),
-        'unknown timing draws as linear': identical(frames['timing-unknown'], frames.valid),
-        'fractional duration draws as its whole frames': identical(frames['duration-fraction'], frames.valid),
-        'undeclared property is ignored': identical(frames['property-undeclared'], frames.valid),
-        'alignment below 0 draws as 0': identical(frames['alignment-below'], frames['alignment-0']),
-        'alignment above 1 draws as 1': identical(frames['alignment-above'], frames['alignment-1']),
-        'alignment moves the window': !identical(frames['alignment-0'], frames['alignment-1']),
+      cases.push({ id, case: 'invalid', parameters: parameters.map((parameter) => parameter.key), declared: {
+        'unknown direction draws as from-left': drawsAs('direction-unknown', 'direction-left'),
+        'unknown timing draws as linear': drawsAs('timing-unknown', 'valid'),
+        'fractional duration draws as its whole frames': drawsAs('duration-fraction', 'valid'),
+        'NaN duration draws as the default duration': drawsAs('duration-nan', 'duration-default'),
+        'infinite duration draws as the default duration': drawsAs('duration-infinite', 'duration-default'),
+        'text duration draws as the default duration': drawsAs('duration-text', 'duration-default'),
+        'zero duration draws as one frame': drawsAs('duration-0', 'duration-1'),
+        'negative duration draws as one frame': drawsAs('duration-negative', 'duration-1'),
+        'the default duration ends on the incoming clip': frames['duration-default'][60].every((v, i) =>
+          Object.is(v, frames.clips[60][i])),
+        'alignment below 0 draws as 0': drawsAs('alignment-below', 'alignment-0'),
+        'alignment above 1 draws as 1': drawsAs('alignment-above', 'alignment-1'),
+        'alignment moves the window': !drawsAs('alignment-0', 'alignment-1'),
+        'NaN alignment draws as centred': drawsAs('alignment-nan', 'alignment-centred'),
+        'infinite alignment draws as centred': drawsAs('alignment-infinite', 'alignment-centred'),
+        'text alignment draws as centred': drawsAs('alignment-text', 'alignment-centred'),
+        'undeclared finite property is ignored': drawsAs('property-undeclared', 'valid'),
+        'undeclared non-finite and non-number properties are ignored': drawsAs('properties-undeclared', 'unset'),
+        'default parameters draw as unset ones': drawsAs('properties-defaults', 'unset'),
+        'non-finite parameters draw as their defaults': drawsAs('properties-not-finite', 'properties-defaults'),
+        'infinite parameters draw as their defaults': drawsAs('properties-infinite', 'properties-defaults'),
+        'non-number parameters draw as their defaults': drawsAs('properties-not-a-number', 'properties-defaults'),
+        'parameters below their range draw as the minimum': drawsAs('properties-below-range', 'properties-at-min'),
+        'parameters above their range draw as the maximum': drawsAs('properties-above-range', 'properties-at-max'),
+        ...(ranged.length > 0 ? { 'parameters reach the picture': !drawsAs('properties-at-min', 'properties-at-max') } : {}),
       } });
     }
     // An unknown transition id draws a hard cut: exactly the two clips with no transition.
@@ -322,6 +390,26 @@ window.__vite_plugin_react_preamble_installed__ = true
       { name: 'unknown', transition: { presentation: 'not-a-transition' }, frames: WINDOW },
     ]);
     cases.push({ id: '*', case: 'invalid-id', presentation: 'not-a-transition', got: unknown.unknown, cut: unknown.cut });
+    // Preview equals export: every invalid pair on the canvas each mode draws to, at the cut.
+    const surfaces = {};
+    for (const mode of ['preview', 'export']) {
+      const canvas = new OffscreenCanvas(W, H);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const renderer = await createCompositionRenderer(composition(invalidPairs), canvas, ctx, { mode });
+      try {
+        await renderer.preload?.();
+        surfaces[mode] = [];
+        for (const index of invalidPairs.keys()) {
+          await renderer.renderFrame(index * PAIR + CUT);
+          surfaces[mode].push(Array.from(ctx.getImageData(0, 0, W, H).data));
+        }
+      } finally {
+        renderer.dispose();
+      }
+    }
+    cases.push({ id: '*', case: 'invalid-preview-export', pairs: invalidPairs.map((pair) => pair.name),
+      differing: invalidPairs.map((_, index) => surfaces.preview[index].filter((v, i) => v !== surfaces.export[index][i]).length),
+      blank: invalidPairs.map((_, index) => surfaces.export[index].every((v) => v === 0)) });
     return cases;
   }, { W, H, sdrLeft, sdrRight, layer: CASE_LAYER, RATE });
 } finally {
@@ -386,7 +474,13 @@ for (const transition of report.transitions) {
 const same = (got, want) => got.length === want.length && want.every((v, i) => Object.is(v, got[i]));
 for (const entry of report.cases) {
   const { id } = entry;
-  if (entry.case === 'invalid-id') {
+  if (entry.case === 'invalid-preview-export') {
+    entry.pairs.forEach((name, index) => {
+      check(entry.differing[index] === 0, `${name}: ${entry.differing[index]} channels differ between the preview surface and export`);
+      check(!entry.blank[index], `${name}: the export surface is blank`);
+    });
+    check(entry.pairs.length === report.transitions.length * 6, 'preview/export: not every invalid pair was measured');
+  } else if (entry.case === 'invalid-id') {
     // The cut is drawn through the canvas route, so it is the clips to 8-bit precision.
     for (const [r, got] of Object.entries(entry.got)) {
       const differing = got.filter((v, k) => Math.abs(v - entry.cut[r][k]) > 1.5 / 255 + 1e-3).length;
@@ -425,6 +519,7 @@ for (const entry of report.cases) {
   }
 }
 check(report.cases.some((entry) => entry.case === 'invalid-id'), 'no unknown transition id case measured');
+check(report.cases.some((entry) => entry.case === 'invalid-preview-export'), 'no preview/export case measured for invalid inputs');
 for (const { id } of report.transitions) {
   for (const name of ['animated', 'composed', 'invalid']) {
     check(report.cases.some((entry) => entry.id === id && entry.case === name), `${id}: no ${name} case measured`);
@@ -434,5 +529,5 @@ if (failures.length) {
   console.error(failures.slice(0, 40).join('\n'));
   assert.fail(`${failures.length} transition-matrix failures`);
 }
-console.log(JSON.stringify({ check: 'every transition and direction: boundaries, SDR route parity, HDR range, mirror symmetry, determinism; animated, composed and declared invalid cases through the renderer',
+console.log(JSON.stringify({ check: 'every transition and direction: boundaries, SDR route parity, HDR range, mirror symmetry, determinism; animated, composed and invalid cases through the renderer',
   transitions: report.transitions.length, frames: frameCount, cases: report.cases.length }));
