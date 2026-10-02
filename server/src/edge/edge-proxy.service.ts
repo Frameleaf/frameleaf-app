@@ -6,6 +6,12 @@ import http, {
   type ServerResponse,
 } from 'node:http';
 import type { Duplex } from 'node:stream';
+import {
+  type BuddyRecoveryAccess,
+  buddyAuthorityMatches,
+  buddyBackupRequestAllowed,
+  buddyRecoveryRequestAllowed,
+} from 'src/edge/buddy-recovery.js';
 import { ImmichHeader } from 'src/enum.js';
 import { stripFrameleafHeaders } from 'src/middleware/frameleaf-via.middleware.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -21,7 +27,7 @@ import {
 import { type FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 
 /** How one connection reached the edge worker: the via tag and the visitor's own address. */
-export type EdgeArrival = { via: FrameleafVia; clientIp: string; host: string | null };
+export type EdgeArrival = { via: FrameleafVia; clientIp: string; host: string | null; buddyRecovery?: boolean };
 
 /** Hop-by-hop headers (RFC 9110 section 7.6.1), never forwarded in either direction. */
 const HOP_BY_HOP = new Set([
@@ -70,7 +76,11 @@ export const upstreamHeaders = (
     copy[lower] = value;
   }
   stripFrameleafHeaders(copy);
-  const host = typeof headers.host === 'string' && headers.host ? headers.host : arrival.host;
+  const host = arrival.buddyRecovery
+    ? arrival.host
+    : typeof headers.host === 'string' && headers.host
+      ? headers.host
+      : arrival.host;
   return {
     ...copy,
     ...(upgrade && { connection: 'upgrade', upgrade }),
@@ -113,6 +123,8 @@ export class EdgeProxyService {
   private arrivals = new WeakMap<Duplex, EdgeArrival>();
   private sockets = new Set<Duplex>();
   private perAddress = new Map<string, number>();
+  private recovery: BuddyRecoveryAccess | null = null;
+  private buddyOnly = false;
 
   constructor(
     private logger: LoggingRepository,
@@ -136,6 +148,20 @@ export class EdgeProxyService {
   /** Connections open right now (for the self-check and specs). */
   get connectionCount() {
     return this.sockets.size;
+  }
+
+  /** A learned block, unlink, expiry or rebind also closes already-open recovery connections. */
+  configureRecovery(access: BuddyRecoveryAccess | null, buddyOnly = false) {
+    if (JSON.stringify(access) !== JSON.stringify(this.recovery) || buddyOnly !== this.buddyOnly) {
+      for (const socket of this.sockets) {
+        const arrival = this.arrivals.get(socket);
+        if (buddyOnly || buddyOnly !== this.buddyOnly || arrival?.buddyRecovery) {
+          socket.destroy();
+        }
+      }
+    }
+    this.recovery = access;
+    this.buddyOnly = buddyOnly;
   }
 
   /**
@@ -219,6 +245,23 @@ export class EdgeProxyService {
       this.refuse(response, 503, 'Remote access is not available on this server right now.');
       return;
     }
+    if (
+      arrival.buddyRecovery &&
+      (arrival.host !== this.recovery?.host ||
+        !buddyRecoveryRequestAllowed(this.recovery, request.method, request.url, request.headers.host))
+    ) {
+      this.refuse(response, 403, 'This recovery address only serves reads from its Buddy vault.');
+      return;
+    }
+    if (
+      this.buddyOnly &&
+      !arrival.buddyRecovery &&
+      (!buddyAuthorityMatches(request.headers.host, arrival.host) ||
+        !buddyBackupRequestAllowed(this.recovery, request.method, request.url))
+    ) {
+      this.refuse(response, 403, 'This address only serves its Buddy vault.');
+      return;
+    }
     const outgoing = http.request({
       host,
       port,
@@ -266,6 +309,10 @@ export class EdgeProxyService {
     const arrival = this.arrivalOf(socket);
     const { host, port, secret } = this.upstream();
     const upgrade = typeof request.headers.upgrade === 'string' ? request.headers.upgrade : undefined;
+    if (arrival?.buddyRecovery || this.buddyOnly) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      return;
+    }
     if (!arrival || !secret || !upgrade) {
       socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
       return;

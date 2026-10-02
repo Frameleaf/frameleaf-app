@@ -150,6 +150,7 @@ export class FakeRelay {
     relay?: string;
     lifetimeSec?: number;
     iat?: number;
+    recovery?: { pairId: string; vaultId: string; sourceInstanceId: string };
   }): string {
     const iat = input.iat ?? Math.floor(Date.now() / 1000);
     const claims = {
@@ -160,10 +161,11 @@ export class FakeRelay {
       relay: input.relay ?? this.relayId,
       cnf: { jwk: { kty: 'OKP', crv: 'Ed25519', x: input.publicKeyX } },
       thr: { bps: 8_000_000, burst: 4_194_304 },
-      lim: { conns: 500 },
+      lim: { conns: input.recovery ? 2 : 500 },
       iat,
-      exp: iat + (input.lifetimeSec ?? 4 * 3600),
+      exp: iat + (input.lifetimeSec ?? (input.recovery ? 300 : 4 * 3600)),
       jti: randomUUID(),
+      ...(input.recovery && { purpose: 'buddy-recovery', ...input.recovery }),
     };
     const signingInput = `${b64({ alg: 'EdDSA', typ: 'relay+jwt', kid: 'relay-test' })}.${b64(claims)}`;
     return `${signingInput}.${sign(null, Buffer.from(signingInput), this.tokenKey.privateKey).toString('base64url')}`;

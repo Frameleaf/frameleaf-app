@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import tls, { type SecureContext, type TLSSocket } from 'node:tls';
 import type { Socket } from 'node:net';
 import type { FrameleafRemoteEnrollment } from 'src/types.js';
+import { buddyRecoveryHost } from 'src/edge/buddy-recovery.js';
 import { EdgeProxyService } from 'src/edge/edge-proxy.service.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -207,6 +208,7 @@ export class EdgeDirectService {
       via,
       clientIp: (socket.remoteAddress ?? '').replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, ''),
       host: servername,
+      ...(servername?.toLowerCase().replace(/\.$/, '') === buddyRecoveryHost(enrollment) && { buddyRecovery: true }),
     });
   }
 }
