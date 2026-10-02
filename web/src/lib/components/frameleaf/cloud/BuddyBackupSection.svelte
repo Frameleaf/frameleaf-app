@@ -587,7 +587,8 @@
       <div>
         <dt>{$t('frameleaf_buddy_original_estimate')}</dt>
         <dd>
-          {bytes(coverage.originalBytes)} · {coverage.items.toLocaleString($locale)} {$t('frameleaf_buddy_items')}
+          {bytes(coverage.originalBytes)} · {coverage.items.toLocaleString($locale)}
+          {$t('frameleaf_buddy_items')}
         </dd>
       </div>
       <div>
