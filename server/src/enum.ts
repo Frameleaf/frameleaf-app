@@ -1400,6 +1400,8 @@ export enum MediaOperationKind {
    * its SHA-256 before it is written; a mismatch stops the restore with a report.
    */
   CloudRestore = 'cloud_restore',
+  BuddyBackup = 'buddy_backup',
+  BuddyRestore = 'buddy_restore',
 }
 
 export const MediaOperationKindSchema = z
@@ -2458,6 +2460,7 @@ export enum DatabaseLock {
   FrameleafCloudMlJobEstimates = 970,
   /** FL-292: setup code checks, tickets and the claim of a new server happen one at a time. */
   FrameleafServerClaim = 971,
+  BuddyBackup = 972,
 }
 
 export enum MaintenanceAction {

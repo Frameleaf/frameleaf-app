@@ -2,7 +2,7 @@ import { LoginResponseDto, ManualJobName } from '@immich/sdk';
 import { errorDto } from 'src/responses.js';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('/admin/database-backups', () => {
   let cookie: string | undefined;
@@ -92,17 +92,27 @@ describe('/admin/database-backups', () => {
   // => action: restore database flow
 
   describe.sequential('POST /start-restore', () => {
+    // The hook covers End, the bounded restart wait, and recreating the admin.
     afterAll(async () => {
-      await request(app).post('/admin/maintenance').set('cookie', cookie!).send({ action: 'end' });
-      await utils.poll(
-        () => request(app).get('/server/config'),
-        ({ status, body }) => status === 200 && !body.maintenanceMode,
+      await request(app)
+        .post('/admin/maintenance')
+        .set('cookie', cookie!)
+        .send({ action: 'end' })
+        .timeout({ deadline: 5000 })
+        .expect(201);
+      await vi.waitFor(
+        async () => {
+          const { status, body } = await request(app).get('/server/config').timeout({ deadline: 5000 });
+          expect({ status, maintenanceMode: body.maintenanceMode }).toEqual({ status: 200, maintenanceMode: false });
+        },
+        // Match the maintenance exit test's restart budget; connection errors retry at this interval.
+        { interval: 500, timeout: 60_000 },
       );
 
       admin = await utils.adminSetup({
         onboarding: false,
       });
-    });
+    }, 70_000);
 
     it.sequential('should not work when the server is configured', async () => {
       const { status, body } = await request(app).post('/admin/database-backups/start-restore').send();

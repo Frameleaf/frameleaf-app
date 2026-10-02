@@ -3,7 +3,9 @@ import { parse } from 'cookie';
 import { NextFunction, Request, Response } from 'express';
 import { jwtVerify } from 'jose';
 import { readFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { IncomingHttpHeaders } from 'node:http';
+import { dirname } from 'node:path';
 import type { MaintenanceModeState } from 'src/types.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -26,9 +28,12 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type ApiService as _ApiService } from 'src/services/api.service.js';
 import { type BaseService as _BaseService } from 'src/services/base.service.js';
+import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { type ServerService as _ServerService } from 'src/services/server.service.js';
 import { type VersionService as _VersionService } from 'src/services/version.service.js';
+import { buddyMaintenancePath, buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
+import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
 import { getConfig } from 'src/utils/config.js';
 import { createMaintenanceLoginUrl, detectPriorInstall, maintenanceLoginHint } from 'src/utils/maintenance.js';
 import { resolvePublicUrl } from 'src/utils/public-url.js';
@@ -62,6 +67,7 @@ export class MaintenanceWorkerService {
     private processRepository: ProcessRepository,
     private databaseRepository: DatabaseRepository,
     private databaseBackupService: DatabaseBackupService,
+    private buddyRecovery: BuddyBackupRecoveryService,
   ) {
     this.logger.setContext(this.constructor.name);
   }
@@ -72,9 +78,10 @@ export class MaintenanceWorkerService {
   }
 
   async init() {
-    const state = (await this.systemMetadataRepository.get(
-      SystemMetadataKey.MaintenanceMode,
-    )) as MaintenanceModeState & { isMaintenanceMode: true };
+    const state = ((await buddyMaintenanceState(this.configRepository)) ??
+      (await this.systemMetadataRepository.get(SystemMetadataKey.MaintenanceMode))) as MaintenanceModeState & {
+      isMaintenanceMode: true;
+    };
 
     this.#secret = state.secret;
     this.#reason = state.action?.reason ?? undefined;
@@ -360,7 +367,12 @@ export class MaintenanceWorkerService {
   async runRestoreDatabase(action: SetMaintenanceModeDto) {
     // also set here, before the first await, for a restore resumed from the stored state on start
     this.#restoring = true;
-    const isLock = await this.databaseRepository.tryLock(DatabaseLock.MaintenanceOperation);
+    const held = action.buddyRecoveryId
+      ? await this.databaseRepository.holdLock(DatabaseLock.MaintenanceOperation)
+      : null;
+    const isLock = action.buddyRecoveryId
+      ? !!held
+      : await this.databaseRepository.tryLock(DatabaseLock.MaintenanceOperation);
     if (!isLock) {
       // another process holds the maintenance lock; the claim is released so this worker is not stuck
       this.#restoring = false;
@@ -369,16 +381,50 @@ export class MaintenanceWorkerService {
 
     this.logger.log(`Running maintenance action ${action.action}`);
 
-    await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
-      isMaintenanceMode: true,
-      secret: this.secret,
-      action: {
-        action: MaintenanceAction.Start,
-        reason: this.#reason,
-      },
-    });
-
+    const assert = async () => {
+      if (action.buddyRecoveryId && (!held || !(await held.verify())))
+        throw new Error('Recovery lost its maintenance lock; retry in maintenance mode');
+    };
     try {
+      await assert();
+      await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
+        isMaintenanceMode: true,
+        secret: this.secret,
+        action: {
+          action: MaintenanceAction.Start,
+          reason: this.#reason,
+        },
+      });
+
+      if (action.buddyRecoveryId) {
+        const maintenance = { isMaintenanceMode: true as const, secret: this.secret, action };
+        if (action.restoreBackupFilename) {
+          await this.buddyRecovery.restore(
+            action.buddyRecoveryId,
+            () =>
+              this.databaseBackupService.restoreDatabaseBackup(
+                action.restoreBackupFilename!,
+                (task, progress) => this.setStatus({ active: true, action: action.action, task, progress }),
+                { keepSafetyBackup: true, fence: { backendPid: held!.backendPid, assert } },
+              ),
+            maintenance,
+            assert,
+          );
+        } else {
+          await this.buddyRecovery.settings(action.buddyRecoveryId, assert);
+        }
+        await assert();
+        await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
+          isMaintenanceMode: true,
+          secret: this.secret,
+          action: { action: MaintenanceAction.Start },
+        });
+        await assert();
+        await rm(buddyMaintenancePath(this.configRepository));
+        await flushBuddyDirectory(dirname(buddyMaintenancePath(this.configRepository)));
+        await this.setAction({ action: MaintenanceAction.End });
+        return;
+      }
       if (!action.restoreBackupFilename) {
         throw new Error("Expected restoreBackupFilename but it's missing!");
       }
@@ -393,6 +439,7 @@ export class MaintenanceWorkerService {
         error: '' + error,
       });
     } finally {
+      await held?.release();
       this.#restoring = false;
     }
   }
@@ -423,6 +470,8 @@ export class MaintenanceWorkerService {
   }
 
   private async endMaintenance(): Promise<void> {
+    if (await buddyMaintenanceState(this.configRepository))
+      throw new ConflictException('Finish the staged Buddy recovery before reopening this server.');
     const state: MaintenanceModeState = { isMaintenanceMode: false as const };
     await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, state);
 

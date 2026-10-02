@@ -4,6 +4,7 @@ name: Test
   pull_request:
     branches:
       - fork/main
+      - master/frameleaf-implementation
   push:
     branches:
       - fork/main
@@ -57,6 +58,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -70,9 +73,13 @@ jobs:
           version: 2026.7.12
       - name: Run ci-unit
         run: mise run //server:ci-unit
+      - name: Run Buddy Backup and recovery runtime tests
+        working-directory: ./server
+        run: node --test --test-timeout=15000 test/runtime/buddy-backup.test.mjs test/runtime/buddy-recovery.test.mjs
       - name: Capture automatic server lint fixes
         if: failure()
         run: |
+          timeout 15m pnpm --filter immich format:fix || true
           timeout 15m pnpm --filter immich lint:fix || true
           git diff --binary > "$RUNNER_TEMP/server-lint.patch"
       - name: Archive automatic server lint fixes
@@ -162,12 +169,12 @@ jobs:
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile
       - name: Run linter
-        run: pnpm lint
+        run: pnpm exec eslint . --max-warnings 0 --concurrency 2
         if: ${{ !cancelled() }}
       - name: Capture automatic lint fixes
         if: failure()
         run: |
-          timeout 15m pnpm lint:fix || true
+          timeout 15m pnpm exec eslint . --max-warnings 0 --concurrency 2 --fix || true
           git diff --binary > "$RUNNER_TEMP/web-lint.patch"
       - name: Archive automatic lint fixes
         if: failure()
@@ -199,6 +206,18 @@ jobs:
           version: 2026.7.12
       - name: Run ci-unit
         run: mise run ci-unit
+      - name: Capture automatic web formatting fixes
+        if: failure()
+        run: |
+          timeout 15m pnpm format:fix || true
+          git diff --binary -- . > "$RUNNER_TEMP/web-format.patch"
+      - name: Archive automatic web formatting fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: web-format-autofix
+          path: ${{ runner.temp }}/web-format.patch
+          retention-days: 7
     timeout-minutes: 60
   i18n-tests:
     name: Test i18n
@@ -259,6 +278,18 @@ jobs:
       - name: Run ci-unit
         run: mise run ci-unit
         if: ${{ !cancelled() }}
+      - name: Capture automatic E2E formatting fixes
+        if: failure()
+        run: |
+          timeout 5m pnpm format:fix || true
+          git diff --binary -- . > "$RUNNER_TEMP/e2e-format.patch"
+      - name: Archive automatic E2E formatting fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: e2e-format-autofix
+          path: ${{ runner.temp }}/e2e-format.patch
+          retention-days: 7
     timeout-minutes: 60
   server-medium-tests:
     name: Medium Tests (Server)

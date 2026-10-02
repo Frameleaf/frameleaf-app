@@ -9,6 +9,7 @@ import { DatabaseLock, ExitCode, ImmichWorker, LogLevel, SystemMetadataKey } fro
 import { ConfigRepository, warnDeprecatedEnv } from 'src/repositories/config.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { type DB } from 'src/schema/index.js';
+import { buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { chooseBootWorkers, isFirstLaunchHandover } from 'src/utils/first-launch.js';
 import { SupervisorStop, WORKER_STOP_MESSAGE } from 'src/utils/shutdown.js';
@@ -131,6 +132,7 @@ class Workers {
   }
 
   private async isMaintenanceMode(): Promise<boolean> {
+    if (await buddyMaintenanceState(new ConfigRepository())) return true;
     const { database } = new ConfigRepository().getEnv();
     const { log: _, ...kyselyConfig } = getKyselyConfig(database.config);
     const kysely = new Kysely<DB>(kyselyConfig);
@@ -353,6 +355,10 @@ async function main() {
 
   // FL-294: `frameleaf-admin`; `immich-admin` is its deprecated alias
   if (immichApp === 'frameleaf-admin' || immichApp === 'immich-admin') {
+    if (process.argv[2] === 'buddy-backup') {
+      const { buddyBackupCommand } = await import('./utils/buddy-backup-offline.js');
+      return buddyBackupCommand(process.argv.slice(3));
+    }
     process.title = 'frameleaf_admin_cli';
     process.env.FRAMELEAF_LOG_LEVEL = LogLevel.Warn;
     // the old name would otherwise conflict with the level set here

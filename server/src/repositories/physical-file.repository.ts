@@ -4,7 +4,14 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, join, parse } from 'node:path';
 import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
-import { AssetFileType, AssetStatus, ChecksumAlgorithm, PhysicalFileType } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetStatus,
+  ChecksumAlgorithm,
+  PhysicalFileType,
+  StudioExportScope,
+  StudioExportVersionState,
+} from 'src/enum.js';
 import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
@@ -13,6 +20,7 @@ import { anyUuid, asUuid } from 'src/utils/database.js';
 type PhysicalFile = Selectable<PhysicalFileTable>;
 
 export const PHYSICAL_FILE_HANDOFF_REFUSAL = 'Shared files cannot change during database handoff';
+export const BUDDY_CAPTURE_LOCK = -311;
 
 /**
  * Takes the transaction-scoped advisory lock that guards one file path against concurrent reference
@@ -21,6 +29,7 @@ export const PHYSICAL_FILE_HANDOFF_REFUSAL = 'Shared files cannot change during 
  * Postgres builtin. A caller taking several paths takes them in sorted order.
  */
 export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> => {
+  await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(db);
   const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
   await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
 };
@@ -1017,6 +1026,8 @@ export class PhysicalFileRepository {
     // intermediate (FL-97; its row goes before its file is queued), and a develop artifact (FL-233:
     // released with its row, so a re-upload that records the same file again keeps it).
     const retainedRefs = await sql<{ count: string }>`SELECT count(*) FROM (
+      SELECT 1 FROM immich_fork.buddy_backup_reference reference WHERE reference.path = ${path} AND NOT reference.released
+      UNION ALL
       SELECT 1 FROM immich_fork.asset_physical_file mapping
       JOIN public.asset asset ON asset.id = mapping."assetId"
       WHERE mapping."upstreamPath" = ${path}
@@ -1028,6 +1039,8 @@ export class PhysicalFileRepository {
           WHERE mapping."physicalFileId" = physical.id
         )
       UNION ALL SELECT 1 FROM public.studio_export_version version WHERE version."outputPath" = ${path}
+      UNION ALL SELECT 1 FROM immich_fork.studio_project_import imported WHERE imported.path = ${path}
+      UNION ALL SELECT 1 FROM immich_fork.studio_generated_resource generated WHERE generated.path = ${path}
       UNION ALL SELECT 1 FROM immich_fork.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
       UNION ALL SELECT 1 FROM immich_fork.asset_develop_artifact artifact WHERE artifact.path = ${path}
       UNION ALL SELECT 1 FROM public.preservation_package package
@@ -1067,38 +1080,104 @@ export class PhysicalFileRepository {
     assetId: string,
     ownerId: string,
     callback: () => Promise<T>,
+    derivative?: { type: AssetFileType; isEdited: boolean },
   ): Promise<T> {
     const execute = async (trx: Transaction<DB>) => {
-      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
-      const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
-      const lock = await sql<{
-        locked: boolean;
-      }>`SELECT pg_try_advisory_xact_lock(${key.toString()}::bigint) AS locked`.execute(trx);
-      if (!lock.rows[0]?.locked) throw new Error('Owner restore destination is changing');
-      const physical = await trx.selectFrom('physical_file').select('id').where('path', '=', path).executeTakeFirst();
-      const references = await this.countPathReferencesIn(trx, path, physical?.id);
-      const own = await trx
-        .selectFrom('asset')
-        .select('id')
-        .where('id', '=', assetId)
-        .where('ownerId', '=', ownerId)
-        .where('originalPath', '=', path)
-        .executeTakeFirst();
-      const ownFiles = await trx
-        .selectFrom('asset_file')
-        .innerJoin('asset', 'asset.id', 'asset_file.assetId')
-        .select('asset_file.assetId')
-        .where('asset_file.assetId', '=', assetId)
-        .where('asset.ownerId', '=', ownerId)
-        .where('asset_file.path', '=', path)
-        .where('asset_file.type', '=', AssetFileType.Sidecar)
-        .execute();
-      // Any other original, derivative, history or orphan reference refuses publication, even same-owner.
-      if (references > (own ? 1 : 0) + ownFiles.length || (physical && !own))
-        throw new Error('Owner restore destination unavailable');
+      const access = await this.ownerRestorePathAccess(trx, path, assetId, ownerId, derivative);
+      if (!access.mutable) throw new Error('Owner restore destination unavailable');
       return callback();
     };
     return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
+  }
+
+  /** Buddy's recomputed immutable project target, under its live administrator/project transaction. */
+  async withStudioRestorePath<T>(
+    path: string,
+    projectId: string,
+    ownerId: string,
+    sha256: string,
+    callback: () => Promise<T>,
+  ): Promise<T> {
+    if (!this.db.isTransaction || !/^[a-f0-9]{64}$/.test(sha256))
+      throw new Error('Studio restore requires its authorization transaction');
+    const trx = this.db as Transaction<DB>;
+    await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
+    await lockFilePath(trx, path);
+    const physical = await trx.selectFrom('physical_file').select('id').where('path', '=', path).executeTakeFirst();
+    const references = await this.countPathReferencesIn(trx, path, physical?.id);
+    const { rows } = await sql<{ count: string }>`SELECT count(*) FROM (
+      SELECT 1 FROM immich_fork.studio_project_import imported
+      WHERE imported.path=${path} AND imported."projectId"=${projectId}::uuid
+        AND imported."ownerId"=${ownerId}::uuid AND imported.checksum=${sha256}
+      UNION ALL SELECT 1 FROM immich_fork.studio_generated_resource generated
+      WHERE generated.path=${path} AND generated."projectId"=${projectId}::uuid
+        AND generated."ownerId"=${ownerId}::uuid AND generated.checksum=${sha256}
+      UNION ALL SELECT 1 FROM public.studio_export_version exported
+      WHERE exported."outputPath"=${path} AND exported."projectId"=${projectId}::uuid
+        AND exported."ownerId"=${ownerId}::uuid AND exported."outputChecksum"=${Buffer.from(sha256, 'hex')}
+    ) owned`.execute(trx);
+    if (physical || references !== Number(rows[0].count))
+      throw new Error('Studio restore destination is shared or pinned');
+    return callback();
+  }
+
+  /** Inspection has no mutation callback. A supplied transaction keeps the path lock for its metadata checks. */
+  async inspectOwnerRestorePath(
+    path: string,
+    assetId: string,
+    ownerId: string,
+    derivative?: { type: AssetFileType; isEdited: boolean },
+  ): Promise<void> {
+    const execute = async (trx: Transaction<DB>) => {
+      const access = await this.ownerRestorePathAccess(trx, path, assetId, ownerId, derivative);
+      if (!access.inspectable) throw new Error('Owner restore destination unavailable');
+    };
+    return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
+  }
+
+  private async ownerRestorePathAccess(
+    trx: Transaction<DB>,
+    path: string,
+    assetId: string,
+    ownerId: string,
+    derivative?: { type: AssetFileType; isEdited: boolean },
+  ) {
+    await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
+    const barrier = await sql<{
+      locked: boolean;
+    }>`SELECT pg_try_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint) AS locked`.execute(trx);
+    if (!barrier.rows[0]?.locked) throw new Error('Backup is capturing file ownership; retry this restore');
+    const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
+    const lock = await sql<{
+      locked: boolean;
+    }>`SELECT pg_try_advisory_xact_lock(${key.toString()}::bigint) AS locked`.execute(trx);
+    if (!lock.rows[0]?.locked) throw new Error('Owner restore destination is changing');
+    const physical = await trx.selectFrom('physical_file').select('id').where('path', '=', path).executeTakeFirst();
+    const references = await this.countPathReferencesIn(trx, path, physical?.id);
+    const own = await trx
+      .selectFrom('asset')
+      .select('id')
+      .where('id', '=', assetId)
+      .where('ownerId', '=', ownerId)
+      .where('originalPath', '=', path)
+      .executeTakeFirst();
+    const ownFiles = await trx
+      .selectFrom('asset_file')
+      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+      .select(['asset_file.assetId', 'asset_file.physicalFileId'])
+      .where('asset_file.assetId', '=', assetId)
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset_file.path', '=', path)
+      .where('asset_file.type', '=', derivative?.type ?? AssetFileType.Sidecar)
+      .$if(!!derivative, (query) => query.where('asset_file.isEdited', '=', derivative!.isEdited))
+      .execute();
+    // Any other original, derivative, history or orphan reference refuses publication, even same-owner.
+    return {
+      inspectable: (!physical && references === 0) || !!own || ownFiles.length > 0,
+      mutable:
+        references <= (own ? 1 : 0) + ownFiles.length &&
+        (!physical || !!own || ownFiles.some((file) => derivative && file.physicalFileId === physical.id)),
+    };
   }
 
   /**
@@ -1120,7 +1199,11 @@ export class PhysicalFileRepository {
   async deleteUnreferencedPath(
     path: string,
     unlink: () => Promise<void>,
-    options: { removedAssetId?: string } = {},
+    options: {
+      removedAssetId?: string;
+      orphanStudioImport?: { projectId: string; id: string; ownerId: string; checksum: string; sizeBytes: number };
+      retiredStudioExport?: { id: string; ownerId: string; checksum: Buffer | null; sizeBytes: number | null };
+    } = {},
   ): Promise<{ deleted: boolean; references: number }> {
     return this.withPathLock(path, async (trx) => {
       if (options.removedAssetId) {
@@ -1134,18 +1217,83 @@ export class PhysicalFileRepository {
         }
       }
 
+      const imported = options.orphanStudioImport;
+      const exported = options.retiredStudioExport;
+      if (imported && exported) throw new Error('Only one Studio file identity can be released');
+      if (imported) {
+        // A restored project can recreate an absent ID. Do not wait in the reverse lock order
+        // of its project-before-path transaction, or credit an import that has since changed.
+        const lock = await sql<{ locked: boolean }>`SELECT pg_try_advisory_xact_lock(hashtextextended(
+          ${`buddy-studio:${imported.projectId}`},0)) AS locked`.execute(trx);
+        if (!lock.rows[0]?.locked) return { deleted: false, references: 1 };
+        const orphan = await sql`SELECT item.id FROM immich_fork.studio_project_import item
+          WHERE item."projectId"=${imported.projectId}::uuid AND item.id=${imported.id}::uuid
+            AND item."ownerId"=${imported.ownerId}::uuid AND item.path=${path}
+            AND item.checksum=${imported.checksum} AND item."sizeBytes"=${imported.sizeBytes}
+            AND NOT EXISTS (SELECT 1 FROM public.studio_project project WHERE project.id=item."projectId")
+          FOR UPDATE`.execute(trx);
+        if (orphan.rows.length === 0) return { deleted: false, references: 1 };
+      }
+      if (exported) {
+        const retired = await trx
+          .selectFrom('studio_export_version')
+          .select('id')
+          .where('id', '=', exported.id)
+          .where('ownerId', '=', exported.ownerId)
+          .where('outputPath', '=', path)
+          .where('outputRemovedAt', 'is', null)
+          .where(sql<boolean>`"outputChecksum" IS NOT DISTINCT FROM ${exported.checksum}::bytea`)
+          .where(sql<boolean>`"outputSizeInBytes" IS NOT DISTINCT FROM ${exported.sizeBytes}::bigint`)
+          .where((eb) =>
+            eb.or([
+              eb('state', 'in', [StudioExportVersionState.Failed, StudioExportVersionState.Cancelled]),
+              eb.and([
+                eb('state', '=', StudioExportVersionState.Published),
+                eb('scope', '=', StudioExportScope.Project),
+                eb('projectId', 'is', null),
+              ]),
+            ]),
+          )
+          .forUpdate()
+          .executeTakeFirst();
+        if (!retired) return { deleted: false, references: 1 };
+      }
+
       const physicalFile = await trx
         .selectFrom('physical_file')
         .select(['id'])
         .where('path', '=', path)
         .executeTakeFirst();
 
-      const references = await this.countPathReferencesIn(trx, path, physicalFile?.id);
+      // Only this exact orphan row may be released. Other imports, generated outputs, live
+      // assets and Buddy capture pins remain references, even when owned by the same person.
+      const references =
+        (await this.countPathReferencesIn(trx, path, physicalFile?.id)) - (imported || exported ? 1 : 0);
       if (references > 0) {
+        await sql`UPDATE immich_fork.buddy_backup_reference SET "deleteRequested" = true WHERE path = ${path} AND NOT released`.execute(
+          trx,
+        );
         return { deleted: false, references };
       }
 
       await unlink();
+
+      if (imported) {
+        // The row is the durable retry intent: retain it through pin deferral and unlink failure.
+        // A crash after unlink but before commit retries the same idempotent unlink next sweep.
+        await sql`DELETE FROM immich_fork.studio_project_import
+          WHERE "projectId"=${imported.projectId}::uuid AND id=${imported.id}::uuid`.execute(trx);
+      }
+      if (exported)
+        await trx
+          .updateTable('studio_export_version')
+          .set({
+            outputPath: null,
+            outputRemovedAt: sql<Date>`clock_timestamp()`,
+            updatedAt: sql<Date>`clock_timestamp()`,
+          })
+          .where('id', '=', exported.id)
+          .execute();
 
       if (physicalFile) {
         await trx.deleteFrom('physical_file').where('id', '=', physicalFile.id).execute();

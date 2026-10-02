@@ -22,6 +22,8 @@ import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js
 import { LoggingInterceptor } from 'src/middleware/logging.interceptor.js';
 import { RateLimitFailureInterceptor, RateLimitGuard } from 'src/middleware/rate-limit.guard.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
+import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
+import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -34,6 +36,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { CliService } from 'src/services/cli.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { services } from 'src/services/index.js';
@@ -127,6 +130,9 @@ export class ApiModule extends BaseModule {}
     MaintenanceWebsocketRepository,
     DatabaseBackupService,
     MaintenanceWorkerService,
+    BuddyBackupRepository,
+    CloudBackupKeyRepository,
+    BuddyBackupRecoveryService,
     ...commonMiddleware,
     { provide: APP_GUARD, useClass: MaintenanceAuthGuard },
     { provide: IWorker, useValue: ImmichWorker.Maintenance },

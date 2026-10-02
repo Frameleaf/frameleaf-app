@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FrameleafLicense, FrameleafLicenseClaims, FrameleafRemoteAccess } from 'src/types.js';
@@ -53,7 +53,7 @@ describe(EdgeStateService.name, () => {
   let identityDir: string;
   let certificates: EdgeCertificateRepository;
   let direct: { listening: boolean; configure: any; start: any; stop: any };
-  let proxy: { destroy: any };
+  let proxy: { destroy: any; configureRecovery: any };
   let relay: { configure: any; ensure: any; stop: any; status: any; state: Record<string, unknown> };
   let portMapping: { keep: any; release: any; result: Record<string, unknown> };
   let wanProbe: Record<string, unknown>;
@@ -62,7 +62,8 @@ describe(EdgeStateService.name, () => {
   let lockHeld: boolean;
   let wildcard: { certificate: string; key: string };
   let custom: { certificate: string; key: string };
-  const now = Date.UTC(2026, 8, 26, 12);
+  // The wildcard fixture becomes valid on September 27; recovery checks notBefore as well as expiry.
+  const now = Date.UTC(2026, 8, 28, 12);
 
   const remoteState = () => metadata.get(SystemMetadataKey.FrameleafRemoteAccess) as FrameleafRemoteAccess | undefined;
 
@@ -100,7 +101,11 @@ describe(EdgeStateService.name, () => {
     });
     lockHeld = true;
     mocks.database.holdLock.mockImplementation(() =>
-      Promise.resolve({ verify: () => Promise.resolve(lockHeld), release: vi.fn(() => Promise.resolve()) }),
+      Promise.resolve({
+        backendPid: 123,
+        verify: () => Promise.resolve(lockHeld),
+        release: vi.fn(() => Promise.resolve()),
+      }),
     );
     mocks.instanceIdentity.loadOrCreate.mockResolvedValue({ instanceId: INSTANCE_ID, kid: 'kid-1' } as never);
     mocks.instanceIdentity.currentSigner.mockReturnValue({ kid: 'kid-1' } as never);
@@ -147,7 +152,7 @@ describe(EdgeStateService.name, () => {
         return Promise.resolve();
       }),
     };
-    proxy = { destroy: vi.fn() };
+    proxy = { destroy: vi.fn(), configureRecovery: vi.fn() };
     relay = {
       state: { connected: false },
       configure: vi.fn(),
@@ -258,6 +263,114 @@ describe(EdgeStateService.name, () => {
   });
 
   describe('serving', () => {
+    it('switches a lapsed plan to recovery only with an existing enrollment, even with new backups disabled', async () => {
+      issueWith(wildcard);
+      await sut.tick(now);
+      const enrollment = remoteState()!.names!;
+      const key = { kty: 'OKP', crv: 'Ed25519', x: 'a'.repeat(43) };
+      const partner = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54';
+      const pairId = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e55';
+      const vaultId = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e56';
+      const vault = {
+        vaultId,
+        sourceInstanceId: partner,
+        destinationInstanceId: INSTANCE_ID,
+        sourceKey: key,
+        destinationKey: key,
+        quotaBytes: 10 * 1024 ** 3,
+        retention: { days: 30, monthly: 12 },
+      };
+      const pairing = {
+        version: 1,
+        pairId,
+        state: 'active',
+        readUntil: null,
+        vaults: [
+          vault,
+          {
+            ...vault,
+            vaultId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e57',
+            sourceInstanceId: INSTANCE_ID,
+            destinationInstanceId: partner,
+          },
+        ],
+      };
+      await mkdir(join(identityDir, 'buddy'));
+      await writeFile(
+        join(identityDir, 'buddy', 'state.json'),
+        JSON.stringify({ version: 1, settings: null, pairing }),
+      );
+      metadata.delete(SystemMetadataKey.FrameleafLicense);
+      calls.length = 0;
+      direct.start.mockClear();
+      relay.ensure.mockClear();
+      await sut.tick(now + 10_000);
+      expect(direct.stop).toHaveBeenCalled();
+      expect(direct.start).not.toHaveBeenCalled();
+      expect(calls.some(({ url }) => url.endsWith('/enroll'))).toBe(false);
+      expect(relay.ensure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          enrollment,
+          recovery: { pairId, vaultId, sourceInstanceId: partner, readUntil: null },
+        }),
+        now + 10_000,
+      );
+      expect(proxy.configureRecovery).toHaveBeenLastCalledWith({
+        pairId,
+        vaultId,
+        sourceInstanceId: partner,
+        readUntil: null,
+        host: `recovery.${enrollment.label}.${enrollment.domain}`,
+      });
+      expect(remoteState()).toMatchObject({
+        status: 'idle',
+        candidates: [],
+        direct: { listening: false, mapping: null },
+      });
+
+      // A configured paid Buddy pair gets direct and relay transport without enabling ordinary remote access.
+      vi.stubEnv('FRAMELEAF_BUDDY_BACKUP', 'true');
+      try {
+        await writeFile(
+          join(identityDir, 'buddy', 'state.json'),
+          JSON.stringify({
+            version: 1,
+            pairing,
+            settings: { directory: '/buddy', quotaBytes: 10 * 1024 ** 3, pausedReceiving: false },
+          }),
+        );
+        metadata.set(SystemMetadataKey.FrameleafLicense, { key: null, plan: license(['CLOUD', 'REMOTE_ACCESS'], now) });
+        setSettings({ enabled: false });
+        relay.ensure.mockClear();
+        await sut.tick(now + 15_000);
+        expect(direct.configure).toHaveBeenLastCalledWith(expect.objectContaining({ allowWan: true }));
+        expect(relay.ensure).toHaveBeenCalledWith(expect.objectContaining({ buddyOnly: true }), now + 15_000);
+        expect(proxy.configureRecovery).toHaveBeenLastCalledWith(
+          expect.objectContaining({ backupEnabled: true, writeAllowed: true }),
+          true,
+        );
+        expect(remoteState()!.candidates.some((candidate) => candidate.kind === 'local')).toBe(true);
+        expect(portMapping.keep).toHaveBeenCalled();
+        vi.stubEnv('FRAMELEAF_BUDDY_BACKUP', 'false');
+        await sut.tick(now + 17_000);
+        expect(remoteState()).toMatchObject({ status: 'idle', candidates: [], direct: { listening: false } });
+        metadata.delete(SystemMetadataKey.FrameleafLicense);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+
+      // A block learned from durable state removes access on the next edge reconciliation.
+      await writeFile(
+        join(identityDir, 'buddy', 'state.json'),
+        JSON.stringify({ version: 1, pairing: { ...pairing, state: 'blocked' } }),
+      );
+      relay.ensure.mockClear();
+      await sut.tick(now + 20_000);
+      expect(proxy.configureRecovery).toHaveBeenLastCalledWith(null, true);
+      expect(relay.ensure).not.toHaveBeenCalled();
+      expect(relay.stop).toHaveBeenCalled();
+    });
+
     it('enrols, issues the wildcard certificate through the TXT API, reports it and listens', async () => {
       const issue = issueWith(wildcard);
       await sut.tick(now);

@@ -12,7 +12,6 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { FakeRelay, type FakeTunnel, relayFixture } from 'test/fixtures/relay.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
-import { automock } from 'test/utils.js';
 
 const INSTANCE_ID = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
 const LABEL = 'u225vlzhsdlhwh4l';
@@ -84,7 +83,7 @@ describe(EdgeRelayService.name, () => {
           },
         }),
     } as unknown as ConfigRepository;
-    const logger = automock(LoggingRepository, { args: [undefined, { getEnv: () => ({}) }], strict: false });
+    const logger = { setContext: vi.fn(), warn: vi.fn(), log: vi.fn(), error: vi.fn() } as unknown as LoggingRepository;
     proxy = new EdgeProxyService(logger, config);
 
     signer = signerFor();
@@ -115,7 +114,7 @@ describe(EdgeRelayService.name, () => {
             changed: false,
           });
         }
-        if (request.url === `${API}/v1/remote/relay-token`) {
+        if (request.url === `${API}/v1/remote/relay-token` || request.url === `${API}/v1/buddy/recovery-relay-token`) {
           return schema.parse(tokenAnswer());
         }
         throw new Error(`unexpected ${request.url}`);
@@ -239,6 +238,119 @@ describe(EdgeRelayService.name, () => {
     expect(answer.status).toBe(200);
     expect(answer.certificate.subject.CN).toBe('photos.example.com');
     expect(seen[0].headers['x-forwarded-host']).toBe('photos.example.com');
+  });
+
+  describe('Buddy recovery tunnel', () => {
+    const host = `recovery.${LABEL}.${DOMAIN}`;
+    const recovery = {
+      pairId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e54',
+      vaultId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e55',
+      sourceInstanceId: '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e56',
+      readUntil: null,
+    };
+    const answer = (lifetimeSec = 300) => {
+      const iat = Math.floor(Date.now() / 1000);
+      const token = relay.issueToken({
+        instanceId: INSTANCE_ID,
+        label: LABEL,
+        domain: DOMAIN,
+        publicKeyX: signer.publicJwk.x,
+        iat,
+        lifetimeSec,
+        recovery,
+      });
+      return {
+        ...relay.tokenAnswer(token),
+        expiresAt: new Date((iat + lifetimeSec) * 1000).toISOString(),
+        recoveryHost: host,
+        limits: { conns: 2 },
+        refreshAfterSec: Math.max(1, Math.floor(lifetimeSec / 2)),
+      };
+    };
+
+    it('replaces the ordinary tunnel and serves only the recovery hostname and vault reads', async () => {
+      const first = relay.nextTunnel();
+      await sut.ensure(target);
+      const ordinary = await first;
+      const closed = ordinary.closed.catch((error: NodeJS.ErrnoException) => {
+        // Replacing the tunnel intentionally resets its HTTP/2 session.
+        if (error.code !== 'ECONNRESET') {
+          throw error;
+        }
+      });
+      calls.length = 0;
+      tokenAnswer = answer;
+      proxy.configureRecovery({ ...recovery, host });
+      const connected = relay.nextTunnel();
+      await sut.ensure({ ...target, recovery });
+      const tunnel = await connected;
+      await closed;
+      expect(tunnel.claims).toMatchObject({ purpose: 'buddy-recovery', vaultId: recovery.vaultId, lim: { conns: 2 } });
+      expect(calls).toEqual([
+        {
+          url: `${API}/v1/buddy/recovery-relay-token`,
+          body: {
+            version: 1,
+            pairId: recovery.pairId,
+            vaultId: recovery.vaultId,
+          },
+        },
+      ]);
+      await expect(tunnel.visit({ sni: RELAY_NAME })).rejects.toThrow('403');
+      await expect(tunnel.visit({ sni: 'photos.example.com' })).rejects.toThrow('403');
+      expect((await visit(tunnel, { sni: host, path: '/api/server/ping' })).status).toBe(403);
+      expect(
+        (await visit(tunnel, { sni: host, path: `/api/buddy/v1/vaults/${recovery.vaultId}/snapshots` })).status,
+      ).toBe(200);
+      expect(seen).toHaveLength(1);
+      expect(seen[0].headers['x-forwarded-host']).toBe(host);
+    });
+
+    it.each(['offline', 'ordinary'] as const)('never extends recovery expiry after an %s refresh', async (failure) => {
+      let issued = false;
+      tokenAnswer = () => {
+        if (!issued) {
+          issued = true;
+          return answer(3);
+        }
+        if (failure === 'offline') {
+          throw new Error('Cloud unavailable');
+        }
+        return relay.tokenAnswer(
+          relay.issueToken({
+            instanceId: INSTANCE_ID,
+            label: LABEL,
+            domain: DOMAIN,
+            publicKeyX: signer.publicJwk.x,
+          }),
+        );
+      };
+      const connected = relay.nextTunnel();
+      await sut.ensure({ ...target, recovery });
+      const tunnel = await connected;
+      await tunnel.closed;
+      expect(tunnel.refreshes).toHaveLength(0);
+      expect(sut.status().connected).toBe(false);
+      expect(relay.handshakes).toHaveLength(1);
+    });
+
+    it('closes immediately on a learned recovery revocation', async () => {
+      let issued = false;
+      tokenAnswer = () => {
+        if (issued) {
+          throw new FrameleafCloudError('other' as never, 403, 'blocked', { code: 'forbidden' } as never);
+        }
+        issued = true;
+        return { ...answer(), refreshAfterSec: 1 };
+      };
+      const connected = relay.nextTunnel();
+      await sut.ensure({ ...target, recovery });
+      const tunnel = await connected;
+      await tunnel.closed;
+      await until(() => !!sut.status().revoked);
+      expect(sut.status().connected).toBe(false);
+      expect(relay.handshakes).toHaveLength(1);
+    });
   });
 
   it('carries a WebSocket through the tunnel', async () => {
