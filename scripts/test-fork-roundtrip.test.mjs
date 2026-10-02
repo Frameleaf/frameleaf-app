@@ -202,8 +202,9 @@ for (const [failures, attempts] of [
         calls.push(args.join(" "));
         if (args[0] === "pull" && ++pulls <= failures) throw failure;
       },
-      setTimeout: async (ms) => {
+      setTimeout: (resolve, ms) => {
         waits.push(ms);
+        resolve();
       },
       console: { error() {} },
       main: () => {
