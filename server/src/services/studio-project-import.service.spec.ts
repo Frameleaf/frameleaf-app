@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { StudioProjectImport } from 'src/repositories/studio-project.repository.js';
+import type { StudioProjectImport, StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { CacheControl } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -42,7 +42,7 @@ describe(StudioProjectImportService.name, () => {
     getImport: ReturnType<typeof vi.fn>;
     getImportBytes: ReturnType<typeof vi.fn>;
     listOrphanImportProjects: ReturnType<typeof vi.fn>;
-    deleteImports: ReturnType<typeof vi.fn>;
+    deleteImports: ReturnType<typeof vi.fn<StudioProjectRepository['deleteImports']>>;
   };
   let studio: { forgetResolutions: ReturnType<typeof vi.fn>; requireOwnedProject: ReturnType<typeof vi.fn> };
   let users: { get: ReturnType<typeof vi.fn> };
@@ -64,7 +64,7 @@ describe(StudioProjectImportService.name, () => {
       getImport: vi.fn(),
       getImportBytes: vi.fn().mockResolvedValue(0),
       listOrphanImportProjects: vi.fn().mockResolvedValue([]),
-      deleteImports: vi.fn().mockResolvedValue(undefined),
+      deleteImports: vi.fn<StudioProjectRepository['deleteImports']>().mockResolvedValue(undefined),
     };
     studio = {
       forgetResolutions: vi.fn(),
@@ -342,9 +342,14 @@ describe(StudioProjectImportService.name, () => {
     const keptPath = join(studioImportProjectFolder(OWNER, PROJECT), `${IMPORT}.wav`);
     const failedPath = join(studioImportProjectFolder(OWNER, GONE), `${IMPORT}.wav`);
     projects.deleteImports.mockImplementation(async (projectId, ownerId, remove) => {
-      await remove({ projectId, ownerId, id: IMPORT, path: projectId === PROJECT ? keptPath : failedPath });
+      await remove({
+        projectId,
+        ownerId,
+        id: IMPORT,
+        path: projectId === PROJECT ? keptPath : failedPath,
+      } as StudioProjectImport);
     });
-    unlink.mockImplementation(async (path) => { if (path === failedPath) throw new Error('EIO'); });
+    unlink.mockImplementation((path) => (path === failedPath ? Promise.reject(new Error('EIO')) : Promise.resolve()));
     await sut.sweep(new Date());
     expect(unlinkDir).not.toHaveBeenCalled();
     expect(projects.deleteImports).toHaveBeenCalledWith(PROJECT, OWNER, expect.any(Function));
