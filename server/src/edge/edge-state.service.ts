@@ -13,6 +13,7 @@ import type {
   FrameleafRemoteAccess,
   FrameleafRemoteEnrollment,
 } from 'src/types.js';
+import { type BuddyRecoveryScope, buddyRecoveryHost, readBuddyRecovery } from 'src/edge/buddy-recovery.js';
 import { type EdgeCertificateKind, EdgeCertificateRepository } from 'src/edge/edge-certificate.repository.js';
 import { EdgeDirectService } from 'src/edge/edge-direct.service.js';
 import { EdgePortMappingService } from 'src/edge/edge-port-mapping.service.js';
@@ -71,7 +72,15 @@ export type EdgeDesired =
       removeCertificates: boolean;
       link: FrameleafCloudLink | null;
     }
-  | { serve: true; cloudUrl: string; link: FrameleafCloudLink & { instanceId: string }; settings: RemoteSettings };
+  | {
+      serve: true;
+      cloudUrl: string;
+      link: FrameleafCloudLink & { instanceId: string };
+      settings: RemoteSettings;
+      buddyRecovery?: BuddyRecoveryScope;
+      recoveryOnly?: true;
+      buddyOnly?: true;
+    };
 
 /** An enrolment is refreshed (it is idempotent and heals the cloud's records) once a day. */
 const ENROLL_REFRESH_MS = 24 * 60 * 60 * 1000;
@@ -114,10 +123,11 @@ export const carrierGradeNat = (routerIp: string | null, observedIp: string | nu
  * should be doing and makes it so:
  *
  * - Exactly one edge worker serves: the one holding `DatabaseLock.FrameleafEdge`. Any other stays idle.
- * - Without `FRAMELEAF_CLOUD_URL`, a link, an active or grace remote access entitlement and
- *   `frameleafCloud.remoteAccess.enabled`, it serves nothing and makes no network call. Turning remote
- *   access off or unlinking closes the listener and removes the certificates and their keys; a lapsed
- *   entitlement only closes the listener.
+ * - Without `FRAMELEAF_CLOUD_URL` or a link it serves nothing. Ordinary remote access also requires
+ *   an active or grace entitlement and `frameleafCloud.remoteAccess.enabled`. A configured active
+ *   Buddy pair may use the same paid transports with every request restricted to its vault. A
+ *   readable Buddy pair may retain a recovery-only relay after lapse, using an existing enrollment.
+ *   Without a Buddy pair, turning remote access off removes the certificates; lapse preserves them.
  * - Otherwise it enrols (`POST /v1/remote/enroll`), keeps the wildcard certificate (and the verified
  *   custom hostname's) issued and renewed through ACME DNS-01 and the cloud's TXT API, reports each
  *   certificate's facts (`POST /v1/remote/certs`), pins the CAA record to its ACME account, and serves
@@ -135,6 +145,7 @@ export class EdgeStateService {
   private lock: HeldLock | null = null;
   private readonly bootId = randomUUID();
   private served: string | null = null;
+  private servingMode: 'ordinary' | 'buddy' | 'recovery' = 'ordinary';
   private lastWritten: { state: Omit<FrameleafRemoteAccess, 'updatedAt'>; at: number } | null = null;
   private enrollRetry: { at: number; failures: number } | null = null;
   private reportAttempts = new Map<EdgeCertificateKind, number>();
@@ -248,11 +259,26 @@ export class EdgeStateService {
     }
     const config = await this.settings();
     const settings = config.frameleafCloud.remoteAccess;
+    const buddyRecovery = await readBuddyRecovery(identityDirectory(this.configRepository), link.instanceId, now);
+    const licenses = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+    const paid = entitlementFlags([licenses?.key, licenses?.plan], now).remoteAccess;
+    const ordinary = settings.enabled && paid;
+    if (buddyRecovery) {
+      const buddyOnly = !ordinary && paid && buddyRecovery.backupEnabled;
+      return {
+        serve: true,
+        cloudUrl,
+        link: link as FrameleafCloudLink & { instanceId: string },
+        settings: buddyOnly ? { ...settings, mode: 'relay-and-direct' } : settings,
+        buddyRecovery,
+        ...(buddyOnly && { buddyOnly: true as const }),
+        ...(!ordinary && !buddyOnly && { recoveryOnly: true as const }),
+      };
+    }
     if (!settings.enabled) {
       return { serve: false, status: 'off', reason: 'Remote access is off.', removeCertificates: true, link };
     }
-    const licenses = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
-    if (!entitlementFlags([licenses?.key, licenses?.plan], now).remoteAccess) {
+    if (!ordinary) {
       return {
         serve: false,
         status: 'idle',
@@ -322,6 +348,7 @@ export class EdgeStateService {
     previous: FrameleafRemoteAccess | null,
     now: number,
   ) {
+    this.proxy.configureRecovery(null);
     if (this.direct.listening) {
       await this.direct.stop();
       this.served = null;
@@ -361,6 +388,16 @@ export class EdgeStateService {
     previous: FrameleafRemoteAccess | null,
     now: number,
   ) {
+    const mode = desired.recoveryOnly ? 'recovery' : desired.buddyOnly ? 'buddy' : 'ordinary';
+    if (mode !== this.servingMode) {
+      // The old ordinary tunnel must close before a possibly slow certificate renewal after lapse.
+      await this.stopServing();
+      this.servingMode = mode;
+    }
+    if (desired.recoveryOnly) {
+      await this.serveRecovery(desired, previous, now);
+      return;
+    }
     const { settings } = desired;
     const base = {
       bootId: this.bootId,
@@ -392,7 +429,7 @@ export class EdgeStateService {
     let state: Omit<FrameleafRemoteAccess, 'updatedAt'> = {
       ...base,
       status: 'starting',
-      reason: null,
+      reason: desired.buddyOnly ? 'Buddy Backup transport only. Ordinary remote access is off.' : null,
       names: previous?.names,
       acmeAccountUri: previous?.acmeAccountUri,
       certificate: previous?.certificate ?? null,
@@ -412,6 +449,10 @@ export class EdgeStateService {
       return;
     }
     state.names = enrollment;
+    this.proxy.configureRecovery(
+      desired.buddyRecovery ? { ...desired.buddyRecovery, host: buddyRecoveryHost(enrollment) } : null,
+      !!desired.buddyOnly,
+    );
     const identityDir = identityDirectory(this.configRepository);
     const cloud = () => this.cloud(desired);
 
@@ -499,6 +540,7 @@ export class EdgeStateService {
           linkKey: `${desired.link.instanceId}|${desired.link.linkedAt ?? ''}`,
           enrollment,
           cloud,
+          ...(desired.buddyOnly && { buddyOnly: true }),
         },
         now,
       );
@@ -535,6 +577,95 @@ export class EdgeStateService {
     });
     if (state.status === 'starting' && this.direct.listening) {
       state.status = 'ready';
+    }
+    await this.writeState(state, now);
+  }
+
+  /** Recovery reuses an existing enrollment; it never obtains paid enrollment or enables direct access. */
+  private async serveRecovery(
+    desired: Extract<EdgeDesired, { serve: true }>,
+    previous: FrameleafRemoteAccess | null,
+    now: number,
+  ) {
+    if (this.direct.listening) {
+      await this.direct.stop();
+      this.served = null;
+    }
+    await this.portMapping.release();
+    const enrollment = previous?.names;
+    const recovery = desired.buddyRecovery;
+    let state: Omit<FrameleafRemoteAccess, 'updatedAt'> = {
+      bootId: this.bootId,
+      status: 'idle',
+      reason: 'Buddy Backup recovery only. Ordinary remote access is unavailable.',
+      names: enrollment,
+      certificate: previous?.certificate ?? null,
+      certificateIssuance: previous?.certificateIssuance,
+      acmeAccountUri: previous?.acmeAccountUri,
+      relay: { connected: false },
+      direct: { listening: false, port: this.listenPort(), mapping: null, cgnatSuspected: false },
+      candidates: [],
+    };
+    if (
+      !recovery ||
+      !this.configRepository.getEnv().frameleafCloud.edge.secret ||
+      !enrollment ||
+      enrollment.instanceId !== desired.link.instanceId ||
+      enrollment.cloudUrl !== desired.cloudUrl ||
+      enrollment.linkedAt !== desired.link.linkedAt
+    ) {
+      await this.stopServing();
+      await this.writeState(
+        { ...state, reason: 'Buddy recovery needs an existing remote enrollment and edge secret.' },
+        now,
+      );
+      return;
+    }
+    this.proxy.configureRecovery({ ...recovery, host: buddyRecoveryHost(enrollment) });
+    const cloud = () => this.cloud(desired);
+    // DNS-01, CAA and certificate reports remain available for an enrolled linked instance after lapse.
+    // No enrollment request is made: a removed/suspended enrollment must be recovered in Cloud first.
+    const wildcard = await this.keepCertificate({
+      kind: 'wildcard',
+      names: wildcardNames(enrollment),
+      identityDir: identityDirectory(this.configRepository),
+      enrollment,
+      facts: state.certificate ?? null,
+      issuance: state.certificateIssuance,
+      cloud,
+      now,
+      onAccount: (accountUri) => {
+        state.acmeAccountUri = accountUri;
+      },
+    });
+    state = { ...state, certificate: wildcard.facts, certificateIssuance: wildcard.issuance };
+    if (wildcard.accountPinned) {
+      state.names = { ...enrollment, caa: { ...enrollment.caa, accountUri: wildcard.accountPinned } };
+    }
+    if (
+      wildcard.pair &&
+      Date.parse(wildcard.facts?.notBefore ?? '') <= now &&
+      Date.parse(wildcard.facts?.notAfter ?? '') > now
+    ) {
+      const signature = JSON.stringify(['buddy-recovery', wildcard.facts?.serial, enrollment.label, enrollment.domain]);
+      if (signature !== this.served) {
+        this.relay.configure({ contexts: { wildcard: wildcard.pair }, enrollment });
+        this.served = signature;
+      }
+      await this.relay.ensure(
+        {
+          instanceId: desired.link.instanceId,
+          linkKey: `${desired.link.instanceId}|${desired.link.linkedAt ?? ''}`,
+          enrollment,
+          cloud,
+          recovery,
+        },
+        now,
+      );
+      state.relay = this.relay.status();
+    } else {
+      await this.stopServing();
+      state.reason = 'Buddy recovery is waiting for a valid remote certificate.';
     }
     await this.writeState(state, now);
   }
@@ -668,6 +799,7 @@ export class EdgeStateService {
   }
 
   private async stopServing() {
+    this.proxy.configureRecovery(null);
     if (this.direct.listening) {
       await this.direct.stop();
     }
