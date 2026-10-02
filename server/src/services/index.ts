@@ -14,6 +14,11 @@ import { AuthAdminService } from 'src/services/auth-admin.service.js';
 import { AuthService } from 'src/services/auth.service.js';
 import { BackupDeviceService } from 'src/services/backup-device.service.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
+import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
+import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
+import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
+import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.service.js';
+import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import { BulkOperationService } from 'src/services/bulk-operation.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { CliService } from 'src/services/cli.service.js';
@@ -140,6 +145,11 @@ export const services = [
   CloudMlService,
   CloudBackupDetailsService,
   CloudBackupService,
+  BuddyBackupService,
+  BuddyBackupPeerService,
+  BuddyBackupCaptureService,
+  BuddyBackupRestoreService,
+  BuddyBackupRecoveryService,
   CloudMlBatchService,
   CloudMlJobService,
   FrameleafAuthService,

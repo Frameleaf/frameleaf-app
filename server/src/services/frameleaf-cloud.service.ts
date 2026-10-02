@@ -1174,7 +1174,11 @@ export class FrameleafCloudService extends BaseService {
     const config = await this.getConfig({ withCache: true });
     const settings = config.frameleafCloud.remoteAccess;
     const enabled = link.status === 'linked' && !!settings?.enabled;
-    const state = enabled ? await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess) : null;
+    // Buddy-only transport advertises candidates while ordinary remote access stays disabled.
+    const state =
+      link.status === 'linked'
+        ? await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess)
+        : null;
     const current = edgeStateCurrent(state) && state?.names?.instanceId === link.instanceId;
     return {
       endpoints: current && state ? heartbeatEndpoints(state.candidates) : [],

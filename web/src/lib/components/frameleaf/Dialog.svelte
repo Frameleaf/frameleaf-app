@@ -113,6 +113,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-sheet);
     padding: 22px;
+    margin: auto;
     width: 100%;
     max-width: min(510px, calc(100vw - 32px));
     max-height: calc(100dvh - 44px);

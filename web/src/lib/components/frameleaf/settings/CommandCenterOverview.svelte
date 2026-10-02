@@ -6,6 +6,7 @@
    * server does not measure is shown as not measured rather than invented.
    */
   import { page } from '$app/state';
+  import BackupSummary from '$lib/components/frameleaf/cloud/BackupSummary.svelte';
   import AnalyticsChart from '$lib/components/frameleaf/analytics/AnalyticsChart.svelte';
   import { commandCenterUrl, type SettingsAreaId } from '$lib/frameleaf/settings-areas';
   import { formatBytes } from '$lib/frameleaf/physical-dedup';
@@ -376,6 +377,7 @@
       <a class="activity" href={Route.activity()}>{$t('frameleaf_cc_activity')} ›</a>
     </section>
   </div>
+  <BackupSummary />
   <section class="glance">
     <h2>{$t('frameleaf_cc_glance')}</h2>
     <div>
