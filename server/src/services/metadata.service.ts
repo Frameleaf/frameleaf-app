@@ -121,7 +121,7 @@ const validateRange = (value: number | undefined, min: number, max: number): Non
 const getLensModel = (exifTags: ImmichTags): string | null => {
   for (const value of [exifTags.LensID, exifTags.LensType, exifTags.LensSpec, exifTags.LensModel]) {
     const lens = String(value ?? '').trim();
-    if (lens && lens !== '----' && !lens.startsWith('Unknown')) {
+    if (lens && lens.toLowerCase() !== 'n/a' && lens !== '----' && !lens.startsWith('Unknown')) {
       return lens;
     }
   }
