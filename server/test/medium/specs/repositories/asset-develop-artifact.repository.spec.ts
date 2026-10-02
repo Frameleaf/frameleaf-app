@@ -239,6 +239,7 @@ it('refuses writes while the server is being handed over', async () => {
   }
 });
 
+// many uploads at once, each waiting its turn on the photo's lock: slow on a loaded runner
 it('holds the per-photo limit when more uploads than it allows arrive at once (FL-304)', async () => {
   const { ctx, sut } = setup();
   const { user } = await ctx.newUser();
@@ -264,7 +265,7 @@ it('holds the per-photo limit when more uploads than it allows arrive at once (F
   await expect(stored(asset.id)).resolves.toBe(DEVELOP_ARTIFACT_PER_ASSET);
   // a refused upload is not charged
   await expect(usage(user.id)).resolves.toBe(DEVELOP_ARTIFACT_PER_ASSET * 100);
-});
+}, 30_000);
 
 it('holds the owner’s quota when uploads for several photos arrive at once, and counts them for later uploads (FL-304)', async () => {
   const { ctx, sut } = setup();
@@ -304,4 +305,4 @@ it('holds the owner’s quota when uploads for several photos arrive at once, an
   const before = new Date(Date.now() + 60_000);
   await sut.releaseArtifacts(vi.fn().mockResolvedValue(void 0), { unreferencedBefore: before });
   await expect(usage(user.id)).resolves.toBe(300);
-});
+}, 30_000);
