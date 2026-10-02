@@ -62,7 +62,8 @@ describe(EdgeStateService.name, () => {
   let lockHeld: boolean;
   let wildcard: { certificate: string; key: string };
   let custom: { certificate: string; key: string };
-  const now = Date.UTC(2026, 8, 26, 12);
+  // The wildcard fixture becomes valid on September 27; recovery checks notBefore as well as expiry.
+  const now = Date.UTC(2026, 8, 28, 12);
 
   const remoteState = () => metadata.get(SystemMetadataKey.FrameleafRemoteAccess) as FrameleafRemoteAccess | undefined;
 
