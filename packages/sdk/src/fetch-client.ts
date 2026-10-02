@@ -25584,7 +25584,9 @@ export enum StudioProjectImportKind {
     Audio = "audio",
     Image = "image",
     Video = "video",
-    Vector = "vector"
+    Vector = "vector",
+    Captions = "captions",
+    Lut = "lut"
 }
 export enum Id {
     JobEnqueueReverseConform = "job.enqueueReverseConform"

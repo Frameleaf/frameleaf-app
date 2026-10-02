@@ -4,7 +4,8 @@ import { ApiCustomExtension } from 'src/enum.js';
 
 /**
  * Files uploaded into a Studio project rather than the library (FL-103, FL-105): microphone
- * recordings, sound and music files, stills, short video, SVG and Lottie graphics. The server
+ * recordings, sound and music files, stills, short video, SVG and Lottie graphics, caption files
+ * (.srt, .vtt) and .cube LUTs. The server
  * records the owner, the type it read from the bytes, the SHA-256 and the size; no server path ever
  * appears here. A clip names the import by `importId` and the editor reads it through the file
  * route.
@@ -28,7 +29,7 @@ const StudioProjectImportSchema = z
   .object({
     id: z.uuid().describe('Import id; clips reference it as `importId`'),
     kind: z
-      .enum(['audio', 'image', 'video', 'vector'])
+      .enum(['audio', 'image', 'video', 'vector', 'captions', 'lut'])
       .describe('What the file is, read from its bytes')
       .meta({ id: 'StudioProjectImportKind' }),
     contentType: z.string().describe('Content type read from the bytes, not the name'),

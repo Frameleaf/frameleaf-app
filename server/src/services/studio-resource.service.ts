@@ -53,6 +53,7 @@ import { getLockedOwnerId, isLockedAssetRow } from 'src/utils/locked-visibility.
 import { isRevealedLockReason } from 'src/utils/locked.js';
 import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { restoredVersionState } from 'src/utils/restoration.js';
+import { studioImportKind } from 'src/utils/studio-imports.js';
 import {
   STUDIO_MAX_GRAPH_BYTES,
   STUDIO_MAX_REFERENCES,
@@ -591,14 +592,18 @@ export class StudioResourceService extends BaseService {
               : `The graphic references ${item.externalReferences} external subresource(s).`,
         };
       }
-      // An import is used only as what it is: sound from sound or video, captions and LUTs from text.
-      const expected =
+      // An import is used only as what it is: sound from sound or video, captions from a caption
+      // file and a LUT from a `.cube` file, as the upload read each from its bytes.
+      const kind = studioImportKind(item.contentType);
+      const fits =
         reference.kind === StudioResourceKind.Audio
-          ? /^(audio|video)\//
-          : reference.kind === StudioResourceKind.Captions || reference.kind === StudioResourceKind.Lut
-            ? /^(text\/|application\/(x-subrip|octet-stream))/
-            : null;
-      if (expected && !expected.test(item.contentType)) {
+          ? kind === 'audio' || kind === 'video'
+          : reference.kind === StudioResourceKind.Captions
+            ? kind === 'captions'
+            : reference.kind === StudioResourceKind.Lut
+              ? kind === 'lut'
+              : true;
+      if (!fits) {
         return {
           ok: false,
           reason: StudioRefusalReason.UnsupportedMediaType,

@@ -1,12 +1,15 @@
 /**
  * Files uploaded into a Studio project rather than the library (FL-103 recordings, FL-105 media
- * import): microphone takes, music and sound files, stills, short video, SVG and Lottie graphics.
+ * import): microphone takes, music and sound files, stills, short video, SVG and Lottie graphics,
+ * SubRip and WebVTT caption files and `.cube` 3D LUTs.
  *
  * The server never trusts the name or the declared type a browser sends. {@link sniffStudioImport}
  * reads the first bytes and decides the content type from what the file is, accepting only the
  * kinds the editor can place. Vector graphics are scanned: an SVG with script or event handlers is
  * refused outright, and every external subresource of an SVG or a Lottie document is counted so the
- * FL-90 resolver refuses a graphic that would reach the network when it is rendered.
+ * FL-90 resolver refuses a graphic that would reach the network when it is rendered. Caption files
+ * and LUTs are text with no signature, so the whole file is read and must be exactly the format its
+ * first lines look like ({@link validateStudioImportText}).
  */
 
 /** Largest single import. A take or a music file is far smaller; short video is the ceiling. */
@@ -15,10 +18,51 @@ export const STUDIO_IMPORT_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 /** Vector documents are parsed in memory, so they are bounded well below media files. */
 export const STUDIO_IMPORT_VECTOR_MAX_BYTES = 16 * 1024 * 1024;
 
+/** A caption file is a few hundred kilobytes for a feature-length film; this is generous. */
+export const STUDIO_IMPORT_CAPTIONS_MAX_BYTES = 4 * 1024 * 1024;
+
+/** A 65-point 3D LUT, the largest accepted, is about 9 MB of text. */
+export const STUDIO_IMPORT_LUT_MAX_BYTES = 16 * 1024 * 1024;
+
+/** The largest 3D LUT grid accepted: 65 points an axis, the largest size grading tools write. */
+export const STUDIO_IMPORT_LUT_MAX_SIZE = 65;
+
 /** How many imports one project may declare; the resolver's reference ceiling bounds it again. */
 export const STUDIO_IMPORT_MAX_PER_PROJECT = 1000;
 
-export type StudioImportKind = 'audio' | 'image' | 'video' | 'vector';
+export type StudioImportKind = 'audio' | 'image' | 'video' | 'vector' | 'captions' | 'lut';
+
+export const STUDIO_IMPORT_SUBRIP_TYPE = 'application/x-subrip';
+export const STUDIO_IMPORT_WEBVTT_TYPE = 'text/vtt';
+/** `.cube` has no registered media type; this one is the server's own. */
+export const STUDIO_IMPORT_CUBE_LUT_TYPE = 'text/x-cube-lut';
+
+/** What an import is, from the content type the server recorded for it. */
+export const studioImportKind = (contentType: string): StudioImportKind => {
+  switch (contentType) {
+    case 'image/svg+xml':
+    case 'application/json': {
+      return 'vector';
+    }
+    case STUDIO_IMPORT_SUBRIP_TYPE:
+    case STUDIO_IMPORT_WEBVTT_TYPE: {
+      return 'captions';
+    }
+    case STUDIO_IMPORT_CUBE_LUT_TYPE: {
+      return 'lut';
+    }
+    default: {
+      return contentType.split('/', 1)[0] as StudioImportKind;
+    }
+  }
+};
+
+/** Kinds that are read whole and checked as text, with the largest file each may be. */
+export const STUDIO_IMPORT_TEXT_LIMITS: Partial<Record<StudioImportKind, { maxBytes: number; label: string }>> = {
+  vector: { maxBytes: STUDIO_IMPORT_VECTOR_MAX_BYTES, label: 'A vector graphic' },
+  captions: { maxBytes: STUDIO_IMPORT_CAPTIONS_MAX_BYTES, label: 'A caption file' },
+  lut: { maxBytes: STUDIO_IMPORT_LUT_MAX_BYTES, label: 'A LUT' },
+};
 
 export type StudioImportType = { contentType: string; kind: StudioImportKind; extension: string };
 
@@ -38,6 +82,13 @@ const startsWith = (bytes: Uint8Array, signature: number[], offset = 0) =>
 /** ISO base media brands that are sound only. */
 const audioBrands = new Set(['M4A ', 'M4B ', 'M4P ', 'F4A ', 'F4B ']);
 const quickTimeBrands = new Set(['qt  ']);
+
+const unplaceable =
+  'Studio can import sound, images, short video, SVG and Lottie graphics, .srt and .vtt captions and .cube LUTs only';
+
+/** A keyword line of a `.cube` file (Adobe Cube LUT 1.0, plus the input range Resolve writes). */
+const cubeKeyword =
+  /^(TITLE|LUT_3D_SIZE|LUT_1D_SIZE|DOMAIN_MIN|DOMAIN_MAX|LUT_3D_INPUT_RANGE|LUT_1D_INPUT_RANGE)(?:[ \t]|$)/;
 
 const textHead = (bytes: Uint8Array) => {
   let text = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, 1024));
@@ -115,7 +166,22 @@ export function sniffStudioImport(head: Uint8Array, declared: string | undefined
   if (text.startsWith('{')) {
     return { contentType: 'application/json', kind: 'vector', extension: '.json' };
   }
-  throw new StudioImportRefusal('Studio can import sound, images, short video, SVG and Lottie files only');
+  // Caption files and LUTs have no signature: these only choose which whole-file check runs.
+  if (/^WEBVTT(?:[ \t\r\n]|$)/.test(text)) {
+    return { contentType: STUDIO_IMPORT_WEBVTT_TYPE, kind: 'captions', extension: '.vtt' };
+  }
+  if (/^\d{1,10}[ \t]*\r?\n\d{2,4}:\d{2}:\d{2}[,.]\d{3} --> \d/.test(text)) {
+    return { contentType: STUDIO_IMPORT_SUBRIP_TYPE, kind: 'captions', extension: '.srt' };
+  }
+  // A `.cube` LUT opens with comments and then a keyword; the keyword must be within the head.
+  const statement = text
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.trim())
+    .find((line) => line !== '' && !line.startsWith('#'));
+  if (statement && cubeKeyword.test(statement)) {
+    return { contentType: STUDIO_IMPORT_CUBE_LUT_TYPE, kind: 'lut', extension: '.cube' };
+  }
+  throw new StudioImportRefusal(unplaceable);
 }
 
 /** Decode XML character references, so an encoded `javascript:` or `url(` is seen as written. */
@@ -249,4 +315,247 @@ export function scanStudioVector(type: StudioImportType, text: string): number |
     return undefined;
   }
   return type.contentType === 'image/svg+xml' ? scanStudioSvg(text) : scanStudioLottie(text);
+}
+
+/* ------------------------------------------------------------------ */
+/* Caption files and LUTs                                               */
+/* ------------------------------------------------------------------ */
+
+/** Lines of a text import: no byte-order mark, any newline convention, no control characters. */
+const textLines = (text: string, label: string): string[] => {
+  // eslint-disable-next-line no-control-regex
+  if (/[\u{0}-\u{8}\u{B}\u{C}\u{E}-\u{1F}\u{7F}]/u.test(text)) {
+    throw new StudioImportRefusal(`${label} must be plain text`);
+  }
+  return (text.codePointAt(0) === 0xfe_ff ? text.slice(1) : text).split(/\r\n|\r|\n/);
+};
+
+type TextBlock = { line: number; lines: string[] };
+
+/** Runs of consecutive non-empty lines, each with the number of its first line for messages. */
+const textBlocks = (lines: string[], offset = 0): TextBlock[] => {
+  const blocks: TextBlock[] = [];
+  let current: TextBlock | undefined;
+  for (const [index, line] of lines.entries()) {
+    if (line.trim() === '') {
+      current = undefined;
+    } else if (current) {
+      current.lines.push(line);
+    } else {
+      current = { line: offset + index + 1, lines: [line] };
+      blocks.push(current);
+    }
+  }
+  return blocks;
+};
+
+const srtTiming =
+  /^(\d{2,4}):(\d{2}):(\d{2})[,.](\d{3}) --> (\d{2,4}):(\d{2}):(\d{2})[,.](\d{3})(?:[ \t]+X1:\d+ X2:\d+ Y1:\d+ Y2:\d+)?[ \t]*$/;
+const vttTiming =
+  /^(?:(\d{2,4}):)?(\d{2}):(\d{2})\.(\d{3})[ \t]+-->[ \t]+(?:(\d{2,4}):)?(\d{2}):(\d{2})\.(\d{3})(?:[ \t]+[a-z]+:[^\s:]\S*)*[ \t]*$/;
+/** CSS that could fetch something, or an escape that could spell it: refused in a WebVTT style block. */
+const cssReachesNetwork = /url\s*\(|@import\b|image-set\s*\(|\bimage\s*\(|cross-fade\s*\(|\\/i;
+
+/** Check one timing line: both times well formed, minutes and seconds in range, not running backwards. */
+const checkCueTiming = (pattern: RegExp, text: string | undefined, line: number) => {
+  const match = pattern.exec(text ?? '');
+  const time = (found: RegExpExecArray, at: number) =>
+    Number(found[at + 1]) > 59 || Number(found[at + 2]) > 59
+      ? NaN
+      : ((Number(found[at] ?? 0) * 60 + Number(found[at + 1])) * 60 + Number(found[at + 2])) * 1000 +
+        Number(found[at + 3]);
+  if (!match || !(time(match, 5) >= time(match, 1))) {
+    throw new StudioImportRefusal(`The caption timing on line ${line} is not valid`);
+  }
+};
+
+const checkNoTiming = (block: TextBlock, from: number) => {
+  if (block.lines.slice(from).some((line) => line.includes('-->'))) {
+    throw new StudioImportRefusal(
+      `The block starting on line ${block.line} of the caption file has a stray timing line`,
+    );
+  }
+};
+
+/**
+ * A SubRip file, whole: captions separated by blank lines, each a counter, a
+ * `hh:mm:ss,mmm --> hh:mm:ss,mmm` line that does not run backwards, then its text. Anything else in
+ * the file refuses it. The text itself is kept as written: it is data, shown as text.
+ */
+export function validateStudioSubRip(text: string): void {
+  const blocks = textBlocks(textLines(text, 'A caption file'));
+  if (blocks.length === 0) {
+    throw new StudioImportRefusal('The caption file has no captions');
+  }
+  for (const block of blocks) {
+    if (!/^\d{1,10}[ \t]*$/.test(block.lines[0])) {
+      throw new StudioImportRefusal(`Line ${block.line} of the caption file is not a caption number`);
+    }
+    checkCueTiming(srtTiming, block.lines[1], block.line + 1);
+    checkNoTiming(block, 2);
+  }
+}
+
+/**
+ * A WebVTT file, whole: the `WEBVTT` line first, then notes, style and region blocks and captions,
+ * each caption with a timing line that does not run backwards. A style block that could fetch
+ * anything is refused: captions never reach the network when they are shown or rendered.
+ */
+export function validateStudioWebVtt(text: string): void {
+  const lines = textLines(text, 'A caption file');
+  if (!/^WEBVTT(?:[ \t].*)?$/.test(lines[0])) {
+    throw new StudioImportRefusal('A WebVTT file starts with WEBVTT');
+  }
+  // The header runs to the first blank line and holds no caption.
+  const headerEnd = lines.findIndex((line) => line.trim() === '');
+  if ((headerEnd === -1 ? lines : lines.slice(0, headerEnd)).some((line) => line.includes('-->'))) {
+    throw new StudioImportRefusal('A WebVTT caption must follow a blank line');
+  }
+  let captions = 0;
+  for (const block of headerEnd === -1 ? [] : textBlocks(lines.slice(headerEnd), headerEnd)) {
+    const [first] = block.lines;
+    if (/^NOTE(?:[ \t]|$)/.test(first)) {
+      checkNoTiming(block, 0);
+      continue;
+    }
+    if (/^(?:STYLE|REGION)[ \t]*$/.test(first)) {
+      if (captions > 0) {
+        throw new StudioImportRefusal(`The block on line ${block.line} must come before the first caption`);
+      }
+      checkNoTiming(block, 0);
+      if (first.startsWith('STYLE') && cssReachesNetwork.test(block.lines.join('\n'))) {
+        throw new StudioImportRefusal('A caption file whose styles load other files cannot be imported');
+      }
+      continue;
+    }
+    // A caption: an optional identifier line, the timing line, then text.
+    const at = first.includes('-->') ? 0 : 1;
+    checkCueTiming(vttTiming, block.lines[at], block.line + at);
+    checkNoTiming(block, at + 1);
+    captions++;
+  }
+  if (captions === 0) {
+    throw new StudioImportRefusal('The caption file has no captions');
+  }
+}
+
+const cubeNumber = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?`;
+const cubeTriple = new RegExp(String.raw`^(${cubeNumber})[ \t]+(${cubeNumber})[ \t]+(${cubeNumber})$`);
+const cubePair = new RegExp(String.raw`^(${cubeNumber})[ \t]+(${cubeNumber})$`);
+/** The specification allows 250 characters a line; a table row or keyword is never longer. */
+const CUBE_MAX_LINE = 250;
+
+/** Three finite numbers, or undefined. */
+const readCubeTriple = (text: string): number[] | undefined => {
+  const values = cubeTriple.exec(text)?.slice(1).map(Number);
+  return values?.every((value) => Number.isFinite(value)) ? values : undefined;
+};
+
+/**
+ * A `.cube` 3D LUT, whole (Adobe Cube LUT Specification 1.0): comments, then the keywords, then
+ * exactly `LUT_3D_SIZE`³ rows of three finite numbers. A 1D LUT, a grid outside 2 to
+ * {@link STUDIO_IMPORT_LUT_MAX_SIZE}, an unknown keyword, a keyword after the table has begun or a
+ * table of any other length refuses the file.
+ */
+export function validateStudioCubeLut(text: string): void {
+  let size: number | undefined;
+  let rows = 0;
+  let title = false;
+  const domain: { DOMAIN_MIN?: number[]; DOMAIN_MAX?: number[] } = {};
+  const refuse: (line: number, problem: string) => never = (line, problem) => {
+    throw new StudioImportRefusal(`Line ${line} of the LUT ${problem}`);
+  };
+  for (const [index, raw] of textLines(text, 'A LUT').entries()) {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) {
+      continue;
+    }
+    if (line.length > CUBE_MAX_LINE) {
+      refuse(index + 1, 'is too long');
+    }
+    const keyword = cubeKeyword.exec(line)?.[1];
+    if (!keyword) {
+      if (!readCubeTriple(line)) {
+        refuse(index + 1, 'is not three numbers');
+      }
+      if (size === undefined) {
+        refuse(index + 1, 'comes before LUT_3D_SIZE');
+      }
+      if (++rows > size ** 3) {
+        refuse(index + 1, 'is past the end of the table');
+      }
+      continue;
+    }
+    if (rows > 0) {
+      refuse(index + 1, 'is a keyword inside the table');
+    }
+    const value = line.slice(keyword.length).trim();
+    switch (keyword) {
+      case 'TITLE': {
+        if (title || value === '') {
+          refuse(index + 1, 'is not a valid title');
+        }
+        title = true;
+        break;
+      }
+      case 'LUT_3D_SIZE': {
+        if (size !== undefined || !/^\d{1,3}$/.test(value)) {
+          refuse(index + 1, 'is not a valid LUT_3D_SIZE');
+        }
+        size = Number(value);
+        if (size < 2 || size > STUDIO_IMPORT_LUT_MAX_SIZE) {
+          refuse(index + 1, `has a grid size outside 2 to ${STUDIO_IMPORT_LUT_MAX_SIZE}`);
+        }
+        break;
+      }
+      case 'DOMAIN_MIN':
+      case 'DOMAIN_MAX': {
+        const triple = readCubeTriple(value);
+        if (domain[keyword] || !triple) {
+          refuse(index + 1, `is not a valid ${keyword}`);
+        }
+        domain[keyword] = triple;
+        break;
+      }
+      case 'LUT_3D_INPUT_RANGE': {
+        const pair = cubePair.exec(value);
+        if (!pair || !(Number(pair[1]) < Number(pair[2]))) {
+          refuse(index + 1, 'is not a valid LUT_3D_INPUT_RANGE');
+        }
+        break;
+      }
+      default: {
+        throw new StudioImportRefusal('Only 3D .cube LUTs can be imported');
+      }
+    }
+  }
+  if (size === undefined) {
+    throw new StudioImportRefusal('The LUT has no LUT_3D_SIZE');
+  }
+  const min = domain.DOMAIN_MIN ?? [0, 0, 0];
+  const max = domain.DOMAIN_MAX ?? [1, 1, 1];
+  if (min.some((value, axis) => !(value < max[axis]))) {
+    throw new StudioImportRefusal('The LUT domain is not valid');
+  }
+  if (rows !== size ** 3) {
+    throw new StudioImportRefusal(`The LUT has ${rows} rows where its size needs ${size ** 3}`);
+  }
+}
+
+/** Check a caption file or a LUT in full. Other kinds have their own checks and pass through. */
+export function validateStudioImportText(type: StudioImportType, text: string): void {
+  switch (type.contentType) {
+    case STUDIO_IMPORT_SUBRIP_TYPE: {
+      validateStudioSubRip(text);
+      break;
+    }
+    case STUDIO_IMPORT_WEBVTT_TYPE: {
+      validateStudioWebVtt(text);
+      break;
+    }
+    case STUDIO_IMPORT_CUBE_LUT_TYPE: {
+      validateStudioCubeLut(text);
+      break;
+    }
+  }
 }

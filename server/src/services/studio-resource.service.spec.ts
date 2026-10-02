@@ -1092,9 +1092,36 @@ describe(StudioResourceService.name, () => {
         path: '/projects/p/d.png',
         externalReferences: 0,
       },
-      { id: 'warm', contentType: 'text/plain', checksum: 'l1', sizeBytes: 10, path: '/projects/p/warm.cube' },
+      { id: 'warm', contentType: 'text/x-cube-lut', checksum: 'l1', sizeBytes: 10, path: '/projects/p/warm.cube' },
       { id: 'subs', contentType: 'text/vtt', checksum: 'c1', sizeBytes: 10, path: '/projects/p/subs.vtt' },
+      { id: 'subs-srt', contentType: 'application/x-subrip', checksum: 'c2', sizeBytes: 10, path: '/projects/p/s.srt' },
+      { id: 'notes', contentType: 'text/plain', checksum: 'n1', sizeBytes: 10, path: '/projects/p/notes.txt' },
     ];
+
+    it('uses a caption file only as captions and a .cube file only as a LUT (FL-105)', async () => {
+      const { manifest, refused } = await sut.resolveProjectResources(
+        auth,
+        context(
+          sequenceWith(
+            { kind: 'title', captionsImportId: 'subs-srt' },
+            { kind: 'title', captionsImportId: 'warm' },
+            { kind: 'title', captionsImportId: 'notes' },
+            { grade: { lutId: 'subs', lutSource: 'import' } },
+            { grade: { lutId: 'notes', lutSource: 'import' } },
+          ),
+          { imports },
+        ),
+      );
+      expect(manifest.entries.map((entry) => [entry.kind, entry.id])).toEqual([
+        [StudioResourceKind.Captions, 'subs-srt'],
+      ]);
+      expect(refused.map((item) => [item.kind, item.id, item.reason])).toEqual([
+        [StudioResourceKind.Captions, 'warm', StudioRefusalReason.UnsupportedMediaType],
+        [StudioResourceKind.Captions, 'notes', StudioRefusalReason.UnsupportedMediaType],
+        [StudioResourceKind.Lut, 'subs', StudioRefusalReason.UnsupportedMediaType],
+        [StudioResourceKind.Lut, 'notes', StudioRefusalReason.UnsupportedMediaType],
+      ]);
+    });
 
     it('authorizes declared imports as project-owned render inputs and refuses the rest', async () => {
       const owner = newUuid();
