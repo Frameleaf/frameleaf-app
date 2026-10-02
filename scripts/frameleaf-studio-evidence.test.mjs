@@ -11,10 +11,11 @@ import {
   commandMatrixCoverage,
   mergeMatrixCoverage,
   missingCases,
+  rowCommandsFromCatalogue,
 } from "./frameleaf-studio-evidence.mjs";
 
-// A rowCommands map used in tests instead of the real ROW_COMMAND_MAPPING, so these tests don't
-// depend on - or break when someone edits - the real reviewed entries.
+// A rowCommands map used in tests instead of the catalogue's real row/command links, so these
+// tests don't depend on - or break when someone edits - the real reviewed entries.
 const rowCommands = (map) => map;
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -179,6 +180,51 @@ test("commandMatrixCoverage merges a row's manifestIds coverage with its explici
     coverage.get("command.effect-update"),
     new Set(["access", "lease"]),
   );
+});
+
+test("rowCommandsFromCatalogue reads each non-command row's own commands and skips rows with none", () => {
+  assert.deepEqual(
+    rowCommandsFromCatalogue({
+      commands: [{ id: "effect.add", manifestIds: ["command.effect-add"] }],
+      nonCommandRows: [
+        { id: "module.effects", reason: "r", commands: ["effect.add"] },
+        { id: "module.docs", reason: "r", commands: [], withoutCommand: "w" },
+      ],
+    }),
+    { "module.effects": ["effect.add"] },
+  );
+});
+
+test("the command axis takes its row/command links from the published catalogue by default", async () => {
+  const report = {
+    commands: [
+      {
+        id: "effect.reorder",
+        manifestIds: [],
+        cases: [{ case: "undo", result: "passed" }],
+      },
+      {
+        id: "clip.update",
+        manifestIds: [],
+        cases: [{ case: "lease", result: "passed" }],
+      },
+    ],
+  };
+  const coverage = commandMatrixCoverage(report);
+  assert.deepEqual(coverage.get("module.effects"), new Set(["undo"]));
+  assert.deepEqual(
+    coverage.get("readme.effects-masks-compositing.8"),
+    new Set(["lease"]),
+  );
+  // A row the catalogue links to no command gets nothing from a report that doesn't name it.
+  assert.equal(coverage.has("module.docs"), false);
+  const catalogue = JSON.parse(
+    await readFile(
+      path.join(ROOT, "studio/frameleaf-studio-commands.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(Object.keys(rowCommandsFromCatalogue(catalogue)).length, 16);
 });
 
 test("applyCommandMatrixCoverage covers a mapped row using the union of its commands' passed cases", async () => {

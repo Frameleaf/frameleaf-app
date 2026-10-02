@@ -15,6 +15,7 @@ import {
   parseWebVocabulary,
   validate,
 } from './frameleaf-studio-commands.mjs';
+import { COMMAND_AXIS_WAIVERS } from '../studio/tools/conformance.mjs';
 
 const repository = fileURLToPath(new URL('..', import.meta.url));
 const read = (file) => readFile(path.join(repository, file), 'utf8');
@@ -62,7 +63,10 @@ test('the published contracts omit private planning metadata', async () => {
     ]);
   }
   for (const row of document.nonCommandRows) {
-    assert.deepEqual(Object.keys(row).sort(), ['id', 'reason']);
+    assert.deepEqual(
+      Object.keys(row).sort(),
+      row.commands.length > 0 ? ['commands', 'id', 'reason'] : ['commands', 'id', 'reason', 'withoutCommand'],
+    );
   }
   for (const content of [...Object.values(files), await read(WEB_VOCABULARY_PATH)]) {
     assert.doesNotMatch(content, /FL-\d+|prototypeFunctions|prototypeSource|owner:/);
@@ -80,6 +84,58 @@ test('a manifest row that loses its command and its exemption fails the check', 
     () => validate({ document: broken, ...context }),
     /command\.split has no command and is not declared a non-command row/,
   );
+});
+
+test('every non-command row names the commands that prove it, or says what does instead', async () => {
+  const { document } = await generate(repository);
+  const linked = document.nonCommandRows.filter((row) => row.commands.length > 0);
+
+  assert.equal(linked.length, 16);
+  assert.equal(document.counts.nonCommandRowsLinkedToCommands, 16);
+  const commandsOf = (id) => document.nonCommandRows.find((row) => row.id === id).commands;
+  assert.deepEqual(commandsOf('module.effects'), ['effect.add', 'effect.remove', 'effect.reorder', 'effect.update']);
+  assert.deepEqual(commandsOf('readme.effects-masks-compositing.8'), ['clip.update', 'effect.update']);
+
+  // A row with no command is one the coordinator waived on the command axis, or the one row
+  // measured on the server's project service instead of through an editor command.
+  assert.deepEqual(
+    document.nonCommandRows.filter((row) => row.commands.length === 0).map((row) => row.id),
+    [...COMMAND_AXIS_WAIVERS.keys(), 'readme.projects-storage.4'].sort(),
+  );
+});
+
+test('a non-command row with no link, an unknown command or a contradictory link fails the check', async () => {
+  const { document } = await generate(repository);
+  const context = await inputs();
+  const row = (broken, id) => broken.nonCommandRows.find((entry) => entry.id === id);
+
+  for (const [mutate, pattern] of [
+    [
+      (broken) => (row(broken, 'module.effects').commands = []),
+      /module\.effects is linked to no command and does not say what covers it instead/,
+    ],
+    [(broken) => delete row(broken, 'module.effects').commands, /module\.effects needs a commands list/],
+    [
+      (broken) => delete row(broken, 'module.docs').withoutCommand,
+      /module\.docs is linked to no command and does not say what covers it instead/,
+    ],
+    [
+      (broken) => row(broken, 'module.effects').commands.push('effect.polish'),
+      /module\.effects is linked to unknown command effect\.polish/,
+    ],
+    [
+      (broken) => row(broken, 'module.effects').commands.push('effect.add'),
+      /module\.effects names a command twice/,
+    ],
+    [
+      (broken) => (row(broken, 'module.effects').withoutCommand = 'none'),
+      /module\.effects is linked to a command and also claims to have none/,
+    ],
+  ]) {
+    const broken = clone(document);
+    mutate(broken);
+    assert.throws(() => validate({ document: broken, ...context }), pattern);
+  }
 });
 
 test('a job row may not claim a graph change, an undo entry or a missing worker', async () => {

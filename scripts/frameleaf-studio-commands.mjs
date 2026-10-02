@@ -1324,77 +1324,232 @@ export const catalogue = [
  * lifecycle action: reaching it does not mean sending an editing command. The check rejects
  * any manifest row that is neither mapped nor listed here, so this table is the only way a
  * row can be left out, and it cannot be left out silently.
+ *
+ * `commands` names the catalogue commands whose graph edits are the row's behaviour in
+ * Frameleaf: the row is not one command, but those commands are what the command matrix
+ * measures for it (scripts/frameleaf-studio-evidence.mjs reads the link from the published
+ * catalogue). A row with no command behind it at all says what covers it instead in
+ * `withoutCommand`; the check rejects a row that has neither, a row that has both, and a
+ * link to a command the catalogue does not have. Each link was reviewed by the row's owner.
  */
 export const nonCommandRows = [
-  { id: 'extra.bento', reason: 'Panel layout preset; a client preference, not a graph change.' },
+  // FL-98: the bento layout (bento-layout.ts) arranges the selected items by writing their
+  // transforms.
+  {
+    id: 'extra.bento',
+    reason: 'Panel layout preset; a client preference, not a graph change.',
+    commands: ['clip.setTransform'],
+  },
   {
     id: 'extra.portable-headless',
     reason: 'Workspace and lifecycle API the host owns; not an in-editor command.',
+    withoutCommand: 'The headless render contract is the render worker; its probes cover it, not a command.',
   },
   {
     id: 'module.docs',
     reason: 'Source module inventory row, not an action.',
+    withoutCommand: 'In-app help pages are read-only documentation; nothing edits the project.',
   },
-  { id: 'module.editor', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.effects', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.export', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.keyframes', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.lottie-browser', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.media-library', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.preview', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.project-bundle', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.projects', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.scene-browser', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.settings', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.timeline', reason: 'Source module inventory row, not an action.' },
-  { id: 'module.workspace-gate', reason: 'Source module inventory row, not an action.' },
+  // FL-88: the editor is the mount every command reaches the graph through; its own commands are
+  // undo and redo.
+  {
+    id: 'module.editor',
+    reason: 'Source module inventory row, not an action.',
+    commands: ['history.undo', 'history.redo'],
+  },
+  // FL-99: the effect-management feature as a whole; these four are exactly its graph
+  // operations.
+  {
+    id: 'module.effects',
+    reason: 'Source module inventory row, not an action.',
+    commands: ['effect.add', 'effect.remove', 'effect.reorder', 'effect.update'],
+  },
+  // FL-105: export in Frameleaf is the export job and the project bundle.
+  {
+    id: 'module.export',
+    reason: 'Source module inventory row, not an action.',
+    commands: ['job.enqueueExport', 'project.exportBundle'],
+  },
+  // FL-100: keyframes and the property modifiers and expressions the keyframe editor drives.
+  {
+    id: 'module.keyframes',
+    reason: 'Source module inventory row, not an action.',
+    commands: [
+      'keyframe.add',
+      'keyframe.remove',
+      'keyframe.setEasing',
+      'keyframe.update',
+      'property.bakeModifier',
+      'property.setExpression',
+      'property.setModifier',
+    ],
+  },
+  // FL-105: the Lottie browser places a Lottie item and edits it.
+  {
+    id: 'module.lottie-browser',
+    reason: 'Source module inventory row, not an action.',
+    commands: ['clip.add', 'lottie.update'],
+  },
+  // FL-105: the media library's import, relink and removal.
+  {
+    id: 'module.media-library',
+    reason: 'Source module inventory row, not an action.',
+    commands: ['media.import', 'media.relink', 'media.remove'],
+  },
+  // FL-98: the preview module edits the graph only through its gizmos (transform, parenting,
+  // crop, mask); its frames come from preview.request/release, which the matrix measures at the
+  // gate only, as host services.
+  {
+    id: 'module.preview',
+    reason: 'Source module inventory row, not an action.',
+    commands: [
+      'clip.setTransform',
+      'clip.setTransformParent',
+      'clip.setCrop',
+      'clip.setMask',
+      'preview.request',
+      'preview.release',
+    ],
+  },
+  // FL-91: bundles export and import a whole project.
+  {
+    id: 'module.project-bundle',
+    reason: 'Source module inventory row, not an action.',
+    commands: ['project.exportBundle', 'project.importBundle'],
+  },
+  // FL-91: what a project holds in the editor: its name, settings, template and sequences.
+  {
+    id: 'module.projects',
+    reason: 'Source module inventory row, not an action.',
+    commands: [
+      'project.rename',
+      'project.setSettings',
+      'project.applyTemplate',
+      'sequence.add',
+      'sequence.duplicate',
+      'sequence.remove',
+      'sequence.setActive',
+      'sequence.setFields',
+      'sequence.setSettings',
+    ],
+  },
+  // FL-111: the scene browser shows detected scenes and inserts the chosen one.
+  {
+    id: 'module.scene-browser',
+    reason: 'Source module inventory row, not an action.',
+    commands: ['job.enqueueSceneDetection', 'clip.insert'],
+  },
+  {
+    id: 'module.settings',
+    reason: 'Source module inventory row, not an action.',
+    withoutCommand: 'Editor preferences and hotkeys are per-device state, not the project graph.',
+  },
+  // FL-94: the timeline module is the timeline's own edits: clips, tracks and markers.
+  {
+    id: 'module.timeline',
+    reason: 'Source module inventory row, not an action.',
+    commands: [
+      'clip.add',
+      'clip.delete',
+      'clip.insert',
+      'clip.join',
+      'clip.move',
+      'clip.overwrite',
+      'clip.push',
+      'clip.reorder',
+      'clip.roll',
+      'clip.setLink',
+      'clip.setSpeed',
+      'clip.slide',
+      'clip.slip',
+      'clip.split',
+      'clip.trimEnd',
+      'clip.trimStart',
+      'marker.add',
+      'marker.remove',
+      'marker.update',
+      'track.add',
+      'track.closeGap',
+      'track.remove',
+      'track.reorder',
+      'track.set',
+    ],
+  },
+  {
+    id: 'module.workspace-gate',
+    reason: 'Source module inventory row, not an action.',
+    withoutCommand: 'Replaced by server project storage: there is no workspace folder to ask for.',
+  },
+  // FL-103: pitch, EQ, fades and volume are clip and track audio; transition audio is the
+  // transition itself.
   {
     id: 'readme.audio.4',
     reason: 'Render-path preservation obligation proved by export evidence, not by a command.',
+    commands: ['clip.setAudio', 'track.setAudio', 'clip.setTransition'],
   },
+  // FL-99: the colour picker and eyedropper are preview-axis controls; what they produce is a
+  // colour value committed through effect.update (gradient map, chroma key, temperature tint)
+  // or clip.update (shape fill and stroke, text colour). The command matrix does not yet
+  // exercise a colour-typed invalid case (malformed hex or alpha), so this row's `invalid` case
+  // stays missing even with the link in place.
   {
     id: 'readme.effects-masks-compositing.8',
     reason: 'Colour picker and eyedropper; an input control whose result travels in another payload.',
+    commands: ['effect.update', 'clip.update'],
   },
   {
     id: 'readme.local-ai-analysis.7',
     reason: 'Model cache and unload controls live in settings, outside the project graph.',
+    withoutCommand: 'Model cache and unload controls are per-device settings, not the project graph.',
   },
+  // FL-105: ProRes sources are imported and previewed like any other source.
   {
     id: 'readme.media-import.3',
     reason: 'ProRes decode is a deployment capability, not an editing command.',
+    commands: ['media.import', 'preview.request'],
   },
+  // FL-98: frame-accurate playback is the exact frame at a rational time, asked for by
+  // preview.request (FL-93/FL-96).
   {
     id: 'readme.preview-playback.2',
     reason: 'Playback clock and composition runtime; no graph change.',
+    commands: ['preview.request'],
   },
   {
     id: 'readme.preview-playback.3',
     reason: 'Scrub overlays, prewarming and adaptive quality; no graph change.',
+    withoutCommand: 'Playback performance only; nothing changes the graph.',
   },
   {
     id: 'readme.preview-playback.5',
     reason: 'Colour scopes are read-only measurement surfaces.',
+    withoutCommand: 'The scopes measure the picture and never edit it.',
   },
   {
     id: 'readme.projects-storage.1',
     reason: 'Project storage is server-side here; the workspace folder API does not apply.',
+    withoutCommand: 'Replaced by server project storage; covered by the save and reopen cases of the graph axis.',
   },
   {
     id: 'readme.projects-storage.2',
     reason: 'Workspace switching is replaced by the account library; not an editing command.',
+    withoutCommand: 'Replaced by the server project library; covered by the project service.',
   },
   {
     id: 'readme.projects-storage.3',
     reason: 'Project storage and migration are host lifecycle, not editing commands.',
+    withoutCommand: 'Projects are stored as server revisions; covered by the save and reopen cases of the graph axis.',
   },
   {
     id: 'readme.projects-storage.4',
     reason: 'Project trash and delete flows are host lifecycle with their own authorization.',
+    withoutCommand:
+      'Trash, restore and permanent delete are measured on the project service against a real database, not through an editor command.',
   },
   {
     id: 'readme.projects-storage.6',
     reason: 'Auto-save, thumbnails and orphan cleanup are host obligations, not commands.',
+    withoutCommand: 'Autosave is the save and reopen cases of the graph axis; the rest is server housekeeping.',
   },
 ];
 
@@ -1490,13 +1645,21 @@ export function buildCatalogueDocument(manifest) {
       manifestRows: manifest.features.length,
       manifestRowsDeclaredNonCommand: nonCommandRows.length,
       manifestRowsMapped: mapped.size,
+      nonCommandRowsLinkedToCommands: nonCommandRows.filter((row) => (row.commands ?? []).length > 0).length,
     },
     engine: ENGINE,
     engineRevision: ENGINE_REVISION,
     fieldTypes: FIELD_TYPES,
     generator: GENERATOR,
     manifestPath: MANIFEST_PATH,
-    nonCommandRows: [...nonCommandRows].sort((a, b) => (a.id < b.id ? -1 : 1)),
+    nonCommandRows: [...nonCommandRows]
+      .sort((a, b) => (a.id < b.id ? -1 : 1))
+      .map(({ id, reason, commands = [], withoutCommand }) => ({
+        commands: [...commands].sort(),
+        id,
+        reason,
+        ...(withoutCommand === undefined ? {} : { withoutCommand }),
+      })),
     schemaVersion: SCHEMA_VERSION,
     scopes: SCOPES,
     webVocabularyPath: WEB_VOCABULARY_PATH,
@@ -1667,6 +1830,24 @@ export function validate({ document, manifest, webSource }) {
   for (const row of document.nonCommandRows) {
     assert.ok(manifestIds.has(row.id), `Non-command row ${row.id} is not a manifest row`);
     assert.ok(row.reason.length > 0, `Non-command row ${row.id} needs a reason`);
+    // A non-command row is still proved by something: the commands whose edits are its
+    // behaviour, or a stated reason nothing in the catalogue is. Never neither, never both.
+    assert.ok(Array.isArray(row.commands), `Non-command row ${row.id} needs a commands list`);
+    assert.equal(new Set(row.commands).size, row.commands.length, `Non-command row ${row.id} names a command twice`);
+    for (const id of row.commands) {
+      assert.ok(ids.includes(id), `Non-command row ${row.id} is linked to unknown command ${id}`);
+    }
+    if (row.commands.length === 0) {
+      assert.ok(
+        typeof row.withoutCommand === 'string' && row.withoutCommand.length > 0,
+        `Non-command row ${row.id} is linked to no command and does not say what covers it instead`,
+      );
+    } else {
+      assert.ok(
+        !Object.hasOwn(row, 'withoutCommand'),
+        `Non-command row ${row.id} is linked to a command and also claims to have none`,
+      );
+    }
   }
   const mapped = new Set(document.commands.flatMap((command) => command.manifestIds));
   for (const id of mapped) {
