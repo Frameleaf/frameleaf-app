@@ -72,6 +72,235 @@ export type BackupDeviceListDto = {
     devices: BackupDeviceDto[];
     nextOffset: number | null;
 };
+export type BuddyStatusDto = {
+    availableBytes: number | null;
+    capacityUpdatedAt: string | null;
+    configured: boolean;
+    connection: string | null;
+    enabled: boolean;
+    hosting: {
+        committedBytes: number;
+        quotaBytes: number;
+        reservedBytes: number;
+    };
+    instanceId: string;
+    keyFingerprint: string | null;
+    lastCompleteAt: string | null;
+    lastVerifiedAt: string | null;
+    pairing: {
+        pairId: string;
+        readUntil: string | null;
+        state: State;
+        vaults: {
+            destinationInstanceId: string;
+            destinationKey: {
+                crv: Crv;
+                kty: Kty;
+                x: string;
+            };
+            quotaBytes: number;
+            retention: {
+                days: Days;
+                monthly: Monthly;
+            };
+            sourceInstanceId: string;
+            sourceKey: {
+                crv: Crv;
+                kty: Kty;
+                x: string;
+            };
+            vaultId: string;
+        }[];
+        version: Version;
+    } | null;
+    pendingObjects: number;
+    recoveryVerified: boolean;
+    run: {
+        error: string | null;
+        finishedAt: string | null;
+        id: string;
+        objects: number;
+        startedAt: string;
+        state: string;
+        totalBytes: number;
+        uploadedBytes: number;
+        uploadedObjects: number;
+    } | null;
+    settings: {
+        configurationFiles?: string[];
+        directory: string;
+        downloadMbps?: number;
+        includeDerived?: boolean;
+        pausedReceiving?: boolean;
+        pausedSending?: boolean;
+        quotaBytes: number;
+        schedule?: string;
+        timezone: string;
+        uploadMbps?: number;
+        windowEnd?: string;
+        windowStart?: string;
+    } | null;
+    transferMbps: number;
+};
+export type BuddyControlDto = {
+    action: Action;
+};
+export type BuddyInviteDto = {
+    instanceId: string;
+    quotaBytes: number;
+    retention: {
+        days: Days;
+        monthly: Monthly;
+    };
+    targetAccountId: string;
+    version: Version;
+};
+export type BuddyInviteResponseDto = {
+    expiresAt: string;
+    invitationId: string;
+    token: string;
+    version: Version;
+};
+export type BuddyAcceptDto = {
+    instanceId: string;
+    quotaBytes: number;
+    retention: {
+        days: Days;
+        monthly: Monthly;
+    };
+    token: string;
+    version: Version;
+};
+export type BuddyKitDto = {
+    current: number;
+    keys: {
+        [key: string]: string;
+    };
+    vaultId: string;
+    version: Version;
+};
+export type BuddyEscrowWrapDto = {
+    passphrase: string;
+};
+export type BuddyEscrowDto = {
+    blob: string;
+    vaultId: string;
+    version: Version;
+};
+export type BuddyEscrowImportDto = {
+    escrow: {
+        blob: string;
+        vaultId: string;
+        version: Version;
+    };
+    passphrase: string;
+};
+export type BuddyPreflightRequestDto = {
+    configurationFiles?: string[];
+    directory?: string;
+};
+export type BuddyPreflightDto = {
+    configurationFiles: {
+        available: boolean;
+        path: string;
+    }[];
+    databaseBytes: number;
+    hostingAvailableBytes: number | null;
+    items: number;
+    mounts: {
+        available: boolean;
+        path: string;
+    }[];
+    originalBytes: number;
+    stagingAvailableBytes: number;
+    timezone: string;
+    unknownSizes: number;
+};
+export type BuddyProbeResponseDto = {
+    ok: boolean;
+};
+export type BuddyRelationshipDto = {
+    action: Action2;
+};
+export type BuddyRestoreDto = {
+    albumId?: string;
+    assetIds?: string[];
+    confirm?: boolean;
+    mode?: Mode;
+    scope: Scope;
+    snapshotId: string;
+};
+export type BuddyRestoreResponseDto = {
+    bytes: number;
+    conflicts: number;
+    items: number;
+    metadataItems?: number;
+    mode: Mode;
+    operationId: string | null;
+    state: string;
+};
+export type BuddyApplyDto = {
+    confirm: true;
+    operationId: string;
+};
+export type BuddyApplyResponseDto = {
+    jwt: string;
+};
+export type BuddyRestoreCheckpointDto = {
+    operation: {
+        error: string | null;
+        id: string;
+        phase: string;
+        progress: number | null;
+        recoveryId: string | null;
+        state: string;
+    } | null;
+};
+export type BuddyRestoreStatusDto = {
+    error: string | null;
+    id: string;
+    phase: string;
+    progress: number | null;
+    recoveryId: string | null;
+    state: string;
+};
+export type BuddySettingsDto = {
+    configurationFiles?: string[];
+    directory: string;
+    downloadMbps?: number;
+    includeDerived?: boolean;
+    pausedReceiving?: boolean;
+    pausedSending?: boolean;
+    quotaBytes: number;
+    schedule?: string;
+    timezone: string;
+    uploadMbps?: number;
+    windowEnd?: string;
+    windowStart?: string;
+};
+export type BuddySnapshotListDto = {
+    nextOffset: number | null;
+    snapshots: {
+        createdAt: string;
+        id: string;
+        keyVersion: number;
+        sequence: number;
+    }[];
+};
+export type BuddyBrowseDto = {
+    albums: {
+        id: string;
+        items: number;
+        name: string;
+    }[];
+    items: {
+        bytes: number;
+        id: string;
+        name: string;
+        ownerId?: string;
+    }[];
+    nextOffset: number | null;
+};
 export type CloudBackupActiveRestoreDto = {
     bytes: number;
     bytesTotal: number;
@@ -1858,6 +2087,8 @@ export type LicenseCertificateDto = {
 };
 export type SetMaintenanceModeDto = {
     action: MaintenanceAction;
+    /** A verified, locally staged Buddy recovery */
+    buddyRecoveryId?: string;
     /** Keep the safety backup of the current database that a restore makes first (default true); it is always kept when the restore fails */
     keepSafetyBackup?: boolean;
     /** Why the server is in maintenance, shown to everyone on the maintenance screen (max 200 characters). Omit to keep the current reason; null or an empty string clears it */
@@ -3636,7 +3867,7 @@ export type AssetSafetyDto = {
         lastVerifiedRunAt: string | null;
         /** Earliest retained complete backup run containing the current original hash */
         since: string | null;
-        state: State;
+        state: State2;
     };
     id: string;
     integrityResult: IntegrityResult;
@@ -4223,7 +4454,7 @@ export type ImageDescriptionEnrichmentResponseDto = {
     visibleText?: string[];
 };
 export type ImageEnrichmentReview = {
-    action: Action;
+    action: Action3;
     isNsfw: boolean;
     /** Review timestamp */
     reviewedAt: string;
@@ -12526,6 +12757,300 @@ export function listAllBackupDevices({ limit, offset }: {
         data: BackupDeviceListDto;
     }>(`/admin/backup-devices${QS.query(QS.explode({
         limit,
+        offset
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Get Buddy Backup and hosting status
+ */
+export function getBuddyBackupStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BuddyStatusDto;
+    }>("/admin/buddy-backup", {
+        ...opts
+    }));
+}
+/**
+ * Start, pause, resume, restart or verify Buddy Backup
+ */
+export function controlBuddyBackup({ buddyControlDto }: {
+    buddyControlDto: BuddyControlDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyStatusDto;
+    }>("/admin/buddy-backup/control", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyControlDto
+    })));
+}
+/**
+ * Invite a Cloud account to pair its Frameleaf server
+ */
+export function inviteBackupBuddy({ buddyInviteDto }: {
+    buddyInviteDto: BuddyInviteDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyInviteResponseDto;
+    }>("/admin/buddy-backup/invitations", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyInviteDto
+    })));
+}
+/**
+ * Accept a Buddy invitation with this hosting capacity
+ */
+export function acceptBackupBuddy({ buddyAcceptDto }: {
+    buddyAcceptDto: BuddyAcceptDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyStatusDto;
+    }>("/admin/buddy-backup/invitations/accept", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyAcceptDto
+    })));
+}
+/**
+ * Generate and return a new recovery kit once
+ */
+export function generateBuddyRecoveryKit(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyKitDto;
+    }>("/admin/buddy-backup/key", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Encrypt a recovery kit locally with a passphrase
+ */
+export function wrapBuddyRecoveryKit({ buddyEscrowWrapDto }: {
+    buddyEscrowWrapDto: BuddyEscrowWrapDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyEscrowDto;
+    }>("/admin/buddy-backup/key/escrow", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyEscrowWrapDto
+    })));
+}
+/**
+ * Unlock and import an encrypted recovery package locally
+ */
+export function unlockBuddyRecoveryKit({ buddyEscrowImportDto }: {
+    buddyEscrowImportDto: BuddyEscrowImportDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyStatusDto;
+    }>("/admin/buddy-backup/key/escrow/import", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyEscrowImportDto
+    })));
+}
+/**
+ * Import a recovery kit on the rebound server
+ */
+export function importBuddyRecoveryKit({ buddyKitDto }: {
+    buddyKitDto: BuddyKitDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyStatusDto;
+    }>("/admin/buddy-backup/key/import", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyKitDto
+    })));
+}
+/**
+ * Rotate encryption while retaining historical keys
+ */
+export function rotateBuddyRecoveryKit(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyKitDto;
+    }>("/admin/buddy-backup/key/rotate", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Verify the recovery kit the owner saved
+ */
+export function verifyBuddyRecoveryKit({ buddyKitDto }: {
+    buddyKitDto: BuddyKitDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyStatusDto;
+    }>("/admin/buddy-backup/key/verify", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyKitDto
+    })));
+}
+/**
+ * Check backup size, storage and configuration coverage
+ */
+export function checkBuddyBackupCoverage({ buddyPreflightRequestDto }: {
+    buddyPreflightRequestDto: BuddyPreflightRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyPreflightDto;
+    }>("/admin/buddy-backup/preflight", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyPreflightRequestDto
+    })));
+}
+/**
+ * Verify an encrypted round trip
+ */
+export function testBuddyBackup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyProbeResponseDto;
+    }>("/admin/buddy-backup/probe", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Refresh the Cloud pairing
+ */
+export function refreshBuddyBackup(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyStatusDto;
+    }>("/admin/buddy-backup/refresh", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Confirm, end, or immediately block a pairing
+ */
+export function changeBuddyRelationship({ buddyRelationshipDto }: {
+    buddyRelationshipDto: BuddyRelationshipDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyStatusDto;
+    }>("/admin/buddy-backup/relationship", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyRelationshipDto
+    })));
+}
+/**
+ * Preview or start a verified restore
+ */
+export function restoreBuddyBackup({ buddyRestoreDto }: {
+    buddyRestoreDto: BuddyRestoreDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyRestoreResponseDto;
+    }>("/admin/buddy-backup/restore", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyRestoreDto
+    })));
+}
+/**
+ * Apply staged settings or server recovery in maintenance mode
+ */
+export function applyBuddyRecovery({ buddyApplyDto }: {
+    buddyApplyDto: BuddyApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyApplyResponseDto;
+    }>("/admin/buddy-backup/restore/apply", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyApplyDto
+    })));
+}
+/**
+ * Resume the current owner restore or staged recovery
+ */
+export function getBuddyRestoreCheckpoint(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BuddyRestoreCheckpointDto;
+    }>("/admin/buddy-backup/restores", {
+        ...opts
+    }));
+}
+/**
+ * Get restore or staging progress
+ */
+export function getBuddyRestoreStatus({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BuddyRestoreStatusDto;
+    }>(`/admin/buddy-backup/restores/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Configure hosting, schedules and transfer limits
+ */
+export function configureBuddyBackup({ buddySettingsDto }: {
+    buddySettingsDto: BuddySettingsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BuddyStatusDto;
+    }>("/admin/buddy-backup/settings", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: buddySettingsDto
+    })));
+}
+/**
+ * List complete Buddy restore points
+ */
+export function listBuddyBackupSnapshots({ offset }: {
+    offset?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BuddySnapshotListDto;
+    }>(`/admin/buddy-backup/snapshots${QS.query(QS.explode({
+        offset
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Browse a decrypted restore point
+ */
+export function browseBuddyBackup({ id, offset }: {
+    id: string;
+    offset?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BuddyBrowseDto;
+    }>(`/admin/buddy-backup/snapshots/${encodeURIComponent(id)}${QS.query(QS.explode({
         offset
     }))}`, {
         ...opts
@@ -22845,6 +23370,76 @@ export function reconcileBackupBucket({ id, runId, reconciliationBucketDto }: {
     })));
 }
 /**
+ * Preview or restore own items or an album
+ */
+export function restoreOwnBuddyBackup({ buddyRestoreDto }: {
+    buddyRestoreDto: BuddyRestoreDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: BuddyRestoreResponseDto;
+    }>("/users/me/buddy-backup/restore", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: buddyRestoreDto
+    })));
+}
+/**
+ * Resume an own Buddy restore
+ */
+export function getOwnBuddyRestoreCheckpoint(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BuddyRestoreCheckpointDto;
+    }>("/users/me/buddy-backup/restores", {
+        ...opts
+    }));
+}
+/**
+ * Get own Buddy restore progress
+ */
+export function getOwnBuddyRestoreStatus({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BuddyRestoreStatusDto;
+    }>(`/users/me/buddy-backup/restores/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * List own accessible Buddy restore points
+ */
+export function listOwnBuddySnapshots({ offset }: {
+    offset?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BuddySnapshotListDto;
+    }>(`/users/me/buddy-backup/snapshots${QS.query(QS.explode({
+        offset
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Browse own accessible backed-up items and albums
+ */
+export function browseOwnBuddyBackup({ id, offset }: {
+    id: string;
+    offset?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BuddyBrowseDto;
+    }>(`/users/me/buddy-backup/snapshots/${encodeURIComponent(id)}${QS.query(QS.explode({
+        offset
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Retrieve calendar heatmap activity
  */
 export function getMyCalendarHeatmap({ $from, to, $type }: {
@@ -23324,6 +23919,52 @@ export enum UserAvatarColor {
     Orange = "orange",
     Gray = "gray",
     Amber = "amber"
+}
+export enum State {
+    Pending = "pending",
+    Active = "active",
+    Ended = "ended",
+    Blocked = "blocked"
+}
+export enum Crv {
+    Ed25519 = "Ed25519"
+}
+export enum Kty {
+    Okp = "OKP"
+}
+export enum Days {
+    $30 = 30
+}
+export enum Monthly {
+    $12 = 12
+}
+export enum Version {
+    $1 = 1
+}
+export enum Action {
+    Start = "start",
+    PauseSending = "pause-sending",
+    ResumeSending = "resume-sending",
+    PauseReceiving = "pause-receiving",
+    ResumeReceiving = "resume-receiving",
+    Restart = "restart",
+    Verify = "verify"
+}
+export enum Action2 {
+    Confirm = "confirm",
+    End = "end",
+    Block = "block"
+}
+export enum Mode {
+    Keep = "keep",
+    Replace = "replace"
+}
+export enum Scope {
+    Asset = "asset",
+    Album = "album",
+    Library = "library",
+    Settings = "settings",
+    Server = "server"
 }
 export enum CloudBackupRestoreScope {
     Files = "files",
@@ -23889,7 +24530,9 @@ export enum MediaOperationKind {
     CloudDescriptionBatch = "cloud_description_batch",
     CloudMlJob = "cloud_ml_job",
     CloudBackup = "cloud_backup",
-    CloudRestore = "cloud_restore"
+    CloudRestore = "cloud_restore",
+    BuddyBackup = "buddy_backup",
+    BuddyRestore = "buddy_restore"
 }
 export enum MediaOperationStatus {
     Queued = "queued",
@@ -24410,7 +25053,7 @@ export enum AssetJobName {
     RegenerateThumbnail = "regenerate-thumbnail",
     TranscodeVideo = "transcode-video"
 }
-export enum State {
+export enum State2 {
     Unavailable = "unavailable",
     NotBackedUp = "not-backed-up",
     Completed = "completed"
@@ -24432,9 +25075,6 @@ export enum CloudAvailability {
 export enum AssetDevelopRevisionKind {
     Recipe = "recipe",
     External = "external"
-}
-export enum Version {
-    $1 = 1
 }
 export enum AssetDevelopPreset {
     Original = "Original",
@@ -24550,7 +25190,7 @@ export enum Status {
     Failed = "failed",
     Skipped = "skipped"
 }
-export enum Action {
+export enum Action3 {
     Accepted = "accepted",
     MarkedSafe = "marked-safe",
     MarkedNsfw = "marked-nsfw"
