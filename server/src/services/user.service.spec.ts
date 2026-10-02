@@ -810,6 +810,17 @@ describe(UserService.name, () => {
 
       expect(mocks.user.syncUsage).toHaveBeenCalledTimes(1);
     });
+
+    it('recounts with develop artifacts where the fork schema can be used, and the photos alone elsewhere (FL-304)', async () => {
+      mocks.assetDevelop.syncUsage.mockResolvedValue(true);
+      await sut.handleUserSyncUsage();
+      expect(mocks.assetDevelop.syncUsage).toHaveBeenCalledWith(undefined);
+      expect(mocks.user.syncUsage).not.toHaveBeenCalled();
+
+      mocks.assetDevelop.syncUsage.mockResolvedValue(false);
+      await sut.handleUserSyncUsage();
+      expect(mocks.user.syncUsage).toHaveBeenCalledExactlyOnceWith(undefined);
+    });
   });
 
   describe('preference history (FL-71 CC-10)', () => {

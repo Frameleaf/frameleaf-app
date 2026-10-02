@@ -25,6 +25,7 @@ import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
+import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -260,6 +261,7 @@ export type ServiceOverrides = {
   apiKey: ApiKeyRepository;
   app: AppRepository;
   asset: AssetRepository;
+  assetDevelop: AssetDevelopRepository;
   assetEdit: AssetEditRepository;
   assetFile: AssetFileRepository;
   assetJob: AssetJobRepository;
@@ -368,6 +370,7 @@ export const getMocks = () => {
     album: automock(AlbumRepository, { strict: false }),
     albumUser: automock(AlbumUserRepository),
     asset: newAssetRepositoryMock(),
+    assetDevelop: automock(AssetDevelopRepository, { strict: false }),
     assetEdit: automock(AssetEditRepository),
     assetFile: automock(AssetFileRepository),
     assetJob: automock(AssetJobRepository),
@@ -495,6 +498,7 @@ export const newTestService = <T extends BaseService>(
     overrides.apiKey || (mocks.apiKey as As<ApiKeyRepository>),
     overrides.app || (mocks.app as As<AppRepository>),
     overrides.asset || (mocks.asset as As<AssetRepository>),
+    overrides.assetDevelop || (mocks.assetDevelop as As<AssetDevelopRepository>),
     overrides.assetEdit || (mocks.assetEdit as As<AssetEditRepository>),
     overrides.assetFile || (mocks.assetFile as As<AssetFileRepository>),
     overrides.assetJob || (mocks.assetJob as As<AssetJobRepository>),

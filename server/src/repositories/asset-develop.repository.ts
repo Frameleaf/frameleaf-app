@@ -455,4 +455,34 @@ export class AssetDevelopRepository {
       return files;
     });
   }
+
+  /**
+   * FL-304: recount storage usage (of user `id`, or of every live user) as `UserRepository.syncUsage`
+   * does, plus the develop artifacts each owner keeps, in one statement, so an upload committing
+   * meanwhile is never counted twice. `false`, having changed nothing, while the fork schema cannot
+   * be used (not installed, or a handoff holds it): the caller then recounts the photos alone.
+   */
+  async syncUsage(id?: string): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      if (!(await canWriteFork(tx))) {
+        return false;
+      }
+      await sql`
+        UPDATE public."user" AS "user"
+        SET
+          "quotaUsageInBytes" = (
+            SELECT COALESCE(sum(exif."fileSizeInByte"), 0)
+            FROM public.asset asset
+            LEFT JOIN public.asset_exif exif ON exif."assetId" = asset.id
+            WHERE asset."libraryId" IS NULL AND asset."ownerId" = "user".id
+          ) + (
+            SELECT COALESCE(sum(artifact.bytes), 0) FROM ${ARTIFACTS} artifact WHERE artifact."ownerId" = "user".id
+          ),
+          "updatedAt" = now()
+        WHERE "user"."deletedAt" IS NULL
+        ${id ? sql`AND "user".id = ${id}::uuid` : sql``}
+      `.execute(tx);
+      return true;
+    });
+  }
 }
