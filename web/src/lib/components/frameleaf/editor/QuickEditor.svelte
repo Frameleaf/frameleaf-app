@@ -1479,7 +1479,15 @@
                 {/each}
               </div>
               <p>{$t('frameleaf_editor_social_help')}</p>
-              <UserPresets current={currentSettings} onApply={(settings) => change(settings)} />
+              <UserPresets
+                current={currentSettings}
+                carried={recipe.opaqueRecipe}
+                onApply={(settings, extras) =>
+                  change({
+                    ...settings,
+                    opaqueRecipe: { ...recipe.opaqueRecipe, ...extras } as EditorRecipe['opaqueRecipe'],
+                  })}
+              />
             </div>
           {:else}
             <div class="ed-panel-body">

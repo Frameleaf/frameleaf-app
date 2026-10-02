@@ -65,7 +65,23 @@ describe('UserPresets', () => {
     const button = await screen.findByRole('button', { name: 'Golden hour' });
     expect(button).toHaveAttribute('aria-pressed', 'false');
     await fireEvent.click(button);
-    expect(onApply).toHaveBeenCalledWith(warm);
+    expect(onApply).toHaveBeenCalledWith(warm, {});
+  });
+
+  it('applies the settings this editor has no control for, such as Brilliance (FL-304)', async () => {
+    const native = { ...stored, settings: { ...toPresetDto(warm), brilliance: 40 } };
+    vi.mocked(getDevelopPresets).mockResolvedValue([native]);
+    const onApply = vi.fn();
+    const { rerender } = render(UserPresets, { current: warm, onApply });
+
+    // the sliders match, the photo's Brilliance does not: the preset is not the one applied
+    const button = await screen.findByRole('button', { name: 'Golden hour' });
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    await fireEvent.click(button);
+    expect(onApply).toHaveBeenCalledWith(warm, { brilliance: 40 });
+
+    await rerender({ current: warm, carried: { version: 1, brilliance: 40 }, onApply });
+    expect(button).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('replaces a preset with the current settings', async () => {

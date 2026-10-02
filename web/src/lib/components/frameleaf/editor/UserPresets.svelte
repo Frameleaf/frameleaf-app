@@ -4,7 +4,13 @@
    * sliders, look, strength and masks, never the crop — under a name, and applies them to any
    * photo in one click. Presets belong to the signed-in account.
    */
-  import { presetMatches, presetSettingsFrom, toPresetDto, type PresetSettings } from '$lib/frameleaf/photo-tools';
+  import {
+    presetExtras,
+    presetMatches,
+    presetSettingsFrom,
+    toPresetDto,
+    type PresetSettings,
+  } from '$lib/frameleaf/photo-tools';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import {
     createDevelopPreset,
@@ -20,10 +26,13 @@
 
   let {
     current,
+    carried = {},
     onApply,
   }: {
     current: PresetSettings;
-    onApply: (settings: PresetSettings) => void;
+    /** The recipe as the server holds it: where settings this editor has no control for live. */
+    carried?: Record<string, unknown>;
+    onApply: (settings: PresetSettings, extras: Record<string, unknown>) => void;
   } = $props();
 
   let presets = $state<DevelopPresetResponseDto[]>([]);
@@ -68,8 +77,15 @@
     }
   };
 
+  // a setting the photo does not carry is at its neutral 0
+  const applied = (preset: DevelopPresetResponseDto) =>
+    presetMatches(presetSettingsFrom(preset.settings), current) &&
+    Object.entries(presetExtras(preset.settings)).every(
+      ([key, value]) => JSON.stringify(carried[key] ?? 0) === JSON.stringify(value),
+    );
+
   const apply = (preset: DevelopPresetResponseDto) => {
-    onApply(presetSettingsFrom(preset.settings));
+    onApply(presetSettingsFrom(preset.settings), presetExtras(preset.settings));
     toastManager.primary($t('frameleaf_editor_preset_applied', { values: { name: preset.name } }));
   };
 
@@ -118,7 +134,7 @@
         <button
           type="button"
           class="ed-chip"
-          aria-pressed={presetMatches(presetSettingsFrom(preset.settings), current)}
+          aria-pressed={applied(preset)}
           title={$t('frameleaf_editor_preset_apply', { values: { name: preset.name } })}
           onclick={() => apply(preset)}
         >

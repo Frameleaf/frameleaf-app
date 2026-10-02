@@ -99,3 +99,4 @@ A preset holds the develop sliders (Brilliance included), the look and its stren
 
 - **Create:** any setting the request leaves out takes its neutral value. A preset saved from the web, which has no Brilliance control, starts with Brilliance at 0.
 - **Update:** `settings` is a patch. Only the settings the request sends change. Every other stored setting keeps its value, including Brilliance and any setting the server or client does not know yet. `masks`, when sent, replaces every mask of the preset.
+- **Apply:** every setting of the preset goes into the photo's recipe. A client applies the settings it has no control for too (the web applies Brilliance this way) and carries them like any other field it cannot show.
