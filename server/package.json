@@ -9,7 +9,8 @@
   "files": [
     "bin",
     "dist",
-    "helmet.json"
+    "helmet.json",
+    "resources"
   ],
   "scripts": {
     "build": "nest build",
