@@ -1,7 +1,7 @@
 name: Frameleaf design template
 'on':
   pull_request:
-    branches: [fork/main]
+    branches: [fork/main, master/frameleaf-implementation]
     paths:
       - design/frameleaf/**
       - .github/workflows/frameleaf-design.yml
@@ -41,3 +41,9 @@ jobs:
         run: pnpm test
       - name: Build portable template
         run: pnpm build
+      - name: Save the portable preview
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-design-preview
+          path: design/frameleaf/template/dist/
+          retention-days: 7
