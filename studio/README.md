@@ -371,7 +371,12 @@ with no arguments, verifies them. It fails when a checked-in file is stale, when
 catalogue, or when a row of `freecut-feature-manifest.json` is neither mapped to a command
 nor listed in `nonCommandRows` with a reason. 182 rows are reachable through a command and
 28 are declared non-command rows (module inventories, playback and storage behaviour,
-read-only surfaces, host lifecycle).
+read-only surfaces, host lifecycle). A non-command row still names what proves it: 16 list
+the `commands` whose graph edits are the row's behaviour (`module.effects` is `effect.add`,
+`effect.remove`, `effect.reorder` and `effect.update`), which is where
+`scripts/frameleaf-studio-evidence.mjs` takes a row's command-axis evidence from, and the
+other 12 say in `withoutCommand` what covers them instead. The check fails on a row with
+neither, a row with both, or a link to a command the catalogue does not have.
 
 ```sh
 node scripts/frameleaf-studio-commands.mjs            # verify, the CI default
