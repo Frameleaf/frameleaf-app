@@ -1437,7 +1437,9 @@ describe(StudioExportRepository.name, () => {
 
       const removable = await context.sut.listRemovableOutputs();
       expect(removable.map((version) => version.id)).toEqual([failed.version.id]);
-      expect(await context.sut.markOutputRemoved(published.version.id)).toBe(false);
+      const unlink = vi.fn().mockResolvedValue(undefined);
+      expect(await context.sut.markOutputRemoved(published.version.id, unlink)).toBe(false);
+      expect(unlink).not.toHaveBeenCalled();
     });
   });
 

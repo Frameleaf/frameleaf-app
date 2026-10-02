@@ -20,6 +20,7 @@ import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repos
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { MediaOperation, MediaOperationCreate } from 'src/repositories/media-operation.repository.js';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   StudioExportRemoteReferenceTable,
@@ -971,23 +972,16 @@ export class StudioExportRepository {
       .execute() as Promise<StudioExportVersion[]>;
   }
 
-  /** Record that retention removed a file. Guarded so a file that became referenced is never marked. */
-  async markOutputRemoved(id: string): Promise<boolean> {
-    const result = await this.write((db) =>
-      db
-        .updateTable('studio_export_version')
-        .set({ outputRemovedAt: sql<Date>`now()`, updatedAt: sql<Date>`now()` })
-        .where('id', '=', id)
-        .where('outputRemovedAt', 'is', null)
-        .where((eb) =>
-          eb.or([
-            eb('state', 'in', [StudioExportVersionState.Failed, StudioExportVersionState.Cancelled]),
-            eb.and([eb('scope', '=', StudioExportScope.Project), eb('projectId', 'is', null)]),
-          ]),
-        )
-        .executeTakeFirst(),
-    );
-    return Number(result.numUpdatedRows) === 1;
+  /** The output row is durable cleanup intent until its exact, unreferenced file is removed. */
+  async markOutputRemoved(id: string, unlink: (version: StudioExportVersion) => Promise<void>): Promise<boolean> {
+    // Preserve the public writer's handoff refusal even when there is no removable output.
+    await this.write(async () => {});
+    const version = await this.db.selectFrom('studio_export_version').selectAll().where('id', '=', id).executeTakeFirst();
+    if (!version?.outputPath) return false;
+    const result = await new PhysicalFileRepository(this.db).deleteUnreferencedPath(version.outputPath,
+      () => unlink(version), { retiredStudioExport: { id: version.id, ownerId: version.ownerId,
+        checksum: version.outputChecksum, sizeBytes: version.outputSizeInBytes } });
+    return result.deleted;
   }
 
   /** Whether the database is being handed over or taken back, or has been handed over. */
