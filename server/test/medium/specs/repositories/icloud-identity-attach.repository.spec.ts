@@ -103,14 +103,8 @@ describe('owner and byte-validated iCloud identity attachment', () => {
   it('uses the current digest after a concurrent original replacement', async () => {
     const { sut, auth, input, asset } = await setup();
     // Hold a concurrent original change until it commits; attachment must not trust the old digest.
-    let release!: () => void;
-    const released = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let locked!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
+    const { promise: released, resolve: release } = Promise.withResolvers<void>();
+    const { promise: ready, resolve: locked } = Promise.withResolvers<void>();
     const replacement = db.transaction().execute(async (tx) => {
       await tx
         .updateTable('asset')

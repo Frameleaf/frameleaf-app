@@ -56,7 +56,9 @@ describe('iCloud identity attachment', () => {
 
   it('refuses an unregistered or foreign device before recording any identity', async () => {
     const { sut, repository } = setup(false);
-    await expect(sut.attach(auth, { deviceKey: randomUUID(), items: [item()] })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(sut.attach(auth, { deviceKey: randomUUID(), items: [item()] })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(repository.attachDevice).not.toHaveBeenCalled();
   });
 
@@ -68,8 +70,8 @@ describe('iCloud identity attachment', () => {
     }
     expect(ICloudAttachSchema.safeParse({ ...input, items: [] }).success).toBe(false);
     expect(ICloudAttachSchema.safeParse({ ...input, items: Array.from({ length: 501 }, item) }).success).toBe(false);
-    expect(ICloudAttachSchema.parse({ ...input, items: [{ ...item(), sha256: 'AB'.repeat(32) }] }).items[0].sha256).toBe(
-      'ab'.repeat(32),
-    );
+    expect(
+      ICloudAttachSchema.parse({ ...input, items: [{ ...item(), sha256: 'AB'.repeat(32) }] }).items[0].sha256,
+    ).toBe('ab'.repeat(32));
   });
 });
