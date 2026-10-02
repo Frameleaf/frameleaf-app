@@ -313,7 +313,8 @@ export class MetadataService extends BaseService {
       // comments
       description: String(exifTags.ImageDescription || exifTags.Description || '').trim(),
       profileDescription: exifTags.ProfileDescription || null,
-      rating: Number.isInteger(exifTags.Rating) && exifTags.Rating !== 0 ? validateRange(exifTags.Rating, -1, 5) : null,
+      rating:
+        Number.isSafeInteger(exifTags.Rating) && exifTags.Rating !== 0 ? validateRange(exifTags.Rating, -1, 5) : null,
 
       // grouping
       livePhotoCID: (exifTags.ContentIdentifier || exifTags.MediaGroupUUID) ?? null,

@@ -277,15 +277,18 @@ describe(MetadataService.name, () => {
       );
     });
 
-    it.each(['', '   ', '----', 'Unknown (0)'])('uses LensModel after an unusable earlier lens: %s', async (LensID) => {
-      const asset = AssetFactory.create();
-      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
-      mockReadTags({ LensID, LensModel: ' Recorded lens ' });
-      await sut.handleMetadataExtraction({ id: asset.id });
-      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
-        expect.objectContaining({ exif: expect.objectContaining({ lensModel: 'Recorded lens' }) }),
-      );
-    });
+    it.each(['', ' '.repeat(3), '----', 'Unknown (0)'])(
+      'uses LensModel after an unusable earlier lens: %s',
+      async (LensID) => {
+        const asset = AssetFactory.create();
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mockReadTags({ LensID, LensModel: ' Recorded lens ' });
+        await sut.handleMetadataExtraction({ id: asset.id });
+        expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+          expect.objectContaining({ exif: expect.objectContaining({ lensModel: 'Recorded lens' }) }),
+        );
+      },
+    );
 
     it.each([
       [-1, -1],
