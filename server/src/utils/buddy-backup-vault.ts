@@ -1,6 +1,7 @@
+/* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
 import { createHash, createPublicKey, randomUUID, verify } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, link, mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { BUDDY_BLOCK_BYTES, BUDDY_ID, BUDDY_SEALED_OVERHEAD, BUDDY_UUID } from './buddy-backup-crypto.ts';
 
@@ -305,7 +306,7 @@ export class BuddyVault {
 
   private validate(envelope: BuddySignedSnapshot, publicKey: BuddyPublicKey) {
     const { snapshot, signature } = envelope;
-    const keys = [
+    const keys = new Set([
       'version',
       'vaultId',
       'id',
@@ -316,10 +317,10 @@ export class BuddyVault {
       'keyVersion',
       'manifest',
       'objects',
-    ];
+    ]);
     if (
       !snapshot ||
-      Object.keys(snapshot).some((key) => !keys.includes(key)) ||
+      Object.keys(snapshot).some((key) => !keys.has(key)) ||
       snapshot.version !== 1 ||
       Object.keys(envelope).some((key) => !['snapshot', 'signature'].includes(key)) ||
       !BUDDY_UUID.test(snapshot.id) ||
@@ -332,7 +333,7 @@ export class BuddyVault {
       !Array.isArray(snapshot.objects) ||
       snapshot.objects.length > 1_000_000 ||
       !Array.isArray(snapshot.manifest) ||
-      snapshot.manifest.length < 1 ||
+      snapshot.manifest.length === 0 ||
       snapshot.manifest.length > 128 ||
       !Number.isFinite(Date.parse(snapshot.createdAt)) ||
       !Number.isFinite(Date.parse(snapshot.retainUntil)) ||
@@ -419,7 +420,7 @@ export class BuddyVault {
       const month = snapshot.createdAt.slice(0, 7);
       const monthly = !months.has(month) && months.size < 12;
       if (monthly) months.add(month);
-      if (index === 0 || monthly || deadline > now || created > now - 30 * 86400_000) {
+      if (index === 0 || monthly || deadline > now || created > now - 30 * 86_400_000) {
         for (const receipt of snapshot.objects) references.add(receipt.id);
       } else removed.push(snapshot.id);
     }
@@ -428,7 +429,7 @@ export class BuddyVault {
       await rm(join(this.directory, 'snapshots', id));
       await rm(join(this.directory, 'summaries', id), { force: true });
     }
-    if (removed.length) {
+    if (removed.length > 0) {
       await flushBuddyDirectory(join(this.directory, 'snapshots'));
       await flushBuddyDirectory(join(this.directory, 'summaries'));
     }
@@ -436,7 +437,7 @@ export class BuddyVault {
       if (!/^[a-f\d]{2}$/.test(shard)) continue;
       for (const id of await names(join(this.directory, 'objects', shard))) {
         if (!BUDDY_ID.test(id) || references.has(id)) continue;
-        if ((await lstat(this.path(id))).mtimeMs > now - 30 * 86400_000) continue;
+        if ((await lstat(this.path(id))).mtimeMs > now - 30 * 86_400_000) continue;
         await rm(this.path(id));
         await rm(join(this.directory, 'receipts', id), { force: true });
       }
@@ -445,7 +446,7 @@ export class BuddyVault {
     for (const id of await names(join(this.directory, 'reservations'))) {
       if (!BUDDY_ID.test(id)) continue;
       const path = join(this.directory, 'reservations', id);
-      if ((await lstat(path)).mtimeMs < now - 7 * 86400_000) await rm(path);
+      if ((await lstat(path)).mtimeMs < now - 7 * 86_400_000) await rm(path);
     }
     for (const directory of ['receipts', 'reservations']) {
       const path = join(this.directory, directory);
@@ -464,7 +465,7 @@ export class BuddyVault {
     this.validate(envelope, publicKey);
     const { snapshot } = envelope;
     const existing = await this.snapshots();
-    const duplicate = existing.find((entry) => entry.id === snapshot.id);
+    const duplicate = existing.some((entry) => entry.id === snapshot.id);
     if (duplicate) {
       if (JSON.stringify(await this.snapshot(snapshot.id)) !== JSON.stringify(envelope))
         throw new Error('Buddy snapshots are immutable');
@@ -473,7 +474,7 @@ export class BuddyVault {
     if (
       !Number.isFinite(now) ||
       Math.abs(Date.parse(snapshot.createdAt) - now) > 300_000 ||
-      Date.parse(snapshot.retainUntil) < now + 30 * 86400_000 ||
+      Date.parse(snapshot.retainUntil) < now + 30 * 86_400_000 ||
       existing.length >= 4096
     )
       throw new Error('Buddy snapshot time, retention or catalog limit rejected');

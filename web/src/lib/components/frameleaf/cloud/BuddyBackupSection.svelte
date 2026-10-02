@@ -107,7 +107,9 @@
           .filter(Boolean),
       },
     });
-    if (!status?.settings) timezone = coverage.timezone;
+    if (!status?.settings) {
+      timezone = coverage.timezone;
+    }
     return coverage;
   };
   const beginSetup = () =>
@@ -123,8 +125,9 @@
       if (
         checked.mounts.some((mount) => !mount.available) ||
         checked.configurationFiles.some((file) => !file.available)
-      )
+      ) {
         throw new Error($t('frameleaf_buddy_coverage_unavailable'));
+      }
       const buddySettingsDto: BuddySettingsDto = {
         directory,
         quotaBytes: Math.floor(quotaGiB * 1024 ** 3),
@@ -148,7 +151,9 @@
     });
   const pair = (accept: boolean) =>
     action(async () => {
-      if (!status?.settings) return;
+      if (!status?.settings) {
+        return;
+      }
       const common = {
         version: 1 as const,
         instanceId: status.instanceId,
@@ -181,7 +186,9 @@
   };
   const wrapKit = () =>
     action(async () => {
-      if (passphrase !== repeatPassphrase) throw new Error($t('frameleaf_buddy_the_passphrases_do_not_match'));
+      if (passphrase !== repeatPassphrase) {
+        throw new Error($t('frameleaf_buddy_the_passphrases_do_not_match'));
+      }
       try {
         const encrypted = await wrapBuddyRecoveryKit({ buddyEscrowWrapDto: { passphrase } });
         savePackage(encrypted, `frameleaf-buddy-escrow-${encrypted.vaultId}.json`);
@@ -195,9 +202,12 @@
     });
   const unlockKit = (file: File | undefined) =>
     action(async () => {
-      if (!file) return;
-      if (file.size > 40 * 1024)
+      if (!file) {
+        return;
+      }
+      if (file.size > 40 * 1024) {
         throw new Error($t('frameleaf_buddy_choose_an_encrypted_recovery_package_under_40_kib'));
+      }
       try {
         const escrow = JSON.parse(await file.text()) as BuddyEscrowDto;
         status = await unlockBuddyRecoveryKit({ buddyEscrowImportDto: { escrow, passphrase } });
@@ -208,15 +218,20 @@
       }
     });
   const saveKit = () => {
-    if (!kit) return;
+    if (!kit) {
+      return;
+    }
     savePackage(kit, `frameleaf-buddy-recovery-${kit.vaultId}.json`);
     kitSaved = true;
   };
   const readKit = async (file: File | undefined, recovering = false) =>
     action(async () => {
-      if (!file) return;
-      if (file.size > 64 * 1024)
+      if (!file) {
+        return;
+      }
+      if (file.size > 64 * 1024) {
         throw new Error($t('frameleaf_buddy_choose_a_frameleaf_buddy_recovery_kit_under_64_kib'));
+      }
       const buddyKitDto = JSON.parse(await file.text()) as BuddyKitDto;
       status = recovering
         ? await importBuddyRecoveryKit({ buddyKitDto })
@@ -240,10 +255,11 @@
         kit = await rotateBuddyRecoveryKit();
         setup = true;
         step = 3;
-      } else if (confirmAction === 'restart')
+      } else if (confirmAction === 'restart') {
         status = await controlBuddyBackup({ buddyControlDto: { action: 'restart' } });
-      else if (confirmAction)
+      } else if (confirmAction) {
         status = await changeBuddyRelationship({ buddyRelationshipDto: { action: confirmAction } });
+      }
       confirmAction = null;
       await load();
     });
@@ -251,7 +267,9 @@
     const stopCloud = cloudManager.listen();
     void action(load);
     const timer = setInterval(() => {
-      if (!document.hidden && !busy) void load().catch(() => {});
+      if (!document.hidden && !busy) {
+        void load().catch(() => {});
+      }
     }, 15_000);
     return () => {
       clearInterval(timer);
@@ -522,7 +540,7 @@
         {$t('frameleaf_buddy_unknown_sizes', { values: { count: coverage.unknownSizes } })}
       </p>{/if}
     <ul class="coverage">
-      {#each [...coverage.mounts, ...coverage.configurationFiles] as entry}
+      {#each [...coverage.mounts, ...coverage.configurationFiles] as entry, index (`${index}:${entry.path}`)}
         <li>
           <span class="identifier">{entry.path}</span> — {entry.available
             ? $t('frameleaf_buddy_accessible')
@@ -669,7 +687,9 @@
         onclick={() =>
           action(async () => {
             status = await refreshBuddyBackup();
-            if (status.pairing) step = 2;
+            if (status.pairing) {
+              step = 2;
+            }
           })}>{$t('frameleaf_buddy_check_for_acceptance')}</Button
       >
     {:else if step === 2}
@@ -699,8 +719,9 @@
         disabled={busy || !status?.pairing}
         onclick={() =>
           action(async () => {
-            if (status?.pairing?.state !== 'active')
+            if (status?.pairing?.state !== 'active') {
               status = await changeBuddyRelationship({ buddyRelationshipDto: { action: 'confirm' } });
+            }
             step = 3;
           })}>{$t('frameleaf_buddy_confirm_agreement')}</Button
       >

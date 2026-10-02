@@ -3,9 +3,9 @@ import { mkdirSync } from 'node:fs';
 import { lstat, mkdtemp, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.service.js';
-import { AssetFileType, JobName, MediaOperationStatus } from 'src/enum.js';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { AssetFileType, JobName, MediaOperationStatus } from 'src/enum.js';
+import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.service.js';
 import { CloudBackupRestorer } from 'src/services/cloud-backup-restore.js';
 import { checkOwnerRestoreItems, ownerRestoreHash } from 'src/utils/cloud-backup-owner-restore.js';
 
@@ -46,13 +46,13 @@ it.each([
   const query: any = {
     select: () => query,
     where: () => query,
-    executeTakeFirst: async () => ({ path: files[1].path }),
+    executeTakeFirst: () => Promise.resolve({ path: files[1].path }),
   };
   const complete = vi.fn().mockResolvedValue(true);
   const fail = vi.fn();
   const guard = vi.fn(async (_operation, _token, _job, _manifest, _snapshot, _file, action, inspect) => {
     if (!inspect) throw new Error('Owner restore destination unavailable');
-    return action();
+    return await action();
   });
   const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
     repository: { root: () => directory, db: { selectFrom: () => query } },
@@ -67,32 +67,35 @@ it.each([
     binding: async () => {},
     guarded: guard,
     index: {
-      getOwnerRestoreAuth: async () => ({ auth: { user: { isAdmin: true } } }),
-      getOwnerRestoreIdentities: async () => ({ [assetId]: { originalPath: files[0].path, isExternal: false } }),
+      getOwnerRestoreAuth: () => Promise.resolve({ auth: { user: { isAdmin: true } } }),
+      getOwnerRestoreIdentities: () =>
+        Promise.resolve({ [assetId]: { originalPath: files[0].path, isExternal: false } }),
     },
     operations: {
-      getOfKind: async () => operation,
-      reportProgress: async () => true,
-      setBulkResult: async () => true,
-      beginValidation: async () => true,
+      getOfKind: () => Promise.resolve(operation),
+      reportProgress: () => Promise.resolve(true),
+      setBulkResult: () => Promise.resolve({ cancelRequestedAt: null, pauseRequestedAt: null }),
+      beginValidation: () => Promise.resolve(true),
       complete,
       fail,
     },
-    open: async () => ({
-      manifest,
-      reader: {
-        download: async (_manifest: unknown, sha256: string, path: string) => {
-          const bytes = sha256 === files[0].sha256 ? 'original bytes' : 'backed up edit';
-          await writeFile(path, bytes);
-          return { sha256, size: Buffer.byteLength(bytes) };
+    open: () =>
+      Promise.resolve({
+        manifest,
+        reader: {
+          download: async (_manifest: unknown, sha256: string, path: string) => {
+            const bytes = sha256 === files[0].sha256 ? 'original bytes' : 'backed up edit';
+            await writeFile(path, bytes);
+            return { sha256, size: Buffer.byteLength(bytes) };
+          },
         },
-      },
-    }),
+      }),
   });
   const restore = CloudBackupRestorer.prototype.restore;
   // Isolate the actual Buddy file publisher from the separately tested database metadata finalizer.
   const restorer = vi.spyOn(CloudBackupRestorer.prototype, 'restore').mockImplementation(function (options) {
-    return restore.call(this, { ...options, library: async (result) => result });
+    // eslint-disable-next-line unicorn/no-this-outside-of-class -- Preserve the real restorer instance in this wrapper.
+    return restore.call(this, { ...options, library: (result) => Promise.resolve(result) });
   });
   const media = vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue(directory);
   try {
@@ -120,7 +123,7 @@ it('replays deferred metadata jobs after a crash before or after restore complet
   const restart = () =>
     Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
       repository: { root: () => directory },
-      operations: { getOfKind: async () => operation },
+      operations: { getOfKind: () => Promise.resolve(operation) },
       jobs: { queueAll },
     });
   try {
@@ -196,7 +199,7 @@ it('authorizes a hidden Live Photo component only through its selected, still-au
   };
   const buddy: any = { library: manifest, assetLinks: { still: { livePhotoVideoId: 'motion' } } };
   const service = Object.assign(Object.create(BuddyBackupRestoreService.prototype), {
-    visible: async () => ['still'],
+    visible: () => Promise.resolve(['still']),
   });
   expect(await service.selection(auth, { scope: 'asset', assetIds: ['still'] }, buddy, false)).toEqual([
     'still',
@@ -219,9 +222,9 @@ it('authorizes a hidden Live Photo component only through its selected, still-au
   );
   const states = new Map(['still', 'motion'].map((id) => [id, { ownerId: 'owner', allowed: true, status: 'active' }]));
   const index: any = {
-    getOwnerHistoryState: async () => states,
-    getAssetDetails: async () => new Map(),
-    getOwnerRestoreIdentities: async () => identities,
+    getOwnerHistoryState: () => Promise.resolve(states),
+    getAssetDetails: () => Promise.resolve(new Map()),
+    getOwnerRestoreIdentities: () => Promise.resolve(identities),
   };
   const snapshot: any = {
     assetIds: ['still', 'motion'],

@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
 import { copyFile, lstat, mkdir, open, readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -29,17 +30,18 @@ export const buddyBackupCommand = async (args: string[]) => {
     throw new Error('Invalid vault or snapshot identifier');
   const vault = new BuddyVault(dirname(vaultPath), vaultId);
   const snapshots = await vault.snapshots();
-  if (!snapshots.length) throw new Error('No complete snapshots in this vault');
-  if (values.snapshot && !snapshots.some((snapshot) => snapshot.id === values.snapshot))
+  if (snapshots.length === 0) throw new Error('No complete snapshots in this vault');
+  if (values.snapshot && snapshots.every((snapshot) => snapshot.id !== values.snapshot))
     throw new Error('Snapshot is not in this vault');
   const output = resolve(values.output);
   await mkdir(output, { recursive: true, mode: 0o700 });
-  if (!(await lstat(output)).isDirectory() || (await readdir(output)).length)
+  if (!(await lstat(output)).isDirectory() || (await readdir(output)).length > 0)
     throw new Error('Recovery output must be an empty regular directory');
   if (positionals[0] === 'export') {
     const copied = new Set<string>();
     // Immutable snapshots and objects make this consistent without copying the host's mutable catalog.
-    for (const snapshot of snapshots.filter((entry) => !values.snapshot || entry.id === values.snapshot)) {
+    for (const snapshot of snapshots) {
+      if (values.snapshot && snapshot.id !== values.snapshot) continue;
       const envelope = await vault.snapshot(snapshot.id);
       const destination = join(output, vaultId);
       for (const receipt of envelope.snapshot.objects) {
@@ -71,7 +73,9 @@ export const buddyBackupCommand = async (args: string[]) => {
   let kit: unknown;
   try {
     if ((await kitFile.stat()).size > 64 * 1024) throw new Error('Recovery kit exceeds its limit');
-    kit = JSON.parse(await kitFile.readFile('utf8'));
+    // eslint-disable-next-line unicorn/consistent-json-file-read -- FileHandle.readFile takes encoding as its first argument.
+    const content = await kitFile.readFile('utf8');
+    kit = JSON.parse(content);
   } finally {
     await kitFile.close();
   }
