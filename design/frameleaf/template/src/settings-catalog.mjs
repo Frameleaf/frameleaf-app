@@ -72,6 +72,13 @@ export const settingsAreas = [
     description: "How your library grows and gets used over time.",
   },
   {
+    id: "backups",
+    title: "Backup command center",
+    icon: "mdiBackupRestore",
+    group: "Command center",
+    description: "Cloud and Buddy backups, recovery, and the encrypted space you host.",
+  },
+  {
     id: "storage",
     title: "Storage & originals",
     icon: "mdiHarddisk",

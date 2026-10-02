@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import Chart from "chart.js/auto";
 import { Icon } from "./Icon";
+import { BackupSummary } from "./BackupCenter";
 import {
   ANALYTICS_SNAPSHOT,
   GiB,
@@ -531,6 +532,7 @@ export function SettingsAnalytics({
         {exportStatus}
       </p>
       <LibraryHero report={report} insights={insights} />
+      <BackupSummary onNavigate={onNavigate} analytics />
       <div className="analytics-card analytics-growth-card">
         <LibraryGrowthChart range={range} scope={scope} metric={metric} />
       </div>
