@@ -48,6 +48,8 @@ import { FrameleafServerSetupService } from 'src/services/frameleaf-server-setup
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
+import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
+import { ICloudIdentityAdoptionService } from 'src/services/icloud-identity-adoption.service.js';
 import { ICloudIdentityService } from 'src/services/icloud-identity.service.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
@@ -138,6 +140,8 @@ import { WorkflowService } from 'src/services/workflow.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
 
 export const services = [
+  ICloudAuditService,
+  ICloudIdentityAdoptionService,
   PhotographyWorkspaceService,
   PhotographyWorkflowService,
   AssetUploadResourceService,

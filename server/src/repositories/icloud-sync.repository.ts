@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
@@ -29,6 +29,8 @@ export type ICloudConnection = {
 };
 export type ICloudResource = {
   id: string;
+  auditRequestId?: string | null;
+  nextAttemptAt?: Date | null;
   connectionId: string;
   ownerId: string;
   libraryKey: string;
@@ -190,11 +192,29 @@ export class ICloudSyncRepository {
       if (changed.length === 0) {
         return;
       }
+      if (update.encryptedSession !== undefined) {
+        // This explicit setter replaces credentials. Normal provider refresh uses withSession;
+        // randomized ciphertext there must not retire otherwise-current owner consent.
+        const {
+          rows: [installed],
+        } = await sql<{ table: string | null; upgraded: boolean }>`SELECT
+          to_regclass('immich_fork.icloud_weekly_grant')::text AS table,
+          EXISTS (SELECT 1 FROM pg_attribute
+            WHERE attrelid=to_regclass('immich_fork.icloud_identity_audit') AND attname='purpose'
+              AND NOT attisdropped) AS upgraded`.execute(db);
+        if (!installed.table && installed.upgraded) {
+          throw new ConflictException('Weekly authority schema is unavailable');
+        }
+        if (installed.table) {
+          await sql`UPDATE immich_fork.icloud_weekly_grant SET enabled=false,"includeProtected"=false,
+            "pinBinding"=NULL,generation=generation+1,"revokedAt"=clock_timestamp()
+            WHERE "connectionId"=${id}::uuid AND "ownerId"=${ownerId}::uuid AND enabled`.execute(db);
+        }
+      }
       if (update.config) {
         await sql`UPDATE immich_fork.icloud_resource SET source=source || '{"current":false}'::jsonb,
-          "leaseToken"=NULL,"leaseExpiresAt"=NULL WHERE "connectionId"=${id}::uuid AND "ownerId"=${ownerId}::uuid AND status<>'committed'`.execute(
-          db,
-        );
+          "leaseToken"=NULL,"leaseExpiresAt"=NULL WHERE "connectionId"=${id}::uuid AND "ownerId"=${ownerId}::uuid AND status<>'committed'
+          AND ("auditRequestId" IS NULL OR status<>'finalized')`.execute(db);
         await sql`DELETE FROM immich_fork.icloud_checkpoint WHERE "connectionId"=${id}::uuid`.execute(db);
       }
     });
@@ -262,7 +282,7 @@ export class ICloudSyncRepository {
           db,
         );
         await sql`UPDATE immich_fork.icloud_resource SET status='pending',"expectedTarget"=NULL,"promotedPath"=NULL
-          WHERE "connectionId"=${connection.id}::uuid AND status='finalized'`.execute(db);
+          WHERE "connectionId"=${connection.id}::uuid AND status='finalized' AND "auditRequestId" IS NULL`.execute(db);
       }
     });
   }
@@ -272,16 +292,16 @@ export class ICloudSyncRepository {
       status: string;
       count: number;
     }>`SELECT status, count(*)::int AS count FROM immich_fork.icloud_resource
-      WHERE "connectionId" = ${connectionId}::uuid GROUP BY status`.execute(this.db);
+      WHERE "connectionId" = ${connectionId}::uuid AND "auditRequestId" IS NULL GROUP BY status`.execute(this.db);
     const assets = await sql<{
       count: number;
     }>`SELECT count(DISTINCT ("libraryKey", "sourceAssetId"))::int AS count FROM immich_fork.icloud_resource
-      WHERE "connectionId" = ${connectionId}::uuid`.execute(this.db);
+      WHERE "connectionId" = ${connectionId}::uuid AND "auditRequestId" IS NULL`.execute(this.db);
     const { rows: outcomes } = await sql<{
       outcome: string;
       count: number;
     }>`SELECT verification->>'outcome' AS outcome,count(*)::int AS count
-      FROM immich_fork.icloud_resource WHERE "connectionId"=${connectionId}::uuid AND verification->>'outcome' IS NOT NULL
+      FROM immich_fork.icloud_resource WHERE "connectionId"=${connectionId}::uuid AND "auditRequestId" IS NULL AND verification->>'outcome' IS NOT NULL
       GROUP BY verification->>'outcome'`.execute(this.db);
     const { rows: discovered } = await sql<{
       count: number;
@@ -298,7 +318,7 @@ export class ICloudSyncRepository {
     const { rows: provenance } = await sql<{ metadata: number; review: number }>`SELECT
       count(DISTINCT "assetId") FILTER (WHERE source#>>'{_sync,metadata,status}'='applied')::int AS metadata,
       count(DISTINCT "assetId") FILTER (WHERE source#>>'{_sync,metadata,status}'='needs-review' OR source#>>'{_sync,relations,status}'='needs-review')::int AS review
-      FROM immich_fork.icloud_resource WHERE "connectionId"=${connectionId}::uuid AND coalesce((source->>'current')::boolean,true)`.execute(
+      FROM immich_fork.icloud_resource WHERE "connectionId"=${connectionId}::uuid AND "auditRequestId" IS NULL AND coalesce((source->>'current')::boolean,true)`.execute(
       this.db,
     );
     const { rows: albumCounts } = await sql<{
@@ -310,7 +330,7 @@ export class ICloudSyncRepository {
       count: number;
     }>`SELECT count(DISTINCT r."assetId")::int AS count FROM immich_fork.icloud_resource r JOIN asset a ON a.id=r."assetId"
       AND a."ownerId"=r."ownerId" AND a."deletedAt" IS NULL
-      WHERE r."connectionId"=${connectionId}::uuid AND coalesce((r.source->>'sourceDisappeared')::boolean,false)`.execute(
+      WHERE r."connectionId"=${connectionId}::uuid AND r."auditRequestId" IS NULL AND coalesce((r.source->>'sourceDisappeared')::boolean,false)`.execute(
       this.db,
     );
     const { rows: unsupported } = await sql<{
@@ -381,7 +401,7 @@ export class ICloudSyncRepository {
         );
         if (record.deleted) {
           await sql`UPDATE immich_fork.icloud_resource SET source=source || '{"current":false,"sourceDisappeared":true}'::jsonb
-            WHERE "connectionId"=${connectionId}::uuid AND "libraryKey"=${libraryKey} AND "sourceAssetId"=${record.recordName}`.execute(
+            WHERE "connectionId"=${connectionId}::uuid AND "libraryKey"=${libraryKey} AND "sourceAssetId"=${record.recordName} AND "auditRequestId" IS NULL`.execute(
             db,
           );
         }
@@ -392,7 +412,7 @@ export class ICloudSyncRepository {
           db,
         );
         await sql`UPDATE immich_fork.icloud_resource r SET source=r.source || '{"current":false,"sourceDisappeared":true}'::jsonb
-          WHERE r."connectionId"=${connectionId}::uuid AND r."libraryKey"=${libraryKey}
+          WHERE r."connectionId"=${connectionId}::uuid AND r."libraryKey"=${libraryKey} AND r."auditRequestId" IS NULL
             AND EXISTS (SELECT 1 FROM immich_fork.icloud_record a WHERE a."connectionId"=r."connectionId" AND a."libraryKey"=r."libraryKey"
               AND a."recordId"=r."sourceAssetId" AND a.deleted)`.execute(db);
       }
@@ -409,7 +429,9 @@ export class ICloudSyncRepository {
       await sql`DELETE FROM immich_fork.icloud_checkpoint WHERE "connectionId" = ${connectionId}::uuid`.execute(db);
       await this.retryFailures(connectionId, db);
       await sql`UPDATE immich_fork.icloud_resource SET status = 'pending', "attempts" = 0, "nextAttemptAt" = NULL
-        WHERE "connectionId" = ${connectionId}::uuid AND status IN ('retry','failed','finalized','reused')`.execute(db);
+        WHERE "connectionId" = ${connectionId}::uuid AND "auditRequestId" IS NULL AND status IN ('retry','failed','finalized','reused')`.execute(
+        db,
+      );
     }, transaction);
   }
 
@@ -428,7 +450,7 @@ export class ICloudSyncRepository {
       for (let count = 0; count < 100; count++) {
         candidate =
           await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize" FROM immich_fork.icloud_resource
-          WHERE "connectionId"=${connectionId}::uuid AND status IN ('pending','retry','staging','validated','promoted','committed')
+          WHERE "connectionId"=${connectionId}::uuid AND "auditRequestId" IS NULL AND status IN ('pending','retry','staging','validated','promoted','committed')
           AND (status='committed' OR coalesce((source->>'current')::boolean,true))
           AND ("leaseExpiresAt" IS NULL OR "leaseExpiresAt"<now()) AND ("nextAttemptAt" IS NULL OR "nextAttemptAt"<=now())
           ORDER BY CASE WHEN status='committed' THEN 0 ELSE 1 END,"createdAt",id FOR UPDATE SKIP LOCKED LIMIT 1`
@@ -442,7 +464,7 @@ export class ICloudSyncRepository {
           known: boolean;
         }>`SELECT count(DISTINCT r.fingerprint)::int AS count,
           coalesce(bool_or(r.fingerprint=${candidate.fingerprint}),false) AS known
-          FROM immich_fork.icloud_resource r WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${connection.ownerId}::uuid
+          FROM immich_fork.icloud_resource r WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${connection.ownerId}::uuid AND r."auditRequestId" IS NULL
             AND r."libraryKey"=${candidate.libraryKey} AND r."sourceAssetId"=${candidate.sourceAssetId} AND r.role IN ('edited-image','edited-video')
             AND (EXISTS(SELECT 1 FROM asset a WHERE a.id=r."assetId" AND a."ownerId"=r."ownerId")
               OR (r.status NOT IN ('finalized','reused','removed')
@@ -587,7 +609,7 @@ export class ICloudSyncRepository {
       WHERE c.state = 'connected' AND c."encryptedSession" IS NOT NULL AND c."lastError" IS DISTINCT FROM 'owner_removed'
         AND (c."nextRunAt" IS NULL OR c."nextRunAt" <= now())
         AND NOT EXISTS (SELECT 1 FROM media_operation o WHERE o."ownerId" = c."ownerId"
-          AND o.kind = ${MediaOperationKind.ICloudSync} AND o.snapshot->>'connectionId' = c.id::text
+          AND o.kind = ${MediaOperationKind.ICloudSync} AND o.snapshot->>'connectionId' = c.id::text AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit'
           AND (o.status = ANY(${[...ACTIVE_MEDIA_OPERATION_STATUSES]}::text[])
             OR coalesce(o."finishedAt", o."createdAt") > now() - make_interval(hours => coalesce((c.config->>'intervalHours')::int, 24))))
       ORDER BY c."nextRunAt" NULLS FIRST, c.id LIMIT 100`
@@ -599,7 +621,7 @@ export class ICloudSyncRepository {
   async latestOperation(
     connectionId: string,
     ownerId: string,
-    options: { activeOnly?: boolean } = {},
+    options: { activeOnly?: boolean; includeAudits?: boolean } = {},
     transaction?: Kysely<DB>,
   ): Promise<MediaOperation | undefined> {
     let query = (transaction ?? this.db)
@@ -608,6 +630,9 @@ export class ICloudSyncRepository {
       .where('ownerId', '=', ownerId)
       .where('kind', '=', MediaOperationKind.ICloudSync)
       .where(sql<string>`snapshot->>'connectionId'`, '=', connectionId);
+    if (!options.includeAudits) {
+      query = query.where(sql<boolean>`snapshot->>'task' IS DISTINCT FROM 'identity-audit'`);
+    }
     if (options.activeOnly) {
       query = query.where('status', 'in', [...ACTIVE_MEDIA_OPERATION_STATUSES]);
     }
@@ -653,7 +678,7 @@ export class ICloudSyncRepository {
       switch (options.trigger) {
         case 'schedule': {
           const recent = await sql`SELECT 1 FROM media_operation WHERE "ownerId" = ${ownerId}::uuid
-          AND kind = ${MediaOperationKind.ICloudSync} AND snapshot->>'connectionId' = ${connectionId}
+          AND kind = ${MediaOperationKind.ICloudSync} AND snapshot->>'connectionId' = ${connectionId} AND snapshot->>'task' IS DISTINCT FROM 'identity-audit'
           AND coalesce("finishedAt", "createdAt") > now() - make_interval(hours => ${connection.config.intervalHours}::int)
           LIMIT 1`.execute(db);
           if (
@@ -742,7 +767,7 @@ export class ICloudSyncRepository {
       if (connection.state !== 'disconnected') {
         return 'still-connected';
       }
-      if (await this.latestOperation(id, ownerId, { activeOnly: true }, db)) {
+      if (await this.latestOperation(id, ownerId, { activeOnly: true, includeAudits: true }, db)) {
         return 'busy';
       }
       const { rows: inFlight } = await sql`SELECT 1 FROM immich_fork.icloud_resource WHERE "connectionId" = ${id}::uuid
@@ -862,7 +887,7 @@ export class ICloudSyncRepository {
         ORDER BY a."recordId"`.execute(db);
       for (const row of rows) {
         await sql`UPDATE immich_fork.icloud_resource SET source=source || '{"current":false}'::jsonb
-          WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${libraryKey} AND "sourceAssetId"=${row.recordName}`.execute(
+          WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${libraryKey} AND "sourceAssetId"=${row.recordName} AND "auditRequestId" IS NULL`.execute(
           db,
         );
         const normalized = resourcesForICloudAsset(row, row.master ?? undefined);
@@ -893,7 +918,7 @@ export class ICloudSyncRepository {
           await sql`INSERT INTO immich_fork.icloud_resource ("connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize")
             VALUES (${connection.id}::uuid,${connection.ownerId}::uuid,${libraryKey},${library}::jsonb,
               ${resource.sourceAssetId},${resource.recordId},${resource.resourceKey},${resource.role},${resource.fingerprint},${{ ...resource.source, current: true }}::jsonb,${resource.expectedSize})
-            ON CONFLICT ("connectionId","libraryKey","sourceAssetId","resourceKey",fingerprint)
+            ON CONFLICT ("connectionId","libraryKey","sourceAssetId","resourceKey",fingerprint) WHERE "auditRequestId" IS NULL
             DO UPDATE SET source = excluded.source || CASE WHEN immich_fork.icloud_resource.source ? '_sync' THEN jsonb_build_object('_sync',immich_fork.icloud_resource.source->'_sync') ELSE '{}'::jsonb END, "updatedAt" = now()`.execute(
             db,
           );
@@ -974,7 +999,7 @@ export class ICloudSyncRepository {
       fileName: string;
     }>`SELECT r."assetId",r.id AS "resourceId",r.verification->>'outcome' AS outcome,a."originalFileName" AS "fileName"
       FROM immich_fork.icloud_resource r JOIN public.asset a ON a.id=r."assetId" AND a."ownerId"=r."ownerId"
-      WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND a.visibility <> 'hidden'
+      WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND r."auditRequestId" IS NULL AND a.visibility <> 'hidden'
         AND NOT EXISTS (SELECT 1 FROM asset_lock l WHERE l."assetId"=a.id)
         AND a."deletedAt" IS NULL AND r.verification->>'outcome' IS NOT NULL AND r.status IN ('committed','finalized')
       ORDER BY r."updatedAt" DESC,r.id LIMIT 100`.execute(this.db);
@@ -996,7 +1021,7 @@ export class ICloudSyncRepository {
   async hasPending(connectionId: string): Promise<boolean> {
     return (
       (await sql`SELECT 1 FROM immich_fork.icloud_resource WHERE "connectionId"=${connectionId}::uuid
-      AND status IN ('pending','retry','staging','validated','promoted','committed')
+      AND "auditRequestId" IS NULL AND status IN ('pending','retry','staging','validated','promoted','committed')
       AND (status='committed' OR coalesce((source->>'current')::boolean,true)) LIMIT 1`
         .execute(this.db)
         .then((result) => result.rows.length)) > 0
@@ -1009,9 +1034,11 @@ export class ICloudSyncRepository {
         db,
       );
       await sql`UPDATE immich_fork.icloud_resource SET source=source #- '{_sync,relations,signature}'
-        WHERE "connectionId"=${connectionId}::uuid AND source#>>'{_sync,relations,status}'='needs-review'`.execute(db);
+        WHERE "connectionId"=${connectionId}::uuid AND "auditRequestId" IS NULL AND source#>>'{_sync,relations,status}'='needs-review'`.execute(
+        db,
+      );
       await sql`UPDATE immich_fork.icloud_resource SET status=CASE WHEN status='committed' THEN 'committed' ELSE 'pending' END,attempts=0,"nextAttemptAt"=NULL
-      WHERE "connectionId"=${connectionId}::uuid AND status IN ('failed','retry','needs-review','unsupported','committed') AND "leaseToken" IS NULL`.execute(
+      WHERE "connectionId"=${connectionId}::uuid AND "auditRequestId" IS NULL AND status IN ('failed','retry','needs-review','unsupported','committed') AND "leaseToken" IS NULL`.execute(
         db,
       );
     }, transaction);
@@ -1028,7 +1055,7 @@ export class ICloudSyncRepository {
     return this.active(async (db) => {
       const { rows } = await sql`SELECT id FROM immich_fork.icloud_resource WHERE id=${resource.id}::uuid
         AND "leaseToken"=${resource.leaseToken}::uuid AND "leaseExpiresAt">now() AND status='committed'
-        AND "pendingJobs"='[]'::jsonb FOR UPDATE`.execute(db);
+        AND "auditRequestId" IS NULL AND "pendingJobs"='[]'::jsonb FOR UPDATE`.execute(db);
       if (rows.length === 0) {
         return false;
       }

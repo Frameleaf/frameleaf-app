@@ -125,26 +125,41 @@ export class SessionRepository {
     verified: { pinCode: string | null; password: string | null },
     pinExpiresAt: Date,
   ): Promise<boolean> {
-    const result = await this.db
-      .updateTable('session')
-      .set({ pinExpiresAt })
-      .where('session.id', '=', asUuid(id))
-      .where('session.userId', '=', asUuid(userId))
-      .where((eb) =>
-        eb.exists(
-          eb
-            .selectFrom('user')
-            .select('user.id')
-            .whereRef('user.id', '=', 'session.userId')
-            .where('user.deletedAt', 'is', null)
-            .where(sql<boolean>`"user"."pinCode" is not distinct from ${verified.pinCode}`)
-            .where(sql<boolean>`"user"."password" is not distinct from ${verified.password}`)
-            .forShare(),
-        ),
-      )
-      .returning('session.id')
-      .executeTakeFirst();
-    return !!result;
+    return this.db.transaction().execute(async (db) => {
+      // Acquire the verified credential lock before the session write, matching PIN mutation.
+      const user = await db
+        .selectFrom('user')
+        .select('user.id')
+        .where('user.id', '=', asUuid(userId))
+        .where('user.deletedAt', 'is', null)
+        .where(sql<boolean>`"user"."pinCode" is not distinct from ${verified.pinCode}`)
+        .where(sql<boolean>`"user"."password" is not distinct from ${verified.password}`)
+        .forShare()
+        .executeTakeFirst();
+      if (!user) {
+        return false;
+      }
+      const result = await db
+        .updateTable('session')
+        .set({ pinExpiresAt })
+        .where('session.id', '=', asUuid(id))
+        .where('session.userId', '=', asUuid(userId))
+        .where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom('user')
+              .select('user.id')
+              .whereRef('user.id', '=', 'session.userId')
+              .where('user.deletedAt', 'is', null)
+              .where(sql<boolean>`"user"."pinCode" is not distinct from ${verified.pinCode}`)
+              .where(sql<boolean>`"user"."password" is not distinct from ${verified.password}`)
+              .forShare(),
+          ),
+        )
+        .returning('session.id')
+        .executeTakeFirst();
+      return !!result;
+    });
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

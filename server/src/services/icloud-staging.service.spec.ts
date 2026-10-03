@@ -79,6 +79,29 @@ describe(ICloudStagingService.name, () => {
     await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('downloads audit bytes through a new private resource and refuses stale authority before reusing its marker', async () => {
+    const original = await sut.download(connection, resource);
+    const audit = { ...resource, id: randomUUID(), auditRequestId: randomUUID() };
+    const allowed = vi.fn().mockResolvedValue(true);
+    const path = await sut.download(connection, audit, allowed);
+    expect(path).not.toBe(original);
+    expect(await readFile(path, 'utf8')).toBe('data');
+    expect(transport.download).toHaveBeenCalledTimes(2);
+    allowed.mockResolvedValue(false);
+    await expect(sut.download(connection, { ...audit, stagingPath: path }, allowed)).rejects.toThrow(
+      'audit_authority_changed',
+    );
+    expect(transport.download).toHaveBeenCalledTimes(2);
+    expect(await readFile(original, 'utf8')).toBe('data');
+  });
+
+  it('refuses audit certification when authority changes during the streamed download', async () => {
+    resource.auditRequestId = randomUUID();
+    const allowed = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
+    await expect(sut.download(connection, resource, allowed)).rejects.toThrow();
+    await expect(readFile(join(root, resource.id, 'complete'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('drains an in-flight heartbeat before returning bytes to the recovery commit', async () => {
     let tick!: () => void;
     const timer = vi.spyOn(globalThis, 'setInterval').mockImplementation(((callback: () => void) => {

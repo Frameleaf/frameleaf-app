@@ -46,7 +46,11 @@ export class ICloudStagingService {
     return root;
   }
 
-  async download(connection: ICloudConnection, resource: ICloudResource): Promise<string> {
+  async download(
+    connection: ICloudConnection,
+    resource: ICloudResource,
+    auditCheck?: () => Promise<boolean>,
+  ): Promise<string> {
     const root = await this.root();
     const directory = join(root, resource.id);
     await mkdir(directory, { mode: 0o700 }).catch((error) => {
@@ -54,14 +58,18 @@ export class ICloudStagingService {
         throw error;
       }
     });
-    return this.downloadInto(connection, resource, directory);
+    return this.downloadInto(connection, resource, directory, auditCheck);
   }
 
   private async downloadInto(
     connection: ICloudConnection,
     resource: ICloudResource,
     directory: string,
+    auditCheck?: () => Promise<boolean>,
   ): Promise<string> {
+    if (resource.auditRequestId && (!auditCheck || !(await auditCheck()))) {
+      throw new Error('audit_authority_changed');
+    }
     if ((await realpath(directory)) !== directory || !(await lstat(directory).then((result) => result.isDirectory()))) {
       throw new Error('staging_symlink');
     }
@@ -117,7 +125,11 @@ export class ICloudStagingService {
       checking = this.repository
         .get(connection.id)
         .then(async (current) => {
-          if (current?.state !== 'connected' || !(await this.repository.progress(resource, { status: 'staging' }))) {
+          if (
+            current?.state !== 'connected' ||
+            (auditCheck && !(await auditCheck())) ||
+            !(await this.repository.progress(resource, { status: 'staging' }))
+          ) {
             controller.abort();
           }
         })
@@ -160,7 +172,7 @@ export class ICloudStagingService {
       if (received !== resource.expectedSize) {
         throw new Error('source_size_mismatch');
       }
-      if (!(await this.repository.progress(resource, { status: 'staging' }))) {
+      if ((auditCheck && !(await auditCheck())) || !(await this.repository.progress(resource, { status: 'staging' }))) {
         throw new Error('lease_changed');
       }
       await link(temporary, target);
@@ -184,6 +196,9 @@ export class ICloudStagingService {
     const root = await this.root();
     const expected = join(root, resource.id, 'complete');
     if (resource.stagingPath !== expected) {
+      if (resource.auditRequestId) {
+        throw new Error('audit_staging_path_invalid');
+      }
       return;
     }
     if ((await realpath(join(root, resource.id))) !== join(root, resource.id)) {

@@ -254,7 +254,17 @@
       "path": "patches/0050-caption-import-export-modes.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "8c443377bfc6092dee167926117685eb3257e1489a543bd8ab362565d66b1f3d"
+    },
+    {
+      "path": "patches/0051-extracted-caption-export-modes.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "57dc16773bf2bd9a2b9f4c37521c59682cb36d56dfbf19bdcdc9d3fc76a1e68b"
+    },
+    {
+      "path": "patches/0052-microphone-finalization-authority.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "477781b250207c9083fcb9be06895b37e94989ea403647e211ad59c454f3a206"
     }
   ],
-  "sourceSha256": "506878be3a2ccf47797835046206d74345c2ed374c59173924bd2c8f0385b16e"
+  "sourceSha256": "7f8e1fee3117125038cbcd32a459d4ece5d930d5e281babf36a269bd7156ca22"
 }
