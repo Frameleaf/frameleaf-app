@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
-import { StudioPreviewCancelQueryDto, StudioPreviewDto, StudioPreviewRequestDto, StudioPreviewResponseDto, StudioPreviewScopeQueryDto } from 'src/dtos/studio-preview.dto.js';
+import {
+  StudioPreviewCancelQueryDto,
+  StudioPreviewDto,
+  StudioPreviewRequestDto,
+  StudioPreviewResponseDto,
+  StudioPreviewScopeQueryDto,
+} from 'src/dtos/studio-preview.dto.js';
 import {
   CacheControl,
   ImmichWorker,
@@ -14,10 +20,18 @@ import {
   StudioPreviewStatus,
 } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperation, MediaOperationCreate, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import {
+  MediaOperation,
+  MediaOperationCreate,
+  MediaOperationRepository,
+} from 'src/repositories/media-operation.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
-import { StudioPreviewFrame, StudioPreviewRepository, StudioPreviewRetirement } from 'src/repositories/studio-preview.repository.js';
+import {
+  StudioPreviewFrame,
+  StudioPreviewRepository,
+  StudioPreviewRetirement,
+} from 'src/repositories/studio-preview.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { StudioProjectService, StudioRevisionEvent } from 'src/services/studio-project.service.js';
 import {
@@ -30,11 +44,7 @@ import { rational } from 'src/utils/rational-time.js';
 import { StudioExportTiming, declareStudioTiming, studioMediaSources } from 'src/utils/studio-export-contract.js';
 import { isInsideFolder } from 'src/utils/studio-export.js';
 import {
-  isConsumerPreview,
   PREVIEW_CANCEL_CLEANED,
-  previewConsumerKey,
-  previewConsumerOf,
-  previewConsumerSession,
   PREVIEW_CONTENT_TYPES,
   PREVIEW_FRAMES_PER_REVISION,
   PREVIEW_RETENTION_MS,
@@ -45,9 +55,13 @@ import {
   PreviewStatusValue,
   PreviewTime,
   decidePreviewDelivery,
+  isConsumerPreview,
   isValidPreviewViewport,
   planPreviewEviction,
   previewCacheKey,
+  previewConsumerKey,
+  previewConsumerOf,
+  previewConsumerSession,
   previewETag,
   previewExpiry,
   previewTimeKey,
@@ -281,9 +295,12 @@ export class StudioPreviewService {
         await this.dropFrames([frame]);
         throw new NotFoundException('Preview frame not found');
       }
-      const grant = frame.grantToken ? await this.resources.verifyReadGrant(frame.grantToken, {
-        workerId: frame.grantSessionId ?? auth.session?.id ?? auth.user.id, auth,
-      }) : null;
+      const grant = frame.grantToken
+        ? await this.resources.verifyReadGrant(frame.grantToken, {
+            workerId: frame.grantSessionId ?? auth.session?.id ?? auth.user.id,
+            auth,
+          })
+        : null;
       if (!grant?.valid || head !== frame.projectRevision) {
         await this.dropFrames([frame]);
         throw new ConflictException('This preview is no longer authorized or current');
@@ -379,10 +396,15 @@ export class StudioPreviewService {
       if (!(await this.repository.markConsumerAccessed(frame, new Date()))) {
         throw new GoneException('This preview admission was retired');
       }
-    } else if (isConsumerPreview(frame.cacheKey) && decision.outcome === 'not-modified') {
+    } else if (!decision.deliver && isConsumerPreview(frame.cacheKey) && decision.outcome === 'not-modified') {
       const current = await this.repository.getForOwner(frame.id, frame.ownerId);
-      if (!current || current.status !== StudioPreviewStatus.Ready || current.operationId !== frame.operationId ||
-        current.cacheKey !== frame.cacheKey || current.framePath !== frame.framePath) {
+      if (
+        !current ||
+        current.status !== StudioPreviewStatus.Ready ||
+        current.operationId !== frame.operationId ||
+        current.cacheKey !== frame.cacheKey ||
+        current.framePath !== frame.framePath
+      ) {
         throw new GoneException('This preview admission was retired');
       }
     }
@@ -441,12 +463,20 @@ export class StudioPreviewService {
       if (query.expectedOperationId === undefined) {
         throw new BadRequestException('A scoped cancellation requires a captured operation ID or literal null');
       }
-      const result = await this.retireConsumerFrame(frame, query.expectedOperationId === 'null' ? null : query.expectedOperationId, false);
+      const result = await this.retireConsumerFrame(
+        frame,
+        query.expectedOperationId === 'null' ? null : query.expectedOperationId,
+        false,
+      );
       if (!result) {
         throw new ConflictException('The preview admission changed');
       }
-      return { ...this.map(result.frame), admissionReleased: true,
-        cancellationState: result.cancellationState, rendererReleased: result.rendererReleased };
+      return {
+        ...this.map(result.frame),
+        admissionReleased: true,
+        cancellationState: result.cancellationState,
+        rendererReleased: result.rendererReleased,
+      };
     }
     const [cancelled] = await this.dropFrames([frame]);
     if (cancelled) {
@@ -700,15 +730,22 @@ export class StudioPreviewService {
     expectedOperationId?: string | null,
     snapshot = true,
   ): Promise<StudioPreviewRetirement | undefined> {
-    const result = await this.repository.retireConsumer(frame,
-      (tx, id, ownerId) => this.operations.requestCancelWithin(tx, id, ownerId), expectedOperationId, snapshot);
+    const result = await this.repository.retireConsumer(
+      frame,
+      (tx, id, ownerId) => this.operations.requestCancelWithin(tx, id, ownerId),
+      expectedOperationId,
+      snapshot,
+    );
     if (!result) {
       return;
     }
     this.operations.notifyCancellation(result.changedOperation);
     if (result.cleanupAllowed && result.frame.errorCode !== PREVIEW_CANCEL_CLEANED) {
       try {
-        await this.storage.unlinkDir(studioPreviewFrameFolder(frame.ownerId, frame.id), { recursive: true, force: true });
+        await this.storage.unlinkDir(studioPreviewFrameFolder(frame.ownerId, frame.id), {
+          recursive: true,
+          force: true,
+        });
         await this.repository.markConsumerCleaned(result.frame);
       } catch {
         this.logger.warn(`Scoped preview ${frame.id} remains pending directory cleanup`);
@@ -796,8 +833,14 @@ export class StudioPreviewService {
       projectRevision: manifest.revision,
       grantToken: grant.token,
       grantSessionId: grant.sessionId,
-      cacheKey: dto.consumerRequestId ? previewConsumerKey(binding, dto.consumerRequestId,
-        previewConsumerSession(ownerId, auth.session?.id), dto.seekGeneration ?? 0) : previewCacheKey(binding),
+      cacheKey: dto.consumerRequestId
+        ? previewConsumerKey(
+            binding,
+            dto.consumerRequestId,
+            previewConsumerSession(ownerId, auth.session?.id),
+            dto.seekGeneration ?? 0,
+          )
+        : previewCacheKey(binding),
       timeNumerator: String(time.num) as never,
       timeDenominator: String(time.den) as never,
       quality: dto.quality,
@@ -817,8 +860,9 @@ export class StudioPreviewService {
       expiresAt: previewExpiry(now),
     });
 
-    const needsAllocation = created || (isConsumerPreview(frame.cacheKey) &&
-      frame.status === StudioPreviewStatus.Pending && frame.operationId === null);
+    const needsAllocation =
+      created ||
+      (isConsumerPreview(frame.cacheKey) && frame.status === StudioPreviewStatus.Pending && frame.operationId === null);
     const recorded = needsAllocation ? await this.enqueue(frame, binding, manifest, timing) : frame;
 
     await this.evict(projectId, ownerId, revisionDigest, now);
@@ -893,10 +937,13 @@ export class StudioPreviewService {
 
     if (isConsumerPreview(frame.cacheKey)) {
       try {
-        const { operation } = await this.operations.createWithin(async (tx) => {
-          await this.repository.lockPendingAdmission(tx, frame);
-          return { operation: input, value: frame };
-        }, (tx, operation, value) => this.repository.attachAdmissionOperation(tx, value, operation.id));
+        const { operation } = await this.operations.createWithin(
+          async (tx) => {
+            await this.repository.lockPendingAdmission(tx, frame);
+            return { operation: input, value: frame };
+          },
+          (tx, operation, value) => this.repository.attachAdmissionOperation(tx, value, operation.id),
+        );
         return { ...frame, operationId: operation.id, status: StudioPreviewStatus.Rendering };
       } catch (error) {
         const current = await this.repository.getForOwner(frame.id, frame.ownerId);
@@ -993,12 +1040,20 @@ export class StudioPreviewService {
     }
   }
 
-  private async findOwned(auth: AuthDto, id: string, query: StudioPreviewScopeQueryDto = {}): Promise<StudioPreviewFrame> {
+  private async findOwned(
+    auth: AuthDto,
+    id: string,
+    query: StudioPreviewScopeQueryDto = {},
+  ): Promise<StudioPreviewFrame> {
     const frame = await this.repository.getForOwner(id, auth.user.id);
     const consumer = frame ? previewConsumerOf(frame.cacheKey) : null;
-    if (!frame || (isConsumerPreview(frame.cacheKey) && (!consumer ||
-      consumer.requestId !== query.consumerRequestId?.toLowerCase() ||
-      consumer.sessionDigest !== previewConsumerSession(auth.user.id, auth.session?.id)))) {
+    if (
+      !frame ||
+      (isConsumerPreview(frame.cacheKey) &&
+        (!consumer ||
+          consumer.requestId !== query.consumerRequestId?.toLowerCase() ||
+          consumer.sessionDigest !== previewConsumerSession(auth.user.id, auth.session?.id)))
+    ) {
       // Somebody else's frame and a frame that never existed answer identically on purpose.
       throw new NotFoundException('Preview frame not found');
     }

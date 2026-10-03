@@ -1,9 +1,28 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Query, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Next,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { StudioPreviewCancelQueryDto, StudioPreviewDto, StudioPreviewRequestDto, StudioPreviewResponseDto, StudioPreviewScopeQueryDto } from 'src/dtos/studio-preview.dto.js';
+import {
+  StudioPreviewCancelQueryDto,
+  StudioPreviewDto,
+  StudioPreviewRequestDto,
+  StudioPreviewResponseDto,
+  StudioPreviewScopeQueryDto,
+} from 'src/dtos/studio-preview.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -53,7 +72,11 @@ export class StudioPreviewController {
     description: 'The state of one requested frame, including its revision-bound entity tag.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  getStudioPreview(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto, @Query() dto: StudioPreviewScopeQueryDto): Promise<StudioPreviewDto> {
+  getStudioPreview(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Query() dto: StudioPreviewScopeQueryDto,
+  ): Promise<StudioPreviewDto> {
     return this.service.get(auth, id, dto);
   }
 
@@ -101,7 +124,11 @@ export class StudioPreviewController {
       'Retires delivery of a preview. Scoped admissions require their captured consumer and operation identities; cancellation receipt facts distinguish durable request from renderer release. An active renderer directory is retained until genuine release.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  cancelStudioPreview(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto, @Query() dto: StudioPreviewCancelQueryDto): Promise<StudioPreviewDto> {
+  cancelStudioPreview(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Query() dto: StudioPreviewCancelQueryDto,
+  ): Promise<StudioPreviewDto> {
     return this.service.cancel(auth, id, dto);
   }
 }
