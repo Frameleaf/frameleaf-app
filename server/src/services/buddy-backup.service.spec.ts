@@ -555,4 +555,46 @@ describe('Buddy production run controls and checkpoints', () => {
     expect(fixture.fetch).not.toHaveBeenCalled();
     expect(await readFile(fixture.capturePath)).toEqual(fixture.captureBytes);
   });
+
+  it('settles an unavailable peer into the same durable operation and preserves its capture for recovery', async () => {
+    const { worker, operation, fetch, operations, repository, capturePath, captureBytes, release, state } = fixture;
+    fetch.mockRejectedValueOnce(new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }));
+    await worker.run(operation, 'first-claim');
+    expect(operations.requeue).toHaveBeenCalledExactlyOnceWith(operation.id, 'first-claim', {
+      delayMs: expect.any(Number),
+      returnAttempt: true,
+    });
+    const delayMs = operations.requeue.mock.calls[0][2].delayMs;
+    expect(delayMs).toBeGreaterThanOrEqual(60_000);
+    expect(delayMs).toBeLessThan(120_000);
+    expect(await repository.state()).toMatchObject({
+      lastCompleteAt: state.lastCompleteAt,
+      lastVerifiedAt: null,
+      settings: { pausedSending: false },
+      run: { id: operation.id, state: 'waiting-peer' },
+    });
+    expect(await readFile(capturePath)).toEqual(captureBytes);
+    expect(release).not.toHaveBeenCalled();
+    expect(operations.complete).not.toHaveBeenCalled();
+    expect(operations.fail).not.toHaveBeenCalled();
+
+    operation.claimToken = 'recovered-claim';
+    await worker.run(operation, 'recovered-claim');
+    expect(operations.complete).toHaveBeenCalledExactlyOnceWith(operation.id, 'recovered-claim', {
+      resultAssetId: null,
+    });
+    expect(await repository.state()).toMatchObject({ run: { id: operation.id, state: 'complete' } });
+  });
+
+  it('does not overwrite a replacement worker status when its unavailable-peer settlement loses the claim', async () => {
+    const { worker, operation, fetch, operations, repository, capturePath, captureBytes, release, state } = fixture;
+    operations.requeue.mockResolvedValue(false);
+    fetch.mockRejectedValueOnce(new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }));
+    await worker.run(operation, 'first-claim');
+    expect(operations.requeue).toHaveBeenCalledTimes(1);
+    expect(await repository.state()).toEqual(state);
+    expect(await readFile(capturePath)).toEqual(captureBytes);
+    expect(release).not.toHaveBeenCalled();
+    expect(operations.fail).not.toHaveBeenCalled();
+  });
 });
