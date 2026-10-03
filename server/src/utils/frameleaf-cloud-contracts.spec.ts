@@ -91,7 +91,12 @@ describe('published Frameleaf Cloud 0.0.3 identity receipt', () => {
       'identity/instance-claims.json',
     ]);
     for (const { path, sha256 } of identity.fixtures) {
-      expect(createHash('sha256').update(readFileSync(join(directory, path))).digest('hex'), path).toBe(sha256);
+      expect(
+        createHash('sha256')
+          .update(readFileSync(join(directory, path)))
+          .digest('hex'),
+        path,
+      ).toBe(sha256);
     }
   });
 });
