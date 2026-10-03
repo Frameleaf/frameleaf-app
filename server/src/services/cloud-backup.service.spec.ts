@@ -252,6 +252,7 @@ describe(CloudBackupService.name, () => {
         streamed.push(Buffer.concat(chunks));
         return { etag: '"manifest"', size: streamed.at(-1)!.length };
       }),
+      get: vi.fn(),
       delete: vi.fn().mockResolvedValue(undefined),
       listAll: vi.fn().mockResolvedValue(0),
       readMarker: vi.fn().mockResolvedValue({

@@ -425,7 +425,8 @@ describe('weekly consent foundation, never execution authority', () => {
       encodeSession: (id: string, value: unknown) => encryptICloudSession(key, id, value),
       download,
     };
-    const root = await mkdtemp(join(tmpdir(), 'fl296-weekly-refresh-'));
+    const root = await mkdtemp(join(tmpdir(), 'fl296-weekly-refresh-staging-'));
+    const mediaRoot = await mkdtemp(join(tmpdir(), 'fl296-weekly-refresh-media-'));
     const priorRoot = process.env.FRAMELEAF_ICLOUD_STAGING_PATH;
     let priorMediaLocation: string | undefined;
     try {
@@ -434,7 +435,7 @@ describe('weekly consent foundation, never execution authority', () => {
       priorMediaLocation = undefined;
     }
     process.env.FRAMELEAF_ICLOUD_STAGING_PATH = root;
-    StorageCore.setMediaLocation(root);
+    StorageCore.setMediaLocation(mediaRoot);
     try {
       const staging = new ICloudStagingService(
         sync,
@@ -469,6 +470,7 @@ describe('weekly consent foundation, never execution authority', () => {
         StorageCore.setMediaLocation(priorMediaLocation);
       }
       await rm(root, { recursive: true, force: true });
+      await rm(mediaRoot, { recursive: true, force: true });
     }
   });
 
