@@ -90,7 +90,10 @@ describe('iCloud exact identity adoption', () => {
     await db.destroy();
   });
 
-  async function arrange(role: 'original' | 'raw' | 'motion' = 'original') {
+  async function arrange(
+    role: 'original' | 'raw' | 'motion' = 'original',
+    config: { concurrency?: number; includeHidden?: boolean } = {},
+  ) {
     const directory = await mkdtemp(join(tmpdir(), 'identity-adoption-'));
     directories.add(directory);
     const originalFileName = role === 'motion' ? 'source.mov' : 'source.jpg';
@@ -137,7 +140,7 @@ describe('iCloud exact identity adoption', () => {
       checksum: sha256,
       checksumAlgorithm: ChecksumAlgorithm.sha256File,
     });
-    const connection = (await sync.create(user.id, 'Photos', ICloudConfigSchema.parse({})))!;
+    const connection = (await sync.create(user.id, 'Photos', ICloudConfigSchema.parse(config)))!;
     connections.add(connection.id);
     await sync.update(connection.id, user.id, { state: 'connected', encryptedSession: 'fixture-session' });
     const field = (value: unknown) => ({ value });
@@ -274,7 +277,7 @@ describe('iCloud exact identity adoption', () => {
   });
 
   it('adopts independently checked still and motion resources under the same whole-item claim without rewriting the pair', async () => {
-    const fixture = await arrange('motion');
+    const fixture = await arrange('motion', { concurrency: 2 });
     const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: 'green' } })
       .jpeg()
       .toBuffer();
@@ -320,6 +323,7 @@ describe('iCloud exact identity adoption', () => {
     );
     await sync.materialize(fixture.connection, 'library', { area: 'private', zoneID: { zoneName: 'PrimarySync' } });
     const resource = (await sync.claim(fixture.connection.id, fixture.connection.config.stagingBytes))!;
+    expect(resource).toBeDefined();
     expect(resource.role).toBe('original');
     await sql`INSERT INTO immich_fork.icloud_source_identity
       ("ownerId","assetId","libraryKey","cplAssetRecordName","cplMasterRecordName",role,sha256,"deliveredBy","cloudIdentifier")
@@ -385,10 +389,7 @@ describe('iCloud exact identity adoption', () => {
   );
 
   it('denies Locked originals even with includeHidden configured', async () => {
-    const fixture = await arrange();
-    const config = { ...fixture.connection.config, includeHidden: true };
-    await sync.update(fixture.connection.id, fixture.user.id, { config });
-    fixture.authority.config = canonicalJson(config);
+    const fixture = await arrange('original', { includeHidden: true });
     await sql`INSERT INTO public.asset_lock ("assetId",reason) VALUES (${fixture.asset.id}::uuid,${AssetLockReason.Marked})`.execute(
       db,
     );
@@ -554,7 +555,18 @@ describe('iCloud exact identity adoption', () => {
       }
       case 'ambiguous': {
         const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
-        const { asset } = await ctx.newAsset({ ownerId: fixture.user.id, checksum: fixture.sha256 });
+        const originalPath = join(dirname(fixture.originalPath), 'ambiguous.jpg');
+        await writeFile(originalPath, fixture.bytes);
+        // Both supported digest algorithms describe genuine identical originals without
+        // violating the owner/checksum uniqueness contract.
+        const { asset } = await ctx.newAsset({
+          ownerId: fixture.user.id,
+          originalPath,
+          originalFileName: 'ambiguous.jpg',
+          type: AssetType.Image,
+          checksum: createHash('sha1').update(fixture.bytes).digest(),
+          checksumAlgorithm: ChecksumAlgorithm.sha1File,
+        });
         await sql`INSERT INTO immich_fork.icloud_source_identity
           ("ownerId","assetId","libraryKey","cplAssetRecordName","cplMasterRecordName",role,sha256,"deliveredBy","cloudIdentifier")
           SELECT "ownerId",${asset.id}::uuid,"libraryKey","cplAssetRecordName","cplMasterRecordName",role,sha256,"deliveredBy","cloudIdentifier"
