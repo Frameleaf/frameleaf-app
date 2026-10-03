@@ -174,3 +174,18 @@ remain unchanged; their hashes and actual parser assertions are in `frameleaf-cl
 The discovery and push parsers remain Library-owned. Conformance covers actual DPoP request bodies,
 API token audience, push proof address, response/error envelopes and local rejection of the published
 invalid request. It does not qualify APNs delivery, relay, linked servers, top-ups or provider behavior.
+
+### Earlier package parser compatibility (source-derived)
+
+The genuine registry 0.0.2 tarball has SHA256
+`a63d807ea2ad81c046acb223fdc7cf87bf6c8520256edb48b5c226d9b7c8f540`; its registry receipt verifies
+SHA1 `44d575f4b6f318d52f97fc7790bcc784acf3a8f7` and SHA512 integrity. Inspection of that package's
+compiled `instance/discovery.js` shows `DiscoveryEndpoints = z.strictObject(...)` without a `push`
+property. Therefore the unmodified 0.0.2 package parser rejects the new additive `endpoints.push`
+field. This is a source-derived compatibility finding, not an executed runtime result. The 0.0.3
+package declares `push` optional, preserving discovery documents that omit it.
+
+The Library owns its parser and copied corpus; it does not import either package as a runtime
+dependency. Its current conformance covers FC-98's optional discovery push address, explicit
+`FRAMELEAF_PUSH_URL` precedence, and all eleven published push fixtures. This packet introduces no
+additional FL-293 product question or delivery qualification claim.
