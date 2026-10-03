@@ -471,6 +471,22 @@ export class PhysicalFileRepository {
   }
 
   /**
+   * The stored originals whose primary asset is one of `ownerId`'s: read before that account's assets are
+   * removed, so each can be handed to its next primary afterwards (`electNextCanonical`).
+   */
+  async getOriginalIdsWithPrimaryOwnedBy(ownerId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('physical_file')
+      .innerJoin('asset', 'asset.id', 'physical_file.canonicalAssetId')
+      .select('physical_file.id')
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .where('physical_file.type', '=', PhysicalFileType.Original)
+      .orderBy('physical_file.id')
+      .execute();
+    return rows.map(({ id }) => id);
+  }
+
+  /**
    * Universal storage primary handover: once a shared original's primary asset is gone (its
    * `canonicalAssetId` was set null by the asset's removal), the oldest remaining asset that references
    * the file becomes primary, live assets before trashed ones. The generated files the new primary

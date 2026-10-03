@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
-import { AssetFileType, StorageFolder, UserStatus } from 'src/enum.js';
+import { AssetFileType, JobName, StorageFolder, UserStatus } from 'src/enum.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -156,6 +156,23 @@ describe('UserService.handleUserDelete with shared originals (FL-44)', () => {
     await expect(ctx.get(PhysicalFileRepository).getPhysicalFile(physical.id)).resolves.toMatchObject({
       path: sharedPath,
     });
+  });
+
+  it("hands a shared original to the other owner's asset and queues its move out of the deleted folder", async () => {
+    const { sut, ctx } = setup(null);
+    const { owner, copy, physical } = await seedSharedOriginal(ctx);
+    await expect(ctx.get(PhysicalFileRepository).getPhysicalFile(physical.id)).resolves.not.toMatchObject({
+      canonicalAssetId: copy.id,
+    });
+
+    await sut.handleUserDelete({ id: owner.id, force: true });
+
+    await expect(ctx.get(PhysicalFileRepository).getPhysicalFile(physical.id)).resolves.toMatchObject({
+      canonicalAssetId: copy.id,
+    });
+    const jobs = ctx.getMock(JobRepository);
+    const queued = [...jobs.queue.mock.calls.map(([job]) => job), ...jobs.queueAll.mock.calls.flatMap(([all]) => all)];
+    expect(queued).toContainEqual({ name: JobName.StorageTemplateMigrationSingle, data: { id: copy.id } });
   });
 
   it('deletes an account the retired master-user setting still names, keeping originals others share', async () => {
