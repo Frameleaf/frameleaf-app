@@ -184,7 +184,7 @@
 +export { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
 --- /dev/null
 +++ b/src/features/media-library/services/subtitle-import-service.test.ts
-@@ -0,0 +1,137 @@
+@@ -0,0 +1,151 @@
 +import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +import { fireEvent } from '@testing-library/react'
 +import type { Project } from '@/types/project'
@@ -248,6 +248,20 @@
 +    await hydrateTimelineStoresFromProject({ ...project, timeline: saved })
 +    expect(useItemsStore.getState().items).toEqual(items)
 +    expect(useItemsStore.getState().tracks).toEqual(tracks)
++  })
++
++  it.each([
++    ['srt', '00:00:61,000 --> 00:01:03,000'],
++    ['srt', '00:59:59,000 --> 00:60:03,000'],
++    ['vtt', '00:00:61.000 --> 00:01:03.000'],
++    ['vtt', '59:59.000 --> 60:03.000'],
++  ])('refuses a mixed valid/overflow %s file atomically', async (format, timing) => {
++    const valid = format === 'srt' ? srt : vtt
++    choose(`${valid}\n\n3\n${timing}\nInvalid overflow`, `captions.${format}`)
++    await expect(showSubtitleImport(project.id)).rejects.toThrow('between 0 and 59')
++    expect(useItemsStore.getState()).toMatchObject({ tracks: [], items: [] })
++    expect(useTimelineCommandStore.getState().canUndo).toBe(false)
++    expect(useTimelineSettingsStore.getState().isDirty).toBe(false)
 +  })
 +
 +  it.each(['', '1\ninvalid --> timing\nHello', `${srt}\n\n3\nbroken block`, '1\n00:00:01,000 --> 00:00:01,000\nEmpty'])('refuses empty or malformed files atomically', async (text) => {
@@ -324,7 +338,7 @@
 +})
 --- /dev/null
 +++ b/src/features/media-library/services/subtitle-import-service.ts
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,111 @@
 +import { useProjectStore } from '../deps/projects'
 +import {
 +  useCompositionsStore,
@@ -392,6 +406,17 @@
 +    }
 +    if (format === 'vtt' && !/^\uFEFF?WEBVTT(?:[ \t].*)?(?:\r?\n|$)/.test(text)) {
 +      throw new Error('VTT subtitle files must begin with WEBVTT.')
++    }
++    // The reused parser converts fields arithmetically; reject overflow before any cue is imported.
++    const invalidTimestampFields = text.split(/\r?\n/)
++      .filter((line) => line.includes('-->'))
++      .some((line) => line.split('-->').some((part) => {
++        const timestamp = part.trim().split(/\s+/)[0] ?? ''
++        const fields = (timestamp.split(/[,.]/)[0] ?? '').split(':')
++        return fields.slice(-2).some((field) => Number(field) > 59)
++      }))
++    if (invalidTimestampFields) {
++      throw new Error('Subtitle timestamp minutes and seconds must be between 0 and 59.')
 +    }
 +    const parsed = format === 'srt' ? parseSrt(text) : parseVtt(text)
 +    // Overlapping cues are valid; skipped malformed blocks must never produce a partial import.
