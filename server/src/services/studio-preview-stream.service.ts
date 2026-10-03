@@ -249,7 +249,7 @@ export class StudioPreviewStreamService {
     this.assertOpen(operation);
     if (!isValidAnswerSdp(dto.sdp)) {
       throw new BadRequestException({
-        message: 'The answer must receive one video and send nothing',
+        message: 'The answer must receive one video, keep one control channel and send no video',
         code: 'studio_preview_stream_invalid_answer',
       });
     }
