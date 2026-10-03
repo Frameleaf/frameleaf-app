@@ -524,6 +524,8 @@ export enum SystemMetadataKey {
   SystemFlags = 'system-flags',
   VersionCheckState = 'version-check-state',
   PhysicalDeduplicationMigration = 'physical-deduplication-migration',
+  /** FL-326: the one-time universal storage upgrade migration's checkpointed state (spec §3.6). */
+  UniversalStorageMigration = 'universal-storage-migration',
   /** FL-159: the Frameleaf Cloud link written by linking the server (FL-155); read by cloud processing. */
   FrameleafCloudLink = 'frameleaf-cloud-link',
   /** FL-159: this server's Ed25519 identity (public part only; the private key is a 0600 file). */
@@ -2143,6 +2145,8 @@ export enum BootstrapEventPriority {
   JobService = -190,
   // FL-289: start the fork-schema backfill once the queues exist, on the API worker
   ForkSchemaAutoStart = -185,
+  // FL-326: queue the universal storage upgrade migration once the fork schema has started
+  UniversalStorageMigration = -184,
   // Initialize config after other bootstrap services, stop other services from using config on bootstrap
   SystemConfig = 100,
   PluginSync = 190,
@@ -2300,6 +2304,8 @@ export enum JobName {
   StorageTemplateMigrationSingle = 'StorageTemplateMigrationSingle',
   PhysicalDeduplicationMigrationDryRun = 'PhysicalDeduplicationMigrationDryRun',
   PhysicalDeduplicationMigrationApply = 'PhysicalDeduplicationMigrationApply',
+  /** FL-326: one checkpointed batch of the universal storage upgrade migration. */
+  UniversalStorageMigration = 'UniversalStorageMigration',
 
   TagCleanup = 'TagCleanup',
 
@@ -2467,6 +2473,8 @@ export enum DatabaseLock {
   /** FL-292: setup code checks, tickets and the claim of a new server happen one at a time. */
   FrameleafServerClaim = 971,
   BuddyBackup = 972,
+  /** FL-326: one universal storage migration batch runs at a time across every worker. */
+  UniversalStorageMigration = 973,
 }
 
 export enum MaintenanceAction {

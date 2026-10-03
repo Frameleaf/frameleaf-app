@@ -708,6 +708,13 @@ export class JobRepository {
           delay: item.data?.delay,
         };
       }
+      case JobName.UniversalStorageMigration: {
+        // FL-326: one batch waiting at a time; the running batch queues the next itself
+        return {
+          deduplication: { id: JobName.UniversalStorageMigration, keepLastIfActive: true },
+          ...(item.data?.delay && { delay: item.data.delay }),
+        };
+      }
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
       }

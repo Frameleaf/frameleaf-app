@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest';
 import {
   STORAGE_MIGRATION_SKIPPED_SHOWN,
   advanceStorageMigrationStage,
@@ -7,7 +8,6 @@ import {
   recordStorageMigrationBatch,
   storageMigrationStatus,
 } from 'src/utils/storage-migration.js';
-import { describe, expect, it } from 'vitest';
 
 const at = (seconds: number) => new Date(Date.UTC(2026, 9, 3, 12, 0, seconds));
 
@@ -170,5 +170,30 @@ describe('storageMigrationStatus', () => {
     expect(storageMigrationStatus(undefined)).toMatchObject({ stage: 'pending', showInGettingReady: false });
     const empty = createStorageMigrationState({ total: 0, now: at(0) });
     expect(storageMigrationStatus(empty)).toMatchObject({ stage: 'done', required: false, showInGettingReady: false });
+  });
+});
+
+describe('finishing a stage', () => {
+  it('makes what was done the stage total, so it reads complete', () => {
+    const state = { ...createStorageMigrationState({ total: 1000, now: at(0) }), checked: 990 };
+    const next = recordStorageMigrationBatch(state, {
+      patch: { stage: 'relinking', cursor: null },
+      units: 0,
+      startedAt: at(0),
+      now: at(1),
+    });
+    expect(next.stage).toBe('relinking');
+    expect(storageMigrationStatus(next).stages.checking).toEqual({ done: 990, total: 990 });
+  });
+
+  it('records when the migration finished', () => {
+    const state = { ...createStorageMigrationState({ total: 10, now: at(0) }), stage: 'trashing' as const };
+    const next = recordStorageMigrationBatch(state, {
+      patch: { stage: 'done' },
+      units: 0,
+      startedAt: at(0),
+      now: at(5),
+    });
+    expect(next.finishedAt).toBe(at(5).toISOString());
   });
 });

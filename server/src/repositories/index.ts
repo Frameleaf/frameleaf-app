@@ -84,6 +84,7 @@ import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { StorageMigrationRepository } from 'src/repositories/storage-migration.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
@@ -205,6 +206,7 @@ export const repositories = [
   PetRepository,
   PhotoToolsRepository,
   PhysicalFileRepository,
+  StorageMigrationRepository,
   RateLimitRepository,
   PluginRepository,
   PreservationFileRepository,
