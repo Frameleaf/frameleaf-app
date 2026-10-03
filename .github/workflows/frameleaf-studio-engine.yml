@@ -160,13 +160,52 @@ jobs:
           npm --prefix studio/engine run build
           node studio/tools/engine.mjs attest
           cp studio/engine/frameleaf-build.json "$RUNNER_TEMP/frameleaf-build-first.json"
-      - name: Frameleaf adapter tests and editor build (FL-88, FL-92)
+      - name: Frameleaf adapter tests (FL-88, FL-92)
+        id: adapter_contracts
         run: |
           # The adapter compiles host modules from web/src, whose tsconfig extends the SvelteKit
           # config that `svelte-kit sync` generates. This job has no web workspace, so stand in for it.
           mkdir -p web/.svelte-kit
           test -f web/.svelte-kit/tsconfig.json || echo '{}' > web/.svelte-kit/tsconfig.json
           COMMAND_MATRIX_REPORT="$RUNNER_TEMP/command-matrix-report.json" node studio/tools/adapter.mjs test
+      - name: Recover genuine graph fixture answers after adapter failure
+        id: graph_fixture_recovery
+        if: ${{ failure() && steps.adapter_contracts.outcome == 'failure' }}
+        timeout-minutes: 8
+        env:
+          GRAPH_CONFORMANCE_WRITE: '1'
+          REVIEWED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test -f studio/engine/frameleaf-source.json
+          test -x studio/engine/node_modules/.bin/vp
+          fixture_input_sha="$(sha256sum studio/graph-conformance-v1.json | cut -d ' ' -f 1)"
+          (
+            cd studio/engine
+            ./node_modules/.bin/vp test run --config "$GITHUB_WORKSPACE/studio/adapters/web/vite.config.mjs" "$GITHUB_WORKSPACE/studio/adapters/web/test/graph-conformance.test.ts" --testNamePattern 'replays every fixture through the engine without drift'
+          )
+          node studio/tools/engine.mjs verify
+          evidence="$RUNNER_TEMP/studio-graph-fixture-recovery"
+          mkdir -p "$evidence"
+          cp studio/graph-conformance-v1.json "$evidence/graph-conformance-v1.json"
+          git diff --binary -- studio/graph-conformance-v1.json > "$evidence/graph-conformance.patch"
+          {
+            printf 'reviewedHead=%s\n' "$REVIEWED_HEAD"
+            printf 'checkoutHead=%s\n' "$(git rev-parse HEAD)"
+            printf 'runId=%s\n' "$GITHUB_RUN_ID"
+            printf 'fixtureInputSha256=%s\n' "$fixture_input_sha"
+            sha256sum studio/engine-build.json studio/freecut-provenance.json studio/adapters/web/src/canonical-commands.ts studio/adapters/web/test/graph-conformance.test.ts
+            sha256sum studio/engine-package-lock.json studio/adapters/web/vite.config.mjs studio/tools/graph-reference.mjs
+            sha256sum "$evidence/graph-conformance-v1.json" "$evidence/graph-conformance.patch"
+          } > "$evidence/provenance.txt"
+      - name: Retain genuine graph fixture recovery for reviewed import
+        if: ${{ always() && steps.graph_fixture_recovery.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-studio-graph-fixture-recovery
+          path: ${{ runner.temp }}/studio-graph-fixture-recovery
+          if-no-files-found: error
+      - name: Frameleaf editor build (FL-88)
+        run: |
           node studio/tools/adapter.mjs build
           test -f web/static/studio-engine/manifest.json
           test -f web/static/studio-engine/notices/freecut.txt

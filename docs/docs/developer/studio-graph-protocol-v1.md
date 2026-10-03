@@ -490,7 +490,7 @@ Two kinds of native rule appear. **Refuse** means the engine accepts an edit who
 | A transition is repaired only when a command changes one of its clips (12.2.6).                                                                               | Do not re-check other transitions.                                                                  |
 | A ripple delete removes clips that a shifted linked clip would land on (12.3.2, `clip.delete/ripple-unsynced-companion-covers`).                              | Reproduce.                                                                                          |
 | A ripple trim does not move the linked clips of the clips it shifts; a ripple delete does (12.4.1).                                                           | Reproduce both.                                                                                     |
-| `track.closeGap` with `at` ripples sync-locked tracks and ignores linked clips; without `at` it does the opposite (12.7.5).                                   | Reproduce both.                                                                                     |
+| The raw pinned `closeGapAtPosition` action ripples sync-locked tracks without expanding linked clips; the canonical adapter corrects this (12.7.5).           | Follow linked clips and attached captions in both forms; reproduce the canonical adapter's atomic safety refusals. |
 | A ripple that cuts a linked clip on a sync-locked track splits it alone, so its halves lose their `linkedGroupId` (12.2.3).                                   | Reproduce. The halves stay linked by the legacy link (12.2.1).                                      |
 | The surviving tail of a clip whose head a ripple or an overwrite removes has a new id (12.2.3, 12.5.4).                                                       | Reproduce the ids. Do not assume an id names the same footage after such an edit.                   |
 | `clip.overwrite` removes every caption attached to a clip when the part that keeps the clip's id is covered (12.5.4).                                         | Reproduce.                                                                                          |
@@ -598,7 +598,7 @@ A track with `locked: true` is locked. Lock checking is **per command and is not
 
 The twelve commands of part 3 check nothing either (13.1). The last two rows are **implementation-defined**: the engine's own editor never lets a person edit a locked track, so its edit actions were never guarded, and the command layer guards only some of them. **Native rule:** a native client treats a lock as binding for every command. It must not issue a command that would add, remove or change a clip on a locked track, including through a linked clip or a ripple. Given such an envelope in a fixture, a conforming implementation still produces the engine's graph.
 
-No command checks the lock of the track an **attached caption** is on: captions follow their clip wherever they are.
+`track.closeGap` checks the lock of every **attached caption** in its affected linked set (12.7.5). Other commands' caption lock behaviour remains as recorded by their own sections and fixtures.
 
 Track commands (`track.set`, `track.reorder`) may change a locked track itself. That is how a track is unlocked.
 
@@ -1394,23 +1394,28 @@ A **gap** on a track is a run of free frames that ends where a clip starts: the 
 **Refusals, in order**
 
 1. The track is locked: `failed`.
-2. Without `at`: a clip of the linked set of the track's clips is on a locked track: `failed`.
-3. With `at`: `at` is not a valid non-negative time, or no gap holds that frame: `invalid`.
-4. A clip did not move as asked: `failed`.
+2. Without `at`: any clip or attached caption in the expanded linked set of the track's clips is on a locked track: `failed`.
+3. With `at`: `at` is not a valid non-negative time, or no gap holds that frame: `invalid`. After identifying the later clips, any item in their expanded linked/caption set is on a locked track: `failed`.
+4. An intended linked/caption position is negative: `failed`, before the engine can clamp it to zero.
+5. With `at`: sync-lock propagation removes, splits or changes any affected linked item's data other than `from`: `failed`. The canonical adapter never reconstructs a source window.
+6. A linked item cannot reach its exact intended position while retaining all other fields, or two items overlap on an affected track: `failed`. Exact touching is permitted.
+7. A target-track clip did not move as asked: `failed`.
 
-**Effect with `at`.** Let the gap be `[a, b)`. Every clip on the track with `from ≥ b` moves left by `b − a`. Every other sync-enabled track has the interval `[a, b)` removed (12.2.3).
+**Effect with `at`.** Let the gap be `[a, b)`. Capture the original items and expand every target-track clip with `from ≥ b` to its linked group and attached captions. Each affected item's intended `from` is its captured original `from − (b − a)`. Run the pinned action once: target clips move left, and every other sync-enabled track has `[a, b)` removed (12.2.3). If each captured linked item survives with all non-position fields unchanged, correct only surviving items not already at their intended absolute position, then repair their transitions. A companion already shifted by sync lock is never shifted twice. Unrelated sync-lock splitting/removal retains the pinned engine's behaviour.
 
-**Effect without `at`.** The track's clips are packed from frame 0 in order of `from`: each clip moves left to the end of the one before it. Each clip that moves takes its linked set with it, by the greatest shift of any member of its linked group. Other tracks are not rippled.
+**Effect without `at`.** The track's clips are packed from frame 0 in order of `from`: each clip moves left to the end of the one before it. Each clip that moves takes its linked set and attached captions with it, by the greatest shift of any member of its linked group. Check intended positions before movement and companion-track overlap after movement. Other tracks are not rippled.
 
 **Consequences**
 
-- **Linked:** without `at`, linked clips follow. With `at`, they do **not**: only sync lock moves other tracks (`track.closeGap/at-leaves-linked-clips-without-sync-lock`).
-- **Locks:** refusals 1 and 2.
-- **Sync lock:** with `at`, as above: clips on other sync-enabled tracks that lie in the gap's interval are **cut or removed** (`track.closeGap/at-removes-interval-from-sync-locked-tracks`). Without `at`, none.
-- **Overlap:** none can arise on the track. Without `at`, linked clips on other tracks are not checked.
-- **Transitions:** the moved clips, and the clips sync lock cut or moved, are changed.
+- **Linked:** clips and attached captions follow in both forms, including on tracks with `syncLock: false`.
+- **Locks:** the expanded linked/caption set is checked in both forms; a lock cannot silently strand a companion.
+- **Sync lock:** with `at`, unrelated clips on other sync-enabled tracks may be **cut or removed** (`track.closeGap/at-removes-interval-from-sync-locked-tracks`). A destructive change to a captured linked item refuses the entire batch. Without `at`, none.
+- **Overlap:** refused on linked/caption tracks in both forms and on affected sync-lock tracks with `at`; exact touching is valid.
+- **Transitions:** use the existing repair for moved, cut and corrected clips; source data is not reconstructed.
 
-The two forms treating linked clips and sync lock differently is **implementation-defined**. **Native rule:** reproduce both.
+**Canonical adapter versus raw engine.** The pinned upstream single-gap action does not expand links, and its movement normalizer clamps negative starts. These are raw action behaviours, not permission for a native client to strand a linked companion or coerce its position. **Native rule:** reproduce the canonical adapter's linked shifts and atomic refusals above. A refusal publishes no graph and records no history; the original graph, item order and media authority remain intact.
+
+**Fixture provenance and qualification.** The existing case ID `track.closeGap/at-leaves-linked-clips-without-sync-lock` is retained as a historical input label from the earlier adapter contract; its recorded answer is not current qualification after this correction. Existing recorded answers must be regenerated by the real canonical-adapter replay, never edited by hand. New FL-94 cases carry authored `admission` requirements and `expect: null` until hosted `GRAPH_CONFORMANCE_WRITE=1` produces their complete graphs, digests and refusals. Both ordinary engine replay and the independent reference/schema checks must pass after importing the genuine output. This section does not claim qualification of the refused destructive linked interval cases or the complete FL-94 interaction matrix.
 
 **Draws:** with `at`, the ids of the sync-lock splits. Without `at`, none. In and out points are clamped (12.2.7).
 
