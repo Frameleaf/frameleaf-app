@@ -71,19 +71,22 @@ const instance = {
   keyFile: '/identity/instance-key.pem',
   createdAt: '2026-09-01T00:00:00.000Z',
 };
-const claim = (overrides: Partial<FrameleafCloudBackup> = {}): FrameleafCloudBackup => ({
-  target: 'byo-s3',
-  bucketRef: ref,
-  endpoint: s3.endpoint,
-  region: 'eu-central-2',
-  bucket: s3.bucket,
-  instanceId: 'instance-1',
-  claimedAt: '2026-09-25T00:00:00.000Z',
-  keyMode: 'server',
-  keyFingerprint: fingerprint,
-  reconciledAt: '2026-09-25T00:00:00.000Z',
-  ...overrides,
-});
+type CloudBackupClaimOverrides = Record<string, unknown> & { target?: FrameleafCloudBackup['target'] };
+
+const claim = (overrides: CloudBackupClaimOverrides = {}): FrameleafCloudBackup =>
+  ({
+    target: 'byo-s3',
+    bucketRef: ref,
+    endpoint: s3.endpoint,
+    region: 'eu-central-2',
+    bucket: s3.bucket,
+    instanceId: 'instance-1',
+    claimedAt: '2026-09-25T00:00:00.000Z',
+    keyMode: 'server',
+    keyFingerprint: fingerprint,
+    reconciledAt: '2026-09-25T00:00:00.000Z',
+    ...overrides,
+  }) as FrameleafCloudBackup;
 const enabledConfig = (keyMode = 'server', include?: { thumbs: boolean; encodedVideo: boolean }) => ({
   frameleafCloud: {
     cloudBackup: {
@@ -2620,7 +2623,7 @@ describe(CloudBackupService.name, () => {
     const grant = cloudContractFixture('backup/grant-response.json');
     const cloudUrl = 'https://cloud.frameleaf.test';
     const managedRef = bucketRef(grant.endpoint, grant.bucket);
-    const managedClaim = (overrides: Partial<FrameleafCloudBackup> = {}) =>
+    const managedClaim = (overrides: CloudBackupClaimOverrides = {}) =>
       claim({ target: 'managed', bucketRef: managedRef, endpoint: grant.endpoint, bucket: grant.bucket, ...overrides });
     const ALLOWED = ['bucketClaimed', 'claimedAt', 'entitlement', 'firstRun', 'keyLoaded', 'nextRunAt', 'target'];
     const useManaged = ({ linked }: { linked: boolean }) => {
