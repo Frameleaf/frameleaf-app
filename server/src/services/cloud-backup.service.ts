@@ -1627,7 +1627,8 @@ export class CloudBackupService {
           grant.location.locationId === metadata.managed.location?.locationId
         // Legacy claims keep their address-based index, but still require the recorded bucket and region below.
         : metadata.bucketRef.startsWith('https://') && metadata.bucketRef.endsWith(`/${metadata.bucket}`);
-      if (!sameIdentity || grant.bucket !== metadata.bucket || grant.region !== metadata.region) {
+      const sameLocation = !metadata.managed?.location || grant.location.locationId === metadata.managed.location.locationId;
+      if (!sameIdentity || !sameLocation || grant.bucket !== metadata.bucket || grant.region !== metadata.region) {
         throw new Error('Frameleaf Cloud offered a different storage binding than the one this server claimed. Set up cloud backup again.');
       }
     }
