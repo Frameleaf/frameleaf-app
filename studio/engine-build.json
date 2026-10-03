@@ -253,7 +253,7 @@
     {
       "path": "patches/0050-caption-import-export-modes.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "8c443377bfc6092dee167926117685eb3257e1489a543bd8ab362565d66b1f3d"
+      "sha256": "bf66f5b8a1f1912769e103e739059236c1966563bfa316b4e9cfc69c5f382fba"
     },
     {
       "path": "patches/0051-extracted-caption-export-modes.patch",
