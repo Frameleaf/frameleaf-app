@@ -1092,6 +1092,41 @@ describe(AssetService.name, () => {
       });
     });
 
+    it('hands a shared file over to the next primary and queues its storage move', async () => {
+      const asset = AssetFactory.from({ physicalOriginalFileId: 'physical-file-id' }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      mocks.physicalFile.electNextCanonical.mockResolvedValue({ assetId: 'next-primary' });
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.physicalFile.electNextCanonical).toHaveBeenCalledWith('physical-file-id');
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.StorageTemplateMigrationSingle,
+        data: { id: 'next-primary' },
+      });
+    });
+
+    it('leaves the primary alone when a non-primary copy is deleted', async () => {
+      const asset = AssetFactory.from({ physicalOriginalFileId: 'physical-file-id' }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      mocks.physicalFile.electNextCanonical.mockResolvedValue(undefined);
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(
+        expect.objectContaining({ name: JobName.StorageTemplateMigrationSingle }),
+      );
+    });
+
+    it('never elects a primary for an asset without a shared file', async () => {
+      const asset = AssetFactory.from().build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.physicalFile.electNextCanonical).not.toHaveBeenCalled();
+    });
+
     it('never deletes the original or sidecar of an external library item (FL-78)', async () => {
       const asset = AssetFactory.from({ libraryId: newUuid(), isExternal: true })
         .file({ type: AssetFileType.Thumbnail })

@@ -420,6 +420,7 @@ export class AssetJobRepository {
         'asset.ownerId',
         'asset.livePhotoVideoId',
         'asset.originalPath',
+        'asset.physicalOriginalFileId',
         'asset.isOffline',
         'asset.deletedAt',
       ])

@@ -126,6 +126,42 @@ describe(StorageTemplateService.name, () => {
       expect(mocks.storage.stat).not.toHaveBeenCalled();
     });
 
+    it('moves nothing for a primary deleted while its move was queued (Review Focus 2)', async () => {
+      mocks.assetJob.getForStorageTemplateJob.mockResolvedValue(void 0);
+
+      await sut.handleMigrationSingle({ id: testAsset.id });
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.copyFile).not.toHaveBeenCalled();
+      expect(mocks.move.create).not.toHaveBeenCalled();
+      expect(mocks.physicalFile.updateOriginalPhysicalPathForAsset).not.toHaveBeenCalled();
+    });
+
+    it("moves a shared file to its newly elected primary's template path", async () => {
+      const asset = AssetFactory.from({
+        physicalOriginalFileId: 'physical-file-id',
+        fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+      })
+        .exif()
+        .build();
+      const newPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+      mocks.user.get.mockResolvedValue(userStub.user1);
+      mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(asset));
+      mocks.physicalFile.isOriginalCanonical.mockResolvedValue(true);
+      mocks.move.create.mockResolvedValueOnce({
+        id: '123',
+        entityId: asset.id,
+        pathType: AssetPathType.Original,
+        oldPath: asset.originalPath,
+        newPath,
+      });
+
+      await expect(sut.handleMigrationSingle({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.physicalFile.isOriginalCanonical).toHaveBeenCalledWith(asset.id, 'physical-file-id');
+      expect(await movedOriginals()).toContainEqual({ id: asset.id, originalPath: newPath });
+    });
+
     it('should migrate single moving picture', async () => {
       const motionAsset = AssetFactory.from({
         type: AssetType.Video,

@@ -286,6 +286,65 @@ export class PhysicalFileRepository {
     });
   }
 
+  /**
+   * Universal storage primary handover: once a shared original's primary asset is gone (its
+   * `canonicalAssetId` was set null by the asset's removal), the oldest remaining asset that references
+   * the file becomes primary, live assets before trashed ones. The generated files the new primary
+   * shares follow it. Returns undefined when the file still has a primary or nothing references it.
+   * The caller queues the new primary's storage-template move, so the file follows its new owner.
+   */
+  async electNextCanonical(physicalFileId: string): Promise<{ assetId: string } | undefined> {
+    const physicalFile = await this.getPhysicalFile(physicalFileId);
+    if (!physicalFile || physicalFile.canonicalAssetId) {
+      return;
+    }
+
+    return this.withPathLock(physicalFile.path, async (trx) => {
+      const current = await trx
+        .selectFrom('physical_file')
+        .select(['id', 'canonicalAssetId'])
+        .where('id', '=', asUuid(physicalFileId))
+        .forUpdate()
+        .executeTakeFirst();
+      if (!current || current.canonicalAssetId) {
+        return;
+      }
+
+      const next = await trx
+        .selectFrom('asset')
+        .select('id')
+        .where('physicalOriginalFileId', '=', asUuid(physicalFileId))
+        .orderBy(sql`"deletedAt" IS NOT NULL`)
+        .orderBy('createdAt', 'asc')
+        .orderBy('id', 'asc')
+        .limit(1)
+        .executeTakeFirst();
+      if (!next) {
+        return;
+      }
+
+      await trx
+        .updateTable('physical_file')
+        .set({ canonicalAssetId: next.id })
+        .where('id', '=', asUuid(physicalFileId))
+        .execute();
+      await trx
+        .updateTable('physical_file')
+        .set({ canonicalAssetId: next.id })
+        .where('canonicalAssetId', 'is', null)
+        .where('type', '!=', PhysicalFileType.Original)
+        .where('id', 'in', (eb) =>
+          eb
+            .selectFrom('asset_file')
+            .select('asset_file.physicalFileId')
+            .where('asset_file.assetId', '=', asUuid(next.id))
+            .where('asset_file.physicalFileId', 'is not', null),
+        )
+        .execute();
+      return { assetId: next.id };
+    });
+  }
+
   private registerOriginal(
     trx: Transaction<DB>,
     values: { canonicalAssetId: string; checksum: Buffer; path: string; sizeInBytes: number },
