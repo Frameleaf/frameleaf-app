@@ -41,10 +41,15 @@ export const backupCitySchema = z.strictObject({
   countryCode: z.string().regex(/^[A-Z]{2}$/),
 });
 export type BackupCity = z.infer<typeof backupCitySchema>;
-const brandedEndpoint = z.url().refine((value) => /^https:\/\/s3\.[a-z]{2}-[a-z]+-\d\.backup\.frameleaf\.cloud\/?$/.test(value));
+const brandedEndpoint = z
+  .url()
+  .refine((value) => /^https:\/\/s3\.[a-z]{2}-[a-z]+-\d\.backup\.frameleaf\.cloud\/?$/.test(value));
 export const backupLocationSchema = backupCitySchema.extend({ probeUrl: brandedEndpoint });
 export type BackupLocation = z.infer<typeof backupLocationSchema>;
-export const backupLocationsSchema = z.strictObject({ version: z.literal(2), locations: z.array(backupLocationSchema).max(16) });
+export const backupLocationsSchema = z.strictObject({
+  version: z.literal(2),
+  locations: z.array(backupLocationSchema).max(16),
+});
 export const backupGrantRequestSchema = z.strictObject({ locationId: backupCitySchema.shape.locationId });
 export const managedStorageRef = (storageId: string): string => `frameleaf-storage:${storageId}`;
 

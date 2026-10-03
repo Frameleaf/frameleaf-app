@@ -40,7 +40,13 @@ const status = (readOnly: boolean, readOnlyReason: string | null) =>
     region: 'eu-central-1',
     managed: {
       storageId: '0194b445-9c8a-7001-8000-000000000002',
-      location: { locationId: 'loc-07', cityId: 'amsterdam', city: 'Amsterdam', country: 'Netherlands', countryCode: 'NL' },
+      location: {
+        locationId: 'loc-07',
+        cityId: 'amsterdam',
+        city: 'Amsterdam',
+        country: 'Netherlands',
+        countryCode: 'NL',
+      },
       readOnly,
       readOnlyReason,
       quotaBytes: 1_000_000_000_000,

@@ -1,23 +1,43 @@
 import { lookup } from 'node:dns';
-import { request } from 'node:https';
-import { BlockList, isIP, type LookupFunction } from 'node:net';
+import { type RequestOptions, request } from 'node:https';
+import { BlockList, type LookupFunction, isIP } from 'node:net';
 import type { BackupLocation } from 'src/utils/frameleaf-cloud-backup.js';
 
 const failure = () => new Error('No backup location could be reached reliably. Try setup again.');
-const blocked = new BlockList();
-for (const [address, prefix] of [
-  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8],
-  ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.0.2.0', 24],
-  ['192.88.99.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24],
-  ['203.0.113.0', 24], ['224.0.0.0', 4], ['240.0.0.0', 4],
-] as const) {
-  blocked.addSubnet(address, prefix, 'ipv4');
-}
-const publicV6 = new BlockList();
-publicV6.addSubnet('2000::', 3, 'ipv6');
-for (const [address, prefix] of [['2001::', 23], ['2001:db8::', 32], ['2002::', 16], ['3fff::', 20]] as const) {
-  blocked.addSubnet(address, prefix, 'ipv6');
-}
+const createProbeAddressLists = () => {
+  const blocked = new BlockList();
+  for (const [address, prefix] of [
+    ['0.0.0.0', 8],
+    ['10.0.0.0', 8],
+    ['100.64.0.0', 10],
+    ['127.0.0.0', 8],
+    ['169.254.0.0', 16],
+    ['172.16.0.0', 12],
+    ['192.0.0.0', 24],
+    ['192.0.2.0', 24],
+    ['192.88.99.0', 24],
+    ['192.168.0.0', 16],
+    ['198.18.0.0', 15],
+    ['198.51.100.0', 24],
+    ['203.0.113.0', 24],
+    ['224.0.0.0', 4],
+    ['240.0.0.0', 4],
+  ] as const) {
+    blocked.addSubnet(address, prefix, 'ipv4');
+  }
+  const publicV6 = new BlockList();
+  publicV6.addSubnet('2000::', 3, 'ipv6');
+  for (const [address, prefix] of [
+    ['2001::', 23],
+    ['2001:db8::', 32],
+    ['2002::', 16],
+    ['3fff::', 20],
+  ] as const) {
+    blocked.addSubnet(address, prefix, 'ipv6');
+  }
+  return { blocked, publicV6 };
+};
+const { blocked, publicV6 } = createProbeAddressLists();
 
 export const publicProbeAddress = (address: string): boolean => {
   const family = isIP(address);
@@ -31,7 +51,12 @@ const probeUrl = (value: string): URL | null => {
     const url = new URL(value);
     return url.protocol === 'https:' &&
       /^s3\.[a-z]{2}-[a-z]+-\d\.backup\.frameleaf\.cloud$/.test(url.hostname) &&
-      !url.username && !url.password && !url.port && !url.search && !url.hash && url.pathname === '/'
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      !url.search &&
+      !url.hash &&
+      url.pathname === '/'
       ? url
       : null;
   } catch {
@@ -60,7 +85,8 @@ export const probeBackupLocation = (location: BackupLocation, signal: AbortSigna
       return;
     }
     const started = performance.now();
-    const req = request(url, {
+    // HTTP typings omit this socket option; it is required to keep the validated DNS address pinned.
+    const options: RequestOptions & { autoSelectFamily: false } = {
       method: 'HEAD',
       agent: false,
       autoSelectFamily: false,
@@ -68,7 +94,8 @@ export const probeBackupLocation = (location: BackupLocation, signal: AbortSigna
       lookup: publicLookup,
       maxHeaderSize: 16_384,
       signal,
-    }, (response) => {
+    };
+    const req = request(url, options, (response) => {
       const status = response.statusCode ?? 0;
       resolve(status >= 200 && status < 500 ? performance.now() - started : null);
       response.resume();
@@ -91,10 +118,9 @@ const boundedProbe = async (location: BackupLocation, probe: Probe, overall: Abo
         cancel();
         return;
       }
-      Promise.resolve().then(() => probe(location, controller.signal)).then(
-        (value) => resolve(value !== null && Number.isFinite(value) && value >= 0 ? value : null),
-        () => resolve(null),
-      );
+      Promise.try(() => probe(location, controller.signal))
+        .then((value) => resolve(value !== null && Number.isFinite(value) && value >= 0 ? value : null))
+        .catch(() => resolve(null));
     });
   } finally {
     clearTimeout(timeout);
@@ -108,9 +134,12 @@ export const selectBackupLocation = async (
   locations: BackupLocation[],
   probe: Probe = probeBackupLocation,
 ): Promise<BackupLocation> => {
-  if (locations.length === 0 || locations.length > 16 ||
+  if (
+    locations.length === 0 ||
+    locations.length > 16 ||
     new Set(locations.map(({ locationId }) => locationId)).size !== locations.length ||
-    locations.some(({ locationId, probeUrl: url }) => !/^loc-\d{2}$/.test(locationId) || !probeUrl(url))) {
+    locations.some(({ locationId, probeUrl: url }) => !/^loc-\d{2}$/.test(locationId) || !probeUrl(url))
+  ) {
     throw failure();
   }
   const overall = new AbortController();
@@ -139,8 +168,11 @@ export const selectBackupLocation = async (
     clearTimeout(deadline);
     overall.abort();
   }
-  ranked.sort((a, b) => a.median - b.median ||
-    (a.location.locationId < b.location.locationId ? -1 : a.location.locationId > b.location.locationId ? 1 : 0));
+  ranked.sort(
+    (a, b) =>
+      a.median - b.median ||
+      (a.location.locationId < b.location.locationId ? -1 : a.location.locationId > b.location.locationId ? 1 : 0),
+  );
   if (!ranked[0]) {
     throw failure();
   }

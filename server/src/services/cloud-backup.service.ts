@@ -733,12 +733,22 @@ export class CloudBackupService {
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
 
     const previous = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
-    const legacyClaim = managed && claim.existing && previous?.target === 'managed' && !previous.managed?.storageId &&
-      previous.bucketRef.startsWith('https://') && previous.bucketRef.endsWith(`/${previous.bucket}`) &&
-      previous.bucket === connection.bucket && previous.region === connection.region &&
-      previous.instanceId === identity.instanceId && previous.keyFingerprint === fingerprint;
-    const ref = legacyClaim ? previous.bucketRef :
-      managed ? managedStorageRef(managed.state.storageId) : bucketRef(connection.endpoint, connection.bucket);
+    const legacyClaim =
+      managed &&
+      claim.existing &&
+      previous?.target === 'managed' &&
+      !previous.managed?.storageId &&
+      previous.bucketRef.startsWith('https://') &&
+      previous.bucketRef.endsWith(`/${previous.bucket}`) &&
+      previous.bucket === connection.bucket &&
+      previous.region === connection.region &&
+      previous.instanceId === identity.instanceId &&
+      previous.keyFingerprint === fingerprint;
+    const ref = legacyClaim
+      ? previous.bucketRef
+      : managed
+        ? managedStorageRef(managed.state.storageId)
+        : bucketRef(connection.endpoint, connection.bucket);
     const managedState = managed && { ...managed.state, ...(legacyClaim && { storageId: undefined }) };
     // A new claim means the bucket was empty: whatever the index remembers of it (an emptied or recreated
     // bucket) is gone, and the first run reads the bucket's listing again.
@@ -868,9 +878,16 @@ export class CloudBackupService {
       }
       const grant = await this.cloudBackup.grant(api, locationId);
       issued = 'credentials' in grant ? grant : await this.cloudBackup.rotate(api);
-      if (issued.location.locationId !== locationId || issued.storageId !== grant.storageId ||
-        issued.bucket !== grant.bucket || issued.region !== grant.region ||
-        (recorded && (issued.storageId !== recorded.storageId || issued.bucket !== recorded.bucket || issued.region !== recorded.region))) {
+      if (
+        issued.location.locationId !== locationId ||
+        issued.storageId !== grant.storageId ||
+        issued.bucket !== grant.bucket ||
+        issued.region !== grant.region ||
+        (recorded &&
+          (issued.storageId !== recorded.storageId ||
+            issued.bucket !== recorded.bucket ||
+            issued.region !== recorded.region))
+      ) {
         throw new ManagedStorageRefusal('Frameleaf Cloud offered a different storage binding. Try setup again.', null);
       }
     } catch (error) {
@@ -1623,13 +1640,17 @@ export class CloudBackupService {
   private managedConnection(grant: BackupGrantResponse, metadata?: FrameleafCloudBackup): CloudBackupConnection {
     if (metadata) {
       const sameIdentity = metadata.managed?.storageId
-        ? grant.storageId === metadata.managed.storageId && managedStorageRef(grant.storageId) === metadata.bucketRef &&
+        ? grant.storageId === metadata.managed.storageId &&
+          managedStorageRef(grant.storageId) === metadata.bucketRef &&
           grant.location.locationId === metadata.managed.location?.locationId
-        // Legacy claims keep their address-based index, but still require the recorded bucket and region below.
-        : metadata.bucketRef.startsWith('https://') && metadata.bucketRef.endsWith(`/${metadata.bucket}`);
-      const sameLocation = !metadata.managed?.location || grant.location.locationId === metadata.managed.location.locationId;
+        : // Legacy claims keep their address-based index, but still require the recorded bucket and region below.
+          metadata.bucketRef.startsWith('https://') && metadata.bucketRef.endsWith(`/${metadata.bucket}`);
+      const sameLocation =
+        !metadata.managed?.location || grant.location.locationId === metadata.managed.location.locationId;
       if (!sameIdentity || !sameLocation || grant.bucket !== metadata.bucket || grant.region !== metadata.region) {
-        throw new Error('Frameleaf Cloud offered a different storage binding than the one this server claimed. Set up cloud backup again.');
+        throw new Error(
+          'Frameleaf Cloud offered a different storage binding than the one this server claimed. Set up cloud backup again.',
+        );
       }
     }
     return {
@@ -2879,7 +2900,9 @@ export class CloudBackupService {
         found.metadata.target === 'managed'
           ? await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () => {
               if (await this.activeBucketOperation()) throw new ConflictException('Cloud backup is busy');
-              return read(this.managedConnection(await this.cloudBackup.rotate(await this.managedApi()), found.metadata));
+              return read(
+                this.managedConnection(await this.cloudBackup.rotate(await this.managedApi()), found.metadata),
+              );
             })
           : await read(
               this.ownBucketConnection(found.metadata, (await this.readSettings()).frameleafCloud.cloudBackup),
@@ -3344,10 +3367,18 @@ export class CloudBackupService {
       throw new NotFoundException('This backup is not one of the kept backups.');
     }
     const binding = JSON.stringify([
-      metadata.bucketRef, metadata.region, metadata.bucket, metadata.keyFingerprint,
-      metadata.managed?.storageId ?? null, metadata.managed?.location?.locationId ?? null,
+      metadata.bucketRef,
+      metadata.region,
+      metadata.bucket,
+      metadata.keyFingerprint,
+      metadata.managed?.storageId ?? null,
+      metadata.managed?.location?.locationId ?? null,
     ]);
-    if (this.manifestCache?.bucketRef === metadata.bucketRef && this.manifestCache.key === key && this.manifestCache.binding === binding) {
+    if (
+      this.manifestCache?.bucketRef === metadata.bucketRef &&
+      this.manifestCache.key === key &&
+      this.manifestCache.binding === binding
+    ) {
       return this.manifestCache.manifest;
     }
     const bucketKey = await this.requireKeyForRequest(metadata);
