@@ -1,10 +1,12 @@
 import { Kysely } from 'kysely';
-import { AssetFileType, AssetLockReason, AssetVisibility, JobName } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, AssetLockReason, AssetVisibility, JobName, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -12,6 +14,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import {
+  AlbumOriginField,
   AssetOriginField,
   PartnerBackfillState,
   PartnerOriginRepository,
@@ -20,15 +23,18 @@ import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
+import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
+import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { PartnerCopyService } from 'src/services/partner-copy.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
+import { checkAccess } from 'src/utils/access.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -44,6 +50,7 @@ afterAll(async () => {
 
 const real = [
   AccessRepository,
+  AlbumRepository,
   AssetRepository,
   PartnerOriginRepository,
   PartnerRepository,
@@ -71,7 +78,6 @@ const assetService = () => {
     database: db,
     real: [
       ...real,
-      AlbumRepository,
       AssetEditRepository,
       AssetJobRepository,
       DuplicateRepository,
@@ -89,7 +95,30 @@ const assetService = () => {
   return { assets: sut, assetCtx: ctx };
 };
 
-const PARTNER_JOBS = new Set<string>([JobName.PartnerCopyAsset, JobName.PartnerPropagate, JobName.PartnerBackfill]);
+/** AlbumService over the same database; its queued jobs are drained with the copy service's. */
+const albumService = () => {
+  const { sut, ctx } = newMediumService(AlbumService, {
+    database: db,
+    real: [...real, AlbumUserRepository, ClassificationRepository, MapRepository, SmartAlbumRepository],
+    mock: [EventRepository, JobRepository, LoggingRepository],
+  });
+  ctx.getMock(EventRepository).emit.mockResolvedValue();
+  ctx.getMock(JobRepository).queue.mockResolvedValue();
+  ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+  return { albums: sut, albumCtx: ctx };
+};
+
+const albumAssetIds = async (albumId: string) =>
+  (await db.selectFrom('album_asset').select('assetId').where('albumId', '=', albumId).execute())
+    .map(({ assetId }) => assetId)
+    .toSorted();
+
+const PARTNER_JOBS = new Set<string>([
+  JobName.PartnerCopyAlbum,
+  JobName.PartnerCopyAsset,
+  JobName.PartnerPropagate,
+  JobName.PartnerBackfill,
+]);
 
 /** Run every queued partner job, and the jobs they queue, until none is left; returns the rounds taken. */
 const drain = async (sut: PartnerCopyService, contexts: { getMock: Ctx['getMock'] }[]) => {
@@ -120,6 +149,10 @@ const drain = async (sut: PartnerCopyService, contexts: { getMock: Ctx['getMock'
         }
         case JobName.PartnerBackfill: {
           await sut.handleBackfill(job.data);
+          break;
+        }
+        case JobName.PartnerCopyAlbum: {
+          await sut.handleCopyAlbum(job.data);
           break;
         }
         default: {
@@ -481,6 +514,99 @@ describe(PartnerCopyService.name, () => {
         const checksums = rows.map(({ checksum }) => Buffer.from(checksum).toString('hex'));
         expect(new Set(checksums).size).toBe(checksums.length);
         expect(checksums).toHaveLength(2);
+      }
+    });
+  });
+
+  describe('albums and partner access (spec §4.4, §4.8)', () => {
+    const shareWithAlbum = async () => {
+      const { sut, ctx } = setup();
+      const { albums, albumCtx } = albumService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const first = await newSourceAsset(ctx, alice.id);
+      const second = await newSourceAsset(ctx, alice.id);
+      const third = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id, albumName: 'Lake' }, [first.id, second.id]);
+      await ctx.get(PartnerOriginRepository).startBackfill(alice.id, bob.id, 3);
+      await sut.handleBackfill({ sharedById: alice.id, sharedWithId: bob.id });
+      await drain(sut, [ctx]);
+      const origins = ctx.get(PartnerOriginRepository);
+      const copyOf = async (assetId: string) => (await origins.getCopyId('asset', assetId, bob.id))!;
+      const albumCopy = (await origins.getCopyId('album', album.id, bob.id))!;
+      return { sut, ctx, albums, albumCtx, alice, bob, album, first, second, third, copyOf, albumCopy, origins };
+    };
+
+    it("copies an album the partner owns, holding the recipient's copies, and mirrors its membership", async () => {
+      const { sut, ctx, albums, albumCtx, alice, bob, album, first, second, third, copyOf, albumCopy } =
+        await shareWithAlbum();
+
+      expect(albumCopy).toBeDefined();
+      const copy = await db.selectFrom('album').selectAll().where('id', '=', albumCopy).executeTakeFirstOrThrow();
+      expect(copy.albumName).toBe('Lake');
+      const owner = await db
+        .selectFrom('album_user')
+        .select(['userId', 'role'])
+        .where('albumId', '=', albumCopy)
+        .execute();
+      expect(owner).toEqual([{ userId: bob.id, role: AlbumUserRole.Owner }]);
+      await expect(albumAssetIds(albumCopy)).resolves.toEqual(
+        [await copyOf(first.id), await copyOf(second.id)].toSorted(),
+      );
+
+      await albums.addAssets(factory.auth({ user: alice }), album.id, { ids: [third.id] });
+      await albums.removeAssets(factory.auth({ user: alice }), album.id, { ids: [first.id] });
+      await albums.update(factory.auth({ user: alice }), album.id, { albumName: 'Lake trip' });
+      await drain(sut, [ctx, albumCtx]);
+
+      await expect(albumAssetIds(albumCopy)).resolves.toEqual(
+        [await copyOf(second.id), await copyOf(third.id)].toSorted(),
+      );
+      await expect(
+        db.selectFrom('album').select('albumName').where('id', '=', albumCopy).executeTakeFirstOrThrow(),
+      ).resolves.toEqual({ albumName: 'Lake trip' });
+    });
+
+    it("stops mirroring membership once the recipient changes their album's items", async () => {
+      const { sut, ctx, albums, albumCtx, alice, bob, album, first, third, copyOf, albumCopy, origins } =
+        await shareWithAlbum();
+
+      await albums.removeAssets(factory.auth({ user: bob }), albumCopy, { ids: [await copyOf(first.id)] });
+      await expect(origins.getOrigin('album', albumCopy)).resolves.toMatchObject({
+        overriddenFields: [AlbumOriginField.Membership],
+      });
+
+      await albums.addAssets(factory.auth({ user: alice }), album.id, { ids: [third.id] });
+      await drain(sut, [ctx, albumCtx]);
+      expect(await albumAssetIds(albumCopy)).not.toContain(await copyOf(third.id));
+      // the source album is untouched by the recipient's edit
+      expect(await albumAssetIds(album.id)).toContain(first.id);
+    });
+
+    it('never copies an album the recipient already sees as a member', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const asset = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id }, [asset.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: bob.id, role: AlbumUserRole.Editor });
+
+      await expect(sut.copyAlbum(album.id, bob.id, alice.id)).resolves.toBeUndefined();
+    });
+
+    it("never lets a partner read the sharer's own rows: only their copies", async () => {
+      const { ctx, bob, first, copyOf } = await shareWithAlbum();
+      const access = ctx.get(AccessRepository);
+      const auth = factory.auth({ user: bob });
+      const copyId = await copyOf(first.id);
+
+      for (const permission of [Permission.AssetRead, Permission.AssetView, Permission.AssetDownload]) {
+        await expect(checkAccess(access, { auth, permission, ids: new Set([first.id]) })).resolves.toEqual(new Set());
+        await expect(checkAccess(access, { auth, permission, ids: new Set([copyId]) })).resolves.toEqual(
+          new Set([copyId]),
+        );
       }
     });
   });

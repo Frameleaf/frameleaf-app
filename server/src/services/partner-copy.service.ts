@@ -1,14 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { IPartnerBackfillJob, IPartnerCopyAssetJob, IPartnerPropagateJob, JobItem } from 'src/types.js';
+import type {
+  IPartnerBackfillJob,
+  IPartnerCopyAlbumJob,
+  IPartnerCopyAssetJob,
+  IPartnerPropagateJob,
+  JobItem,
+} from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { AssetStatus, AssetVisibility, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
+import {
+  AlbumKind,
+  AlbumUserRole,
+  AssetStatus,
+  AssetVisibility,
+  ImmichWorker,
+  JobName,
+  JobStatus,
+  QueueName,
+} from 'src/enum.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import {
+  AlbumOriginField,
   AssetOriginField,
   PartnerBackfillState,
   PartnerOriginRepository,
 } from 'src/repositories/partner-origin.repository.js';
+import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { upsertTags } from 'src/utils/tag.js';
 
@@ -90,6 +107,65 @@ export const recordAssetEdit = async (
   }
 };
 
+const TRACKED_ALBUM_FIELDS = new Set<string>(Object.values(AlbumOriginField));
+
+/** The followed fields an album edit touches (spec §4.4). */
+export const getAlbumEditFields = (dto: {
+  albumName?: unknown;
+  description?: unknown;
+  albumThumbnailAssetId?: unknown;
+}): AlbumOriginField[] => [
+  ...(dto.albumName === undefined ? [] : [AlbumOriginField.Title]),
+  ...(dto.description === undefined ? [] : [AlbumOriginField.Description]),
+  ...(dto.albumThumbnailAssetId === undefined ? [] : [AlbumOriginField.Cover]),
+];
+
+/**
+ * These fields of these albums were edited (spec §4.4, §4.6): on album copies the fields become the
+ * copy's own, and every album copy that follows one of these albums receives the change.
+ */
+export const recordAlbumEdit = async (
+  { partnerOrigin, job }: BackfillRepositories,
+  albumIds: string[],
+  fields: string[],
+) => {
+  const tracked = fields.filter((field) => TRACKED_ALBUM_FIELDS.has(field));
+  if (tracked.length === 0 || albumIds.length === 0) {
+    return;
+  }
+  // any member's edit of an album copy makes that field the copy's own (an album may have editors)
+  await partnerOrigin.markOverridden('album', albumIds, tracked);
+  const sources = await partnerOrigin.getIdsWithFollowers('album', albumIds);
+  if (sources.length > 0) {
+    await job.queueAll(
+      sources.map((sourceId) => ({
+        name: JobName.PartnerPropagate as const,
+        data: { kind: 'album' as const, sourceId, fields: tracked },
+      })),
+    );
+  }
+};
+
+/** A new album of `ownerId`'s goes to everyone they share with (spec §4.4, §4.6). */
+export const queueAlbumCopies = async (
+  { partner, job }: { partner: PartnerRepository; job: JobRepository },
+  ownerId: string,
+  albumId: string,
+) => {
+  const partners = await partner.getAll(ownerId);
+  const recipients = partners
+    .filter((row) => row.sharedById === ownerId && row.sharedWithId !== ownerId)
+    .map((row) => row.sharedWithId);
+  if (recipients.length > 0) {
+    await job.queueAll(
+      recipients.map((targetOwnerId) => ({
+        name: JobName.PartnerCopyAlbum as const,
+        data: { sourceAlbumId: albumId, targetOwnerId, partnerSharedById: ownerId },
+      })),
+    );
+  }
+};
+
 /**
  * Partner sharing v2 (FL-326, spec §4.3, §4.7): a partner receives their own copy of every item the
  * sharing user holds. A copy is an ordinary row of the recipient's, linked to the same stored file,
@@ -153,7 +229,11 @@ export class PartnerCopyService extends BaseService {
     }
 
     await this.copyTags(source.id, copyId, targetOwnerId);
-    await this.copyFaces(source.id, copyId, targetOwnerId);
+    await this.copyFaces({ sourceAssetId: source.id, targetAssetId: copyId, targetOwnerId, partnerSharedById });
+    // spec §4.4: an album copy whose membership still follows its source gains the new copy
+    for (const albumId of await this.partnerOriginRepository.getFollowingAlbumCopiesHolding(source.id, targetOwnerId)) {
+      await this.albumRepository.addAssetIds(albumId, [copyId]);
+    }
     return copyId;
   }
 
@@ -198,8 +278,95 @@ export class PartnerCopyService extends BaseService {
    * TASK 12 (partner-people-locked): copy the source's faces (exact boxes, `face_search` embeddings)
    * mapped to the target library's people. Faces are not copied until then.
    */
-  protected copyFaces(_sourceAssetId: string, _copyId: string, _targetOwnerId: string): Promise<void> {
+  protected copyFaces(_input: {
+    sourceAssetId: string;
+    targetAssetId: string;
+    targetOwnerId: string;
+    partnerSharedById: string;
+  }): Promise<void> {
     return Promise.resolve();
+  }
+
+  /**
+   * Copy an album `partnerSharedById` shares into `targetOwnerId`'s library (spec §4.4): only a plain
+   * album its owner owns (collections and shared spaces are not copied), never one the target already
+   * sees as a member, never back to its original owner, and once per library. The copy holds the target's
+   * copies of the album's items and follows the source's title, description, cover and membership.
+   */
+  async copyAlbum(
+    sourceAlbumId: string,
+    targetOwnerId: string,
+    partnerSharedById: string,
+  ): Promise<string | undefined> {
+    const album = await this.partnerOriginRepository.getAlbumForCopy(sourceAlbumId);
+    if (!album || album.deletedAt || album.kind !== AlbumKind.Album || album.ownerId === targetOwnerId) {
+      return;
+    }
+    const origin = await this.partnerOriginRepository.getOrigin('album', album.id);
+    const rootOwnerId = origin?.rootOwnerId ?? album.ownerId;
+    if (rootOwnerId === targetOwnerId) {
+      return;
+    }
+    if (await this.partnerOriginRepository.isAlbumMember(album.id, targetOwnerId)) {
+      return;
+    }
+    if (await this.partnerOriginRepository.getCopyId('album', album.id, targetOwnerId)) {
+      return;
+    }
+
+    const assetIds = await this.partnerOriginRepository.getAlbumAssetCopyIds(album.id, targetOwnerId);
+    const cover = album.albumThumbnailAssetId
+      ? await this.partnerOriginRepository.getCopyId('asset', album.albumThumbnailAssetId, targetOwnerId)
+      : undefined;
+    const copy = await this.albumRepository.create(
+      {
+        albumName: album.albumName,
+        description: album.description,
+        order: album.order,
+        albumThumbnailAssetId: cover ?? assetIds[0] ?? null,
+        kind: AlbumKind.Album,
+      },
+      assetIds,
+      [{ userId: targetOwnerId, role: AlbumUserRole.Owner }],
+      targetOwnerId,
+    );
+    await this.partnerOriginRepository.createOrigin('album', {
+      id: copy.id,
+      sourceId: album.id,
+      ownerId: targetOwnerId,
+      rootOwnerId,
+      partnerSharedById,
+    });
+    return copy.id;
+  }
+
+  @OnJob({ name: JobName.PartnerCopyAlbum, queue: QueueName.BackgroundTask })
+  async handleCopyAlbum({ sourceAlbumId, targetOwnerId, partnerSharedById }: IPartnerCopyAlbumJob): Promise<JobStatus> {
+    const partner = await this.partnerRepository.get({ sharedById: partnerSharedById, sharedWithId: targetOwnerId });
+    if (!partner) {
+      return JobStatus.Skipped;
+    }
+    const copyId = await this.copyAlbum(sourceAlbumId, targetOwnerId, partnerSharedById);
+    if (!copyId) {
+      return JobStatus.Skipped;
+    }
+    // A→B→C: B's copy goes on to everyone B shares with
+    await queueAlbumCopies({ partner: this.partnerRepository, job: this.jobRepository }, targetOwnerId, copyId);
+    return JobStatus.Success;
+  }
+
+  /** Bring one album copy's items in line with its source's (only while membership is followed). */
+  private async syncAlbumMembership(sourceAlbumId: string, copyAlbumId: string, ownerId: string) {
+    const desired = new Set(await this.partnerOriginRepository.getAlbumAssetCopyIds(sourceAlbumId, ownerId));
+    const current = new Set(await this.partnerOriginRepository.getAlbumAssetIds(copyAlbumId));
+    const added = [...desired.difference(current)];
+    const removed = [...current.difference(desired)];
+    if (added.length > 0) {
+      await this.albumRepository.addAssetIds(copyAlbumId, added);
+    }
+    if (removed.length > 0) {
+      await this.albumRepository.removeAssetIds(copyAlbumId, removed);
+    }
   }
 
   /** The partners `ownerId` shares their library with. */
@@ -278,9 +445,43 @@ export class PartnerCopyService extends BaseService {
     return followers.length > 0 ? JobStatus.Success : JobStatus.Skipped;
   }
 
-  /** Album propagation (Task 11). */
-  protected propagateAlbum(_sourceId: string, _fields: string[]): Promise<JobStatus> {
-    return Promise.resolve(JobStatus.Skipped);
+  /** Album propagation (spec §4.4): title, description, cover and membership, each until changed. */
+  private async propagateAlbum(sourceId: string, fields: string[]): Promise<JobStatus> {
+    const followers = await this.partnerOriginRepository.getFollowers('album', sourceId);
+    if (followers.length === 0) {
+      return JobStatus.Skipped;
+    }
+    const source = await this.partnerOriginRepository.getAlbumForCopy(sourceId);
+    if (!source) {
+      return JobStatus.Skipped;
+    }
+    const onward: JobItem[] = [];
+    for (const follower of followers) {
+      const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
+      if (apply.length === 0) {
+        continue;
+      }
+      if (apply.includes(AlbumOriginField.Membership)) {
+        await this.syncAlbumMembership(sourceId, follower.id, follower.ownerId);
+      }
+      const cover =
+        apply.includes(AlbumOriginField.Cover) && source.albumThumbnailAssetId
+          ? await this.partnerOriginRepository.getCopyId('asset', source.albumThumbnailAssetId, follower.ownerId)
+          : undefined;
+      const update = {
+        ...(apply.includes(AlbumOriginField.Title) && { albumName: source.albumName }),
+        ...(apply.includes(AlbumOriginField.Description) && { description: source.description }),
+        ...(cover && { albumThumbnailAssetId: cover }),
+      };
+      if (Object.keys(update).length > 0) {
+        await this.albumRepository.update(follower.id, { id: follower.id, ...update }, follower.ownerId);
+      }
+      onward.push({ name: JobName.PartnerPropagate, data: { kind: 'album', sourceId: follower.id, fields: apply } });
+    }
+    if (onward.length > 0) {
+      await this.jobRepository.queueAll(onward);
+    }
+    return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.PartnerBackfill, queue: QueueName.BackgroundTask })
@@ -324,9 +525,14 @@ export class PartnerCopyService extends BaseService {
     return JobStatus.Success;
   }
 
-  /** After the assets: albums (Task 11), then people (Task 12). */
-  protected onAssetsBackfilled(_sharedById: string, _sharedWithId: string): Promise<void> {
-    return Promise.resolve();
+  /** After the assets: albums (spec §4.7), then people (Task 12). */
+  protected async onAssetsBackfilled(sharedById: string, sharedWithId: string): Promise<void> {
+    for (const albumId of await this.partnerOriginRepository.getOwnedAlbumIds(sharedById)) {
+      const copyId = await this.copyAlbum(albumId, sharedWithId, sharedById);
+      if (copyId) {
+        await queueAlbumCopies({ partner: this.partnerRepository, job: this.jobRepository }, sharedWithId, copyId);
+      }
+    }
   }
 
   /**

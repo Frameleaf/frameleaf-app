@@ -653,7 +653,8 @@ describe(AssetRepository.name, () => {
       await ctx.newAsset({ ownerId: owner.id, livePhotoVideoId: plainMotion.id });
       const ids = new Set([motion.id, plainMotion.id]);
 
-      await expect(access.asset.checkPartnerAccess(partner.id, ids)).resolves.toEqual(new Set([plainMotion.id]));
+      // FL-326: a partner reaches none of the sharer's rows; they hold their own copies
+      await expect(access.asset.checkOwnerAccess(partner.id, ids, false)).resolves.toEqual(new Set());
       await expect(access.asset.checkOwnerAccess(owner.id, ids, false)).resolves.toEqual(new Set([plainMotion.id]));
       await expect(access.asset.checkOwnerAccess(owner.id, ids, true)).resolves.toEqual(ids);
     });

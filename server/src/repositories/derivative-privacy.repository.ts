@@ -119,12 +119,11 @@ export class DerivativePrivacyRepository {
    * right now, share-locking the rows that grant it.
    *
    * The same grants as the library (`AccessRepository`): an album the account is a member
-   * of (owners are members too) that holds the asset, or a partner who shares their library with
-   * the account and the asset is on their timeline, or an item shared directly with the account.
-   * Locked media is reached by none of them. The rows
-   * that grant access are locked `FOR SHARE`, so deleting the album, removing the account from it,
-   * taking the asset out of it, deleting the partner's account or ending the partnership waits for
-   * this transaction; one that committed first is seen as lost access.
+   * of (owners are members too) that holds the asset, or an item shared directly with the account.
+   * FL-326: a partnership grants nothing, as partners hold their own copies. Locked media is reached
+   * by none of them. The rows that grant access are locked `FOR SHARE`, so deleting the album,
+   * removing the account from it or taking the asset out of it waits for this transaction; one that
+   * committed first is seen as lost access.
    */
   async lockSharedAccess(tx: Kysely<DB>, userId: string, sources: readonly LockedSourceRow[]): Promise<Set<string>> {
     const candidates = sources.filter((source) => source.ownerId !== userId && source.lockReason === null);
@@ -143,18 +142,7 @@ export class DerivativePrivacyRepository {
       FOR SHARE OF album, album_asset, album_user
     `.execute(tx);
 
-    const partners = await sql<{ assetId: string }>`
-      SELECT asset.id AS "assetId"
-      FROM partner
-      JOIN "user" owner ON owner.id = partner."sharedById" AND owner."deletedAt" IS NULL
-      JOIN asset ON asset."ownerId" = partner."sharedById"
-      WHERE partner."sharedWithId" = ${userId}::uuid
-        AND asset.id = ANY(${ids}::uuid[])
-        AND asset.visibility IN (${sql.lit(AssetVisibility.Timeline)}, ${sql.lit(AssetVisibility.Hidden)})
-      FOR SHARE OF partner, owner
-    `.execute(tx);
-
-    const reachable = new Set([...albums.rows, ...partners.rows].map((row) => row.assetId));
+    const reachable = new Set(albums.rows.map((row) => row.assetId));
     const remaining = ids.filter((id) => !reachable.has(id));
     if (remaining.length === 0) {
       return reachable;

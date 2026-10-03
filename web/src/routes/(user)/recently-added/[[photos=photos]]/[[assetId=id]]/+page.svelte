@@ -29,7 +29,6 @@
   const options = {
     visibility: AssetVisibility.Timeline,
     withStacked: true,
-    withPartners: true,
     dateType: TimeBucketDateType.Added,
   };
 </script>
