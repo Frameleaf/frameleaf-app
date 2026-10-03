@@ -54,6 +54,7 @@ it('edits real loaded settings and reports success only after the server resolve
     ),
   );
   expect(vi.mocked(saveBrand).mock.calls[0][1]).not.toHaveProperty('logoAssetId');
+  expect(vi.mocked(saveBrand).mock.calls[0][1]).not.toHaveProperty('watermarkPresets');
   expect(onSaved).not.toHaveBeenCalled();
   resolveSave({ revision: 'persisted', brand: { ...brand, name: 'Renamed studio' }, logoUnavailable: true });
   await screen.findByText('Branding saved on your server');
