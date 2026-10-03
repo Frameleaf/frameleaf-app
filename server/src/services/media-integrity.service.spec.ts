@@ -70,7 +70,9 @@ describe(MediaIntegrityService.name, () => {
     first.cancel();
     expect(await first.result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
     let settled = false;
-    void first.settled.then(() => { settled = true; });
+    void first.settled.then(() => {
+      settled = true;
+    });
     const second = sut.validateWithSettlement({ ...input, deep: true });
     expect(await sut.validate(input)).toEqual({ status: 'transient', reason: 'validation_busy' });
     expect(settled).toBe(false);
