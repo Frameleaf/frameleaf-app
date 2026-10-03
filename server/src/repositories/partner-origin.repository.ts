@@ -85,6 +85,9 @@ const GENERATED_FILE_TYPES = [
   AssetFileType.EncodedVideo,
 ];
 
+/** Copies form chains (A→B→C…); lineage walks stop here, far beyond any real chain, as a guard. */
+const MAX_LINEAGE_DEPTH = 64;
+
 const COPY_REFUSAL = 'Partner sharing is unavailable during database handoff';
 
 /**
@@ -643,17 +646,60 @@ export class PartnerOriginRepository {
     return rows[0]?.present ?? false;
   }
 
-  /** `ownerId`'s copies of the items in `sourceAlbumId`, in the source album's order of addition. */
+  /**
+   * `ownerId`'s copies of the items in `sourceAlbumId`. An item counts as copied when the library holds a
+   * copy of it or of anything it was itself copied from: with A→B, A→C and B→C, C's copy of A's photo is
+   * the one that belongs in C's copy of B's album (the one-copy rule never gave C a copy of B's copy).
+   */
   async getAlbumAssetCopyIds(sourceAlbumId: string, ownerId: string): Promise<string[]> {
     const { rows } = await sql<{ id: string }>`
+      WITH RECURSIVE lineage(id, depth) AS (
+        SELECT album_asset."assetId", 0 FROM album_asset WHERE album_asset."albumId" = ${sourceAlbumId}::uuid
+        UNION
+        SELECT up."sourceAssetId", lineage.depth + 1
+        FROM lineage
+        JOIN immich_fork.asset_origin up ON up."assetId" = lineage.id
+        WHERE up."sourceAssetId" IS NOT NULL AND lineage.depth < ${MAX_LINEAGE_DEPTH}
+      )
       SELECT DISTINCT origin."assetId" AS id
-      FROM album_asset
-      JOIN immich_fork.asset_origin origin ON origin."sourceAssetId" = album_asset."assetId"
+      FROM lineage
+      JOIN immich_fork.asset_origin origin ON origin."sourceAssetId" = lineage.id
         AND origin."ownerId" = ${ownerId}::uuid
       JOIN asset copy ON copy.id = origin."assetId" AND copy."deletedAt" IS NULL
-      WHERE album_asset."albumId" = ${sourceAlbumId}::uuid
     `.execute(this.db);
     return rows.map(({ id }) => id);
+  }
+
+  /**
+   * Whether `ownerId` already holds a copy of this album or of any album it descends from or that
+   * descends from the same original (the root album): one copy per library per root album, however many
+   * partners pass it on (A→B, A→C, B→C must not give C two).
+   */
+  async hasAlbumCopyOfRoot(albumId: string, ownerId: string): Promise<boolean> {
+    const { rows } = await sql<{ present: boolean }>`
+      WITH RECURSIVE source_lineage(id, depth) AS (
+        SELECT ${albumId}::uuid, 0
+        UNION
+        SELECT up."sourceAlbumId", source_lineage.depth + 1
+        FROM source_lineage
+        JOIN immich_fork.album_origin up ON up."albumId" = source_lineage.id
+        WHERE up."sourceAlbumId" IS NOT NULL AND source_lineage.depth < ${MAX_LINEAGE_DEPTH}
+      ),
+      root AS (SELECT id FROM source_lineage ORDER BY depth DESC LIMIT 1),
+      copy_lineage(id, depth) AS (
+        SELECT origin."sourceAlbumId", 1
+        FROM immich_fork.album_origin origin
+        JOIN album copy ON copy.id = origin."albumId"
+        WHERE origin."ownerId" = ${ownerId}::uuid AND origin."sourceAlbumId" IS NOT NULL
+        UNION
+        SELECT up."sourceAlbumId", copy_lineage.depth + 1
+        FROM copy_lineage
+        JOIN immich_fork.album_origin up ON up."albumId" = copy_lineage.id
+        WHERE up."sourceAlbumId" IS NOT NULL AND copy_lineage.depth < ${MAX_LINEAGE_DEPTH}
+      )
+      SELECT EXISTS (SELECT 1 FROM copy_lineage WHERE id IN (SELECT id FROM root)) AS present
+    `.execute(this.db);
+    return rows[0]?.present ?? false;
   }
 
   /** The items in an album. */
