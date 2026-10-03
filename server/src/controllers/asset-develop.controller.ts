@@ -17,6 +17,7 @@ import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  AssetDevelopArtifactResponseDto,
   AssetDevelopFileQueryDto,
   AssetDevelopPreviewDto,
   AssetDevelopResponseDto,
@@ -25,7 +26,6 @@ import {
   AssetDevelopRevisionResponseDto,
   AssetDevelopSaveDto,
   AssetDevelopSemanticMaskDto,
-  AssetDevelopArtifactResponseDto,
 } from 'src/dtos/asset-develop.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';

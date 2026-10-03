@@ -18,8 +18,8 @@ import {
 } from 'src/services/asset-develop.service.js';
 import {
   DARKTABLE_RENDERER_VERSION,
-  renderDarktable,
   encodeNativeDevelopOutput,
+  renderDarktable,
 } from 'src/utils/darktable-renderer.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';

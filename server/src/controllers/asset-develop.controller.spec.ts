@@ -1,12 +1,14 @@
 import { EventEmitter } from 'node:events';
-import { AssetDevelopController } from './asset-develop.controller.js';
+import { AssetDevelopController } from 'src/controllers/asset-develop.controller.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+
 it('propagates a disconnected preview to native work and removes its response listener', async () => {
   const res = Object.assign(new EventEmitter(), { destroyed: false, set: vi.fn(), end: vi.fn() });
   const service = {
-    preview: vi.fn(async (_auth, _id, _dto, signal: AbortSignal) => {
+    preview: vi.fn((_auth, _id, _dto, signal: AbortSignal) => {
       res.emit('close');
       signal.throwIfAborted();
+      return Promise.resolve();
     }),
   };
   const controller = new AssetDevelopController(service as never, {} as never);
@@ -20,9 +22,9 @@ it('propagates proposal disconnects and preserves the existing artifact response
   const res = Object.assign(new EventEmitter(), { destroyed: false });
   const artifact = { id: 'artifact' };
   const service = {
-    proposeSemanticMask: vi.fn(async (_auth, _id, _dto, signal: AbortSignal) => {
+    proposeSemanticMask: vi.fn((_auth, _id, _dto, signal: AbortSignal) => {
       expect(signal.aborted).toBe(false);
-      return artifact;
+      return Promise.resolve(artifact);
     }),
   };
   const controller = new AssetDevelopController(service as never, {} as never);

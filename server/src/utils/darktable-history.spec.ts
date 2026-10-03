@@ -1,9 +1,10 @@
-import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { prepareNativeHistory } from './darktable-renderer.js';
+import { DatabaseSync } from 'node:sqlite';
 import { DarktableDevelopRecipeSchema } from 'src/dtos/asset-develop.dto.js';
+import { prepareNativeHistory } from 'src/utils/darktable-renderer.js';
+
 let directory: string;
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'native-history-double-'));
@@ -22,7 +23,7 @@ function fixture() {
     db.prepare('INSERT INTO history VALUES(1,?,?,?, ?,1,NULL,14,0,NULL,0)').run(num, op, version, bytes);
   put(0, 'exposure', 7, Buffer.alloc(28));
   const wb = Buffer.alloc(20);
-  [2, 1, 1.5, 0].forEach((value, index) => wb.writeFloatLE(value, index * 4));
+  for (const [index, value] of [2, 1, 1.5, 0].entries()) wb.writeFloatLE(value, index * 4);
   put(1, 'temperature', 4, wb);
   const orientation = Buffer.alloc(4);
   orientation.writeInt32LE(-1);
@@ -94,6 +95,27 @@ it('rolls back earlier exposure writes if a later native module or camera coeffi
   ).toThrow('coefficient out of range');
   const check = new DatabaseSync(path);
   expect(check.prepare("SELECT op_params FROM history WHERE operation='exposure'").get()!.op_params).toEqual(old);
+  expect(check.prepare('SELECT history_end FROM images').get()!.history_end).toBe(3);
+  check.close();
+});
+it('rejects unsafe native history priorities and rolls back the exposure write', () => {
+  const path = fixture();
+  const db = new DatabaseSync(path);
+  const exposure = db.prepare("SELECT op_params FROM history WHERE operation='exposure'").get()!.op_params;
+  db.prepare('UPDATE module_order SET version = 0, iop_list = ?').run(
+    'rawprepare,0,colorbalance,0,exposure,9007199254740992,gamma,0',
+  );
+  db.close();
+  expect(() =>
+    prepareNativeHistory(path, {
+      version: 2,
+      renderer: 'darktable/5.6.1',
+      exposureEV: 3,
+      contrast: 1.1,
+    }),
+  ).toThrow(/^Unsupported native module order$/);
+  const check = new DatabaseSync(path);
+  expect(check.prepare("SELECT op_params FROM history WHERE operation='exposure'").get()!.op_params).toEqual(exposure);
   expect(check.prepare('SELECT history_end FROM images').get()!.history_end).toBe(3);
   check.close();
 });

@@ -1,6 +1,7 @@
 import { defaults } from 'src/config.js';
-import { MachineLearningRepository, FRAMELEAF_CLOUD_ENDPOINT } from 'src/repositories/machine-learning.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { FRAMELEAF_CLOUD_ENDPOINT, MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
+
 const local = 'http://immich-machine-learning:3003';
 const repo = (url = local) => {
   const sut = new MachineLearningRepository(LoggingRepository.create());
@@ -9,18 +10,16 @@ const repo = (url = local) => {
 };
 afterEach(() => vi.unstubAllGlobals());
 it('sends pinned semantic task to one local worker and refuses Cloud or redirects', async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValue(
-      Response.json({
-        'semantic-mask': {
-          png: Buffer.from('png').toString('base64'),
-          width: 10,
-          height: 20,
-          coordinates: 'sensor-active',
-        },
-      }),
-    );
+  const fetch = vi.fn().mockResolvedValue(
+    Response.json({
+      'semantic-mask': {
+        png: Buffer.from('png').toString('base64'),
+        width: 10,
+        height: 20,
+        coordinates: 'sensor-active',
+      },
+    }),
+  );
   vi.stubGlobal('fetch', fetch);
   expect(await repo().semanticMaskLocal(Buffer.from('private-canvas'), 'sky')).toEqual(Buffer.from('png'));
   expect(fetch).toHaveBeenCalledTimes(1);

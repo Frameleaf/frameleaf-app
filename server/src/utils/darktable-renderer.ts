@@ -2,18 +2,20 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { execFile as execFileCallback } from 'node:child_process';
 import { constants } from 'node:fs';
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
-import { basename, dirname } from 'node:path';
 import { endianness, tmpdir } from 'node:os';
-import { extname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
-import { DarktableDevelopRecipeSchema, type DarktableDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
-
+import {
+  ASSET_DEVELOP_BITMAP_MASK_KINDS,
+  AssetDevelopMaskKind,
+  type DarktableDevelopRecipe,
+  DarktableDevelopRecipeSchema,
+} from 'src/dtos/asset-develop.dto.js';
 import { NATIVE_RAW_ORDER, nativeBlendParams, nativeModuleParams } from 'src/utils/darktable-controls.js';
 import { type DevelopBitmap } from 'src/utils/develop-cleanup.js';
 import { maskWeight, originalMaskWeight } from 'src/utils/develop-recipe.js';
-import { AssetDevelopMaskKind, ASSET_DEVELOP_BITMAP_MASK_KINDS } from 'src/dtos/asset-develop.dto.js';
 
 const execFile = promisify(execFileCallback);
 
@@ -128,7 +130,7 @@ export function prepareNativeHistory(
         if (
           order[0][0] !== 'rawprepare' ||
           order.at(-1)![0] !== 'gamma' ||
-          order.some(([op, instance]) => !/^[a-z0-9]+$/.test(op) || !Number.isInteger(instance))
+          order.some(([op, instance]) => !/^[a-z0-9]+$/.test(op) || !Number.isSafeInteger(instance))
         )
           throw new Error('Unsupported native module order');
       } else if (row.version === 4) order = NATIVE_RAW_ORDER.map((op) => [op, 0]);
@@ -145,7 +147,7 @@ export function prepareNativeHistory(
       rasterInstance?: number,
     ) => {
       const list = ensureOrder();
-      if (!list.some(([op]) => op === operation)) throw new Error(`Unsupported native module order for ${operation}`);
+      if (list.every(([op]) => op !== operation)) throw new Error(`Unsupported native module order for ${operation}`);
       const existing = rows(operation).find((row) => row.multi_priority === instance);
       if (
         existing &&
@@ -175,7 +177,7 @@ export function prepareNativeHistory(
           instance,
           instance ? `Frameleaf mask ${instance}` : 'Frameleaf',
         );
-      if (!list.some(([op, priority]) => op === operation && priority === instance)) {
+      if (list.every(([op, priority]) => !(op === operation && priority === instance))) {
         const last = list.findLastIndex(([op]) => op === operation);
         list.splice(last + 1, 0, [operation, instance]);
       }
@@ -210,7 +212,7 @@ export function prepareNativeHistory(
       let orientation = Buffer.from(row.op_params).readInt32LE(0);
       if (orientation === -1)
         orientation = Number(db.prepare('SELECT orientation FROM images WHERE id = ?').get(image.id)?.orientation);
-      if (!Number.isInteger(orientation) || orientation < 0 || orientation > 7)
+      if (!Number.isSafeInteger(orientation) || orientation < 0 || orientation > 7)
         throw new Error('Unsupported native camera orientation');
       for (let turn = 0; turn < (recipe.rotation ?? 0) / 90; turn++)
         orientation = orientation ^ (orientation & 4 ? 2 : 1) ^ 4;
@@ -279,7 +281,7 @@ async function writeNativeMasks(
   signal: AbortSignal,
 ) {
   const masks = recipe.masks?.filter((mask) => mask.enabled && mask.amount > 0) ?? [];
-  if (!masks.length) return [];
+  if (masks.length === 0) return [];
   const db = new DatabaseSync(library);
   let original: { width: number; height: number };
   try {
@@ -401,8 +403,10 @@ export async function renderDarktable(
       recipe.lensCorrection &&
       !recipe.sensorCanvas &&
       !/^[1-7]$/.test(
-        Array.from((rendered.stdout + rendered.stderr).matchAll(/frameleaf-lens-calibration:(\d+)\b/g)).at(-1)?.[1] ??
-          '',
+        (rendered.stdout + rendered.stderr)
+          .matchAll(/frameleaf-lens-calibration:(\d+)\b/g)
+          .toArray()
+          .at(-1)?.[1] ?? '',
       )
     )
       throw new Error('Native lens calibration unavailable; install the qualified engine or disable lens correction');
@@ -446,7 +450,8 @@ export async function encodeNativeDevelopOutput(
   output?: string,
 ): Promise<Buffer | undefined> {
   let pipeline = sharp(buffer, { failOn: 'warning' }).pipelineColorspace('rgb16').keepIccProfile();
-  if (options.size) pipeline = pipeline.resize(options.size, options.size, { fit: 'inside', withoutEnlargement: true });
+  const targetSize = options.size;
+  if (targetSize) pipeline = pipeline.resize(targetSize, targetSize, { fit: 'inside', withoutEnlargement: true });
   pipeline = pipeline.toFormat(options.format, {
     quality: options.quality,
     chromaSubsampling: '4:4:4',
