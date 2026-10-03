@@ -9683,6 +9683,8 @@
   "frameleaf_trash_summary_retention": "automatic retention window",
   "frameleaf_trash_summary_sizes": "original file sizes",
   "frameleaf_trash_try_again": "Try again",
+  "frameleaf_universal_storage_description": "Frameleaf keeps one copy of each file on the server, however many libraries hold it. Every library is still charged the full size. A file no library uses any more waits in the Library Care file trash.",
+  "frameleaf_universal_storage_title": "One file per photo",
   "frameleaf_upload_album_add_failed": "Uploaded to your library, but it could not be added to the album. Retry to add it.",
   "frameleaf_users_accounts_label": "Accounts",
   "frameleaf_users_authentication_password": "Password",

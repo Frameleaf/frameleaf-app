@@ -126,7 +126,7 @@ describe(PhysicalDeduplicationService.name, () => {
     mocks.database.withLock.mockImplementation((_lock, callback) => callback());
     mocks.physicalFile.getMigrationCandidates.mockReturnValue(stream() as never);
 
-    await expect(sut[handler]({})).resolves.toBe(JobStatus.Success);
+    await expect(sut[handler]({ masterUserId: 'master-user' })).resolves.toBe(JobStatus.Success);
 
     expect(mocks.physicalFile.getMigrationCandidates).toHaveBeenCalledWith('master-user');
   });
@@ -185,7 +185,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master() as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
 
-      await expect(sut.handleDryRun({})).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleDryRun({ masterUserId: 'master-user' })).resolves.toBe(JobStatus.Success);
 
       const [, summary] = mocks.systemMetadata.set.mock.calls[0] as [unknown, Record<string, unknown>];
       expect(summary).toEqual(
@@ -227,7 +227,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMigrationCandidates.mockReturnValue(stream(candidate()) as never);
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(undefined as never);
 
-      await sut.handleDryRun({});
+      await sut.handleDryRun({ masterUserId: 'master-user' });
 
       const [, summary] = mocks.systemMetadata.set.mock.calls[0] as [unknown, Record<string, unknown>];
       expect(summary).toEqual(expect.objectContaining({ eligibleAssets: 0, skippedMissingMaster: 1, retained: [] }));
@@ -253,7 +253,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master() as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(2);
 
-      await sut.handleDryRun({});
+      await sut.handleDryRun({ masterUserId: 'master-user' });
 
       const [, summary] = mocks.systemMetadata.set.mock.calls[0] as [unknown, Record<string, unknown>];
       expect(summary).toEqual(expect.objectContaining({ eligibleAssets: 0, reclaimableBytes: 0, skippedExternal: 1 }));
@@ -278,7 +278,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master() as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
 
-      await sut.handleDryRun({ scopeUserId: 'emma' });
+      await sut.handleDryRun({ masterUserId: 'master-user', scopeUserId: 'emma' });
 
       const [, summary] = mocks.systemMetadata.set.mock.calls[0] as [unknown, Record<string, unknown>];
       expect(summary).toEqual(expect.objectContaining({ scopeUserId: 'emma', eligibleAssets: 1 }));
@@ -312,7 +312,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master({ width: 6000, height: 4000 }) as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
 
-      await sut.handleDryRun({});
+      await sut.handleDryRun({ masterUserId: 'master-user' });
 
       const summary = saved(mocks);
       expect(summary.eligibleAssets).toBe(3);
@@ -343,7 +343,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master() as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
 
-      await sut.handleDryRun({});
+      await sut.handleDryRun({ masterUserId: 'master-user' });
 
       const summary = saved(mocks);
       expect(summary).toEqual(
@@ -571,21 +571,15 @@ describe(PhysicalDeduplicationService.name, () => {
   });
 
   describe('requireApplyAllowed (FL-73)', () => {
-    it.each([
-      [{ enabled: false, masterUserId: 'master-user' }, BadRequestException],
-      [{ enabled: true, masterUserId: null }, BadRequestException],
-      [{ enabled: true, masterUserId: 'someone-else' }, ConflictException],
-    ])('refuses %o', async (physicalDeduplication, error) => {
+    it('refuses once the account the plan retains originals in is gone', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mockConfig(mocks, physicalDeduplication);
-      mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
+      mocks.user.get.mockResolvedValue(undefined as never);
 
-      await expect(sut.requireApplyAllowed({ masterUserId: 'master-user' })).rejects.toBeInstanceOf(error);
+      await expect(sut.requireApplyAllowed({ masterUserId: 'master-user' })).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it('allows the saved, enabled, existing retained account', async () => {
+    it('allows the plan’s existing retained account; universal storage has no saved setting to match', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mockConfig(mocks, { enabled: true, masterUserId: 'master-user' });
       mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
 
       await expect(sut.requireApplyAllowed({ masterUserId: 'master-user' })).resolves.toBeUndefined();
@@ -841,15 +835,6 @@ describe(PhysicalDeduplicationService.name, () => {
       );
     });
 
-    it('rejects a preview while file reuse is off (FL-73 configuration error)', async () => {
-      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mockConfig(mocks, { enabled: false, masterUserId: 'master-user' }, null);
-      mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
-
-      await expect(sut.requestPreview({})).rejects.toThrow('Enable file reuse before preparing a plan.');
-      expect(mocks.job.queue).not.toHaveBeenCalled();
-    });
-
     it('queues the dry run with the chosen account and scope', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
       mockConfig(mocks, { enabled: true, masterUserId: null }, null);
@@ -863,24 +848,19 @@ describe(PhysicalDeduplicationService.name, () => {
       });
     });
 
-    it('falls back to the saved retained account', async () => {
+    it('needs the account named on the page: universal storage has no saved one', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mockConfig(mocks, { enabled: true, masterUserId: 'master-user' }, null);
       mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
 
-      await sut.requestPreview({});
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.PhysicalDeduplicationMigrationDryRun,
-        data: { masterUserId: 'master-user', scopeUserId: undefined },
-      });
+      await expect(sut.requestPreview({})).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 
   describe('getPreview', () => {
     const counts = { active: 0, completed: 0, failed: 0, delayed: 0, waiting: 0, paused: 0 };
 
-    it('returns the saved configuration and no plan before any run', async () => {
+    it('reports universal storage as always on, with no saved account and no plan before any run', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
       mockConfig(mocks, { enabled: false, masterUserId: null }, null);
       mocks.job.getJobCounts.mockResolvedValue(counts);
@@ -888,7 +868,7 @@ describe(PhysicalDeduplicationService.name, () => {
       await expect(sut.getPreview(authStub.admin)).resolves.toEqual({
         plan: null,
         savedMasterUserId: null,
-        enabled: false,
+        enabled: true,
         running: false,
         applying: false,
         applies: [],

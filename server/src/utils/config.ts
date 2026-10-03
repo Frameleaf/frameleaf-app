@@ -129,6 +129,13 @@ const loadFromFile = async ({ metadataRepo, logger }: RepoDeps, filepath: string
   }
 };
 
+/**
+ * Settings Frameleaf no longer has. They are dropped quietly from saved settings and config files, which
+ * keep loading: master-user physical deduplication (`physicalDeduplication.enabled`/`masterUserId`) is
+ * replaced by universal storage, which is always on.
+ */
+const RETIRED_CONFIG_KEYS = ['physicalDeduplication'];
+
 const buildConfig = async (repos: RepoDeps) => {
   const { configRepo, metadataRepo, logger } = repos;
   const { configFile } = configRepo.getEnv();
@@ -137,6 +144,12 @@ const buildConfig = async (repos: RepoDeps) => {
   const partial = configFile
     ? await loadFromFile(repos, configFile)
     : await metadataRepo.get(SystemMetadataKey.SystemConfig);
+
+  if (partial && typeof partial === 'object') {
+    for (const key of RETIRED_CONFIG_KEYS) {
+      delete (partial as Record<string, unknown>)[key];
+    }
+  }
 
   // merge with defaults
   const rawConfig = cloneDeep(defaults);
