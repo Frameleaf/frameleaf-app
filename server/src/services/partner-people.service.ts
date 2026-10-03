@@ -241,7 +241,8 @@ export class PartnerPeopleService extends BaseService {
           actorId: targetOwnerId,
           action: 'partner-merge',
           faceId: null,
-          fromPersonId: null,
+          // the partner's person, so the history names it (it is never one of the owner's people)
+          fromPersonId: sourcePersonGroupId,
           toPersonId: match.personGroupId,
           fromPersonName: sourcePerson?.name ?? null,
           toPersonName: match.name,

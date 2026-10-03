@@ -25,7 +25,7 @@ export const PARTNER_SHARED_ITEMS: ReadonlyArray<{ id: PartnerSharedItemId; icon
 ];
 
 export type BackfillState = 'queued' | 'running' | 'done' | 'stopped';
-const BACKFILL_STATES: readonly string[] = ['queued', 'running', 'done', 'stopped'];
+const BACKFILL_STATES: ReadonlySet<string> = new Set(['queued', 'running', 'done', 'stopped']);
 
 export type BackfillInput = { state?: string | null; total?: number | null; done?: number | null } | null | undefined;
 export type BackfillProgress = { state: BackfillState; percent: number; total: number; done: number };
@@ -38,7 +38,8 @@ export const backfillProgress = (backfill: BackfillInput): BackfillProgress | un
   if (!backfill) {
     return undefined;
   }
-  const state = (BACKFILL_STATES.includes(backfill.state ?? '') ? backfill.state : 'queued') as BackfillState;
+  // the server starts a backfill as `pending`; the card shows it as waiting (`queued`)
+  const state = (BACKFILL_STATES.has(backfill.state ?? '') ? backfill.state : 'queued') as BackfillState;
   const total = count(backfill.total);
   let done = count(backfill.done);
   if (state === 'done') {
@@ -50,5 +51,5 @@ export const backfillProgress = (backfill: BackfillInput): BackfillProgress | un
 };
 
 /** The original owner's name for "From {name}'s library", or undefined for the viewer's own items. */
-export const originOwnerName = (origin: { rootOwnerName?: string | null } | null | undefined) =>
+export const originOwnerName = (origin: { rootOwnerId?: string; rootOwnerName?: string | null } | null | undefined) =>
   origin?.rootOwnerName?.trim() || undefined;
