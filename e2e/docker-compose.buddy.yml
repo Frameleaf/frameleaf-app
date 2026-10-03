@@ -1,0 +1,105 @@
+# FL-310: isolated real A/B stacks; images are built by test.yml, never pulled as an acceptance shortcut.
+name: immich-buddy-e2e
+
+x-app: &app
+  image: immich-server:latest
+  user: '${BUDDY_UID:?}:${BUDDY_GID:?}'
+  environment: &environment
+    DB_USERNAME: postgres
+    DB_PASSWORD: postgres
+    DB_DATABASE_NAME: immich
+    FRAMELEAF_PORT: '2285'
+    FRAMELEAF_ENV: testing
+    # The host fixture runs the real direct/proxy classes; ACME/EdgeState enrollment is out of scope.
+    FRAMELEAF_WORKERS_INCLUDE: api,microservices
+    FRAMELEAF_SETUP_CODE: E2ESETUP
+    FRAMELEAF_MACHINE_LEARNING_ENABLED: 'false'
+    FRAMELEAF_IGNORE_MOUNT_CHECK_ERRORS: 'true'
+    FRAMELEAF_BUDDY_BACKUP: 'true'
+    FRAMELEAF_IDENTITY_DIR: /buddy-identity
+    FRAMELEAF_CLOUD_URL: http://host.docker.internal:30186
+    NODE_EXTRA_CA_CERTS: /buddy-ca.crt
+  extra_hosts:
+    - host.docker.internal:host-gateway
+    - r.buddyfixtureaaaa.buddy.test:host-gateway
+    - r.buddyfixturebbbb.buddy.test:host-gateway
+
+x-db: &db
+  image: frameleaf-postgres:e2e
+  # Retain production durability settings for the restart assertion.
+  command: -c fsync=on -c shared_preload_libraries=vchord.so -c config_file=/var/lib/postgresql/data/postgresql.conf
+  environment:
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_USER: postgres
+    POSTGRES_DB: immich
+  shm_size: 128mb
+  healthcheck:
+    test: ['CMD-SHELL', 'pg_isready -U postgres -d immich']
+    interval: 1s
+    timeout: 5s
+    retries: 30
+    start_period: 10s
+
+services:
+  buddy-a:
+    <<: *app
+    environment:
+      <<: *environment
+      DB_HOSTNAME: db-a
+      REDIS_HOSTNAME: redis-a
+      FRAMELEAF_EDGE_SECRET: fl310-buddy-a-test-only
+    ports:
+      - 127.0.0.1:3285:2285
+    volumes:
+      - ${BUDDY_ROOT:?}/a/media:/data
+      - ${BUDDY_ROOT:?}/a/identity:/buddy-identity
+      - ${BUDDY_ROOT:?}/a/incoming:/buddy-host
+      - ${BUDDY_ROOT:?}/tls/ca.crt:/buddy-ca.crt:ro
+    depends_on:
+      db-a:
+        condition: service_healthy
+      redis-a:
+        condition: service_healthy
+  buddy-b:
+    <<: *app
+    environment:
+      <<: *environment
+      DB_HOSTNAME: db-b
+      REDIS_HOSTNAME: redis-b
+      FRAMELEAF_EDGE_SECRET: fl310-buddy-b-test-only
+    ports:
+      - 127.0.0.1:3286:2285
+    volumes:
+      - ${BUDDY_ROOT:?}/b/media:/data
+      - ${BUDDY_ROOT:?}/b/identity:/buddy-identity
+      - ${BUDDY_ROOT:?}/b/incoming:/buddy-host
+      - ${BUDDY_ROOT:?}/tls/ca.crt:/buddy-ca.crt:ro
+    depends_on:
+      db-b:
+        condition: service_healthy
+      redis-b:
+        condition: service_healthy
+  db-a:
+    <<: *db
+    ports:
+      - 127.0.0.1:5535:5432
+    volumes:
+      - db-a:/var/lib/postgresql/data
+  db-b:
+    <<: *db
+    ports:
+      - 127.0.0.1:5536:5432
+    volumes:
+      - db-b:/var/lib/postgresql/data
+  redis-a:
+    image: docker.io/valkey/valkey:9@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+    healthcheck:
+      test: redis-cli ping || exit 1
+  redis-b:
+    image: docker.io/valkey/valkey:9@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+    healthcheck:
+      test: redis-cli ping || exit 1
+
+volumes:
+  db-a:
+  db-b:
