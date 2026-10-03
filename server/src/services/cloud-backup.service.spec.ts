@@ -1768,6 +1768,20 @@ describe(CloudBackupService.name, () => {
       expect(saved.managed?.storageId).toBeUndefined();
     });
 
+    it('rejects a changed recorded legacy location before storage I/O or metadata replacement', async () => {
+      const saved = managedClaim({
+        bucketRef: bucketRef(grant.endpoint, grant.bucket),
+        managed: { location: grant.location, readOnly: false, readOnlyReason: null, quotaBytes: grant.quotaBytes, checkedAt: '2026-09-25T00:00:00.000Z' },
+      });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = saved;
+      cloudBackup.rotate.mockResolvedValue({ ...rotated, location: { ...rotated.location, locationId: 'loc-01' } });
+
+      await expect(sut['openManaged'](saved, managedOperation(), 'claim-1')).rejects.toThrow('different storage binding');
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toBe(saved);
+      expect(store.get).not.toHaveBeenCalled();
+      expect(store.uploadFile).not.toHaveBeenCalled();
+    });
+
     it('rejects a rotation that disagrees with the POST binding during first setup before claiming storage', async () => {
       metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
       cloudBackup.grant.mockResolvedValue(cloudContractFixture('backup/grant-metadata.json'));
@@ -1818,6 +1832,7 @@ describe(CloudBackupService.name, () => {
       for (const changed of [
         { ...saved, region: 'us-east-1' },
         { ...saved, bucket: saved.bucket.replace('fl-eu-', 'fl-na-') },
+        { ...saved, keyFingerprint: 'different-key-fingerprint' },
         { ...saved, managed: { ...saved.managed!, storageId: '0194b445-9c8a-7001-8000-000000000099' } },
         { ...saved, managed: { ...saved.managed!, location: { ...grant.location, locationId: 'loc-01' } } },
       ]) {
