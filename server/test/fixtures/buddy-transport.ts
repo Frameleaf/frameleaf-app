@@ -41,6 +41,10 @@ export const buddyForwardingDiagnostic = (
     'backup',
     'committed-ciphertext-and-real-dump',
     'delete-restart-and-restore',
+    'delete-before-restart',
+    'owned-compose-restart',
+    'awaiting-both-peer-apis',
+    'restore-after-peer-readiness',
     'no-hosted-buddy-photo-access',
     'complete',
   ]);
