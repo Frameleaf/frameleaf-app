@@ -390,8 +390,13 @@ export class PhysicalFileRepository {
           ? await this.getPhysicalFile(candidate.physicalOriginalFileId, trx)
           : undefined;
         const path = target?.path ?? candidate.originalPath;
-        if (path !== asset.originalPath && (await options.exists(path))) {
+        // checked again under the path lock: a FileDelete that held it may have moved the file to the file
+        // trash meanwhile, and then the upload keeps its own file (or takes the trashed one back, below)
+        const existsUnderLock = async () => {
           await this.lockPath(trx, path);
+          return options.exists(path);
+        };
+        if (path !== asset.originalPath && (await options.exists(path)) && (await existsUnderLock())) {
           if (options.ingestion) {
             await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
           }
