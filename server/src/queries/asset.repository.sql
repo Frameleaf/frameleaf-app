@@ -279,6 +279,9 @@ SELECT
     reservation."upstreamPath",
     asset."originalPath"
   ) AS "originalPath",
+  asset."originalFileName",
+  asset.checksum,
+  coalesce(exif."fileSizeInByte", 0)::float8 AS "sizeInBytes",
   reservation."temporaryPath" AS "reservationTemporaryPath",
   asset."libraryId",
   asset."isOffline"
@@ -286,6 +289,7 @@ FROM
   public.asset asset
   LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
   LEFT JOIN immich_fork.asset_storage_reservation reservation ON reservation."assetId" = asset.id
+  LEFT JOIN public.asset_exif exif ON exif."assetId" = asset.id
 WHERE
   asset."ownerId" = $1::uuid
 FOR UPDATE OF
@@ -332,8 +336,10 @@ limit
 -- AssetRepository.getForCopy
 select
   "id",
+  "ownerId",
   "stackId",
   "originalPath",
+  "physicalOriginalFileId",
   "isFavorite",
   (
     select

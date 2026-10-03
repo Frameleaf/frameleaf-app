@@ -4,6 +4,7 @@ import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -44,6 +45,7 @@ import {
   JobStatus,
   Permission,
   QueueName,
+  StorageFolder,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
@@ -555,24 +557,40 @@ export class AssetService extends BaseService {
     targetAsset,
   }: {
     sourceAsset: { files: AssetFile[] };
-    targetAsset: { id: string; files: AssetFile[]; originalPath: string };
+    targetAsset: {
+      id: string;
+      ownerId: string;
+      files: AssetFile[];
+      originalPath: string;
+      physicalOriginalFileId?: string | null;
+    };
   }) {
     const { sidecarFile: sourceFile } = getAssetFiles(sourceAsset.files);
     if (!sourceFile?.path) {
       return;
     }
 
-    const { sidecarFile: targetFile } = getAssetFiles(targetAsset.files ?? []);
-    if (targetFile?.path) {
-      await this.storageRepository.unlink(targetFile.path);
-    }
+    // universal storage: beside a shared original lives the primary owner's sidecar, so a non-primary
+    // target writes its own, in its owner's upload folder (as metadata extraction does)
+    const isSharedNonCanonical =
+      !!targetAsset.physicalOriginalFileId &&
+      !(await this.physicalFileRepository.isOriginalCanonical(targetAsset.id, targetAsset.physicalOriginalFileId));
+    const targetPath = isSharedNonCanonical
+      ? StorageCore.getNestedPath(StorageFolder.Upload, targetAsset.ownerId, `${targetAsset.id}.xmp`)
+      : `${targetAsset.originalPath}.xmp`;
 
-    await this.storageRepository.copyFile(sourceFile.path, `${targetAsset.originalPath}.xmp`);
+    const { sidecarFile: targetFile } = getAssetFiles(targetAsset.files ?? []);
+
+    await this.storageRepository.copyFile(sourceFile.path, targetPath);
     await this.assetRepository.upsertFile({
       assetId: targetAsset.id,
-      path: `${targetAsset.originalPath}.xmp`,
+      path: targetPath,
       type: AssetFileType.Sidecar,
     });
+    // the replaced sidecar is released through the reference-counted FileDelete, never unlinked here
+    if (targetFile?.path && targetFile.path !== targetPath) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [targetFile.path] } });
+    }
     await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: targetAsset.id } });
   }
 
@@ -631,6 +649,7 @@ export class AssetService extends BaseService {
     // deletion again; once the row is gone, its files are queued. The job names the asset, so a job
     // whose removal rolled back after it was queued deletes nothing; FileDelete also keeps any file
     // another asset references (a deduplicated original).
+    let removedOriginalPath: string | undefined;
     const removedAsset = await this.assetRepository.remove(asset, {
       files: (removed) => {
         const assetFiles = getAssetFiles(removed.files);
@@ -654,6 +673,7 @@ export class AssetService extends BaseService {
         const ownsOriginal = deleteOnDisk && !asset.isOffline && !asset.libraryId;
         if (ownsOriginal) {
           files.push(assetFiles.sidecarFile?.path, removed.originalPath, removed.reservationTemporaryPath ?? undefined);
+          removedOriginalPath = removed.originalPath;
         }
 
         // FL-179: a storage move that never committed can have left the file at either of its paths,
@@ -669,7 +689,25 @@ export class AssetService extends BaseService {
         // a path can be named twice (a version file that is also a generated file); delete it once
         return [...new Set(files.filter((file): file is string => !!file))];
       },
-      queue: (files) => this.jobRepository.queue({ name: JobName.FileDelete, data: { files, removedAssetId: id } }),
+      queue: (files) =>
+        this.jobRepository.queue({
+          name: JobName.FileDelete,
+          data: {
+            files,
+            removedAssetId: id,
+            // universal storage: once nothing references it, the original goes to the file trash with who held it
+            ...(removedOriginalPath && {
+              original: {
+                path: removedOriginalPath,
+                ownerId: asset.ownerId,
+                assetId: id,
+                originalFileName: asset.originalFileName,
+                checksum: Buffer.from(asset.checksum).toString('hex'),
+                sizeInBytes: asset.exifInfo?.fileSizeInByte ?? 0,
+              },
+            }),
+          },
+        }),
     });
     if (!removedAsset) {
       return JobStatus.Failed;
@@ -686,6 +724,18 @@ export class AssetService extends BaseService {
     await this.afterAssetRemoval(id, 'announce the deletion', () =>
       this.eventRepository.emit('AssetDelete', { assetId: id, userId: asset.ownerId }),
     );
+
+    // universal storage: a shared file whose primary asset went is handed to the oldest remaining
+    // asset, and follows it to that asset's storage template path
+    await this.afterAssetRemoval(id, 'hand its shared file to another asset', async () => {
+      if (!asset.physicalOriginalFileId) {
+        return;
+      }
+      const next = await this.physicalFileRepository.electNextCanonical(asset.physicalOriginalFileId);
+      if (next) {
+        await this.jobRepository.queue({ name: JobName.StorageTemplateMigrationSingle, data: { id: next.assetId } });
+      }
+    });
 
     // delete the motion if it is not used by another asset
     await this.afterAssetRemoval(id, 'queue the deletion of its motion part', async () => {

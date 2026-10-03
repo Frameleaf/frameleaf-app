@@ -14,9 +14,6 @@ import {
   storageMigrationStatus,
 } from 'src/utils/storage-migration.js';
 
-// TEMP until storage-core's file trash lands on this branch
-vi.mock('src/services/physical-file-trash.service.js', () => ({ PhysicalFileTrashService: class {} }));
-
 const checksum = Buffer.from('aa'.repeat(20), 'hex');
 
 type Row = {
@@ -425,6 +422,7 @@ describe(StorageMigrationService.name, () => {
     const file = (id: string, sizeInBytes = 100) => ({
       id,
       path: `/data/upload/owner-2/${id}.jpg`,
+      checksum,
       sizeInBytes,
       lastOwnerId: 'owner-2',
       lastAssetId: `asset-${id}`,
@@ -445,9 +443,13 @@ describe(StorageMigrationService.name, () => {
 
       await sut.service.runBatch(() => at);
 
-      expect(sut.mocks.fileTrash.trashOriginal).toHaveBeenCalledWith('p1', {
+      expect(sut.mocks.fileTrash.trashOriginal).toHaveBeenCalledWith({
+        physicalFileId: 'p1',
+        path: '/data/upload/owner-2/p1.jpg',
+        checksum,
+        sizeInBytes: 100,
         lastOwnerId: 'owner-2',
-        lastAssetId: 'asset-p1',
+        lastAssetId: `asset-p1`,
         originalFileName: 'p1.jpg',
       });
       expect(sut.state()).toMatchObject({ trashed: 3, bytesFreed: 100, cursor: 'p3' });
