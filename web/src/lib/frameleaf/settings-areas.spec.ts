@@ -236,7 +236,7 @@ describe('Frameleaf settings areas', () => {
       expect(sectionsForArea(backup, 'backup').map((s) => s.key)).toEqual(['takeout', 'backup', 'preservation']);
     });
 
-    it("interleaves server and account sections where the template does (Library care's health, repair, enrichment)", () => {
+    it("interleaves server and account sections where the template does (Library care's health, repair, deduplication, enrichment)", () => {
       const care = [
         { key: 'enrichment-care', title: 'Enrichment completeness', admin: true },
         { key: 'repair', title: 'Repair queues' },
@@ -247,7 +247,7 @@ describe('Frameleaf settings areas', () => {
         'repair',
         'enrichment-care',
       ]);
-      expect(areaSectionKeys('care')).toEqual(['integrity-checks', 'repair', 'enrichment-care']);
+      expect(areaSectionKeys('care')).toEqual(['integrity-checks', 'repair', 'deduplication', 'enrichment-care']);
       expect(sectionsForArea([care[1]], 'care').map((s) => s.key)).toEqual(['repair']);
     });
 
@@ -291,7 +291,7 @@ describe('Frameleaf settings areas', () => {
 
     it("groups each area's sections as the template's directory does, with More for strays and none for Maintenance", () => {
       expect(directoryGroup('storage', 'storage-template')).toBe('storage');
-      expect(directoryGroup('storage', 'deduplication')).toBe('identical_files');
+      expect(directoryGroup('care', 'deduplication')).toBe('identical_files');
       expect(directoryGroup('security', 'suppressed-content')).toBe('locked_content');
       expect(directoryGroup('storage', 'something-new')).toBe('more');
       expect(directoryGroup('maintenance', 'mode')).toBeUndefined();

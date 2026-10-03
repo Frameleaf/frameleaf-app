@@ -124,7 +124,7 @@ const bootstrap = async () => {
 
   /** Preview and freeze the reviewed plan as apply does (FL-73), without changing anything yet. */
   const reviewPlan = async () => {
-    await expect(sut.handleDryRun({})).resolves.toBe(JobStatus.Success);
+    await expect(sut.handleDryRun({ masterUserId: masterUser.id })).resolves.toBe(JobStatus.Success);
     const { items, retained } = physicalDeduplicationPlanItems(savedPlan, []);
     const snapshot: PhysicalDeduplicationApplySnapshot = {
       version: 1,
@@ -291,11 +291,11 @@ describe(PhysicalDeduplicationService.name, () => {
   });
 
   it('dry-run emits no FileDelete and mutates nothing', async () => {
-    const { sut, ctx, existing, newPair, getAssetLink } = await bootstrap();
+    const { sut, ctx, existing, newPair, getAssetLink, masterUser } = await bootstrap();
     const { duplicate, masterPath, dupPath } = await newPair();
     existing.add(masterPath);
 
-    await expect(sut.handleDryRun({})).resolves.toBe(JobStatus.Success);
+    await expect(sut.handleDryRun({ masterUserId: masterUser.id })).resolves.toBe(JobStatus.Success);
 
     expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalled();
     expect(ctx.getMock(StorageRepository).copyFile).not.toHaveBeenCalled();
@@ -369,11 +369,11 @@ describe(PhysicalDeduplicationService.name, () => {
     });
 
     it('skips every copy when the retained original is unavailable on disk at preview time', async () => {
-      const { sut, existing, newPair, savedPlan } = await bootstrap();
+      const { sut, existing, newPair, savedPlan, masterUser } = await bootstrap();
       const { dupPath } = await newPair();
       existing.add(dupPath);
 
-      await expect(sut.handleDryRun({})).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleDryRun({ masterUserId: masterUser.id })).resolves.toBe(JobStatus.Success);
 
       expect(savedPlan().retained).toEqual([expect.objectContaining({ fileAvailable: false })]);
       expect(savedPlan().copies).toEqual([

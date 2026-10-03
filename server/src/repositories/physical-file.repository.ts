@@ -1655,6 +1655,22 @@ export class PhysicalFileRepository {
     });
   }
 
+  /**
+   * Universal storage: the bytes a return to an official server needs to give every asset that shares
+   * another asset's original its own copy (the claim flow's split). External-library files never split.
+   */
+  async getReturnSplitRequiredBytes(): Promise<number> {
+    const { rows } = await sql<{ requiredBytes: number }>`
+      SELECT coalesce(sum(exif."fileSizeInByte"), 0)::float8 AS "requiredBytes"
+      FROM public.asset asset
+      JOIN public.physical_file physical ON physical.id = asset."physicalOriginalFileId"
+      LEFT JOIN public.asset_exif exif ON exif."assetId" = asset.id
+      WHERE physical."canonicalAssetId" IS DISTINCT FROM asset.id
+        AND asset."libraryId" IS NULL
+        AND NOT asset."isExternal"`.execute(this.db);
+    return Number(rows[0]?.requiredBytes ?? 0);
+  }
+
   getMigrationCandidates(masterUserId: string) {
     return this.db
       .selectFrom('asset')

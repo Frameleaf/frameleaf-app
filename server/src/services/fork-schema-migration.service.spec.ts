@@ -7,7 +7,11 @@ import {
 } from 'src/commands/fork-schema.command.js';
 import { DatabaseLock, JobName, JobStatus } from 'src/enum.js';
 import { BACKFILL_KINDS, BackfillKind, BackfillProgress } from 'src/repositories/fork-schema.repository.js';
-import { BackfillBatchHandler, ForkSchemaMigrationService } from 'src/services/fork-schema-migration.service.js';
+import {
+  BackfillBatchHandler,
+  ForkSchemaMigrationService,
+  ReturnSpaceError,
+} from 'src/services/fork-schema-migration.service.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const state = (phase: 'legacy' | 'dual-write' | 'ready' | 'inactive' = 'legacy') => ({
@@ -718,6 +722,36 @@ describe(ForkSchemaMigrationService.name, () => {
       expect(mocks.forkSchema.activateAfterReturnReconciliation).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('refuses up front when the disk cannot hold a copy of every shared original (universal storage)', async () => {
+      mocks.physicalFile.getReturnSplitRequiredBytes.mockResolvedValue(5000);
+      mocks.storage.checkDiskUsage.mockResolvedValue({ available: 1000, free: 1000, total: 10_000 });
+
+      const refusal = service.reconcileAfterOfficialReturn(10);
+
+      await expect(refusal).rejects.toBeInstanceOf(ReturnSpaceError);
+      await expect(refusal).rejects.toMatchObject({ requiredBytes: 5000, availableBytes: 1000 });
+      expect(mocks.forkSchema.beginOrResumeReturnReconciliation).not.toHaveBeenCalled();
+      expect(mocks.forkSchema.claimReturnBatch).not.toHaveBeenCalled();
+    });
+
+    it('proceeds when the disk can hold the split', async () => {
+      mocks.physicalFile.getReturnSplitRequiredBytes.mockResolvedValue(5000);
+      mocks.storage.checkDiskUsage.mockResolvedValue({ available: 6000, free: 6000, total: 10_000 });
+      mocks.forkSchema.claimReturnBatch.mockResolvedValue(null);
+
+      await expect(service.reconcileAfterOfficialReturn(10)).resolves.toMatchObject({ phase: 'inactive' });
+      expect(mocks.forkSchema.beginOrResumeReturnReconciliation).toHaveBeenCalledOnce();
+    });
+
+    it('needs no free-space check when nothing is shared', async () => {
+      mocks.physicalFile.getReturnSplitRequiredBytes.mockResolvedValue(0);
+      mocks.forkSchema.claimReturnBatch.mockResolvedValue(null);
+
+      await service.reconcileAfterOfficialReturn(10);
+
+      expect(mocks.storage.checkDiskUsage).not.toHaveBeenCalled();
     });
 
     it('preserves completed progress when an interruption is resumed', async () => {

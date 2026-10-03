@@ -135,7 +135,7 @@
   }
   th,
   td {
-    text-align: left;
+    text-align: start;
     padding: 0.5rem 0.75rem 0.5rem 0;
     border-bottom: 1px solid var(--fl-line, rgb(128 128 128 / 0.25));
     vertical-align: middle;

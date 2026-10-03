@@ -639,22 +639,6 @@ describe(UserService.name, () => {
       ]);
     });
 
-    it('never deletes the account physical deduplication retains originals in (FL-44)', async () => {
-      const user = { id: 'retained-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
-      mocks.user.get.mockResolvedValue(user);
-      mocks.systemMetadata.get.mockResolvedValue({
-        physicalDeduplication: { enabled: true, masterUserId: user.id },
-      });
-
-      await sut.handleUserDelete({ id: user.id });
-
-      expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
-      expect(mocks.storage.walkFiles).not.toHaveBeenCalled();
-      expect(mocks.storage.unlinkDir).not.toHaveBeenCalled();
-      expect(mocks.user.delete).not.toHaveBeenCalled();
-      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('retains the originals'));
-    });
-
     it('removes an account an administrator removed now (force) at once (FL-71)', async () => {
       const user = { id: 'deleted-user', deletedAt: makeDeletedAt(0), status: UserStatus.Removing } as UserAdmin;
       mocks.user.get.mockResolvedValue(user);

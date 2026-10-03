@@ -437,7 +437,7 @@ describe(ServerService.name, () => {
         nsfwDetection: false,
         nsfwHiding: false,
         passwordLogin: true,
-        physicalDeduplication: false,
+        physicalDeduplication: true,
         search: true,
         sidecar: true,
         configFile: false,

@@ -216,7 +216,7 @@ export const Route = {
   /** Library analytics in the command center (FL-79); `/admin/server-status` redirects here. */
   libraryAnalytics: (params?: { scope?: string; range?: string }) => analyticsAreaUrl(params),
   // FL-71: the old administration pages are Command Center sections; their addresses redirect.
-  physicalDeduplication: () => commandCenterUrl('storage', 'deduplication'),
+  physicalDeduplication: () => commandCenterUrl('care', 'deduplication'),
   /** Maintenance (FL-71): the area's directory, or one of its sections (mode, database backups, integrity checks). */
   systemMaintenance: (params?: { section?: MaintenanceSectionKey; continue?: string }) =>
     commandCenterUrl('maintenance', params?.section, { continue: params?.continue }),
