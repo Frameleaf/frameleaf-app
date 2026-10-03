@@ -173,6 +173,8 @@ const RATE_LIMITED_ROUTES: Record<string, RateLimitRule> = {
   'POST oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
   'DELETE oauth/frameleaf/link': RATE_LIMITS.frameleafSignIn,
   'POST shared-links/login': RATE_LIMITS.sharedLinkLogin,
+  // FL-283: invitations and gallery passwords are bounded per address, without credential-derived buckets.
+  'POST photography/galleries/:id/session': { bucket: 'photography-gallery-session', limit: 30, windowSeconds: 600 },
   'PUT admin/license/activate': RATE_LIMITS.licenseActivation,
   'PUT admin/license/certificate': RATE_LIMITS.licenseActivation,
   'PUT users/me/license': RATE_LIMITS.licenseActivation,

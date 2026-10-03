@@ -17,6 +17,7 @@ import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  AssetDevelopArtifactResponseDto,
   AssetDevelopFileQueryDto,
   AssetDevelopPreviewDto,
   AssetDevelopResponseDto,
@@ -24,6 +25,7 @@ import {
   AssetDevelopRevisionParamDto,
   AssetDevelopRevisionResponseDto,
   AssetDevelopSaveDto,
+  AssetDevelopSemanticMaskDto,
 } from 'src/dtos/asset-develop.dto.js';
 import { ApiTag, Permission, RouteKey } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse, OriginalTransfer } from 'src/middleware/auth.guard.js';
@@ -89,13 +91,43 @@ export class AssetDevelopController {
     @Body() dto: AssetDevelopPreviewDto,
     @Res() res: Response,
   ) {
-    const { buffer, contentType } = await this.service.preview(auth, id, dto);
-    res.set({
-      'Content-Type': contentType,
-      'Cache-Control': 'private, no-store',
-      'Content-Length': String(buffer.length),
-    });
-    res.end(buffer);
+    const controller = new AbortController();
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
+    if (res.destroyed) abandon();
+    try {
+      const { buffer, contentType } = await this.service.preview(auth, id, dto, controller.signal);
+      if (!res.destroyed) {
+        res.set({
+          'Content-Type': contentType,
+          'Cache-Control': 'private, no-store',
+          'Content-Length': String(buffer.length),
+        });
+        res.end(buffer);
+      }
+    } finally {
+      res.removeListener('close', abandon);
+    }
+  }
+
+  @Post(':id/develop/masks/propose')
+  @Authenticated({ permission: Permission.AssetEditCreate })
+  @Endpoint({ summary: 'Suggest a subject or sky mask locally', history: history() })
+  async proposeAssetDevelopMask(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AssetDevelopSemanticMaskDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AssetDevelopArtifactResponseDto> {
+    const controller = new AbortController();
+    const abandon = () => controller.abort();
+    res.once('close', abandon);
+    if (res.destroyed) abandon();
+    try {
+      return await this.service.proposeSemanticMask(auth, id, dto, controller.signal);
+    } finally {
+      res.removeListener('close', abandon);
+    }
   }
 
   @Post(':id/develop/revert')

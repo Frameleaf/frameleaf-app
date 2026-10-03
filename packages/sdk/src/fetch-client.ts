@@ -4256,6 +4256,9 @@ export type AssetDevelopImportDto = {
     /** SHA-256 (hex) of the original the file was developed from */
     sourceChecksum?: string;
 };
+export type AssetDevelopSemanticMaskDto = {
+    target: Target;
+};
 export type AssetDevelopPreviewDto = {
     recipe: AssetDevelopRecipeDto;
     /** Longest edge of the preview in pixels; the original is never upscaled */
@@ -5386,6 +5389,106 @@ export type DevelopPresetMask = {
     /** Centre (radial) or start (linear) down the oriented frame; any value for brush and bitmap masks */
     y: number;
 };
+export type DarktableDevelopRecipe = {
+    contrast?: number;
+    crop?: {
+        /** Crop height as a fraction of the frame */
+        h: number;
+        /** Crop width as a fraction of the frame */
+        w: number;
+        /** Left edge of the crop as a fraction of the oriented frame width */
+        x: number;
+        /** Top edge of the crop as a fraction of the oriented frame height */
+        y: number;
+    };
+    curve?: {
+        /** Input */
+        x: number;
+        /** Output */
+        y: number;
+    }[];
+    exposureEV?: number;
+    flipHorizontal?: boolean;
+    flipVertical?: boolean;
+    highlights?: number;
+    /** Use native embedded metadata or Lensfun; refuse absent calibration */
+    lensCorrection?: boolean;
+    masks?: {
+        adjustments: {
+            contrast?: number;
+            curve?: {
+                /** Input */
+                x: number;
+                /** Output */
+                y: number;
+            }[];
+            exposureEV?: number;
+            highlights?: number;
+            saturation?: number;
+            shadows?: number;
+        };
+        /** How much of the adjustment is applied, as a percentage */
+        amount?: number;
+        /** Subject, sky and background masks: the stored greyscale mask bitmap, covering the whole original image */
+        artifact?: string | null;
+        coordinates: Coordinates;
+        /** A disabled mask is kept but not rendered */
+        enabled?: boolean;
+        /** Where a linear mask has faded out, across the frame */
+        endX?: number;
+        /** Where a linear mask has faded out, down the frame */
+        endY?: number;
+        /** Softness of a radial edge as a percentage of the radius, or of a brush stroke as one of its radius */
+        feather?: number;
+        /** Client-chosen identifier, unique within the recipe */
+        id: string;
+        /** Apply the adjustment outside the shape instead of inside */
+        invert?: boolean;
+        kind: AssetDevelopMaskKind;
+        /** Optional name shown in the editor */
+        name?: string | null;
+        /** Horizontal radius of a radial mask as a fraction of the frame width */
+        radiusX?: number;
+        /** Vertical radius of a radial mask as a fraction of the frame height */
+        radiusY?: number;
+        strokes?: {
+            /** Erase from the mask instead of painting it (brush masks only) */
+            erase?: boolean;
+            points: [
+                number,
+                number
+            ][];
+            /** Stroke radius as a fraction of the original image's shorter side */
+            radius: number;
+        }[];
+        /** Centre (radial) or start (linear) across the oriented frame; any value for brush and bitmap masks */
+        x: number;
+        /** Centre (radial) or start (linear) down the oriented frame; any value for brush and bitmap masks */
+        y: number;
+    }[];
+    /** Native pre-demosaic wavelet noise threshold */
+    noiseThreshold?: number;
+    renderer: Renderer;
+    /** Additional clockwise rotation after camera orientation */
+    rotation?: 0 | 90 | 180 | 270;
+    saturation?: number;
+    /** Unrotated, uncropped, uncorrected canvas for selecting sensor-space masks */
+    sensorCanvas?: boolean;
+    shadows?: number;
+    sharpen?: {
+        amount: number;
+        radius: number;
+        threshold: number;
+    };
+    straighten?: number;
+    version: Version2;
+    /** Multipliers of native camera white-balance coefficients, not Kelvin estimates */
+    whiteBalance?: {
+        blue: number;
+        green: number;
+        red: number;
+    };
+};
 export type DevelopPresetSettingsDto = {
     /** Black point */
     blacks?: number;
@@ -5405,6 +5508,7 @@ export type DevelopPresetSettingsDto = {
     highlights?: number;
     /** Radial and linear selective adjustments, applied in order after the global develop */
     masks?: DevelopPresetMask[];
+    native?: DarktableDevelopRecipe;
     /** Luminance noise reduction amount */
     noiseReduction?: number;
     preset?: AssetDevelopPreset;
@@ -5463,6 +5567,7 @@ export type DevelopPresetSettingsUpdateDto = {
     highlights?: number;
     /** Radial and linear selective adjustments, applied in order after the global develop */
     masks?: DevelopPresetMask[];
+    native?: DarktableDevelopRecipe;
     /** Luminance noise reduction amount */
     noiseReduction?: number;
     preset?: AssetDevelopPreset;
@@ -7989,6 +8094,523 @@ export type PetObservationCreateDto = {
     /** Width of the image the region was drawn on */
     imageWidth?: number;
 };
+export type PhotographyGalleryDto = {
+    brand: {
+        background: string;
+        color: string;
+        email: string;
+        font: string;
+        logoUrl: string | null;
+        name: string;
+        phone: string;
+        tagline: string;
+        textColor: string;
+    };
+    chapters: {
+        coverCaptureId: string | null;
+        description: string;
+        id: string;
+        position: number;
+        title: string;
+    }[];
+    checkoutAvailable: boolean;
+    choices: string[];
+    mode: Mode2;
+    notes: {
+        annotations?: {
+            height: number;
+            text: string;
+            width: number;
+            x: number;
+            y: number;
+        }[];
+        captureId: string;
+        text: string;
+    }[];
+    orders: {
+        acceptedAt: string | null;
+        captureIds: string[];
+        createdAt: string;
+        currency: string;
+        editingBlocked: boolean;
+        id: string;
+        items: {
+            approved: boolean;
+            captureId: string;
+            clientApprovalRequired: boolean;
+            exportSpec: {
+                format: Format;
+                maxEdge: number;
+                quality: Quality;
+            };
+            outputs: {
+                approvalPreviewUrl: string | null;
+                approved: boolean;
+                blockedReason?: BlockedReason | null;
+                branded: boolean;
+                canDownload?: boolean;
+                clientApprovalRequired: boolean;
+                exportSpec: {
+                    format: Format;
+                    maxEdge: number;
+                    quality: Quality;
+                };
+                id: string;
+                kind: Kind9;
+                label: string;
+                ready: boolean;
+                renderStatus: RenderStatus;
+                revisionId: string | null;
+                url: string;
+            }[];
+            ready: boolean;
+            revisionId: string | null;
+        }[];
+        paymentTiming: PaymentTiming;
+        pricing: {
+            additionalPrice: number;
+            bundles: {
+                count: number;
+                price: number;
+            }[];
+            collectionPrice: number | null;
+            includedCount: number;
+            option: string;
+        };
+        readyCount: number;
+        recipientId: string;
+        roundId: string | null;
+        status: Status3;
+        terms: string;
+        total: number;
+    }[];
+    photos: {
+        approvalRevisionId: string | null;
+        blockedReason: BlockedReason | null;
+        canDownload: boolean;
+        chapterId: string | null;
+        id: string;
+        "number": number;
+        outputs: {
+            approvalPreviewUrl: string | null;
+            approved: boolean;
+            blockedReason?: BlockedReason | null;
+            branded: boolean;
+            canDownload?: boolean;
+            clientApprovalRequired: boolean;
+            exportSpec: {
+                format: Format;
+                maxEdge: number;
+                quality: Quality;
+            };
+            id: string;
+            kind: Kind9;
+            label: string;
+            ready: boolean;
+            renderStatus: RenderStatus;
+            revisionId: string | null;
+            url: string;
+        }[];
+        previewUrl: string;
+        status: Status4;
+        thumbnailUrl: string;
+    }[];
+    presentation: {
+        blocks?: {
+            captureIds: string[];
+            chapterId: string | null;
+            id: string;
+            selection?: Selection;
+            text: string;
+            "type": Type;
+        }[];
+        coverCaptureId: string | null;
+        coverFocal: number;
+        coverTreatment: CoverTreatment;
+        font: Font;
+        introduction: string;
+        palette: Palette;
+        showChapters: boolean;
+        showNumbers: boolean;
+        spacing: Spacing;
+        template: Template;
+    };
+    pricing: {
+        additionalPrice: number;
+        bundles: {
+            count: number;
+            price: number;
+        }[];
+        collectionPrice: number | null;
+        currency: string;
+        includedCount: number;
+        selectionDeadline: string | null;
+        terms: string;
+    };
+    publication: {
+        completed: number;
+        error: string | null;
+        failedCaptureId: string | null;
+        id: string;
+        status: Status5;
+        total: number;
+    } | null;
+    publishedGenerationId: string | null;
+    receipts: {
+        action: string;
+        createdAt: string;
+        id: string;
+        orderId: string | null;
+        recipientId: string;
+        reference: string;
+    }[];
+    recipient: {
+        canDownload: boolean;
+        id: string;
+        name: string;
+    };
+    revision: string | null;
+    rounds: {
+        captureIds: string[];
+        createdAt: string;
+        id: string;
+        notes: {
+            annotations?: {
+                height: number;
+                text: string;
+                width: number;
+                x: number;
+                y: number;
+            }[];
+            captureId: string;
+            text: string;
+        }[];
+        "number": number;
+        recipientId: string;
+    }[];
+    title: string;
+};
+export type PhotographyGuestApprovalDto = {
+    approved: boolean;
+    captureId: string;
+    expectedRevision: string | null;
+    note: string;
+    revisionId: string;
+};
+export type PhotographyChoicesDto = {
+    captureIds: string[];
+    expectedRevision: string | null;
+    notes: {
+        annotations?: {
+            height: number;
+            text: string;
+            width: number;
+            x: number;
+            y: number;
+        }[];
+        captureId: string;
+        text: string;
+    }[];
+};
+export type PhotographyOrderAcceptDto = {
+    expectedRevision: string | null;
+};
+export type PhotographyCheckoutDto = {
+    url: string;
+};
+export type PhotographyGallerySessionDto = {
+    password?: string;
+    token: string;
+};
+export type PhotographyGallerySessionResponseDto = {
+    expiresAt: string;
+    recipientId: string;
+    session: string;
+};
+export type PhotographyWorkflowMutationDto = {
+    expectedRevision: string | null;
+};
+export type PhotographyZipDto = {
+    captureIds?: string[];
+    outputs?: {
+        captureId: string;
+        outputId: string;
+    }[];
+};
+export type PhotographyZipResponseDto = {
+    id: string;
+    status: Status6;
+    url: string;
+};
+export type PhotographyCallbackDto = {
+    received: boolean;
+};
+export type PhotographyStudioPresetsDto = {
+    presets: {
+        config: {
+            additionalPrice: number;
+            bundles: {
+                count: number;
+                price: number;
+            }[];
+            collectionPrice: number | null;
+            currency: string;
+            downloadOutputs?: {
+                key: string;
+                kind: Kind9;
+                label: string;
+                maxEdge: number;
+                watermark: {
+                    alignment?: Alignment;
+                    backing?: boolean;
+                    color?: string;
+                    font?: Font2;
+                    logoAssetId?: string | null;
+                    logoPosition?: LogoPosition;
+                    logoScale?: number;
+                    logoVariant?: LogoVariant;
+                    margin?: number;
+                    opacity?: number;
+                    outline?: boolean;
+                    pattern?: Pattern;
+                    position?: Position;
+                    rotation?: number;
+                    secondLine?: string;
+                    size?: number;
+                    spacing?: number;
+                    text: string;
+                    "type"?: Type2;
+                } | null;
+            }[];
+            downloadWatermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font2;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type2;
+            } | null;
+            expiresAt: string | null;
+            includedCount: number;
+            mode: Mode2;
+            paymentTiming: PaymentTiming;
+            presentation: {
+                blocks?: {
+                    captureIds: string[];
+                    chapterId: string | null;
+                    id: string;
+                    selection?: Selection;
+                    text: string;
+                    "type": Type3;
+                }[];
+                coverCaptureId: string | null;
+                coverFocal: number;
+                coverTreatment: CoverTreatment;
+                font: Font3;
+                introduction: string;
+                palette: Palette;
+                showChapters: boolean;
+                showNumbers: boolean;
+                spacing: Spacing;
+                template: Template;
+            };
+            proofWatermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font4;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type4;
+            };
+            selectionDeadline: string | null;
+            terms: string;
+            title: string;
+            turnaroundDays: number;
+            webWatermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font4;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type4;
+            } | null;
+        };
+        id: string;
+        name: string;
+    }[];
+    revision: string | null;
+};
+export type PhotographyPresetSaveDto = {
+    config: {
+        additionalPrice: number;
+        bundles: {
+            count: number;
+            price: number;
+        }[];
+        collectionPrice: number | null;
+        currency: string;
+        downloadOutputs?: {
+            key: string;
+            kind: Kind9;
+            label: string;
+            maxEdge: number;
+            watermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font4;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type4;
+            } | null;
+        }[];
+        downloadWatermark: {
+            alignment?: Alignment;
+            backing?: boolean;
+            color?: string;
+            font?: Font4;
+            logoAssetId?: string | null;
+            logoPosition?: LogoPosition;
+            logoScale?: number;
+            logoVariant?: LogoVariant;
+            margin?: number;
+            opacity?: number;
+            outline?: boolean;
+            pattern?: Pattern;
+            position?: Position;
+            rotation?: number;
+            secondLine?: string;
+            size?: number;
+            spacing?: number;
+            text: string;
+            "type"?: Type4;
+        } | null;
+        expiresAt: string | null;
+        includedCount: number;
+        mode: Mode2;
+        paymentTiming: PaymentTiming;
+        presentation: {
+            blocks?: {
+                captureIds: string[];
+                chapterId: string | null;
+                id: string;
+                selection?: Selection;
+                text: string;
+                "type": Type5;
+            }[];
+            coverCaptureId: string | null;
+            coverFocal: number;
+            coverTreatment: CoverTreatment;
+            font: Font5;
+            introduction: string;
+            palette: Palette;
+            showChapters: boolean;
+            showNumbers: boolean;
+            spacing: Spacing;
+            template: Template;
+        };
+        proofWatermark: {
+            alignment?: Alignment;
+            backing?: boolean;
+            color?: string;
+            font?: Font6;
+            logoAssetId?: string | null;
+            logoPosition?: LogoPosition;
+            logoScale?: number;
+            logoVariant?: LogoVariant;
+            margin?: number;
+            opacity?: number;
+            outline?: boolean;
+            pattern?: Pattern;
+            position?: Position;
+            rotation?: number;
+            secondLine?: string;
+            size?: number;
+            spacing?: number;
+            text: string;
+            "type"?: Type6;
+        };
+        selectionDeadline: string | null;
+        terms: string;
+        title: string;
+        turnaroundDays: number;
+        webWatermark: {
+            alignment?: Alignment;
+            backing?: boolean;
+            color?: string;
+            font?: Font6;
+            logoAssetId?: string | null;
+            logoPosition?: LogoPosition;
+            logoScale?: number;
+            logoVariant?: LogoVariant;
+            margin?: number;
+            opacity?: number;
+            outline?: boolean;
+            pattern?: Pattern;
+            position?: Position;
+            rotation?: number;
+            secondLine?: string;
+            size?: number;
+            spacing?: number;
+            text: string;
+            "type"?: Type6;
+        } | null;
+    };
+    expectedRevision: string | null;
+    id: string | null;
+    name: string;
+};
 export type PhotographyWorkspaceDto = {
     revision: string | null;
     shoots: {
@@ -8001,7 +8623,7 @@ export type PhotographyWorkspaceDto = {
         id: string;
         name: string;
         stage: Stage;
-        "type": Type;
+        "type": Type7;
         unavailable: boolean;
     }[];
 };
@@ -8015,7 +8637,7 @@ export type PhotographyWorkspaceSaveDto = {
         id: string;
         name: string;
         stage: Stage;
-        "type": Type;
+        "type": Type7;
     }[];
 };
 export type PhotographyBrandDto = {
@@ -8023,17 +8645,46 @@ export type PhotographyBrandDto = {
         background: string;
         color: string;
         email: string | "";
-        font: Font;
+        exportWatermarkPresetId?: string | null;
+        font: Font7;
         logoAssetId: string | null;
         logoInitials: string;
         name: string;
         phone: string;
+        proofWatermarkPresetId?: string | null;
         tagline: string;
         textColor: string;
         watermarkColor: string;
         watermarkOpacity: number;
         watermarkPosition: WatermarkPosition;
+        watermarkPresets?: {
+            id: string;
+            name: string;
+            version: number;
+            watermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font8;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type8;
+            };
+        }[];
         watermarkSize: number;
+        webWatermarkPresetId?: string | null;
     };
     /** Stored logo is no longer eligible; its identity is redacted */
     logoUnavailable: boolean;
@@ -8044,18 +8695,47 @@ export type PhotographyBrandSaveDto = {
         background: string;
         color: string;
         email: string | "";
-        font: Font;
+        exportWatermarkPresetId?: string | null;
+        font: Font9;
         /** Omit to retain the existing logo reference; null explicitly selects initials */
         logoAssetId?: string | null;
         logoInitials: string;
         name: string;
         phone: string;
+        proofWatermarkPresetId?: string | null;
         tagline: string;
         textColor: string;
         watermarkColor: string;
         watermarkOpacity: number;
         watermarkPosition: WatermarkPosition;
+        watermarkPresets?: {
+            id: string;
+            name: string;
+            version: number;
+            watermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font10;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type8;
+            };
+        }[];
         watermarkSize: number;
+        webWatermarkPresetId?: string | null;
     };
     expectedRevision: string | null;
 };
@@ -8066,20 +8746,1485 @@ export type PhotographyLogoCandidatesDto = {
     }[];
     nextCursor: string | null;
 };
+export type PhotographyRenditionPreviewDto = {
+    background?: Background;
+    orientation?: Orientation;
+    watermark: {
+        alignment?: Alignment;
+        backing?: boolean;
+        color?: string;
+        font?: Font10;
+        logoAssetId?: string | null;
+        logoPosition?: LogoPosition;
+        logoScale?: number;
+        logoVariant?: LogoVariant;
+        margin?: number;
+        opacity?: number;
+        outline?: boolean;
+        pattern?: Pattern;
+        position?: Position;
+        rotation?: number;
+        secondLine?: string;
+        size?: number;
+        spacing?: number;
+        text: string;
+        "type"?: Type8;
+    };
+};
 export type PhotographyPhotosDto = {
     nextCursor: string | null;
     photos: {
+        camera: string;
         canRate: boolean;
+        capturedAt: string | null;
         currentRevisionId: string | null;
+        eligible: boolean;
+        exclusion: string | null;
         fileName: string;
+        height: number | null;
         id: string;
+        isRaw: boolean;
+        processing: Processing;
         rating: number | null;
         stackCount: number;
+        stackId: string | null;
+        width: number | null;
     }[];
 };
 export type PhotographyRatingDto = {
     assetId: string;
     rating: number | null;
+};
+export type PhotographySiteDto = {
+    revision: string | null;
+    site: {
+        about: string;
+        contact: string;
+        enabled: boolean;
+        portfolio: {
+            captureId: string;
+            consent: true;
+            shootId: string;
+        }[];
+        presentation?: {
+            font: Font11;
+            layout: Layout;
+            palette: Palette;
+            spacing: Spacing;
+        };
+        services: string;
+        title: string;
+    };
+    url?: string;
+};
+export type PhotographySiteSaveDto = {
+    expectedRevision: string | null;
+    site: {
+        about: string;
+        contact: string;
+        enabled: boolean;
+        portfolio: {
+            captureId: string;
+            consent: true;
+            shootId: string;
+        }[];
+        presentation?: {
+            font: Font11;
+            layout: Layout;
+            palette: Palette;
+            spacing: Spacing;
+        };
+        services: string;
+        title: string;
+    };
+};
+export type PhotographyPublicSiteDto = {
+    about: string;
+    brand: {
+        background: string;
+        color: string;
+        email: string;
+        font: string;
+        logoUrl: string | null;
+        name: string;
+        phone: string;
+        tagline: string;
+        textColor: string;
+    };
+    contact: string;
+    enabled: boolean;
+    portfolio: {
+        captureId: string;
+        shootId: string;
+        url: string;
+    }[];
+    presentation?: {
+        font: Font11;
+        layout: Layout;
+        palette: Palette;
+        spacing: Spacing;
+    };
+    services: string;
+    title: string;
+};
+export type PhotographyWorkflowListDto = {
+    galleries: {
+        expiresAt: string | null;
+        mode: string;
+        pendingEdits: number;
+        published: boolean;
+        readyCount: number;
+        revision: string | null;
+        selectionDeadline: string | null;
+        shootId: string;
+        submittedRounds: number;
+        title: string;
+        unpaidOrders: number;
+    }[];
+};
+export type PhotographyWorkflowDto = {
+    approvals: {
+        approved: boolean;
+        captureId: string;
+        createdAt: string;
+        note: string;
+        recipientId: string;
+        revisionId: string;
+    }[];
+    approvedVersions: {
+        approvedAt: string;
+        captureId: string;
+        revisionId: string;
+    }[];
+    captures: {
+        approvalRequested: boolean;
+        approvedRevisionId: string | null;
+        assetId: string | null;
+        assetIds: string[];
+        camera: string | null;
+        capturedAt: string | null;
+        chapterId: string | null;
+        checksum: string | null;
+        eligible: boolean;
+        exclusion: string | null;
+        fileName: string | null;
+        id: string;
+        isRaw: boolean | null;
+        "number": number;
+        offsetSeconds: number;
+        photographer: string;
+        position: number;
+        processing: Processing;
+        proofRevisionId: string | null;
+        rating: number | null;
+        state: State3;
+        withheld: boolean;
+    }[];
+    chapters: {
+        coverCaptureId: string | null;
+        description: string;
+        id: string;
+        position: number;
+        title: string;
+    }[];
+    config: {
+        additionalPrice: number;
+        bundles: {
+            count: number;
+            price: number;
+        }[];
+        collectionPrice: number | null;
+        currency: string;
+        downloadOutputs?: {
+            key: string;
+            kind: Kind9;
+            label: string;
+            maxEdge: number;
+            watermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font12;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type8;
+            } | null;
+        }[];
+        downloadWatermark: {
+            alignment?: Alignment;
+            backing?: boolean;
+            color?: string;
+            font?: Font12;
+            logoAssetId?: string | null;
+            logoPosition?: LogoPosition;
+            logoScale?: number;
+            logoVariant?: LogoVariant;
+            margin?: number;
+            opacity?: number;
+            outline?: boolean;
+            pattern?: Pattern;
+            position?: Position;
+            rotation?: number;
+            secondLine?: string;
+            size?: number;
+            spacing?: number;
+            text: string;
+            "type"?: Type8;
+        } | null;
+        expiresAt: string | null;
+        includedCount: number;
+        mode: Mode2;
+        paymentTiming: PaymentTiming;
+        presentation: {
+            blocks?: {
+                captureIds: string[];
+                chapterId: string | null;
+                id: string;
+                selection?: Selection;
+                text: string;
+                "type": Type9;
+            }[];
+            coverCaptureId: string | null;
+            coverFocal: number;
+            coverTreatment: CoverTreatment;
+            font: Font13;
+            introduction: string;
+            palette: Palette;
+            showChapters: boolean;
+            showNumbers: boolean;
+            spacing: Spacing;
+            template: Template;
+        };
+        proofWatermark: {
+            alignment?: Alignment;
+            backing?: boolean;
+            color?: string;
+            font?: Font14;
+            logoAssetId?: string | null;
+            logoPosition?: LogoPosition;
+            logoScale?: number;
+            logoVariant?: LogoVariant;
+            margin?: number;
+            opacity?: number;
+            outline?: boolean;
+            pattern?: Pattern;
+            position?: Position;
+            rotation?: number;
+            secondLine?: string;
+            size?: number;
+            spacing?: number;
+            text: string;
+            "type"?: Type10;
+        };
+        selectionDeadline: string | null;
+        terms: string;
+        title: string;
+        turnaroundDays: number;
+        webWatermark: {
+            alignment?: Alignment;
+            backing?: boolean;
+            color?: string;
+            font?: Font14;
+            logoAssetId?: string | null;
+            logoPosition?: LogoPosition;
+            logoScale?: number;
+            logoVariant?: LogoVariant;
+            margin?: number;
+            opacity?: number;
+            outline?: boolean;
+            pattern?: Pattern;
+            position?: Position;
+            rotation?: number;
+            secondLine?: string;
+            size?: number;
+            spacing?: number;
+            text: string;
+            "type"?: Type10;
+        } | null;
+    };
+    ordering: Ordering;
+    orders: {
+        acceptedAt: string | null;
+        captureIds: string[];
+        createdAt: string;
+        currency: string;
+        editingBlocked: boolean;
+        id: string;
+        items: {
+            approved: boolean;
+            captureId: string;
+            clientApprovalRequired: boolean;
+            exportSpec: {
+                format: Format;
+                maxEdge: number;
+                quality: Quality;
+            };
+            outputs: {
+                approvalPreviewUrl: string | null;
+                approved: boolean;
+                blockedReason?: BlockedReason | null;
+                branded: boolean;
+                canDownload?: boolean;
+                clientApprovalRequired: boolean;
+                exportSpec: {
+                    format: Format;
+                    maxEdge: number;
+                    quality: Quality;
+                };
+                id: string;
+                kind: Kind9;
+                label: string;
+                ready: boolean;
+                renderStatus: RenderStatus;
+                revisionId: string | null;
+                url: string;
+            }[];
+            ready: boolean;
+            revisionId: string | null;
+        }[];
+        paymentTiming: PaymentTiming;
+        pricing: {
+            additionalPrice: number;
+            bundles: {
+                count: number;
+                price: number;
+            }[];
+            collectionPrice: number | null;
+            includedCount: number;
+            option: string;
+        };
+        readyCount: number;
+        recipientId: string;
+        roundId: string | null;
+        status: Status7;
+        terms: string;
+        total: number;
+    }[];
+    pendingEdits: number;
+    presets: {
+        config: {
+            additionalPrice: number;
+            bundles: {
+                count: number;
+                price: number;
+            }[];
+            collectionPrice: number | null;
+            currency: string;
+            downloadOutputs?: {
+                key: string;
+                kind: Kind9;
+                label: string;
+                maxEdge: number;
+                watermark: {
+                    alignment?: Alignment;
+                    backing?: boolean;
+                    color?: string;
+                    font?: Font14;
+                    logoAssetId?: string | null;
+                    logoPosition?: LogoPosition;
+                    logoScale?: number;
+                    logoVariant?: LogoVariant;
+                    margin?: number;
+                    opacity?: number;
+                    outline?: boolean;
+                    pattern?: Pattern;
+                    position?: Position;
+                    rotation?: number;
+                    secondLine?: string;
+                    size?: number;
+                    spacing?: number;
+                    text: string;
+                    "type"?: Type10;
+                } | null;
+            }[];
+            downloadWatermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font14;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type10;
+            } | null;
+            expiresAt: string | null;
+            includedCount: number;
+            mode: Mode2;
+            paymentTiming: PaymentTiming;
+            presentation: {
+                blocks?: {
+                    captureIds: string[];
+                    chapterId: string | null;
+                    id: string;
+                    selection?: Selection;
+                    text: string;
+                    "type": Type11;
+                }[];
+                coverCaptureId: string | null;
+                coverFocal: number;
+                coverTreatment: CoverTreatment;
+                font: Font15;
+                introduction: string;
+                palette: Palette;
+                showChapters: boolean;
+                showNumbers: boolean;
+                spacing: Spacing;
+                template: Template;
+            };
+            proofWatermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font16;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type12;
+            };
+            selectionDeadline: string | null;
+            terms: string;
+            title: string;
+            turnaroundDays: number;
+            webWatermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font16;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type12;
+            } | null;
+        };
+        id: string;
+        name: string;
+    }[];
+    publication: {
+        completed: number;
+        error: string | null;
+        failedCaptureId: string | null;
+        id: string;
+        status: Status8;
+        total: number;
+    } | null;
+    receipts: {
+        action: string;
+        createdAt: string;
+        id: string;
+        orderId: string | null;
+        recipientId: string;
+        reference: string;
+    }[];
+    recipients: {
+        canDownload: boolean;
+        canProof: boolean;
+        captureIds: string[] | null;
+        choices: string[];
+        expiresAt: string | null;
+        id: string;
+        name: string;
+        notes: {
+            annotations?: {
+                height: number;
+                text: string;
+                width: number;
+                x: number;
+                y: number;
+            }[];
+            captureId: string;
+            text: string;
+        }[];
+        passwordProtected: boolean;
+        revoked: boolean;
+    }[];
+    revision: string | null;
+    rounds: {
+        captureIds: string[];
+        createdAt: string;
+        id: string;
+        notes: {
+            annotations?: {
+                height: number;
+                text: string;
+                width: number;
+                x: number;
+                y: number;
+            }[];
+            captureId: string;
+            text: string;
+        }[];
+        "number": number;
+        recipientId: string;
+    }[];
+    shootId: string;
+    studioPresets: {
+        presets: {
+            config: {
+                additionalPrice: number;
+                bundles: {
+                    count: number;
+                    price: number;
+                }[];
+                collectionPrice: number | null;
+                currency: string;
+                downloadOutputs?: {
+                    key: string;
+                    kind: Kind9;
+                    label: string;
+                    maxEdge: number;
+                    watermark: {
+                        alignment?: Alignment;
+                        backing?: boolean;
+                        color?: string;
+                        font?: Font16;
+                        logoAssetId?: string | null;
+                        logoPosition?: LogoPosition;
+                        logoScale?: number;
+                        logoVariant?: LogoVariant;
+                        margin?: number;
+                        opacity?: number;
+                        outline?: boolean;
+                        pattern?: Pattern;
+                        position?: Position;
+                        rotation?: number;
+                        secondLine?: string;
+                        size?: number;
+                        spacing?: number;
+                        text: string;
+                        "type"?: Type12;
+                    } | null;
+                }[];
+                downloadWatermark: {
+                    alignment?: Alignment;
+                    backing?: boolean;
+                    color?: string;
+                    font?: Font16;
+                    logoAssetId?: string | null;
+                    logoPosition?: LogoPosition;
+                    logoScale?: number;
+                    logoVariant?: LogoVariant;
+                    margin?: number;
+                    opacity?: number;
+                    outline?: boolean;
+                    pattern?: Pattern;
+                    position?: Position;
+                    rotation?: number;
+                    secondLine?: string;
+                    size?: number;
+                    spacing?: number;
+                    text: string;
+                    "type"?: Type12;
+                } | null;
+                expiresAt: string | null;
+                includedCount: number;
+                mode: Mode2;
+                paymentTiming: PaymentTiming;
+                presentation: {
+                    blocks?: {
+                        captureIds: string[];
+                        chapterId: string | null;
+                        id: string;
+                        selection?: Selection;
+                        text: string;
+                        "type": Type13;
+                    }[];
+                    coverCaptureId: string | null;
+                    coverFocal: number;
+                    coverTreatment: CoverTreatment;
+                    font: Font17;
+                    introduction: string;
+                    palette: Palette;
+                    showChapters: boolean;
+                    showNumbers: boolean;
+                    spacing: Spacing;
+                    template: Template;
+                };
+                proofWatermark: {
+                    alignment?: Alignment;
+                    backing?: boolean;
+                    color?: string;
+                    font?: Font18;
+                    logoAssetId?: string | null;
+                    logoPosition?: LogoPosition;
+                    logoScale?: number;
+                    logoVariant?: LogoVariant;
+                    margin?: number;
+                    opacity?: number;
+                    outline?: boolean;
+                    pattern?: Pattern;
+                    position?: Position;
+                    rotation?: number;
+                    secondLine?: string;
+                    size?: number;
+                    spacing?: number;
+                    text: string;
+                    "type"?: Type14;
+                };
+                selectionDeadline: string | null;
+                terms: string;
+                title: string;
+                turnaroundDays: number;
+                webWatermark: {
+                    alignment?: Alignment;
+                    backing?: boolean;
+                    color?: string;
+                    font?: Font18;
+                    logoAssetId?: string | null;
+                    logoPosition?: LogoPosition;
+                    logoScale?: number;
+                    logoVariant?: LogoVariant;
+                    margin?: number;
+                    opacity?: number;
+                    outline?: boolean;
+                    pattern?: Pattern;
+                    position?: Position;
+                    rotation?: number;
+                    secondLine?: string;
+                    size?: number;
+                    spacing?: number;
+                    text: string;
+                    "type"?: Type14;
+                } | null;
+            };
+            id: string;
+            name: string;
+        }[];
+        revision: string | null;
+    };
+};
+export type PhotographyApprovalDto = {
+    captureId: string;
+    expectedRevision: string | null;
+    requestClientApproval: boolean;
+    revisionId: string;
+};
+export type PhotographyAssemblyDto = {
+    captures: {
+        chapterId: string | null;
+        id: string;
+        offsetSeconds: number;
+        photographer: string;
+        position: number;
+        withheld: boolean;
+    }[];
+    chapters: {
+        coverCaptureId: string | null;
+        description: string;
+        id: string;
+        position: number;
+        title: string;
+    }[];
+    expectedRevision: string | null;
+    ordering: Ordering;
+};
+export type PhotographyWorkflowConfigDto = {
+    config: {
+        additionalPrice: number;
+        bundles: {
+            count: number;
+            price: number;
+        }[];
+        collectionPrice: number | null;
+        currency: string;
+        downloadOutputs?: {
+            key: string;
+            kind: Kind9;
+            label: string;
+            maxEdge: number;
+            watermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font18;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type14;
+            } | null;
+        }[];
+        downloadWatermark: {
+            alignment?: Alignment;
+            backing?: boolean;
+            color?: string;
+            font?: Font18;
+            logoAssetId?: string | null;
+            logoPosition?: LogoPosition;
+            logoScale?: number;
+            logoVariant?: LogoVariant;
+            margin?: number;
+            opacity?: number;
+            outline?: boolean;
+            pattern?: Pattern;
+            position?: Position;
+            rotation?: number;
+            secondLine?: string;
+            size?: number;
+            spacing?: number;
+            text: string;
+            "type"?: Type14;
+        } | null;
+        expiresAt: string | null;
+        includedCount: number;
+        mode: Mode2;
+        paymentTiming: PaymentTiming;
+        presentation: {
+            blocks?: {
+                captureIds: string[];
+                chapterId: string | null;
+                id: string;
+                selection?: Selection;
+                text: string;
+                "type": Type15;
+            }[];
+            coverCaptureId: string | null;
+            coverFocal: number;
+            coverTreatment: CoverTreatment;
+            font: Font19;
+            introduction: string;
+            palette: Palette;
+            showChapters: boolean;
+            showNumbers: boolean;
+            spacing: Spacing;
+            template: Template;
+        };
+        proofWatermark: {
+            alignment?: Alignment;
+            backing?: boolean;
+            color?: string;
+            font?: Font20;
+            logoAssetId?: string | null;
+            logoPosition?: LogoPosition;
+            logoScale?: number;
+            logoVariant?: LogoVariant;
+            margin?: number;
+            opacity?: number;
+            outline?: boolean;
+            pattern?: Pattern;
+            position?: Position;
+            rotation?: number;
+            secondLine?: string;
+            size?: number;
+            spacing?: number;
+            text: string;
+            "type"?: Type16;
+        };
+        selectionDeadline: string | null;
+        terms: string;
+        title: string;
+        turnaroundDays: number;
+        webWatermark: {
+            alignment?: Alignment;
+            backing?: boolean;
+            color?: string;
+            font?: Font20;
+            logoAssetId?: string | null;
+            logoPosition?: LogoPosition;
+            logoScale?: number;
+            logoVariant?: LogoVariant;
+            margin?: number;
+            opacity?: number;
+            outline?: boolean;
+            pattern?: Pattern;
+            position?: Position;
+            rotation?: number;
+            secondLine?: string;
+            size?: number;
+            spacing?: number;
+            text: string;
+            "type"?: Type16;
+        } | null;
+    };
+    expectedRevision: string | null;
+};
+export type PhotographyIntakeDto = {
+    expandCaptureIds?: string[];
+    expectedRevision: string | null;
+};
+export type PhotographyOrderCreateDto = {
+    bundleCount?: number;
+    captureIds?: string[];
+    expectedRevision: string | null;
+    outputs?: {
+        key: string;
+        kind: Kind9;
+        label: string;
+        maxEdge: number;
+        revisions?: {
+            captureId: string;
+            revisionId: string;
+        }[];
+        watermark: {
+            alignment?: Alignment;
+            backing?: boolean;
+            color?: string;
+            font?: Font20;
+            logoAssetId?: string | null;
+            logoPosition?: LogoPosition;
+            logoScale?: number;
+            logoVariant?: LogoVariant;
+            margin?: number;
+            opacity?: number;
+            outline?: boolean;
+            pattern?: Pattern;
+            position?: Position;
+            rotation?: number;
+            secondLine?: string;
+            size?: number;
+            spacing?: number;
+            text: string;
+            "type"?: Type16;
+        } | null;
+    }[];
+    pricing: Pricing;
+    recipientId: string;
+    roundId?: string | null;
+};
+export type PhotographyPaymentDto = {
+    action: Action4;
+    expectedRevision: string | null;
+    reference: string;
+};
+export type PhotographyPublicationDto = {
+    expectedRevision: string | null;
+    scope: Scope2;
+};
+export type PhotographyRecipientCreateDto = {
+    canDownload: boolean;
+    canProof: boolean;
+    captureIds: string[] | null;
+    expectedRevision: string | null;
+    expiresAt: string | null;
+    name: string;
+    password: string | null;
+};
+export type PhotographyInvitationDto = {
+    invitation: {
+        recipientId: string;
+        token: string;
+    };
+    workflow: {
+        approvals: {
+            approved: boolean;
+            captureId: string;
+            createdAt: string;
+            note: string;
+            recipientId: string;
+            revisionId: string;
+        }[];
+        approvedVersions: {
+            approvedAt: string;
+            captureId: string;
+            revisionId: string;
+        }[];
+        captures: {
+            approvalRequested: boolean;
+            approvedRevisionId: string | null;
+            assetId: string | null;
+            assetIds: string[];
+            camera: string | null;
+            capturedAt: string | null;
+            chapterId: string | null;
+            checksum: string | null;
+            eligible: boolean;
+            exclusion: string | null;
+            fileName: string | null;
+            id: string;
+            isRaw: boolean | null;
+            "number": number;
+            offsetSeconds: number;
+            photographer: string;
+            position: number;
+            processing: Processing;
+            proofRevisionId: string | null;
+            rating: number | null;
+            state: State3;
+            withheld: boolean;
+        }[];
+        chapters: {
+            coverCaptureId: string | null;
+            description: string;
+            id: string;
+            position: number;
+            title: string;
+        }[];
+        config: {
+            additionalPrice: number;
+            bundles: {
+                count: number;
+                price: number;
+            }[];
+            collectionPrice: number | null;
+            currency: string;
+            downloadOutputs?: {
+                key: string;
+                kind: Kind9;
+                label: string;
+                maxEdge: number;
+                watermark: {
+                    alignment?: Alignment;
+                    backing?: boolean;
+                    color?: string;
+                    font?: Font20;
+                    logoAssetId?: string | null;
+                    logoPosition?: LogoPosition;
+                    logoScale?: number;
+                    logoVariant?: LogoVariant;
+                    margin?: number;
+                    opacity?: number;
+                    outline?: boolean;
+                    pattern?: Pattern;
+                    position?: Position;
+                    rotation?: number;
+                    secondLine?: string;
+                    size?: number;
+                    spacing?: number;
+                    text: string;
+                    "type"?: Type16;
+                } | null;
+            }[];
+            downloadWatermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font20;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type16;
+            } | null;
+            expiresAt: string | null;
+            includedCount: number;
+            mode: Mode2;
+            paymentTiming: PaymentTiming;
+            presentation: {
+                blocks?: {
+                    captureIds: string[];
+                    chapterId: string | null;
+                    id: string;
+                    selection?: Selection;
+                    text: string;
+                    "type": Type17;
+                }[];
+                coverCaptureId: string | null;
+                coverFocal: number;
+                coverTreatment: CoverTreatment;
+                font: Font21;
+                introduction: string;
+                palette: Palette;
+                showChapters: boolean;
+                showNumbers: boolean;
+                spacing: Spacing;
+                template: Template;
+            };
+            proofWatermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font22;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type18;
+            };
+            selectionDeadline: string | null;
+            terms: string;
+            title: string;
+            turnaroundDays: number;
+            webWatermark: {
+                alignment?: Alignment;
+                backing?: boolean;
+                color?: string;
+                font?: Font22;
+                logoAssetId?: string | null;
+                logoPosition?: LogoPosition;
+                logoScale?: number;
+                logoVariant?: LogoVariant;
+                margin?: number;
+                opacity?: number;
+                outline?: boolean;
+                pattern?: Pattern;
+                position?: Position;
+                rotation?: number;
+                secondLine?: string;
+                size?: number;
+                spacing?: number;
+                text: string;
+                "type"?: Type18;
+            } | null;
+        };
+        ordering: Ordering;
+        orders: {
+            acceptedAt: string | null;
+            captureIds: string[];
+            createdAt: string;
+            currency: string;
+            editingBlocked: boolean;
+            id: string;
+            items: {
+                approved: boolean;
+                captureId: string;
+                clientApprovalRequired: boolean;
+                exportSpec: {
+                    format: Format;
+                    maxEdge: number;
+                    quality: Quality;
+                };
+                outputs: {
+                    approvalPreviewUrl: string | null;
+                    approved: boolean;
+                    blockedReason?: BlockedReason | null;
+                    branded: boolean;
+                    canDownload?: boolean;
+                    clientApprovalRequired: boolean;
+                    exportSpec: {
+                        format: Format;
+                        maxEdge: number;
+                        quality: Quality;
+                    };
+                    id: string;
+                    kind: Kind9;
+                    label: string;
+                    ready: boolean;
+                    renderStatus: RenderStatus;
+                    revisionId: string | null;
+                    url: string;
+                }[];
+                ready: boolean;
+                revisionId: string | null;
+            }[];
+            paymentTiming: PaymentTiming;
+            pricing: {
+                additionalPrice: number;
+                bundles: {
+                    count: number;
+                    price: number;
+                }[];
+                collectionPrice: number | null;
+                includedCount: number;
+                option: string;
+            };
+            readyCount: number;
+            recipientId: string;
+            roundId: string | null;
+            status: Status9;
+            terms: string;
+            total: number;
+        }[];
+        pendingEdits: number;
+        presets: {
+            config: {
+                additionalPrice: number;
+                bundles: {
+                    count: number;
+                    price: number;
+                }[];
+                collectionPrice: number | null;
+                currency: string;
+                downloadOutputs?: {
+                    key: string;
+                    kind: Kind9;
+                    label: string;
+                    maxEdge: number;
+                    watermark: {
+                        alignment?: Alignment;
+                        backing?: boolean;
+                        color?: string;
+                        font?: Font22;
+                        logoAssetId?: string | null;
+                        logoPosition?: LogoPosition;
+                        logoScale?: number;
+                        logoVariant?: LogoVariant;
+                        margin?: number;
+                        opacity?: number;
+                        outline?: boolean;
+                        pattern?: Pattern;
+                        position?: Position;
+                        rotation?: number;
+                        secondLine?: string;
+                        size?: number;
+                        spacing?: number;
+                        text: string;
+                        "type"?: Type18;
+                    } | null;
+                }[];
+                downloadWatermark: {
+                    alignment?: Alignment;
+                    backing?: boolean;
+                    color?: string;
+                    font?: Font22;
+                    logoAssetId?: string | null;
+                    logoPosition?: LogoPosition;
+                    logoScale?: number;
+                    logoVariant?: LogoVariant;
+                    margin?: number;
+                    opacity?: number;
+                    outline?: boolean;
+                    pattern?: Pattern;
+                    position?: Position;
+                    rotation?: number;
+                    secondLine?: string;
+                    size?: number;
+                    spacing?: number;
+                    text: string;
+                    "type"?: Type18;
+                } | null;
+                expiresAt: string | null;
+                includedCount: number;
+                mode: Mode2;
+                paymentTiming: PaymentTiming;
+                presentation: {
+                    blocks?: {
+                        captureIds: string[];
+                        chapterId: string | null;
+                        id: string;
+                        selection?: Selection;
+                        text: string;
+                        "type": Type19;
+                    }[];
+                    coverCaptureId: string | null;
+                    coverFocal: number;
+                    coverTreatment: CoverTreatment;
+                    font: Font23;
+                    introduction: string;
+                    palette: Palette;
+                    showChapters: boolean;
+                    showNumbers: boolean;
+                    spacing: Spacing;
+                    template: Template;
+                };
+                proofWatermark: {
+                    alignment?: Alignment;
+                    backing?: boolean;
+                    color?: string;
+                    font?: Font24;
+                    logoAssetId?: string | null;
+                    logoPosition?: LogoPosition;
+                    logoScale?: number;
+                    logoVariant?: LogoVariant;
+                    margin?: number;
+                    opacity?: number;
+                    outline?: boolean;
+                    pattern?: Pattern;
+                    position?: Position;
+                    rotation?: number;
+                    secondLine?: string;
+                    size?: number;
+                    spacing?: number;
+                    text: string;
+                    "type"?: Type20;
+                };
+                selectionDeadline: string | null;
+                terms: string;
+                title: string;
+                turnaroundDays: number;
+                webWatermark: {
+                    alignment?: Alignment;
+                    backing?: boolean;
+                    color?: string;
+                    font?: Font24;
+                    logoAssetId?: string | null;
+                    logoPosition?: LogoPosition;
+                    logoScale?: number;
+                    logoVariant?: LogoVariant;
+                    margin?: number;
+                    opacity?: number;
+                    outline?: boolean;
+                    pattern?: Pattern;
+                    position?: Position;
+                    rotation?: number;
+                    secondLine?: string;
+                    size?: number;
+                    spacing?: number;
+                    text: string;
+                    "type"?: Type20;
+                } | null;
+            };
+            id: string;
+            name: string;
+        }[];
+        publication: {
+            completed: number;
+            error: string | null;
+            failedCaptureId: string | null;
+            id: string;
+            status: Status10;
+            total: number;
+        } | null;
+        receipts: {
+            action: string;
+            createdAt: string;
+            id: string;
+            orderId: string | null;
+            recipientId: string;
+            reference: string;
+        }[];
+        recipients: {
+            canDownload: boolean;
+            canProof: boolean;
+            captureIds: string[] | null;
+            choices: string[];
+            expiresAt: string | null;
+            id: string;
+            name: string;
+            notes: {
+                annotations?: {
+                    height: number;
+                    text: string;
+                    width: number;
+                    x: number;
+                    y: number;
+                }[];
+                captureId: string;
+                text: string;
+            }[];
+            passwordProtected: boolean;
+            revoked: boolean;
+        }[];
+        revision: string | null;
+        rounds: {
+            captureIds: string[];
+            createdAt: string;
+            id: string;
+            notes: {
+                annotations?: {
+                    height: number;
+                    text: string;
+                    width: number;
+                    x: number;
+                    y: number;
+                }[];
+                captureId: string;
+                text: string;
+            }[];
+            "number": number;
+            recipientId: string;
+        }[];
+        shootId: string;
+        studioPresets: {
+            presets: {
+                config: {
+                    additionalPrice: number;
+                    bundles: {
+                        count: number;
+                        price: number;
+                    }[];
+                    collectionPrice: number | null;
+                    currency: string;
+                    downloadOutputs?: {
+                        key: string;
+                        kind: Kind9;
+                        label: string;
+                        maxEdge: number;
+                        watermark: {
+                            alignment?: Alignment;
+                            backing?: boolean;
+                            color?: string;
+                            font?: Font24;
+                            logoAssetId?: string | null;
+                            logoPosition?: LogoPosition;
+                            logoScale?: number;
+                            logoVariant?: LogoVariant;
+                            margin?: number;
+                            opacity?: number;
+                            outline?: boolean;
+                            pattern?: Pattern;
+                            position?: Position;
+                            rotation?: number;
+                            secondLine?: string;
+                            size?: number;
+                            spacing?: number;
+                            text: string;
+                            "type"?: Type20;
+                        } | null;
+                    }[];
+                    downloadWatermark: {
+                        alignment?: Alignment;
+                        backing?: boolean;
+                        color?: string;
+                        font?: Font24;
+                        logoAssetId?: string | null;
+                        logoPosition?: LogoPosition;
+                        logoScale?: number;
+                        logoVariant?: LogoVariant;
+                        margin?: number;
+                        opacity?: number;
+                        outline?: boolean;
+                        pattern?: Pattern;
+                        position?: Position;
+                        rotation?: number;
+                        secondLine?: string;
+                        size?: number;
+                        spacing?: number;
+                        text: string;
+                        "type"?: Type20;
+                    } | null;
+                    expiresAt: string | null;
+                    includedCount: number;
+                    mode: Mode2;
+                    paymentTiming: PaymentTiming;
+                    presentation: {
+                        blocks?: {
+                            captureIds: string[];
+                            chapterId: string | null;
+                            id: string;
+                            selection?: Selection;
+                            text: string;
+                            "type": Type21;
+                        }[];
+                        coverCaptureId: string | null;
+                        coverFocal: number;
+                        coverTreatment: CoverTreatment;
+                        font: Font25;
+                        introduction: string;
+                        palette: Palette;
+                        showChapters: boolean;
+                        showNumbers: boolean;
+                        spacing: Spacing;
+                        template: Template;
+                    };
+                    proofWatermark: {
+                        alignment?: Alignment;
+                        backing?: boolean;
+                        color?: string;
+                        font?: Font26;
+                        logoAssetId?: string | null;
+                        logoPosition?: LogoPosition;
+                        logoScale?: number;
+                        logoVariant?: LogoVariant;
+                        margin?: number;
+                        opacity?: number;
+                        outline?: boolean;
+                        pattern?: Pattern;
+                        position?: Position;
+                        rotation?: number;
+                        secondLine?: string;
+                        size?: number;
+                        spacing?: number;
+                        text: string;
+                        "type"?: Type22;
+                    };
+                    selectionDeadline: string | null;
+                    terms: string;
+                    title: string;
+                    turnaroundDays: number;
+                    webWatermark: {
+                        alignment?: Alignment;
+                        backing?: boolean;
+                        color?: string;
+                        font?: Font26;
+                        logoAssetId?: string | null;
+                        logoPosition?: LogoPosition;
+                        logoScale?: number;
+                        logoVariant?: LogoVariant;
+                        margin?: number;
+                        opacity?: number;
+                        outline?: boolean;
+                        pattern?: Pattern;
+                        position?: Position;
+                        rotation?: number;
+                        secondLine?: string;
+                        size?: number;
+                        spacing?: number;
+                        text: string;
+                        "type"?: Type22;
+                    } | null;
+                };
+                id: string;
+                name: string;
+            }[];
+            revision: string | null;
+        };
+    };
+};
+export type PhotographyRecipientUpdateDto = {
+    canDownload: boolean;
+    canProof: boolean;
+    captureIds: string[] | null;
+    expectedRevision: string | null;
+    expiresAt: string | null;
+    revoked: boolean;
+};
+export type PhotographyStudioPresetApplyDto = {
+    expectedPresetRevision: string;
+    expectedRevision: string | null;
 };
 export type PluginMethodResponseDto = {
     /** Hosts this method may send requests to; empty when it cannot reach other servers */
@@ -8647,7 +10792,7 @@ export type PushDeviceRegisterDto = {
 };
 export type PushActivityTokenDto = {
     /** The Live Activity type */
-    kind: Kind9;
+    kind: Kind10;
     /** The ActivityKit push token of this activity */
     token: string;
 };
@@ -8892,7 +11037,7 @@ export type RenderWorkerProgressDto = {
     claimToken: string;
     outputBytes?: string;
     processedUnits: number;
-    status: Status3;
+    status: Status11;
     totalUnits: number | null;
 };
 export type RenderWorkerStreamSignalRequestDto = {
@@ -11660,7 +13805,7 @@ export type PinnedCollection = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind10;
+    kind: Kind11;
     /** Null when unavailable; the inaccessible target identity is not disclosed */
     targetId: string | null;
     /** Current access-filtered title; null when unavailable */
@@ -11675,7 +13820,7 @@ export type PinnedCollectionsResponseDto = {
 export type PinnedCollectionRef = {
     /** Opaque pin ID chosen by the client and retained across reorders */
     id: string;
-    kind: Kind10;
+    kind: Kind11;
     /** Target UUID, saved-search name, or built-in ID. Null retains an existing unavailable pin by its opaque ID */
     targetId: string | null;
 };
@@ -12027,7 +14172,7 @@ export type KnownAssetDevelopRecipe = {
     /** Magenta (positive) or green (negative) tint */
     tint?: number;
     /** Recipe contract version */
-    version: Version;
+    version: Version3;
     /** Saturation weighted towards muted colours */
     vibrance?: number;
     /** Darkened (positive) or lightened (negative) edges */
@@ -12365,7 +14510,7 @@ export type SyncAssetTrashStateV1 = {
     assetId: string;
     deletedAt: string;
     isOffline: boolean;
-    status: Status4;
+    status: Status12;
 };
 export type SyncAssetV1 = {
     /** Checksum */
@@ -12581,7 +14726,7 @@ export type SyncPinnedCollectionV1 = {
     /** Current readable cover asset; null when unavailable or empty */
     coverAssetId: string | null;
     id: string;
-    kind: Kind10;
+    kind: Kind11;
     position: number;
     targetId: string;
     /** Current access-filtered title; null when unavailable */
@@ -12639,7 +14784,7 @@ export type SyncSharedSpaceV1 = {
     description: string | null;
     icon: string | null;
     id: string;
-    kind: Kind11;
+    kind: Kind12;
     name: string;
     updatedAt: string;
 };
@@ -15651,6 +17796,22 @@ export function importAssetDevelopRendition({ id, assetDevelopImportDto }: {
         ...opts,
         method: "POST",
         body: assetDevelopImportDto
+    })));
+}
+/**
+ * Suggest a subject or sky mask locally
+ */
+export function proposeAssetDevelopMask({ id, assetDevelopSemanticMaskDto }: {
+    id: string;
+    assetDevelopSemanticMaskDto: AssetDevelopSemanticMaskDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: AssetDevelopArtifactResponseDto;
+    }>(`/assets/${encodeURIComponent(id)}/develop/masks/propose`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetDevelopSemanticMaskDto
     })));
 }
 /**
@@ -19451,6 +21612,250 @@ export function createPetObservation({ id, petObservationCreateDto }: {
         body: petObservationCreateDto
     })));
 }
+export function photographyGallery({ xPhotographySession, id }: {
+    xPhotographySession: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyGalleryDto;
+    }>(`/photography/galleries/${encodeURIComponent(id)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    }));
+}
+export function photographyApprove({ xPhotographySession, id, photographyGuestApprovalDto }: {
+    xPhotographySession: string;
+    id: string;
+    photographyGuestApprovalDto: PhotographyGuestApprovalDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyGalleryDto;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/approve`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyGuestApprovalDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    })));
+}
+export function photographyChoices({ xPhotographySession, id, photographyChoicesDto }: {
+    xPhotographySession: string;
+    id: string;
+    photographyChoicesDto: PhotographyChoicesDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyGalleryDto;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/choices`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographyChoicesDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    })));
+}
+export function photographyLogo({ xPhotographySession, id }: {
+    xPhotographySession: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/logo`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    }));
+}
+export function photographyAccept({ xPhotographySession, id, orderId, photographyOrderAcceptDto }: {
+    xPhotographySession: string;
+    id: string;
+    orderId: string;
+    photographyOrderAcceptDto: PhotographyOrderAcceptDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyGalleryDto;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/orders/${encodeURIComponent(orderId)}/accept`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyOrderAcceptDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    })));
+}
+export function photographyCheckout({ xPhotographySession, id, orderId }: {
+    xPhotographySession: string;
+    id: string;
+    orderId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyCheckoutDto;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/orders/${encodeURIComponent(orderId)}/checkout`, {
+        ...opts,
+        method: "POST",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    }));
+}
+export function photographyOutput({ xPhotographySession, captureId, id, outputId }: {
+    xPhotographySession: string;
+    captureId: string;
+    id: string;
+    outputId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/photos/${encodeURIComponent(captureId)}/outputs/${encodeURIComponent(outputId)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    }));
+}
+export function photographyOutputPreview({ xPhotographySession, captureId, id, outputId }: {
+    xPhotographySession: string;
+    captureId: string;
+    id: string;
+    outputId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/photos/${encodeURIComponent(captureId)}/outputs/${encodeURIComponent(outputId)}/preview`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    }));
+}
+export function photographyFile({ xPhotographySession, captureId, id, kind }: {
+    xPhotographySession: string;
+    captureId: string;
+    id: string;
+    kind: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/photos/${encodeURIComponent(captureId)}/${encodeURIComponent(kind)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    }));
+}
+export function photographySession({ id, photographyGallerySessionDto }: {
+    id: string;
+    photographyGallerySessionDto: PhotographyGallerySessionDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyGallerySessionResponseDto;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/session`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyGallerySessionDto
+    })));
+}
+export function photographySubmit({ xPhotographySession, id, photographyWorkflowMutationDto }: {
+    xPhotographySession: string;
+    id: string;
+    photographyWorkflowMutationDto: PhotographyWorkflowMutationDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyGalleryDto;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/submit`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyWorkflowMutationDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    })));
+}
+export function photographyZip({ xPhotographySession, id, photographyZipDto }: {
+    xPhotographySession: string;
+    id: string;
+    photographyZipDto: PhotographyZipDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyZipResponseDto;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/zip`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyZipDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    })));
+}
+export function photographyArchive({ xPhotographySession, id, zipId }: {
+    xPhotographySession: string;
+    id: string;
+    zipId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/galleries/${encodeURIComponent(id)}/zip/${encodeURIComponent(zipId)}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "X-Photography-Session": xPhotographySession
+        })
+    }));
+}
+export function photographyCallback({ stripeSignature, body }: {
+    stripeSignature: string;
+    body: {
+        [key: string]: any;
+    };
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyCallbackDto;
+    }>("/photography/payments/stripe", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "Stripe-Signature": stripeSignature
+        })
+    })));
+}
+export function photographyStudioPresets(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyStudioPresetsDto;
+    }>("/photography/presets", {
+        ...opts
+    }));
+}
+export function photographySaveStudioPreset({ photographyPresetSaveDto }: {
+    photographyPresetSaveDto: PhotographyPresetSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyStudioPresetsDto;
+    }>("/photography/presets", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyPresetSaveDto
+    })));
+}
 /**
  * Read your private shoots
  */
@@ -19521,15 +21926,30 @@ export function getPhotographyLogos({ cursor }: {
 /**
  * View an eligible owned logo thumbnail without original metadata
  */
-export function getPhotographyLogoThumbnail({ id }: {
+export function getPhotographyLogoThumbnail({ id, variant }: {
     id: string;
+    variant?: "original" | "light" | "dark";
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
         data: Blob;
-    }>(`/photography/shoots/branding/logos/${encodeURIComponent(id)}/thumbnail`, {
+    }>(`/photography/shoots/branding/logos/${encodeURIComponent(id)}/thumbnail${QS.query(QS.explode({
+        variant
+    }))}`, {
         ...opts
     }));
+}
+/**
+ * Preview a watermark using the production font metrics and renderer
+ */
+export function previewPhotographyWatermark({ photographyRenditionPreviewDto }: {
+    photographyRenditionPreviewDto: PhotographyRenditionPreviewDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/photography/shoots/branding/preview", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyRenditionPreviewDto
+    })));
 }
 /**
  * Read a page of unlocked shoot photos
@@ -19558,6 +21978,263 @@ export function ratePhotographyPhoto({ id, photographyRatingDto }: {
         ...opts,
         method: "PATCH",
         body: photographyRatingDto
+    })));
+}
+export function photographySite(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographySiteDto;
+    }>("/photography/site", {
+        ...opts
+    }));
+}
+export function photographySaveSite({ photographySiteSaveDto }: {
+    photographySiteSaveDto: PhotographySiteSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographySiteDto;
+    }>("/photography/site", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographySiteSaveDto
+    })));
+}
+export function photographyPublicSite({ ownerId }: {
+    ownerId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyPublicSiteDto;
+    }>(`/photography/studios/${encodeURIComponent(ownerId)}`, {
+        ...opts
+    }));
+}
+export function photographyPublicLogo({ ownerId }: {
+    ownerId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/studios/${encodeURIComponent(ownerId)}/logo`, {
+        ...opts
+    }));
+}
+export function photographyPublicPhoto({ captureId, ownerId, shootId }: {
+    captureId: string;
+    ownerId: string;
+    shootId: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/photography/studios/${encodeURIComponent(ownerId)}/photos/${encodeURIComponent(shootId)}/${encodeURIComponent(captureId)}`, {
+        ...opts
+    }));
+}
+export function photographyList(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyWorkflowListDto;
+    }>("/photography/workflows", {
+        ...opts
+    }));
+}
+export function photographyGet({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+export function photographyApproval({ id, photographyApprovalDto }: {
+    id: string;
+    photographyApprovalDto: PhotographyApprovalDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/approvals`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyApprovalDto
+    })));
+}
+export function photographyAssembly({ id, photographyAssemblyDto }: {
+    id: string;
+    photographyAssemblyDto: PhotographyAssemblyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/assembly`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographyAssemblyDto
+    })));
+}
+export function photographyRetryCapture({ captureId, id, photographyWorkflowMutationDto }: {
+    captureId: string;
+    id: string;
+    photographyWorkflowMutationDto: PhotographyWorkflowMutationDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/captures/${encodeURIComponent(captureId)}/retry-processing`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyWorkflowMutationDto
+    })));
+}
+export function photographyConfig({ id, photographyWorkflowConfigDto }: {
+    id: string;
+    photographyWorkflowConfigDto: PhotographyWorkflowConfigDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/config`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: photographyWorkflowConfigDto
+    })));
+}
+export function photographyIntake({ id, photographyIntakeDto }: {
+    id: string;
+    photographyIntakeDto: PhotographyIntakeDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/intake`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyIntakeDto
+    })));
+}
+export function photographyOrder({ id, photographyOrderCreateDto }: {
+    id: string;
+    photographyOrderCreateDto: PhotographyOrderCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/orders`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyOrderCreateDto
+    })));
+}
+export function photographyPayment({ id, orderId, photographyPaymentDto }: {
+    id: string;
+    orderId: string;
+    photographyPaymentDto: PhotographyPaymentDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/orders/${encodeURIComponent(orderId)}/payment`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyPaymentDto
+    })));
+}
+export function photographySavePreset({ id, photographyPresetSaveDto }: {
+    id: string;
+    photographyPresetSaveDto: PhotographyPresetSaveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/presets`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyPresetSaveDto
+    })));
+}
+export function photographyApplyPreset({ id, presetId, photographyWorkflowMutationDto }: {
+    id: string;
+    presetId: string;
+    photographyWorkflowMutationDto: PhotographyWorkflowMutationDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/presets/${encodeURIComponent(presetId)}/apply`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyWorkflowMutationDto
+    })));
+}
+export function photographyPublish({ id, photographyPublicationDto }: {
+    id: string;
+    photographyPublicationDto: PhotographyPublicationDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/publish`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyPublicationDto
+    })));
+}
+export function photographyInvite({ id, photographyRecipientCreateDto }: {
+    id: string;
+    photographyRecipientCreateDto: PhotographyRecipientCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyInvitationDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/recipients`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyRecipientCreateDto
+    })));
+}
+export function photographyRecipient({ id, recipientId, photographyRecipientUpdateDto }: {
+    id: string;
+    recipientId: string;
+    photographyRecipientUpdateDto: PhotographyRecipientUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/recipients/${encodeURIComponent(recipientId)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: photographyRecipientUpdateDto
+    })));
+}
+export function photographyRetry({ id, photographyWorkflowMutationDto }: {
+    id: string;
+    photographyWorkflowMutationDto: PhotographyWorkflowMutationDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/retry`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyWorkflowMutationDto
+    })));
+}
+export function photographyApplyStudioPreset({ id, presetId, photographyStudioPresetApplyDto }: {
+    id: string;
+    presetId: string;
+    photographyStudioPresetApplyDto: PhotographyStudioPresetApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: PhotographyWorkflowDto;
+    }>(`/photography/workflows/${encodeURIComponent(id)}/studio-presets/${encodeURIComponent(presetId)}/apply`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: photographyStudioPresetApplyDto
     })));
 }
 /**
@@ -25148,6 +27825,10 @@ export enum AssetDevelopArtifactKind {
     Mask = "mask",
     Fill = "fill"
 }
+export enum Target {
+    Subject = "subject",
+    Sky = "sky"
+}
 export enum AssetDevelopFileKind {
     Master = "master",
     Preview = "preview"
@@ -25321,6 +28002,23 @@ export enum Unit {
 export enum DevelopPresetMaskKind {
     Radial = "radial",
     Linear = "linear"
+}
+export enum Coordinates {
+    SensorActive = "sensor-active"
+}
+export enum AssetDevelopMaskKind {
+    Radial = "radial",
+    Linear = "linear",
+    Brush = "brush",
+    Subject = "subject",
+    Sky = "sky",
+    Background = "background"
+}
+export enum Renderer {
+    Darktable561 = "darktable/5.6.1"
+}
+export enum Version2 {
+    $2 = 2
 }
 export enum DocumentField {
     Date = "date",
@@ -25791,6 +28489,185 @@ export enum PetObservationState {
     Confirmed = "confirmed",
     Rejected = "rejected"
 }
+export enum Mode2 {
+    EditedDelivery = "edited-delivery",
+    SelectBeforeEditing = "select-before-editing",
+    SellByPhoto = "sell-by-photo"
+}
+export enum Format {
+    Jpeg = "jpeg"
+}
+export enum Quality {
+    $90 = 90
+}
+export enum BlockedReason {
+    Permission = "permission",
+    Order = "order",
+    Payment = "payment",
+    Approval = "approval",
+    Render = "render"
+}
+export enum Kind9 {
+    Print = "print",
+    Web = "web",
+    Social = "social"
+}
+export enum RenderStatus {
+    AwaitingApproval = "awaiting-approval",
+    Preparing = "preparing",
+    Ready = "ready"
+}
+export enum PaymentTiming {
+    BeforeEditing = "before-editing",
+    AfterApproval = "after-approval"
+}
+export enum Status3 {
+    Quoted = "quoted",
+    Accepted = "accepted",
+    Settled = "settled",
+    Free = "free",
+    Refunded = "refunded",
+    Cancelled = "cancelled"
+}
+export enum Status4 {
+    Imported = "imported",
+    Selected = "selected",
+    ApprovalRequested = "approval-requested",
+    Approved = "approved",
+    Delivered = "delivered"
+}
+export enum Selection {
+    Automatic = "automatic",
+    Explicit = "explicit"
+}
+export enum Type {
+    Chapter = "chapter",
+    Grid = "grid",
+    Full = "full",
+    Pair = "pair",
+    Caption = "caption",
+    Slideshow = "slideshow"
+}
+export enum CoverTreatment {
+    Full = "full",
+    Split = "split",
+    Quiet = "quiet"
+}
+export enum Font {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Palette {
+    Studio = "studio",
+    Ivory = "ivory",
+    Charcoal = "charcoal"
+}
+export enum Spacing {
+    Compact = "compact",
+    Comfortable = "comfortable",
+    Airy = "airy"
+}
+export enum Template {
+    Wedding = "wedding",
+    Portrait = "portrait",
+    FineArt = "fine-art",
+    Proofing = "proofing"
+}
+export enum Status5 {
+    Queued = "queued",
+    Rendering = "rendering",
+    Ready = "ready",
+    Failed = "failed"
+}
+export enum Status6 {
+    Ready = "ready"
+}
+export enum Alignment {
+    Left = "left",
+    Center = "center",
+    Right = "right"
+}
+export enum Font2 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum LogoPosition {
+    Above = "above",
+    Below = "below",
+    Left = "left",
+    Right = "right"
+}
+export enum LogoVariant {
+    Original = "original",
+    Light = "light",
+    Dark = "dark"
+}
+export enum Pattern {
+    Signature = "signature",
+    Centre = "centre",
+    Diagonal = "diagonal",
+    Tile = "tile"
+}
+export enum Position {
+    TopLeft = "top-left",
+    TopRight = "top-right",
+    BottomLeft = "bottom-left",
+    BottomRight = "bottom-right",
+    Center = "center"
+}
+export enum Type2 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
+}
+export enum Type3 {
+    Chapter = "chapter",
+    Grid = "grid",
+    Full = "full",
+    Pair = "pair",
+    Caption = "caption",
+    Slideshow = "slideshow"
+}
+export enum Font3 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Font4 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type4 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
+}
+export enum Type5 {
+    Chapter = "chapter",
+    Grid = "grid",
+    Full = "full",
+    Pair = "pair",
+    Caption = "caption",
+    Slideshow = "slideshow"
+}
+export enum Font5 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Font6 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type6 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
+}
 export enum Stage {
     Imported = "Imported",
     Selected = "Selected",
@@ -25798,7 +28675,7 @@ export enum Stage {
     Proofing = "Proofing",
     Delivered = "Delivered"
 }
-export enum Type {
+export enum Type7 {
     FamilyPortrait = "Family portrait",
     Wedding = "Wedding",
     Portrait = "Portrait",
@@ -25807,7 +28684,7 @@ export enum Type {
     Event = "Event",
     Personal = "Personal"
 }
-export enum Font {
+export enum Font7 {
     Editorial = "editorial",
     Modern = "modern",
     Classic = "classic"
@@ -25817,6 +28694,270 @@ export enum WatermarkPosition {
     BottomLeft = "bottom-left",
     Center = "center",
     TopRight = "top-right"
+}
+export enum Font8 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type8 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
+}
+export enum Font9 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Classic = "classic"
+}
+export enum Font10 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Background {
+    Light = "light",
+    Dark = "dark"
+}
+export enum Orientation {
+    Portrait = "portrait",
+    Landscape = "landscape"
+}
+export enum Processing {
+    Ready = "ready",
+    Pending = "pending",
+    Failed = "failed"
+}
+export enum Font11 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Layout {
+    Editorial = "editorial",
+    Grid = "grid",
+    Slideshow = "slideshow"
+}
+export enum State3 {
+    Imported = "imported",
+    Selected = "selected",
+    ApprovalRequested = "approval-requested",
+    Approved = "approved",
+    Delivered = "delivered"
+}
+export enum Font12 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type9 {
+    Chapter = "chapter",
+    Grid = "grid",
+    Full = "full",
+    Pair = "pair",
+    Caption = "caption",
+    Slideshow = "slideshow"
+}
+export enum Font13 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Font14 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type10 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
+}
+export enum Ordering {
+    Chronological = "chronological",
+    Photographer = "photographer",
+    Manual = "manual",
+    Chapters = "chapters"
+}
+export enum Status7 {
+    Quoted = "quoted",
+    Accepted = "accepted",
+    Settled = "settled",
+    Free = "free",
+    Refunded = "refunded",
+    Cancelled = "cancelled"
+}
+export enum Type11 {
+    Chapter = "chapter",
+    Grid = "grid",
+    Full = "full",
+    Pair = "pair",
+    Caption = "caption",
+    Slideshow = "slideshow"
+}
+export enum Font15 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Font16 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type12 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
+}
+export enum Status8 {
+    Queued = "queued",
+    Rendering = "rendering",
+    Ready = "ready",
+    Failed = "failed"
+}
+export enum Type13 {
+    Chapter = "chapter",
+    Grid = "grid",
+    Full = "full",
+    Pair = "pair",
+    Caption = "caption",
+    Slideshow = "slideshow"
+}
+export enum Font17 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Font18 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type14 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
+}
+export enum Type15 {
+    Chapter = "chapter",
+    Grid = "grid",
+    Full = "full",
+    Pair = "pair",
+    Caption = "caption",
+    Slideshow = "slideshow"
+}
+export enum Font19 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Font20 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type16 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
+}
+export enum Pricing {
+    Package = "package",
+    Collection = "collection",
+    Bundle = "bundle"
+}
+export enum Action4 {
+    Settle = "settle",
+    Refund = "refund",
+    Cancel = "cancel"
+}
+export enum Scope2 {
+    AllEligible = "all-eligible",
+    Selected = "selected"
+}
+export enum Type17 {
+    Chapter = "chapter",
+    Grid = "grid",
+    Full = "full",
+    Pair = "pair",
+    Caption = "caption",
+    Slideshow = "slideshow"
+}
+export enum Font21 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Font22 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type18 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
+}
+export enum Status9 {
+    Quoted = "quoted",
+    Accepted = "accepted",
+    Settled = "settled",
+    Free = "free",
+    Refunded = "refunded",
+    Cancelled = "cancelled"
+}
+export enum Type19 {
+    Chapter = "chapter",
+    Grid = "grid",
+    Full = "full",
+    Pair = "pair",
+    Caption = "caption",
+    Slideshow = "slideshow"
+}
+export enum Font23 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Font24 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type20 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
+}
+export enum Status10 {
+    Queued = "queued",
+    Rendering = "rendering",
+    Ready = "ready",
+    Failed = "failed"
+}
+export enum Type21 {
+    Chapter = "chapter",
+    Grid = "grid",
+    Full = "full",
+    Pair = "pair",
+    Caption = "caption",
+    Slideshow = "slideshow"
+}
+export enum Font25 {
+    Editorial = "editorial",
+    Modern = "modern",
+    Script = "script"
+}
+export enum Font26 {
+    Script = "script",
+    Serif = "serif",
+    Sans = "sans"
+}
+export enum Type22 {
+    Text = "text",
+    Logo = "logo",
+    Both = "both"
 }
 export enum WorkflowType {
     AssetV1 = "AssetV1"
@@ -25942,7 +29083,7 @@ export enum PushPlatform {
     Ios = "ios",
     Android = "android"
 }
-export enum Kind9 {
+export enum Kind10 {
     CloudBackupActivation = "cloud-backup-activation"
 }
 export enum Cipher {
@@ -26088,7 +29229,7 @@ export enum QueueJobWorkerKind {
     Lan = "lan",
     FrameleafCloud = "frameleaf-cloud"
 }
-export enum Status3 {
+export enum Status11 {
     Preparing = "preparing",
     Rendering = "rendering"
 }
@@ -26597,7 +29738,7 @@ export enum CloudBackupOwnerSetupFirstRun {
     Done = "done",
     Failed = "failed"
 }
-export enum Kind10 {
+export enum Kind11 {
     Album = "album",
     SmartAlbum = "smart-album",
     SavedSearch = "saved-search",
@@ -26627,20 +29768,15 @@ export enum AssetDevelopCleanupMethod {
     Remove = "remove",
     Pixelate = "pixelate"
 }
-export enum AssetDevelopMaskKind {
-    Radial = "radial",
-    Linear = "linear",
-    Brush = "brush",
-    Subject = "subject",
-    Sky = "sky",
-    Background = "background"
+export enum Version3 {
+    $1 = 1
 }
-export enum Status4 {
+export enum Status12 {
     Active = "active",
     Trashed = "trashed",
     Deleted = "deleted"
 }
-export enum Kind11 {
+export enum Kind12 {
     Space = "space"
 }
 export enum UserMetadataKey {

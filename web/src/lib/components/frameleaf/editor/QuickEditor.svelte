@@ -39,6 +39,8 @@
   } from '$lib/components/frameleaf/editor/RestorationPanel.svelte';
   import RoundTripPanel from '$lib/components/frameleaf/editor/RoundTripPanel.svelte';
   import UserPresets from '$lib/components/frameleaf/editor/UserPresets.svelte';
+  import NativeRawEditor from '$lib/components/frameleaf/editor/NativeRawEditor.svelte';
+  import { isRawName } from '$lib/frameleaf/library-care';
   import VideoQuickEditor from '$lib/components/frameleaf/editor/VideoQuickEditor.svelte';
   import {
     ASPECTS,
@@ -172,6 +174,7 @@
   } = $props();
 
   const isVideo = isVideoAsset(asset);
+  let nativeOpen = $state(isRawName(asset.originalFileName));
   const privateStateGeneration = getPrivateBrowserStateGeneration();
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   const originalPreviewUrl = getAssetMediaUrl({
@@ -323,7 +326,10 @@
   const previewMatches = $derived(identityTone || serverPreview?.key === currentToneKey);
 
   $effect(() => {
-    if (isVideo) {
+    if (isVideo || nativeOpen) {
+      clearTimeout(previewTimer);
+      previewAbort?.abort();
+      previewPending = false;
       return;
     }
     const key = currentToneKey;
@@ -849,6 +855,9 @@
     target instanceof HTMLElement &&
     (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
   const onKeyDown = (event: KeyboardEvent) => {
+    if (nativeOpen) {
+      return;
+    }
     if (isVideo) {
       videoQuickEditor?.keyDown(event);
       return;
@@ -882,6 +891,9 @@
     }
   };
   const onKeyUp = (event: KeyboardEvent) => {
+    if (nativeOpen) {
+      return;
+    }
     if (isVideo) {
       videoQuickEditor?.keyUp(event);
       return;
@@ -1006,6 +1018,8 @@
   {#if isVideo}
     <!-- Editor.jsx is one editor for photos and clips; the clip half lives in VideoQuickEditor (VE-1 … VE-12). -->
     <VideoQuickEditor bind:this={videoQuickEditor} {asset} {onClose} />
+  {:else if nativeOpen}
+    <NativeRawEditor {asset} {onClose} {onRendered} onLegacy={() => (nativeOpen = false)} />
   {:else}
     <div class="ed-shell">
       <header class="ed-top">
@@ -1096,6 +1110,9 @@
         >
           <Icon icon={mdiCompareHorizontal} size="20" />
         </button>
+        {#if isRawName(asset.originalFileName)}
+          <button type="button" class="ed-tool labelled" onclick={() => (nativeOpen = true)}>RAW development</button>
+        {/if}
         <span class="ed-sep ed-wide" aria-hidden="true"></span>
         <button
           type="button"
