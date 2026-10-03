@@ -5,10 +5,11 @@ from __future__ import annotations
 import ast
 import unittest
 from collections.abc import Callable
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 
 def loader_method(filename: str, name: str, namespace: dict[str, Any]) -> Callable[..., Any]:
@@ -67,16 +68,18 @@ class NativeTransformersBoundaryTests(unittest.TestCase):
                 "verify_snapshot": self.verify,
                 "ModelUnavailableError": RuntimeError,
                 "LocalEntryNotFoundError": OSError,
+                "cast": cast,
+                "Callable": Callable,
             },
         )
 
     def test_semantic_loaders_remain_offline_verified_and_safetensors_only(self) -> None:
         model = SimpleNamespace(cache_dir=Path("/cache"), device_name="cpu")
         self.semantic_load(model)
-        for call, entry in zip(self.snapshot.call_args_list, self.manifest):
-            self.assertEqual(call.args, (entry["repository"],))
+        for request, entry in zip(self.snapshot.call_args_list, self.manifest):
+            self.assertEqual(request.args, (entry["repository"],))
             self.assertEqual(
-                call.kwargs,
+                request.kwargs,
                 {"revision": entry["revision"], "cache_dir": Path("/cache/hub"), "local_files_only": True},
             )
         self.assertEqual(self.verify.call_count, 2)
@@ -88,6 +91,7 @@ class NativeTransformersBoundaryTests(unittest.TestCase):
                 self.assertIs(factory.call_args.kwargs["use_safetensors"], True)
                 factory.return_value.to.assert_called_once_with("cpu")
                 factory.return_value.eval.assert_called_once_with()
+                self.assertEqual(factory.return_value.method_calls, [call.to("cpu"), call.eval()])
         self.assertIs(model.florence, self.vendor.Florence2ForConditionalGeneration.from_pretrained.return_value)
         self.assertIs(model.sam, self.vendor.Sam2Model.from_pretrained.return_value)
 
@@ -127,10 +131,44 @@ class NativeTransformersBoundaryTests(unittest.TestCase):
                 )
                 factory.return_value.to.assert_called_once_with("cpu")
                 factory.return_value.eval.assert_called_once_with()
+                self.assertEqual(factory.return_value.method_calls, [call.to("cpu"), call.eval()])
                 self.assertEqual(
                     self.vendor.AutoProcessor.from_pretrained.call_args.kwargs,
                     {"trust_remote_code": florence, "local_files_only": True},
                 )
+
+    def test_florence_generation_keeps_inputs_device_and_deterministic_controls(self) -> None:
+        predict = loader_method(
+            "semantic_mask.py", "_predict", {"cast": cast, "Callable": Callable, "bounded_boxes": lambda *_: []}
+        )
+        self.torch.inference_mode = nullcontext
+        image = SimpleNamespace(width=20, height=10, size=(20, 10), convert=Mock())
+        image.convert.return_value = image
+        task = "<CAPTION_TO_PHRASE_GROUNDING>"
+
+        class Features(dict[str, object]):
+            def to(self, device: str) -> Features:
+                self.device = device
+                return self
+
+        for target, phrase in [("subject", "the main foreground subject"), ("sky", "sky")]:
+            with self.subTest(target=target):
+                features = Features(input_ids=object(), pixel_values=object())
+                processor = Mock(return_value=features)
+                processor.batch_decode.return_value = ["grounded"]
+                processor.post_process_generation.return_value = {task: {"bboxes": []}}
+                model = Mock()
+                owner = SimpleNamespace(
+                    _inference_lock=nullcontext(), device_name="cpu", florence_processor=processor, florence=model
+                )
+                # Stop after grounding; this test never runs SAM, converts pixels or encodes an image.
+                with self.assertRaisesRegex(ValueError, "No subject or sky proposal"):
+                    predict(owner, image, target)
+                self.assertEqual(features.device, "cpu")
+                processor.assert_called_once_with(text=task + phrase, images=image, return_tensors="pt")
+                model.generate.assert_called_once_with(**features, max_new_tokens=512, num_beams=1, do_sample=False)
+                processor.batch_decode.assert_called_once_with(model.generate.return_value, skip_special_tokens=False)
+                processor.post_process_generation.assert_called_once_with("grounded", task=task, image_size=image.size)
 
 
 if __name__ == "__main__":
