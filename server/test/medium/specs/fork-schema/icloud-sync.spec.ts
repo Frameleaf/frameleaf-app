@@ -106,7 +106,8 @@ describe('fork-owned iCloud state', () => {
     for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
       expect(cloud(actual[kind])).toEqual(
         cloud(manifest[kind]).toSorted(
-          (left, right) => left.identity.localeCompare(right.identity) || left.definition.localeCompare(right.definition),
+          (left, right) =>
+            left.identity.localeCompare(right.identity) || left.definition.localeCompare(right.definition),
         ),
       );
     }
