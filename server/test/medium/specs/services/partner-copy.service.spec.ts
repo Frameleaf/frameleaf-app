@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AlbumUserRole, AssetFileType, AssetLockReason, AssetVisibility, JobName, Permission } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, AssetLockReason, JobName, Permission, UserMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -7,6 +7,7 @@ import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -22,17 +23,19 @@ import {
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { SearchRepository } from 'src/repositories/search.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetService } from 'src/services/asset.service.js';
-import { PartnerCopyService } from 'src/services/partner-copy.service.js';
+import { PartnerCopyService, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { checkAccess } from 'src/utils/access.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -52,9 +55,13 @@ const real = [
   AccessRepository,
   AlbumRepository,
   AssetRepository,
+  ConfigRepository,
   PartnerOriginRepository,
   PartnerRepository,
+  PersonRepository,
   PhysicalFileRepository,
+  SearchRepository,
+  SystemMetadataRepository,
   TagRepository,
   UserRepository,
 ];
@@ -291,23 +298,63 @@ describe(PartnerCopyService.name, () => {
       await expect(sut.copyAsset(carolCopy!, alice.id, carol.id)).resolves.toBeUndefined();
     });
 
-    it('skips Locked and sensitive items until locked sharing lands', async () => {
+    it("copies Locked and sensitive items locked behind the recipient's own PIN (FL-326 Task 13)", async () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();
       const { user: bob } = await ctx.newUser();
-      const locked = await newSourceAsset(ctx, alice.id);
-      await db.updateTable('asset').set({ visibility: AssetVisibility.Locked }).where('id', '=', locked.id).execute();
       const marked = await newSourceAsset(ctx, alice.id);
       await db
         .insertInto('asset_lock')
-        .values({ assetId: marked.id, reason: AssetLockReason.Marked, lockedBy: null })
+        .values({ assetId: marked.id, reason: AssetLockReason.Detected, lockedBy: null })
         .execute();
       const sensitive = await newSourceAsset(ctx, alice.id);
       await db.updateTable('asset').set({ is_nsfw: true }).where('id', '=', sensitive.id).execute();
 
-      for (const { id } of [locked, marked, sensitive]) {
-        await expect(sut.copyAsset(id, bob.id, alice.id)).resolves.toBeUndefined();
-      }
+      const markedCopy = await sut.copyAsset(marked.id, bob.id, alice.id);
+      const sensitiveCopy = await sut.copyAsset(sensitive.id, bob.id, alice.id);
+      expect(markedCopy).toBeDefined();
+      expect(sensitiveCopy).toBeDefined();
+
+      await expect(ctx.get(AssetRepository).getLockReasons([markedCopy!, sensitiveCopy!])).resolves.toEqual([
+        expect.objectContaining({ assetId: markedCopy, reason: AssetLockReason.Detected }),
+      ]);
+      const copy = await db
+        .selectFrom('asset')
+        .select('is_nsfw')
+        .where('id', '=', sensitiveCopy!)
+        .executeTakeFirstOrThrow();
+      expect(copy.is_nsfw).toBe(true);
+
+      // only Bob's own elevated session reads the locked copy
+      const ordinary = factory.auth({ user: bob });
+      const elevated = { ...ordinary, session: { id: 'session', hasElevatedPermission: true } } as typeof ordinary;
+      const access = ctx.get(AccessRepository);
+      const readable = (auth: typeof ordinary) =>
+        checkAccess(access, { auth, permission: Permission.AssetRead, ids: new Set([markedCopy!]) });
+      await expect(readable(ordinary)).resolves.toEqual(new Set());
+      await expect(readable(elevated)).resolves.toEqual(new Set([markedCopy]));
+      // Bob has no PIN: the one-time notice is flagged
+      const metadata = await ctx.get(UserRepository).getMetadata(bob.id);
+      expect(metadata.map(({ key }) => key)).toContain(UserMetadataKey.PartnerLockedNotice);
+    });
+
+    it("copies a photo's faces and maps its people into the recipient's library (FL-326 Task 12)", async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id);
+      const { person: emma } = await ctx.newPerson({ ownerId: alice.id, name: 'Emma' });
+      await ctx.newAssetFace({ assetId: source.id, personGroupId: emma.personGroupId });
+
+      const copyId = await sut.copyAsset(source.id, bob.id, alice.id);
+
+      const faces = await db.selectFrom('asset_face').selectAll().where('assetId', '=', copyId!).execute();
+      expect(faces).toHaveLength(1);
+      const mapping = await ctx.get(PartnerOriginRepository).getPersonMapping(bob.id, emma.personGroupId);
+      expect(faces[0].personGroupId).toBe(mapping?.personGroupId);
+      await expect(
+        ctx.get(PersonRepository).getByGroupId({ ownerId: bob.id, personGroupId: mapping!.personGroupId }),
+      ).resolves.toMatchObject({ name: 'Emma' });
     });
 
     it('never links an external-library item', async () => {
@@ -445,6 +492,47 @@ describe(PartnerCopyService.name, () => {
       expect(exif.description).toBe('mine');
       expect(exif.latitude).toBeCloseTo(51.05);
       expect(exif.longitude).toBeCloseTo(-114.07);
+    });
+
+    it('carries a lock and unlock to a followed copy until its owner changes it (FL-326 Task 13)', async () => {
+      const { sut, ctx } = setup();
+      const { assets, assetCtx } = assetService();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const other = await newSourceAsset(ctx, alice.id);
+      const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
+      const bobOther = await sut.copyAsset(other.id, bob.id, alice.id);
+      const byId = (left: string, right: string) => left.localeCompare(right);
+      const lockedIds = async () =>
+        (await ctx.get(AssetRepository).getLockReasons([bobCopy!, bobOther!]))
+          .map(({ assetId }) => assetId)
+          .toSorted(byId);
+      const unlockAs = async (ownerId: string, ids: string[]) => {
+        // as `POST /assets/unlock` does: remove the lock, then record the owner's visibility edit
+        await ctx.get(AssetRepository).unlock(ids);
+        await recordAssetEdit(
+          { partnerOrigin: ctx.get(PartnerOriginRepository), job: ctx.getMock(JobRepository) },
+          ownerId,
+          ids,
+          [AssetOriginField.Visibility],
+        );
+      };
+
+      await assets.lock(factory.auth({ user: alice }), { ids: [source.id, other.id] });
+      await drain(sut, [ctx, assetCtx]);
+      await expect(lockedIds()).resolves.toEqual([bobCopy!, bobOther!].toSorted(byId));
+
+      // Bob unlocks one copy himself: that copy's visibility is his from now on
+      await unlockAs(bob.id, [bobOther!]);
+      await drain(sut, [ctx, assetCtx]);
+
+      // Alice unlocks both and locks `other` again: the followed copy unlocks, Bob's own choice stands
+      await unlockAs(alice.id, [source.id, other.id]);
+      await assets.lock(factory.auth({ user: alice }), { ids: [other.id] });
+      await drain(sut, [ctx, assetCtx]);
+      await expect(lockedIds()).resolves.toEqual([]);
     });
 
     it('never propagates favorites or trash', async () => {

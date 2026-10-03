@@ -27,6 +27,8 @@ import {
 } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { PartnerLockService } from 'src/services/partner-lock.service.js';
+import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { upsertTags } from 'src/utils/tag.js';
 
 /** Assets copied per backfill batch before the job re-queues itself (and records its cursor). */
@@ -179,8 +181,8 @@ export class PartnerCopyService extends BaseService {
   /**
    * Copy one source asset into `targetOwnerId`'s library. Returns the copy's id, or undefined when it
    * is skipped: the one-copy rule (the library already holds this content, live or trashed), a target
-   * that is the item's own or original owner, an external-library or Hidden item, or (until Task 13)
-   * a Locked or sensitive one.
+   * that is the item's own or original owner, or an external-library or Hidden item. A Locked item is
+   * copied locked, so only the recipient's own PIN shows it (spec §4.9, `PartnerLockService`).
    */
   async copyAsset(
     sourceAssetId: string,
@@ -200,10 +202,6 @@ export class PartnerCopyService extends BaseService {
     const origin = await this.partnerOriginRepository.getOrigin('asset', source.id);
     const rootOwnerId = origin?.rootOwnerId ?? source.ownerId;
     if (rootOwnerId === targetOwnerId) {
-      return;
-    }
-
-    if (await this.isWithheldFromCopy(source.id, source.visibility)) {
       return;
     }
 
@@ -230,23 +228,18 @@ export class PartnerCopyService extends BaseService {
 
     await this.copyTags(source.id, copyId, targetOwnerId);
     await this.copyFaces({ sourceAssetId: source.id, targetAssetId: copyId, targetOwnerId, partnerSharedById });
+    // spec §4.9: locked where the source is, behind the recipient's own PIN
+    await BaseService.create(PartnerLockService, this).mirrorLockedState({
+      sourceAssetId: source.id,
+      sourceOwnerId: source.ownerId,
+      targetAssetId: copyId,
+      targetOwnerId,
+    });
     // spec §4.4: an album copy whose membership still follows its source gains the new copy
     for (const albumId of await this.partnerOriginRepository.getFollowingAlbumCopiesHolding(source.id, targetOwnerId)) {
       await this.albumRepository.addAssetIds(albumId, [copyId]);
     }
     return copyId;
-  }
-
-  /**
-   * TASK 13 (partner-people-locked) removes this skip: Locked and sensitive items are not copied yet
-   * (spec §8 step 6). This is the only place it is applied.
-   */
-  private async isWithheldFromCopy(assetId: string, visibility: AssetVisibility): Promise<boolean> {
-    if (visibility === AssetVisibility.Locked) {
-      return true;
-    }
-    const { locked, sensitive } = await this.partnerOriginRepository.getCopyBlockers(assetId);
-    return locked || sensitive;
   }
 
   /**
@@ -275,16 +268,16 @@ export class PartnerCopyService extends BaseService {
   }
 
   /**
-   * TASK 12 (partner-people-locked): copy the source's faces (exact boxes, `face_search` embeddings)
-   * mapped to the target library's people. Faces are not copied until then.
+   * Spec §4.5: the source's faces (exact boxes, `face_search` embeddings, no ML re-run), mapped to the
+   * target library's people: auto-merged into a matching person of theirs, or a new person that follows.
    */
-  protected copyFaces(_input: {
+  protected async copyFaces(input: {
     sourceAssetId: string;
     targetAssetId: string;
     targetOwnerId: string;
     partnerSharedById: string;
   }): Promise<void> {
-    return Promise.resolve();
+    await BaseService.create(PartnerPeopleService, this).copyFaces(input);
   }
 
   /**
@@ -410,6 +403,23 @@ export class PartnerCopyService extends BaseService {
     return JobStatus.Success;
   }
 
+  /**
+   * Spec §4.9: a lock made anywhere (the owner, a sensitive detection, a stack or iCloud) reaches the
+   * copies that still follow the item's visibility. Only propagated, never recorded as the owner's edit.
+   */
+  @OnEvent({ name: 'AssetLocked' })
+  async onAssetLocked({ assetIds }: ArgOf<'AssetLocked'>) {
+    const sources = await this.partnerOriginRepository.getIdsWithFollowers('asset', assetIds);
+    if (sources.length > 0) {
+      await this.jobRepository.queueAll(
+        sources.map((sourceId) => ({
+          name: JobName.PartnerPropagate as const,
+          data: { kind: 'asset' as const, sourceId, fields: [AssetOriginField.Visibility] },
+        })),
+      );
+    }
+  }
+
   /** Spec §4.6: a new item of a sharing user's is copied to every partner, once its metadata is read. */
   @OnEvent({ name: 'AssetMetadataExtracted', workers: [ImmichWorker.Microservices] })
   async onAssetMetadataExtracted({ assetId, userId }: ArgOf<'AssetMetadataExtracted'>) {
@@ -436,6 +446,15 @@ export class PartnerCopyService extends BaseService {
       await this.partnerOriginRepository.applyAssetFields(sourceId, follower.id, apply);
       if (apply.includes(AssetOriginField.Tags)) {
         await this.copyTags(sourceId, follower.id, follower.ownerId);
+      }
+      // spec §4.9: a lock or unlock carries over while the copy's visibility is followed
+      if (apply.includes(AssetOriginField.Visibility)) {
+        await BaseService.create(PartnerLockService, this).mirrorLockedState({
+          sourceAssetId: sourceId,
+          sourceOwnerId: follower.partnerSharedById,
+          targetAssetId: follower.id,
+          targetOwnerId: follower.ownerId,
+        });
       }
       onward.push({ name: JobName.PartnerPropagate, data: { kind, sourceId: follower.id, fields: apply } });
     }
@@ -525,7 +544,10 @@ export class PartnerCopyService extends BaseService {
     return JobStatus.Success;
   }
 
-  /** After the assets: albums (spec §4.7), then people (Task 12). */
+  /**
+   * After the assets: albums (spec §4.7). People need no step of their own: each copied face was mapped to
+   * the recipient's people as it was copied (`copyFaces`, spec §4.5).
+   */
   protected async onAssetsBackfilled(sharedById: string, sharedWithId: string): Promise<void> {
     for (const albumId of await this.partnerOriginRepository.getOwnedAlbumIds(sharedById)) {
       const copyId = await this.copyAlbum(albumId, sharedWithId, sharedById);
