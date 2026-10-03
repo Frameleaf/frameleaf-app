@@ -389,14 +389,13 @@ test("share sheet switches between people and public link modes", async () => {
   assert.equal(button("Copy image").disabled, false);
 });
 
-test("partner header toggles settings and confirms stop sharing", async () => {
+test("partner header has no timeline or location toggles and confirms stop sharing", async () => {
   const patches = [];
   let settingsOpened = 0;
   await render(
     React.createElement(PartnerHeader, {
       partner: { id: "jamie", name: "Jamie", image: "/media/avatar-jamie.png" },
       count: 128,
-      settings: { inTimeline: true, shareLocation: false },
       onChange(patch) {
         patches.push(patch);
       },
@@ -405,19 +404,18 @@ test("partner header toggles settings and confirms stop sharing", async () => {
       },
     }),
   );
-  assert.match(text(), /Jamie’s library/);
+  assert.match(text(), /From Jamie’s library/);
   assert.match(text(), /128 items/);
-  const switches = [...document.querySelectorAll('[role="switch"]')];
-  assert.equal(switches.length, 2);
-  assert.equal(switches[0].checked, true);
-  await act(async () => switches[1].click());
-  assert.deepEqual(patches, [{ shareLocation: true }]);
+  assert.match(text(), /copies in your library/);
+  assert.equal(document.querySelectorAll('[role="switch"]').length, 0);
+  assert.doesNotMatch(text(), /Show in my timeline|can see my location/);
   await click("Sharing settings");
   assert.equal(settingsOpened, 1);
   await click("Stop sharing");
   assert.match(dialog().textContent, /Stop sharing with this partner/);
+  assert.match(dialog().textContent, /keeps everything already copied/);
   await click("Cancel");
-  assert.equal(patches.length, 1);
+  assert.equal(patches.length, 0);
   await click("Stop sharing");
   await click("Stop sharing", dialog());
   assert.deepEqual(patches.at(-1), { sharing: false });

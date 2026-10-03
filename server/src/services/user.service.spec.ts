@@ -312,7 +312,7 @@ describe(UserService.name, () => {
       const file = { path: '/profile/path' } as Express.Multer.File;
       const asset = AssetFactory.create({ ownerId: 'partner-id' });
       mocks.user.get.mockResolvedValue(userStub.admin);
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(asset as never);
 
       await expect(sut.createProfileImage(authStub.admin, file, { assetId: asset.id })).rejects.toThrow(

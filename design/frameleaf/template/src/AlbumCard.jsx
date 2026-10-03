@@ -2,6 +2,7 @@ import React from "react";
 import { Icon } from "./Icon";
 import { PersonAvatar } from "./People";
 import { plural } from "./collections-data.mjs";
+import { originLabel } from "./partner-sharing.mjs";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -66,6 +67,7 @@ export function AlbumCard({
     .map((member) => member.userId);
   const meta = spanLabel({ itemCount: count, earliestAt, latestAt });
   const open = () => onOpen?.(collection.id);
+  const origin = originLabel(collection.origin, users);
   return (
     <article
       className={`al-card${className ? ` ${className}` : ""}`}
@@ -93,6 +95,11 @@ export function AlbumCard({
         {collection.kind === "space" && (
           <span className="al-smart al-space-mark" title="Shared space" aria-hidden="true">
             <Icon name="mdiAccountMultipleOutline" size={13} />
+          </span>
+        )}
+        {origin && (
+          <span className="al-smart al-origin-mark" role="img" title={origin} aria-label={origin}>
+            <Icon name="mdiAccountArrowLeftOutline" size={13} />
           </span>
         )}
       </button>

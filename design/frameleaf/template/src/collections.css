@@ -901,6 +901,12 @@
   width: 13px;
   height: 13px;
 }
+.al-origin-mark {
+  left: auto;
+  right: 8px;
+  color: #fff3d6;
+  pointer-events: auto;
+}
 .al-space-mark {
   color: #e6f0ff;
 }

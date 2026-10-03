@@ -58,6 +58,7 @@ import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
@@ -135,6 +136,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   OAuthRepository,
   OcrRepository,
   PartnerRepository,
+  PartnerOriginRepository,
   PersonRepository,
   PhysicalFileRepository,
   PhysicalFileTrashRepository,
@@ -215,6 +217,7 @@ export class BaseService {
     protected oauthRepository: OAuthRepository,
     protected ocrRepository: OcrRepository,
     protected partnerRepository: PartnerRepository,
+    protected partnerOriginRepository: PartnerOriginRepository,
     protected personRepository: PersonRepository,
     protected physicalFileRepository: PhysicalFileRepository,
     protected physicalFileTrashRepository: PhysicalFileTrashRepository,
@@ -304,6 +307,7 @@ export class BaseService {
       ctx.oauthRepository,
       ctx.ocrRepository,
       ctx.partnerRepository,
+      ctx.partnerOriginRepository,
       ctx.personRepository,
       ctx.physicalFileRepository,
       ctx.physicalFileTrashRepository,

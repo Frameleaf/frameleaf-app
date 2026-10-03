@@ -10,17 +10,11 @@ const possessive = (name) => {
 };
 
 /**
- * Header rendered above the library grid while browsing a partner's library.
- * settings: { inTimeline: boolean, shareLocation: boolean }
- * onChange(patch): { inTimeline } | { shareLocation } | { sharing: false }
+ * Header rendered above the grid of items copied from a partner's library.
+ * The copies are the viewer's own; there are no timeline or location toggles.
+ * onChange(patch): { sharing: false }
  */
-export function PartnerHeader({
-  partner,
-  count = 0,
-  settings = {},
-  onChange,
-  onOpenSettings,
-}) {
+export function PartnerHeader({ partner, count = 0, onChange, onOpenSettings }) {
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState("");
   const name = partner?.name || "Partner";
@@ -29,58 +23,16 @@ export function PartnerHeader({
     setNotice(message);
   };
   return (
-    <section className="ph-header" aria-label={`${possessive(name)} library`}>
+    <section className="ph-header" aria-label={`From ${possessive(name)} library`}>
       <div className="ph-identity">
         <PersonAvatar person={partner} size={48} />
         <div className="ph-copy">
-          <h2>{possessive(name)} library</h2>
+          <h2>From {possessive(name)} library</h2>
           <p>
-            {count} {count === 1 ? "item" : "items"} · shared with you ·
-            originals stay in {possessive(name)} account
+            {count} {count === 1 ? "item" : "items"} · copies in your library ·
+            they follow {possessive(name)} edits until you change them
           </p>
         </div>
-      </div>
-      <div className="ph-toggles">
-        <label className="slf-toggle">
-          <span>
-            <strong>Show in my timeline</strong>
-            <small>Mix these photos into your own library view.</small>
-          </span>
-          <input
-            type="checkbox"
-            role="switch"
-            className="slf-switch"
-            checked={!!settings.inTimeline}
-            onChange={(event) =>
-              change(
-                { inTimeline: event.target.checked },
-                event.target.checked
-                  ? `${possessive(name)} photos now appear in your timeline.`
-                  : `${possessive(name)} photos stay in their own library.`,
-              )
-            }
-          />
-        </label>
-        <label className="slf-toggle">
-          <span>
-            <strong>Partner can see my location</strong>
-            <small>Applies to places recorded on the items you share back.</small>
-          </span>
-          <input
-            type="checkbox"
-            role="switch"
-            className="slf-switch"
-            checked={!!settings.shareLocation}
-            onChange={(event) =>
-              change(
-                { shareLocation: event.target.checked },
-                event.target.checked
-                  ? `${name} can see where your shared photos were taken.`
-                  : `Locations are hidden from ${name}.`,
-              )
-            }
-          />
-        </label>
       </div>
       <div className="ph-actions">
         <Button icon="mdiCogOutline" onClick={() => onOpenSettings?.()}>
@@ -121,9 +73,9 @@ export function PartnerHeader({
           }
         >
           <p>
-            {name} loses access to your library and their photos leave your
-            timeline. Nothing is deleted from either account, and you can
-            share again later from Sharing settings.
+            New photos and edits stop reaching {name}. {name} keeps everything
+            already copied into their library, and the copies you received stay
+            yours. You can share again later from Sharing settings.
           </p>
           <p className="muted">
             <Icon name="mdiInformationOutline" size={16} /> Shared links you

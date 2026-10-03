@@ -2,10 +2,18 @@ import React, { useState, useEffect, useRef } from "react";
 import { Button, Dialog } from "./App";
 import { Icon } from "./Icon";
 import { loadResourceState } from "./account-library-data.mjs";
+import { PARTNER_SHARED_ITEMS, backfillProgress } from "./partner-sharing.mjs";
 const key = "frameleaf:sharing-access:v1";
 const initial = () => ({
   version: 1,
-  partners: [{ id: "jamie", outgoing: true, incoming: true, inTimeline: true }],
+  partners: [
+    {
+      id: "jamie",
+      outgoing: true,
+      incoming: true,
+      backfill: { state: "running", total: 3200, done: 1240 },
+    },
+  ],
   members: ["taylor", "jamie"],
   sent: [],
   received: [
@@ -13,6 +21,12 @@ const initial = () => ({
   ],
   history: [],
 });
+function readBackfill(value) {
+  const progress = backfillProgress(value);
+  if (!progress) return { state: "queued", total: 0, done: 0 };
+  const count = (n) => (Number.isFinite(n) && n > 0 ? Math.floor(n) : 0);
+  return { state: progress.state, total: count(value.total), done: count(value.done) };
+}
 function read() {
   const base = initial();
   try {
@@ -31,7 +45,7 @@ function read() {
               id: x.id,
               outgoing: !!x.outgoing,
               incoming: !!x.incoming,
-              inTimeline: !!x.incoming && !!x.inTimeline,
+              backfill: x.outgoing || x.backfill ? readBackfill(x.backfill) : null,
             }))
         : base.partners,
       members: Array.isArray(s.members)
@@ -131,7 +145,13 @@ export function SharingAccess({ section, onNavigate }) {
           ...state,
           partners: existing
             ? state.partners.map((x) =>
-                x.id === userId ? { ...x, outgoing: true } : x,
+                x.id === userId
+                  ? {
+                      ...x,
+                      outgoing: true,
+                      backfill: { state: "queued", total: 0, done: 0 },
+                    }
+                  : x,
               )
             : [
                 ...state.partners,
@@ -139,7 +159,7 @@ export function SharingAccess({ section, onNavigate }) {
                   id: userId,
                   incoming: false,
                   outgoing: true,
-                  inTimeline: false,
+                  backfill: { state: "queued", total: 0, done: 0 },
                 },
               ],
         },
@@ -151,7 +171,15 @@ export function SharingAccess({ section, onNavigate }) {
         {
           ...state,
           partners: state.partners
-            .map((x) => (x.id === dialog.id ? { ...x, outgoing: false } : x))
+            .map((x) =>
+              x.id === dialog.id
+                ? {
+                    ...x,
+                    outgoing: false,
+                    backfill: x.backfill && { ...x.backfill, state: "stopped" },
+                  }
+                : x,
+            )
             .filter((x) => x.incoming || x.outgoing),
         },
         `Stopped sharing with ${person(dialog.id)}.`,
@@ -184,7 +212,7 @@ export function SharingAccess({ section, onNavigate }) {
           <h3>{partnerPage ? "Partner libraries" : "Recognition groups"}</h3>
           <p>
             {partnerPage
-              ? "Manage who can see your library and whose shared photos appear in your timeline."
+              ? "Partners get their own copies of your photos, albums, tags and people. Their copies follow your edits until they change something themselves."
               : "Choose whose recognition results help organize people in your library."}
           </p>
         </div>
@@ -221,27 +249,8 @@ export function SharingAccess({ section, onNavigate }) {
                       ? "Shares with you"
                       : "Does not share with you"}
                   </p>
-                  {partner.incoming && (
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={partner.inTimeline}
-                        onChange={(event) =>
-                          commit(
-                            {
-                              ...state,
-                              partners: state.partners.map((x) =>
-                                x.id === partner.id
-                                  ? { ...x, inTimeline: event.target.checked }
-                                  : x,
-                              ),
-                            },
-                            "Personal timeline preference updated.",
-                          )
-                        }
-                      />
-                      Show shared photos in my timeline
-                    </label>
+                  {(partner.outgoing || partner.backfill) && (
+                    <PartnerProgress partner={partner} />
                   )}
                 </div>
                 {partner.outgoing && (
@@ -384,9 +393,9 @@ export function SharingAccess({ section, onNavigate }) {
           )}
           <p>
             {dialog.kind === "partner-add"
-              ? `${person(userId)} will see photos and videos allowed by your sharing policy. Private media stays restricted. This action does not ask them to share their library.`
+              ? `${person(userId)} gets their own copies of your photos and videos, albums you own, tags, people, descriptions, locations and locked items. Locked items stay behind their own PIN. This action does not ask them to share their library.`
               : dialog.kind === "partner-remove"
-                ? `${person(dialog.id)} loses the access you granted to your library. Their originals and any access they granted you are retained.`
+                ? `New photos and edits stop reaching ${person(dialog.id)}. ${person(dialog.id)} keeps everything already copied into their library, and any access they granted you is retained.`
                 : dialog.kind === "invite"
                   ? "The recipient reviews membership before joining. Recognition membership does not grant unrestricted photo access."
                   : dialog.kind === "accept"
@@ -397,6 +406,38 @@ export function SharingAccess({ section, onNavigate }) {
             Interactive preview · no invitations or messages are sent.
           </small>
         </Dialog>
+      )}
+    </div>
+  );
+}
+
+function PartnerProgress({ partner }) {
+  const progress = backfillProgress(partner.backfill);
+  return (
+    <div className="cc-partner-detail">
+      {partner.outgoing && (
+        <ul className="cc-partner-shared" aria-label="What they receive">
+          {PARTNER_SHARED_ITEMS.map((item) => (
+            <li key={item.id}>
+              <Icon name={item.icon} size={15} />
+              {item.label}
+            </li>
+          ))}
+        </ul>
+      )}
+      {progress && (
+        <div className="cc-partner-progress" data-state={progress.state}>
+          <div
+            role="progressbar"
+            aria-label="Copying to their library"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress.percent}
+          >
+            <span style={{ width: `${progress.percent}%` }} />
+          </div>
+          <small>{progress.label}</small>
+        </div>
       )}
     </div>
   );

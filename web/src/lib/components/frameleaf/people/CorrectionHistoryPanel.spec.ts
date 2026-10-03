@@ -105,6 +105,23 @@ describe('CorrectionHistoryPanel', () => {
     );
   });
 
+  it('describes a partner auto-merge and offers its undo (FL-326)', async () => {
+    sdkMock.getCorrectionHistory.mockResolvedValue({
+      corrections: [
+        correction('partner', {
+          action: PersonCorrectionAction.PartnerMerge,
+          fromPerson: { id: 'emma', name: 'Emma', exists: false },
+          evidence: null,
+        }),
+      ],
+      hasNextPage: false,
+    });
+    render(CorrectionHistoryPanel, { person, close: vi.fn() });
+
+    expect(await screen.findByText("Matched Emma from a partner's library to Ada")).toBeTruthy();
+    expect(screen.getByRole('button', { name: "Undo: Matched Emma from a partner's library to Ada" })).toBeTruthy();
+  });
+
   it('offers no undo for a merge', async () => {
     sdkMock.getCorrectionHistory.mockResolvedValue({
       corrections: [correction('merge', { action: PersonCorrectionAction.Merge, evidence: null, undoable: false })],
