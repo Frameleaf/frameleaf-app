@@ -488,6 +488,27 @@ describe(PhysicalFileRepository.name, () => {
     });
   });
 
+  describe('getGeneratedPathPrimaryAssetId', () => {
+    it('names the oldest live asset whose generated file is at the path (a copy never owns its source file)', async () => {
+      const { ctx, sut } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const path = `/data/thumbs/${randomUUID()}-preview.jpeg`;
+      const source = await newAssetWithSize(ctx, alice.id);
+      await ctx.newAssetFile({ assetId: source.id, type: AssetFileType.Preview, path });
+      const copy = await newAssetWithSize(ctx, bob.id);
+      await ctx.newAssetFile({ assetId: copy.id, type: AssetFileType.Preview, path });
+      await defaultDatabase
+        .updateTable('asset')
+        .set({ createdAt: new Date('2020-01-01') })
+        .where('id', '=', source.id)
+        .execute();
+
+      await expect(sut.getGeneratedPathPrimaryAssetId(path)).resolves.toBe(source.id);
+      await expect(sut.getGeneratedPathPrimaryAssetId('/data/thumbs/nothing.jpeg')).resolves.toBeUndefined();
+    });
+  });
+
   describe('electNextCanonical (primary handover)', () => {
     const newSharedByThree = async (ctx: MediumTestContext, sut: PhysicalFileRepository) => {
       const checksum = randomBytes(32);

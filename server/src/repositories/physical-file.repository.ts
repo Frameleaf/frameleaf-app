@@ -471,6 +471,27 @@ export class PhysicalFileRepository {
   }
 
   /**
+   * For a generated file with no `physical_file` row (made before universal storage, and inherited by a
+   * partner copy of such an asset): the asset that owns the file at `path`, chosen as a primary is
+   * (`electNextCanonical`): the oldest live asset whose unedited generated file is there. Undefined when
+   * no asset names the path.
+   */
+  async getGeneratedPathPrimaryAssetId(path: string): Promise<string | undefined> {
+    const row = await this.db
+      .selectFrom('asset_file')
+      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+      .select('asset.id')
+      .where('asset_file.path', '=', path)
+      .where('asset_file.isEdited', '=', false)
+      .orderBy(sql`asset."deletedAt" IS NOT NULL`)
+      .orderBy('asset.createdAt', 'asc')
+      .orderBy('asset.id', 'asc')
+      .limit(1)
+      .executeTakeFirst();
+    return row?.id;
+  }
+
+  /**
    * The stored originals whose primary asset is one of `ownerId`'s: read before that account's assets are
    * removed, so each can be handed to its next primary afterwards (`electNextCanonical`).
    */
