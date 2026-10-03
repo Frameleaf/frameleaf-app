@@ -62,10 +62,11 @@ describe(ICloudAuditRepository.name, () => {
   });
   afterEach(async () => {
     // Real audit leases count against the global cap; retire only this test's owned connections.
-    if (fixtureConnections.size > 0) {
-      await sql`DELETE FROM immich_fork.icloud_connection WHERE id=ANY(${[...fixtureConnections]}::uuid[])`.execute(db);
-      fixtureConnections.clear();
+    if (fixtureConnections.size === 0) {
+      return;
     }
+    await sql`DELETE FROM immich_fork.icloud_connection WHERE id=ANY(${[...fixtureConnections]}::uuid[])`.execute(db);
+    fixtureConnections.clear();
   });
 
   async function arrange() {
