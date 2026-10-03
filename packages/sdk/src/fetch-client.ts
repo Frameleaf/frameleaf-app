@@ -386,9 +386,17 @@ export type CloudBackupLastVerifyDto = {
     operationId: string;
     status: CloudBackupVerifyStatus;
 };
+export type CloudBackupLocationDto = {
+    city: string;
+    cityId: string;
+    country: string;
+    countryCode: string;
+    locationId: string;
+};
 export type CloudBackupManagedDto = {
     allowanceBytes: number | null;
     extraBlocks: number | null;
+    location?: (CloudBackupLocationDto) | null;
     measuredAt: string | null;
     objects: number | null;
     /** Storage included with the plan; more is added in 1 TB blocks */
@@ -399,6 +407,7 @@ export type CloudBackupManagedDto = {
     readOnlyReason: string | null;
     /** Why Frameleaf Cloud last refused backup storage */
     refusal: string | null;
+    storageId?: string | null;
     usedBytes: number | null;
 };
 export type CloudBackupStatusResponseDto = {
@@ -1896,6 +1905,35 @@ export type BackupRestoreVerificationRecordDto = {
 export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
+};
+export type FileTrashItemResponseDto = {
+    /** Hex-encoded SHA-256 checksum of the file */
+    checksum: string;
+    /** File trash entry id */
+    id: string;
+    /** Asset that held the file last, when known */
+    lastAssetId: string | null;
+    /** Account whose library held the file last, when known */
+    lastOwnerId: string | null;
+    /** Name of that account, while it exists */
+    lastOwnerName: string | null;
+    /** Name of the file when it was last in a library */
+    originalFileName: string;
+    /** Size of the file in bytes */
+    sizeInBytes: number;
+    /** When the file was moved to the file trash */
+    trashedAt: string;
+};
+export type FileTrashResponseDto = {
+    items: FileTrashItemResponseDto[];
+    /** Entries in the file trash */
+    total: number;
+    /** Disk space the file trash holds, in bytes */
+    totalBytes: number;
+};
+export type FileTrashRestoreResponseDto = {
+    /** The new asset the file was restored as, in its last owner’s library */
+    assetId: string;
 };
 export type HardwareWorkloadBenchmarkDto = {
     error: string | null;
@@ -6203,6 +6241,14 @@ export type ICloudConnectionResponseDto = {
         [key: string]: number;
     };
     id: string;
+    identityReuseAuthority?: {
+        available: boolean;
+        enabled: boolean;
+        /** Foundation consent does not enable weekly execution or identity reuse */
+        executionAvailable: false;
+        includeProtected: boolean;
+        regrantRequired: boolean;
+    };
     label: string;
     lastError: string | null;
     nextRunAt: string | null;
@@ -6248,6 +6294,19 @@ export type ICloudAuthDto = {
 };
 export type ICloudControlDto = {
     action: ICloudControlAction;
+};
+export type ICloudIdentityReuseAuthorityDto = {
+    enabled: boolean;
+    includeProtected: boolean;
+    requestKey: string;
+};
+export type ICloudIdentityReuseAuthorityStatusDto = {
+    available: boolean;
+    enabled: boolean;
+    /** Foundation consent does not enable weekly execution or identity reuse */
+    executionAvailable: boolean;
+    includeProtected: boolean;
+    regrantRequired: boolean;
 };
 export type ICloudInventoryResponseDto = {
     albums: {
@@ -16117,6 +16176,48 @@ export function downloadDatabaseBackup({ filename }: {
     }));
 }
 /**
+ * List the file trash
+ */
+export function getFileTrash({ page, size }: {
+    page?: number;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileTrashResponseDto;
+    }>(`/admin/file-trash${QS.query(QS.explode({
+        page,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Delete a file permanently
+ */
+export function deleteFileTrashItem({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/file-trash/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Restore a file from the file trash
+ */
+export function restoreFileTrashItem({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileTrashRestoreResponseDto;
+    }>(`/admin/file-trash/${encodeURIComponent(id)}/restore`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get the Hardware & GPU check
  */
 export function getHardwareCheck(opts?: Oazapfts.RequestOpts) {
@@ -19555,6 +19656,19 @@ export function controlICloudConnection({ id, iCloudControlDto }: {
         ...opts,
         method: "POST",
         body: iCloudControlDto
+    })));
+}
+export function updateICloudIdentityReuseAuthority({ id, iCloudIdentityReuseAuthorityDto }: {
+    id: string;
+    iCloudIdentityReuseAuthorityDto: ICloudIdentityReuseAuthorityDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudIdentityReuseAuthorityStatusDto;
+    }>(`/icloud-sync/connections/${encodeURIComponent(id)}/identity-reuse-authority`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: iCloudIdentityReuseAuthorityDto
     })));
 }
 export function getICloudInventory({ id }: {
