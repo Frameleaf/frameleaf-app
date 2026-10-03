@@ -31,11 +31,18 @@ const native = (binary: string, args: string[]) =>
 const ffmpeg = (...args: string[]) =>
   native('ffmpeg', ['-v', 'error', '-y', '-threads', '1', ...args.slice(0, -1), '-threads', '1', args.at(-1)!]);
 type Probe = {
-  streams: Array<{ codec_type: string; width: number; height: number; channels: number; sample_rate: string }>;
+  streams: Array<{
+    codec_type: string;
+    width: number;
+    height: number;
+    channels: number;
+    channel_layout: string;
+    sample_rate: string;
+  }>;
   frames: Array<{ best_effort_timestamp_time: string }>;
   packets: Array<{ data_hash: string }>;
 };
-const inspect = (file: string, ...args: string[]): Probe =>
+const inspect = <T = Probe>(file: string, ...args: string[]): T =>
   JSON.parse(native('ffprobe', ['-v', 'error', '-of', 'json', ...args, file]).toString());
 const digest = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
 const frequencies = [233, 349, 467, 73, 587, 719]; // FL, FR, FC, LFE, BL, BR; none are shared.
@@ -183,8 +190,108 @@ const audioPackets = (file: string) =>
 const pcm = (file: string) => {
   const audio = inspect(file, '-select_streams', 'a:0', '-show_streams').streams[0];
   expect(audio.channels).toBe(6);
+  expect(audio.channel_layout).toBe('5.1');
   expect(Number(audio.sample_rate)).toBe(48_000);
   return ffmpeg('-i', file, '-map', '0:a:0', '-f', 'f32le', '-acodec', 'pcm_f32le', 'pipe:1');
+};
+
+type PresentationProbe = {
+  streams: Array<{
+    codec_name: string;
+    profile: string;
+    time_base: string;
+    sample_rate: string;
+    channels: number;
+    channel_layout: string;
+  }>;
+  frames: Array<{ best_effort_timestamp: number; duration: number; nb_samples: number }>;
+  packets: Array<{
+    pts: number;
+    duration: number;
+    side_data_list?: Array<{ skip_samples?: number; discard_padding?: number }>;
+  }>;
+};
+const audioTick = 1 / 48_000;
+const videoTick = 1 / 90_000;
+const clockTolerance = 2 * (audioTick + videoTick);
+// These owned AAC-LC fixtures encode 1024 samples per access unit. An encoder may add
+// at most one trailing unit, but priming never grants an audio start-offset allowance.
+const aacTailTolerance = 1024 * audioTick + clockTolerance;
+const presentation = (file: string) => {
+  const audio = inspect<PresentationProbe>(file, '-select_streams', 'a:0', '-show_streams', '-show_packets');
+  const audioFrames = inspect<PresentationProbe>(file, '-select_streams', 'a:0', '-show_frames').frames;
+  const video = inspect<PresentationProbe>(file, '-select_streams', 'v:0', '-show_streams', '-show_frames');
+  expect(audio.streams[0]).toMatchObject({
+    codec_name: 'aac',
+    profile: 'LC',
+    time_base: '1/48000',
+    sample_rate: '48000',
+    channels: 6,
+    channel_layout: '5.1',
+  });
+  expect(video.streams[0].time_base).toBe('1/90000');
+  expect(audioFrames.length).toBeGreaterThan(0);
+  expect(video.frames.length).toBeGreaterThan(0);
+
+  // libavcodec/packet.h AV_PKT_DATA_SKIP_SAMPLES defines leading skip and trailing
+  // discard counts. Ignore fully skipped priming packets; retain partial packet windows.
+  // Packet duration also bounds a final AAC unit shorter than its decoded padding.
+  const retained = audio.packets.flatMap((packet) => {
+    expect(Number.isSafeInteger(packet.pts)).toBe(true);
+    expect(Number.isSafeInteger(packet.duration)).toBe(true);
+    expect(packet.duration).toBeGreaterThan(0);
+    expect(packet.duration).toBeLessThanOrEqual(1024);
+    const skip = packet.side_data_list?.reduce((sum, side) => sum + (side.skip_samples ?? 0), 0) ?? 0;
+    const padding = packet.side_data_list?.reduce((sum, side) => sum + (side.discard_padding ?? 0), 0) ?? 0;
+    expect(Number.isSafeInteger(skip)).toBe(true);
+    expect(Number.isSafeInteger(padding)).toBe(true);
+    expect(skip).toBeGreaterThanOrEqual(0);
+    expect(padding).toBeGreaterThanOrEqual(0);
+    expect(skip + padding).toBeLessThanOrEqual(1024);
+    const start = packet.pts + skip;
+    // A demuxer may shorten the final packet duration and also signal padding;
+    // intersect these bounds rather than removing the same padding twice.
+    const end = packet.pts + Math.min(packet.duration, 1024 - padding);
+    return start >= end ? [] : [{ start: start * audioTick, end: end * audioTick }];
+  });
+  expect(retained.length).toBeGreaterThan(0);
+  retained.forEach((window, index) => {
+    if (index > 0) {
+      expect(Math.abs(window.start - retained[index - 1].end)).toBeLessThanOrEqual(audioTick);
+    }
+  });
+  audioFrames.forEach((frame) => {
+    expect(Number.isSafeInteger(frame.best_effort_timestamp)).toBe(true);
+    expect(Number.isSafeInteger(frame.nb_samples)).toBe(true);
+    expect(frame.nb_samples).toBeGreaterThan(0);
+  });
+  video.frames.forEach((frame) => {
+    expect(Number.isSafeInteger(frame.best_effort_timestamp)).toBe(true);
+    expect(Number.isSafeInteger(frame.duration)).toBe(true);
+    expect(frame.duration).toBeGreaterThan(0);
+  });
+  const firstAudio = audioFrames[0];
+  const lastAudio = audioFrames.at(-1)!;
+  const firstVideo = video.frames[0];
+  const lastVideo = video.frames.at(-1)!;
+  // ffprobe's decoded frame timestamps already account for skip samples (decode.c).
+  // Intersect them with retained packet windows so decoded tail padding is not presented.
+  return {
+    audioStart: Math.max(retained[0].start, firstAudio.best_effort_timestamp * audioTick),
+    audioEnd: Math.min(retained.at(-1)!.end, (lastAudio.best_effort_timestamp + lastAudio.nb_samples) * audioTick),
+    videoStart: firstVideo.best_effort_timestamp * videoTick,
+    videoEnd: (lastVideo.best_effort_timestamp + lastVideo.duration) * videoTick,
+  };
+};
+const assertAVPresentation = (actual: ReturnType<typeof presentation>, source?: ReturnType<typeof presentation>) => {
+  expect(Math.abs(actual.audioStart - actual.videoStart)).toBeLessThanOrEqual(clockTolerance);
+  expect(Math.abs(actual.audioEnd - actual.videoEnd)).toBeLessThanOrEqual(aacTailTolerance);
+  if (source) {
+    expect(Math.abs(actual.videoStart - source.videoStart)).toBeLessThanOrEqual(clockTolerance);
+    expect(Math.abs(actual.videoEnd - source.videoEnd)).toBeLessThanOrEqual(clockTolerance);
+    expect(Math.abs(actual.audioStart - source.audioStart)).toBeLessThanOrEqual(clockTolerance);
+    expect(Math.abs(actual.audioEnd - source.audioEnd)).toBeLessThanOrEqual(aacTailTolerance);
+  }
 };
 const channelAmplitudes = (file: string) => {
   const samples = pcm(file);
@@ -434,9 +541,14 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     const source = fixture(folder, 320, 240, 36, 1);
     const baseline = channelAmplitudes(source);
     assertChannelIdentity(baseline);
+    const sourcePresentation = presentation(source);
+    assertAVPresentation(sourcePresentation);
     const unchanged = await master(source, [fullCrop(320, 240)], 'audio-copy');
     expect(audioPackets(unchanged)).toEqual(audioPackets(source));
     expect(pcm(unchanged)).toEqual(pcm(source));
+    const unchangedPresentation = presentation(unchanged);
+    assertAVPresentation(unchangedPresentation, sourcePresentation);
+    expect(Math.abs(unchangedPresentation.audioEnd - sourcePresentation.audioEnd)).toBeLessThanOrEqual(clockTolerance);
     const filtered = await master(
       source,
       [fullCrop(320, 240), { action: AssetEditAction.Audio, parameters: { volume: 0.5 } }],
@@ -444,6 +556,7 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     );
     const actual = channelAmplitudes(filtered);
     assertChannelIdentity(actual);
+    assertAVPresentation(presentation(filtered), sourcePresentation);
     actual.forEach((lane, channel) => {
       const ratio = lane[channel] / baseline[channel][channel];
       expect(ratio).toBeGreaterThan(0.35);
@@ -459,6 +572,33 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
       ffmpeg('-i', source, '-vn', '-af', filter, '-c:a', 'aac', bad);
       expect(() => assertChannelIdentity(channelAmplitudes(bad))).toThrow();
     }
+    // Stream copy only: unchanged audio payloads must not hide a 250 ms A/V delay.
+    const shifted = join(folder, 'timestamp-only-audio-shift.mp4');
+    ffmpeg(
+      '-copyts',
+      '-i',
+      unchanged,
+      '-itsoffset',
+      '0.25',
+      '-i',
+      unchanged,
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-c',
+      'copy',
+      '-avoid_negative_ts',
+      'disabled',
+      '-video_track_timescale',
+      '90000',
+      shifted,
+    );
+    expect(audioPackets(shifted)).toEqual(audioPackets(unchanged));
+    expect(frameTimes(shifted)).toEqual(frameTimes(unchanged));
+    const shiftedPresentation = presentation(shifted);
+    expect(shiftedPresentation.audioStart - unchangedPresentation.audioStart).toBeGreaterThan(0.2);
+    expect(() => assertAVPresentation(shiftedPresentation, sourcePresentation)).toThrow();
   }, 120_000);
 
   it('publishes repeated original-derived masters through the real version transaction', async () => {
