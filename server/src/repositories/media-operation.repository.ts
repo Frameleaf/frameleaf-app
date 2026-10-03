@@ -1251,30 +1251,41 @@ export class MediaOperationRepository {
    * `returnAttempt` gives the claim's attempt back, as `settlePause` does: an iCloud sync (FL-68)
    * that hands itself back to wait for the provider or for a backed-off item did not fail, and must
    * not use up the attempts lapse recovery counts.
+   *
+   * `settled` publishes related durable state while the successful UPDATE still holds
+   * the operation row lock. Lock order is schema guard, operation row, then any state
+   * lock taken by the callback; callers must not enter with a state lock already held.
    */
   async requeue(
     id: string,
     claimToken: string,
     options: { delayMs: number; returnAttempt?: boolean },
+    settled?: (trx: Transaction<DB>) => Promise<void>,
   ): Promise<boolean> {
-    const result = await this.write((db) =>
-      db
-        .updateTable('media_operation')
-        .set({
-          // A pause asked for during the pass holds the job here rather than at its next claim.
-          status: pausedIfRequested(),
-          retryAt: nowPlus(options.delayMs),
-          claimToken: null,
-          claimedBy: null,
-          claimExpiresAt: null,
-          ...(options.returnAttempt && { attempt: sql<number>`greatest("attempt" - 1, 0)` }),
-        })
-        .where('id', '=', id)
-        .where('claimToken', '=', claimToken)
-        .where('status', 'in', WORKING_STATUSES)
-        .where('cancelRequestedAt', 'is', null)
-        .returning(['id', 'ownerId'])
-        .executeTakeFirst(),
+    const result = await withPublicForkWrites(
+      this.db,
+      async (trx) => {
+        const row = await trx
+          .updateTable('media_operation')
+          .set({
+            // A pause asked for during the pass holds the job here rather than at its next claim.
+            status: pausedIfRequested(),
+            retryAt: nowPlus(options.delayMs),
+            claimToken: null,
+            claimedBy: null,
+            claimExpiresAt: null,
+            ...(options.returnAttempt && { attempt: sql<number>`greatest("attempt" - 1, 0)` }),
+          })
+          .where('id', '=', id)
+          .where('claimToken', '=', claimToken)
+          .where('status', 'in', WORKING_STATUSES)
+          .where('cancelRequestedAt', 'is', null)
+          .returning(['id', 'ownerId'])
+          .executeTakeFirst();
+        if (row) await settled?.(trx);
+        return row;
+      },
+      MEDIA_OPERATION_HANDOFF_REFUSAL,
     );
 
     this.changed(result);
