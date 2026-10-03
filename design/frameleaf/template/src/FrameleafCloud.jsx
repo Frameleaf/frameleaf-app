@@ -2846,7 +2846,7 @@ function BackupRestore({ state, run }) {
 function BackupSetup({ state, close, finish }) {
   const [step, setStep] = useState(0);
   const [target, setTarget] = useState("managed");
-  const [bucket, setBucket] = useState({ endpoint: "https://s3.eu-central-2.wasabisys.com", bucket: "", accessKey: "", secret: "" });
+  const [bucket, setBucket] = useState({ endpoint: "https://s3.eu-central-2.storage.example", bucket: "", accessKey: "", secret: "" });
   const [probe, setProbe] = useState(null);
   const [keyChoice, setKeyChoice] = useState("generated");
   const [storeOwnKey, setStoreOwnKey] = useState(true);

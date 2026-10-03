@@ -31,15 +31,18 @@ import {
   CLOUD_BACKUP_VERIFY_CRON,
   CloudBackupService,
 } from 'src/services/cloud-backup.service.js';
+import { selectBackupLocation } from 'src/utils/backup-location-selection.js';
 import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
-import { keyEscrowBlobSchema } from 'src/utils/frameleaf-cloud-backup.js';
+import { keyEscrowBlobSchema, managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
 import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
+
+vi.mock('src/utils/backup-location-selection.js', () => ({ selectBackupLocation: vi.fn() }));
 
 /** Each escrow open or wrap runs the real scrypt (N = 2^17, 128 MiB); a busy runner needs more than 5 s. */
 const SCRYPT_TEST_TIMEOUT_MS = 30_000;
@@ -54,7 +57,7 @@ const SHA_DUMP = hex('dump');
 const key = Buffer.alloc(32, 7);
 const fingerprint = keyFingerprint(key);
 const s3 = {
-  endpoint: 'https://s3.eu-central-2.wasabisys.test',
+  endpoint: 'https://s3.eu-central-2.storage.example',
   region: '',
   bucket: 'family-backup',
   accessKeyId: 'AKIAEXAMPLE',
@@ -185,6 +188,7 @@ describe(CloudBackupService.name, () => {
     recorded.mock.invocationCallOrder[recorded.mock.calls.findIndex((args) => predicate(args))];
 
   beforeEach(() => {
+    vi.mocked(selectBackupLocation).mockReset();
     mocks = getMocks();
     metadata = {};
     mocks.systemMetadata.get.mockImplementation((name) => Promise.resolve(metadata[name] as never));
@@ -298,6 +302,8 @@ describe(CloudBackupService.name, () => {
       createDatabaseBackup: vi.fn().mockResolvedValue('/data/backups/cloud-backup-immich-db-backup-dump.sql.gz'),
     };
     cloudBackup = {
+      metadata: vi.fn().mockResolvedValue(null),
+      locations: vi.fn().mockResolvedValue({ version: 2, locations: [] }),
       grant: vi.fn(),
       rotate: vi.fn(),
       usage: vi.fn(),
@@ -1462,10 +1468,25 @@ describe(CloudBackupService.name, () => {
   describe('Frameleaf-managed storage (FL-164)', () => {
     const grant = cloudContractFixture('backup/grant-response.json');
     const rotated = cloudContractFixture('backup/grant-rotate-response.json');
-    const managedRef = bucketRef(grant.endpoint, grant.bucket);
+    const managedRef = managedStorageRef(grant.storageId);
     const cloudUrl = 'https://cloud.frameleaf.test';
     const managedClaim = (overrides: Record<string, unknown> = {}) =>
-      claim({ target: 'managed', bucketRef: managedRef, endpoint: grant.endpoint, bucket: grant.bucket, ...overrides });
+      claim({
+        target: 'managed',
+        bucketRef: managedRef,
+        endpoint: grant.endpoint,
+        region: grant.region,
+        bucket: grant.bucket,
+        managed: {
+          storageId: grant.storageId,
+          location: grant.location,
+          readOnly: false,
+          readOnlyReason: null,
+          quotaBytes: grant.quotaBytes,
+          checkedAt: '2026-09-25T00:00:00.000Z',
+        },
+        ...overrides,
+      });
     const managedOperation = () =>
       operationOf({ snapshot: { version: 1, bucketRef: managedRef, keyFingerprint: fingerprint } });
 
@@ -1482,6 +1503,7 @@ describe(CloudBackupService.name, () => {
       mocks.frameleafCloud.discovery.mockResolvedValue({ api: 'https://api.frameleaf.test' } as never);
       mocks.frameleafCloud.accessToken.mockResolvedValue({ accessToken: 'token' } as never);
       cloudBackup.rotate.mockResolvedValue(rotated);
+      vi.mocked(selectBackupLocation).mockResolvedValue({ ...grant.location, probeUrl: grant.endpoint });
     });
 
     it('rotates the key at the start of every run and never keeps it', async () => {
@@ -1675,6 +1697,11 @@ describe(CloudBackupService.name, () => {
       await sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never);
 
       // a repeated grant answers without a key, so one is rotated for the claim
+      expect(selectBackupLocation).toHaveBeenCalled();
+      expect(cloudBackup.grant).toHaveBeenCalledWith(expect.anything(), grant.location.locationId);
+      expect(vi.mocked(selectBackupLocation).mock.invocationCallOrder[0]).toBeLessThan(
+        cloudBackup.grant.mock.invocationCallOrder[0],
+      );
       expect(cloudBackup.rotate).toHaveBeenCalled();
       expect(store.claim).toHaveBeenCalledWith(
         expect.objectContaining({ bucket: grant.bucket, secretAccessKey: rotated.credentials.secretAccessKey }),
@@ -1683,8 +1710,14 @@ describe(CloudBackupService.name, () => {
       );
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
         target: 'managed',
+        bucketRef: managedRef,
         bucket: grant.bucket,
-        managed: { readOnly: false, quotaBytes: grant.quotaBytes },
+        managed: {
+          storageId: grant.storageId,
+          location: grant.location,
+          readOnly: false,
+          quotaBytes: grant.quotaBytes,
+        },
       });
       const persisted = JSON.stringify(mocks.forkSchema.persistConfig.mock.calls);
       expect(persisted).toContain('"target":"managed"');
@@ -1693,6 +1726,170 @@ describe(CloudBackupService.name, () => {
         keyMode: 'server',
         scheduleEnabled: true,
       });
+    });
+
+    it('tests locations on this server before the first grant, and provisions nothing when selection fails', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
+      const locations = [{ ...grant.location, probeUrl: grant.endpoint }];
+      cloudBackup.locations.mockResolvedValue({ version: 2, locations });
+      vi.mocked(selectBackupLocation).mockRejectedValue(new Error('provider detail must not escape'));
+
+      await expect(
+        sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never),
+      ).rejects.toThrow('No backup location could be reached reliably. Try setup again.');
+      expect(selectBackupLocation).toHaveBeenCalledWith(locations);
+      expect(cloudBackup.grant).not.toHaveBeenCalled();
+      expect(cloudBackup.rotate).not.toHaveBeenCalled();
+      expect(store.claim).not.toHaveBeenCalled();
+    });
+
+    it('reuses the persisted location on setup retry without fetching or probing a new catalog', async () => {
+      const recorded = cloudContractFixture('backup/grant-metadata.json');
+      cloudBackup.metadata.mockResolvedValue(recorded);
+      cloudBackup.grant.mockResolvedValue(grant);
+
+      await sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never);
+      expect(cloudBackup.grant).toHaveBeenCalledWith(expect.anything(), recorded.location.locationId);
+      expect(cloudBackup.locations).not.toHaveBeenCalled();
+      expect(selectBackupLocation).not.toHaveBeenCalled();
+    });
+
+    it('keeps stable storage identity independently of the connection hostname but rejects a changed physical region or storage ID', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({
+        endpoint: 'https://previous.backup.frameleaf.cloud',
+      });
+      await sut.run(managedOperation(), 'claim-1');
+      expect(operations.complete).toHaveBeenCalled();
+      expect((metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup).bucketRef).toBe(managedRef);
+
+      operations.complete.mockClear();
+      for (const changed of [
+        { ...rotated, region: 'us-east-1' },
+        { ...rotated, storageId: '0194b445-9c8a-7001-8000-000000000099' },
+        { ...rotated, location: { ...rotated.location, locationId: 'loc-01' } },
+        { ...rotated, bucket: rotated.bucket.replace('fl-eu-', 'fl-na-') },
+      ]) {
+        cloudBackup.rotate.mockResolvedValue(changed);
+        await sut.run(managedOperation(), 'claim-1');
+        expect(operations.fail).toHaveBeenCalledWith(
+          'run-1',
+          'claim-1',
+          expect.objectContaining({ error: expect.stringContaining('different storage binding') }),
+        );
+      }
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it('keeps an older address-based index identity unchanged without a backup-data migration', async () => {
+      const oldRef = bucketRef(grant.endpoint, grant.bucket);
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({
+        bucketRef: oldRef,
+        managed: {
+          readOnly: false,
+          readOnlyReason: null,
+          quotaBytes: grant.quotaBytes,
+          checkedAt: '2026-09-25T00:00:00.000Z',
+        },
+      });
+      await sut.run(
+        operationOf({ snapshot: { version: 1, bucketRef: oldRef, keyFingerprint: fingerprint } }),
+        'claim-1',
+      );
+      expect(operations.complete).toHaveBeenCalled();
+      const saved = metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup;
+      expect(saved.bucketRef).toBe(oldRef);
+      expect(saved.managed?.storageId).toBeUndefined();
+    });
+
+    it('rejects a changed recorded legacy location before storage I/O or metadata replacement', async () => {
+      const saved = managedClaim({
+        bucketRef: bucketRef(grant.endpoint, grant.bucket),
+        managed: {
+          location: grant.location,
+          readOnly: false,
+          readOnlyReason: null,
+          quotaBytes: grant.quotaBytes,
+          checkedAt: '2026-09-25T00:00:00.000Z',
+        },
+      });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = saved;
+      cloudBackup.rotate.mockResolvedValue({ ...rotated, location: { ...rotated.location, locationId: 'loc-01' } });
+
+      await expect(sut['openManaged'](saved, managedOperation(), 'claim-1')).rejects.toThrow(
+        'different storage binding',
+      );
+      expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toBe(saved);
+      expect(store.get).not.toHaveBeenCalled();
+      expect(store.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it('rejects a rotation that disagrees with the POST binding during first setup before claiming storage', async () => {
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = undefined;
+      cloudBackup.grant.mockResolvedValue(cloudContractFixture('backup/grant-metadata.json'));
+      for (const changed of [
+        { ...rotated, region: 'us-east-1' },
+        { ...rotated, storageId: '0194b445-9c8a-7001-8000-000000000099' },
+        { ...rotated, bucket: rotated.bucket.replace('fl-eu-', 'fl-na-') },
+      ]) {
+        cloudBackup.rotate.mockResolvedValue(changed);
+        await expect(
+          sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never),
+        ).rejects.toThrow('different storage binding');
+      }
+      expect(store.claim).not.toHaveBeenCalled();
+    });
+
+    it('reclaims the same legacy binding without moving its index or dropping its history', async () => {
+      const oldRef = bucketRef('https://previous.backup.frameleaf.cloud', grant.bucket);
+      const lastSuccessAt = '2026-09-25T01:00:00.000Z';
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({
+        bucketRef: oldRef,
+        endpoint: 'https://previous.backup.frameleaf.cloud',
+        lastSuccessAt,
+        managed: { readOnly: false, readOnlyReason: null, quotaBytes: grant.quotaBytes, checkedAt: lastSuccessAt },
+      });
+      cloudBackup.metadata.mockResolvedValue(cloudContractFixture('backup/grant-metadata.json'));
+      cloudBackup.grant.mockResolvedValue(grant);
+      store.claim.mockResolvedValue({ existing: true, claimedAt: lastSuccessAt });
+      await sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never);
+
+      const saved = metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup;
+      expect(saved.bucketRef).toBe(oldRef);
+      expect(saved.lastSuccessAt).toBe(lastSuccessAt);
+      expect(saved.managed?.storageId).toBeUndefined();
+      expect(index.deleteBucket).not.toHaveBeenCalled();
+      expect(sut['managedConnection'](rotated, saved).region).toBe(grant.region);
+    });
+
+    it('does not serve a warm manifest cache after its recorded storage binding changes', async () => {
+      const saved = managedClaim() as FrameleafCloudBackup;
+      const key = 'm/2026-09-25T01:00:00.000Z.json.gz';
+      index.listKeptManifests.mockResolvedValue([{ key }]);
+      const manifest = {} as never;
+      sut['manifestCache'] = {
+        bucketRef: saved.bucketRef,
+        key,
+        manifest,
+        binding: JSON.stringify([
+          saved.bucketRef,
+          saved.region,
+          saved.bucket,
+          saved.keyFingerprint,
+          saved.managed?.storageId ?? null,
+          saved.managed?.location?.locationId ?? null,
+        ]),
+      };
+      await expect(sut['readManifestForRequest'](saved, key)).resolves.toBe(manifest);
+      for (const changed of [
+        { ...saved, region: 'us-east-1' },
+        { ...saved, bucket: saved.bucket.replace('fl-eu-', 'fl-na-') },
+        { ...saved, keyFingerprint: 'different-key-fingerprint' },
+        { ...saved, managed: { ...saved.managed!, storageId: '0194b445-9c8a-7001-8000-000000000099' } },
+        { ...saved, managed: { ...saved.managed!, location: { ...grant.location, locationId: 'loc-01' } } },
+      ]) {
+        await expect(sut['readManifestForRequest'](changed, key)).rejects.toThrow();
+      }
+      expect(store.get).not.toHaveBeenCalled();
     });
   });
 

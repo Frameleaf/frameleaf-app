@@ -41,6 +41,10 @@ jobs:
         run: node --test scripts/frameleaf-branding.test.mjs
       - name: Validate Frameleaf variable and command names
         run: node --test scripts/frameleaf-legacy-names.test.mjs
+      - name: Validate public storage URLs (FL-325)
+        run: |
+          node --test scripts/frameleaf-public-storage-urls.test.mjs
+          node scripts/frameleaf-public-storage-urls.mjs
       - name: Validate the web bundle budget
         run: node --test scripts/frameleaf-web-bundle-budget.test.mjs
       - name: Validate the Studio authorization report
