@@ -807,7 +807,19 @@ describe('photography workflow integration boundaries', () => {
     const config = {
       ...s.row().value.config,
       title: 'Reusable portrait',
-      presentation: { ...s.row().value.config.presentation, coverCaptureId: s.captureId },
+      presentation: {
+        ...s.row().value.config.presentation,
+        coverCaptureId: s.captureId,
+        blocks: [
+          {
+            id: randomUUID(),
+            type: 'grid' as const,
+            chapterId: randomUUID(),
+            captureIds: [s.captureId],
+            text: 'Reusable layout',
+          },
+        ],
+      },
       downloadOutputs: [
         { key: 'social', label: 'Clean social', kind: 'social' as const, maxEdge: 1200, watermark: null },
       ],
@@ -819,6 +831,11 @@ describe('photography workflow integration boundaries', () => {
       config,
     });
     expect(preset.presets[0].config.presentation.coverCaptureId).toBeNull();
+    expect(preset.presets[0].config.presentation.blocks?.[0]).toMatchObject({
+      chapterId: null,
+      captureIds: [],
+      text: 'Reusable layout',
+    });
     expect(preset.presets[0].config.downloadOutputs).toEqual(config.downloadOutputs);
     const current = s.row().revision;
     await expect(
@@ -932,5 +949,58 @@ describe('photography workflow integration boundaries', () => {
     expect(s.row().value.orders[0].items[0].revisionId).toBe(original.id);
     expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
     expect((await s.service.outputFile(s.shootId, b.session, s.captureId, view.id)).path).not.toBe(preview.path);
+  });
+  it('validates ordered presentation blocks, preserves legacy omission, pins publication and filters guest capture references', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    expect(s.row().value.config.presentation.blocks).toBeUndefined();
+    const blocks = [
+      {
+        id: randomUUID(),
+        type: 'grid' as const,
+        chapterId: null,
+        captureIds: [s.captureId],
+        text: 'Published caption',
+      },
+    ];
+    const config = { ...s.row().value.config, presentation: { ...s.row().value.config.presentation, blocks } };
+    await expect(
+      s.service.config(s.auth, s.shootId, {
+        expectedRevision: s.row().revision,
+        config: {
+          ...config,
+          presentation: { ...config.presentation, blocks: [{ ...blocks[0], captureIds: [randomUUID()] }] },
+        },
+      }),
+    ).rejects.toThrow('Unknown block photograph');
+    await expect(
+      s.service.config(s.auth, s.shootId, {
+        expectedRevision: s.row().revision,
+        config: {
+          ...config,
+          presentation: { ...config.presentation, blocks: [{ ...blocks[0], chapterId: randomUUID() }] },
+        },
+      }),
+    ).rejects.toThrow('Unknown block chapter');
+    await expect(
+      s.service.config(s.auth, s.shootId, {
+        expectedRevision: s.row().revision,
+        config: { ...config, presentation: { ...config.presentation, blocks: [blocks[0], blocks[0]] } },
+      }),
+    ).rejects.toThrow('Duplicate block ID');
+    await s.service.config(s.auth, s.shootId, { expectedRevision: s.row().revision, config });
+    await s.published();
+    await s.service.config(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      config: {
+        ...config,
+        presentation: { ...config.presentation, blocks: [{ ...blocks[0], text: 'Draft caption' }] },
+      },
+    });
+    expect((await s.service.gallery(s.shootId, client.session)).presentation.blocks).toEqual(blocks);
+    s.asset.isOffline = true;
+    const guest = await s.service.gallery(s.shootId, client.session);
+    expect(guest.photos).toEqual([]);
+    expect(guest.presentation.blocks![0]).toMatchObject({ captureIds: [], text: 'Published caption' });
   });
 });

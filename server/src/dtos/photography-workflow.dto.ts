@@ -34,6 +34,19 @@ export const PhotographyConfigSchema = z.strictObject({
     introduction: z.string().max(5000),
     showChapters: z.boolean(),
     showNumbers: z.boolean(),
+    blocks: z
+      .array(
+        z.strictObject({
+          id: Id,
+          type: z.enum(['chapter', 'grid', 'full', 'pair', 'caption', 'slideshow']),
+          chapterId: Id.nullable(),
+          captureIds: Ids.max(1000),
+          text: z.string().max(2000),
+        }),
+      )
+      .max(100)
+      .refine((blocks) => new Set(blocks.map((block) => block.id)).size === blocks.length, 'Duplicate block ID')
+      .optional(),
   }),
   title: z.string().trim().min(1).max(200),
   mode: z.enum(['edited-delivery', 'select-before-editing', 'sell-by-photo']),
