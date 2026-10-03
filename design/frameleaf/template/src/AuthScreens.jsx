@@ -37,6 +37,11 @@ import {
   planById,
 } from "./cloud-account.mjs";
 import { addCredit } from "./cloud-jobs.mjs";
+import {
+  advanceStorageMigrationDemo,
+  createStorageMigrationDemo,
+  storageMigrationView,
+} from "./storage-migration-data.mjs";
 import "./system.css";
 import "./auth.css";
 
@@ -941,6 +946,171 @@ export function MaintenanceSplash({
           </InfoNote>
         )}
       </div>
+    </AuthShell>
+  );
+}
+
+// ------------------------------------------- Getting Ready: combining duplicates
+
+const COMBINE_ICONS = {
+  done: "mdiCheckCircle",
+  running: "mdiProgressClock",
+  queued: "mdiClockOutline",
+};
+const COMBINE_LABELS = { done: "Done", queued: "Waiting" };
+
+/**
+ * FL-326 (spec §5.1): the Getting Ready step after the safety backup on the
+ * first start of a library the official server created. Staged progress (X of
+ * Y), relinked / to review, space freed and time left. No Continue until it
+ * finishes; "Run in background instead" asks first, because the extra copies
+ * are not freed until it completes. Preview with ?screen=getting-ready and
+ * &review=0 for a run that ends "Done".
+ */
+export function CombiningDuplicates({
+  theme,
+  setTheme,
+  onContinue,
+  onOpenCare,
+  toReview = 2,
+  tick = 400,
+}) {
+  const [status, setStatus] = useState(() =>
+    createStorageMigrationDemo({ toReview }),
+  );
+  const [confirming, setConfirming] = useState(false);
+  const view = storageMigrationView(status);
+  useEffect(() => {
+    if (status.stage === "done") return undefined;
+    const id = setInterval(
+      () => setStatus((prev) => advanceStorageMigrationDemo(prev, 1000)),
+      tick,
+    );
+    return () => clearInterval(id);
+  }, [status.stage, tick]);
+  const finished = view.kind === "done" || view.kind === "review";
+  return (
+    <AuthShell theme={theme} setTheme={setTheme} footer={<BuiltOn />}>
+      <div className="auth-card getting-ready-combine">
+        <span className="pin-mark">
+          <Icon
+            name={finished ? "mdiCheckCircle" : "mdiFileTree"}
+            size={26}
+          />
+        </span>
+        <div className="auth-heading">
+          <h1>{view.title}</h1>
+          <p>
+            {view.kind === "done"
+              ? "Every photo and video now keeps one file on this server. Your library is ready."
+              : view.kind === "review"
+                ? "Everything else is combined. The files that could not be matched exactly are listed in Library Care; nothing was guessed."
+                : "Frameleaf keeps one file for each photo or video, however many libraries hold it. Missing originals are relinked only to exact, verified copies. Your photos are safe."}
+          </p>
+        </div>
+        <div
+          className="fl-bar"
+          role="progressbar"
+          aria-label="Combining duplicate files"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={view.percent}
+        >
+          <span style={{ width: `${view.percent}%` }} />
+        </div>
+        <ul className="maint-tasks">
+          {view.tasks.map((task) => (
+            <li key={task.id} data-status={task.status}>
+              <span className="maint-icon">
+                <Icon name={COMBINE_ICONS[task.status]} size={20} />
+              </span>
+              <div>
+                <strong>{task.title}</strong>
+                <span>
+                  {task.id === "relinking" && task.status !== "queued"
+                    ? view.relinkLine
+                    : task.detail}
+                </span>
+              </div>
+              <span className="maint-pct">
+                {task.status === "running"
+                  ? task.progressLabel
+                  : COMBINE_LABELS[task.status]}
+              </span>
+              {task.status === "running" && (
+                <div className="fl-bar" aria-hidden="true">
+                  <span style={{ width: `${task.percent}%` }} />
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+        <div className="maint-status">
+          <span role="status" aria-live="polite">
+            {finished
+              ? `${view.freedLabel} of extra copies moved to the file trash`
+              : `${view.freedLabel} freed so far`}
+          </span>
+          {!finished && view.timeLeftLabel && <span>{view.timeLeftLabel}</span>}
+        </div>
+        <div className="maint-actions">
+          {finished ? (
+            <>
+              {view.kind === "review" && (
+                <Button type="button" icon="mdiShieldCheckOutline" onClick={onOpenCare}>
+                  Open Library Care
+                </Button>
+              )}
+              <Button primary type="button" onClick={onContinue}>
+                Continue
+              </Button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="auth-link"
+              onClick={() => setConfirming(true)}
+            >
+              Run in background instead
+            </button>
+          )}
+        </div>
+        {!finished && (
+          <InfoNote>
+            Keep this page open until it finishes. Closing it is safe: the
+            server carries on, and reopening Frameleaf returns here.
+          </InfoNote>
+        )}
+      </div>
+      {confirming && (
+        <Dialog
+          title="Run in the background?"
+          close={() => setConfirming(false)}
+          actions={
+            <>
+              <Button type="button" data-initial-focus onClick={() => setConfirming(false)}>
+                Keep waiting
+              </Button>
+              <Button
+                primary
+                type="button"
+                onClick={() => {
+                  setConfirming(false);
+                  onContinue?.({ background: true });
+                }}
+              >
+                Run in background
+              </Button>
+            </>
+          }
+        >
+          <p>
+            Frameleaf opens now and keeps combining files in the background.
+            The extra copies are not freed until it finishes, and the library
+            may be slower until then. Progress shows in Library Care.
+          </p>
+        </Dialog>
+      )}
     </AuthShell>
   );
 }
