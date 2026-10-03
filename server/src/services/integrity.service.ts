@@ -867,7 +867,10 @@ export class IntegrityService extends BaseService {
     if (byPath.length > 0) {
       const tracked = await this.integrityRepository.getTrackedPaths(byPath.map(({ path }) => path));
       const trackedPaths = new Set(tracked.map(({ path }) => path));
-      for (const { path } of byPath.filter(({ path }) => !trackedPaths.has(path))) {
+      for (const { path } of byPath) {
+        if (trackedPaths.has(path)) {
+          continue;
+        }
         await this.physicalFileRepository
           .deleteUnreferencedPath(path, () => this.storageRepository.unlink(path))
           .catch(() => void 0);
