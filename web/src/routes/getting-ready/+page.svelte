@@ -9,6 +9,7 @@
    */
   import { page } from '$app/state';
   import AuthShell from '$lib/components/frameleaf/AuthShell.svelte';
+  import GettingReadyCombine from '$lib/components/frameleaf/GettingReadyCombine.svelte';
   import {
     GETTING_READY_POLL_MS,
     advanceGettingReady,
@@ -17,6 +18,12 @@
     type GettingReadyStatus,
     type GettingReadyTaskStatus,
   } from '$lib/frameleaf/getting-ready';
+  import {
+    fetchStorageMigrationStatus,
+    gettingReadyWaitsFor,
+    type StorageMigrationStatus,
+  } from '$lib/frameleaf/storage-migration';
+  import { utilitiesUrl } from '$lib/frameleaf/utilities';
   import { Route } from '$lib/route';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { Icon } from '@immich/ui';
@@ -34,6 +41,8 @@
   import { locale, t } from 'svelte-i18n';
 
   let status = $state<GettingReadyStatus | undefined>();
+  /** FL-326: the universal storage migration this page waits for once the upgrade is done. */
+  let migration = $state<StorageMigrationStatus | undefined>();
   const view = $derived(gettingReadyView(status));
 
   /** Where to go once the server is ready: the page that was asked for, never this one again. */
@@ -53,6 +62,15 @@
         return;
       }
       if (next === 'finished') {
+        // FL-326: the upgraded server may still be combining duplicate files; this page waits for it.
+        const storage = await fetchStorageMigrationStatus();
+        if (stopped) {
+          return;
+        }
+        if (gettingReadyWaitsFor(storage)) {
+          migration = storage;
+          return;
+        }
         location.assign(continueUrl());
         return;
       }
@@ -111,93 +129,109 @@
 </script>
 
 <AuthShell withHeader={false}>
-  <div class="auth-card getting-ready">
-    <span class="pin-mark">
-      <Icon
-        icon={view.kind === 'failed'
-          ? mdiAlertCircleOutline
-          : view.kind === 'saved' || view.kind === 'skipped'
-            ? mdiCheckCircle
-            : mdiDatabaseLockOutline}
-        size="26"
-        aria-hidden={true}
+  {#if migration}
+    <div class="auth-card getting-ready">
+      <GettingReadyCombine
+        initial={migration}
+        onContinue={() => location.assign(continueUrl())}
+        onOpenLibraryCare={() => location.assign(utilitiesUrl('missing-media'))}
+        onSignIn={() => location.assign(Route.login({ continue: `${page.url.pathname}${page.url.search}` }))}
       />
-    </span>
-    <div class="auth-heading">
-      {#if view.kind === 'failed'}
-        <h1>{$t('frameleaf_getting_ready_failed_title')}</h1>
-        {#if view.reason === 'disk-space'}
+    </div>
+  {:else}
+    <div class="auth-card getting-ready">
+      <span class="pin-mark">
+        <Icon
+          icon={view.kind === 'failed'
+            ? mdiAlertCircleOutline
+            : view.kind === 'saved' || view.kind === 'skipped'
+              ? mdiCheckCircle
+              : mdiDatabaseLockOutline}
+          size="26"
+          aria-hidden={true}
+        />
+      </span>
+      <div class="auth-heading">
+        {#if view.kind === 'failed'}
+          <h1>{$t('frameleaf_getting_ready_failed_title')}</h1>
+          {#if view.reason === 'disk-space'}
+            <p>
+              {view.requiredBytes === undefined || view.availableBytes === undefined
+                ? $t('frameleaf_getting_ready_failed_space_body_plain')
+                : $t('frameleaf_getting_ready_failed_space_body', {
+                    values: { required: bytes(view.requiredBytes), available: bytes(view.availableBytes) },
+                  })}
+            </p>
+          {:else}
+            <p>{$t('frameleaf_getting_ready_failed_body')}</p>
+          {/if}
+        {:else if view.kind === 'skipped'}
+          <h1>{$t('frameleaf_getting_ready_skipped_title')}</h1>
           <p>
-            {view.requiredBytes === undefined || view.availableBytes === undefined
-              ? $t('frameleaf_getting_ready_failed_space_body_plain')
-              : $t('frameleaf_getting_ready_failed_space_body', {
-                  values: { required: bytes(view.requiredBytes), available: bytes(view.availableBytes) },
-                })}
+            {$t('frameleaf_getting_ready_skipped_body', {
+              values: { date: view.backup ? formatDate(view.backup.takenAt) : '' },
+            })}
           </p>
+        {:else if view.kind === 'saved'}
+          <h1>{$t('frameleaf_getting_ready_saved_title')}</h1>
+          <p>{$t('frameleaf_getting_ready_saved_body')}</p>
+        {:else if view.kind === 'finishing'}
+          <h1>{$t('frameleaf_getting_ready_finishing_title')}</h1>
+          <p>{$t('frameleaf_getting_ready_finishing_body')}</p>
         {:else}
-          <p>{$t('frameleaf_getting_ready_failed_body')}</p>
+          <h1>{$t('frameleaf_getting_ready_title')}</h1>
+          <p>{$t('frameleaf_getting_ready_body')}</p>
         {/if}
-      {:else if view.kind === 'skipped'}
-        <h1>{$t('frameleaf_getting_ready_skipped_title')}</h1>
-        <p>
-          {$t('frameleaf_getting_ready_skipped_body', {
-            values: { date: view.backup ? formatDate(view.backup.takenAt) : '' },
-          })}
+      </div>
+
+      {#if view.kind !== 'failed'}
+        <div
+          class="fl-bar busy"
+          role="progressbar"
+          aria-label={$t('frameleaf_getting_ready_progress')}
+          aria-busy="true"
+        >
+          <span></span>
+        </div>
+      {/if}
+
+      <ul class="maint-tasks">
+        {#each view.tasks as task (task.id)}
+          <li data-status={task.status}>
+            <span class="maint-icon"><Icon icon={taskIcons[task.status]} size="20" aria-hidden={true} /></span>
+            <div>
+              <strong>{$t(`frameleaf_getting_ready_task_${task.id}`)}</strong>
+              <span>{$t(`frameleaf_getting_ready_task_${task.id}_detail`)}</span>
+            </div>
+            <span class="maint-pct">{taskStatusLabel(task.status)}</span>
+          </li>
+        {/each}
+      </ul>
+
+      {#if (view.kind === 'skipped' || view.kind === 'saved') && view.backup}
+        <p class="backup-name">
+          {view.kind === 'skipped'
+            ? $t('frameleaf_getting_ready_backup_found', { values: { filename: view.backup.filename } })
+            : $t('frameleaf_getting_ready_backup_saved', { values: { filename: view.backup.filename } })}
         </p>
-      {:else if view.kind === 'saved'}
-        <h1>{$t('frameleaf_getting_ready_saved_title')}</h1>
-        <p>{$t('frameleaf_getting_ready_saved_body')}</p>
-      {:else if view.kind === 'finishing'}
-        <h1>{$t('frameleaf_getting_ready_finishing_title')}</h1>
-        <p>{$t('frameleaf_getting_ready_finishing_body')}</p>
-      {:else}
-        <h1>{$t('frameleaf_getting_ready_title')}</h1>
-        <p>{$t('frameleaf_getting_ready_body')}</p>
+      {/if}
+
+      <div class="maint-status">
+        <span role="status" aria-live="polite">{statusLine}</span>
+      </div>
+
+      {#if view.kind === 'failed'}
+        <p class="auth-info">
+          <Icon icon={mdiInformationOutline} size="16" aria-hidden={true} />
+          <span>
+            {view.reason === 'disk-space'
+              ? $t('frameleaf_getting_ready_failed_space_action')
+              : $t('frameleaf_getting_ready_failed_action')}
+          </span>
+        </p>
       {/if}
     </div>
-
-    {#if view.kind !== 'failed'}
-      <div class="fl-bar busy" role="progressbar" aria-label={$t('frameleaf_getting_ready_progress')} aria-busy="true">
-        <span></span>
-      </div>
-    {/if}
-
-    <ul class="maint-tasks">
-      {#each view.tasks as task (task.id)}
-        <li data-status={task.status}>
-          <span class="maint-icon"><Icon icon={taskIcons[task.status]} size="20" aria-hidden={true} /></span>
-          <div>
-            <strong>{$t(`frameleaf_getting_ready_task_${task.id}`)}</strong>
-            <span>{$t(`frameleaf_getting_ready_task_${task.id}_detail`)}</span>
-          </div>
-          <span class="maint-pct">{taskStatusLabel(task.status)}</span>
-        </li>
-      {/each}
-    </ul>
-
-    {#if (view.kind === 'skipped' || view.kind === 'saved') && view.backup}
-      <p class="backup-name">
-        {view.kind === 'skipped'
-          ? $t('frameleaf_getting_ready_backup_found', { values: { filename: view.backup.filename } })
-          : $t('frameleaf_getting_ready_backup_saved', { values: { filename: view.backup.filename } })}
-      </p>
-    {/if}
-
-    <div class="maint-status">
-      <span role="status" aria-live="polite">{statusLine}</span>
-    </div>
-
-    {#if view.kind === 'failed'}
-      <p class="auth-info">
-        <Icon icon={mdiInformationOutline} size="16" aria-hidden={true} />
-        <span>
-          {view.reason === 'disk-space'
-            ? $t('frameleaf_getting_ready_failed_space_action')
-            : $t('frameleaf_getting_ready_failed_action')}
-        </span>
-      </p>
-    {/if}
-  </div>
+  {/if}
 </AuthShell>
 
 <style>

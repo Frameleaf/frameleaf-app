@@ -9,6 +9,7 @@
   import GeolocationUtility from '$lib/components/frameleaf/GeolocationUtility.svelte';
   import ICloudSyncPanel from '$lib/components/frameleaf/ICloudSyncPanel.svelte';
   import LibraryCareHealth from '$lib/components/frameleaf/LibraryCareHealth.svelte';
+  import StorageMigrationCard from '$lib/components/frameleaf/StorageMigrationCard.svelte';
   import SettingsDirectory, { type DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import UtilityHistory from '$lib/components/frameleaf/UtilityHistory.svelte';
@@ -142,6 +143,8 @@
         <ApplicationSetup tool={data.tool} />
       {:else if data.tool === 'icloud'}<ICloudSyncPanel initial={data.initial} />
       {:else if data.tool === 'missing-media' || data.tool === 'corrupt-media'}
+        <!-- FL-326: the storage migration's progress, and the missing originals it left for review -->
+        {#if data.tool === 'missing-media' && authManager.user.isAdmin}<StorageMigrationCard />{/if}
         <LibraryCareHealth
           category={data.category}
           initial={data.mediaHealth}
