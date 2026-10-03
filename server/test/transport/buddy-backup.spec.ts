@@ -160,6 +160,23 @@ it('retains causal forwarding state without leaking request identities or error 
     expect(diagnostic.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(JSON.stringify(diagnostic)).not.toContain(secret);
   }
+  for (const phase of [
+    'delete-before-restart',
+    'owned-compose-restart',
+    'awaiting-both-peer-apis',
+    'restore-after-peer-readiness',
+  ]) {
+    const diagnostic = buddyForwardingDiagnostic(
+      'GET',
+      `/api/buddy/v1/vaults/${secret}/handshake?token=${secret}`,
+      'ECONNRESET',
+      phase,
+      phase,
+      state,
+    );
+    expect(diagnostic).toMatchObject({ phase, admittedPhase: phase });
+    expect(JSON.stringify(diagnostic)).not.toContain(secret);
+  }
   const unknown = buddyForwardingDiagnostic(secret, `/api/${secret}`, new Error(secret), secret, secret, state);
   expect(unknown).toMatchObject({
     method: 'OTHER',
