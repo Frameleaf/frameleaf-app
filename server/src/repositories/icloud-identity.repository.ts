@@ -104,6 +104,10 @@ const syncIdentities = (where: ReturnType<typeof sql>) => sql`
     SET sha256 = excluded.sha256, "libraryKey" = excluded."libraryKey", library = excluded.library,
       "cplMasterRecordName" = coalesce(excluded."cplMasterRecordName", icloud_source_identity."cplMasterRecordName"),
       "cloudChecksum" = coalesce(excluded."cloudChecksum", icloud_source_identity."cloudChecksum"),
+      "lastVerifiedAt" = CASE WHEN icloud_source_identity.sha256 IS NOT DISTINCT FROM excluded.sha256
+        THEN icloud_source_identity."lastVerifiedAt" END,
+      "lastAuditResult" = CASE WHEN icloud_source_identity.sha256 IS NOT DISTINCT FROM excluded.sha256
+        THEN icloud_source_identity."lastAuditResult" END,
       "appleFingerprint" = CASE WHEN icloud_source_identity.sha256 = excluded.sha256
         THEN icloud_source_identity."appleFingerprint" END
 `;
