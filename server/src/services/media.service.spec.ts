@@ -385,6 +385,29 @@ describe(MediaService.name, () => {
       expect(mocks.move.create).not.toHaveBeenCalledWith(expect.objectContaining({ pathType: AssetFileType.Preview }));
       expect(mocks.move.create).toHaveBeenCalledWith(expect.objectContaining({ pathType: AssetFileType.Thumbnail }));
     });
+
+    it("never moves a generated file with no physical file that another asset (a partner copy's source) owns", async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Preview, path: '/data/thumbs/source/preview.jpeg', physicalFileId: null })
+        .file({ type: AssetFileType.Thumbnail, path: '/data/thumbs/own/thumbnail.webp', physicalFileId: null })
+        .build();
+      mocks.assetJob.getForMigrationJob.mockResolvedValue(asset);
+      mocks.physicalFile.getGeneratedPathPrimaryAssetId.mockImplementation((path: string) =>
+        Promise.resolve(path === '/data/thumbs/source/preview.jpeg' ? 'source-asset' : asset.id),
+      );
+      mocks.move.create.mockResolvedValue({
+        entityId: asset.id,
+        id: 'move-id',
+        newPath: '/new/path',
+        oldPath: '/old/path',
+        pathType: AssetPathType.Original,
+      });
+
+      await expect(sut.handleAssetMigration({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.move.create).not.toHaveBeenCalledWith(expect.objectContaining({ pathType: AssetFileType.Preview }));
+      expect(mocks.move.create).toHaveBeenCalledWith(expect.objectContaining({ pathType: AssetFileType.Thumbnail }));
+    });
   });
 
   describe('handleGenerateThumbnails', () => {

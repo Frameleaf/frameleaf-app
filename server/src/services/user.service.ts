@@ -454,7 +454,21 @@ export class UserService extends BaseService {
     this.logger.log(`Deleting user: ${user.id}`);
 
     this.logger.warn(`Removing user from database: ${user.id}`);
+    // universal storage: shared files this account's assets were primary for are handed on below
+    const primaryOriginals = (await this.physicalFileRepository.getOriginalIdsWithPrimaryOwnedBy(user.id)) ?? [];
     const removedAssets = (await this.assetRepository.deleteAll(user.id)) ?? [];
+    // each goes to the oldest remaining asset that references it and follows it to that asset's storage
+    // template path, out of the deleted account's folders (a file nothing references is left to FileDelete)
+    const handovers: JobItem[] = [];
+    for (const physicalFileId of primaryOriginals) {
+      const next = await this.physicalFileRepository.electNextCanonical(physicalFileId);
+      if (next) {
+        handovers.push({ name: JobName.StorageTemplateMigrationSingle, data: { id: next.assetId } });
+      }
+    }
+    if (handovers.length > 0) {
+      await this.jobRepository.queueAll(handovers);
+    }
     // universal storage: each original goes to the file trash with who held it once nothing references it
     const originals = new Map<string, TrashedOriginal>();
     const originalJobs: JobItem[] = [];

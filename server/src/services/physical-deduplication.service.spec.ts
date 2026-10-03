@@ -667,9 +667,16 @@ describe(PhysicalDeduplicationService.name, () => {
         path: '/upload/master/a.jpg',
       });
       expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledTimes(1);
+      // universal storage: the copy's own original goes to the file trash, never unlinked
       expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
         '/upload/jamie/copy.jpg',
         expect.any(Function),
+        {
+          trash: {
+            move: expect.any(Function),
+            original: expect.objectContaining({ ownerId: 'jamie', originalFileName: 'copy.jpg' }),
+          },
+        },
       );
       // The asset row stays: albums, faces, stacks, shared links and lock records keep pointing at it.
       expect(mocks.asset.remove).not.toHaveBeenCalled();
@@ -741,9 +748,16 @@ describe(PhysicalDeduplicationService.name, () => {
         expect.objectContaining({ state: 'already-applied', reclaimedBytes: 10 }),
       );
       expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+      // universal storage: the copy's own original goes to the file trash, never unlinked
       expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
         '/upload/jamie/copy.jpg',
         expect.any(Function),
+        {
+          trash: {
+            move: expect.any(Function),
+            original: expect.objectContaining({ ownerId: 'jamie', originalFileName: 'copy.jpg' }),
+          },
+        },
       );
     });
 
