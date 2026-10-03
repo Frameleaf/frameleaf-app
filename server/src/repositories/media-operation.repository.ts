@@ -1343,8 +1343,23 @@ export class MediaOperationRepository {
   }
 
   async requestCancel(id: string, ownerId: string, claimToken?: string): Promise<MediaOperation | undefined> {
-    const row = (await this.write((db) =>
-      db
+    const row = await withPublicForkWrites(
+      this.db,
+      (tx) => this.requestCancelWithin(tx, id, ownerId, claimToken),
+      MEDIA_OPERATION_HANDOFF_REFUSAL,
+    );
+    this.notifyCancellation(row);
+    return row;
+  }
+
+  /** Caller holds the fork write guard; notification follows its OUTER commit. */
+  async requestCancelWithin(
+    tx: Transaction<DB>,
+    id: string,
+    ownerId: string,
+    claimToken?: string,
+  ): Promise<MediaOperation | undefined> {
+    return (await tx
         .updateTable('media_operation')
         .set((eb) => ({
           // A paused job has no worker either (FL-104), so it is cancelled outright like a queued one.
@@ -1383,10 +1398,11 @@ export class MediaOperationRepository {
         .$if(claimToken !== undefined, (qb) => qb.where('claimToken', '=', claimToken!))
         .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
         .returningAll()
-        .executeTakeFirst(),
-    )) as unknown as MediaOperation | undefined;
+        .executeTakeFirst()) as unknown as MediaOperation | undefined;
+  }
+
+  notifyCancellation(row: MediaOperation | undefined): void {
     this.changed(row);
-    return row;
   }
 
   /**
@@ -1416,6 +1432,22 @@ export class MediaOperationRepository {
       .where('id', '=', id)
       .where('claimToken', '=', claimToken)
       .where('status', '=', MediaOperationStatus.Cancelling)
+      // Scoped previews require a live claim at the actual ACK write, not an earlier service read.
+      // The stored frame catches a missing/malformed discriminator; it cannot fall back to legacy.
+      .where(sql<boolean>`("kind" <> ${MediaOperationKind.StudioPreview} OR (
+        NOT ("snapshot" ? 'consumerRequestId') AND NOT EXISTS (
+          SELECT 1 FROM studio_preview_frame f WHERE f."operationId" = "media_operation"."id"
+          AND f."cacheKey" LIKE 'fl279c1:%'
+        )
+      ) OR (
+        "claimExpiresAt" > clock_timestamp() AND EXISTS (
+          SELECT 1 FROM studio_preview_frame f WHERE f."operationId" = "media_operation"."id"
+          AND f."ownerId" = "media_operation"."ownerId"
+          AND f.id::text = "media_operation"."snapshot"->>'previewFrameId'
+          AND f."cacheKey" LIKE 'fl279c1:%'
+          AND split_part(f."cacheKey", ':', 2) = "media_operation"."snapshot"->>'consumerRequestId'
+        )
+      ))`)
       .returning(['id', 'ownerId'])
       .executeTakeFirst();
 
