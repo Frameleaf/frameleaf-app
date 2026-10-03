@@ -7983,6 +7983,78 @@
     {
       "definition": "timestamp with time zone|nullable|||",
       "identity": "immich_fork.icloud_identity_audit.verifiedAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.appleFingerprint"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.assetId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.basis"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.connectionId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.cplAssetRecordName"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.cplMasterRecordName"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.icloud_identity_reuse.createdAt"
+    },
+    {
+      "definition": "text|not null|''::text||",
+      "identity": "immich_fork.icloud_identity_reuse.editVersion"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.expectedSha256"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_identity_reuse.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.identityId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.itemClaimId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.libraryKey"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.operationId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.role"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.snapshot"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.sourceResourceId"
     }
   ],
   "constraints": [
@@ -10477,6 +10549,42 @@
     {
       "definition": "CHECK (jsonb_typeof(snapshot) = 'object'::text)",
       "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_snapshot_check"
+    },
+    {
+      "definition": "CHECK (\"appleFingerprint\" ~ '^[A-Za-z0-9+/]{28}$'::text AND get_byte(decode(\"appleFingerprint\", 'base64'::text), 0) = 1)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_appleFingerprint_check"
+    },
+    {
+      "definition": "CHECK (basis = 'exact-identity'::text)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_basis_check"
+    },
+    {
+      "definition": "FOREIGN KEY (\"connectionId\", \"ownerId\") REFERENCES immich_fork.icloud_connection(id, \"ownerId\") ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_connectionId_ownerId_fkey"
+    },
+    {
+      "definition": "CHECK (\"editVersion\" = ''::text)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_editVersion_check"
+    },
+    {
+      "definition": "CHECK (octet_length(\"expectedSha256\") = 32)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_expectedSha256_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_pkey"
+    },
+    {
+      "definition": "CHECK (role = ANY (ARRAY['original'::text, 'live-motion'::text, 'raw-alternate'::text]))",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_role_check"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(snapshot) = 'object'::text AND snapshot ?& ARRAY['config'::text, 'resourceKey'::text, 'fingerprint'::text, 'sourceRevision'::text, 'masterRevision'::text, 'originalPath'::text, 'updateId'::text, 'checksum'::text, 'algorithm'::text, 'physicalId'::text, 'forkPhysicalId'::text, 'fileIdentity'::text, 'sourceChecksum'::text] AND jsonb_typeof(snapshot -> 'fileIdentity'::text) = 'object'::text AND (snapshot -> 'fileIdentity'::text) ?& ARRAY['dev'::text, 'ino'::text, 'size'::text, 'mtimeMs'::text, 'ctimeMs'::text] AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'dev'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'ino'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'size'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'mtimeMs'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'ctimeMs'::text) = 'number'::text)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_snapshot_check"
+    },
+    {
+      "definition": "UNIQUE (\"sourceResourceId\")",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_sourceResourceId_key"
     }
   ],
   "enums": [
@@ -10600,7 +10708,8 @@
     "0000000000212-AssetDevelopArtifacts",
     "0000000000213-ICloudSourceIdentity",
     "0000000000214-BuddyBackupReferences",
-    "0000000000216-ICloudIdentityAudit"
+    "0000000000216-ICloudIdentityAudit",
+    "0000000000217-ICloudIdentityReuse"
   ],
   "functions": [
     {
@@ -14664,6 +14773,18 @@
     {
       "definition": "CREATE UNIQUE INDEX icloud_identity_audit_pkey ON immich_fork.icloud_identity_audit USING btree (id)",
       "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_identity_reuse_owner_connection_idx ON immich_fork.icloud_identity_reuse USING btree (\"ownerId\", \"connectionId\")",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_owner_connection_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_identity_reuse_pkey ON immich_fork.icloud_identity_reuse USING btree (id)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_identity_reuse_sourceResourceId_key\" ON immich_fork.icloud_identity_reuse USING btree (\"sourceResourceId\")",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_sourceResourceId_key"
     }
   ],
   "migrationOverrides": [
@@ -15695,6 +15816,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.icloud_identity_audit"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_identity_reuse"
     }
   ],
   "triggers": [
