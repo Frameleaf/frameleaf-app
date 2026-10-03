@@ -5,7 +5,7 @@ import type { DarktableDevelopRecipe } from 'src/dtos/asset-develop.dto.js';
 export type NativeModule = { version: number; params: Buffer; colorspace: number; enabled: boolean };
 const floats = (values: number[]) => {
   const buffer = Buffer.alloc(values.length * 4);
-  values.forEach((value, index) => buffer.writeFloatLE(value, index * 4));
+  for (const [index, value] of values.entries()) buffer.writeFloatLE(value, index * 4);
   return buffer;
 };
 
