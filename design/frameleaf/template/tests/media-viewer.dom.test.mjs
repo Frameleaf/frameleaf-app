@@ -661,3 +661,17 @@ test("availableActions hides unsupported entries and legacy ids keep working", a
     "Escape closes the menu first, not the viewer",
   );
 });
+
+test("information panel names the partner library a copied item came from", async () => {
+  await key({ key: "i" });
+  assert.equal($(".mv-origin"), null, "own uploads have no origin line");
+  await render({
+    assets: assets.map((asset) =>
+      asset.id === "a" ? { ...asset, origin: { rootOwnerId: "jamie" } } : asset,
+    ),
+    users: [{ id: "jamie", name: "Jamie" }],
+  });
+  const origin = $(".mv-origin");
+  assert.ok(origin, "origin line rendered");
+  assert.equal(origin.textContent.trim(), "From Jamie’s library");
+});
