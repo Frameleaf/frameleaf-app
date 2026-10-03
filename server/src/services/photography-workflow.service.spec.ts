@@ -1,9 +1,11 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { createHmac, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
+import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
+import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { WorkflowRow } from 'src/repositories/photography-workflow.repository.js';
@@ -65,7 +67,22 @@ async function setup(brand?: unknown) {
     rating: null,
     isOffline: false,
   };
+  let studio = { revision: null as string | null, presets: [] as any[] };
   const repository = {
+    studioPresets: vi.fn(() => Promise.resolve(structuredClone(studio))),
+    mutateStudio: vi.fn(async (_owner: string, expected: string | null, change: (record: any) => unknown) => {
+      if (expected !== studio.revision) throw new ConflictException();
+      const record = { site: site?.value ?? null, presets: structuredClone(studio.presets) };
+      const result = await change(record);
+      studio = { revision: randomUUID(), presets: record.presets };
+      return { revision: studio.revision, record, result };
+    }),
+    pinnedStudioPreset: vi.fn((_tx: unknown, _owner: string, expected: string, id: string) => {
+      if (expected !== studio.revision) throw new ConflictException();
+      const preset = studio.presets.find((preset) => preset.id === id);
+      if (!preset) throw new ForbiddenException();
+      return Promise.resolve(structuredClone(preset));
+    }),
     site: vi.fn(() => Promise.resolve(site)),
     saveSite: vi.fn((_owner: string, _expected: string | null, value: PhotographySite) => {
       site = { revision: randomUUID(), value };
@@ -528,5 +545,392 @@ describe('photography workflow integration boundaries', () => {
     state.payment_intent.latest_charge.amount_refunded = 500;
     await s.service.callback(...event('evt_refunded', 'charge.refunded'));
     expect(s.row().value.orders[0]).toMatchObject({ status: 'refunded', total: 1500, captureIds: [s.captureId] });
+  });
+  it('snapshots config outputs, renders distinct clean/branded sizes and historical approved versions, and scopes ZIP entries', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.published();
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: false,
+    });
+    const oldRevision = {
+      ...(await s.revisions.get(s.revisionId))!,
+      id: randomUUID(),
+      isCurrent: false,
+      masterPath: s.source,
+    };
+    s.revisions.get.mockImplementation((id) =>
+      Promise.resolve(
+        id === oldRevision.id
+          ? oldRevision
+          : id === s.revisionId
+            ? { ...oldRevision, id: s.revisionId, isCurrent: true }
+            : undefined,
+      ),
+    );
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: oldRevision.id,
+      requestClientApproval: false,
+    });
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: false,
+    });
+    const outputs = [
+      { key: 'print', label: 'Full resolution', kind: 'print' as const, maxEdge: 65_535, watermark: null },
+      { key: 'web', label: 'Clean web', kind: 'web' as const, maxEdge: 400, watermark: null },
+      {
+        key: 'social',
+        label: 'Studio social',
+        kind: 'social' as const,
+        maxEdge: 400,
+        watermark: { ...s.row().value.config.proofWatermark, opacity: 100, size: 15 },
+      },
+    ];
+    await s.service.config(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      config: { ...s.row().value.config, mode: 'edited-delivery', downloadOutputs: outputs },
+    });
+    await s.service.order(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      recipientId: client.recipientId,
+      roundId: null,
+      pricing: 'package',
+      captureIds: [s.captureId],
+      outputs: outputs.map((output) => ({
+        ...output,
+        revisions: output.key === 'web' ? [{ captureId: s.captureId, revisionId: oldRevision.id }] : [],
+      })),
+    });
+    const order = s.row().value.orders[0];
+    expect(order.items[0].outputs).toHaveLength(3);
+    expect((await s.service.get(s.auth, s.shootId)).orders[0].items[0].outputs[0].renderStatus).toBe('preparing');
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    const views = (await s.service.gallery(s.shootId, client.session)).photos[0].outputs;
+    expect(views.every((output) => output.canDownload && output.renderStatus === 'ready')).toBe(true);
+    const files = await Promise.all(
+      views.map((output) => s.service.outputFile(s.shootId, client.session, s.captureId, output.id)),
+    );
+    expect(await sharp(files[0].path).metadata()).toMatchObject({ width: 800, height: 600 });
+    expect(await sharp(files[1].path).metadata()).toMatchObject({ width: 400, height: 300 });
+    expect((await sharp(files[1].path).raw().toBuffer()).equals(await sharp(files[2].path).raw().toBuffer())).toBe(
+      false,
+    );
+    expect(
+      (await readFile(files[0].path)).equals(await renderPhotographyRendition(s.source, null, undefined, 65_535)),
+    ).toBe(true);
+    expect(order.items[0].outputs![1].revisionId).toBe(oldRevision.id);
+    await expect(s.service.outputFile(s.shootId, client.session, randomUUID(), views[0].id)).rejects.toThrow();
+    await expect(s.service.outputFile(s.shootId, client.session, s.captureId, randomUUID())).rejects.toThrow();
+    const zip = await s.service.zip(s.shootId, client.session, {
+      captureIds: [],
+      outputs: views.map((output) => ({ captureId: s.captureId, outputId: output.id })),
+    });
+    expect(s.row().value.zips[0].entries).toHaveLength(3);
+    await s.service.config(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      config: {
+        ...s.row().value.config,
+        downloadOutputs: [{ ...outputs[0], watermark: s.row().value.config.proofWatermark }],
+      },
+    });
+    expect(s.row().value.orders[0].items[0].outputs![0].exportWatermark).toBeNull();
+    s.asset.checksum = Buffer.alloc(32, 2);
+    await expect(s.service.outputFile(s.shootId, client.session, s.captureId, views[0].id)).rejects.toThrow();
+    await expect(s.service.archive(s.shootId, client.session, zip.id)).rejects.toThrow();
+    expect(s.storage.createZipStream).not.toHaveBeenCalled();
+  });
+  it.each(['locked', 'expired', 'revoked', 'refunded'] as const)(
+    'rechecks %s grants for each output and pinned ZIP retrieval',
+    async (reason) => {
+      const s = await setup();
+      const client = await s.invitation();
+      await s.published();
+      await s.service.config(s.auth, s.shootId, {
+        expectedRevision: s.row().revision,
+        config: { ...s.row().value.config, mode: 'edited-delivery' },
+      });
+      await s.service.approval(s.auth, s.shootId, {
+        expectedRevision: s.row().revision,
+        captureId: s.captureId,
+        revisionId: s.revisionId,
+        requestClientApproval: false,
+      });
+      await s.service.order(s.auth, s.shootId, {
+        expectedRevision: s.row().revision,
+        recipientId: client.recipientId,
+        roundId: null,
+        pricing: 'package',
+        captureIds: [s.captureId],
+      });
+      expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+      const output = (await s.service.gallery(s.shootId, client.session)).photos[0].outputs[0];
+      const zip = await s.service.zip(s.shootId, client.session, {
+        captureIds: [],
+        outputs: [{ captureId: s.captureId, outputId: output.id }],
+      });
+      if (reason === 'locked') s.setVisible(false);
+      else if (reason === 'refunded') s.row().value.orders[0].status = 'refunded';
+      else {
+        const recipient = s.row().value.recipients[0];
+        if (reason === 'expired') recipient.expiresAt = '2000-01-01T00:00:00Z';
+        else recipient.revoked = true;
+      }
+      await expect(s.service.outputFile(s.shootId, client.session, s.captureId, output.id)).rejects.toThrow();
+      await expect(
+        s.service.zip(s.shootId, client.session, {
+          captureIds: [],
+          outputs: [{ captureId: s.captureId, outputId: output.id }],
+        }),
+      ).rejects.toThrow();
+      await expect(s.service.archive(s.shootId, client.session, zip.id)).rejects.toThrow();
+      expect(s.storage.createZipStream).not.toHaveBeenCalled();
+    },
+  );
+  it('carries approval requested before order into all outputs and never reuses another recipient approval', async () => {
+    const s = await setup();
+    const a = await s.invitation();
+    const b = await s.invitation();
+    await s.service.config(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      config: {
+        ...s.row().value.config,
+        mode: 'edited-delivery',
+        downloadOutputs: [
+          { key: 'print', label: 'Print', kind: 'print', maxEdge: 65_535, watermark: null },
+          { key: 'web', label: 'Web', kind: 'web', maxEdge: 1024, watermark: null },
+        ],
+      },
+    });
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: true,
+    });
+    await s.published();
+    await s.service.order(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      roundId: null,
+      recipientId: a.recipientId,
+      pricing: 'package',
+      captureIds: [s.captureId],
+    });
+    expect(
+      s
+        .row()
+        .value.orders[0].items[0].outputs!.every(
+          (output) => output.revisionId === s.revisionId && output.clientApprovalRequired && !output.approved,
+        ),
+    ).toBe(true);
+    expect((await s.service.get(s.auth, s.shootId)).pendingEdits).toBe(1);
+    await s.service.guestApproval(s.shootId, a.session, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      approved: true,
+      note: '',
+    });
+    await s.service.order(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      roundId: null,
+      recipientId: b.recipientId,
+      pricing: 'package',
+      captureIds: [s.captureId],
+      outputs: [
+        {
+          key: 'colour',
+          label: 'Colour',
+          kind: 'print',
+          maxEdge: 65_535,
+          watermark: null,
+          revisions: [{ captureId: s.captureId, revisionId: s.revisionId }],
+        },
+      ],
+    });
+    expect(s.row().value.orders[1].items[0].outputs![0]).toMatchObject({
+      revisionId: s.revisionId,
+      approved: false,
+      clientApprovalRequired: true,
+    });
+    await s.service.guestApproval(s.shootId, b.session, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      approved: true,
+      note: '',
+    });
+    expect((await s.service.get(s.auth, s.shootId)).pendingEdits).toBe(0);
+  });
+  it('passes original validated logo bytes to the renderer so light variants are selected exactly once', async () => {
+    const s = await setup();
+    const logoId = randomUUID();
+    const file = path.join(path.dirname(s.source), 'logo.jpg');
+    const raw = Buffer.alloc(700 * 700 * 3);
+    let seed = 123;
+    for (let i = 0; i < raw.length; i++) {
+      seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+      raw[i] = seed >>> 24;
+    }
+    const upload = await sharp(raw, { raw: { width: 700, height: 700, channels: 3 } })
+      .jpeg({ quality: 60 })
+      .toBuffer();
+    expect(upload.length).toBeLessThan(512_000);
+    expect((await preparePhotographyLogo(upload)).original.length).toBeGreaterThan(512_000);
+    await writeFile(file, upload);
+    s.repository.logo.mockResolvedValue([{ ...s.asset, id: logoId, originalPath: file }] as never);
+    const mark = PhotographyWatermarkSchema.parse({
+      type: 'logo',
+      text: 'Studio',
+      logoAssetId: logoId,
+      logoVariant: 'light',
+      opacity: 100,
+      size: 20,
+    });
+    const bytes = await (s.service as any).logo({ ownerId: s.ownerId, albumId: randomUUID() }, mark);
+    expect(bytes.equals(upload)).toBe(true);
+    expect(await renderPhotographyRendition(s.source, mark, bytes, 480)).toEqual(
+      await renderPhotographyRendition(s.source, mark, upload, 480),
+    );
+  });
+  it('saves reusable output/package/presentation defaults and applies source and gallery CAS without changing live publication', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.published();
+    const config = {
+      ...s.row().value.config,
+      title: 'Reusable portrait',
+      presentation: { ...s.row().value.config.presentation, coverCaptureId: s.captureId },
+      downloadOutputs: [
+        { key: 'social', label: 'Clean social', kind: 'social' as const, maxEdge: 1200, watermark: null },
+      ],
+    };
+    const preset = await s.service.saveStudioPreset(s.auth, {
+      expectedRevision: null,
+      id: null,
+      name: 'Portrait setup',
+      config,
+    });
+    expect(preset.presets[0].config.presentation.coverCaptureId).toBeNull();
+    expect(preset.presets[0].config.downloadOutputs).toEqual(config.downloadOutputs);
+    const current = s.row().revision;
+    await expect(
+      s.service.applyStudioPreset(s.auth, s.shootId, preset.presets[0].id, {
+        expectedRevision: current,
+        expectedPresetRevision: randomUUID(),
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(s.row().revision).toBe(current);
+    await s.service.applyStudioPreset(s.auth, s.shootId, preset.presets[0].id, {
+      expectedRevision: current,
+      expectedPresetRevision: preset.revision,
+    });
+    expect(s.row().value.config.title).toBe(config.title);
+    expect((await s.service.gallery(s.shootId, client.session)).title).toBe('Portrait');
+    await expect(
+      s.service.saveStudioPreset(s.auth, { expectedRevision: null, id: null, name: 'Stale', config }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      s.service.saveStudioPreset({ ...s.auth, apiKey: {} } as AuthDto, {
+        expectedRevision: preset.revision,
+        id: null,
+        name: 'Forbidden',
+        config,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      s.service.config(s.auth, s.shootId, {
+        expectedRevision: s.row().revision,
+        config: { ...config, downloadOutputs: [{ ...config.downloadOutputs[0], maxEdge: 6000 }] },
+      }),
+    ).rejects.toThrow('Output size');
+  });
+  it('allows a recipient to approve a pinned historical output via its burned proof while current gallery proof changes', async () => {
+    const s = await setup();
+    const a = await s.invitation();
+    const b = await s.invitation();
+    await s.service.config(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      config: { ...s.row().value.config, mode: 'edited-delivery' },
+    });
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: true,
+    });
+    await s.published();
+    await s.service.order(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      roundId: null,
+      recipientId: a.recipientId,
+      pricing: 'package',
+      captureIds: [s.captureId],
+    });
+    await s.service.guestApproval(s.shootId, a.session, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      approved: true,
+      note: '',
+    });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    const original = (await s.revisions.get(s.revisionId))!;
+    const newer = { ...original, id: randomUUID() };
+    s.revisions.get.mockImplementation((id) =>
+      Promise.resolve(id === newer.id ? newer : id === original.id ? original : undefined),
+    );
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: newer.id,
+      requestClientApproval: false,
+    });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    await s.published();
+    await s.service.order(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      roundId: null,
+      recipientId: b.recipientId,
+      pricing: 'package',
+      captureIds: [s.captureId],
+      outputs: [
+        {
+          key: 'original-colour',
+          label: 'Original Colour',
+          kind: 'print',
+          maxEdge: 65_535,
+          watermark: null,
+          revisions: [{ captureId: s.captureId, revisionId: original.id }],
+        },
+      ],
+    });
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    const view = (await s.service.gallery(s.shootId, b.session)).photos[0].outputs[0];
+    expect(view.approvalPreviewUrl).toBeTruthy();
+    expect(view.canDownload).toBe(false);
+    const preview = await s.service.outputPreview(s.shootId, b.session, s.captureId, view.id);
+    expect(
+      (await readFile(preview.path)).equals(await renderPhotographyRendition(s.source, null, undefined, 2400)),
+    ).toBe(false);
+    await expect(s.service.outputPreview(s.shootId, a.session, s.captureId, view.id)).rejects.toThrow();
+    await s.service.guestApproval(s.shootId, b.session, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: original.id,
+      approved: true,
+      note: '',
+    });
+    expect(s.row().value.captures[0].proofRevisionId).toBe(newer.id);
+    expect(s.row().value.orders[0].items[0].revisionId).toBe(original.id);
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    expect((await s.service.outputFile(s.shootId, b.session, s.captureId, view.id)).path).not.toBe(preview.path);
   });
 });

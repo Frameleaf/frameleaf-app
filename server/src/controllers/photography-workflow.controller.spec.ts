@@ -31,6 +31,11 @@ describe('photography OpenAPI contract', () => {
       expect(guest).toMatchObject({
         content: { 'application/json': { schema: { $ref: '#/components/schemas/PhotographyGalleryDto' } } },
       });
+      expect(document.paths['/photography/presets'].post?.requestBody).toBeTruthy();
+      expect(
+        document.paths['/photography/workflows/{id}/studio-presets/{presetId}/apply'].post?.requestBody,
+      ).toBeTruthy();
+      expect(document.paths['/photography/galleries/{id}/photos/{captureId}/outputs/{outputId}'].get).toBeTruthy();
       const schemas = document.components!.schemas!;
       expect(schemas.PhotographyGalleryDto).toMatchObject({
         properties: { checkoutAvailable: { type: 'boolean' }, photos: { type: 'array' } },

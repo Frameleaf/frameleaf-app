@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, NotFoundException } 
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import type { PhotographySite, PhotographyStudioPreset } from 'src/dtos/photography-workflow.dto.js';
 import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
 import { AlbumUserRole, AssetFileType, AssetStatus, AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
 import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
@@ -32,13 +33,15 @@ export class PhotographyWorkflowRepository {
       submittedRounds: number;
       unpaidOrders: number;
       readyCount: number;
+      pendingEdits: number;
     }>`
       SELECT workflow.id AS "shootId",workflow."albumId",workflow.revision,workflow.value->'config'->>'title' AS title,workflow.value->'config'->>'mode' AS mode,
       workflow.value->'config'->>'selectionDeadline' AS "selectionDeadline",workflow.value->'config'->>'expiresAt' AS "expiresAt",
       (workflow.value->'published' IS NOT NULL AND workflow.value->'published' <> 'null'::jsonb) AS published,
       jsonb_array_length(workflow.value->'rounds') AS "submittedRounds",
       (SELECT count(*)::int FROM jsonb_array_elements(workflow.value->'orders') orders WHERE orders->>'status' IN ('quoted','accepted')) AS "unpaidOrders",
-      (SELECT count(*)::int FROM jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item WHERE orders->>'status' IN ('settled','free') AND item->>'approved'='true' AND item->>'finalPath' IS NOT NULL) AS "readyCount"
+      (SELECT count(*)::int FROM jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item WHERE orders->>'status' IN ('settled','free') AND item->>'approved'='true' AND item->>'finalPath' IS NOT NULL) AS "readyCount",
+      (SELECT count(DISTINCT item->>'captureId')::int FROM jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item WHERE orders->>'status' IN ('accepted','settled','free') AND (orders->>'paymentTiming' <> 'before-editing' OR orders->>'status' IN ('settled','free')) AND (CASE WHEN item ? 'outputs' THEN EXISTS(SELECT 1 FROM jsonb_array_elements(item->'outputs') output WHERE output->>'approved' <> 'true' OR output->>'revisionId' IS NULL) ELSE item->>'approved' <> 'true' OR item->>'revisionId' IS NULL END)) AS "pendingEdits"
       FROM immich_fork.photography_workflow workflow JOIN public.album album ON album.id=workflow."albumId"
       JOIN public.album_user membership ON membership."albumId"=album.id AND membership."userId"=workflow."ownerId" AND membership.role='owner'
       JOIN public."user" studio ON studio.id=workflow."ownerId"
@@ -57,7 +60,7 @@ export class PhotographyWorkflowRepository {
     albumId: string,
     expected: string | null | undefined,
     initial: PhotographyWorkflow,
-    change: (value: PhotographyWorkflow) => Promise<T> | T,
+    change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
   ): Promise<{ row: WorkflowRow; result: T }> {
     return this.db.transaction().execute(async (tx) => {
       await lockForkWrites(tx, 'Photography changes are unavailable during database handoff');
@@ -82,7 +85,7 @@ export class PhotographyWorkflowRepository {
       if (expected !== undefined && (current?.revision ?? null) !== expected)
         throw new ConflictException('Workflow changed; reload before saving');
       const value = current?.value ?? structuredClone(initial);
-      const result = await change(value);
+      const result = await change(value, tx);
       const revision = randomUUID();
       const encoded = JSON.stringify(value);
       if (Buffer.byteLength(encoded) > 20_000_000)
@@ -209,19 +212,42 @@ export class PhotographyWorkflowRepository {
   async site(ownerId: string) {
     const { rows } = await sql<{
       revision: string;
-      value: import('src/dtos/photography-workflow.dto.js').PhotographySite;
-    }>`
-      SELECT revision,value FROM immich_fork.photography_studio_site WHERE "ownerId"=${ownerId}::uuid`.execute(this.db);
+      value: PhotographySite | null;
+    }>`SELECT revision,CASE WHEN value ? 'site' THEN value->'site' ELSE value END AS value FROM immich_fork.photography_studio_site WHERE "ownerId"=${ownerId}::uuid`.execute(
+      this.db,
+    );
     return rows[0];
   }
-  async saveSite(
+  async studioPresets(ownerId: string) {
+    await this.studioLive(ownerId);
+    const { rows } = await sql<{
+      revision: string;
+      presets: PhotographyStudioPreset[];
+    }>`SELECT revision,CASE WHEN value ? 'site' THEN COALESCE(value->'presets','[]'::jsonb) ELSE '[]'::jsonb END AS presets FROM immich_fork.photography_studio_site WHERE "ownerId"=${ownerId}::uuid`.execute(
+      this.db,
+    );
+    return rows[0] ?? { revision: null, presets: [] };
+  }
+  async pinnedStudioPreset(tx: Kysely<DB>, ownerId: string, expected: string, presetId: string) {
+    const { rows } = await sql<{
+      revision: string;
+      presets: PhotographyStudioPreset[];
+    }>`SELECT revision,COALESCE(value->'presets','[]'::jsonb) AS presets FROM immich_fork.photography_studio_site WHERE "ownerId"=${ownerId}::uuid FOR SHARE`.execute(
+      tx,
+    );
+    if (rows[0]?.revision !== expected) throw new ConflictException('Studio preset changed; reload');
+    const preset = rows[0].presets.find((preset) => preset.id === presetId);
+    if (!preset) throw new NotFoundException('Studio preset unavailable');
+    return preset;
+  }
+  async mutateStudio<T>(
     ownerId: string,
     expected: string | null,
-    value: import('src/dtos/photography-workflow.dto.js').PhotographySite,
+    change: (record: { site: PhotographySite | null; presets: PhotographyStudioPreset[] }) => Promise<T> | T,
   ) {
     return this.db.transaction().execute(async (tx) => {
       await lockForkWrites(tx, 'Photography changes are unavailable during database handoff');
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${ownerId}, 0))`.execute(tx);
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${ownerId},0))`.execute(tx);
       const owner = await tx
         .selectFrom('user')
         .select('id')
@@ -233,15 +259,28 @@ export class PhotographyWorkflowRepository {
       if (!owner) throw new ForbiddenException('Studio unavailable');
       const { rows } = await sql<{
         revision: string;
-      }>`SELECT revision FROM immich_fork.photography_studio_site WHERE "ownerId"=${ownerId}::uuid FOR UPDATE`.execute(
+        value: PhotographySite | { site: PhotographySite | null; presets: PhotographyStudioPreset[] };
+      }>`SELECT revision,value FROM immich_fork.photography_studio_site WHERE "ownerId"=${ownerId}::uuid FOR UPDATE`.execute(
         tx,
       );
-      if ((rows[0]?.revision ?? null) !== expected) throw new ConflictException('Studio site changed; reload');
+      if ((rows[0]?.revision ?? null) !== expected) throw new ConflictException('Studio settings changed; reload');
+      const stored = rows[0]?.value;
+      const record = stored && 'site' in stored ? stored : { site: stored ?? null, presets: [] };
+      const result = await change(record);
+      const encoded = JSON.stringify(record);
+      if (Buffer.byteLength(encoded) > 20_000_000) throw new ConflictException('Studio settings storage limit reached');
       const revision = randomUUID();
-      await sql`INSERT INTO immich_fork.photography_studio_site ("ownerId",revision,value) VALUES (${ownerId}::uuid,${revision}::uuid,${JSON.stringify(value)}::text::jsonb)
-        ON CONFLICT ("ownerId") DO UPDATE SET revision=EXCLUDED.revision,value=EXCLUDED.value`.execute(tx);
-      return { revision, site: value };
+      await sql`INSERT INTO immich_fork.photography_studio_site ("ownerId",revision,value) VALUES (${ownerId}::uuid,${revision}::uuid,${encoded}::text::jsonb) ON CONFLICT ("ownerId") DO UPDATE SET revision=EXCLUDED.revision,value=EXCLUDED.value`.execute(
+        tx,
+      );
+      return { revision, record, result };
     });
+  }
+  async saveSite(ownerId: string, expected: string | null, value: PhotographySite) {
+    const result = await this.mutateStudio(ownerId, expected, (record) => {
+      record.site = value;
+    });
+    return { revision: result.revision, site: value };
   }
   async unfinished(cursor: string | null = null) {
     const { rows } = await sql<WorkflowRow>`SELECT * FROM ${TABLE}

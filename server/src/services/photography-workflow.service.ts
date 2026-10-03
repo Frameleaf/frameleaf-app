@@ -38,6 +38,7 @@ import {
   PhotographyRecipientCreateDto,
   PhotographyRecipientUpdateDto,
   PhotographySiteSaveDto,
+  PhotographyStudioPresetApplyDto,
   PhotographyWorkflowConfigDto,
   PhotographyWorkflowMutationDto,
   PhotographyZipDto,
@@ -99,6 +100,21 @@ type Round = {
   notes: Recipient['notes'];
   createdAt: string;
 };
+type DeliveryOutput = {
+  id: string;
+  key: string;
+  label: string;
+  kind: 'print' | 'web' | 'social';
+  revisionId: string | null;
+  approved: boolean;
+  clientApprovalRequired: boolean;
+  explicitRevision: boolean;
+  approvalPreviewPath?: string | null;
+  proofWatermark?: PhotographyWatermark;
+  finalPath: string | null;
+  exportWatermark: PhotographyWatermark | null;
+  exportSpec: { format: 'jpeg'; quality: 90; maxEdge: number };
+};
 type OrderItem = {
   captureId: string;
   revisionId: string | null;
@@ -106,7 +122,8 @@ type OrderItem = {
   clientApprovalRequired: boolean;
   finalPath: string | null;
   exportWatermark: PhotographyWatermark | null;
-  exportSpec: { format: 'jpeg'; quality: 90; maxEdge: 65_535 };
+  exportSpec: { format: 'jpeg'; quality: 90; maxEdge: number };
+  outputs?: DeliveryOutput[];
 };
 type Order = {
   id: string;
@@ -176,6 +193,7 @@ export type PhotographyWorkflow = {
   config: PhotographyConfig;
   expandedAssetIds: string[];
   presets: { id: string; name: string; config: PhotographyConfig }[];
+  approvedVersions?: { captureId: string; revisionId: string; approvedAt: string }[];
   captures: PhotographyCapture[];
   chapters: PhotographyChapter[];
   ordering: PhotographyAssemblyDto['ordering'];
@@ -207,7 +225,14 @@ export type PhotographyWorkflow = {
     reference: string;
     createdAt: string;
   }[];
-  zips: { id: string; recipientId: string; captureIds: string[]; createdAt: string; expiresAt: string }[];
+  zips: {
+    id: string;
+    recipientId: string;
+    captureIds: string[];
+    entries?: { captureId: string; orderId: string; outputId: string; revisionId: string }[];
+    createdAt: string;
+    expiresAt: string;
+  }[];
 };
 const iso = () => new Date().toISOString();
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -286,6 +311,7 @@ export class PhotographyWorkflowService {
       }),
       expandedAssetIds: [],
       presets: [],
+      approvedVersions: [],
       captures: [],
       chapters: [],
       ordering: 'chronological',
@@ -328,6 +354,7 @@ export class PhotographyWorkflowService {
     };
   }
   private async ownerView(row: WorkflowRow) {
+    await this.hydrateOutputFiles(row.value);
     const value = row.value;
     const assets = await this.repository.assets(row.ownerId, row.albumId, [
       ...new Set(value.captures.flatMap((c) => c.assetIds)),
@@ -383,6 +410,21 @@ export class PhotographyWorkflowService {
       shootId: row.id,
       config: value.config,
       presets: value.presets ?? [],
+      studioPresets: await this.repository.studioPresets(row.ownerId),
+      approvedVersions: value.approvedVersions ?? [],
+      pendingEdits: new Set(
+        value.orders
+          .filter(
+            (order) =>
+              ['accepted', 'settled', 'free'].includes(order.status) &&
+              (order.paymentTiming !== 'before-editing' || ['settled', 'free'].includes(order.status)),
+          )
+          .flatMap((order) =>
+            order.items
+              .filter((item) => this.outputs(order, item).some((output) => !output.approved || !output.revisionId))
+              .map((item) => item.captureId),
+          ),
+      ).size,
       captures,
       chapters: value.chapters,
       ordering: value.ordering,
@@ -391,7 +433,7 @@ export class PhotographyWorkflowService {
         passwordProtected: !!passwordHash,
       })),
       rounds: value.rounds,
-      orders: value.orders.map((order) => this.orderView(order)),
+      orders: value.orders.map((order) => this.orderView(order, row.id)),
       publication: this.publicationView(value.publication),
       receipts: value.receipts,
       approvals: value.approvals,
@@ -409,7 +451,22 @@ export class PhotographyWorkflowService {
       }
     );
   }
-  private orderView(order: Order) {
+  private async hydrateOutputFiles(value: PhotographyWorkflow) {
+    for (const order of value.orders)
+      for (const item of order.items) {
+        for (const output of this.outputs(order, item))
+          for (const field of ['finalPath', 'approvalPreviewPath'] as const)
+            if (output[field]) {
+              try {
+                await access(output[field]!, constants.R_OK);
+              } catch {
+                output[field] = null;
+              }
+            }
+        this.primary(item);
+      }
+  }
+  private orderView(order: Order, shootId: string) {
     return {
       id: order.id,
       recipientId: order.recipientId,
@@ -426,6 +483,10 @@ export class PhotographyWorkflowService {
       items: order.items.map(({ finalPath, exportWatermark: _watermark, ...item }) => ({
         ...item,
         ready: !!finalPath,
+        outputs: this.outputs(
+          order,
+          order.items.find((candidate) => candidate.captureId === item.captureId)!,
+        ).map((output) => this.outputView(shootId, item, output)),
       })),
       readyCount: order.items.filter((item) => item.approved && item.finalPath).length,
       editingBlocked: order.paymentTiming === 'before-editing' && !['settled', 'free'].includes(order.status),
@@ -472,7 +533,12 @@ export class PhotographyWorkflowService {
   private async validateConfig(auth: AuthDto, id: string, value: PhotographyWorkflow, config: PhotographyConfig) {
     if (config.presentation.coverCaptureId && value.captures.every((c) => c.id !== config.presentation.coverCaptureId))
       throw new BadRequestException('Unknown cover');
-    for (const watermark of [config.proofWatermark, config.webWatermark, config.downloadWatermark])
+    for (const watermark of [
+      config.proofWatermark,
+      config.webWatermark,
+      config.downloadWatermark,
+      ...(config.downloadOutputs ?? []).map((output) => output.watermark),
+    ])
       if (watermark?.logoAssetId) await this.logo(await this.owner(auth, id), watermark);
   }
   async savePreset(auth: AuthDto, id: string, input: PhotographyPresetSaveDto) {
@@ -497,6 +563,133 @@ export class PhotographyWorkflowService {
       await this.validateConfig(auth, id, value, preset.config);
       value.config = structuredClone(preset.config);
     });
+  }
+  async studioPresets(auth: AuthDto) {
+    return this.repository.studioPresets(this.studioSession(auth));
+  }
+  async saveStudioPreset(auth: AuthDto, input: PhotographyPresetSaveDto) {
+    const dto = PhotographyPresetSaveDto.schema.parse(input);
+    const ownerId = this.studioSession(auth);
+    for (const watermark of [
+      dto.config.proofWatermark,
+      dto.config.webWatermark,
+      dto.config.downloadWatermark,
+      ...(dto.config.downloadOutputs ?? []).map((output) => output.watermark),
+    ])
+      if (watermark?.logoAssetId) await this.logo({ ownerId, albumId: '' }, watermark);
+    const result = await this.repository.mutateStudio(ownerId, dto.expectedRevision, (record) => {
+      const current = dto.id && record.presets.find((preset) => preset.id === dto.id);
+      if (dto.id && !current) throw new NotFoundException('Studio preset unavailable');
+      const config = structuredClone(dto.config);
+      config.presentation.coverCaptureId = null;
+      if (current) Object.assign(current, { name: dto.name, config });
+      else {
+        if (record.presets.length >= 30) throw new ConflictException('Studio preset limit reached');
+        record.presets.push({ id: randomUUID(), name: dto.name, config });
+      }
+    });
+    return { revision: result.revision, presets: result.record.presets };
+  }
+  async applyStudioPreset(auth: AuthDto, id: string, presetId: string, input: PhotographyStudioPresetApplyDto) {
+    const dto = PhotographyStudioPresetApplyDto.schema.parse(input);
+    const owner = await this.owner(auth, id);
+    const { row } = await this.repository.mutate(
+      id,
+      owner.ownerId,
+      owner.albumId,
+      dto.expectedRevision,
+      owner.initial,
+      async (value, tx) => {
+        const preset = await this.repository.pinnedStudioPreset(
+          tx,
+          owner.ownerId,
+          dto.expectedPresetRevision,
+          presetId,
+        );
+        await this.validateConfig(auth, id, value, preset.config);
+        value.config = structuredClone(preset.config);
+      },
+    );
+    return this.ownerView(row);
+  }
+  private outputs(order: Order, item: OrderItem): DeliveryOutput[] {
+    if (item.outputs) return item.outputs;
+    const bytes = createHash('sha256').update(`${order.id}:${item.captureId}:print`).digest().subarray(0, 16);
+    bytes[6] = (bytes[6] & 15) | 64;
+    bytes[8] = (bytes[8] & 63) | 128;
+    const hex = bytes.toString('hex');
+    const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    item.outputs = [
+      {
+        id,
+        key: 'print',
+        label: 'Print',
+        kind: 'print',
+        revisionId: item.revisionId,
+        approved: item.approved,
+        clientApprovalRequired: item.clientApprovalRequired,
+        explicitRevision: !!item.approved,
+        finalPath: item.finalPath,
+        exportSpec: structuredClone(item.exportSpec),
+        exportWatermark: structuredClone(item.exportWatermark),
+      },
+    ];
+    return item.outputs;
+  }
+  private primary(item: OrderItem) {
+    const output = item.outputs?.find((output) => output.kind === 'print') ?? item.outputs?.[0];
+    if (output) {
+      item.revisionId = output.revisionId;
+      item.approved = output.approved;
+      item.clientApprovalRequired = output.clientApprovalRequired;
+      item.finalPath = output.finalPath;
+      item.exportSpec = structuredClone(output.exportSpec);
+      item.exportWatermark = structuredClone(output.exportWatermark);
+    }
+  }
+  private approveVersion(value: PhotographyWorkflow, captureId: string, revisionId: string) {
+    value.approvedVersions ??= [];
+    if (value.approvedVersions.some((version) => version.captureId === captureId && version.revisionId === revisionId))
+      return;
+    if (value.approvedVersions.length >= 20_000) throw new ConflictException('Approved version limit reached');
+    value.approvedVersions.push({ captureId, revisionId, approvedAt: iso() });
+  }
+  private approvedVersion(value: PhotographyWorkflow, captureId: string, revisionId: string) {
+    return (
+      value.captures.some((capture) => capture.id === captureId && capture.approvedRevisionId === revisionId) ||
+      value.approvedVersions?.some((version) => version.captureId === captureId && version.revisionId === revisionId) ||
+      value.orders.some((order) =>
+        order.items.some(
+          (item) =>
+            item.captureId === captureId &&
+            this.outputs(order, item).some((output) => output.approved && output.revisionId === revisionId),
+        ),
+      )
+    );
+  }
+  private outputView(shootId: string, item: Pick<OrderItem, 'captureId'>, output: DeliveryOutput) {
+    return {
+      id: output.id,
+      label: output.label,
+      kind: output.kind,
+      revisionId: output.revisionId,
+      approved: output.approved,
+      approvalPreviewUrl:
+        output.clientApprovalRequired && output.approvalPreviewPath
+          ? `/api/photography/galleries/${shootId}/photos/${item.captureId}/outputs/${output.id}/preview`
+          : null,
+      clientApprovalRequired: output.clientApprovalRequired,
+      ready: !!output.finalPath,
+      renderStatus:
+        !output.approved || !output.revisionId
+          ? ('awaiting-approval' as const)
+          : output.finalPath
+            ? ('ready' as const)
+            : ('preparing' as const),
+      branded: !!output.exportWatermark,
+      exportSpec: output.exportSpec,
+      url: `/api/photography/galleries/${shootId}/photos/${item.captureId}/outputs/${output.id}`,
+    };
   }
   async intake(
     auth: AuthDto,
@@ -735,6 +928,7 @@ export class PhotographyWorkflowService {
     return recipient.canProof && (recipient.captureIds === null || recipient.captureIds.includes(id));
   }
   private async guestView(row: WorkflowRow, recipient: Recipient) {
+    await this.hydrateOutputFiles(row.value);
     const published = row.value.published;
     const ids = published?.photos.map((p) => p.captureId) ?? [];
     const eligible = await this.eligible(row, ids);
@@ -743,7 +937,11 @@ export class PhotographyWorkflowService {
         ...(published?.photos ?? []).flatMap((p) => (p.revisionId ? [p.revisionId] : [])),
         ...row.value.orders
           .filter((o) => o.recipientId === recipient.id)
-          .flatMap((o) => o.items.flatMap((i) => (i.revisionId ? [i.revisionId] : []))),
+          .flatMap((o) =>
+            o.items.flatMap((i) =>
+              this.outputs(o, i).flatMap((output) => (output.revisionId ? [output.revisionId] : [])),
+            ),
+          ),
       ]),
     ]);
     const photos = (published?.photos ?? [])
@@ -755,23 +953,31 @@ export class PhotographyWorkflowService {
       )
       .map((photo) => {
         const capture = row.value.captures.find((c) => c.id === photo.captureId)!;
-        const blockedReason = deliveryBlock(
-          recipient,
-          recipient.id,
-          capture.id,
-          row.value.orders.map((order) => ({
-            ...order,
-            items: order.items.map((item) => ({
-              ...item,
-              approved: item.approved && !!item.revisionId && revisions.has(item.revisionId),
-            })),
-          })),
-        );
+        const outputs = row.value.orders
+          .filter((order) => order.recipientId === recipient.id)
+          .flatMap((order) =>
+            order.items
+              .filter((item) => item.captureId === capture.id)
+              .flatMap((item) =>
+                this.outputs(order, item).map((output) => {
+                  const blockedReason = this.outputBlock(recipient, capture.id, order, output, revisions);
+                  return {
+                    ...this.outputView(row.id, item, output),
+                    canDownload: blockedReason === null,
+                    blockedReason,
+                  };
+                }),
+              ),
+          );
+        const blockedReason = outputs.some((output) => output.canDownload)
+          ? null
+          : (outputs.at(-1)?.blockedReason ?? 'order');
         return {
           id: capture.id,
           number: photo.number,
           chapterId: photo.chapterId,
           status: capture.state,
+          outputs,
           previewUrl: `/api/photography/galleries/${row.id}/photos/${capture.id}/preview`,
           thumbnailUrl: `/api/photography/galleries/${row.id}/photos/${capture.id}/thumbnail`,
           canDownload: blockedReason === null,
@@ -818,7 +1024,7 @@ export class PhotographyWorkflowService {
       rounds: row.value.rounds.filter((round) => round.recipientId === recipient.id),
       orders: row.value.orders
         .filter((order) => order.recipientId === recipient.id)
-        .map((order) => this.orderView(order)),
+        .map((order) => this.orderView(order, row.id)),
       publication: this.publicationView(row.value.publication),
       pricing: {
         currency: row.value.config.currency,
@@ -931,6 +1137,76 @@ export class PhotographyWorkflowService {
       await this.selection({ id, ...owner, value, revision: '' }, recipient, captureIds, false);
       const total = priceSelection(value.config, captureIds.length, dto.pricing, dto.bundleCount);
       const includedDelivery = !round && value.config.mode === 'edited-delivery' && total === 0;
+      const definitions = dto.outputs ??
+        value.config.downloadOutputs?.map((output) => ({ ...output, revisions: [] })) ?? [
+          {
+            key: 'print',
+            label: 'Print',
+            kind: 'print' as const,
+            maxEdge: 65_535,
+            watermark: structuredClone(value.config.downloadWatermark),
+            revisions: [],
+          },
+        ];
+      for (const definition of definitions) {
+        if (definition.revisions.some((mapping) => !captureIds.includes(mapping.captureId)))
+          throw new BadRequestException('Output mapping is outside the order');
+        if (definition.watermark?.logoAssetId) await this.logo(owner, definition.watermark);
+      }
+      const items: OrderItem[] = [];
+      for (const captureId of captureIds) {
+        const capture = value.captures.find((capture) => capture.id === captureId)!;
+        const outputs: DeliveryOutput[] = [];
+        for (const definition of definitions) {
+          const mapping = definition.revisions.find((mapping) => mapping.captureId === captureId);
+          const revisionId =
+            mapping?.revisionId ?? (capture.approvalRequested ? capture.proofRevisionId : capture.approvedRevisionId);
+          const clientApprovalRequired =
+            !!revisionId &&
+            ((capture.approvalRequested && capture.proofRevisionId === revisionId) ||
+              value.approvals.some(
+                (approval) => approval.captureId === captureId && approval.revisionId === revisionId,
+              ));
+          const recipientApproval =
+            value.approvals.findLast(
+              (approval) =>
+                approval.recipientId === recipient.id &&
+                approval.captureId === captureId &&
+                approval.revisionId === revisionId,
+            )?.approved === true;
+          const approved = !!revisionId && (!clientApprovalRequired || recipientApproval);
+          if (mapping && !this.approvedVersion(value, captureId, mapping.revisionId))
+            throw new BadRequestException('Approve the mapped version before adding it to an order');
+          if (revisionId) await this.requireRevision({ id, ...owner, value, revision: '' }, capture, revisionId);
+          outputs.push({
+            id: randomUUID(),
+            key: definition.key,
+            label: definition.label,
+            kind: definition.kind,
+            revisionId,
+            approved,
+            clientApprovalRequired,
+            explicitRevision: !!mapping || approved,
+            finalPath: null,
+            proofWatermark: structuredClone(value.config.proofWatermark),
+            approvalPreviewPath: null,
+            exportWatermark: structuredClone(definition.watermark),
+            exportSpec: { format: 'jpeg', quality: 90, maxEdge: definition.maxEdge },
+          });
+        }
+        const item: OrderItem = {
+          captureId,
+          revisionId: null,
+          approved: false,
+          clientApprovalRequired: false,
+          finalPath: null,
+          exportWatermark: null,
+          exportSpec: { format: 'jpeg', quality: 90, maxEdge: 65_535 },
+          outputs,
+        };
+        this.primary(item);
+        items.push(item);
+      }
       value.orders.push({
         id: randomUUID(),
         recipientId: dto.recipientId,
@@ -948,18 +1224,7 @@ export class PhotographyWorkflowService {
           bundles: structuredClone(value.config.bundles),
           option: dto.pricing,
         },
-        items: captureIds.map((captureId) => {
-          const capture = value.captures.find((c) => c.id === captureId)!;
-          return {
-            captureId,
-            revisionId: capture.approvedRevisionId,
-            approved: !!capture.approvedRevisionId,
-            clientApprovalRequired: false,
-            finalPath: null,
-            exportWatermark: structuredClone(value.config.downloadWatermark),
-            exportSpec: { format: 'jpeg', quality: 90, maxEdge: 65_535 },
-          };
-        }),
+        items,
         createdAt: iso(),
         acceptedAt: includedDelivery ? iso() : null,
         checkoutId: null,
@@ -1040,18 +1305,26 @@ export class PhotographyWorkflowService {
       )
         throw new BadRequestException('A rendered owned edit is required');
       await this.requireRevision({ id, ...owner, value, revision: '' }, capture, revision.id);
+      if (capture.approvedRevisionId) this.approveVersion(value, capture.id, capture.approvedRevisionId);
+      if (!dto.requestClientApproval) this.approveVersion(value, capture.id, revision.id);
       capture.proofRevisionId = revision.id;
       capture.approvalRequested = dto.requestClientApproval;
       capture.approvedRevisionId = dto.requestClientApproval ? null : revision.id;
       capture.state = dto.requestClientApproval ? 'approval-requested' : 'approved';
       for (const order of value.orders)
-        for (const item of order.items)
-          if (item.captureId === capture.id && !item.approved) {
-            item.revisionId = revision.id;
-            item.approved = !dto.requestClientApproval;
-            item.clientApprovalRequired = dto.requestClientApproval;
-            item.finalPath = null;
-          }
+        for (const item of order.items) {
+          if (item.captureId !== capture.id) continue;
+          for (const output of this.outputs(order, item))
+            if (!output.approved && !output.explicitRevision) {
+              output.revisionId = revision.id;
+              output.approved = !dto.requestClientApproval;
+              output.clientApprovalRequired = dto.requestClientApproval;
+              output.explicitRevision = !dto.requestClientApproval;
+              output.finalPath = null;
+              output.approvalPreviewPath = null;
+            }
+          this.primary(item);
+        }
       if (!dto.requestClientApproval) this.prepareDeliveries(value);
     });
     if (!dto.requestClientApproval) await this.jobs.queue({ name: JobName.PhotographyWorkflowRender, data: { id } });
@@ -1064,17 +1337,32 @@ export class PhotographyWorkflowService {
       const capture = value.captures.find((c) => c.id === dto.captureId);
       if (
         !capture ||
-        !capture.approvalRequested ||
-        capture.proofRevisionId !== dto.revisionId ||
-        !value.published?.photos.some((p) => p.captureId === capture.id && p.revisionId === dto.revisionId)
+        !(
+          value.published?.photos.some((p) => p.captureId === capture.id && p.revisionId === dto.revisionId) ||
+          value.orders
+            .filter((order) => order.recipientId === recipient.id && !['cancelled', 'refunded'].includes(order.status))
+            .some((order) =>
+              order.items.some(
+                (item) =>
+                  item.captureId === capture.id &&
+                  this.outputs(order, item).some(
+                    (output) =>
+                      output.revisionId === dto.revisionId &&
+                      output.clientApprovalRequired &&
+                      output.approvalPreviewPath,
+                  ),
+              ),
+            )
+        )
       )
         throw new ConflictException('Approval proof changed; reload');
+      await this.requireRevision({ ...row, value }, capture, dto.revisionId);
       const items = value.orders
-        .filter((o) => o.recipientId === recipient.id && !['cancelled', 'refunded'].includes(o.status))
-        .flatMap((o) => o.items)
-        .filter(
-          (item) => item.captureId === capture.id && item.revisionId === dto.revisionId && item.clientApprovalRequired,
-        );
+        .filter((order) => order.recipientId === recipient.id && !['cancelled', 'refunded'].includes(order.status))
+        .flatMap((order) =>
+          order.items.filter((item) => item.captureId === capture.id).flatMap((item) => this.outputs(order, item)),
+        )
+        .filter((output) => output.revisionId === dto.revisionId && output.clientApprovalRequired && !output.approved);
       if (items.length === 0) throw new ForbiddenException('No approval request for this recipient');
       if (value.approvals.length >= 5000) throw new ConflictException('Approval history limit reached');
       value.approvals.push({
@@ -1085,10 +1373,17 @@ export class PhotographyWorkflowService {
         note: dto.note,
         createdAt: iso(),
       });
-      for (const item of items) item.approved = dto.approved;
+      for (const output of items) {
+        output.approved = dto.approved;
+        if (dto.approved) output.explicitRevision = true;
+      }
+      for (const order of value.orders) for (const item of order.items) this.primary(item);
       if (dto.approved) {
-        capture.approvedRevisionId = dto.revisionId;
-        capture.state = 'approved';
+        this.approveVersion(value, capture.id, dto.revisionId);
+        if (capture.proofRevisionId === dto.revisionId) {
+          capture.approvedRevisionId = dto.revisionId;
+          capture.state = 'approved';
+        }
         this.prepareDeliveries(value);
       }
     });
@@ -1189,8 +1484,9 @@ export class PhotographyWorkflowService {
     const assets = await this.repository.logo(owner.ownerId, watermark.logoAssetId);
     const asset = assets[0];
     if (!asset || asset.isOffline) throw new ForbiddenException('Logo is unavailable');
-    const variants = await preparePhotographyLogo(await this.logoBytes(asset.originalPath));
-    return variants[watermark.logoVariant];
+    const bytes = await this.logoBytes(asset.originalPath);
+    await preparePhotographyLogo(bytes);
+    return bytes;
   }
   private async logoBytes(file: string) {
     const handle = await open(file, 'r');
@@ -1250,7 +1546,15 @@ export class PhotographyWorkflowService {
     const publication = row.value.publication!;
     const folder = this.renditionFolder(row, publicationId);
     let activeCaptureId: string | null = null;
-    const preparedFinals: { orderId: string; captureId: string; revisionId: string; path: string }[] = [];
+    const preparedApprovals: {
+      orderId: string;
+      captureId: string;
+      outputId: string;
+      revisionId: string;
+      path: string;
+    }[] = [];
+    const preparedFinals: { orderId: string; captureId: string; outputId: string; revisionId: string; path: string }[] =
+      [];
     // ponytail: one decoder per job and at most 10000 captures; normalize JSON progress if very large studios need higher write throughput.
     try {
       if (publication.brand.logoAssetId) {
@@ -1308,34 +1612,66 @@ export class PhotographyWorkflowService {
       }
       activeCaptureId = null;
       row = (await this.repository.get(id))!;
+      await this.hydrateOutputFiles(row.value);
       // Renditions pin each approved order item rather than following the currently selected edit.
       for (const order of row.value.orders)
-        for (const item of order.items) {
-          if (!item.approved || !item.revisionId || ['cancelled', 'refunded'].includes(order.status)) continue;
-          if (item.finalPath) {
-            try {
-              await access(item.finalPath, constants.R_OK);
-              continue;
-            } catch {
-              /* Retry prepares missing delivery files in the new atomic generation. */
+        for (const item of order.items)
+          for (const output of this.outputs(order, item)) {
+            if (!output.revisionId || ['cancelled', 'refunded'].includes(order.status)) continue;
+            if (output.clientApprovalRequired && !output.approvalPreviewPath) {
+              activeCaptureId = item.captureId;
+              const capture = row.value.captures.find((capture) => capture.id === item.captureId)!;
+              const revision = await this.requireRevision(row, capture, output.revisionId);
+              const watermark = output.proofWatermark ?? publication.config.proofWatermark;
+              const file = path.join(folder, `${order.id}-${output.id}-${output.revisionId}-approval.jpg`);
+              await this.atomicFile(
+                file,
+                await renderPhotographyRendition(
+                  revision.masterPath!,
+                  watermark,
+                  await this.logo(row, watermark),
+                  2400,
+                ),
+              );
+              preparedApprovals.push({
+                orderId: order.id,
+                captureId: item.captureId,
+                outputId: output.id,
+                revisionId: output.revisionId,
+                path: file,
+              });
             }
+            if (!output.approved) continue;
+            if (output.finalPath) {
+              try {
+                await access(output.finalPath, constants.R_OK);
+                continue;
+              } catch {
+                /* Recover missing prepared output. */
+              }
+            }
+            activeCaptureId = item.captureId;
+            const capture = row.value.captures.find((c) => c.id === item.captureId)!;
+            const revision = await this.requireRevision(row, capture, output.revisionId);
+            const logo = output.exportWatermark ? await this.logo(row, output.exportWatermark) : undefined;
+            const file = path.join(folder, `${order.id}-${item.captureId}-${output.id}-${output.revisionId}-final.jpg`);
+            await this.atomicFile(
+              file,
+              await renderPhotographyRendition(
+                revision.masterPath!,
+                output.exportWatermark,
+                logo,
+                output.exportSpec.maxEdge,
+              ),
+            );
+            preparedFinals.push({
+              orderId: order.id,
+              captureId: item.captureId,
+              outputId: output.id,
+              revisionId: output.revisionId,
+              path: file,
+            });
           }
-          activeCaptureId = item.captureId;
-          const capture = row.value.captures.find((c) => c.id === item.captureId)!;
-          const revision = await this.requireRevision(row, capture, item.revisionId);
-          const logo = item.exportWatermark ? await this.logo(row, item.exportWatermark) : undefined;
-          const file = path.join(folder, `${order.id}-${item.captureId}-${item.revisionId}-final.jpg`);
-          await this.atomicFile(
-            file,
-            await renderPhotographyRendition(revision.masterPath!, item.exportWatermark, logo, 65_535),
-          );
-          preparedFinals.push({
-            orderId: order.id,
-            captureId: item.captureId,
-            revisionId: item.revisionId,
-            path: file,
-          });
-        }
       activeCaptureId = null;
       row = (await this.repository.get(id))!;
       await this.repository.mutate(id, row.ownerId, row.albumId, undefined, row.value, async (value) => {
@@ -1348,6 +1684,7 @@ export class PhotographyWorkflowService {
           ...new Set([
             ...p.photos.flatMap((photo) => (photo.revisionId ? [photo.revisionId] : [])),
             ...preparedFinals.map((final) => final.revisionId),
+            ...preparedApprovals.map((approval) => approval.revisionId),
           ]),
         ];
         const currentRevisions = await this.repository.eligibleRevisions({ ...row!, value }, pinnedRevisionIds);
@@ -1357,7 +1694,19 @@ export class PhotographyWorkflowService {
           const item = value.orders
             .find((order) => order.id === final.orderId)
             ?.items.find((item) => item.captureId === final.captureId);
-          if (item?.approved && item.revisionId === final.revisionId) item.finalPath = final.path;
+          const order = value.orders.find((order) => order.id === final.orderId);
+          const output = order && item && this.outputs(order, item).find((output) => output.id === final.outputId);
+          if (output?.approved && output.revisionId === final.revisionId) {
+            output.finalPath = final.path;
+            this.primary(item!);
+          }
+        }
+        for (const prepared of preparedApprovals) {
+          const order = value.orders.find((order) => order.id === prepared.orderId);
+          const item = order?.items.find((item) => item.captureId === prepared.captureId);
+          const output = order && item && this.outputs(order, item).find((output) => output.id === prepared.outputId);
+          if (output?.clientApprovalRequired && output.revisionId === prepared.revisionId)
+            output.approvalPreviewPath = prepared.path;
         }
         value.published = {
           config: structuredClone(p.config),
@@ -1432,34 +1781,115 @@ export class PhotographyWorkflowService {
       cursor = rows.at(-1)!.id;
     }
   }
-  private async downloadItem(row: WorkflowRow, recipient: Recipient, captureId: string) {
+  private outputBlock(
+    recipient: Recipient,
+    captureId: string,
+    order: Order,
+    output: DeliveryOutput,
+    revisions: Set<string>,
+  ) {
+    return deliveryBlock(recipient, recipient.id, captureId, [
+      {
+        ...order,
+        items: [
+          {
+            captureId,
+            approved: output.approved && !!output.revisionId && revisions.has(output.revisionId),
+            revisionId: output.revisionId,
+            finalPath: output.finalPath,
+          },
+        ],
+      },
+    ]);
+  }
+  private async downloadItem(
+    row: WorkflowRow,
+    recipient: Recipient,
+    captureId: string,
+    outputId?: string,
+    pinned?: { orderId: string; revisionId: string },
+  ) {
     if (!(await this.eligible(row, [captureId])).has(captureId))
       throw new ForbiddenException('Photograph is unavailable');
-    const blocked = deliveryBlock(recipient, recipient.id, captureId, row.value.orders);
-    if (blocked)
-      throw new ForbiddenException({ message: 'Photograph is not ready for download', code: `photography_${blocked}` });
-    const items = row.value.orders
-      .filter((order) => order.recipientId === recipient.id && ['settled', 'free'].includes(order.status))
+    const candidates = row.value.orders
+      .filter((order) => order.recipientId === recipient.id && (!pinned || order.id === pinned.orderId))
       .toReversed()
-      .flatMap((order) => order.items.map((item) => ({ ...item, orderId: order.id })))
-      .filter((item) => item.captureId === captureId && item.approved && item.revisionId && item.finalPath);
-    const current = await this.repository.eligibleRevisions(
+      .flatMap((order) =>
+        order.items
+          .filter((item) => item.captureId === captureId)
+          .flatMap((item) => {
+            const outputs = this.outputs(order, item);
+            const selected = outputId
+              ? outputs.filter((output) => output.id === outputId)
+              : [outputs.find((output) => output.kind === 'print') ?? outputs[0]];
+            return selected.filter(Boolean).map((output) => ({ order, item, output }));
+          }),
+      );
+    const revisions = await this.repository.eligibleRevisions(
       row,
-      items.map((item) => item.revisionId!),
+      candidates.flatMap(({ output }) => (output.revisionId ? [output.revisionId] : [])),
     );
-    const item = items.find((item) => current.has(item.revisionId!));
-    if (!item) throw new ForbiddenException('Approved source is unavailable');
+    const candidate = candidates.find(
+      ({ order, output }) =>
+        (!pinned || output.revisionId === pinned.revisionId) &&
+        this.outputBlock(recipient, captureId, order, output, revisions) === null,
+    );
+    if (!candidate) throw new ForbiddenException('Approved output is not available for download');
+    const { order, output } = candidate;
     await this.requireRevision(
       row,
-      row.value.captures.find((c) => c.id === captureId)!,
-      item.revisionId!,
+      row.value.captures.find((capture) => capture.id === captureId)!,
+      output.revisionId!,
     );
     try {
-      await access(item.finalPath!, constants.R_OK);
+      await access(output.finalPath!, constants.R_OK);
     } catch {
       throw new ConflictException('Final rendition is unavailable; the studio must prepare it again');
     }
-    return item;
+    return { ...output, orderId: order.id };
+  }
+  async outputPreview(
+    id: string,
+    token: string | undefined,
+    captureId: string,
+    outputId: string,
+  ): Promise<ImmichFileResponse> {
+    const { row, recipient } = await this.guest(id, token);
+    if (!this.proofPermission(recipient, captureId) || !(await this.eligible(row, [captureId])).has(captureId))
+      throw new ForbiddenException();
+    const output = row.value.orders
+      .filter((order) => order.recipientId === recipient.id && !['cancelled', 'refunded'].includes(order.status))
+      .flatMap((order) =>
+        order.items.filter((item) => item.captureId === captureId).flatMap((item) => this.outputs(order, item)),
+      )
+      .find((output) => output.id === outputId && output.clientApprovalRequired && output.approvalPreviewPath);
+    if (!output?.revisionId) throw new NotFoundException('Approval proof is preparing');
+    await this.requireRevision(
+      row,
+      row.value.captures.find((capture) => capture.id === captureId)!,
+      output.revisionId,
+    );
+    return new ImmichFileResponse({
+      path: output.approvalPreviewPath!,
+      contentType: 'image/jpeg',
+      cacheControl: CacheControl.None,
+    });
+  }
+  async outputFile(
+    id: string,
+    token: string | undefined,
+    captureId: string,
+    outputId: string,
+  ): Promise<ImmichFileResponse> {
+    const { row, recipient } = await this.guest(id, token);
+    const output = await this.downloadItem(row, recipient, captureId, outputId);
+    const capture = row.value.captures.find((capture) => capture.id === captureId)!;
+    return new ImmichFileResponse({
+      path: output.finalPath!,
+      contentType: 'image/jpeg',
+      fileName: `Photo-${capture.number}-${output.key}.jpg`,
+      cacheControl: CacheControl.None,
+    });
   }
   async file(id: string, token: string | undefined, captureId: string, kind: string): Promise<ImmichFileResponse> {
     const { row, recipient } = await this.guest(id, token);
@@ -1489,62 +1919,88 @@ export class PhotographyWorkflowService {
   async zip(id: string, token: string | undefined, input: PhotographyZipDto) {
     const dto = PhotographyZipDto.schema.parse(input);
     const { row, recipient } = await this.guest(id, token);
-    for (const captureId of dto.captureIds) await this.downloadItem(row, recipient, captureId);
+    const requests = dto.outputs ?? dto.captureIds.map((captureId) => ({ captureId, outputId: undefined }));
     const zipId = randomUUID();
     await this.repository.mutate(id, row.ownerId, row.albumId, row.revision, row.value, async (value) => {
       const current = this.requireRecipient({ ...row, value }, recipient.id);
-      for (const captureId of dto.captureIds) await this.downloadItem({ ...row, value }, current, captureId);
+      const entries = [];
+      for (const request of requests) {
+        const output = await this.downloadItem({ ...row, value }, current, request.captureId, request.outputId);
+        entries.push({
+          captureId: request.captureId,
+          orderId: output.orderId,
+          outputId: output.id,
+          revisionId: output.revisionId!,
+        });
+      }
       value.zips = value.zips.filter((zip) => !expired(zip.expiresAt));
       if (value.zips.length >= 2000) throw new ConflictException('Archive request limit reached');
       value.zips.push({
         id: zipId,
         recipientId: recipient.id,
-        captureIds: dto.captureIds,
+        captureIds: [...new Set(requests.map((request) => request.captureId))],
+        entries,
         createdAt: iso(),
         expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       });
     });
     return { id: zipId, status: 'ready', url: `/api/photography/galleries/${id}/zip/${zipId}` };
   }
-  async archive(id: string, token: string | undefined, zipId: string) {
-    const { row, recipient } = await this.guest(id, token);
+  private zipRequest(row: WorkflowRow, recipient: Recipient, zipId: string) {
     const request = row.value.zips.find(
-      (z) => z.id === zipId && z.recipientId === recipient.id && !expired(z.expiresAt),
+      (zip) => zip.id === zipId && zip.recipientId === recipient.id && !expired(zip.expiresAt),
     );
     if (!request) throw new NotFoundException('Archive request expired');
-    const entries: { file: string; name: string }[] = [];
-    for (const captureId of request.captureIds) {
-      const item = await this.downloadItem(row, recipient, captureId);
-      const capture = row.value.captures.find((c) => c.id === captureId)!;
-      entries.push({ file: item.finalPath!, name: `Photo-${capture.number}.jpg` });
+    if (!request.entries?.length) throw new ConflictException('Create this archive again to pin its approved outputs');
+    return request;
+  }
+  async archive(id: string, token: string | undefined, zipId: string) {
+    const { row, recipient } = await this.guest(id, token);
+    const request = this.zipRequest(row, recipient, zipId);
+    const files = [];
+    for (const entry of request.entries ??
+      request.captureIds.map((captureId) => ({ captureId, outputId: undefined }))) {
+      const output = await this.downloadItem(
+        row,
+        recipient,
+        entry.captureId,
+        entry.outputId,
+        'orderId' in entry ? entry : undefined,
+      );
+      const capture = row.value.captures.find((capture) => capture.id === entry.captureId)!;
+      files.push({ file: output.finalPath!, name: `Photo-${capture.number}-${output.key}-${output.id}.jpg` });
     }
-    // Every entry is checked before opening any file; the existing real ZIP stream bounds memory.
     const zip = this.storage.createZipStream();
-    for (const entry of entries) zip.addFile(entry.file, entry.name);
+    for (const file of files) zip.addFile(file.file, file.name);
     void zip.finalize().catch((error) => zip.stream.destroy(error));
     return { stream: zip.stream, disposition: 'attachment; filename="Photographs.zip"', type: 'application/zip' };
   }
-  async recordDelivery(id: string, token: string | undefined, captureId?: string, zipId?: string) {
+  async recordDelivery(id: string, token: string | undefined, captureId?: string, zipId?: string, outputId?: string) {
     const { row, recipient } = await this.guest(id, token);
-    const captureIds = captureId
-      ? [captureId]
-      : row.value.zips.find((zip) => zip.id === zipId && zip.recipientId === recipient.id && !expired(zip.expiresAt))
-          ?.captureIds;
-    if (!captureIds?.length) throw new ForbiddenException('Delivery scope unavailable');
+    const request = captureId ? undefined : this.zipRequest(row, recipient, zipId!);
+    const entries = captureId
+      ? [{ captureId, outputId }]
+      : (request!.entries ?? request!.captureIds.map((captureId) => ({ captureId, outputId: undefined })));
     await this.repository.mutate(id, row.ownerId, row.albumId, undefined, row.value, async (value) => {
       const current = this.requireRecipient({ ...row, value }, recipient.id);
-      for (const captureId of captureIds) {
-        const delivered = await this.downloadItem({ ...row, value }, current, captureId);
-        const order = value.orders.find((order) => order.id === delivered.orderId);
+      for (const entry of entries) {
+        const delivered = await this.downloadItem(
+          { ...row, value },
+          current,
+          entry.captureId,
+          entry.outputId,
+          'orderId' in entry ? entry : undefined,
+        );
+        const order = value.orders.find((order) => order.id === delivered.orderId)!;
+        const reference = entry.outputId ? `${entry.captureId}:${delivered.id}` : entry.captureId;
         if (
-          order &&
           value.receipts.every(
             (receipt) =>
-              !(receipt.orderId === order.id && receipt.action === 'delivered' && receipt.reference === captureId),
+              !(receipt.orderId === order.id && receipt.action === 'delivered' && receipt.reference === reference),
           )
         )
-          this.receipt(value, order, 'delivered', captureId);
-        value.captures.find((capture) => capture.id === captureId)!.state = 'delivered';
+          this.receipt(value, order, 'delivered', reference);
+        value.captures.find((capture) => capture.id === entry.captureId)!.state = 'delivered';
       }
     });
   }
@@ -1577,7 +2033,10 @@ export class PhotographyWorkflowService {
     const order = row.value.orders.find((o) => o.id === orderId && o.recipientId === recipient.id);
     if (!order || order.status !== 'accepted' || order.total <= 0)
       throw new ConflictException('An accepted unpaid order is required');
-    if (order.paymentTiming === 'after-approval' && order.items.some((item) => !item.approved || !item.revisionId))
+    if (
+      order.paymentTiming === 'after-approval' &&
+      order.items.some((item) => this.outputs(order, item).some((output) => !output.approved || !output.revisionId))
+    )
       throw new ConflictException('Awaiting photographer and client approval');
     if (!this.checkoutAvailable(row.ownerId))
       throw new ServiceUnavailableException('No studio-owned checkout account is configured for this photographer');
@@ -1743,7 +2202,7 @@ export class PhotographyWorkflowService {
   async publicSite(ownerId: string) {
     await this.repository.studioLive(ownerId);
     const site = await this.repository.site(ownerId);
-    if (!site?.value.enabled) throw new NotFoundException();
+    if (!site?.value?.enabled) throw new NotFoundException();
     const portfolio: { shootId: string; captureId: string; url: string }[] = [];
     for (const item of site.value.portfolio) {
       try {
@@ -1791,7 +2250,7 @@ export class PhotographyWorkflowService {
   async publicPhoto(ownerId: string, shootId: string, captureId: string) {
     const site = await this.repository.site(ownerId);
     if (
-      !site?.value.enabled ||
+      !site?.value?.enabled ||
       site.value.portfolio.every((p) => !(p.shootId === shootId && p.captureId === captureId && p.consent))
     )
       throw new NotFoundException();
@@ -1804,7 +2263,7 @@ export class PhotographyWorkflowService {
   }
   async publicLogo(ownerId: string) {
     await this.repository.studioLive(ownerId);
-    if (!(await this.repository.site(ownerId))?.value.enabled) throw new NotFoundException();
+    if (!(await this.repository.site(ownerId))?.value?.enabled) throw new NotFoundException();
     const brand = (await this.workspace.get(ownerId))?.value.brand;
     const asset = brand?.logoAssetId && (await this.repository.logo(ownerId, brand.logoAssetId))[0];
     if (!asset) throw new NotFoundException();

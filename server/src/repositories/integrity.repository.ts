@@ -243,6 +243,16 @@ export class IntegrityRepository {
         jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item
       WHERE item->>'finalPath' IN (${sql.join(paths)})
       UNION
+      SELECT output->>'approvalPreviewPath' AS path FROM immich_fork.photography_workflow workflow,
+      jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item,
+      jsonb_array_elements(COALESCE(item->'outputs','[]'::jsonb)) output
+      WHERE output->>'approvalPreviewPath' IN (${sql.join(paths)})
+      UNION
+      SELECT output->>'finalPath' AS path FROM immich_fork.photography_workflow workflow,
+      jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item,
+      jsonb_array_elements(COALESCE(item->'outputs','[]'::jsonb)) output
+      WHERE output->>'finalPath' IN (${sql.join(paths)})
+      UNION
       SELECT workflow.value->'published'->>'logoPath' AS path FROM immich_fork.photography_workflow workflow
       WHERE workflow.value->'published'->>'logoPath' IN (${sql.join(paths)})
       UNION
