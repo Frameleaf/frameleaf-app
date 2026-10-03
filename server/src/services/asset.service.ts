@@ -45,6 +45,7 @@ import {
   Permission,
   QueueName,
 } from 'src/enum.js';
+import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
@@ -392,6 +393,13 @@ export class AssetService extends BaseService {
   async lock(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
     await this.lockAssets(auth, dto.ids, AssetLockReason.Marked);
+    // FL-326: locking a partner copy makes its visibility the owner's; copies of these items follow it
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      dto.ids,
+      [AssetOriginField.Visibility],
+    );
   }
 
   /**
