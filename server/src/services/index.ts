@@ -80,6 +80,7 @@ import { MlDestinationService } from 'src/services/ml-destination.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
+import { PartnerLockService } from 'src/services/partner-lock.service.js';
 import { PartnerLockedNoticeService } from 'src/services/partner-locked-notice.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
@@ -230,6 +231,7 @@ export const services = [
   NotificationAdminService,
   OcrService,
   ClusterGroupService,
+  PartnerLockService,
   PartnerLockedNoticeService,
   PartnerPeopleService,
   PartnerService,
