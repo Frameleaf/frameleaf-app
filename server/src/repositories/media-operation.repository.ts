@@ -756,10 +756,12 @@ export class MediaOperationRepository {
       .where('id', '=', operation.retryOfId)
       .where('ownerId', '=', operation.ownerId)
       .where('kind', '=', MediaOperationKind.StudioPreview)
-      .where(sql<boolean>`("snapshot" ? 'consumerRequestId' OR EXISTS (
+      .where(
+        sql<boolean>`("snapshot" ? 'consumerRequestId' OR EXISTS (
         SELECT 1 FROM studio_preview_frame f WHERE f."operationId" = "media_operation"."id"
         AND f."ownerId" = "media_operation"."ownerId" AND f."cacheKey" LIKE 'fl279c1:%'
-      ))`)
+      ))`,
+      )
       .executeTakeFirst();
     if (scoped) {
       throw new ConflictException('Request a new consumer preview from Studio');
@@ -1377,45 +1379,45 @@ export class MediaOperationRepository {
     claimToken?: string,
   ): Promise<MediaOperation | undefined> {
     return (await tx
-        .updateTable('media_operation')
-        .set((eb) => ({
-          // A paused job has no worker either (FL-104), so it is cancelled outright like a queued one.
-          status: eb
-            .case()
-            .when('status', 'in', UNCLAIMED_STATUSES)
-            .then(MediaOperationStatus.Cancelled)
-            .else(MediaOperationStatus.Cancelling)
-            .end(),
-          cancelRequestedAt: sql<Date>`coalesce("cancelRequestedAt", now())`,
-          cancelAcknowledgedAt: eb
-            .case()
-            .when('status', 'in', UNCLAIMED_STATUSES)
-            .then(sql<Date>`now()`)
-            .else(eb.ref('cancelAcknowledgedAt'))
-            .end(),
-          finishedAt: eb
-            .case()
-            .when('status', 'in', UNCLAIMED_STATUSES)
-            .then(sql<Date>`now()`)
-            .else(eb.ref('finishedAt'))
-            .end(),
-          // Only a queued or paused job had no worker to revoke.
-          claimToken: eb.case().when('status', 'in', UNCLAIMED_STATUSES).then(null).else(eb.ref('claimToken')).end(),
-          claimExpiresAt: eb
-            .case()
-            .when('status', 'in', UNCLAIMED_STATUSES)
-            .then(null)
-            .else(eb.ref('claimExpiresAt'))
-            .end(),
-          // Stopping outranks holding: a pause waiting to be reached is dropped.
-          pauseRequestedAt: null,
-        }))
-        .where('id', '=', id)
-        .where('ownerId', '=', ownerId)
-        .$if(claimToken !== undefined, (qb) => qb.where('claimToken', '=', claimToken!))
-        .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
-        .returningAll()
-        .executeTakeFirst()) as unknown as MediaOperation | undefined;
+      .updateTable('media_operation')
+      .set((eb) => ({
+        // A paused job has no worker either (FL-104), so it is cancelled outright like a queued one.
+        status: eb
+          .case()
+          .when('status', 'in', UNCLAIMED_STATUSES)
+          .then(MediaOperationStatus.Cancelled)
+          .else(MediaOperationStatus.Cancelling)
+          .end(),
+        cancelRequestedAt: sql<Date>`coalesce("cancelRequestedAt", now())`,
+        cancelAcknowledgedAt: eb
+          .case()
+          .when('status', 'in', UNCLAIMED_STATUSES)
+          .then(sql<Date>`now()`)
+          .else(eb.ref('cancelAcknowledgedAt'))
+          .end(),
+        finishedAt: eb
+          .case()
+          .when('status', 'in', UNCLAIMED_STATUSES)
+          .then(sql<Date>`now()`)
+          .else(eb.ref('finishedAt'))
+          .end(),
+        // Only a queued or paused job had no worker to revoke.
+        claimToken: eb.case().when('status', 'in', UNCLAIMED_STATUSES).then(null).else(eb.ref('claimToken')).end(),
+        claimExpiresAt: eb
+          .case()
+          .when('status', 'in', UNCLAIMED_STATUSES)
+          .then(null)
+          .else(eb.ref('claimExpiresAt'))
+          .end(),
+        // Stopping outranks holding: a pause waiting to be reached is dropped.
+        pauseRequestedAt: null,
+      }))
+      .where('id', '=', id)
+      .where('ownerId', '=', ownerId)
+      .$if(claimToken !== undefined, (qb) => qb.where('claimToken', '=', claimToken!))
+      .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
+      .returningAll()
+      .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
 
   notifyCancellation(row: MediaOperation | undefined): void {
@@ -1451,7 +1453,8 @@ export class MediaOperationRepository {
       .where('status', '=', MediaOperationStatus.Cancelling)
       // Scoped previews require a live claim at the actual ACK write, not an earlier service read.
       // The stored frame catches a missing/malformed discriminator; it cannot fall back to legacy.
-      .where(sql<boolean>`("kind" <> ${MediaOperationKind.StudioPreview} OR (
+      .where(
+        sql<boolean>`("kind" <> ${MediaOperationKind.StudioPreview} OR (
         NOT ("snapshot" ? 'consumerRequestId') AND NOT EXISTS (
           SELECT 1 FROM studio_preview_frame f WHERE f."operationId" = "media_operation"."id"
           AND f."cacheKey" LIKE 'fl279c1:%'
@@ -1464,7 +1467,8 @@ export class MediaOperationRepository {
           AND f."cacheKey" LIKE 'fl279c1:%'
           AND split_part(f."cacheKey", ':', 2) = "media_operation"."snapshot"->>'consumerRequestId'
         )
-      ))`)
+      ))`,
+      )
       .returning(['id', 'ownerId'])
       .executeTakeFirst();
 
