@@ -473,6 +473,19 @@ describe(AssetMediaService.name, () => {
         );
       });
 
+      it('takes content in the file trash back out instead of storing it twice (Review Focus 3)', async () => {
+        mocks.asset.create.mockResolvedValue({ ...assetEntity });
+
+        await sut.uploadAsset(authStub.user1, createDto, file);
+
+        const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+        await options.untrash!('/data/file-trash/id/duplicate.jpeg', '/data/upload/restored.jpeg');
+        expect(mocks.storage.rename).toHaveBeenCalledWith(
+          '/data/file-trash/id/duplicate.jpeg',
+          '/data/upload/restored.jpeg',
+        );
+      });
+
       it('checks that the linked file exists on disk', async () => {
         mocks.asset.create.mockResolvedValue(assetEntity);
         mocks.storage.checkFileExists.mockResolvedValue(true);

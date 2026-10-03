@@ -220,6 +220,60 @@ describe(StorageService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith('path/to/something');
     });
 
+    it('sends an unreferenced original to the file trash instead of unlinking it (universal storage)', async () => {
+      const checksum = Buffer.from('a'.repeat(64), 'hex');
+      mocks.physicalFile.deleteUnreferencedPath.mockImplementation((async (
+        path: string,
+        _unlink: () => Promise<void>,
+        options: { trash?: { move: (from: string, to: string) => Promise<void> } },
+      ) => {
+        await options.trash!.move(path, '/data/file-trash/id/photo.jpg');
+        return { deleted: true, references: 0, trashed: true };
+      }) as never);
+
+      await sut.handleDeleteFiles({
+        files: ['/data/library/user/photo.jpg', '/data/thumbs/user/thumb.webp'],
+        removedAssetId: 'asset-id',
+        original: {
+          path: '/data/library/user/photo.jpg',
+          ownerId: 'user-id',
+          assetId: 'asset-id',
+          originalFileName: 'photo.jpg',
+          checksum: checksum.toString('hex'),
+          sizeInBytes: 42,
+        },
+      });
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        '/data/library/user/photo.jpg',
+        expect.any(Function),
+        {
+          removedAssetId: 'asset-id',
+          trash: {
+            move: expect.any(Function),
+            original: {
+              checksum,
+              sizeInBytes: 42,
+              ownerId: 'user-id',
+              assetId: 'asset-id',
+              originalFileName: 'photo.jpg',
+            },
+          },
+        },
+      );
+      // every path may be a registered original, so every one may go to the trash
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        '/data/thumbs/user/thumb.webp',
+        expect.any(Function),
+        { removedAssetId: 'asset-id', trash: { move: expect.any(Function) } },
+      );
+      expect(mocks.storage.rename).toHaveBeenCalledWith(
+        '/data/library/user/photo.jpg',
+        '/data/file-trash/id/photo.jpg',
+      );
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
     it('should remove the file', async () => {
       await sut.handleDeleteFiles({ files: ['path/to/something'] });
 
@@ -244,7 +298,7 @@ describe(StorageService.name, () => {
       expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
         'path/to/frame.jpeg',
         expect.any(Function),
-        { removedAssetId },
+        expect.objectContaining({ removedAssetId }),
       );
     });
   });

@@ -89,6 +89,7 @@ import { PhotographyWorkflowService } from 'src/services/photography-workflow.se
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
+import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
@@ -235,6 +236,7 @@ export const services = [
   PetService,
   PhysicalDeduplicationPlanService,
   PhysicalDeduplicationService,
+  PhysicalFileTrashService,
   PluginService,
   PreservationService,
   PreservationWorkerService,

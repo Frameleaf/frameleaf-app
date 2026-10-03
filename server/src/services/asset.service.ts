@@ -649,6 +649,7 @@ export class AssetService extends BaseService {
     // deletion again; once the row is gone, its files are queued. The job names the asset, so a job
     // whose removal rolled back after it was queued deletes nothing; FileDelete also keeps any file
     // another asset references (a deduplicated original).
+    let removedOriginalPath: string | undefined;
     const removedAsset = await this.assetRepository.remove(asset, {
       files: (removed) => {
         const assetFiles = getAssetFiles(removed.files);
@@ -672,6 +673,7 @@ export class AssetService extends BaseService {
         const ownsOriginal = deleteOnDisk && !asset.isOffline && !asset.libraryId;
         if (ownsOriginal) {
           files.push(assetFiles.sidecarFile?.path, removed.originalPath, removed.reservationTemporaryPath ?? undefined);
+          removedOriginalPath = removed.originalPath;
         }
 
         // FL-179: a storage move that never committed can have left the file at either of its paths,
@@ -687,7 +689,25 @@ export class AssetService extends BaseService {
         // a path can be named twice (a version file that is also a generated file); delete it once
         return [...new Set(files.filter((file): file is string => !!file))];
       },
-      queue: (files) => this.jobRepository.queue({ name: JobName.FileDelete, data: { files, removedAssetId: id } }),
+      queue: (files) =>
+        this.jobRepository.queue({
+          name: JobName.FileDelete,
+          data: {
+            files,
+            removedAssetId: id,
+            // universal storage: once nothing references it, the original goes to the file trash with who held it
+            ...(removedOriginalPath && {
+              original: {
+                path: removedOriginalPath,
+                ownerId: asset.ownerId,
+                assetId: id,
+                originalFileName: asset.originalFileName,
+                checksum: Buffer.from(asset.checksum).toString('hex'),
+                sizeInBytes: asset.exifInfo?.fileSizeInByte ?? 0,
+              },
+            }),
+          },
+        }),
     });
     if (!removedAsset) {
       return JobStatus.Failed;

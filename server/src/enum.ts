@@ -3114,6 +3114,7 @@ export enum ApiTag {
   Duplicates = 'Duplicates',
   Enrichment = 'Enrichment',
   Faces = 'Faces',
+  FileTrash = 'File trash (admin)',
   FrameleafCloud = 'Frameleaf Cloud (admin)',
   FrameleafCloudMl = 'Frameleaf Cloud processing (admin)',
   FrameleafCloudJobs = 'Frameleaf Cloud jobs',

@@ -421,6 +421,8 @@ export class AssetJobRepository {
         'asset.livePhotoVideoId',
         'asset.originalPath',
         'asset.physicalOriginalFileId',
+        'asset.checksum',
+        'asset.originalFileName',
         'asset.isOffline',
         'asset.deletedAt',
       ])

@@ -89,6 +89,7 @@ const setup = (masterUserId: string | null) => {
   ctx.getMock(AlbumUserRepository).forgetRecipient.mockResolvedValue();
   ctx.getMock(EventRepository).emit.mockResolvedValue();
   ctx.getMock(JobRepository).queue.mockResolvedValue();
+  ctx.getMock(JobRepository).queueAll.mockResolvedValue();
   return { sut, ctx };
 };
 
@@ -189,9 +190,11 @@ describe('UserService.handleUserDelete with shared originals (FL-44)', () => {
       .execute();
     await sut.handleUserDelete({ id: other.id, force: true });
     // the other owner's copy lived in the first owner's library, so the queued FileDelete removes it
-    const queued = ctx
-      .getMock(JobRepository)
-      .queue.mock.calls.flatMap(([job]) => ((job as { data?: { files?: string[] } }).data?.files ?? []) as string[]);
+    const jobs = ctx.getMock(JobRepository);
+    const queued = [
+      ...jobs.queue.mock.calls.map(([job]) => job),
+      ...jobs.queueAll.mock.calls.flatMap(([all]) => all),
+    ].flatMap((job) => ((job as { data?: { files?: string[] } }).data?.files ?? []) as string[]);
     expect(queued).toContain(sharedPath);
     await expect(
       ctx

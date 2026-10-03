@@ -1084,6 +1084,15 @@ describe(AssetService.name, () => {
             data: {
               files: [...asset.files.map(({ path }) => path), '/data/thumbs/video-frame.jpeg', asset.originalPath],
               removedAssetId: asset.id,
+              // universal storage: the original goes to the file trash with who held it
+              original: {
+                path: asset.originalPath,
+                ownerId: asset.ownerId,
+                assetId: asset.id,
+                originalFileName: asset.originalFileName,
+                checksum: asset.checksum.toString('hex'),
+                sizeInBytes: asset.exifInfo?.fileSizeInByte ?? 0,
+              },
             },
           },
         ],
@@ -1196,6 +1205,7 @@ describe(AssetService.name, () => {
             '/data/thumbs/moved.webp.m2.moving',
           ],
           removedAssetId: asset.id,
+          original: expect.objectContaining({ assetId: asset.id }),
         },
       });
     });
@@ -1259,7 +1269,16 @@ describe(AssetService.name, () => {
 
       // the file cleanup is queued with the removal (FL-169), the motion part after it
       expect(mocks.job.queue.mock.calls).toEqual([
-        [{ name: JobName.FileDelete, data: { files: [asset.originalPath], removedAssetId: asset.id } }],
+        [
+          {
+            name: JobName.FileDelete,
+            data: {
+              files: [asset.originalPath],
+              removedAssetId: asset.id,
+              original: expect.objectContaining({ assetId: asset.id }),
+            },
+          },
+        ],
         [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
       ]);
     });
@@ -1275,7 +1294,11 @@ describe(AssetService.name, () => {
         [
           {
             name: JobName.FileDelete,
-            data: { files: [`/data/library/IMG_${asset.id}.jpg`], removedAssetId: asset.id },
+            data: {
+              files: [`/data/library/IMG_${asset.id}.jpg`],
+              removedAssetId: asset.id,
+              original: expect.objectContaining({ assetId: asset.id }),
+            },
           },
         ],
       ]);
@@ -1337,7 +1360,11 @@ describe(AssetService.name, () => {
 
         expect(mocks.job.queue).toHaveBeenCalledWith({
           name: JobName.FileDelete,
-          data: { files: [...asset.files.map(({ path }) => path), asset.originalPath], removedAssetId: asset.id },
+          data: {
+            files: [...asset.files.map(({ path }) => path), asset.originalPath],
+            removedAssetId: asset.id,
+            original: expect.objectContaining({ assetId: asset.id }),
+          },
         });
         expect(mocks.user.updateUsage).not.toHaveBeenCalled();
         expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetDelete', expect.anything());
@@ -1353,7 +1380,16 @@ describe(AssetService.name, () => {
         await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
 
         expect(mocks.job.queue.mock.calls).toEqual([
-          [{ name: JobName.FileDelete, data: { files: [asset.originalPath], removedAssetId: asset.id } }],
+          [
+            {
+              name: JobName.FileDelete,
+              data: {
+                files: [asset.originalPath],
+                removedAssetId: asset.id,
+                original: expect.objectContaining({ assetId: asset.id }),
+              },
+            },
+          ],
           [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
         ]);
         expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, -5000);
@@ -1372,6 +1408,7 @@ describe(AssetService.name, () => {
           data: {
             files: [thumbnailPath, '/data/restorations/result.jpg', '/data/develop/master.tif', asset.originalPath],
             removedAssetId: asset.id,
+            original: expect.objectContaining({ assetId: asset.id }),
           },
         });
       });
@@ -1400,7 +1437,16 @@ describe(AssetService.name, () => {
         await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
 
         expect(mocks.job.queue.mock.calls).toEqual([
-          [{ name: JobName.FileDelete, data: { files: [asset.originalPath], removedAssetId: asset.id } }],
+          [
+            {
+              name: JobName.FileDelete,
+              data: {
+                files: [asset.originalPath],
+                removedAssetId: asset.id,
+                original: expect.objectContaining({ assetId: asset.id }),
+              },
+            },
+          ],
         ]);
       });
     });

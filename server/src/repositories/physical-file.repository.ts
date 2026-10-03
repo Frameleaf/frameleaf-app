@@ -4,6 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { dirname, join, parse } from 'node:path';
 import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AssetFileType,
   AssetStatus,
@@ -42,6 +43,147 @@ export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> 
 export const lockChecksum = async (db: Kysely<DB>, checksum: Buffer): Promise<void> => {
   const key = createHash('sha1').update(checksum).digest().readInt32BE(0);
   await sql`SELECT pg_advisory_xact_lock(${DatabaseLock.UniversalStorageChecksum}::int, ${key}::int)`.execute(db);
+};
+
+/**
+ * Every row that keeps `path` on disk. The caller holds the path's lock (`lockFilePath`), so the count
+ * stays true until its transaction ends.
+ */
+export const countPathReferences = async (
+  trx: Transaction<DB>,
+  path: string,
+  physicalFileId?: string,
+): Promise<number> => {
+  // A path can be the live original of an asset that has no `physical_file`
+  // link at all — both upload-time dedup and the dedup migration point
+  // `asset.originalPath` at a file owned by another asset. Counting only
+  // physical-file links misses those references entirely.
+  const assetRefs = await trx
+    .selectFrom('asset')
+    .select((eb) => eb.fn.countAll<number>().as('count'))
+    .where((eb) =>
+      eb.or([
+        eb('asset.originalPath', '=', path),
+        ...(physicalFileId ? [eb('asset.physicalOriginalFileId', '=', asUuid(physicalFileId))] : []),
+      ]),
+    )
+    .executeTakeFirstOrThrow();
+
+  const fileRefs = await trx
+    .selectFrom('asset_file')
+    .select((eb) => eb.fn.countAll<number>().as('count'))
+    .where((eb) =>
+      eb.or([
+        eb('asset_file.path', '=', path),
+        ...(physicalFileId ? [eb('asset_file.physicalFileId', '=', asUuid(physicalFileId))] : []),
+      ]),
+    )
+    .executeTakeFirstOrThrow();
+
+  // Saved versions remain owners of their rendered files (and a master's lineage sidecar) even
+  // after they leave the current asset projection. A version's source is its asset's original,
+  // which the asset row already protects, so the recorded source path is not a reference.
+  const historyRefs = await sql<{ count: string }>`SELECT count(*) FROM (
+    SELECT 1 FROM immich_fork.video_edit_version v
+    WHERE v."masterPath"=${path} OR v."proxyPath"=${path} OR v."masterPath" || '.lineage.json'=${path}
+      OR EXISTS(SELECT 1 FROM jsonb_array_elements(v.files) f WHERE f->>'path'=${path})
+    UNION ALL SELECT 1 FROM immich_fork.orphaned_records o
+    WHERE o."sourceTable"='video_edit_version' AND (
+      o.payload->>'masterPath'=${path} OR o.payload->>'proxyPath'=${path}
+      OR (o.payload->>'masterPath') || '.lineage.json'=${path}
+      OR EXISTS(SELECT 1 FROM jsonb_array_elements(o.payload->'files') f WHERE f->>'path'=${path}))
+  ) retained`.execute(trx);
+
+  // FL-44 (FN-304): after cutover a live asset's original can be recorded only in its fork
+  // mapping (asset.repository deleteAll resolves `upstreamPath` first), and the fork physical
+  // file keeps the canonical path its sharers resolve to. A mapping of an asset that no longer
+  // exists holds nothing: its row is swept with the asset and must not pin the file forever.
+  // Outputs a Frameleaf feature still serves are owned by their rows the same way: a Studio
+  // export version, a preservation package not yet removed, and a restoration's preview or
+  // result (each clears its path before queueing the file's deletion), a Studio HDR
+  // intermediate (FL-97; its row goes before its file is queued), and a develop artifact (FL-233:
+  // released with its row, so a re-upload that records the same file again keeps it).
+  const retainedRefs = await sql<{ count: string }>`SELECT count(*) FROM (
+    SELECT 1 FROM immich_fork.buddy_backup_reference reference WHERE reference.path = ${path} AND NOT reference.released
+    UNION ALL
+    SELECT 1 FROM immich_fork.asset_physical_file mapping
+    JOIN public.asset asset ON asset.id = mapping."assetId"
+    WHERE mapping."upstreamPath" = ${path}
+    UNION ALL SELECT 1 FROM immich_fork.physical_file physical
+    WHERE physical."canonicalPath" = ${path}
+      AND EXISTS (
+        SELECT 1 FROM immich_fork.asset_physical_file mapping
+        JOIN public.asset asset ON asset.id = mapping."assetId"
+        WHERE mapping."physicalFileId" = physical.id
+      )
+    UNION ALL SELECT 1 FROM public.studio_export_version version WHERE version."outputPath" = ${path}
+    UNION ALL SELECT 1 FROM immich_fork.studio_project_import imported WHERE imported.path = ${path}
+    UNION ALL SELECT 1 FROM immich_fork.studio_generated_resource generated WHERE generated.path = ${path}
+    UNION ALL SELECT 1 FROM immich_fork.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
+    UNION ALL SELECT 1 FROM immich_fork.asset_develop_artifact artifact WHERE artifact.path = ${path}
+    UNION ALL SELECT 1 FROM immich_fork.physical_file_trash trashed WHERE trashed.path = ${path}
+    UNION ALL SELECT 1 FROM public.preservation_package package
+    WHERE package.path = ${path} AND package."removedAt" IS NULL
+    UNION ALL SELECT 1 FROM public.asset_restoration restoration
+    WHERE ${path} IN (
+      restoration."previewBeforePath", restoration."previewAfterPath",
+      restoration."resultPath", restoration."resultPreviewPath"
+    )
+  ) retained`.execute(trx);
+  return (
+    Number(assetRefs.count) +
+    Number(fileRefs.count) +
+    Number(historyRefs.rows[0].count) +
+    Number(retainedRefs.rows[0].count)
+  );
+};
+
+/** Moves (or copies and removes) a file; rejects with ENOENT when the source is gone. */
+export type PhysicalFileTrashMove = (from: string, to: string) => Promise<void>;
+
+/** An original that is not (or no longer) registered as a physical file, described by the asset that held it. */
+export type TrashedOriginal = {
+  checksum: Buffer;
+  sizeInBytes: number;
+  ownerId: string | null;
+  assetId: string | null;
+  originalFileName: string;
+};
+
+/**
+ * Moves an unreferenced original to `<media>/file-trash/<physicalFileId or entry id>/<name>` and records
+ * it, inside the caller's transaction, which holds the path's lock and has counted no reference. A
+ * source already gone is not an error: there is nothing to keep (returns false).
+ */
+export const trashUnreferencedOriginal = async (
+  trx: Transaction<DB>,
+  path: string,
+  move: PhysicalFileTrashMove,
+  entry: {
+    physicalFileId: string | null;
+    checksum: Buffer;
+    sizeInBytes: number;
+    lastOwnerId: string | null;
+    lastAssetId: string | null;
+    originalFileName: string;
+  },
+): Promise<false | { id: string; path: string }> => {
+  const id = randomUUID();
+  const target = StorageCore.getFileTrashPath(entry.physicalFileId ?? id, entry.originalFileName);
+  try {
+    await move(path, target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+  await sql`
+    INSERT INTO immich_fork.physical_file_trash
+      (id, "physicalFileId", path, checksum, "sizeInBytes", "lastOwnerId", "lastAssetId", "originalFileName")
+    VALUES (${id}::uuid, ${entry.physicalFileId}::uuid, ${target}, ${entry.checksum}, ${entry.sizeInBytes}::bigint,
+      ${entry.lastOwnerId}::uuid, ${entry.lastAssetId}::uuid, ${entry.originalFileName})`.execute(trx);
+  return { id, path: target };
 };
 
 export type PhysicalNormalizationAsset = {
@@ -209,6 +351,8 @@ export class PhysicalFileRepository {
     file: { checksum: Buffer; sizeInBytes: number },
     options: {
       exists: (path: string) => Promise<boolean>;
+      /** Moves a file out of the file trash; given, content found there is restored and linked. */
+      untrash?: (from: string, to: string) => Promise<void>;
       ingestion?: { resourceId: string; token: string; ownerId: string };
     },
   ): Promise<{ physicalFile: PhysicalFile; linked: boolean } | undefined> {
@@ -265,6 +409,41 @@ export class PhysicalFileRepository {
             .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
             .where('physicalOriginalFileId', 'is', null)
             .where((eb) => eb.or([eb('id', '=', asUuid(candidate.id)), eb('id', '=', asUuid(asset.id))]))
+            .execute();
+          return { physicalFile, linked: true };
+        }
+      }
+
+      // the content is in the file trash: take that file back out and link to it, never keep two copies
+      if (options.untrash) {
+        const trashed = await sql<{ id: string; path: string }>`
+          SELECT id, path FROM immich_fork.physical_file_trash
+          WHERE checksum = ${file.checksum} AND "sizeInBytes" = ${file.sizeInBytes}::bigint
+          ORDER BY "trashedAt" DESC, id
+          LIMIT 1
+          FOR UPDATE`.execute(trx);
+        const entry = trashed.rows[0];
+        if (entry) {
+          const upload = parse(asset.originalPath);
+          const target = join(upload.dir, `${upload.name}-restored${upload.ext}`);
+          for (const path of [entry.path, target].toSorted()) {
+            await this.lockPath(trx, path);
+          }
+          if (options.ingestion) {
+            await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
+          }
+          await options.untrash(entry.path, target);
+          await sql`DELETE FROM immich_fork.physical_file_trash WHERE id = ${entry.id}::uuid`.execute(trx);
+          const physicalFile = await this.registerOriginal(trx, {
+            canonicalAssetId: asset.id,
+            checksum: file.checksum,
+            path: target,
+            sizeInBytes: file.sizeInBytes,
+          });
+          await trx
+            .updateTable('asset')
+            .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+            .where('id', '=', asUuid(asset.id))
             .execute();
           return { physicalFile, linked: true };
         }
@@ -1207,88 +1386,8 @@ export class PhysicalFileRepository {
     );
   }
 
-  private async countPathReferencesIn(trx: Transaction<DB>, path: string, physicalFileId?: string): Promise<number> {
-    // A path can be the live original of an asset that has no `physical_file`
-    // link at all — both upload-time dedup and the dedup migration point
-    // `asset.originalPath` at a file owned by another asset. Counting only
-    // physical-file links misses those references entirely.
-    const assetRefs = await trx
-      .selectFrom('asset')
-      .select((eb) => eb.fn.countAll<number>().as('count'))
-      .where((eb) =>
-        eb.or([
-          eb('asset.originalPath', '=', path),
-          ...(physicalFileId ? [eb('asset.physicalOriginalFileId', '=', asUuid(physicalFileId))] : []),
-        ]),
-      )
-      .executeTakeFirstOrThrow();
-
-    const fileRefs = await trx
-      .selectFrom('asset_file')
-      .select((eb) => eb.fn.countAll<number>().as('count'))
-      .where((eb) =>
-        eb.or([
-          eb('asset_file.path', '=', path),
-          ...(physicalFileId ? [eb('asset_file.physicalFileId', '=', asUuid(physicalFileId))] : []),
-        ]),
-      )
-      .executeTakeFirstOrThrow();
-
-    // Saved versions remain owners of their rendered files (and a master's lineage sidecar) even
-    // after they leave the current asset projection. A version's source is its asset's original,
-    // which the asset row already protects, so the recorded source path is not a reference.
-    const historyRefs = await sql<{ count: string }>`SELECT count(*) FROM (
-      SELECT 1 FROM immich_fork.video_edit_version v
-      WHERE v."masterPath"=${path} OR v."proxyPath"=${path} OR v."masterPath" || '.lineage.json'=${path}
-        OR EXISTS(SELECT 1 FROM jsonb_array_elements(v.files) f WHERE f->>'path'=${path})
-      UNION ALL SELECT 1 FROM immich_fork.orphaned_records o
-      WHERE o."sourceTable"='video_edit_version' AND (
-        o.payload->>'masterPath'=${path} OR o.payload->>'proxyPath'=${path}
-        OR (o.payload->>'masterPath') || '.lineage.json'=${path}
-        OR EXISTS(SELECT 1 FROM jsonb_array_elements(o.payload->'files') f WHERE f->>'path'=${path}))
-    ) retained`.execute(trx);
-
-    // FL-44 (FN-304): after cutover a live asset's original can be recorded only in its fork
-    // mapping (asset.repository deleteAll resolves `upstreamPath` first), and the fork physical
-    // file keeps the canonical path its sharers resolve to. A mapping of an asset that no longer
-    // exists holds nothing: its row is swept with the asset and must not pin the file forever.
-    // Outputs a Frameleaf feature still serves are owned by their rows the same way: a Studio
-    // export version, a preservation package not yet removed, and a restoration's preview or
-    // result (each clears its path before queueing the file's deletion), a Studio HDR
-    // intermediate (FL-97; its row goes before its file is queued), and a develop artifact (FL-233:
-    // released with its row, so a re-upload that records the same file again keeps it).
-    const retainedRefs = await sql<{ count: string }>`SELECT count(*) FROM (
-      SELECT 1 FROM immich_fork.buddy_backup_reference reference WHERE reference.path = ${path} AND NOT reference.released
-      UNION ALL
-      SELECT 1 FROM immich_fork.asset_physical_file mapping
-      JOIN public.asset asset ON asset.id = mapping."assetId"
-      WHERE mapping."upstreamPath" = ${path}
-      UNION ALL SELECT 1 FROM immich_fork.physical_file physical
-      WHERE physical."canonicalPath" = ${path}
-        AND EXISTS (
-          SELECT 1 FROM immich_fork.asset_physical_file mapping
-          JOIN public.asset asset ON asset.id = mapping."assetId"
-          WHERE mapping."physicalFileId" = physical.id
-        )
-      UNION ALL SELECT 1 FROM public.studio_export_version version WHERE version."outputPath" = ${path}
-      UNION ALL SELECT 1 FROM immich_fork.studio_project_import imported WHERE imported.path = ${path}
-      UNION ALL SELECT 1 FROM immich_fork.studio_generated_resource generated WHERE generated.path = ${path}
-      UNION ALL SELECT 1 FROM immich_fork.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
-      UNION ALL SELECT 1 FROM immich_fork.asset_develop_artifact artifact WHERE artifact.path = ${path}
-      UNION ALL SELECT 1 FROM public.preservation_package package
-      WHERE package.path = ${path} AND package."removedAt" IS NULL
-      UNION ALL SELECT 1 FROM public.asset_restoration restoration
-      WHERE ${path} IN (
-        restoration."previewBeforePath", restoration."previewAfterPath",
-        restoration."resultPath", restoration."resultPreviewPath"
-      )
-    ) retained`.execute(trx);
-    return (
-      Number(assetRefs.count) +
-      Number(fileRefs.count) +
-      Number(historyRefs.rows[0].count) +
-      Number(retainedRefs.rows[0].count)
-    );
+  private countPathReferencesIn(trx: Transaction<DB>, path: string, physicalFileId?: string): Promise<number> {
+    return countPathReferences(trx, path, physicalFileId);
   }
 
   /** Advisory lock guarding one path against concurrent reference changes (`lockFilePath`). */
@@ -1435,8 +1534,13 @@ export class PhysicalFileRepository {
       removedAssetId?: string;
       orphanStudioImport?: { projectId: string; id: string; ownerId: string; checksum: string; sizeBytes: number };
       retiredStudioExport?: { id: string; ownerId: string; checksum: Buffer | null; sizeBytes: number | null };
+      /**
+       * Moves an unreferenced original into the file trash instead of unlinking it. An original is a path
+       * with an `original` physical file row, or `original` here (an unregistered original being removed).
+       */
+      trash?: { move: PhysicalFileTrashMove; original?: TrashedOriginal };
     } = {},
-  ): Promise<{ deleted: boolean; references: number }> {
+  ): Promise<{ deleted: boolean; references: number; trashed?: boolean }> {
     return this.withPathLock(path, async (trx) => {
       if (options.removedAssetId) {
         const kept = await trx
@@ -1493,7 +1597,7 @@ export class PhysicalFileRepository {
 
       const physicalFile = await trx
         .selectFrom('physical_file')
-        .select(['id'])
+        .select(['id', 'type', 'checksum', 'sizeInBytes'])
         .where('path', '=', path)
         .executeTakeFirst();
 
@@ -1508,7 +1612,23 @@ export class PhysicalFileRepository {
         return { deleted: false, references };
       }
 
-      await unlink();
+      // universal storage: an original is never unlinked by a job. Its last copy goes to the file trash,
+      // which only an administrator empties (spec §3.5); generated files are deleted as before.
+      const original = options.trash?.original;
+      const trashed =
+        options.trash && !imported && !exported && (physicalFile?.type === PhysicalFileType.Original || original)
+          ? await trashUnreferencedOriginal(trx, path, options.trash.move, {
+              physicalFileId: physicalFile?.id ?? null,
+              checksum: physicalFile?.checksum ?? original!.checksum,
+              sizeInBytes: physicalFile ? Number(physicalFile.sizeInBytes) : original!.sizeInBytes,
+              lastOwnerId: original?.ownerId ?? null,
+              lastAssetId: original?.assetId ?? options.removedAssetId ?? null,
+              originalFileName: original?.originalFileName ?? parse(path).base,
+            })
+          : undefined;
+      if (!trashed) {
+        await unlink();
+      }
 
       if (imported) {
         // The row is the durable retry intent: retain it through pin deferral and unlink failure.
@@ -1531,7 +1651,7 @@ export class PhysicalFileRepository {
         await trx.deleteFrom('physical_file').where('id', '=', physicalFile.id).execute();
       }
 
-      return { deleted: true, references: 0 };
+      return trashed ? { deleted: true, references: 0, trashed: true } : { deleted: true, references: 0 };
     });
   }
 
