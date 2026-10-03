@@ -1,8 +1,9 @@
 ARG DEVICE=cpu
 
-FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder-cpu
+# Native CPU semantic masks share the existing Torch 2.5 / vision 0.20 Python 3.12 ABI.
+FROM python:3.12-slim-trixie@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS builder-cpu
 
-FROM builder-cpu AS builder-openvino
+FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder-openvino
 
 # The fork's Qwen stack uses torch 2.5 / torchvision 0.20, which require Python <=3.12.
 # Use the same CUDA base in both stages and a portable Python installation.
@@ -46,7 +47,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --extra ${DEVICE} --no-dev --no-editable --no-install-project --compile-bytecode --no-progress --active --link-mode copy
 
-FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS prod-cpu
+FROM python:3.12-slim-trixie@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS prod-cpu
 
 ENV MACHINE_LEARNING_MODEL_ARENA=false
 
@@ -86,7 +87,7 @@ RUN apt-get update && apt-get install --no-install-recommends -yqq migraphx miop
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-FROM prod-cpu AS prod-armnn
+FROM python:3.13-slim-trixie@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS prod-armnn
 
 ENV LD_LIBRARY_PATH=/opt/armnn \
     MACHINE_LEARNING_MODEL_ARENA=false
@@ -152,6 +153,9 @@ RUN echo "hard core 0" >> /etc/security/limits.conf && \
 COPY --from=builder /opt/venv /opt/venv
 COPY scripts/healthcheck.py .
 COPY immich_ml immich_ml
+COPY scripts/verify-semantic-runtime.py scripts/provision-semantic-models.py scripts/qualify-semantic-models.py ./scripts/
+# Only CPU/CUDA advertise this native runtime; no weights are fetched during image construction.
+RUN case "$DEVICE" in cpu|cuda) python scripts/verify-semantic-runtime.py ;; esac
 
 ARG BUILD_ID
 ARG BUILD_IMAGE

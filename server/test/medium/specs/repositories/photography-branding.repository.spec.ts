@@ -1,5 +1,5 @@
 import { type Kysely, sql } from 'kysely';
-import type { PhotographyBrand, StoredShoot } from 'src/dtos/photography-workspace.dto.js';
+import { type PhotographyBrand, PhotographyBrandSchema, type StoredShoot } from 'src/dtos/photography-workspace.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -23,7 +23,7 @@ it('merges legacy shoot writes and brand writes without erasing either and enfor
   const { user: other } = await ctx.newUser();
   const { album } = await ctx.newAlbum({ ownerId: user.id });
   const sut = new PhotographyWorkspaceRepository(db);
-  const brand: PhotographyBrand = {
+  const brand: PhotographyBrand = PhotographyBrandSchema.parse({
     name: 'North Studio',
     tagline: '',
     email: '',
@@ -38,7 +38,7 @@ it('merges legacy shoot writes and brand writes without erasing either and enfor
     watermarkOpacity: 45,
     watermarkPosition: 'bottom-right',
     watermarkSize: 6,
-  };
+  });
   const shoot: StoredShoot = {
     id: newUuid(),
     albumId: album.id,

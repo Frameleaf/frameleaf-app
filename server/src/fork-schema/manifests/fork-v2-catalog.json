@@ -1645,6 +1645,46 @@
       "identity": "immich_fork.pet_recognition_run.updatedAt"
     },
     {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_studio_site.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_studio_site.revision"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.photography_studio_site.value"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_workflow.albumId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.photography_workflow.createdAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_workflow.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_workflow.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_workflow.revision"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.photography_workflow.updatedAt"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.photography_workflow.value"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "immich_fork.physical_file.canonicalAssetId"
     },
@@ -8619,6 +8659,22 @@
       "identity": "immich_fork.pet_recognition_run.pet_recognition_run_status_check"
     },
     {
+      "definition": "CHECK (jsonb_typeof(value) = 'object'::text)",
+      "identity": "immich_fork.photography_studio_site.photography_site_value_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"ownerId\")",
+      "identity": "immich_fork.photography_studio_site.photography_studio_site_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.photography_workflow.photography_workflow_pkey"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(value) = 'object'::text AND octet_length(value::text) <= 20000000)",
+      "identity": "immich_fork.photography_workflow.photography_workflow_value_check"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.physical_file.physical_file_pkey"
     },
@@ -10708,6 +10764,7 @@
     "0000000000212-AssetDevelopArtifacts",
     "0000000000213-ICloudSourceIdentity",
     "0000000000214-BuddyBackupReferences",
+    "0000000000215-PhotographyWorkflow",
     "0000000000216-ICloudIdentityAudit",
     "0000000000217-ICloudIdentityReuse"
   ],
@@ -12285,6 +12342,18 @@
     {
       "definition": "CREATE UNIQUE INDEX pet_recognition_run_pkey ON immich_fork.pet_recognition_run USING btree (\"ownerId\")",
       "identity": "immich_fork.pet_recognition_run.pet_recognition_run_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX photography_studio_site_pkey ON immich_fork.photography_studio_site USING btree (\"ownerId\")",
+      "identity": "immich_fork.photography_studio_site.photography_studio_site_pkey"
+    },
+    {
+      "definition": "CREATE INDEX photography_workflow_owner_idx ON immich_fork.photography_workflow USING btree (\"ownerId\")",
+      "identity": "immich_fork.photography_workflow.photography_workflow_owner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX photography_workflow_pkey ON immich_fork.photography_workflow USING btree (id)",
+      "identity": "immich_fork.photography_workflow.photography_workflow_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX physical_file_canonical_path_uq ON immich_fork.physical_file USING btree (\"canonicalPath\")",
@@ -14793,6 +14862,7 @@
     "function_album_user_after_insert",
     "function_album_user_delete",
     "function_album_user_delete_audit",
+    "function_asset_backup_deletion_capture",
     "function_asset_delete_audit",
     "function_asset_edit_audit",
     "function_asset_edit_delete",
@@ -14810,7 +14880,14 @@
     "function_partner_delete_audit",
     "function_person_delete_audit",
     "function_person_group_delete_audit",
+    "function_pet_delete_audit",
+    "function_pet_observation_delete_audit",
+    "function_pet_observation_update_id",
+    "function_pet_update_id",
     "function_stack_delete_audit",
+    "function_tag_asset_delete_audit",
+    "function_tag_asset_update_id",
+    "function_tag_delete_audit",
     "function_updated_at",
     "function_user_delete_audit",
     "function_user_metadata_audit",
@@ -14848,6 +14925,7 @@
     "trigger_album_user_delete_audit",
     "trigger_album_user_updatedAt",
     "trigger_api_key_updatedAt",
+    "trigger_asset_backup_deletion_capture_trigger",
     "trigger_asset_delete_audit",
     "trigger_asset_edit_audit",
     "trigger_asset_edit_delete",
@@ -14881,6 +14959,10 @@
     "trigger_person_group_delete_audit",
     "trigger_person_group_updatedAt",
     "trigger_person_updatedAt",
+    "trigger_pet_delete_audit",
+    "trigger_pet_observation_delete_audit",
+    "trigger_pet_observation_update_id",
+    "trigger_pet_update_id",
     "trigger_physical_file_updatedAt",
     "trigger_preservation_item_updatedAt",
     "trigger_preservation_package_updatedAt",
@@ -14895,6 +14977,9 @@
     "trigger_studio_preview_frame_updatedAt",
     "trigger_studio_project_comment_updatedAt",
     "trigger_studio_project_updatedAt",
+    "trigger_tag_asset_delete_audit",
+    "trigger_tag_asset_update_id",
+    "trigger_tag_delete_audit",
     "trigger_tag_updatedAt",
     "trigger_user_delete_audit",
     "trigger_user_metadata_audit",
@@ -14903,23 +14988,7 @@
     "trigger_video_moment_frame_updatedAt",
     "trigger_video_moment_index_updatedAt",
     "trigger_video_moment_updatedAt",
-    "trigger_workflow_updatedAt",
-    "function_tag_asset_delete_audit",
-    "function_tag_asset_update_id",
-    "function_tag_delete_audit",
-    "trigger_tag_asset_delete_audit",
-    "trigger_tag_asset_update_id",
-    "trigger_tag_delete_audit",
-    "function_pet_delete_audit",
-    "function_pet_observation_delete_audit",
-    "function_pet_observation_update_id",
-    "function_pet_update_id",
-    "trigger_pet_delete_audit",
-    "trigger_pet_observation_delete_audit",
-    "trigger_pet_observation_update_id",
-    "trigger_pet_update_id",
-    "function_asset_backup_deletion_capture",
-    "trigger_asset_backup_deletion_capture_trigger"
+    "trigger_workflow_updatedAt"
   ],
   "schemas": [
     {
@@ -15120,6 +15189,14 @@
     {
       "definition": "table",
       "identity": "immich_fork.pet_recognition_run"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.photography_studio_site"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.photography_workflow"
     },
     {
       "definition": "table",
