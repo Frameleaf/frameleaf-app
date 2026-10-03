@@ -70,7 +70,7 @@ export class ICloudAuditService {
     if (
       operation.snapshot.task !== 'identity-audit' ||
       hasWeeklyAuthorityInput(operation.snapshot) ||
-      (operation.snapshot.purpose!==undefined && operation.snapshot.purpose!=='manual-session') ||
+      (operation.snapshot.purpose !== undefined && operation.snapshot.purpose !== 'manual-session') ||
       !Array.isArray(ids) ||
       ids.length > 100 ||
       ids.some((id) => typeof id !== 'string' || !/^[\da-f-]{36}$/i.test(id))

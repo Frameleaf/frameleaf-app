@@ -100,9 +100,13 @@ describe('catalog manifests', () => {
     // (FL-233), iCloud source identities, claims, audit and reuse receipts (FL-296),
     // and photography workflows and studio sites (FL-283), in the integrated catalog.
     expect(getCatalogTableLocks(fork)).toHaveLength(227);
-    expect(getCatalogTableLocks(fork)).toEqual(expect.arrayContaining([
-      'immich_fork.icloud_weekly_grant', 'immich_fork.icloud_weekly_cohort', 'immich_fork.icloud_weekly_member',
-    ]));
+    expect(getCatalogTableLocks(fork)).toEqual(
+      expect.arrayContaining([
+        'immich_fork.icloud_weekly_grant',
+        'immich_fork.icloud_weekly_cohort',
+        'immich_fork.icloud_weekly_member',
+      ]),
+    );
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
         'public.pet_audit',
