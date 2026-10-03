@@ -6,6 +6,7 @@ import { mapUser } from 'src/dtos/user.dto.js';
 import { Permission, PushEventType } from 'src/enum.js';
 import { PartnerDirection, PartnerIds } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { startPartnerBackfill, stopPartnerSharing } from 'src/services/partner-copy.service.js';
 
 @Injectable()
 export class PartnerService extends BaseService {
@@ -23,6 +24,12 @@ export class PartnerService extends BaseService {
     }
 
     const partner = await this.partnerRepository.create(partnerId);
+    // FL-326: the partner receives their own copies of this library
+    await startPartnerBackfill(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      sharedWithId,
+    );
     // FL-228: the new partner gained access to this library
     await this.eventRepository.emit('PushNotify', {
       type: PushEventType.AccessChanged,
@@ -42,6 +49,8 @@ export class PartnerService extends BaseService {
     }
 
     await this.partnerRepository.remove(partnerId);
+    // FL-326: the former partner keeps every copy received; following and new copies stop
+    await stopPartnerSharing({ partnerOrigin: this.partnerOriginRepository }, auth.user.id, sharedWithId);
 
     // FL-54: revocation takes effect on open pages too. Access is always checked live on the server,
     // so this only tells the clients to drop what they already loaded (timeline months, the partner

@@ -782,6 +782,13 @@ export class JobRepository {
         }
         return { ...(dedupeKey && { jobId: `push/${dedupeKey}` }), ...(delayMs && { delay: delayMs }) };
       }
+      // FL-326: one backfill per partnership and one copy per source and library at a time
+      case JobName.PartnerBackfill: {
+        return { deduplication: { id: `partner-backfill/${item.data.sharedById}/${item.data.sharedWithId}` } };
+      }
+      case JobName.PartnerCopyAsset: {
+        return { deduplication: { id: `partner-copy/${item.data.sourceAssetId}/${item.data.targetOwnerId}` } };
+      }
       case JobName.PushBackupStaleCheck: {
         return { deduplication: { id: JobName.PushBackupStaleCheck } };
       }

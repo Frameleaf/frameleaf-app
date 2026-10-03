@@ -1,6 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { createHash } from 'node:crypto';
+import { AssetFileType } from 'src/enum.js';
+import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 
 /** What kind of copy an origin row describes (FL-326, spec §4.2). */
@@ -55,6 +59,34 @@ export type PersonOriginRow = {
 };
 
 export type PersonOriginInput = Omit<PersonOriginRow, 'overriddenFields' | 'following'>;
+
+/** What a partner copy of one asset is made from (spec §4.3). */
+export type AssetCopyInput = {
+  sourceAssetId: string;
+  ownerId: string;
+  rootOwnerId: string;
+  partnerSharedById: string;
+  /** The source's original `physical_file`; the copy links to it, nothing on disk is written. */
+  original: { id: string; path: string };
+};
+
+/** Why a source may not be copied yet (Task 13 lifts the Locked and sensitive skip). */
+export type AssetCopyBlockers = { locked: boolean; sensitive: boolean };
+
+const GENERATED_FILE_TYPES = [
+  AssetFileType.Thumbnail,
+  AssetFileType.Preview,
+  AssetFileType.FullSize,
+  AssetFileType.EncodedVideo,
+];
+
+const COPY_REFUSAL = 'Partner sharing is unavailable during database handoff';
+
+/** Serializes copies of the same content into the same library (the one-copy rule under concurrency). */
+const lockLibraryContent = async (trx: Transaction<DB>, ownerId: string, checksum: Buffer) => {
+  const key = createHash('sha1').update(ownerId).update(checksum).digest().readBigInt64BE(0);
+  await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
+};
 
 export enum PartnerBackfillState {
   Pending = 'pending',
@@ -245,6 +277,206 @@ export class PartnerOriginRepository {
       ) AS present
     `.execute(this.db);
     return rows[0]?.present ?? false;
+  }
+
+  /** Locked or sensitive evidence on a source, from either store (positive evidence anywhere counts). */
+  async getCopyBlockers(assetId: string): Promise<AssetCopyBlockers> {
+    const { rows } = await sql<AssetCopyBlockers>`
+      SELECT
+        (asset.visibility = 'locked' OR EXISTS (SELECT 1 FROM asset_lock WHERE asset_lock."assetId" = asset.id)) AS locked,
+        (asset.is_nsfw OR EXISTS (
+          SELECT 1 FROM immich_fork.asset_privacy privacy WHERE privacy."assetId" = asset.id AND privacy."isNsfw"
+        )) AS sensitive
+      FROM asset
+      WHERE asset.id = ${assetId}::uuid
+    `.execute(this.db);
+    return rows[0] ?? { locked: false, sensitive: false };
+  }
+
+  /**
+   * Create `ownerId`'s copy of one asset (spec §4.3): a new asset row of theirs linked to the source's
+   * original and generated files, with the source's exif, smart-search embedding, OCR and job status
+   * (so no machine learning runs again), and its `asset_origin` row. All in one transaction that holds
+   * the file paths' locks (so a concurrent FileDelete cannot count a path unreferenced in between) and
+   * a per-library content lock, re-checking the one-copy rule under it.
+   *
+   * Favorites, trash, stacks, duplicates, edits and the Live Photo pairing are never copied: the copy
+   * starts as the owner's own unedited, unfavorited item. The library is charged the full file size.
+   *
+   * Returns the copy's id, or undefined when the library already holds the content.
+   */
+  async insertAssetCopy(input: AssetCopyInput): Promise<string | undefined> {
+    return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, COPY_REFUSAL);
+      const source = await trx.selectFrom('asset').selectAll().where('id', '=', input.sourceAssetId).executeTakeFirst();
+      if (!source) {
+        return;
+      }
+
+      const files = await trx
+        .selectFrom('asset_file')
+        .selectAll()
+        .where('assetId', '=', source.id)
+        .where('isEdited', '=', false)
+        .where('type', 'in', GENERATED_FILE_TYPES)
+        .execute();
+      for (const path of [...new Set([input.original.path, ...files.map((file) => file.path)])].toSorted()) {
+        await lockFilePath(trx, path);
+      }
+
+      const physical = await trx
+        .selectFrom('physical_file')
+        .select('id')
+        .where('id', '=', input.original.id)
+        .where('path', '=', input.original.path)
+        .executeTakeFirst();
+      if (!physical) {
+        throw new ConflictException('Partner copy source file changed');
+      }
+
+      await lockLibraryContent(trx, input.ownerId, source.checksum);
+      const existing = await trx
+        .selectFrom('asset')
+        .select('id')
+        .where('ownerId', '=', input.ownerId)
+        .where('checksum', '=', source.checksum)
+        .executeTakeFirst();
+      if (existing) {
+        return;
+      }
+
+      const {
+        id: _id,
+        createdAt: _createdAt,
+        updatedAt: _updatedAt,
+        updateId: _updateId,
+        ...columns
+      } = source as typeof source & { createId?: string };
+      delete (columns as { createId?: string }).createId;
+      const copy = await trx
+        .insertInto('asset')
+        .values({
+          ...columns,
+          ownerId: input.ownerId,
+          originalPath: input.original.path,
+          physicalOriginalFileId: input.original.id,
+          libraryId: null,
+          isExternal: false,
+          isOffline: false,
+          isFavorite: false,
+          isEdited: false,
+          deletedAt: null,
+          stackId: null,
+          duplicateId: null,
+          livePhotoVideoId: null,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+
+      const exif = await trx.selectFrom('asset_exif').selectAll().where('assetId', '=', source.id).executeTakeFirst();
+      if (exif) {
+        const { updatedAt: _exifUpdatedAt, updateId: _exifUpdateId, ...exifColumns } = exif;
+        await trx
+          .insertInto('asset_exif')
+          .values({ ...exifColumns, assetId: copy.id })
+          .execute();
+      }
+
+      if (files.length > 0) {
+        await trx
+          .insertInto('asset_file')
+          .values(
+            files.map((file) => ({
+              assetId: copy.id,
+              type: file.type,
+              path: file.path,
+              physicalFileId: file.physicalFileId,
+              isProgressive: file.isProgressive,
+              isTransparent: file.isTransparent,
+            })),
+          )
+          .execute();
+      }
+
+      await sql`
+        INSERT INTO smart_search ("assetId", embedding)
+        SELECT ${copy.id}::uuid, embedding FROM smart_search WHERE "assetId" = ${source.id}::uuid
+      `.execute(trx);
+      const ocr = await trx.selectFrom('asset_ocr').selectAll().where('assetId', '=', source.id).execute();
+      if (ocr.length > 0) {
+        await trx
+          .insertInto('asset_ocr')
+          .values(
+            ocr.map(({ id: _ocrId, updatedAt: _ocrUpdatedAt, updateId: _ocrUpdateId, ...row }) => ({
+              ...row,
+              assetId: copy.id,
+            })),
+          )
+          .execute();
+      }
+      await sql`
+        INSERT INTO ocr_search ("assetId", text)
+        SELECT ${copy.id}::uuid, text FROM ocr_search WHERE "assetId" = ${source.id}::uuid
+      `.execute(trx);
+      const jobStatus = await trx
+        .selectFrom('asset_job_status')
+        .selectAll()
+        .where('assetId', '=', source.id)
+        .executeTakeFirst();
+      await trx
+        .insertInto('asset_job_status')
+        .values({ ...jobStatus, assetId: copy.id })
+        .onConflict((oc) => oc.column('assetId').doNothing())
+        .execute();
+      // the fork's checksum evidence names the same file, so the copy carries it too
+      await sql`
+        INSERT INTO immich_fork.asset_checksum
+        SELECT (jsonb_populate_record(NULL::immich_fork.asset_checksum,
+          to_jsonb(checksum) || jsonb_build_object('assetId', ${copy.id}::uuid))).*
+        FROM immich_fork.asset_checksum checksum
+        WHERE checksum."assetId" = ${source.id}::uuid
+        ON CONFLICT DO NOTHING
+      `.execute(trx);
+
+      await this.createAssetOrigin(
+        {
+          id: copy.id,
+          sourceId: source.id,
+          ownerId: input.ownerId,
+          rootOwnerId: input.rootOwnerId,
+          partnerSharedById: input.partnerSharedById,
+        },
+        trx,
+      );
+
+      // spec §4.3: every library is charged the full size; copying never fails on quota
+      await sql`
+        UPDATE "user"
+        SET "quotaUsageInBytes" = "quotaUsageInBytes" + coalesce(${exif?.fileSizeInByte ?? null}::bigint, 0)
+        WHERE id = ${input.ownerId}::uuid
+      `.execute(trx);
+
+      return copy.id;
+    });
+  }
+
+  /** One page of `ownerId`'s assets after `cursor`, in id order, for the backfill. */
+  async getOwnerAssetIdsAfter(ownerId: string, cursor: string | null, limit: number): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      SELECT id FROM asset
+      WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL
+        ${cursor ? sql`AND id > ${cursor}::uuid` : sql``}
+      ORDER BY id
+      LIMIT ${limit}
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
+
+  async countOwnerAssets(ownerId: string): Promise<number> {
+    const { rows } = await sql<{ count: number }>`
+      SELECT count(*)::int AS count FROM asset WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL
+    `.execute(this.db);
+    return rows[0]?.count ?? 0;
   }
 
   async getBackfill(sharedById: string, sharedWithId: string): Promise<PartnerBackfillRow | undefined> {
