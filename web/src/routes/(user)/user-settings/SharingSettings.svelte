@@ -7,12 +7,15 @@
    * `ClusterGroup*Modal` and generic `showDialog` confirms.
    *
    * Everything it did is kept: recognition group members, leaving, invitations sent and received
-   * (review with the group's members, accept, decline, cancel), re-running face recognition, and
-   * per-partner "Show in timeline" and the fork's location sharing.
+   * (review with the group's members, accept, decline, cancel) and re-running face recognition.
+   *
+   * FL-326 (partner sharing v2): a partner receives their own copies, so the partner card lists what
+   * they receive and how far the first copy has come; the timeline and location toggles are gone.
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+  import { backfillProgress, PARTNER_SHARED_ITEMS } from '$lib/frameleaf/partner-sharing';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
@@ -35,13 +38,16 @@
     type PartnerResponseDto,
     type UserResponseDto,
   } from '@immich/sdk';
+  import { Icon } from '@immich/ui';
   import { onMount } from 'svelte';
-  import { t, type Translations } from 'svelte-i18n';
+  import { locale, t, type Translations } from 'svelte-i18n';
 
   type PartnerSharing = {
     user: UserResponseDto;
     sharedByMe: boolean;
     sharedWithMe: boolean;
+    /** The first copy of my library into theirs (FL-326). */
+    backfill?: PartnerResponseDto['backfill'];
   };
 
   let clusterGroupId: string = $state('');
@@ -140,6 +146,7 @@
       user: candidate,
       sharedByMe: true,
       sharedWithMe: false,
+      backfill: candidate.backfill,
     }));
     for (const candidate of sharedWith) {
       const existing = next.find((p) => p.user.id === candidate.id);
@@ -279,6 +286,17 @@
         : $t('frameleaf_people_sharing.review_title'),
   );
   const selectId = $props.id();
+  const count = (value: number) => value.toLocaleString($locale ?? 'en-US');
+  const progressLabel = (progress: NonNullable<ReturnType<typeof backfillProgress>>) =>
+    progress.state === 'running'
+      ? $t('frameleaf_partner_sharing.progress_running', {
+          values: { done: count(Math.min(progress.done, progress.total)), total: count(progress.total) },
+        })
+      : progress.state === 'done'
+        ? $t('frameleaf_partner_sharing.progress_done', { values: { total: count(progress.total) } })
+        : progress.state === 'stopped'
+          ? $t('frameleaf_partner_sharing.progress_stopped', { values: { done: count(progress.done) } })
+          : $t('frameleaf_partner_sharing.progress_queued');
 </script>
 
 <div class="cc-sharing-workspace">
@@ -401,6 +419,30 @@
                 ? $t('frameleaf_people_sharing.shares_with_you')
                 : $t('frameleaf_people_sharing.does_not_share')}
             </p>
+            {#if partner.sharedByMe}
+              <ul class="cc-partner-shared" aria-label={$t('frameleaf_partner_sharing.receives')}>
+                {#each PARTNER_SHARED_ITEMS as item (item.id)}
+                  <li>
+                    <Icon icon={item.icon} size="15" aria-hidden />{$t(`frameleaf_partner_sharing.shared_${item.id}`)}
+                  </li>
+                {/each}
+              </ul>
+              {@const progress = backfillProgress(partner.backfill)}
+              {#if progress}
+                <div class="cc-partner-progress" data-state={progress.state}>
+                  <div
+                    role="progressbar"
+                    aria-label={$t('frameleaf_partner_sharing.progress_label')}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={progress.percent}
+                  >
+                    <span style:width="{progress.percent}%"></span>
+                  </div>
+                  <small>{progressLabel(progress)}</small>
+                </div>
+              {/if}
+            {/if}
           </div>
           {#if partner.sharedByMe}
             <button type="button" class="button" disabled={working} onclick={() => stopSharing(partner)}>
@@ -502,6 +544,46 @@
     flex-wrap: wrap;
     gap: 8px;
     padding: 8px 0;
+  }
+  /* command-center.css .cc-partner-shared / .cc-partner-progress (FL-326) */
+  .cc-partner-shared {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 11px;
+    color: var(--fl-muted);
+  }
+  .cc-partner-shared li {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .cc-partner-progress {
+    display: grid;
+    gap: 5px;
+    margin-top: 10px;
+    max-width: 360px;
+  }
+  .cc-partner-progress [role='progressbar'] {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--fl-border);
+    overflow: hidden;
+  }
+  .cc-partner-progress [role='progressbar'] span {
+    display: block;
+    height: 100%;
+    background: var(--fl-accent);
+  }
+  .cc-partner-progress[data-state='stopped'] [role='progressbar'] span {
+    background: var(--fl-muted);
+  }
+  .cc-partner-progress small {
+    font-size: 11px;
+    color: var(--fl-muted);
   }
   .cc-subtle {
     color: var(--fl-muted);

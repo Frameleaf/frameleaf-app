@@ -7754,7 +7754,29 @@ export type FrameleafAccountLinkResponseDto = {
     linked: boolean;
     linkedAt: string | null;
 };
-export type PartnerResponseDto = UserResponseDto;
+export type PartnerBackfillDto = {
+    /** Items copied so far */
+    done: number;
+    /** Where the first copy stands */
+    state: State4;
+    /** Items to copy */
+    total: number;
+};
+export type PartnerResponseDto = {
+    avatarColor: UserAvatarColor;
+    /** FL-326: copy progress of the library shared this way; null when it was never copied */
+    backfill?: (PartnerBackfillDto) | null;
+    /** User email */
+    email: string;
+    /** User ID */
+    id: string;
+    /** User name */
+    name: string;
+    /** Profile change date */
+    profileChangedAt: string;
+    /** Profile image path */
+    profileImagePath: string;
+};
 export type PartnerCreateDto = {
     /** User ID to share with */
     sharedWithId: string;
@@ -8963,7 +8985,7 @@ export type PhotographyWorkflowDto = {
         processing: Processing;
         proofRevisionId: string | null;
         rating: number | null;
-        state: State4;
+        state: State5;
         withheld: boolean;
     }[];
     chapters: {
@@ -9739,7 +9761,7 @@ export type PhotographyInvitationDto = {
             processing: Processing;
             proofRevisionId: string | null;
             rating: number | null;
-            state: State4;
+            state: State5;
             withheld: boolean;
         }[];
         chapters: {
@@ -28536,6 +28558,12 @@ export enum PartnerDirection {
     SharedBy = "shared-by",
     SharedWith = "shared-with"
 }
+export enum State4 {
+    Pending = "pending",
+    Running = "running",
+    Done = "done",
+    Stopped = "stopped"
+}
 export enum PersonCorrectionAction {
     Reassign = "reassign",
     NewPerson = "new-person",
@@ -28848,7 +28876,7 @@ export enum Layout {
     Grid = "grid",
     Slideshow = "slideshow"
 }
-export enum State4 {
+export enum State5 {
     Imported = "imported",
     Selected = "selected",
     ApprovalRequested = "approval-requested",

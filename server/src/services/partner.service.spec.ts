@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { PushEventType } from 'src/enum.js';
+import { PartnerBackfillState } from 'src/repositories/partner-origin.repository.js';
 import { PartnerDirection } from 'src/repositories/partner.repository.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -14,6 +15,7 @@ describe(PartnerService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PartnerService));
+    mocks.partnerOrigin.getBackfill.mockResolvedValue(undefined);
   });
 
   it('should work', () => {
@@ -21,6 +23,41 @@ describe(PartnerService.name, () => {
   });
 
   describe('search', () => {
+    it('shows the copy progress of the libraries shared each way (FL-326)', async () => {
+      const user1 = UserFactory.create();
+      const user2 = UserFactory.create();
+      const sharedWithUser2 = PartnerFactory.from().sharedBy(user1).sharedWith(user2).build();
+      const auth = AuthFactory.create({ id: user1.id });
+      mocks.partner.getAll.mockResolvedValue([getForPartner(sharedWithUser2)]);
+      mocks.partnerOrigin.getBackfill.mockResolvedValue({
+        sharedById: user1.id,
+        sharedWithId: user2.id,
+        state: PartnerBackfillState.Running,
+        cursor: null,
+        total: 3200,
+        done: 1240,
+      });
+
+      const [partner] = await sut.search(auth, { direction: PartnerDirection.SharedBy });
+
+      expect(mocks.partnerOrigin.getBackfill).toHaveBeenCalledWith(user1.id, user2.id);
+      expect(partner).toMatchObject({ id: user2.id, backfill: { state: 'running', total: 3200, done: 1240 } });
+    });
+
+    it('reports no progress for a partnership that was never copied', async () => {
+      const user1 = UserFactory.create();
+      const user2 = UserFactory.create();
+      const sharedWithUser1 = PartnerFactory.from().sharedBy(user2).sharedWith(user1).build();
+      mocks.partner.getAll.mockResolvedValue([getForPartner(sharedWithUser1)]);
+
+      const [partner] = await sut.search(AuthFactory.create({ id: user1.id }), {
+        direction: PartnerDirection.SharedWith,
+      });
+
+      expect(mocks.partnerOrigin.getBackfill).toHaveBeenCalledWith(user2.id, user1.id);
+      expect(partner.backfill).toBeNull();
+    });
+
     it("should return a list of partners with whom I've shared my library", async () => {
       const user1 = UserFactory.create();
       const user2 = UserFactory.create();
