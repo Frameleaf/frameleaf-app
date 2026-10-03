@@ -810,26 +810,34 @@ export class BuddyBackupService {
         const message = waiting
           ? error.message
           : 'Backup is incomplete. Check required mounts, source integrity, recovery keys, and local staging space.';
-        await this.repository.update((current) => ({
-          ...current,
-          run: current.run && {
-            ...current.run,
-            state: waiting
-              ? error.status === 507
-                ? 'waiting-quota'
-                : error.status === 401 || error.status === 403
-                  ? 'waiting-authorization'
-                  : 'waiting-peer'
-              : 'incomplete',
-            error: message,
-          },
-        }));
-        if (waiting)
-          await this.operations.requeue(id, token, {
+        // Only the claim owner may settle this outage. A late response from a lost
+        // claim must not overwrite the replacement worker's durable status.
+        if (
+          waiting &&
+          !(await this.operations.requeue(id, token, {
             delayMs: 60_000 + Math.floor(Math.random() * 60_000),
             returnAttempt: true,
-          });
-        else {
+          }))
+        )
+          return;
+        await this.repository.update((current) => ({
+          ...current,
+          run:
+            current.run?.id === id
+              ? {
+                  ...current.run,
+                  state: waiting
+                    ? error.status === 507
+                      ? 'waiting-quota'
+                      : error.status === 401 || error.status === 403
+                        ? 'waiting-authorization'
+                        : 'waiting-peer'
+                    : 'incomplete',
+                  error: message,
+                }
+              : current.run,
+        }));
+        if (!waiting) {
           await this.operations.fail(id, token, { error: message, errorCode: 'buddy_incomplete' }, { retry: false });
           await this.capture.reconcile();
         }
