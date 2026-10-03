@@ -367,6 +367,105 @@ describe(PhysicalFileRepository.name, () => {
     });
   });
 
+  describe('linkUploadedOriginal (universal storage)', () => {
+    const exists = () => Promise.resolve(true);
+    const newUpload = async (ctx: MediumTestContext, checksum: Buffer, dto: object = {}) => {
+      const { user } = await ctx.newUser();
+      return newAssetWithSize(ctx, user.id, { checksum, ...dto });
+    };
+    const originalOf = (id: string) =>
+      defaultDatabase
+        .selectFrom('asset')
+        .select(['originalPath', 'physicalOriginalFileId'])
+        .where('id', '=', id)
+        .executeTakeFirstOrThrow();
+
+    it('links an upload to the file another library already holds, whoever owns it', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const existing = await newUpload(ctx, checksum);
+      const upload = await newUpload(ctx, checksum);
+
+      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, { exists });
+
+      expect(result).toMatchObject({
+        linked: true,
+        physicalFile: { canonicalAssetId: existing.id, path: existing.originalPath },
+      });
+      await expect(originalOf(upload.id)).resolves.toEqual({
+        originalPath: existing.originalPath,
+        physicalOriginalFileId: result!.physicalFile.id,
+      });
+      await expect(originalOf(existing.id)).resolves.toEqual({
+        originalPath: existing.originalPath,
+        physicalOriginalFileId: result!.physicalFile.id,
+      });
+    });
+
+    it('registers new content as its own primary file', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const upload = await newUpload(ctx, checksum);
+
+      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, { exists });
+
+      expect(result).toMatchObject({
+        linked: false,
+        physicalFile: { canonicalAssetId: upload.id, path: upload.originalPath, type: PhysicalFileType.Original },
+      });
+    });
+
+    it('never links to an external-library file, a size mismatch or a file missing on disk', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const { user } = await ctx.newUser();
+      const library = await defaultDatabase
+        .insertInto('library')
+        .values({ name: 'External', ownerId: user.id, importPaths: [], exclusionPatterns: [] })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await newAssetWithSize(ctx, user.id, { checksum, isExternal: true, libraryId: library.id });
+      const missing = await newUpload(ctx, checksum);
+      const upload = await newUpload(ctx, checksum);
+
+      const result = await sut.linkUploadedOriginal(
+        upload.id,
+        { checksum, sizeInBytes: 1000 },
+        { exists: (path) => Promise.resolve(path !== missing.originalPath) },
+      );
+
+      expect(result).toMatchObject({ linked: false, physicalFile: { canonicalAssetId: upload.id } });
+      await expect(originalOf(missing.id)).resolves.toMatchObject({ physicalOriginalFileId: null });
+    });
+
+    it('stores identical new content uploaded by two users at once as one file (Review Focus 1)', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const first = await newUpload(ctx, checksum);
+      const second = await newUpload(ctx, checksum);
+
+      const results = await Promise.all([
+        sut.linkUploadedOriginal(first.id, { checksum, sizeInBytes: 1000 }, { exists }),
+        sut.linkUploadedOriginal(second.id, { checksum, sizeInBytes: 1000 }, { exists }),
+      ]);
+
+      const files = await defaultDatabase
+        .selectFrom('physical_file')
+        .selectAll()
+        .where('checksum', '=', checksum)
+        .execute();
+      expect(files).toHaveLength(1);
+      expect(results.map((result) => result!.physicalFile.id)).toEqual([files[0].id, files[0].id]);
+      // exactly one upload keeps its file; the other's temporary upload is released
+      expect(results.filter((result) => result!.linked)).toHaveLength(1);
+      const rows = await Promise.all([originalOf(first.id), originalOf(second.id)]);
+      expect(rows).toEqual([
+        { originalPath: files[0].path, physicalOriginalFileId: files[0].id },
+        { originalPath: files[0].path, physicalOriginalFileId: files[0].id },
+      ]);
+    });
+  });
+
   describe('getCanonicalGeneratedFile', () => {
     it('resolves the master-owned generated file only for linked duplicates', async () => {
       const { ctx, sut } = setup();
