@@ -259,6 +259,21 @@ export class MediaService extends BaseService {
     return JobStatus.Success;
   }
 
+  /** The generated file types this asset shares with a different primary asset (or one awaiting handover). */
+  private async getSharedGeneratedFileTypes(asset: { id: string; files: AssetFile[] }): Promise<Set<AssetFileType>> {
+    const shared = new Set<AssetFileType>();
+    for (const file of asset.files ?? []) {
+      if (file.isEdited || !file.physicalFileId) {
+        continue;
+      }
+      const physicalFile = await this.physicalFileRepository.getPhysicalFile(file.physicalFileId);
+      if (physicalFile && physicalFile.canonicalAssetId !== asset.id) {
+        shared.add(file.type);
+      }
+    }
+    return shared;
+  }
+
   @OnJob({ name: JobName.AssetFileMigration, queue: QueueName.Migration })
   async handleAssetMigration({ id }: JobOf<JobName.AssetFileMigration>): Promise<JobStatus> {
     const { image } = await this.getConfig({ withCache: true });
@@ -267,10 +282,21 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
-    await this.storageCore.moveAssetImage(asset, AssetFileType.FullSize, image.fullsize.format);
-    await this.storageCore.moveAssetImage(asset, AssetFileType.Preview, image.preview.format);
-    await this.storageCore.moveAssetImage(asset, AssetFileType.Thumbnail, image.thumbnail.format);
-    await this.storageCore.moveAssetVideo(asset);
+    // universal storage: a generated file shared with other assets lives where its primary asset put
+    // it; only the primary moves it, so another owner's job never pulls it into their own folder
+    const shared = await this.getSharedGeneratedFileTypes(asset);
+    for (const [type, format] of [
+      [AssetFileType.FullSize, image.fullsize.format],
+      [AssetFileType.Preview, image.preview.format],
+      [AssetFileType.Thumbnail, image.thumbnail.format],
+    ] as const) {
+      if (!shared.has(type)) {
+        await this.storageCore.moveAssetImage(asset, type, format);
+      }
+    }
+    if (!shared.has(AssetFileType.EncodedVideo)) {
+      await this.storageCore.moveAssetVideo(asset);
+    }
 
     return JobStatus.Success;
   }
@@ -2611,11 +2637,7 @@ export class MediaService extends BaseService {
       return { file };
     }
 
-    const { physicalDeduplication } = await this.getConfig({ withCache: true });
-    if (!physicalDeduplication.enabled) {
-      return { file };
-    }
-
+    // universal storage is always on: a copy linked to another asset's original shares its generated files
     const canonical = await this.physicalFileRepository.getCanonicalGeneratedFile(file.assetId, file.type);
     if (canonical) {
       return {

@@ -501,7 +501,7 @@ export class AssetUploadResourceService {
     if (!asset) {
       throw new NotFoundException('Upload result unavailable');
     }
-    await this.media.finishUploadAsset(auth, this.metadata(claimed), this.file(claimed), asset, undefined, undefined, {
+    await this.media.finishUploadAsset(auth, this.metadata(claimed), this.file(claimed), asset, undefined, {
       preparedFile: true,
       quotaCharged: true,
       ingestion: { resourceId: row.id, ownerId: auth.user.id, token },

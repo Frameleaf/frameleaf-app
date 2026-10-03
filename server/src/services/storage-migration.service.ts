@@ -565,7 +565,11 @@ export class StorageMigrationService {
 
     let bytes = 0;
     for (const file of files) {
-      const result = await this.fileTrash.trashOriginal(file.id, {
+      const result = await this.fileTrash.trashOriginal({
+        physicalFileId: file.id,
+        path: file.path,
+        checksum: file.checksum,
+        sizeInBytes: file.sizeInBytes,
         lastOwnerId: file.lastOwnerId,
         lastAssetId: file.lastAssetId,
         originalFileName: file.originalFileName ?? basename(file.path),
