@@ -249,7 +249,12 @@
       "path": "patches/0049-portable-lut-import.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "68777610978a6f7ec08080cfdd7b157ad333b6ae3ffd34a9e7d40f8513b58ed9"
+    },
+    {
+      "path": "patches/0050-caption-import-export-modes.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4d948f0dd6daf2f6aa2f210498d24ee5c2b68f5c8faab6a6ed83462db839340f"
     }
   ],
-  "sourceSha256": "05ba099ffd6a3e5166587120281c23a1b729722a6c27b12ae62b2b407ea4381b"
+  "sourceSha256": "f61614579c24d1d30dfd70f6a251a60dfd5bc37c73763dadfe3eeccdf87257be"
 }
