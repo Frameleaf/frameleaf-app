@@ -4,14 +4,14 @@ import {
   backupEndpoints,
   backupGrantMetadataSchema,
   backupGrantProblem,
-  backupGrantResponseSchema,
   backupGrantRequestSchema,
+  backupGrantResponseSchema,
   backupLocationsSchema,
-  managedStorageRef,
   backupRunReportSchema,
   backupUsageSchema,
   keyEscrowRecordSchema,
   managedBackupRefusal,
+  managedStorageRef,
 } from 'src/utils/frameleaf-cloud-backup.js';
 import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
@@ -56,7 +56,9 @@ describe('Frameleaf Cloud managed backup contract (FL-164)', () => {
     expect(backupGrantRequestSchema.safeParse({ locationId: 'loc-07', endpoint: grant.endpoint }).success).toBe(false);
     const location = { ...grant.location, probeUrl: grant.endpoint };
     expect(backupLocationsSchema.parse({ version: 2, locations: [location] }).locations).toEqual([location]);
-    expect(backupLocationsSchema.safeParse({ version: 2, locations: [{ ...location, region: grant.region }] }).success).toBe(false);
+    expect(
+      backupLocationsSchema.safeParse({ version: 2, locations: [{ ...location, region: grant.region }] }).success,
+    ).toBe(false);
   });
 
   it("accepts the cloud's plan_full read-only reason (FL-301, FC-91)", () => {

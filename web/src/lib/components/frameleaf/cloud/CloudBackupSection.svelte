@@ -362,7 +362,9 @@
         <dd><code>{status.bucket}</code></dd>
         {#if status.target === CloudBackupTargetSetting.Managed}
           <dt>{$t('frameleaf_cloud_backup_location')}</dt>
-          <dd>{status.managed?.location ? `${status.managed.location.city}, ${status.managed.location.country}` : '—'}</dd>
+          <dd>
+            {status.managed?.location ? `${status.managed.location.city}, ${status.managed.location.country}` : '—'}
+          </dd>
         {:else}
           <dt>{$t('frameleaf_cloud_backup_region')}</dt>
           <dd>{status.region ?? '—'}</dd>

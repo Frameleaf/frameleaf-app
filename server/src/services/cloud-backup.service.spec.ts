@@ -31,8 +31,8 @@ import {
   CLOUD_BACKUP_VERIFY_CRON,
   CloudBackupService,
 } from 'src/services/cloud-backup.service.js';
-import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { selectBackupLocation } from 'src/utils/backup-location-selection.js';
+import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { keyEscrowBlobSchema, managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
@@ -1472,8 +1472,19 @@ describe(CloudBackupService.name, () => {
     const cloudUrl = 'https://cloud.frameleaf.test';
     const managedClaim = (overrides: Record<string, unknown> = {}) =>
       claim({
-        target: 'managed', bucketRef: managedRef, endpoint: grant.endpoint, region: grant.region, bucket: grant.bucket,
-        managed: { storageId: grant.storageId, location: grant.location, readOnly: false, readOnlyReason: null, quotaBytes: grant.quotaBytes, checkedAt: '2026-09-25T00:00:00.000Z' },
+        target: 'managed',
+        bucketRef: managedRef,
+        endpoint: grant.endpoint,
+        region: grant.region,
+        bucket: grant.bucket,
+        managed: {
+          storageId: grant.storageId,
+          location: grant.location,
+          readOnly: false,
+          readOnlyReason: null,
+          quotaBytes: grant.quotaBytes,
+          checkedAt: '2026-09-25T00:00:00.000Z',
+        },
         ...overrides,
       });
     const managedOperation = () =>
@@ -1688,7 +1699,9 @@ describe(CloudBackupService.name, () => {
       // a repeated grant answers without a key, so one is rotated for the claim
       expect(selectBackupLocation).toHaveBeenCalled();
       expect(cloudBackup.grant).toHaveBeenCalledWith(expect.anything(), grant.location.locationId);
-      expect(vi.mocked(selectBackupLocation).mock.invocationCallOrder[0]).toBeLessThan(cloudBackup.grant.mock.invocationCallOrder[0]);
+      expect(vi.mocked(selectBackupLocation).mock.invocationCallOrder[0]).toBeLessThan(
+        cloudBackup.grant.mock.invocationCallOrder[0],
+      );
       expect(cloudBackup.rotate).toHaveBeenCalled();
       expect(store.claim).toHaveBeenCalledWith(
         expect.objectContaining({ bucket: grant.bucket, secretAccessKey: rotated.credentials.secretAccessKey }),
@@ -1699,7 +1712,12 @@ describe(CloudBackupService.name, () => {
         target: 'managed',
         bucketRef: managedRef,
         bucket: grant.bucket,
-        managed: { storageId: grant.storageId, location: grant.location, readOnly: false, quotaBytes: grant.quotaBytes },
+        managed: {
+          storageId: grant.storageId,
+          location: grant.location,
+          readOnly: false,
+          quotaBytes: grant.quotaBytes,
+        },
       });
       const persisted = JSON.stringify(mocks.forkSchema.persistConfig.mock.calls);
       expect(persisted).toContain('"target":"managed"');
@@ -1716,8 +1734,9 @@ describe(CloudBackupService.name, () => {
       cloudBackup.locations.mockResolvedValue({ version: 2, locations });
       vi.mocked(selectBackupLocation).mockRejectedValue(new Error('provider detail must not escape'));
 
-      await expect(sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never))
-        .rejects.toThrow('No backup location could be reached reliably. Try setup again.');
+      await expect(
+        sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never),
+      ).rejects.toThrow('No backup location could be reached reliably. Try setup again.');
       expect(selectBackupLocation).toHaveBeenCalledWith(locations);
       expect(cloudBackup.grant).not.toHaveBeenCalled();
       expect(cloudBackup.rotate).not.toHaveBeenCalled();
@@ -1736,7 +1755,9 @@ describe(CloudBackupService.name, () => {
     });
 
     it('keeps stable storage identity independently of the connection hostname but rejects a changed physical region or storage ID', async () => {
-      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({ endpoint: 'https://previous.backup.frameleaf.cloud' });
+      metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({
+        endpoint: 'https://previous.backup.frameleaf.cloud',
+      });
       await sut.run(managedOperation(), 'claim-1');
       expect(operations.complete).toHaveBeenCalled();
       expect((metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup).bucketRef).toBe(managedRef);
@@ -1750,7 +1771,11 @@ describe(CloudBackupService.name, () => {
       ]) {
         cloudBackup.rotate.mockResolvedValue(changed);
         await sut.run(managedOperation(), 'claim-1');
-        expect(operations.fail).toHaveBeenCalledWith('run-1', 'claim-1', expect.objectContaining({ error: expect.stringContaining('different storage binding') }));
+        expect(operations.fail).toHaveBeenCalledWith(
+          'run-1',
+          'claim-1',
+          expect.objectContaining({ error: expect.stringContaining('different storage binding') }),
+        );
       }
       expect(operations.complete).not.toHaveBeenCalled();
     });
@@ -1759,9 +1784,17 @@ describe(CloudBackupService.name, () => {
       const oldRef = bucketRef(grant.endpoint, grant.bucket);
       metadata[SystemMetadataKey.FrameleafCloudBackup] = managedClaim({
         bucketRef: oldRef,
-        managed: { readOnly: false, readOnlyReason: null, quotaBytes: grant.quotaBytes, checkedAt: '2026-09-25T00:00:00.000Z' },
+        managed: {
+          readOnly: false,
+          readOnlyReason: null,
+          quotaBytes: grant.quotaBytes,
+          checkedAt: '2026-09-25T00:00:00.000Z',
+        },
       });
-      await sut.run(operationOf({ snapshot: { version: 1, bucketRef: oldRef, keyFingerprint: fingerprint } }), 'claim-1');
+      await sut.run(
+        operationOf({ snapshot: { version: 1, bucketRef: oldRef, keyFingerprint: fingerprint } }),
+        'claim-1',
+      );
       expect(operations.complete).toHaveBeenCalled();
       const saved = metadata[SystemMetadataKey.FrameleafCloudBackup] as FrameleafCloudBackup;
       expect(saved.bucketRef).toBe(oldRef);
@@ -1771,12 +1804,20 @@ describe(CloudBackupService.name, () => {
     it('rejects a changed recorded legacy location before storage I/O or metadata replacement', async () => {
       const saved = managedClaim({
         bucketRef: bucketRef(grant.endpoint, grant.bucket),
-        managed: { location: grant.location, readOnly: false, readOnlyReason: null, quotaBytes: grant.quotaBytes, checkedAt: '2026-09-25T00:00:00.000Z' },
+        managed: {
+          location: grant.location,
+          readOnly: false,
+          readOnlyReason: null,
+          quotaBytes: grant.quotaBytes,
+          checkedAt: '2026-09-25T00:00:00.000Z',
+        },
       });
       metadata[SystemMetadataKey.FrameleafCloudBackup] = saved;
       cloudBackup.rotate.mockResolvedValue({ ...rotated, location: { ...rotated.location, locationId: 'loc-01' } });
 
-      await expect(sut['openManaged'](saved, managedOperation(), 'claim-1')).rejects.toThrow('different storage binding');
+      await expect(sut['openManaged'](saved, managedOperation(), 'claim-1')).rejects.toThrow(
+        'different storage binding',
+      );
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toBe(saved);
       expect(store.get).not.toHaveBeenCalled();
       expect(store.uploadFile).not.toHaveBeenCalled();
@@ -1791,8 +1832,9 @@ describe(CloudBackupService.name, () => {
         { ...rotated, bucket: rotated.bucket.replace('fl-eu-', 'fl-na-') },
       ]) {
         cloudBackup.rotate.mockResolvedValue(changed);
-        await expect(sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never))
-          .rejects.toThrow('different storage binding');
+        await expect(
+          sut.setup(authStub.admin, { target: 'managed', keyMode: 'server', key: key.toString('base64') } as never),
+        ).rejects.toThrow('different storage binding');
       }
       expect(store.claim).not.toHaveBeenCalled();
     });
@@ -1825,8 +1867,17 @@ describe(CloudBackupService.name, () => {
       index.listKeptManifests.mockResolvedValue([{ key }]);
       const manifest = {} as never;
       sut['manifestCache'] = {
-        bucketRef: saved.bucketRef, key, manifest,
-        binding: JSON.stringify([saved.bucketRef, saved.region, saved.bucket, saved.keyFingerprint, saved.managed?.storageId ?? null, saved.managed?.location?.locationId ?? null]),
+        bucketRef: saved.bucketRef,
+        key,
+        manifest,
+        binding: JSON.stringify([
+          saved.bucketRef,
+          saved.region,
+          saved.bucket,
+          saved.keyFingerprint,
+          saved.managed?.storageId ?? null,
+          saved.managed?.location?.locationId ?? null,
+        ]),
       };
       await expect(sut['readManifestForRequest'](saved, key)).resolves.toBe(manifest);
       for (const changed of [

@@ -616,9 +616,11 @@ describe(CloudBackupStoreRepository.name, () => {
     it.each(['AccessDenied', 'InvalidRequest'])('keeps the recognized machine code %s', async (code) => {
       vi.stubGlobal(
         'fetch',
-        vi.fn().mockResolvedValue(
-          new Response(`<Error><Code>${code}</Code><Message>${upstreamFailure}</Message></Error>`, { status: 403 }),
-        ),
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(`<Error><Code>${code}</Code><Message>${upstreamFailure}</Message></Error>`, { status: 403 }),
+          ),
       );
 
       await expect(sut.list(connection, '')).rejects.toMatchObject({

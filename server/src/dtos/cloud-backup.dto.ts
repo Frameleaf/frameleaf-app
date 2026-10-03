@@ -289,13 +289,17 @@ const CloudBackupLastPruneSchema = z
 const CloudBackupManagedSchema = z
   .object({
     storageId: z.uuid().nullable().optional(),
-    location: z.object({
-      locationId: z.string(),
-      cityId: z.string(),
-      city: z.string(),
-      country: z.string(),
-      countryCode: z.string(),
-    }).meta({ id: 'CloudBackupLocationDto' }).nullable().optional(),
+    location: z
+      .object({
+        locationId: z.string(),
+        cityId: z.string(),
+        city: z.string(),
+        country: z.string(),
+        countryCode: z.string(),
+      })
+      .meta({ id: 'CloudBackupLocationDto' })
+      .nullable()
+      .optional(),
     readOnly: z.boolean().describe('Uploads are stopped; restores keep working'),
     readOnlyReason: z
       .string()

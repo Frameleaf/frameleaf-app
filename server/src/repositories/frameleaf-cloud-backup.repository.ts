@@ -37,13 +37,19 @@ export class FrameleafCloudBackupRepository {
   constructor(private cloud: FrameleafCloudRepository) {}
 
   locations(target: ManagedBackupApi) {
-    return this.cloud.requestJson(backupLocationsSchema, { url: backupEndpoints(target).locations, dpop: target.token });
+    return this.cloud.requestJson(backupLocationsSchema, {
+      url: backupEndpoints(target).locations,
+      dpop: target.token,
+    });
   }
 
   /** A persisted claim also survives a failed or interrupted first provisioning attempt. */
   async metadata(target: ManagedBackupApi): Promise<BackupGrantMetadata | null> {
     try {
-      return await this.cloud.requestJson(backupGrantMetadataSchema, { url: backupEndpoints(target).grant, dpop: target.token });
+      return await this.cloud.requestJson(backupGrantMetadataSchema, {
+        url: backupEndpoints(target).grant,
+        dpop: target.token,
+      });
     } catch (error) {
       if (error instanceof FrameleafCloudError && error.status === 404 && error.envelope?.code === 'not-found') {
         return null;
