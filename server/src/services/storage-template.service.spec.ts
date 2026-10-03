@@ -162,6 +162,56 @@ describe(StorageTemplateService.name, () => {
       expect(await movedOriginals()).toContainEqual({ id: asset.id, originalPath: newPath });
     });
 
+    describe('a non-primary asset sharing its original', () => {
+      // a move is recorded before the file is touched, so the record names where each file was sent
+      const sidecarMoves = () =>
+        mocks.move.create.mock.calls
+          .map(([move]) => move)
+          .filter((move) => move.pathType === AssetFileType.Sidecar)
+          .map((move) => move.newPath);
+
+      it('moves its sidecar to its own template path and leaves the shared original', async () => {
+        const asset = AssetFactory.from({
+          physicalOriginalFileId: 'physical-file-id',
+          originalPath: '/data/library/primary-owner/2022/2022-06-19/shared.jpg',
+          fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+        })
+          .file({ type: AssetFileType.Sidecar, path: '/data/upload/own/sidecar.xmp' })
+          .exif()
+          .build();
+        const ownPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+        mocks.user.get.mockResolvedValue(userStub.user1);
+        mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(getForStorageTemplate(asset));
+        mocks.physicalFile.isOriginalCanonical.mockResolvedValue(false);
+
+        await sut.handleMigrationSingle({ id: asset.id });
+
+        expect(await movedOriginals()).toEqual([]);
+        expect(sidecarMoves()).toEqual([`${ownPath}.xmp`]);
+      });
+
+      it("never moves its sidecar onto the primary owner's sidecar beside the shared original", async () => {
+        const asset = AssetFactory.from({
+          physicalOriginalFileId: 'physical-file-id',
+          fileCreatedAt: new Date('2022-06-19T23:41:36.910Z'),
+        })
+          .file({ type: AssetFileType.Sidecar, path: '/data/upload/own/sidecar.xmp' })
+          .exif()
+          .build();
+        // the template renders exactly the shared original's path
+        const sharedPath = `/data/library/${asset.ownerId}/2022/2022-06-19/${asset.originalFileName}`;
+        mocks.user.get.mockResolvedValue(userStub.user1);
+        mocks.assetJob.getForStorageTemplateJob.mockResolvedValueOnce(
+          getForStorageTemplate({ ...asset, originalPath: sharedPath }),
+        );
+        mocks.physicalFile.isOriginalCanonical.mockResolvedValue(false);
+
+        await sut.handleMigrationSingle({ id: asset.id });
+
+        expect(sidecarMoves()).not.toContain(`${sharedPath}.xmp`);
+      });
+    });
+
     it('should migrate single moving picture', async () => {
       const motionAsset = AssetFactory.from({
         type: AssetType.Video,
