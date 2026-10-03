@@ -17,6 +17,8 @@ Decisions are one of:
 
 ## Gaps
 
+Server changes land on branch `aj/native-api-gaps` through [Frameleaf/frameleaf-app#176](https://github.com/Frameleaf/frameleaf-app/pull/176); cloud changes through [Frameleaf/frameleaf-cloud#291](https://github.com/Frameleaf/frameleaf-cloud/pull/291).
+
 | Reported by       | Journey                                                                                                                                                     | Decision                           | operationIds                                                                  | Change                                                                                                                                                                                                                                              |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ios-live (FL-218) | Settings > Preferences: changing any preference (for example Memories) forced every session of the account to drop its mirror and re-sync the whole library | Existing endpoint, behaviour fixed | `updateMyPreferences` (and `updateMyPreferencesV3`), unchanged                | The server now requests a sync reset only when the Locked rules (`privacy.suppression`: people, pets, tags, scope) actually change. Other preferences reach devices as an ordinary `UserMetadataV1` upsert. Reordering the same ids is not a change |
@@ -31,7 +33,7 @@ Decisions are one of:
   2026-05-18. The Frameleaf model mirror (`https://models.frameleaf.cloud`) was set up later and only carried
   `ViT-B-32__openai`, so the ML service could not download the default model.
 - **Decision:** keep the default and publish the model on the mirror. The owner approved Apache-2.0 redistribution on
-  2026-10-03. The catalogue change is in frameleaf-cloud (`infra/models/models.json`); publishing is an operator action
+  2026-10-03. The catalogue change is in frameleaf-cloud (`infra/models/models.json`, Frameleaf/frameleaf-cloud#291); publishing is an operator action
   (`models-mirror` workflow).
 - **Guard:** `server/test/model-mirror/default-models.spec.ts` (`pnpm test:model-mirror` in `server/`, workflow
   `model-mirror-defaults.yml`) checks that every default CLIP, facial-recognition and OCR model answers 200 on the mirror.
