@@ -428,6 +428,62 @@ export class MachineLearningRepository implements RestorationInference {
     return [...this.config.urls];
   }
 
+  /** Semantic proposals are instance-local only, independent of Cloud destinations and routing. */
+  async semanticMaskLocal(canvas: Buffer, target: 'subject' | 'sky', signal?: AbortSignal): Promise<Buffer> {
+    if (!this.config.enabled) throw new Error('Local machine learning is disabled');
+    const url = this.getLocalUrls()[0];
+    if (!url || url === FRAMELEAF_CLOUD_ENDPOINT.url) throw new Error('Configure a local semantic mask worker');
+    const endpoint = new URL('predict', url.endsWith('/') ? url : `${url}/`);
+    if (!['http:', 'https:'].includes(endpoint.protocol) || /(^|\.)frameleaf\.(app|cloud)$/i.test(endpoint.hostname))
+      throw new Error('Semantic masks require an instance-local worker');
+    const form = new FormData();
+    form.append(
+      'entries',
+      JSON.stringify({
+        'semantic-mask': { visual: { modelName: 'frameleaf-florence2-sam2.1', options: { target, device: 'cpu' } } },
+      }),
+    );
+    form.append('image', new Blob([new Uint8Array(canvas)]));
+    const deadline = AbortSignal.timeout(120_000);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      body: form,
+      redirect: 'error',
+      signal: signal ? AbortSignal.any([deadline, signal]) : deadline,
+    });
+    if (!response.ok) throw new Error(`Local semantic mask worker unavailable (${response.status})`);
+    // Bound the streamed response before JSON/base64 allocation; never include media or model text in errors.
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Empty local semantic mask result');
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 8 * 1024 * 1024) throw new Error('Local semantic mask result is too large');
+        chunks.push(value);
+      }
+    } finally {
+      await reader.cancel();
+    }
+    const result = z
+      .object({
+        'semantic-mask': z.object({
+          png: z
+            .string()
+            .max(6 * 1024 * 1024)
+            .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+          coordinates: z.literal('sensor-active'),
+          width: z.int().min(1).max(2048),
+          height: z.int().min(1).max(2048),
+        }),
+      })
+      .parse(JSON.parse(Buffer.concat(chunks).toString()));
+    return Buffer.from(result['semantic-mask'].png, 'base64');
+  }
+
   /** FL-159: register the Frameleaf Cloud check that `probe` delegates to for the cloud destination. */
   setCloudProber(prober: CloudMlProber | null) {
     this.cloudProber = prober;

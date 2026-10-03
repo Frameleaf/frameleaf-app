@@ -1641,6 +1641,46 @@
       "identity": "immich_fork.pet_recognition_run.updatedAt"
     },
     {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_studio_site.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_studio_site.revision"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.photography_studio_site.value"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_workflow.albumId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.photography_workflow.createdAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_workflow.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_workflow.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.photography_workflow.revision"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.photography_workflow.updatedAt"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.photography_workflow.value"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "immich_fork.physical_file.canonicalAssetId"
     },
@@ -8479,6 +8519,22 @@
       "identity": "immich_fork.pet_recognition_run.pet_recognition_run_status_check"
     },
     {
+      "definition": "CHECK (jsonb_typeof(value) = 'object'::text)",
+      "identity": "immich_fork.photography_studio_site.photography_site_value_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"ownerId\")",
+      "identity": "immich_fork.photography_studio_site.photography_studio_site_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.photography_workflow.photography_workflow_pkey"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(value) = 'object'::text AND octet_length(value::text) <= 20000000)",
+      "identity": "immich_fork.photography_workflow.photography_workflow_value_check"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.physical_file.physical_file_pkey"
     },
@@ -10511,7 +10567,8 @@
     "0000000000211-FrameleafAccountAccess",
     "0000000000212-AssetDevelopArtifacts",
     "0000000000213-ICloudSourceIdentity",
-    "0000000000214-BuddyBackupReferences"
+    "0000000000214-BuddyBackupReferences",
+    "0000000000215-PhotographyWorkflow"
   ],
   "functions": [
     {
@@ -12083,6 +12140,18 @@
     {
       "definition": "CREATE UNIQUE INDEX pet_recognition_run_pkey ON immich_fork.pet_recognition_run USING btree (\"ownerId\")",
       "identity": "immich_fork.pet_recognition_run.pet_recognition_run_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX photography_studio_site_pkey ON immich_fork.photography_studio_site USING btree (\"ownerId\")",
+      "identity": "immich_fork.photography_studio_site.photography_studio_site_pkey"
+    },
+    {
+      "definition": "CREATE INDEX photography_workflow_owner_idx ON immich_fork.photography_workflow USING btree (\"ownerId\")",
+      "identity": "immich_fork.photography_workflow.photography_workflow_owner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX photography_workflow_pkey ON immich_fork.photography_workflow USING btree (id)",
+      "identity": "immich_fork.photography_workflow.photography_workflow_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX physical_file_canonical_path_uq ON immich_fork.physical_file USING btree (\"canonicalPath\")",
@@ -14898,6 +14967,14 @@
     {
       "definition": "table",
       "identity": "immich_fork.pet_recognition_run"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.photography_studio_site"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.photography_workflow"
     },
     {
       "definition": "table",

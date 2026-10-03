@@ -323,3 +323,27 @@ describe('worst-case cost (FL-233)', () => {
     expect(recipe.masks.flatMap((mask) => mask.strokes ?? []).flatMap((stroke) => stroke.points)).toHaveLength(4096);
   });
 });
+
+it('allows native semantic paint/erase refinement while retaining untouched bitmap coverage', () => {
+  const bitmap: DevelopBitmap = { data: Buffer.alloc(64 * 48, 255), width: 64, height: 48, channels: 1 };
+  const mask = {
+    id: 'refined',
+    kind: AssetDevelopMaskKind.Subject,
+    enabled: true,
+    invert: false,
+    amount: 100,
+    x: 0.5,
+    y: 0.5,
+    endX: 0.5,
+    endY: 1,
+    radiusX: 0.25,
+    radiusY: 0.25,
+    feather: 0,
+    name: null,
+    artifact: 'a'.repeat(64),
+    strokes: [{ points: [[0.5, 0.5]] as [number, number][], radius: 0.15, erase: true }],
+  };
+  const artifacts = new Map([[mask.artifact, bitmap]]);
+  expect(originalMaskWeight(mask, 32, 24, { width: 64, height: 48 }, artifacts)).toBe(0);
+  expect(originalMaskWeight(mask, 2, 2, { width: 64, height: 48 }, artifacts)).toBe(1);
+});

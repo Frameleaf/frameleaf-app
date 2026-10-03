@@ -44,6 +44,7 @@ jobs:
           node scripts/frameleaf-distribution-gates.mjs
           node --test docker/frameleaf-delivery.test.mjs
           node --test \
+            .github/native-raw.test.cjs \
             .github/frameleaf-release.test.cjs \
             .github/frameleaf-deploy-test.test.cjs \
             .github/verify-release-bundle.test.cjs \
@@ -196,29 +197,30 @@ jobs:
   native-raw:
     if: github.repository == 'Frameleaf/frameleaf-app' && github.event_name == 'workflow_dispatch' && inputs.raw_engine != 'none'
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
         include:
           - runner: ubuntu-24.04
-            arch: x86_64
-            darktable_sha256: 867ba61fca41d614e6650fd92d6e7968d8c56a1d1dd2bbc3aa06b52508694ed6
+            platform: linux/amd64
           - runner: ubuntu-24.04-arm
-            arch: aarch64
-            darktable_sha256: 87088ada0a614c2c61c6bc663249388fe9e1d4b57689de3a5fd98c7af348d75d
+            platform: linux/arm64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
           submodules: recursive
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
+        if: inputs.raw_engine == 'libraw'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        if: inputs.raw_engine == 'libraw'
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: inputs.raw_engine == 'libraw'
       - name: Build the candidate's pinned LibRaw source and CLI
         if: inputs.raw_engine == 'libraw'
         working-directory: server/base-image/sources
@@ -273,26 +275,39 @@ jobs:
             }
           } finally { await exiftool.end(); }
           JS
-      - name: Install the hash-pinned darktable release for qualification
+      - name: Build candidate patched native RAW production runtime
         if: inputs.raw_engine == 'darktable'
         env:
-          DT_ARCH: ${{ matrix.arch }}
-          DT_SHA256: ${{ matrix.darktable_sha256 }}
+          RAW_PLATFORM: ${{ matrix.platform }}
+          DOCKER_BUILDKIT: '1'
         run: |
-          mkdir -p "$RUNNER_TEMP/darktable"
-          cd "$RUNNER_TEMP/darktable"
-          curl --fail --location "https://github.com/darktable-org/darktable/releases/download/release-5.6.1/Darktable-5.6.1-${DT_ARCH}.AppImage" --output darktable.AppImage
-          echo "$DT_SHA256  darktable.AppImage" | sha256sum --check -
-          chmod +x darktable.AppImage
-          ln -s darktable.AppImage darktable-cli
-          echo "$RUNNER_TEMP/darktable" >> "$GITHUB_PATH"
-          echo 'APPIMAGE_EXTRACT_AND_RUN=1' >> "$GITHUB_ENV"
-      - name: Build the local plugin SDK required by native media tests
+          mkdir -p "$RUNNER_TEMP/raw-qualification"
+          docker build --pull --no-cache --platform "$RAW_PLATFORM" \
+            --target native-raw-qualification --file server/Dockerfile \
+            --tag frameleaf-native-raw:qualification .
+          docker image inspect frameleaf-native-raw:qualification > "$RUNNER_TEMP/raw-qualification/image.json"
+          docker create --name native-raw-evidence frameleaf-native-raw:qualification
+          docker cp native-raw-evidence:/usr/local/share/frameleaf/native-darktable.json "$RUNNER_TEMP/raw-qualification/"
+          docker cp native-raw-evidence:/build/darktable-runtime.json "$RUNNER_TEMP/raw-qualification/"
+          docker rm native-raw-evidence
+      - name: Qualify genuine RAW full controls and calibrated lens offline
+        id: native-qualification
         if: inputs.raw_engine == 'darktable'
+        shell: bash
         run: |
-          pnpm --filter @immich/sdk build
-          pnpm --filter @immich/plugin-sdk build
-      - name: Qualify actual native history, exposure and export pipeline
-        if: inputs.raw_engine == 'darktable'
-        working-directory: server
-        run: pnpm exec vitest run --config test/vitest.config.darktable.mjs
+          # Fixture is the pinned e2e submodule's genuine CR2. RawSpeed 7cf3dc3 cameras.xml
+          # EOS70D crop is x72/y38 from its 5568x3708 sensor: 5496x3670, orientation 1.
+          # Its EF17-40mm f/4L USM is in the shipped Lensfun0.3.4 database; require calibration.
+          echo 'f3e703f0461707a16b76a0bfae9a42f90b6ab9019e2c8cea90a17ebbe806c7fd  e2e/test-assets/formats/raw/Canon/EOS_70D.CR2' | sha256sum --strict --check -
+          docker run --rm --network none --entrypoint node \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/e2e/test-assets/formats/raw,dst=/fixtures,readonly" \
+            frameleaf-native-raw:qualification /build/verify-darktable-develop.mjs \
+            /fixtures/Canon/EOS_70D.CR2 5496 3670 /usr/src/app/server/dist/utils/darktable-renderer.js calibrated \
+            2>&1 | tee "$RUNNER_TEMP/raw-qualification/fixture.log"
+      - name: Retain native runtime provenance and fixture result
+        if: always() && inputs.raw_engine == 'darktable'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-raw-${{ matrix.runner }}-${{ github.sha }}
+          path: ${{ runner.temp }}/raw-qualification/
+          if-no-files-found: error

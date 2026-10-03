@@ -205,10 +205,12 @@ export function rasterizeStrokes(
   feather: number,
   bounds: Box,
   scale: number,
+  initial?: Float32Array,
 ): DevelopCoverage {
   const width = Math.max(0, Math.ceil((bounds.right - bounds.left) * scale));
   const height = Math.max(0, Math.ceil((bounds.bottom - bounds.top) * scale));
-  const data = new Float32Array(width * height);
+  const data = initial ? new Float32Array(initial) : new Float32Array(width * height);
+  if (data.length !== width * height) throw new Error('Invalid initial mask coverage');
   const unit = Math.min(original.width, original.height);
   for (const stroke of strokes) {
     const radius = stroke.radius * unit;

@@ -74,6 +74,7 @@ const setup = () => {
     new StorageRepository(logger()),
     new SystemMetadataRepository(database),
     new MediaOperationRepository(database),
+    {} as never,
   );
   const presets = new PhotoToolsService(logger(), photoTools);
   return { ctx, sut, presets, job, develop, integrity: new IntegrityRepository(database) };
