@@ -42,6 +42,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess } from 'src/utils/access.js';
 import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
+import { moveFileWithin } from 'src/utils/file-trash.js';
 import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -238,6 +239,7 @@ export class AssetMediaService extends BaseService {
       { checksum: file.checksum, sizeInBytes: file.size },
       {
         exists: (path) => this.storageRepository.checkFileExists(path),
+        untrash: (from, to) => moveFileWithin(this.storageRepository, from, to),
         ...(options.quotaCharged && { ingestion: options.ingestion }),
       },
     );

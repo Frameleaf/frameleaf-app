@@ -60,6 +60,7 @@ import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
@@ -136,6 +137,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   PartnerRepository,
   PersonRepository,
   PhysicalFileRepository,
+  PhysicalFileTrashRepository,
   PluginRepository,
   ProcessRepository,
   RenderWorkerRepository,
@@ -215,6 +217,7 @@ export class BaseService {
     protected partnerRepository: PartnerRepository,
     protected personRepository: PersonRepository,
     protected physicalFileRepository: PhysicalFileRepository,
+    protected physicalFileTrashRepository: PhysicalFileTrashRepository,
     protected pluginRepository: PluginRepository,
     protected processRepository: ProcessRepository,
     protected renderWorkerRepository: RenderWorkerRepository,
@@ -303,6 +306,7 @@ export class BaseService {
       ctx.partnerRepository,
       ctx.personRepository,
       ctx.physicalFileRepository,
+      ctx.physicalFileTrashRepository,
       ctx.pluginRepository,
       ctx.processRepository,
       ctx.renderWorkerRepository,

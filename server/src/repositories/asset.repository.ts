@@ -1371,7 +1371,11 @@ export class AssetRepository {
   @GenerateSql({ params: [DummyValue.UUID] })
   async deleteAll(ownerId: string): Promise<
     {
+      id: string;
       originalPath: string;
+      originalFileName: string;
+      checksum: Buffer;
+      sizeInBytes: number;
       reservationTemporaryPath: string | null;
       libraryId: string | null;
       isOffline: boolean;
@@ -1391,6 +1395,9 @@ export class AssetRepository {
       const locked = await sql<{
         id: string;
         originalPath: string;
+        originalFileName: string;
+        checksum: Buffer;
+        sizeInBytes: number;
         reservationTemporaryPath: string | null;
         libraryId: string | null;
         isOffline: boolean;
@@ -1398,12 +1405,16 @@ export class AssetRepository {
         SELECT
           asset.id,
           coalesce(mapping."upstreamPath", reservation."upstreamPath", asset."originalPath") AS "originalPath",
+          asset."originalFileName",
+          asset.checksum,
+          coalesce(exif."fileSizeInByte", 0)::float8 AS "sizeInBytes",
           reservation."temporaryPath" AS "reservationTemporaryPath",
           asset."libraryId",
           asset."isOffline"
         FROM public.asset asset
         LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
         LEFT JOIN immich_fork.asset_storage_reservation reservation ON reservation."assetId" = asset.id
+        LEFT JOIN public.asset_exif exif ON exif."assetId" = asset.id
         WHERE asset."ownerId" = ${ownerId}::uuid
         FOR UPDATE OF asset
       `.execute(tx);
@@ -1430,12 +1441,27 @@ export class AssetRepository {
         .where((eb) => eb.or([eb('ownerId', '=', asUuid(ownerId)), eb('primaryAssetId', '=', anyUuid(ids))]))
         .execute();
       await tx.deleteFrom('asset').where('ownerId', '=', ownerId).execute();
-      return assets.map(({ originalPath, reservationTemporaryPath, libraryId, isOffline }) => ({
-        originalPath,
-        reservationTemporaryPath,
-        libraryId,
-        isOffline,
-      }));
+      return assets.map(
+        ({
+          id,
+          originalPath,
+          originalFileName,
+          checksum,
+          sizeInBytes,
+          reservationTemporaryPath,
+          libraryId,
+          isOffline,
+        }) => ({
+          id,
+          originalPath,
+          originalFileName,
+          checksum,
+          sizeInBytes,
+          reservationTemporaryPath,
+          libraryId,
+          isOffline,
+        }),
+      );
     });
   }
 

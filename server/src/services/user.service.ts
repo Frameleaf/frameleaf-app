@@ -5,7 +5,8 @@ import { DateTime } from 'luxon';
 import z from 'zod';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { JobOf, UserMetadataItem } from 'src/types.js';
+import type { TrashedOriginal } from 'src/repositories/physical-file.repository.js';
+import type { JobItem, JobOf, UserMetadataItem } from 'src/types.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -42,6 +43,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getCalendarHeatmap } from 'src/services/shared/user-methods.js';
 import { CONFIG_HISTORY_LIMITS, describeObjectChanges } from 'src/utils/config-history.js';
+import { moveFileWithin } from 'src/utils/file-trash.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { isLockedAsset } from 'src/utils/locked-state.js';
@@ -462,13 +464,33 @@ export class UserService extends BaseService {
 
     this.logger.warn(`Removing user from database: ${user.id}`);
     const removedAssets = (await this.assetRepository.deleteAll(user.id)) ?? [];
-    const originalFiles = removedAssets
-      .filter(({ libraryId, isOffline }) => !libraryId && !isOffline)
-      .flatMap(({ originalPath, reservationTemporaryPath }) =>
-        reservationTemporaryPath ? [originalPath, reservationTemporaryPath] : [originalPath],
-      );
-    if (originalFiles.length > 0) {
-      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: originalFiles } });
+    // universal storage: each original goes to the file trash with who held it once nothing references it
+    const originals = new Map<string, TrashedOriginal>();
+    const originalJobs: JobItem[] = [];
+    for (const removed of removedAssets) {
+      if (removed.libraryId || removed.isOffline) {
+        continue;
+      }
+      const original = {
+        checksum: removed.checksum,
+        sizeInBytes: removed.sizeInBytes,
+        ownerId: user.id,
+        assetId: removed.id,
+        originalFileName: removed.originalFileName,
+      };
+      originals.set(removed.originalPath, original);
+      originalJobs.push({
+        name: JobName.FileDelete,
+        data: {
+          files: removed.reservationTemporaryPath
+            ? [removed.originalPath, removed.reservationTemporaryPath]
+            : [removed.originalPath],
+          original: { ...original, path: removed.originalPath, checksum: removed.checksum.toString('hex') },
+        },
+      });
+    }
+    if (originalJobs.length > 0) {
+      await this.jobRepository.queueAll(originalJobs);
     }
 
     // FL-44 (FN-304): media folders can hold files other accounts still reference — a deduplicated
@@ -482,7 +504,7 @@ export class UserService extends BaseService {
     ];
     for (const folder of sharedFolders) {
       this.logger.warn(`Removing user from filesystem: ${folder}`);
-      await this.removeUnreferencedFiles(folder);
+      await this.removeUnreferencedFiles(folder, originals);
     }
 
     const privateFolders = [
@@ -511,11 +533,15 @@ export class UserService extends BaseService {
    * Deletes every file under `folder` that nothing references any more, then the folders left empty.
    * A file another account still references is kept, and so is the folder holding it.
    */
-  private async removeUnreferencedFiles(folder: string) {
+  private async removeUnreferencedFiles(folder: string, originals: Map<string, TrashedOriginal>) {
     let kept = 0;
+    const move = (from: string, to: string) => moveFileWithin(this.storageRepository, from, to);
     for await (const file of this.storageRepository.walkFiles(folder)) {
-      const { deleted } = await this.physicalFileRepository.deleteUnreferencedPath(file, () =>
-        this.storageRepository.unlink(file),
+      const original = originals.get(file);
+      const { deleted } = await this.physicalFileRepository.deleteUnreferencedPath(
+        file,
+        () => this.storageRepository.unlink(file),
+        { trash: { move, ...(original && { original }) } },
       );
       if (!deleted) {
         kept++;

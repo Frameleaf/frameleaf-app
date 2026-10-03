@@ -2085,6 +2085,42 @@
       "identity": "immich_fork.photography_workflow.value"
     },
     {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.physical_file_trash.checksum"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.physical_file_trash.id"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.physical_file_trash.lastAssetId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.physical_file_trash.lastOwnerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.physical_file_trash.originalFileName"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.physical_file_trash.path"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.physical_file_trash.physicalFileId"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "immich_fork.physical_file_trash.sizeInBytes"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.physical_file_trash.trashedAt"
+    },
+    {
       "definition": "uuid|nullable|||",
       "identity": "immich_fork.physical_file.canonicalAssetId"
     },
@@ -9159,6 +9195,14 @@
       "identity": "immich_fork.photography_workflow.photography_workflow_value_check"
     },
     {
+      "definition": "UNIQUE (path)",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_path_key"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_pkey"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.physical_file.physical_file_pkey"
     },
@@ -11183,7 +11227,8 @@
     "0000000000215-PhotographyWorkflow",
     "0000000000216-ICloudIdentityAudit",
     "0000000000217-ICloudIdentityReuse",
-    "0000000000218-ICloudWeeklyAuthority"
+    "0000000000218-ICloudWeeklyAuthority",
+    "0000000000219-PhysicalFileTrash"
   ],
   "functions": [
     {
@@ -12863,6 +12908,22 @@
     {
       "definition": "CREATE UNIQUE INDEX photography_workflow_pkey ON immich_fork.photography_workflow USING btree (id)",
       "identity": "immich_fork.photography_workflow.photography_workflow_pkey"
+    },
+    {
+      "definition": "CREATE INDEX physical_file_trash_checksum_idx ON immich_fork.physical_file_trash USING btree (checksum, \"sizeInBytes\")",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_checksum_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX physical_file_trash_path_key ON immich_fork.physical_file_trash USING btree (path)",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_path_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX physical_file_trash_pkey ON immich_fork.physical_file_trash USING btree (id)",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_pkey"
+    },
+    {
+      "definition": "CREATE INDEX physical_file_trash_trashed_at_idx ON immich_fork.physical_file_trash USING btree (\"trashedAt\")",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_trashed_at_idx"
     },
     {
       "definition": "CREATE UNIQUE INDEX physical_file_canonical_path_uq ON immich_fork.physical_file USING btree (\"canonicalPath\")",
@@ -15702,6 +15763,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.physical_file"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.physical_file_trash"
     },
     {
       "definition": "table",
