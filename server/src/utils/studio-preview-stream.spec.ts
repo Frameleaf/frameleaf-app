@@ -88,8 +88,14 @@ describe('studio preview stream rules', () => {
 
     it('accepts a receive-only answer and refuses one that sends', () => {
       expect(isValidAnswerSdp(answer)).toBe(true);
+      expect(isValidAnswerSdp(answer.replace('a=recvonly', 'a=inactive'))).toBe(true);
       expect(isValidAnswerSdp(offer)).toBe(false);
       expect(isValidAnswerSdp(answer.replace('m=video', 'm=audio'))).toBe(false);
+    });
+
+    it('refuses an answer without exactly one control channel section', () => {
+      expect(isValidAnswerSdp(answer.split('m=application', 1)[0])).toBe(false);
+      expect(isValidAnswerSdp(`${answer}m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n`)).toBe(false);
     });
 
     it('refuses oversized or non-SDP text', () => {
