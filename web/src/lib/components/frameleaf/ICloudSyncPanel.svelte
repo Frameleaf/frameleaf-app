@@ -280,8 +280,12 @@
       if (!current()) {
         return;
       }
+      const identityReuseAuthority: NonNullable<ICloudConnectionResponseDto['identityReuseAuthority']> = {
+        ...authority,
+        executionAvailable: false,
+      };
       connections = connections.map((item) =>
-        item.id === origin.connectionId ? { ...item, identityReuseAuthority: authority } : item,
+        item.id === origin.connectionId ? { ...item, identityReuseAuthority } : item,
       );
       weeklyEnabled = authority.enabled;
       weeklyProtected = authority.includeProtected;
