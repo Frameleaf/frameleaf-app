@@ -227,3 +227,52 @@ for (const termination of ['harness shutdown', 'client disconnect']) {
     assert.deepEqual(harness.observations.map((entry) => entry.kind), ['tunnelled']);
   });
 }
+
+test('refuses CONNECT completed on an accepted connection after shutdown starts', { timeout: 5_000 }, async (t) => {
+  let upstreamConnections = 0;
+  const upstreamServer = net.createServer((socket) => {
+    upstreamConnections++;
+    socket.end();
+  });
+  await new Promise((resolve) => upstreamServer.listen(0, '127.0.0.1', resolve));
+  const upstreamOrigin = `http://127.0.0.1:${upstreamServer.address().port}`;
+  const upstreamHost = new URL(upstreamOrigin).host;
+  let releaseBarrier;
+  let enteredBarrier;
+  const barrierEntered = new Promise((resolve) => { enteredBarrier = resolve; });
+  const barrier = new Promise((resolve) => { releaseBarrier = resolve; });
+  const harness = createHarness({
+    upstream: upstreamOrigin,
+    overrides: [{
+      test: (url) => url.pathname === '/shutdown-barrier',
+      respond: async () => {
+        enteredBarrier();
+        await barrier;
+        return { body: 'barrier released' };
+      },
+    }],
+  });
+  const harnessUrl = new URL(await harness.listen());
+  const client = net.connect(Number(harnessUrl.port), harnessUrl.hostname);
+  t.after(async () => {
+    releaseBarrier();
+    client.destroy();
+    await harness.close();
+    await new Promise((resolve) => upstreamServer.close(resolve));
+  });
+  await once(client, 'connect');
+  client.resume();
+  // The pending response proves the socket is accepted and active (not an idle
+  // socket server.close() can reap). CONNECT is deliberately missing its final CRLF.
+  client.write(`GET ${upstreamOrigin}/shutdown-barrier HTTP/1.1\r\nHost: ${upstreamHost}\r\n\r\n` +
+    `CONNECT ${upstreamHost} HTTP/1.1\r\nHost: ${upstreamHost}\r\n`);
+  await barrierEntered;
+  const clientClosed = once(client, 'close');
+  const closed = harness.close();
+  client.write('\r\n');
+  await Promise.all([clientClosed, closed]);
+  assert.equal(upstreamConnections, 0, 'late CONNECT must not open an upstream socket');
+  assert.deepEqual(harness.observations.filter((entry) => entry.method === 'CONNECT'), [
+    { method: 'CONNECT', url: upstreamHost, kind: 'blocked' },
+  ]);
+});
