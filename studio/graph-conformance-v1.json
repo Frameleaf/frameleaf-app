@@ -50896,7 +50896,7 @@
       "covers": [
         "track.closeGap"
       ],
-      "summary": "Implementation-defined: with at, linked clips on a track without sync lock do not follow.",
+      "summary": "Historical input label retained: canonical single-gap edits keep surviving linked clips aligned without sync lock.",
       "base": "linked-chain",
       "envelopes": [
         {
@@ -51804,6 +51804,136 @@
         "reason": "invalid",
         "detail": "trackId: track \"no-such-track\" does not exist"
       }
+    },
+    {
+      "id": "track.closeGap/fl94-at-linked-without-sync-lock",
+      "story": "FL-94",
+      "covers": ["track.closeGap"],
+      "summary": "Close the interior gap with linked sound exactly once while its track has sync lock disabled.",
+      "base": "linked-chain",
+      "admission": { "status": "applied" },
+      "envelopes": [
+        { "id": "clip.delete", "payload": { "clipId": "bc7f10b3-6a01-4d4b-972a-f11c916f3ec7" }, "revision": 1, "idempotencyKey": "fl94:at-linked:0", "issuedAt": 1758800000000 },
+        { "id": "track.set", "payload": { "trackId": "a1", "patch": { "syncLock": false } }, "revision": 1, "idempotencyKey": "fl94:at-linked:1", "issuedAt": 1758800000000 },
+        { "id": "track.closeGap", "payload": { "trackId": "v1", "at": { "num": 3, "den": 1 } }, "revision": 1, "idempotencyKey": "fl94:at-linked:2", "issuedAt": 1758800000000 }
+      ],
+      "expect": null
+    },
+    {
+      "id": "track.closeGap/fl94-at-captions-without-sync-lock",
+      "story": "FL-94",
+      "covers": ["track.closeGap"],
+      "summary": "Attached transcript captions follow a leading single gap without sync lock.",
+      "base": "seed:captioned",
+      "admission": { "status": "applied" },
+      "envelopes": [
+        { "id": "track.set", "payload": { "trackId": "v2", "patch": { "syncLock": false } }, "revision": 1, "idempotencyKey": "fl94:at-captions:0", "issuedAt": 1758800000000 },
+        { "id": "track.closeGap", "payload": { "trackId": "v1", "at": { "num": 1, "den": 2 } }, "revision": 1, "idempotencyKey": "fl94:at-captions:1", "issuedAt": 1758800000000 }
+      ],
+      "expect": null
+    },
+    {
+      "id": "track.closeGap/fl94-at-captions-with-sync-lock",
+      "story": "FL-94",
+      "covers": ["track.closeGap"],
+      "summary": "Already sync-shifted captions are not shifted twice.",
+      "base": "seed:captioned",
+      "admission": { "status": "applied" },
+      "envelopes": [
+        { "id": "track.closeGap", "payload": { "trackId": "v1", "at": { "num": 1, "den": 2 } }, "revision": 1, "idempotencyKey": "fl94:at-captions-sync:0", "issuedAt": 1758800000000 }
+      ],
+      "expect": null
+    },
+    {
+      "id": "track.closeGap/fl94-all-captions",
+      "story": "FL-94",
+      "covers": ["track.closeGap"],
+      "summary": "Closing all gaps preserves complete attached-caption source metadata.",
+      "base": "seed:captioned",
+      "admission": { "status": "applied" },
+      "envelopes": [
+        { "id": "track.closeGap", "payload": { "trackId": "v1" }, "revision": 1, "idempotencyKey": "fl94:all-captions:0", "issuedAt": 1758800000000 }
+      ],
+      "expect": null
+    },
+    {
+      "id": "track.closeGap/fl94-at-locked-caption",
+      "story": "FL-94",
+      "covers": ["track.closeGap"],
+      "summary": "A locked attached-caption track refuses the whole single-gap batch.",
+      "base": "seed:captioned",
+      "admission": { "status": "rejected", "reason": "failed", "index": 1 },
+      "envelopes": [
+        { "id": "track.set", "payload": { "trackId": "v2", "patch": { "locked": true } }, "revision": 1, "idempotencyKey": "fl94:caption-lock:0", "issuedAt": 1758800000000 },
+        { "id": "track.closeGap", "payload": { "trackId": "v1", "at": { "num": 1, "den": 2 } }, "revision": 1, "idempotencyKey": "fl94:caption-lock:1", "issuedAt": 1758800000000 }
+      ],
+      "expect": null
+    },
+    {
+      "id": "track.closeGap/fl94-at-refuses-destructive-caption",
+      "story": "FL-94",
+      "covers": ["track.closeGap"],
+      "summary": "Sync-lock splitting of a captured attached caption refuses publication.",
+      "base": "seed:captioned",
+      "admission": { "status": "rejected", "reason": "failed", "index": 1 },
+      "envelopes": [
+        { "id": "clip.move", "payload": { "clipId": "cap1", "start": { "num": 1, "den": 3 }, "linkedSelectionEnabled": false }, "revision": 1, "idempotencyKey": "fl94:caption-split:0", "issuedAt": 1758800000000 },
+        { "id": "track.closeGap", "payload": { "trackId": "v1", "at": { "num": 1, "den": 2 } }, "revision": 1, "idempotencyKey": "fl94:caption-split:1", "issuedAt": 1758800000000 }
+      ],
+      "expect": null
+    },
+    {
+      "id": "track.closeGap/fl94-all-refuses-negative-caption",
+      "story": "FL-94",
+      "covers": ["track.closeGap"],
+      "summary": "A caption's intended negative start is refused before engine clamping.",
+      "base": "seed:captioned",
+      "admission": { "status": "rejected", "reason": "failed", "index": 1 },
+      "envelopes": [
+        { "id": "clip.move", "payload": { "clipId": "cap1", "start": { "num": 0, "den": 1 }, "linkedSelectionEnabled": false }, "revision": 1, "idempotencyKey": "fl94:caption-negative:0", "issuedAt": 1758800000000 },
+        { "id": "track.closeGap", "payload": { "trackId": "v1" }, "revision": 1, "idempotencyKey": "fl94:caption-negative:1", "issuedAt": 1758800000000 }
+      ],
+      "expect": null
+    },
+    {
+      "id": "track.closeGap/fl94-all-caption-exact-touch",
+      "story": "FL-94",
+      "covers": ["track.closeGap"],
+      "summary": "An unrelated title ending exactly at the shifted caption start is preserved.",
+      "base": "seed:captioned",
+      "admission": { "status": "applied" },
+      "envelopes": [
+        { "id": "title.add", "payload": { "text": "Barrier", "at": { "num": 0, "den": 1 }, "duration": { "num": 1, "den": 3 } }, "revision": 1, "idempotencyKey": "fl94:caption-touch:0", "issuedAt": 1758800000000 },
+        { "id": "track.closeGap", "payload": { "trackId": "v1" }, "revision": 1, "idempotencyKey": "fl94:caption-touch:1", "issuedAt": 1758800000000 }
+      ],
+      "expect": null
+    },
+    {
+      "id": "track.closeGap/fl94-all-caption-collision",
+      "story": "FL-94",
+      "covers": ["track.closeGap"],
+      "summary": "An unrelated title one frame into the intended caption range refuses all-gap closure.",
+      "base": "seed:captioned",
+      "admission": { "status": "rejected", "reason": "failed", "index": 1 },
+      "envelopes": [
+        { "id": "title.add", "payload": { "text": "Barrier", "at": { "num": 0, "den": 1 }, "duration": { "num": 11, "den": 30 } }, "revision": 1, "idempotencyKey": "fl94:caption-collision-all:0", "issuedAt": 1758800000000 },
+        { "id": "track.closeGap", "payload": { "trackId": "v1" }, "revision": 1, "idempotencyKey": "fl94:caption-collision-all:1", "issuedAt": 1758800000000 }
+      ],
+      "expect": null
+    },
+    {
+      "id": "track.closeGap/fl94-at-caption-collision",
+      "story": "FL-94",
+      "covers": ["track.closeGap"],
+      "summary": "Single-gap correction refuses a caption collision on a track without sync lock.",
+      "base": "seed:captioned",
+      "admission": { "status": "rejected", "reason": "failed", "index": 2 },
+      "envelopes": [
+        { "id": "track.set", "payload": { "trackId": "v2", "patch": { "syncLock": false } }, "revision": 1, "idempotencyKey": "fl94:caption-collision-at:0", "issuedAt": 1758800000000 },
+        { "id": "title.add", "payload": { "text": "Barrier", "at": { "num": 0, "den": 1 }, "duration": { "num": 11, "den": 30 } }, "revision": 1, "idempotencyKey": "fl94:caption-collision-at:1", "issuedAt": 1758800000000 },
+        { "id": "track.closeGap", "payload": { "trackId": "v1", "at": { "num": 1, "den": 2 } }, "revision": 1, "idempotencyKey": "fl94:caption-collision-at:2", "issuedAt": 1758800000000 }
+      ],
+      "expect": null
     },
     {
       "id": "marker.add/named-and-coloured",

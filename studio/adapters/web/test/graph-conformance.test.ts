@@ -97,6 +97,8 @@ interface Case {
    */
   settlesOnLoad?: boolean
   envelopes: CanonicalEnvelope[]
+  /** Authored input requirement, checked before recording an answer; never a fabricated receipt. */
+  admission?: { status: 'applied' | 'rejected'; reason?: string; index?: number }
   expect: CaseExpectation | null
 }
 
@@ -213,6 +215,7 @@ async function runCase(fixtures: Fixtures, entry: Case): Promise<CaseExpectation
   if (!base?.graph) throw new Error(`${entry.id}: base ${entry.base} has no graph`)
   const media = mediaOf(fixtures, entry.media, base.media)
   const outcome = await apply(base.graph, entry.envelopes, media)
+  if (entry.admission) expect(outcome, `${entry.id}: required admission`).toMatchObject(entry.admission)
   if (outcome.status === 'rejected') {
     return { status: 'rejected', index: outcome.index, reason: outcome.reason, detail: outcome.detail }
   }
@@ -228,6 +231,10 @@ async function runCase(fixtures: Fixtures, entry: Case): Promise<CaseExpectation
     media,
   )
   const clockIndependent = later.status === 'applied' && graphDigestOf(later.project) === digest
+  if (entry.admission?.status === 'applied') {
+    expect(fixedPoint, `${entry.id}: admitted graph survives reload`).toBe(true)
+    expect(clockIndependent, `${entry.id}: admitted graph is clock independent`).toBe(true)
+  }
   // FL-309: a case that settles on load records what the load makes of it, and that it then holds.
   let settled: { digest: string; envelopeDigest: string; fixedPoint: boolean } | undefined
   if (entry.settlesOnLoad && again.status === 'applied') {

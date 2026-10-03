@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import {
   applyMarkerCommand,
   applyTrackCommand,
+  canonicalJson,
   carryFrame,
   clampInOut,
   exactRate,
@@ -1229,12 +1230,10 @@ const commands = {
     if (track.locked) failed('track.closeGap: the track is locked');
     const onTrack = () => state.items.filter((item) => item.trackId === track.id).sort((a, b) => a.from - b.from);
     if (payload.at === undefined) {
+      const linked = linkedSet(state, onTrack().map((item) => item.id));
       refuseLocked(
         state,
-        linkedSet(
-          state,
-          onTrack().map((item) => item.id),
-        ),
+        linked,
         'track.closeGap',
       );
       let cursor = 0;
@@ -1260,11 +1259,13 @@ const commands = {
       const moves = state.items
         .filter((item) => (shift.get(item.id) ?? 0) > 0)
         .map((item) => ({ id: item.id, from: item.from - shift.get(item.id) }));
+      if (moves.some((entry) => entry.from < 0)) failed('track.closeGap: clips would start before the timeline');
       for (const entry of moves) move(state, entry.id, entry.from);
       repair(
         state,
         moves.map((entry) => entry.id),
       );
+      refuseOverlap(state, linked.map((id) => clipOf(state, id).trackId), 'track.closeGap');
       let expected = 0;
       for (const item of onTrack()) {
         if (item.from !== expected) failed('track.closeGap: a gap could not be closed');
@@ -1283,9 +1284,35 @@ const commands = {
     }
     if (b === undefined || b <= a) invalid('track.closeGap: there is no gap on the track at that time');
     const later = state.items.filter((item) => item.trackId === track.id && item.from >= b);
+    const before = structuredClone(state.items);
+    const beforeById = new Map(before.map((item) => [item.id, item]));
+    const linked = linkedSet(state, later.map((item) => item.id));
+    refuseLocked(state, linked, 'track.closeGap');
+    const moves = linked.map((id) => ({ id, from: beforeById.get(id).from - (b - a) }));
+    if (moves.some((entry) => entry.from < 0)) failed('track.closeGap: clips would start before the timeline');
+    const affectedTracks = new Set([
+      ...linked.map((id) => beforeById.get(id).trackId),
+      ...before.filter((item) => syncEnabled(trackOf(state, item.trackId))).map((item) => item.trackId),
+    ]);
     for (const item of later) move(state, item.id, item.from - (b - a));
     const affected = removeIntervals(state, new Set([track.id]), [{ start: a, end: b }], draw);
     repair(state, [...later.map((item) => item.id), ...affected]);
+    for (const id of linked) {
+      const original = beforeById.get(id);
+      const current = state.items.find((item) => item.id === id);
+      if (!current || canonicalJson(current) !== canonicalJson({ ...original, from: current.from })) {
+        failed('track.closeGap: sync lock would change a linked source window');
+      }
+    }
+    const corrections = moves.filter((entry) => clipOf(state, entry.id).from !== entry.from);
+    for (const entry of corrections) move(state, entry.id, entry.from);
+    if (corrections.length > 0) repair(state, corrections.map((entry) => entry.id));
+    for (const entry of moves) {
+      if (canonicalJson(clipOf(state, entry.id)) !== canonicalJson({ ...beforeById.get(entry.id), from: entry.from })) {
+        failed('track.closeGap: a linked item could not close the gap without changing its source data');
+      }
+    }
+    refuseOverlap(state, affectedTracks, 'track.closeGap');
   },
 
   /* 12.8 */
