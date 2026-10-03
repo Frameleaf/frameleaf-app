@@ -428,6 +428,10 @@ export const resolveEditedMasterColorPolicy = (
  * remaps, are the ones that are muxed. `-video_track_timescale` pins the output timescale to the
  * source time base so those timestamps stay exactly representable instead of being rounded into
  * the muxer's default 1/1000 grid.
+ * Passthrough also selects the filtergraph's video encoder timebase: the default inverse
+ * frame-rate grid can round speed-remapped PTS before the container ever sees them.
+ * See https://ffmpeg.org/ffmpeg.html and FFmpeg 7.1.3 choose_out_timebase/adjust_frame_pts_to_encoder_tb:
+ * https://github.com/FFmpeg/FFmpeg/blob/n7.1.3/fftools/ffmpeg_filter.c#L1972-L2064
  *
  * FL-93: the timescale is now derived from the source's *rational* time base rather than from
  * the persisted integer denominator, so a container that declares a time base with a numerator
@@ -446,7 +450,7 @@ export const getEditedMasterTimingArgs = (
   const args =
     cadence?.mode === OutputCadenceMode.Convert && cadence.cadence
       ? ['-fps_mode', 'cfr', '-r', formatRational(cadence.cadence)]
-      : ['-fps_mode', 'passthrough'];
+      : ['-fps_mode', 'passthrough', '-enc_time_base:v', 'filter'];
 
   const timeBase = resolveSourceTimeBase(videoStream);
   if (timeBase) {
