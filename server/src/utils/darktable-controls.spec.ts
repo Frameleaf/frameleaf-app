@@ -1,5 +1,5 @@
 import { DarktableDevelopRecipeSchema } from 'src/dtos/asset-develop.dto.js';
-import { nativeModuleParams, nativeBlendParams } from 'src/utils/darktable-controls.js';
+import { nativeBlendParams, nativeModuleParams } from 'src/utils/darktable-controls.js';
 
 const base = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0 };
 it('validates every native control, strict nested objects and ordered endpoint curves', () => {
