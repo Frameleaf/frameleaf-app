@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable, sql } from 'kysely';
+import { type ExpressionBuilder, type Insertable, type Kysely, type Transaction, type Updateable, sql } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
@@ -8,7 +8,7 @@ import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserMetadataKey, UserStatus } from 'src/enum.js';
-import { canWriteFork } from 'src/repositories/fork-write-guard.js';
+import { canWriteFork, lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { UTILITY_ACTIVITY_RETENTION_DAYS } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -455,6 +455,7 @@ export class UserRepository {
     pinCode: string | null,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (db) => {
+      await lockPublicForkWrites(db);
       const user = await db
         .selectFrom('user')
         .select('user.id')
@@ -478,14 +479,18 @@ export class UserRepository {
   }
 
   update(id: string, dto: Updateable<UserTable>) {
-    return this.db
-      .updateTable('user')
-      .set(dto)
-      .where('user.id', '=', asUuid(id))
-      .where('user.deletedAt', 'is', null)
-      .returning(columns.userAdmin)
-      .returning(withMetadata)
-      .executeTakeFirstOrThrow();
+    const write = (db: Kysely<DB>) =>
+      db
+        .updateTable('user')
+        .set(dto)
+        .where('user.id', '=', asUuid(id))
+        .where('user.deletedAt', 'is', null)
+        .returning(columns.userAdmin)
+        .returning(withMetadata)
+        .executeTakeFirstOrThrow();
+    return Object.hasOwn(dto, 'pinCode') || Object.hasOwn(dto, 'deletedAt')
+      ? withPublicForkWrites(this.db, write)
+      : write(this.db);
   }
 
   /**
@@ -569,44 +574,74 @@ export class UserRepository {
   }
 
   async updateAll(dto: Updateable<UserTable>) {
-    await this.db.updateTable('user').set(dto).execute();
+    const write = async (db: Kysely<DB>) => {
+      await db.updateTable('user').set(dto).execute();
+    };
+    if (Object.hasOwn(dto, 'pinCode') || Object.hasOwn(dto, 'deletedAt')) {
+      await withPublicForkWrites(this.db, write);
+    } else {
+      await write(this.db);
+    }
   }
 
   restore(id: string) {
-    return this.db
-      .updateTable('user')
-      .set({ status: UserStatus.Active, deletedAt: null })
-      .where('user.id', '=', asUuid(id))
-      .returning(columns.userAdmin)
-      .returning(withMetadata)
-      .executeTakeFirstOrThrow();
+    return withPublicForkWrites(this.db, (db) =>
+      db
+        .updateTable('user')
+        .set({ status: UserStatus.Active, deletedAt: null })
+        .where('user.id', '=', asUuid(id))
+        .returning(columns.userAdmin)
+        .returning(withMetadata)
+        .executeTakeFirstOrThrow(),
+    );
   }
 
   async upsertMetadata<T extends keyof UserMetadata>(
     id: string,
     { key, value }: { key: T; value: UserMetadata[T] },
-    db: Kysely<DB> = this.db,
+    transaction?: Transaction<DB>,
   ) {
-    await db
-      .insertInto('user_metadata')
-      .values({ userId: id, key, value })
-      .onConflict((oc) =>
-        oc.columns(['userId', 'key']).doUpdateSet({
-          key,
-          value,
-        }),
-      )
-      .execute();
+    const write = async (db: Kysely<DB>) => {
+      await db
+        .insertInto('user_metadata')
+        .values({ userId: id, key, value })
+        .onConflict((oc) =>
+          oc.columns(['userId', 'key']).doUpdateSet({
+            key,
+            value,
+          }),
+        )
+        .execute();
+    };
+    if (transaction) {
+      if (key === UserMetadataKey.Preferences) {
+        await lockPublicForkWrites(transaction);
+      }
+      await write(transaction);
+    } else if (key === UserMetadataKey.Preferences) {
+      await withPublicForkWrites(this.db, write);
+    } else {
+      await write(this.db);
+    }
   }
 
   async deleteMetadata<T extends keyof UserMetadata>(id: string, key: T) {
-    await this.db.deleteFrom('user_metadata').where('userId', '=', id).where('key', '=', key).execute();
+    const write = async (db: Kysely<DB>) => {
+      await db.deleteFrom('user_metadata').where('userId', '=', id).where('key', '=', key).execute();
+    };
+    if (key === UserMetadataKey.Preferences) {
+      await withPublicForkWrites(this.db, write);
+    } else {
+      await write(this.db);
+    }
   }
 
   delete(user: { id: string }, hard?: boolean) {
-    return hard
-      ? this.db.deleteFrom('user').where('id', '=', user.id).execute()
-      : this.db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', user.id).execute();
+    return withPublicForkWrites(this.db, (db) =>
+      hard
+        ? db.deleteFrom('user').where('id', '=', user.id).execute()
+        : db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', user.id).execute(),
+    );
   }
 
   @GenerateSql()
