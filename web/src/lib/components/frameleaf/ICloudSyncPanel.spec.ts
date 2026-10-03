@@ -124,7 +124,11 @@ describe('ICloudSyncPanel', () => {
   });
 
   it('never submits a delayed protected choice after account replacement', async () => {
-    const gate = Promise.withResolvers<{ isElevated: boolean }>();
+    let resolve!: (value: { isElevated: boolean }) => void;
+    const promise = new Promise<{ isElevated: boolean }>((resolvePromise) => {
+      resolve = resolvePromise;
+    });
+    const gate = { promise, resolve };
     mocks.getAuthStatus.mockReturnValue(gate.promise);
     render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
     await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_icloud_weekly_consent }));
@@ -185,13 +189,18 @@ describe('ICloudSyncPanel', () => {
   });
 
   it('does not publish a delayed grant response into a replacement account presentation', async () => {
-    const gate = Promise.withResolvers<{
+    type AuthorityStatus = {
       enabled: boolean;
       includeProtected: boolean;
       available: boolean;
       regrantRequired: boolean;
       executionAvailable: false;
-    }>();
+    };
+    let resolve!: (value: AuthorityStatus) => void;
+    const promise = new Promise<AuthorityStatus>((resolvePromise) => {
+      resolve = resolvePromise;
+    });
+    const gate = { promise, resolve };
     mocks.updateICloudIdentityReuseAuthority.mockReturnValue(gate.promise);
     render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
     await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_icloud_weekly_consent }));
