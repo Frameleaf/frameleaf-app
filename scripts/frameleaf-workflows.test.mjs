@@ -83,6 +83,47 @@ test("Studio graph recovery preserves the failed gate and generates only genuine
     ),
   );
 });
+test("Studio source recovery retains evidence without bypassing normal preparation", () => {
+  const steps = workflow("frameleaf-studio-engine.yml").jobs.engine.steps;
+  const prepare = steps.find((step) => step.id === "prepare_source");
+  const probe = steps.find((step) => step.id === "source_recovery_receipt");
+  const upload = steps.find(
+    (step) => step.with?.name === "frameleaf-studio-source-recovery",
+  );
+  assert.equal(prepare.run, "node studio/tools/engine.mjs prepare");
+  assert.equal(prepare.env.STUDIO_SOURCE_RECOVERY, "1");
+  assert.equal(prepare["continue-on-error"], undefined);
+  assert.ok(probe.if.includes("always()"));
+  assert.ok(probe.run.includes('$RUNNER_TEMP/frameleaf-studio-source-recovery.json'));
+  assert.equal(
+    upload.if,
+    "${{ always() && steps.source_recovery_receipt.outputs.produced == 'true' }}",
+  );
+  assert.equal(
+    upload.with.path,
+    "${{ runner.temp }}/frameleaf-studio-source-recovery.json",
+  );
+  assert.equal(upload.with["if-no-files-found"], "error");
+  assert.equal(
+    upload.uses,
+    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+  );
+  for (const step of steps.filter((step) =>
+    /npm --prefix studio\/engine (?:ci|run build)/.test(step.run ?? ""),
+  )) {
+    assert.equal(step.if, undefined);
+    assert.equal(step["continue-on-error"], undefined);
+  }
+  const source = readFileSync(path.join(root, "studio/tools/engine.mjs"), "utf8");
+  assert.ok(
+    source.indexOf("await admitAdaptedSource(source, configuration.sourceSha256") <
+      source.indexOf("await rename(generated, engine)"),
+  );
+  assert.ok(
+    source.includes("finally { await rm(scratch, { recursive: true, force: true }); }"),
+  );
+  assert.ok(source.includes("'Adapted source digest mismatch'"));
+});
 const owned = readdirSync(path.join(root, ".github/workflows")).filter(
   (name) =>
     /\.ya?ml$/.test(name) &&
