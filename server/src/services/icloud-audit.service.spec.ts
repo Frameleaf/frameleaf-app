@@ -89,28 +89,32 @@ describe(ICloudAuditService.name, () => {
       config: ICloudConfigSchema.parse({}),
     };
     expected = createHash('sha256').update(fresh).digest();
-    repository.get.mockImplementation(async () => ({
-      id: auditRequestId,
-      operationId: operation.id,
-      result: 'running',
-    }));
-    repository.check.mockImplementation(async () =>
-      current ? { source: resource, connection, private: false, request: { expectedSha256: expected } } : undefined,
+    repository.get.mockImplementation(() =>
+      Promise.resolve({ id: auditRequestId, operationId: operation.id, result: 'running' }),
+    );
+    repository.check.mockImplementation(() =>
+      Promise.resolve(
+        current ? { source: resource, connection, private: false, request: { expectedSha256: expected } } : undefined,
+      ),
     );
     repository.allocate.mockResolvedValue(resource);
-    identities.claim.mockImplementation(async () => [{ id: claimId, holder: `icloud-sync:audit:${operation.id}` }]);
+    identities.claim.mockImplementation(() =>
+      Promise.resolve([{ id: claimId, holder: `icloud-sync:audit:${operation.id}` }]),
+    );
     identities.renew.mockResolvedValue([{ id: claimId }]);
     sync.progress.mockResolvedValue(true);
     sync.get.mockResolvedValue(connection);
     sync.withSession.mockImplementation(async (_id, _owner, callback) => (await callback(connection)).value);
-    sync.resource.mockImplementation(async () => ({ ...resource, status: 'committed' }));
+    sync.resource.mockImplementation(() => Promise.resolve({ ...resource, status: 'committed' }));
     transport.enabled.mockReturnValue(true);
-    transport.download.mockImplementation(async () => ({
-      stream: Readable.from([fresh]),
-      session: { version: 1 },
-      fingerprint: resource.fingerprint,
-      size: fresh.length,
-    }));
+    transport.download.mockImplementation(() =>
+      Promise.resolve({
+        stream: Readable.from([fresh]),
+        session: { version: 1 },
+        fingerprint: resource.fingerprint,
+        size: fresh.length,
+      }),
+    );
     operations.reportProgress.mockResolvedValue(true);
     operations.heartbeat.mockResolvedValue(true);
     operations.beginValidation.mockResolvedValue(true);
@@ -180,18 +184,20 @@ describe(ICloudAuditService.name, () => {
   it('does not publish or import when source authority is revoked before a blocked stream finishes', async () => {
     const entered = Promise.withResolvers<void>(),
       release = Promise.withResolvers<void>();
-    transport.download.mockImplementation(async () => ({
-      stream: Readable.from(
-        (async function* () {
-          entered.resolve();
-          await release.promise;
-          yield fresh;
-        })(),
-      ),
-      session: {},
-      fingerprint: resource.fingerprint,
-      size: fresh.length,
-    }));
+    transport.download.mockImplementation(() =>
+      Promise.resolve({
+        stream: Readable.from(
+          (async function* () {
+            entered.resolve();
+            await release.promise;
+            yield fresh;
+          })(),
+        ),
+        session: {},
+        fingerprint: resource.fingerprint,
+        size: fresh.length,
+      }),
+    );
     const running = service.run(operation, token);
     await entered.promise;
     current = false;

@@ -270,7 +270,7 @@ export async function guardAudit(
     .where('asset.id', '=', request.originalAssetId)
     .where('asset.originalPath', '=', request.snapshot.originalPath)
     .where('asset.checksum', '=', Buffer.from(request.snapshot.checksum, 'hex'))
-    .where(sql<boolean>`asset."checksumAlgorithm" IS NOT DISTINCT FROM ${request.snapshot.algorithm}::text`)
+    .where(sql<boolean>`asset."checksumAlgorithm"::text IS NOT DISTINCT FROM ${request.snapshot.algorithm}::text`)
     .where('asset.updateId', '=', request.snapshot.updateId);
   if (lock) {
     safe = safe.forShare('asset');
