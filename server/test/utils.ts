@@ -451,6 +451,9 @@ export const getMocks = () => {
   mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
   mocks.classification.getRules.mockResolvedValue([]);
   mocks.classification.getEnabledRules.mockResolvedValue([]);
+  // FL-326: no partner copies follow anything unless a test says so
+  mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
+  mocks.partnerOrigin.getFollowers.mockResolvedValue([]);
   mocks.classification.getRuleByAlbumId.mockResolvedValue(undefined);
   mocks.classification.recordAlbumRemovals.mockResolvedValue({
     added: 0,

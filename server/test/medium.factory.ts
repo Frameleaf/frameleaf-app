@@ -196,6 +196,11 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
       if (options.mock.includes(dep)) {
         return newMockRepository(dep);
       }
+
+      // FL-326: every asset, tag and partner edit records partner-copy lineage; it is real unless mocked
+      if (dep === PartnerOriginRepository) {
+        return this.get(dep);
+      }
     }) as unknown as ClassConstructorsToInstances<BaseServiceDeps>;
   }
 
