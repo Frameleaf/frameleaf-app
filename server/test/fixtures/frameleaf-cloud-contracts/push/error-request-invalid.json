@@ -1,0 +1,32 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://push.frameleaf.cloud/v1/push/send",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://push.frameleaf.cloud/v1/push/send, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "An alert without its payload, with a field the contract doesn't have. `data.fields` names what was refused (`_` is the body itself) and never echoes a value.",
+    "body": {
+      "platform": "apns",
+      "token": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "type": "alert",
+      "title": "Hello"
+    }
+  },
+  "status": 422,
+  "headers": {},
+  "body": {
+    "code": "request-invalid",
+    "message": "Some fields are missing or invalid.",
+    "retryable": false,
+    "data": {
+      "fields": {
+        "_": "This field isn't accepted.",
+        "payload": "Alert and background pushes need an encrypted payload."
+      }
+    },
+    "requestId": "req_01J8ZK3M4N5P6Q7Y"
+  }
+}

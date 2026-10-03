@@ -1,0 +1,33 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://push.frameleaf.cloud/v1/push/send",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://push.frameleaf.cloud/v1/push/send, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "The platform (here FCM) isn't configured on this deployment yet.",
+    "body": {
+      "platform": "fcm",
+      "token": "fake-fcm-registration-token:FIXTURE_ONLY_0000000000000000",
+      "type": "alert",
+      "priority": "high",
+      "ttlSec": 86400,
+      "payload": "ZmFrZS1jaXBoZXJ0ZXh0LWZvci1maXh0dXJlcy1vbmx5LW5vdC1hLXJlYWwtcHVzaC1lbnZlbG9wZQ"
+    }
+  },
+  "status": 503,
+  "headers": {
+    "Retry-After": "3600"
+  },
+  "body": {
+    "code": "push-unavailable",
+    "message": "Push notifications for this platform aren't available yet.",
+    "retryable": true,
+    "data": {
+      "retryAfterSec": 3600
+    },
+    "requestId": "req_01J8ZK3M4N5P6Q80"
+  }
+}

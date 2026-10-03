@@ -6,9 +6,17 @@ import { FrameleafCloudPushRepository } from 'src/repositories/frameleaf-cloud-p
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { PushSendRequest } from 'src/utils/frameleaf-push.js';
 import { FakeCloud, dpopTokenOf, startFakeCloud, tokenAnswer } from 'test/fake-frameleaf-cloud.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+
+type PublishedPush = {
+  request: { method: string; url: string; body: PushSendRequest };
+  status: number;
+  headers: Record<string, string>;
+  body: unknown;
+};
 
 describe(FrameleafCloudPushRepository.name, () => {
   let cloud: FakeCloud;
@@ -115,5 +123,54 @@ describe(FrameleafCloudPushRepository.name, () => {
     }));
 
     await expect(sut.send(await target(), request())).rejects.toBeInstanceOf(FrameleafCloudError);
+  });
+
+  it.each([
+    'send-alert',
+    'send-background',
+    'send-invalid-token',
+    'send-live-activity-start',
+    'send-live-activity-update',
+    'send-live-activity-end',
+    'send-retry',
+    'send-throttled',
+    'error-push-unavailable',
+    'error-rate-limited',
+  ])('conforms to published Cloud 0.0.3 %s bytes through the actual DPoP client', async (name) => {
+    const fixture = cloudContractFixture<PublishedPush>(`push/${name}.json`);
+    cloud.on('POST /push/v1/push/send', () => ({
+      status: fixture.status,
+      headers: fixture.headers,
+      body: fixture.body,
+    }));
+    const sending = sut.send(await target(), fixture.request.body);
+    if (fixture.status === 200) {
+      await expect(sending).resolves.toEqual(fixture.body);
+    } else {
+      await expect(sending).rejects.toMatchObject({
+        status: fixture.status,
+        envelope: errorEnvelopeSchema.parse(fixture.body),
+        retryAfterSeconds: Number(fixture.headers['Retry-After']),
+      });
+    }
+    const sent = cloud.requests.find(({ path }) => path === '/push/v1/push/send')!;
+    expect(sent.json()).toEqual(fixture.request.body);
+    expect(fixture.request.method).toBe('POST');
+    expect(new URL(fixture.request.url).pathname).toBe('/v1/push/send');
+    expect(sent.headers.authorization).toMatch(/^DPoP /);
+    expect(dpopTokenOf(sent)).toBeTruthy();
+    expect(sent.dpop?.claims.htm).toBe(fixture.request.method);
+    expect(sent.dpop?.claims.htu).toBe(`${cloud.url}/push${new URL(fixture.request.url).pathname}`);
+    const token = cloud.requests.find(({ path }) => path === '/id/token')!;
+    expect(token.form().get('resource')).toBe(`${cloud.url}/api`);
+  });
+
+  it('rejects the published invalid push before admitting an HTTP send', async () => {
+    const fixture = cloudContractFixture<PublishedPush>('push/error-request-invalid.json');
+    const resolved = await target();
+    const before = cloud.requests.length;
+    await expect(sut.send(resolved, fixture.request.body)).rejects.toThrow();
+    expect(cloud.requests).toHaveLength(before);
+    expect(cloud.requests.filter(({ path }) => path.startsWith('/push'))).toEqual([]);
   });
 });

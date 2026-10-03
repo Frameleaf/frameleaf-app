@@ -2,11 +2,12 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { type KeyObject, createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { arch, platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
+import { serverVersion } from 'src/constants.js';
 import {
   AdminAuditAction,
   DatabaseLock,
@@ -277,6 +278,72 @@ describe(FrameleafCloudService.name, () => {
   });
 
   describe('device flow (FL-155)', () => {
+    it('consumes the published device authorization, pending and link contracts without exposing credentials', async () => {
+      const authorization = cloudContractFixture<{
+        device_code: string;
+        user_code: string;
+        verification_uri: string;
+        verification_uri_complete: string;
+        expires_in: number;
+        interval: number;
+      }>('identity/device-authorization-response.json');
+      const authorizationRequest = cloudContractFixture<Record<string, string>>(
+        'identity/device-authorization-request.json',
+      );
+      const pollingRequest = cloudContractFixture<Record<string, string>>('identity/device-token-request.json');
+      const pending = cloudContractFixture('identity/device-token-pending.json');
+      const approved = cloudContractFixture<{ access_token: string }>('identity/token-response-link.json');
+      let grant: { status: number; body: unknown } = { status: 400, body: pending };
+      serveLinking(() => grant);
+      cloud.on('POST /id/device/auth', () => ({ status: 200, body: authorization }));
+
+      const status = await sut.startLink(authStub.admin);
+      expect(status).toMatchObject({
+        state: 'pending',
+        pending: {
+          userCode: authorization.user_code,
+          verificationUri: authorization.verification_uri,
+          verificationUriComplete: authorization.verification_uri_complete,
+          intervalSeconds: authorization.interval,
+        },
+      });
+      expect(Object.fromEntries(cloud.requests.find(({ path }) => path === '/id/device/auth')!.form())).toEqual({
+        ...authorizationRequest,
+        instance_name: 'Frameleaf server',
+        version: serverVersion.toString(),
+        jkt: status.keyFingerprint,
+        platform: `${platform()}/${arch()}`,
+      });
+      const publicPending = JSON.stringify([status, await sut.getStatus(), await sut.getLink()]);
+      expect(publicPending).not.toContain(authorization.device_code);
+      expect(publicPending).not.toContain(approved.access_token);
+
+      makeDue();
+      const waiting = await sut.getLink();
+      expect(waiting).toMatchObject({ state: 'pending', linkResult: 'pending' });
+      const poll = cloud.requests.find(({ path }) => path === '/id/token')!;
+      expect(Object.fromEntries(poll.form())).toEqual(pollingRequest);
+      expect(JSON.stringify(waiting)).not.toContain(authorization.device_code);
+
+      grant = { status: 200, body: approved };
+      makeDue();
+      const completed = await sut.getLink();
+      expect(completed.state).toBe('linked');
+      const register = cloud.requests.find(({ path, method }) => path === '/api/v1/instances' && method === 'POST')!;
+      expect(register.headers.authorization).toBe(`Bearer ${approved.access_token}`);
+      expectRegistrationProof(register);
+      expect(storedLink()?.pending).toBeUndefined();
+      const persistedAndPublic = JSON.stringify([
+        Object.fromEntries(metadata),
+        completed,
+        await sut.getStatus(),
+        await sut.getLink(),
+      ]);
+      expect(persistedAndPublic).not.toContain(authorization.device_code);
+      expect(persistedAndPublic).not.toContain(approved.access_token);
+      expect(storedLink()?.instanceId).toBe(localInstanceId());
+    });
+
     it('starts a device authorization with this server’s name, version, key thumbprint and platform', async () => {
       serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));
       const status = await sut.startLink(authStub.admin);

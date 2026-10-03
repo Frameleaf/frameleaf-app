@@ -99,7 +99,7 @@ describe(FrameleafAuthService.name, () => {
         )
         .setIssuer(issuer())
         .setAudience(INSTANCE)
-        .setSubject('fl-sub')
+        .setSubject(typeof idClaims.sub === 'string' ? idClaims.sub : 'fl-sub')
         .setIssuedAt(now)
         .setExpirationTime(now + 300)
         .sign(idTokenAlg === 'EdDSA' ? edKey : issuerKey);
@@ -199,6 +199,47 @@ describe(FrameleafAuthService.name, () => {
   });
 
   describe('callback', () => {
+    it('links and creates the published instance claims through the signed OIDC callback with its actual subject and sid', async () => {
+      const claims = cloudContractFixture<{
+        sub: string;
+        email: string;
+        name: string;
+        sid: string;
+        frameleaf_role: string;
+        frameleaf_access: string;
+      }>('identity/instance-claims.json');
+      idClaims = { ...claims };
+      idTokenAlg = 'EdDSA';
+      const created = UserFactory.create({ email: claims.email, name: claims.name, isAdmin: true });
+      mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);
+      mocks.user.getByEmail.mockResolvedValue(void 0);
+      mocks.clusterGroup.create.mockResolvedValue({ id: 'group-1' } as never);
+      mocks.user.create.mockResolvedValue(created as never);
+
+      const response = await sut.callback(callbackDto, {}, loginDetails);
+      expect(assertions).toHaveLength(1); // serveIssuer verifies the real private_key_jwt signature.
+      expect(mocks.frameleafAccount.getLinkBySub).toHaveBeenCalledWith(claims.sub);
+      expect(mocks.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({ email: claims.email, name: claims.name, isAdmin: true, quotaSizeInBytes: null }),
+      );
+      expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: created.id,
+          sub: claims.sub,
+          email: claims.email,
+          emailVerified: true,
+          role: claims.frameleaf_role,
+          access: claims.frameleaf_access,
+          autoRegistered: true,
+        }),
+      );
+      expect(mocks.frameleafAccount.tagSession).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'session-1', userId: created.id, sub: claims.sub, sid: claims.sid }),
+      );
+      expect(response.userId).toBe(created.id);
+      // Picture is not enforced by this consumer; this is not full-envelope or provider qualification.
+    });
+
     it('creates the account Frameleaf Cloud authorized, with private_key_jwt, and tags the session', async () => {
       const created = UserFactory.create({ email: 'remote@example.test', name: 'Remote Person' });
       mocks.frameleafAccount.getLinkBySub.mockResolvedValue(void 0);

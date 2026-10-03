@@ -154,3 +154,73 @@ above.
   `packages/contracts/src/billing/stores.ts` and `INSTANCE_CAPABILITY_BACKUP_PLAN` in `src/instance/heartbeat.ts`;
   `server/src/utils/frameleaf-cloud-link.ts` reads it and `server/src/services/frameleaf-cloud.service.spec.ts` checks the
   pushes, `server/src/utils/frameleaf-cloud-backup.spec.ts` the `plan_full` reason.
+
+## Published registry receipt: Cloud contracts 0.0.3
+
+The selective 0.0.3 import is pinned by `registry-0.0.3.json`, copied from the verified registry receipt
+with per-file SHA256 values from the genuine package. Package `@frameleaf/cloud-contracts` version
+0.0.3, registry version ID 1329556226, is Apache-2.0 and restricted on GitHub Packages; this import
+adds no runtime dependency or registry credentials. The annotated `contracts-v0.0.3` tag resolves to
+`b7e9b37b53392694383ecc69fe4d7f18496d4ac2`. Tarball SHA256:
+`23aeee533b7b969473e1a6ab53f1d0299369ea015eb37f85c4cc847cfd194eba`; its registry SHA512 integrity
+and SHA1 are retained in the receipt.
+
+Only `instance/discovery.json` and `instance/discovery-instance.json` are refreshed (the published
+`endpoints.push` address), plus eleven new `push/` fixtures. Every imported file is byte-identical to
+`fixtures/` in that tarball. Other copied files remain unchanged. In particular both heartbeat
+backup-plan fixtures and `backup/usage-plan-full.json` were compared byte-for-byte with 0.0.3 and
+remain unchanged; their hashes and actual parser assertions are in `frameleaf-cloud-contracts.spec.ts`.
+
+The discovery and push parsers remain Library-owned. Conformance covers actual DPoP request bodies,
+API token audience, push proof address, response/error envelopes and local rejection of the published
+invalid request. It does not qualify APNs delivery, relay, linked servers, top-ups or provider behavior.
+
+### Earlier package parser compatibility (source-derived)
+
+The genuine registry 0.0.2 tarball has SHA256
+`a63d807ea2ad81c046acb223fdc7cf87bf6c8520256edb48b5c226d9b7c8f540`; its registry receipt verifies
+SHA1 `44d575f4b6f318d52f97fc7790bcc784acf3a8f7` and SHA512 integrity. Inspection of that package's
+compiled `instance/discovery.js` shows `DiscoveryEndpoints = z.strictObject(...)` without a `push`
+property. Therefore the unmodified 0.0.2 package parser rejects the new additive `endpoints.push`
+field. This is a source-derived compatibility finding, not an executed runtime result. The 0.0.3
+package declares `push` optional, preserving discovery documents that omit it.
+
+The Library owns its parser and copied corpus; it does not import either package as a runtime
+dependency. Its current conformance covers FC-98's optional discovery push address, explicit
+`FRAMELEAF_PUSH_URL` precedence, and all eleven published push fixtures. This packet introduces no
+additional FL-293 product question or delivery qualification claim.
+
+
+## Published identity receipt: Cloud contracts 0.0.3
+
+`identity-0.0.3.json` is a separate selective import receipt for the SAME verified package above:
+SHA256 `23aeee533b7b969473e1a6ab53f1d0299369ea015eb37f85c4cc847cfd194eba`, source
+`b7e9b37b53392694383ecc69fe4d7f18496d4ac2`, registry version ID 1329556226. It retains the genuine
+registry SHA512 integrity, SHA1 and byte count and records each of eight byte-exact fixture hashes.
+The existing `registry-0.0.3.json` and its 13-file selection/assertions remain unchanged. No runtime
+package dependency or registry credential is introduced. This paragraph supersedes only the earlier
+statement that `identity/instance-claims.json` was not copied; historical provenance above is retained.
+
+The eight files are `identity/device-authorization-{request,response}.json`,
+`identity/device-token-{request,pending}.json`, `identity/token-request-client-credentials.json`,
+`identity/token-response-{instance,link}.json`, and `identity/instance-claims.json`. Actual Library
+consumer tests exercise the device authorization/poll/link registration path, signed live instance
+client assertions and DPoP, and the cryptographically signed OIDC callback. Illustrative client JWT
+bytes are NOT used as a signer: issuer/subject/audience, TTL, fresh JTI and signature are checked using
+the real instance key and dynamic configured resource. OIDC issuer/audience and iat/exp are minted by
+the existing actual test issuer; the fixture's subject, role, access, email/name and session sid are
+consumed by the real callback/account/session path. Existing tests keep the default `fl-sub` unless
+claims explicitly supply a string subject. No picture-field enforcement or full-envelope claim.
+
+The exact published `token-response-instance.json` has no `cnf.jkt`. The actual `accessToken` consumer
+must reject it and must not cache it; this is NEGATIVE conformance, not positive instance token
+qualification. Existing positive bound-token/DPoP controls remain unchanged. The link response is a
+temporary registration credential; device/link tokens are tested not to escape public state or remain
+in metadata after successful registration.
+
+`identity/oidc-client-metadata.json` is deliberately NOT copied: there is no complete Library builder
+or consumer for that registration metadata. Callback/client-assertion tests do not qualify an invented
+registration parser, endpoint, or application registration flow. This remains a Cloud-owned integration
+gap, as does Cloud's quarterly key publication fix. No production auth weakening or generated API
+changes. These are authored source tests pending hosted execution, not deployed identity/provider,
+quarterly rotation, native/store or complete product acceptance.
