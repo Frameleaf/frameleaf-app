@@ -343,14 +343,14 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
             throw new Error(`Server ${app.side}: real capture failed; inspect hosted diagnostics`);
           }
           const [operation] = await app.db<{ status: string }[]>`
-            select status from immich_fork.media_operation where id=${sourceRuns[index]}
+            select status from public.media_operation where id=${sourceRuns[index]}
           `;
           return operation?.status === 'completed' && state.lastCompleteAt !== null;
         },
         Boolean,
         180_000,
       );
-      const [completed] = await app.db`select status from immich_fork.media_operation where id=${sourceRuns[index]}`;
+      const [completed] = await app.db`select status from public.media_operation where id=${sourceRuns[index]}`;
       expect(completed.status).toBe('completed');
       await unlock(app);
       const snapshots = await json<{ snapshots: Array<{ id: string }> }>(
