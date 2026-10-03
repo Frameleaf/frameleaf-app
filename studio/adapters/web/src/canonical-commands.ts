@@ -54,7 +54,7 @@ import {
   getLinkedItemIds,
   getUniqueLinkedItemAnchorIds,
 } from '@/features/timeline/utils/linked-items'
-import { expandIdsWithLinkedItems } from '@/features/timeline/stores/actions/linked-edit'
+import { buildLinkedLeftShiftUpdates, expandIdsWithLinkedItems } from '@/features/timeline/stores/actions/linked-edit'
 import { useEditorStore } from '@/shared/state/editor'
 import {
   buildDroppedMediaTimelineItems,
@@ -2148,8 +2148,24 @@ const handlers: Record<string, Handler> = {
         .sort((a, b) => a.from - b.from)
     if (payload.at === undefined) {
       // Every gap, from the start of the timeline, with linked clips following their clip.
-      assertUnlocked(linkedSet(onTrack().map((item) => item.id)), 'track.closeGap')
+      const affected = linkedSet(onTrack().map((item) => item.id))
+      assertUnlocked(affected, 'track.closeGap')
+      // The engine clamps negative starts during movement. Validate its intended linked shifts
+      // first, so an offset companion cannot be silently shortened or put out of sync.
+      const shifts = new Map<string, number>()
+      let end = 0
+      for (const item of onTrack()) {
+        const from = Math.min(item.from, end)
+        if (item.from > from) shifts.set(item.id, item.from - from)
+        end = from + item.durationInFrames
+      }
+      const moves = buildLinkedLeftShiftUpdates(items(), shifts, true)
+      if (moves.some((move) => move.from < 0)) failed('track.closeGap: clips would start before the timeline')
       withLinkedSelection(true, () => closeAllGapsOnTrack(track.id))
+      // Linked members can have intentional offsets, and their tracks can contain unrelated clips.
+      // Closing the picture gaps must not send that sound/caption before zero or into another item.
+      const changed = affected.map((id) => requireItem(id))
+      assertNoOverlap(changed.map((item) => item.trackId), 'track.closeGap')
       let cursor = 0
       for (const item of onTrack()) {
         if (item.from !== cursor) failed('track.closeGap: a gap could not be closed')
