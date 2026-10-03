@@ -7,6 +7,7 @@ import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { typ
 import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
 import * as identity from 'src/fork-schema/migrations/0000000000213-ICloudSourceIdentity.js';
 import * as audit from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
+import * as reuse from 'src/fork-schema/migrations/0000000000217-ICloudIdentityReuse.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -54,6 +55,7 @@ describe('fork-owned iCloud state', () => {
             '0000000000090-ICloudSync': migration,
             '0000000000213-ICloudSourceIdentity': identity,
             '0000000000216-ICloudIdentityAudit': audit,
+            '0000000000217-ICloudIdentityReuse': reuse,
           }),
       },
     });
@@ -111,8 +113,8 @@ describe('fork-owned iCloud state', () => {
         ),
       );
     }
-    // The seven sync tables, source identities and claims, and fresh audit receipts (FL-296).
-    expect(getCatalogTableLocks(manifest).filter((table) => table.startsWith('immich_fork.icloud_'))).toHaveLength(10);
+    // The seven sync tables, source identities and claims, and audit/reuse receipts (FL-296).
+    expect(getCatalogTableLocks(manifest).filter((table) => table.startsWith('immich_fork.icloud_'))).toHaveLength(11);
     const crossSchema = await sql`
       SELECT 1 FROM pg_constraint constraint_record
       JOIN pg_class source ON source.oid = constraint_record.conrelid
@@ -121,7 +123,7 @@ describe('fork-owned iCloud state', () => {
         AND source.relnamespace <> target.relnamespace
     `.execute(db);
     expect(crossSchema.rows).toEqual([]);
-    for (let step = 0; step < 3; step++) {
+    for (let step = 0; step < 4; step++) {
       const result4 = await migrator.migrateDown();
       expect(result4.error).toBeUndefined();
     }
