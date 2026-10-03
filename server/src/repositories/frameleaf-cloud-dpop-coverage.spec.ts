@@ -49,6 +49,8 @@ const RAW_FETCH = {
   'repositories/oauth.repository.ts': 'OIDC profile picture',
   // the public release feed: anonymous on purpose, no instance identity is ever sent (FL-80, FL-192)
   'repositories/server-info.repository.ts': 'public release feed',
+  // FL-283: fixed api.stripe.com checkout/reconciliation with the studio's Stripe key; never a Cloud/media call.
+  'services/photography-workflow.service.ts': 'studio-owned Stripe checkout and payment reconciliation',
   // a user's own workflow HTTP step
   'services/workflow-execution.service.ts': 'workflow HTTP step',
   // Buddy vault requests carry source-key DPoP and require a pinned destination receipt (buddy-backup-client.spec.ts).
@@ -90,6 +92,43 @@ describe('every Frameleaf Cloud call sends a DPoP proof (FC-50, CLD-201)', () =>
   describe('source', () => {
     it('has no raw fetch outside the reviewed list', () => {
       expect(filesMatching(/\bfetch\(/)).toEqual(Object.keys(RAW_FETCH).toSorted());
+    });
+
+    it('bounds the photography exception to studio-owned Stripe requests without media or client secrets (FL-283)', () => {
+      const source = readFileSync(join(SRC, 'services/photography-workflow.service.ts'), 'utf8');
+      expect(source.match(/\bfetch\(/g)).toHaveLength(1);
+      expect(source).toContain('fetch(`https://api.stripe.com/v1/${endpoint}`, {');
+      expect(source).toContain('const secret = process.env.PHOTOGRAPHY_STRIPE_SECRET_KEY;');
+      expect(source).toContain('headers: { Authorization: `Bearer ${this.stripeConfig()}`, ...options.headers },');
+      expect(
+        source
+          .matchAll(/\bthis\.stripe\(([\s\S]*?)\);/g)
+          .map(([, args]) => args.replaceAll(/\s+/g, ' ').trim())
+          .toArray(),
+      ).toEqual([
+        "'checkout/sessions', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': `photography-${order.id}` }, body: form, }",
+        '`payment_intents/${encodeURIComponent(object.payment_intent)}`',
+        '`checkout/sessions/${encodeURIComponent(order.checkoutId)}?expand[]=payment_intent.latest_charge`,',
+      ]);
+      // The only outbound payload is an immutable order quote and studio return URLs.
+      const form = source.match(/const form = new URLSearchParams\(\{([\s\S]*?)\}\);/)?.[1];
+      expect(
+        form
+          ?.trim()
+          .split('\n')
+          .map((line) => line.trim()),
+      ).toEqual([
+        "mode: 'payment',",
+        'success_url: success,',
+        'cancel_url: cancel,',
+        'client_reference_id: order.id,',
+        "'metadata[orderId]': order.id,",
+        "'payment_intent_data[metadata][orderId]': order.id,",
+        "'line_items[0][quantity]': '1',",
+        "'line_items[0][price_data][currency]': order.currency.toLowerCase(),",
+        "'line_items[0][price_data][unit_amount]': String(order.total),",
+        "'line_items[0][price_data][product_data][name]': 'Digital photograph order',",
+      ]);
     });
 
     it('opens no socket outside the reviewed list', () => {

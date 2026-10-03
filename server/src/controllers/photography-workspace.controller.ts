@@ -1,8 +1,9 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Next, Param, Patch, Put, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Next, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { PhotographyLogoVariantDto, PhotographyRenditionPreviewDto } from 'src/dtos/photography-rendition.dto.js';
 import {
   PhotographyBrandDto,
   PhotographyBrandSaveDto,
@@ -93,9 +94,31 @@ export class PhotographyWorkspaceController {
     @Param() { id }: UUIDParamDto,
     @Res() response: Response,
     @Next() next: NextFunction,
+    @Query() query?: PhotographyLogoVariantDto,
   ): Promise<void> {
     response.setHeader('Cache-Control', 'private, no-store');
-    await sendFile(response, next, () => this.service.logoThumbnail(auth, id), this.logger);
+    await sendFile(
+      response,
+      next,
+      () => this.service.logoThumbnail(auth, id, PhotographyLogoVariantDto.schema.parse(query ?? {}).variant),
+      this.logger,
+    );
+  }
+
+  @Post('branding/preview')
+  @Authenticated()
+  @Endpoint({
+    summary: 'Preview a watermark using the production font metrics and renderer',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  async previewPhotographyWatermark(
+    @Auth() auth: AuthDto,
+    @Body() dto: PhotographyRenditionPreviewDto,
+    @Res() response: Response,
+  ): Promise<void> {
+    const output = await this.service.previewWatermark(auth, dto);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.type('image/jpeg').send(output);
   }
 
   @Get(':id/photos')

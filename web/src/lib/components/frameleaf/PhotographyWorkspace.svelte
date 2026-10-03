@@ -24,6 +24,10 @@
     mdiWeb,
   } from '@mdi/js';
   import PhotographyBranding from '$lib/components/frameleaf/PhotographyBranding.svelte';
+  import PhotographyWorkflow from '$lib/components/frameleaf/PhotographyWorkflow.svelte';
+  import PhotographyWatermarks from '$lib/components/frameleaf/PhotographyWatermarks.svelte';
+  import PhotographyWebsite from '$lib/components/frameleaf/PhotographyWebsite.svelte';
+  import PhotographyNativeSync from '$lib/components/frameleaf/PhotographyNativeSync.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import {
@@ -38,13 +42,20 @@
     type Workspace,
   } from '$lib/frameleaf/photography/api';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { loadWorkflowSummaries, type WorkflowSummary } from '$lib/frameleaf/photography/workflow-api';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
+  import { locale } from '$lib/stores/preferences.store';
   import '$lib/frameleaf/photography/workspace.css';
 
-  let section = $state<'shoots' | 'branding'>('shoots');
+  let section = $state<
+    'shoots' | 'branding' | 'watermarks' | 'intake' | 'workflow' | 'orders' | 'presentation' | 'publishing' | 'website'
+  >('shoots');
+  let projectFilter = $state('All projects');
   let workspace = $state<Workspace>({ revision: null, shoots: [] });
+  let workflowSummaries = $state<WorkflowSummary[]>([]);
+  let summaryError = $state('');
   let albums = $state<AlbumResponseDto[]>([]);
   let loading = $state(true);
   let busy = $state(false);
@@ -59,6 +70,8 @@
   let nextCursor = $state<string | null>(null);
   let tab = $state('All');
   let selected = $state<string[]>([]);
+  let compareOpen = $state(false);
+  let batchOpen = $state(false);
   let newOpen = $state(false);
   let draft = $state({
     name: '',
@@ -79,6 +92,11 @@
   const active = $derived(workspace.shoots.find(({ id }) => id === activeId));
   const listing = $derived(
     workspace.shoots
+      .filter(
+        (shoot) =>
+          projectFilter === 'All projects' ||
+          (projectFilter === 'Active' ? shoot.stage !== 'Delivered' : shoot.stage === projectFilter),
+      )
       .filter((shoot) => `${shoot.name} ${shoot.client} ${shoot.type}`.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => (sort === 'name' ? a.name.localeCompare(b.name) : b.date.localeCompare(a.date))),
   );
@@ -98,7 +116,7 @@
   );
   const cover = (id: string) => getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail });
   const dateLabel = (date: string) =>
-    new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    new Date(`${date}T12:00:00`).toLocaleDateString($locale, { month: 'short', day: 'numeric', year: 'numeric' });
   const failure = (cause: unknown) =>
     cause instanceof Error ? cause.message : 'The request could not be completed. Try again.';
 
@@ -107,12 +125,18 @@
     loading = true;
     error = '';
     try {
-      const [stored, sourceAlbums] = await Promise.all([loadWorkspace(), getAllAlbums({})]);
+      const [stored, sourceAlbums, summaries] = await Promise.all([
+        loadWorkspace(),
+        getAllAlbums({}),
+        loadWorkflowSummaries().catch(() => null),
+      ]);
       if (disposed || current !== generation) {
         return;
       }
       workspace = stored;
       albums = sourceAlbums;
+      workflowSummaries = summaries?.galleries ?? [];
+      summaryError = summaries ? '' : 'Collection progress could not be loaded.';
       if (activeId) {
         await openShoot(activeId);
       }
@@ -166,6 +190,8 @@
     photos = [];
     nextCursor = null;
     selected = [];
+    compareOpen = false;
+    batchOpen = false;
     tab = 'All';
     inspecting = null;
     versions = null;
@@ -304,12 +330,16 @@
       versionGeneration++;
       section = 'shoots';
       workspace = { revision: null, shoots: [] };
+      workflowSummaries = [];
+      summaryError = '';
       albums = [];
       activeId = null;
       photos = [];
       inspecting = null;
       versions = null;
       selected = [];
+      compareOpen = false;
+      batchOpen = false;
       busy = false;
       newOpen = false;
       draft = {
@@ -335,6 +365,41 @@
   });
 </script>
 
+<svelte:window
+  onkeydown={(event) => {
+    if (
+      section !== 'shoots' ||
+      !active ||
+      busy ||
+      newOpen ||
+      compareOpen ||
+      batchOpen ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      (event.target instanceof HTMLElement &&
+        (event.target.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(event.target.tagName)))
+    ) {
+      return;
+    }
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      const candidates = visible.filter((photo) => photo.canRate);
+      const index = candidates.findIndex((photo) => photo.id === selected.at(-1));
+      const next =
+        candidates[Math.max(0, Math.min(candidates.length - 1, index + (event.key === 'ArrowRight' ? 1 : -1)))];
+      if (next) {
+        event.preventDefault();
+        selected = [next.id];
+        void inspect(next);
+      }
+    } else if (selected.length > 0 && /^[0-5xX]$/.test(event.key)) {
+      event.preventDefault();
+      void rate(selected, event.key.toLowerCase() === 'x' ? -1 : event.key === '0' ? null : Number(event.key));
+    }
+  }}
+/>
+
 <div class="phw">
   <aside class="phw-rail">
     <a class="phw-return" href={Route.photos()}><Icon icon={mdiArrowLeft} size="1rem" />Back to library</a>
@@ -355,11 +420,17 @@
           if (returning) {
             void reload();
           }
-        }}><Icon icon={mdiCameraOutline} size="1.2rem" />Shoots</button
+        }}><Icon icon={mdiCameraOutline} size="1.2rem" />Projects</button
       >
-      {#each [['Galleries', mdiImageMultipleOutline], ['Website', mdiWeb]] as [label, icon] (label)}
-        <button type="button" disabled title={`${label} is not available yet`}
-          ><Icon {icon} size="1.2rem" />{label}</button
+      {#each [['intake', 'Intake & assembly', mdiCameraOutline], ['workflow', 'Client workflow', mdiImageMultipleOutline], ['orders', 'Selections & orders', mdiStarOutline], ['presentation', 'Gallery templates', mdiWeb], ['watermarks', 'Watermarks', mdiPaletteOutline]] as [id, label, icon] (id)}
+        <button
+          type="button"
+          aria-current={section === id ? 'page' : undefined}
+          disabled={busy}
+          onclick={() => {
+            section = id as typeof section;
+            detailGeneration++;
+          }}><Icon {icon} size="1.2rem" />{label}</button
         >
       {/each}
       <button
@@ -371,8 +442,23 @@
           detailGeneration++;
         }}><Icon icon={mdiPaletteOutline} size="1.2rem" />Branding</button
       >
-      <button type="button" disabled title="Publishing is not available yet"
-        ><Icon icon={mdiCloudUploadOutline} size="1.2rem" />Publishing</button
+      <button
+        type="button"
+        aria-current={section === 'publishing' ? 'page' : undefined}
+        disabled={busy}
+        onclick={() => {
+          section = 'publishing';
+          detailGeneration++;
+        }}><Icon icon={mdiCloudUploadOutline} size="1.2rem" />Publishing</button
+      >
+      <button
+        type="button"
+        aria-current={section === 'website' ? 'page' : undefined}
+        disabled={busy}
+        onclick={() => {
+          section = 'website';
+          detailGeneration++;
+        }}><Icon icon={mdiWeb} size="1.2rem" />Studio website</button
       >
     </nav>
     <div class="phw-rail-bottom">
@@ -385,7 +471,15 @@
     <header class="phw-header">
       <div>
         <span class="phw-breadcrumb">Photography</span>
-        <h1>{section === 'branding' ? 'Branding' : (active?.name ?? 'Shoots')}</h1>
+        <h1>
+          {section === 'branding'
+            ? 'Branding'
+            : section === 'watermarks'
+              ? 'Watermarks'
+              : section === 'website'
+                ? 'Studio website'
+                : (active?.name ?? 'Projects')}
+        </h1>
         <p>
           {section === 'branding'
             ? 'Your studio, carried through every detail.'
@@ -407,7 +501,7 @@
                 albumId: availableAlbums[0]?.id ?? '',
               };
               newOpen = true;
-            }}><Icon icon={mdiPlus} size="1rem" />New shoot</Button
+            }}><Icon icon={mdiPlus} size="1rem" />New project</Button
           >{/if}
       </div>
     </header>
@@ -420,6 +514,29 @@
             void reload();
           }}
         />
+      {:else if section === 'watermarks'}<PhotographyWatermarks />
+      {:else if section === 'website'}<PhotographyWebsite shoots={workspace.shoots} />
+      {:else if !['shoots', 'website'].includes(section)}
+        <div class="phd-project-picker">
+          <label
+            >Project<select
+              value={activeId ?? ''}
+              onchange={(event) => {
+                activeId = event.currentTarget.value || null;
+              }}
+              ><option value="">Choose a project</option>{#each workspace.shoots as shoot (shoot.id)}<option
+                  value={shoot.id}>{shoot.name} · {shoot.client}</option
+                >{/each}</select
+            ></label
+          >
+        </div>
+        {#if active}{#key `${active.id}:${section}`}<PhotographyWorkflow
+              shoot={active}
+              panel={section as 'intake' | 'workflow' | 'orders' | 'presentation' | 'publishing'}
+            />{/key}{:else}<div class="phw-empty">
+            <h2>Choose a project</h2>
+            <p>Open an existing project or create one from Projects.</p>
+          </div>{/if}
       {:else if loading}<div class="phw-empty" role="status">Loading your shoots…</div>
       {:else if active}
         <div class="phw-shoot-top">
@@ -435,6 +552,11 @@
                 ><i>{index + 1}</i>{stage}</span
               >{/each}
           </div>
+        </div>
+        <div class="phd-project-actions">
+          {#each [['intake', 'Intake & assembly'], ['workflow', 'Client workflow'], ['orders', 'Selections & delivery'], ['presentation', 'Presentation'], ['publishing', 'Publish & invite']] as [id, label] (id)}<Button
+              onclick={() => (section = id as typeof section)}>{label}</Button
+            >{/each}
         </div>
         {#if active.unavailable}<div class="phw-empty">
             <h2>Source album is unavailable</h2>
@@ -462,9 +584,7 @@
                         tab = name;
                         selected = [];
                       }}>{name}<small>{photos.filter((photo) => matches(photo, name)).length}</small></button
-                    >{/each}<button type="button" disabled title="Pinned final deliveries are not available yet"
-                    >Deliverables</button
-                  >
+                    >{/each}<button type="button" onclick={() => (section = 'orders')}>Deliverables</button>
                 </div>
                 {#if active.albumId}<a href={Route.viewAlbum({ id: active.albumId })}>Add photos in album</a>{/if}
               </div>
@@ -485,7 +605,16 @@
                     disabled={busy}
                     onclick={() => rate(selected, -1)}>Reject</Button
                   ><Button disabled={busy} onclick={() => rate(selected, null)}>Clear rating</Button>{/if}
+                {#if selected.length === 2}<Button disabled={busy} onclick={() => (compareOpen = true)}>Compare</Button
+                  >{/if}
+                {#if selected.length > 1}<Button disabled={busy} onclick={() => (batchOpen = !batchOpen)}
+                    >Batch RAW editing</Button
+                  >{/if}
               </div>
+              <p class="phw-small">
+                Use ← and → to move between photos, 1–5 to rate, X to reject and 0 to clear a rating.
+              </p>
+              {#if batchOpen && selected.length > 1}<PhotographyNativeSync {photos} assetIds={selected} />{/if}
               {#if photoError}<div class="phw-notice" role="alert">
                   {photoError}<Button
                     disabled={photoLoading}
@@ -627,29 +756,89 @@
                           : ''}
                       </p>{/each}{/if}{/if}
                 <p class="phw-small">
-                  Star your favourites, reject the rest. Original files stay untouched. Stage records your workflow;
-                  sharing and final delivery are not available yet.
+                  Star your favourites, reject the rest, then open the editor. Approve a saved version in Selections &
+                  delivery before publishing it.
                 </p>
               </div>
             </aside>
           </div>{/if}
       {:else if !error}
+        <div class="phd-metrics">
+          <div>
+            <strong>{workspace.shoots.filter((shoot) => shoot.stage !== 'Delivered').length}</strong><span
+              >Active projects</span
+            >
+          </div>
+          <div>
+            <strong>{workspace.shoots.filter((shoot) => shoot.stage === 'Proofing').length}</strong><span
+              >In proofing</span
+            >
+          </div>
+          <div>
+            <strong>{workspace.shoots.filter((shoot) => shoot.stage === 'Edited').length}</strong><span
+              >Edited projects</span
+            >
+          </div>
+          <div>
+            <strong>{workspace.shoots.filter((shoot) => shoot.stage === 'Delivered').length}</strong><span
+              >Delivered</span
+            >
+          </div>
+        </div>
+        {#if summaryError}<p class="phw-small" role="status">
+            {summaryError}
+            <Button disabled={loading} onclick={reload}>Refresh</Button>
+          </p>{:else if workflowSummaries.length}
+          <div class="phd-metrics">
+            <div>
+              <strong>{workflowSummaries.reduce((total, row) => total + row.submittedRounds, 0)}</strong><span
+                >Selection rounds received</span
+              >
+            </div>
+            <div>
+              <strong>{workflowSummaries.reduce((total, row) => total + row.unpaidOrders, 0)}</strong><span
+                >Orders awaiting payment</span
+              >
+            </div>
+            <div>
+              <strong>{workflowSummaries.reduce((total, row) => total + (row.pendingEdits ?? 0), 0)}</strong><span
+                >Photographs awaiting editing</span
+              >
+            </div>
+            <div>
+              <strong>{workflowSummaries.reduce((total, row) => total + row.readyCount, 0)}</strong><span
+                >Prepared deliveries</span
+              >
+            </div>
+            <div>
+              <strong>{workflowSummaries.filter((row) => row.published).length}</strong><span
+                >Published collections</span
+              >
+            </div>
+          </div>
+        {/if}
+        <div class="phw-tabs phd-project-filters" aria-label="Project status">
+          {#each ['All projects', 'Active', 'Proofing', 'Delivered'] as label (label)}<button
+              type="button"
+              aria-pressed={projectFilter === label}
+              onclick={() => (projectFilter = label)}>{label}</button
+            >{/each}
+        </div>
         <div class="phw-list-tools">
           <label class="phw-search"
             ><Icon icon={mdiMagnify} size="1.2rem" /><input
-              aria-label="Search shoots"
-              placeholder="Search shoots or clients"
+              aria-label="Search projects"
+              placeholder="Search projects or clients"
               bind:value={search}
             /></label
           ><select aria-label="Sort shoots" bind:value={sort}
             ><option value="date">Newest first</option><option value="name">Shoot name</option></select
-          ><span>{listing.length} shoots</span>
+          ><span>{listing.length} projects</span>
         </div>
         <div class="phw-shoot-grid">
-          {#each listing as shoot (shoot.id)}<button
-              type="button"
-              class="phw-shoot-card"
-              onclick={() => openShoot(shoot.id)}
+          {#each listing as shoot (shoot.id)}{@const summary = workflowSummaries.find(
+              (row) => row.shootId === shoot.id,
+            )}<button type="button" class="phw-shoot-card" onclick={() => openShoot(shoot.id)}
               ><div class="phw-shoot-image">
                 {#if shoot.coverAssetId}<img
                     src={cover(shoot.coverAssetId)}
@@ -661,6 +850,11 @@
               </div>
               <div class="phw-shoot-text">
                 <strong>{shoot.name}</strong><span>{shoot.client}</span>
+                {#if summary}<small class="phw-small"
+                    >{summary.submittedRounds} selection {summary.submittedRounds === 1 ? 'round' : 'rounds'} · {summary.unpaidOrders}
+                    unpaid {summary.unpaidOrders === 1 ? 'order' : 'orders'} · {summary.pendingEdits ?? 0} awaiting editing{#if summary.selectionDeadline}
+                      · Selections due {new Date(summary.selectionDeadline).toLocaleDateString($locale)}{/if}</small
+                  >{/if}
                 <footer>
                   <time datetime={shoot.date}>{dateLabel(shoot.date)}</time><span
                     >{shoot.assetCount ?? '—'} photos <Icon icon={mdiChevronRight} size="0.875rem" /></span
@@ -683,6 +877,21 @@
       {/if}
     </main>
   </div>
+  <Dialog title="Compare photographs" closeLabel="Close comparison" bind:open={compareOpen} wide>
+    <div class="phd-owner-compare">
+      {#each photos.filter((photo) => selected.includes(photo.id)).slice(0, 2) as photo (photo.id)}
+        <figure>
+          <img src={getAssetMediaUrl({ id: photo.id, size: AssetMediaSize.Preview })} alt={photo.fileName} />
+          <figcaption>
+            {photo.fileName}{#if active?.albumId}<a
+                href={Route.viewAlbumAsset({ albumId: active.albumId, assetId: photo.id })}>Open photo and editor</a
+              >{/if}
+          </figcaption>
+        </figure>
+      {/each}
+    </div>
+  </Dialog>
+
   <Dialog
     title="New shoot"
     closeLabel="Close new shoot"

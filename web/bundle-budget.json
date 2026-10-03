@@ -21,7 +21,7 @@
   "/(user)/people/manage": 510053,
   "/(user)/pets": 512888,
   "/(user)/pets/[petId=id]/[[photos=photos]]/[[assetId=id]]": 573499,
-  "/(user)/photography": 519223,
+  "/(user)/photography": 549836,
   "/(user)/photos/[[assetId=id]]": 619718,
   "/(user)/places": 509130,
   "/(user)/recently-added/[[assetId=id]]": 618790,
@@ -83,5 +83,7 @@
   "/auth/register": 410063,
   "/getting-ready": 384047,
   "/link": 374850,
-  "/maintenance": 389905
+  "/maintenance": 389905,
+  "/photography/gallery/[id]": 392857,
+  "/studio/[id]": 384176
 }

@@ -333,6 +333,16 @@ export function App() {
       spacing: studio.website.spacing,
     };
   });
+  useEffect(() => {
+    if (
+      !["photography", "photography-editor", "photography-client", "photography-site"].includes(screen)
+    )
+      setPhotographyContext((current) => ({
+        ...current,
+        returnSection: "shoots",
+        returnDetail: false,
+      }));
+  }, [screen]);
   const saveEditorFeedback = (feedback) => {
     const studio = readStudioState(localStorage);
     const next = applyEditorFeedback(
@@ -3741,13 +3751,16 @@ export function App() {
             onOpenEditor={(context) => {
               setPhotographyContext({
                 ...context,
-                returnSection: "shoots",
-                returnDetail: true,
+                returnSection: context.returnSection || "shoots",
+                returnDetail: context.returnDetail ?? true,
               });
               setScreen("photography-editor");
             }}
             onPreviewGallery={(context) => {
-              setPhotographyContext({ ...context, returnSection: "galleries" });
+              setPhotographyContext({
+                ...context,
+                returnSection: context.returnSection || "galleries",
+              });
               setScreen("photography-client");
             }}
             onPreviewWebsite={(context) => {
@@ -3766,8 +3779,8 @@ export function App() {
               if (saveEditorFeedback(feedback)) {
                 setPhotographyContext({
                   ...feedback,
-                  returnSection: "shoots",
-                  returnDetail: true,
+                  returnSection: photographyContext.returnSection || "shoots",
+                  returnDetail: photographyContext.returnDetail ?? true,
                 });
                 setScreen("photography");
               }

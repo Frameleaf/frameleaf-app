@@ -72,7 +72,11 @@
     message = '';
     try {
       // Omission preserves a privately retained unavailable logo; null explicitly switches to initials.
-      const { logoAssetId, ...brand } = draft;
+      const { logoAssetId, ...brand } = $state.snapshot(draft);
+      delete brand.watermarkPresets;
+      delete brand.webWatermarkPresetId;
+      delete brand.proofWatermarkPresetId;
+      delete brand.exportWatermarkPresetId;
       const value = await saveBrand(stored.revision, logoChanged ? { ...brand, logoAssetId } : brand);
       if (disposed || current !== generation) {
         return;
@@ -209,7 +213,8 @@
       <div class="phw-brand-intro">
         <h2>Your watermark</h2>
         <p>
-          Placement guide for saved settings. Proof rendering and applying watermarks to exports are not available yet.
+          Legacy placement guide. Open Watermarks to create reusable rendered presets for proofs, web previews and final
+          exports.
         </p>
       </div>
       <div class="phw-watermark-guide" aria-label="Watermark placement guide">

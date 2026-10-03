@@ -7,6 +7,7 @@ import {
   DevelopPresetResponseDto,
   type DevelopPresetSettings,
   DevelopPresetUpdateDto,
+  NativeDevelopPresetSchema,
 } from 'src/dtos/photo-tools.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type DevelopPreset, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
@@ -105,6 +106,7 @@ export class PhotoToolsService {
 export function normalizePresetSettings(settings: Partial<DevelopPresetSettings> | null | undefined) {
   const recipe = normalizeDevelopRecipe(settings ?? {});
   const picked: DevelopPresetSettings = {
+    ...(settings?.native && { native: NativeDevelopPresetSchema.parse(settings.native) }),
     ...(Object.fromEntries(STILL_SLIDER_KEYS.map((key) => [key, recipe[key]])) as Pick<
       DevelopPresetSettings,
       (typeof STILL_SLIDER_KEYS)[number]

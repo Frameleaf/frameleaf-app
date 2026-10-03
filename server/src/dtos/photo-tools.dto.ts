@@ -4,6 +4,7 @@ import {
   ASSET_DEVELOP_MAX_MASKS,
   AssetDevelopMaskFields,
   AssetDevelopMaskKind,
+  DarktableDevelopRecipeSchema,
   KnownAssetDevelopRecipeFields,
 } from 'src/dtos/asset-develop.dto.js';
 import { ApiCustomExtension } from 'src/enum.js';
@@ -66,8 +67,23 @@ const DevelopPresetSettingsFields = KnownAssetDevelopRecipeFields.pick({
  * are brush and subject/sky/background masks or Clean Up, which belong to one photo's content.
  * A new preset fills every setting it is not sent with its neutral value (no change).
  */
+export const NativeDevelopPresetSchema = DarktableDevelopRecipeSchema.refine(
+  (recipe) =>
+    !recipe.crop &&
+    !recipe.straighten &&
+    !recipe.rotation &&
+    !recipe.flipHorizontal &&
+    !recipe.flipVertical &&
+    !recipe.sensorCanvas &&
+    (recipe.masks ?? []).every(
+      (mask) => mask.kind === AssetDevelopMaskKind.Radial || mask.kind === AssetDevelopMaskKind.Linear,
+    ),
+  { error: 'Native presets carry adjustments and reusable shapes, never geometry or photo-specific masks' },
+);
+
 export const DevelopPresetSettingsSchema = DevelopPresetSettingsFields.extend({
   masks: DevelopPresetMasksSchema.default([]),
+  native: NativeDevelopPresetSchema.optional(),
 }).meta({ id: 'DevelopPresetSettingsDto' });
 
 export type DevelopPresetSettings = z.infer<typeof DevelopPresetSettingsSchema>;
@@ -86,6 +102,7 @@ const DevelopPresetSettingsUpdateSchema = z
       }),
     ),
     masks: DevelopPresetMasksSchema.optional(),
+    native: NativeDevelopPresetSchema.optional(),
   })
   .meta({ id: 'DevelopPresetSettingsUpdateDto' }) as unknown as z.ZodType<Partial<DevelopPresetSettings>>;
 

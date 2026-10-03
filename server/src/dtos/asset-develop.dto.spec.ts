@@ -1,3 +1,4 @@
+import z from 'zod';
 import {
   AssetDevelopCleanupMethod,
   AssetDevelopMaskKind,
@@ -5,6 +6,7 @@ import {
   AssetDevelopPreviewDto,
   AssetDevelopRecipeSchema,
   AssetDevelopSaveDto,
+  DarktableDevelopRecipeSchema,
   KnownAssetDevelopRecipeSchema,
   recipeStrokePoints,
 } from 'src/dtos/asset-develop.dto.js';
@@ -203,4 +205,18 @@ it('keeps existing version1 public save validation while retaining opaque fields
   expect(
     AssetDevelopSaveDto.schema.parse({ recipe: { version: 1, future: { opaque: true } }, render: false }).recipe,
   ).toEqual({ version: 1, future: { opaque: true } });
+});
+
+describe('Native development API schemas', () => {
+  it('publishes explicit double/integer metadata for SDK generation, including nested controls', () => {
+    const schema = z.toJSONSchema(DarktableDevelopRecipeSchema, { target: 'openapi-3.0', io: 'input' });
+    const visit = (value: unknown) => {
+      if (!value || typeof value !== 'object') return;
+      const node = value as Record<string, unknown>;
+      if (node.type === 'number') expect(node.format).toBe('double');
+      for (const child of Object.values(node)) visit(child);
+    };
+    visit(schema);
+    expect(schema.properties?.version).toMatchObject({ type: 'integer', format: 'int32', enum: [2] });
+  });
 });
