@@ -299,7 +299,10 @@ describe(StudioPreviewStreamService.name, () => {
       operations.mergeStreamSignal.mockClear();
 
       await expect(
-        sut.answer(auth(), id, { negotiation: 0, sdp: test.sdp.replace('a=recvonly', `a=${test.direction}`) }),
+        sut.answer(auth(), id, {
+          negotiation: 0,
+          sdp: test.sdp.replace('a=recvonly', () => `a=${test.direction}`),
+        }),
       ).rejects.toMatchObject({ status: 400, response: { code: 'studio_preview_stream_invalid_answer' } });
 
       expect(operations.mergeStreamSignal).not.toHaveBeenCalled();
@@ -307,7 +310,7 @@ describe(StudioPreviewStreamService.name, () => {
 
       const answered = await sut.answer(auth(), id, {
         negotiation: 0,
-        sdp: ANSWER.replace('a=recvonly', `a=${test.direction}`),
+        sdp: ANSWER.replace('a=recvonly', () => `a=${test.direction}`),
       });
       expect(answered).toMatchObject({ state: 'answered', negotiation: 0, offer: null });
       expect(operations.mergeStreamSignal).toHaveBeenCalledTimes(1);
