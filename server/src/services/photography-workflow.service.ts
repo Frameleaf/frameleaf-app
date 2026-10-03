@@ -533,6 +533,12 @@ export class PhotographyWorkflowService {
   private async validateConfig(auth: AuthDto, id: string, value: PhotographyWorkflow, config: PhotographyConfig) {
     if (config.presentation.coverCaptureId && value.captures.every((c) => c.id !== config.presentation.coverCaptureId))
       throw new BadRequestException('Unknown cover');
+    for (const block of config.presentation.blocks ?? []) {
+      if (block.chapterId && value.chapters.every((chapter) => chapter.id !== block.chapterId))
+        throw new BadRequestException('Unknown block chapter');
+      if (block.captureIds.some((id) => value.captures.every((capture) => capture.id !== id)))
+        throw new BadRequestException('Unknown block photograph');
+    }
     for (const watermark of [
       config.proofWatermark,
       config.webWatermark,
@@ -582,6 +588,12 @@ export class PhotographyWorkflowService {
       if (dto.id && !current) throw new NotFoundException('Studio preset unavailable');
       const config = structuredClone(dto.config);
       config.presentation.coverCaptureId = null;
+      if (config.presentation.blocks)
+        config.presentation.blocks = config.presentation.blocks.map((block) => ({
+          ...block,
+          chapterId: null,
+          captureIds: [],
+        }));
       if (current) Object.assign(current, { name: dto.name, config });
       else {
         if (record.presets.length >= 30) throw new ConflictException('Studio preset limit reached');
@@ -1002,6 +1014,15 @@ export class PhotographyWorkflowService {
     };
     const presentation = structuredClone(published?.config.presentation ?? row.value.config.presentation);
     if (presentation.coverCaptureId && !visible.has(presentation.coverCaptureId)) presentation.coverCaptureId = null;
+    if (presentation.blocks)
+      presentation.blocks = presentation.blocks.map((block) => ({
+        ...block,
+        captureIds: block.captureIds.filter((id) => visible.has(id)),
+        chapterId:
+          block.chapterId && published?.chapters.some((chapter) => chapter.id === block.chapterId)
+            ? block.chapterId
+            : null,
+      }));
     return {
       revision: row.revision,
       checkoutAvailable: this.checkoutAvailable(row.ownerId),
