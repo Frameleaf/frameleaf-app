@@ -55,7 +55,8 @@ export class ICloudConnectionUpdateDto extends createZodDto(
 ) {}
 
 export class ICloudIdentityReuseAuthorityDto extends createZodDto(
-  z.object({ enabled: z.boolean(), includeProtected: z.boolean(), requestKey: z.uuid() })
+  z
+    .object({ enabled: z.boolean(), includeProtected: z.boolean(), requestKey: z.uuid() })
     .strict()
     .refine((value) => value.enabled || !value.includeProtected, { message: 'Disabled consent has no protected scope' })
     .meta({ id: 'ICloudIdentityReuseAuthorityDto' }),
@@ -67,7 +68,9 @@ const IdentityReuseAuthorityStatusSchema = z
     includeProtected: z.boolean(),
     available: z.boolean(),
     regrantRequired: z.boolean(),
-    executionAvailable: z.literal(false).describe('Foundation consent does not enable weekly execution or identity reuse'),
+    executionAvailable: z
+      .literal(false)
+      .describe('Foundation consent does not enable weekly execution or identity reuse'),
   })
   .meta({ id: 'ICloudIdentityReuseAuthorityStatusDto' });
 export class ICloudIdentityReuseAuthorityStatusDto extends createZodDto(IdentityReuseAuthorityStatusSchema) {}

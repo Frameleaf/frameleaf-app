@@ -7,10 +7,7 @@ export const hasWeeklyAuthorityInput = (snapshot: Record<string, unknown>): bool
   );
 
 /** Generic operation surfaces carry no private scheduled authority or resource evidence. */
-export const isPrivateICloudOperation = (operation: {
-  kind: string;
-  snapshot: Record<string, unknown>;
-}): boolean =>
+export const isPrivateICloudOperation = (operation: { kind: string; snapshot: Record<string, unknown> }): boolean =>
   operation.kind === MediaOperationKind.ICloudSync &&
   (hasWeeklyAuthorityInput(operation.snapshot) ||
     (Object.hasOwn(operation.snapshot, 'task') && operation.snapshot.task !== 'identity-audit') ||

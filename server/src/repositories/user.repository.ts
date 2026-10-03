@@ -637,10 +637,10 @@ export class UserRepository {
   }
 
   delete(user: { id: string }, hard?: boolean) {
-    return withPublicForkWrites(this.db, (db) =>
+    return withPublicForkWrites(this.db, async (db) =>
       hard
-        ? db.deleteFrom('user').where('id', '=', user.id).execute()
-        : db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', user.id).execute(),
+        ? await db.deleteFrom('user').where('id', '=', user.id).execute()
+        : await db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', user.id).execute(),
     );
   }
 
