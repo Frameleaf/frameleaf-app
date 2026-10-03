@@ -8936,7 +8936,7 @@ export type PhotographyWorkflowDto = {
         processing: Processing;
         proofRevisionId: string | null;
         rating: number | null;
-        state: State3;
+        state: State4;
         withheld: boolean;
     }[];
     chapters: {
@@ -9712,7 +9712,7 @@ export type PhotographyInvitationDto = {
             processing: Processing;
             proofRevisionId: string | null;
             rating: number | null;
-            state: State3;
+            state: State4;
             withheld: boolean;
         }[];
         chapters: {
@@ -28776,7 +28776,7 @@ export enum Layout {
     Grid = "grid",
     Slideshow = "slideshow"
 }
-export enum State3 {
+export enum State4 {
     Imported = "imported",
     Selected = "selected",
     ApprovalRequested = "approval-requested",
