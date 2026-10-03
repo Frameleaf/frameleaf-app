@@ -237,7 +237,7 @@ export const s3SettingsProblem = (s3: {
   try {
     url = new URL(s3.endpoint);
   } catch {
-    return 'Enter the storage address, for example https://s3.eu-central-2.wasabisys.com.';
+    return 'Enter the storage address, for example https://s3.eu-central-2.storage.example.';
   }
   if (url.protocol !== 'https:') {
     return 'Encrypted uploads with your key (SSE-C) need an HTTPS storage address.';

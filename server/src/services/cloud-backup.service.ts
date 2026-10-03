@@ -130,6 +130,7 @@ import {
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { selectBackupLocation } from 'src/utils/backup-location-selection.js';
 import { escrowPassphraseProblem, unwrapBucketKey, wrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import {
   assertOwnerRestoreFile,
@@ -176,6 +177,7 @@ import {
   MANAGED_ENTITLEMENT_MISSING_REFUSAL,
   backupGrantProblem,
   managedBackupRefusal,
+  managedStorageRef,
 } from 'src/utils/frameleaf-cloud-backup.js';
 import {
   CLONE_SUSPECTED_NOTICE,
@@ -360,7 +362,7 @@ export class CloudBackupService {
   /** FL-164: this process holds the schedule (`DatabaseLock.FrameleafCloudBackupCheck`). */
   private scheduleLock = false;
   /** FL-164: the last manifest a restore list read, so paging through it reads the bucket once. */
-  private manifestCache?: { bucketRef: string; key: string; manifest: CloudBackupManifest };
+  private manifestCache?: { bucketRef: string; key: string; binding: string; manifest: CloudBackupManifest };
   private readonly maintenance: CloudBackupMaintenance;
   private readonly restorer: CloudBackupRestorer;
 
@@ -438,6 +440,8 @@ export class CloudBackupService {
       lastPrune: metadata?.lastPrune ?? null,
       managed: metadata?.managed
         ? {
+            storageId: metadata.managed.storageId ?? null,
+            location: metadata.managed.location ?? null,
             readOnly: metadata.managed.readOnly,
             readOnlyReason: metadata.managed.readOnlyReason,
             quotaBytes: metadata.managed.quotaBytes,
@@ -728,8 +732,14 @@ export class CloudBackupService {
     );
     await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
 
-    const ref = bucketRef(connection.endpoint, connection.bucket);
     const previous = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    const legacyClaim = managed && claim.existing && previous?.target === 'managed' && !previous.managed?.storageId &&
+      previous.bucketRef.startsWith('https://') && previous.bucketRef.endsWith(`/${previous.bucket}`) &&
+      previous.bucket === connection.bucket && previous.region === connection.region &&
+      previous.instanceId === identity.instanceId && previous.keyFingerprint === fingerprint;
+    const ref = legacyClaim ? previous.bucketRef :
+      managed ? managedStorageRef(managed.state.storageId) : bucketRef(connection.endpoint, connection.bucket);
+    const managedState = managed && { ...managed.state, ...(legacyClaim && { storageId: undefined }) };
     // A new claim means the bucket was empty: whatever the index remembers of it (an emptied or recreated
     // bucket) is gone, and the first run reads the bucket's listing again.
     if (!claim.existing) {
@@ -747,7 +757,7 @@ export class CloudBackupService {
       keyMode: dto.keyMode,
       keyFingerprint: fingerprint,
       lastCheckAt: new Date().toISOString(),
-      ...(managed && { managed: managed.state }),
+      ...(managedState && { managed: managedState }),
       ...(sameBucket && {
         reconciledAt: previous.reconciledAt,
         lastRun: previous.lastRun,
@@ -838,13 +848,31 @@ export class CloudBackupService {
    */
   private async managedGrantForSetup(): Promise<{
     connection: CloudBackupConnection;
-    state: NonNullable<FrameleafCloudBackup['managed']>;
+    state: NonNullable<FrameleafCloudBackup['managed']> & {
+      storageId: string;
+      location: BackupGrantResponse['location'];
+    };
   }> {
     let issued: BackupGrantResponse;
     try {
       const api = await this.managedApi();
-      const grant = await this.cloudBackup.grant(api);
+      const recorded = await this.cloudBackup.metadata(api);
+      let locationId = recorded?.location.locationId;
+      if (!locationId) {
+        const catalog = await this.cloudBackup.locations(api);
+        try {
+          locationId = (await selectBackupLocation(catalog.locations)).locationId;
+        } catch {
+          throw new ManagedStorageRefusal('No backup location could be reached reliably. Try setup again.', 30_000);
+        }
+      }
+      const grant = await this.cloudBackup.grant(api, locationId);
       issued = 'credentials' in grant ? grant : await this.cloudBackup.rotate(api);
+      if (issued.location.locationId !== locationId || issued.storageId !== grant.storageId ||
+        issued.bucket !== grant.bucket || issued.region !== grant.region ||
+        (recorded && (issued.storageId !== recorded.storageId || issued.bucket !== recorded.bucket || issued.region !== recorded.region))) {
+        throw new ManagedStorageRefusal('Frameleaf Cloud offered a different storage binding. Try setup again.', null);
+      }
     } catch (error) {
       // FC-62: new backup grants are paused; the cloud's own message, as a 503 the page shows whole
       throw pausedException(error) ?? new ConflictException(this.refusalOf(error).message);
@@ -861,6 +889,8 @@ export class CloudBackupService {
     return {
       connection: this.managedConnection(issued),
       state: {
+        storageId: issued.storageId,
+        location: issued.location,
         readOnly: false,
         readOnlyReason: null,
         quotaBytes: issued.quotaBytes,
@@ -1566,17 +1596,15 @@ export class CloudBackupService {
       await this.operations.requeue(operation.id, claimToken, { delayMs: refusal.retryAfterMs, returnAttempt: true });
       return null;
     }
-    if (grant.bucket !== metadata.bucket || bucketRef(grant.endpoint, grant.bucket) !== metadata.bucketRef) {
-      throw new Error(
-        'Frameleaf Cloud offered a different bucket than the one this server claimed. Set up cloud backup again.',
-      );
-    }
+    const connection = this.managedConnection(grant, metadata);
     const problem = backupGrantProblem(grant);
     if (problem) {
       throw new Error(problem);
     }
     const managedOf = (current: FrameleafCloudBackup): FrameleafCloudBackupManaged => ({
       ...current.managed,
+      ...(current.managed?.storageId && { storageId: grant.storageId }),
+      location: grant.location,
       readOnly: grant.readOnly,
       readOnlyReason: grant.readOnly ? (grant.readOnlyReason ?? current.managed?.readOnlyReason ?? null) : null,
       quotaBytes: grant.quotaBytes,
@@ -1588,11 +1616,21 @@ export class CloudBackupService {
       managed = managedOf(current);
       return { ...current, managed };
     });
-    return { connection: this.managedConnection(grant), managed };
+    return { connection, managed };
   }
 
   /** The connection a managed grant's key opens, waited on for a few seconds while the new key goes live. */
-  private managedConnection(grant: BackupGrantResponse): CloudBackupConnection {
+  private managedConnection(grant: BackupGrantResponse, metadata?: FrameleafCloudBackup): CloudBackupConnection {
+    if (metadata) {
+      const sameIdentity = metadata.managed?.storageId
+        ? grant.storageId === metadata.managed.storageId && managedStorageRef(grant.storageId) === metadata.bucketRef &&
+          grant.location.locationId === metadata.managed.location?.locationId
+        // Legacy claims keep their address-based index, but still require the recorded bucket and region below.
+        : metadata.bucketRef.startsWith('https://') && metadata.bucketRef.endsWith(`/${metadata.bucket}`);
+      if (!sameIdentity || grant.bucket !== metadata.bucket || grant.region !== metadata.region) {
+        throw new Error('Frameleaf Cloud offered a different storage binding than the one this server claimed. Set up cloud backup again.');
+      }
+    }
     return {
       endpoint: grant.endpoint.replace(/\/+$/, ''),
       region: grant.region,
@@ -2840,7 +2878,7 @@ export class CloudBackupService {
         found.metadata.target === 'managed'
           ? await this.databaseRepository.withLock(DatabaseLock.FrameleafCloudBackup, async () => {
               if (await this.activeBucketOperation()) throw new ConflictException('Cloud backup is busy');
-              return read(this.managedConnection(await this.cloudBackup.rotate(await this.managedApi())));
+              return read(this.managedConnection(await this.cloudBackup.rotate(await this.managedApi()), found.metadata));
             })
           : await read(
               this.ownBucketConnection(found.metadata, (await this.readSettings()).frameleafCloud.cloudBackup),
@@ -3304,7 +3342,11 @@ export class CloudBackupService {
     if (kept.every((manifest) => manifest.key !== key)) {
       throw new NotFoundException('This backup is not one of the kept backups.');
     }
-    if (this.manifestCache?.bucketRef === metadata.bucketRef && this.manifestCache.key === key) {
+    const binding = JSON.stringify([
+      metadata.bucketRef, metadata.region, metadata.bucket, metadata.keyFingerprint,
+      metadata.managed?.storageId ?? null, metadata.managed?.location?.locationId ?? null,
+    ]);
+    if (this.manifestCache?.bucketRef === metadata.bucketRef && this.manifestCache.key === key && this.manifestCache.binding === binding) {
       return this.manifestCache.manifest;
     }
     const bucketKey = await this.requireKeyForRequest(metadata);
@@ -3327,7 +3369,7 @@ export class CloudBackupService {
         }
         let connection: CloudBackupConnection;
         try {
-          connection = this.managedConnection(await this.cloudBackup.rotate(await this.managedApi()));
+          connection = this.managedConnection(await this.cloudBackup.rotate(await this.managedApi()), metadata);
         } catch (error) {
           throw new ConflictException(this.refusalOf(error).message);
         }
@@ -3343,7 +3385,7 @@ export class CloudBackupService {
       }
       manifest = await read(connection);
     }
-    this.manifestCache = { bucketRef: metadata.bucketRef, key, manifest };
+    this.manifestCache = { bucketRef: metadata.bucketRef, key, binding, manifest };
     return manifest;
   }
 
