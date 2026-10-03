@@ -46,10 +46,27 @@ type AuditRowFields = {
   result: string;
   resultAssetId: string | null;
 };
-export type ICloudAuditRow = AuditRowFields & (
-  | { purpose: 'manual-session'; sessionId: string; grantId: null; grantGeneration: null; cohortId: null; memberOrdinal: null; batchOrdinal: null }
-  | { purpose: 'scheduled-weekly'; sessionId: null; grantId: string; grantGeneration: number; cohortId: string; memberOrdinal: number; batchOrdinal: number }
-);
+export type ICloudAuditRow = AuditRowFields &
+  (
+    | {
+        purpose: 'manual-session';
+        sessionId: string;
+        grantId: null;
+        grantGeneration: null;
+        cohortId: null;
+        memberOrdinal: null;
+        batchOrdinal: null;
+      }
+    | {
+        purpose: 'scheduled-weekly';
+        sessionId: null;
+        grantId: string;
+        grantGeneration: number;
+        cohortId: string;
+        memberOrdinal: number;
+        batchOrdinal: number;
+      }
+  );
 type Outcome = { id: string; state: 'queued' | 'unavailable' };
 class Replay extends Error {
   constructor(readonly response: ICloudVerifyResponseDto) {
@@ -149,7 +166,12 @@ export async function guardAudit(
     WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid`
     .execute(db)
     .then(({ rows }) => rows[0]);
-  if (!request || request.purpose !== 'manual-session' || request.operationId !== authority.operationId || !['queued', 'running'].includes(request.result)) {
+  if (
+    !request ||
+    request.purpose !== 'manual-session' ||
+    request.operationId !== authority.operationId ||
+    !['queued', 'running'].includes(request.result)
+  ) {
     return;
   }
   const connection = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
@@ -171,7 +193,9 @@ export async function guardAudit(
     return;
   }
   const current = await sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit
-    WHERE id=${request.id}::uuid AND purpose='manual-session' AND result IN ('queued','running') ${lock ? sql`FOR UPDATE` : sql``}`.execute(db);
+    WHERE id=${request.id}::uuid AND purpose='manual-session' AND result IN ('queued','running') ${lock ? sql`FOR UPDATE` : sql``}`.execute(
+    db,
+  );
   const currentRequest = current.rows[0];
   if (!currentRequest || currentRequest.purpose !== 'manual-session') {
     return;
