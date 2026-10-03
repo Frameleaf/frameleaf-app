@@ -30,3 +30,53 @@ requires actual offline CPU inference against both exact snapshots, representati
 quality and no-proposal behavior, peak memory/time, optional CUDA and server architectures, painted
 refinement and native crop/rotation/lens alignment, and egress-denied inference proof. The bounded
 box/hash tests are stdlib tests that can run without loading the ML runtime.
+
+## Standard CPU image and explicit provisioning
+
+The standard `DEVICE=cpu` image now includes frozen Torch 2.5.1, Torchvision 0.20.1 and Transformers
+5.16.1. Linux amd64 uses the explicit [official CPU wheel index](https://download.pytorch.org/whl/cpu);
+arm64 uses the already supported PyPI CPU wheel. The existing CUDA extra retains its own wheel choice;
+CPU/CUDA extras conflict explicitly, following [uv's accelerator selection](https://docs.astral.sh/uv/guides/integration/pytorch/).
+CPU builder/runtime use the repository's already digest-pinned Python 3.12 slim image, matching Torch's
+wheel ABI. OpenVINO/ArmNN retain their previous Python 3.13 bases; ROCm/RKNN/CUDA bases are unchanged.
+The existing pinned uv 0.8.15 consumes the refreshed frozen lock. No package or weights were installed
+locally. The image build runs `verify-semantic-runtime.py` for CPU/CUDA: native class imports, exact
+runtime versions, Torch/NumPy interchange and CPU wheel isolation, without loading checkpoints.
+
+On an explicit build/provision host, from repository root:
+
+```sh
+docker buildx build --platform linux/amd64 --load --build-arg DEVICE=cpu -f machine-learning/Dockerfile -t frameleaf-machine-learning:raw-development machine-learning
+docker buildx build --platform linux/arm64 --load --build-arg DEVICE=cpu -f machine-learning/Dockerfile -t frameleaf-machine-learning:raw-development-arm64 machine-learning
+# MODEL_CACHE_VOLUME identifies the existing deployment's model-cache volume.
+docker run --rm --entrypoint python -v "$MODEL_CACHE_VOLUME:/cache" \
+  frameleaf-machine-learning:raw-development scripts/provision-semantic-models.py --download
+docker run --rm --network none --entrypoint python -v "$MODEL_CACHE_VOLUME:/cache" \
+  frameleaf-machine-learning:raw-development scripts/provision-semantic-models.py
+```
+
+The first provisioning invocation is an explicit administrator-only network download of the exact
+manifest files. It does not accept media or unpinned repository revisions. Omitting `--download` verifies
+locally and sets Hub offline mode. A fully verified receipt is written beside the hub cache; inference
+independently rechecks every content hash. Rootless installations can substitute their existing cache
+bind mount and numeric user. Use the same owned volume for worker inference. Neither image builds nor
+media requests provision weights. There is no Cloud/media fallback.
+
+For automated real-model qualification, mount consented annotated fixtures plus a separate output
+folder. The truth PNGs must match an unrotated sensor-canvas image of at most 2048 pixels per edge:
+
+```sh
+docker run --rm --network none --entrypoint timeout \
+  -v "$MODEL_CACHE_VOLUME:/cache:ro" -v "$MASK_FIXTURES:/fixtures:ro" -v "$MASK_RESULTS:/results" \
+  frameleaf-machine-learning:raw-development 300 python scripts/qualify-semantic-models.py \
+  /fixtures/sensor-canvas.jpg --subject-truth /fixtures/subject.png --sky-truth /fixtures/sky.png --output /results
+```
+
+This loads the real manifest-verified models, additionally refuses socket connections, requires
+nonempty shape-aligned `sensor-active` PNGs, checks annotated IoU >=0.75 and each cold/warm proposal's
+120-second server deadline, and records mask PNGs, model revisions, timings and peak RSS. Run on both
+CPU architectures; optional CUDA uses the existing `DEVICE=cuda` build and `--device cuda` qualification.
+The gate fails visibly for absent/tampered models, unsupported imports/ABI, no proposals, poor fixture
+IoU, timeout or egress attempts. A passed fixture cannot establish general subject/sky/thin-edge quality;
+representative photographer, native transform/refinement, failure/retry and resource qualification
+remain required. None of these image/model execution commands were run in this source packet.

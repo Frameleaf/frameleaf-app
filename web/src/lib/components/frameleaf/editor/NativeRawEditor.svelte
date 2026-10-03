@@ -1,5 +1,6 @@
 <script lang="ts">
   import EditorSlider from './EditorSlider.svelte';
+  import { nativePublicationState, nativeStrokeOverlay } from '$lib/frameleaf/native-editor-state';
   import {
     requestDevelopPreview,
     developFileUrl,
@@ -52,6 +53,7 @@
   let selectedMask = $state<string | null>(null);
   let proposalBusy = $state(false);
   let previewCanvas = $state<boolean | null>(null);
+  let previewDimensions = $state({ width: 1, height: 1 });
   let brushRadius = $state(0.025);
   let before = $state(false);
   let zoom = $state(1);
@@ -81,15 +83,31 @@
   const failed = (failure: unknown) => {
     error = failure instanceof Error ? failure.message : 'RAW development failed';
   };
-  const watch = () => {
+  const watch = (targetRevision?: string) => {
     stop?.();
+    let renderedBeforeCurrent = 0;
     stop = followDevelop(
       asset.id,
       (develop) => {
         revisions = develop.revisions;
-        if (develop.revisions.some((item) => item.status === 'rendered')) onRendered?.(asset.id);
+        const state = nativePublicationState(develop, targetRevision);
+        if (state.awaitingPublication) {
+          if (++renderedBeforeCurrent >= 10) {
+            stop?.();
+            error = 'Rendered version did not become current; reload versions and retry.';
+          }
+          return;
+        }
+        if (state.published || state.terminal) {
+          stop?.();
+          if (state.published) onRendered?.(asset.id);
+        }
       },
-      { onError: failed },
+      {
+        onError: failed,
+        continueWhile: (develop) =>
+          nativePublicationState(develop, targetRevision).awaitingPublication && renderedBeforeCurrent < 10,
+      },
     );
   };
   onMount(async () => {
@@ -104,7 +122,8 @@
         revisionId = current.id;
       }
       loaded = true;
-      if (revisions.some((item) => item.status === 'queued' || item.status === 'rendering')) watch();
+      const pending = revisions.find((item) => item.status === 'queued' || item.status === 'rendering');
+      if (pending) watch(pending.id);
     } catch (failure) {
       failed(failure);
     }
@@ -177,7 +196,7 @@
       revisions = [result, ...revisions];
       undo = [];
       redo = [];
-      watch();
+      watch(result.id);
     } catch (failure) {
       failed(failure);
     }
@@ -368,10 +387,21 @@
             activeStroke = undefined;
             strokeStart = undefined;
           }}
+          style:width={`min(100%, calc((100vh - 210px) * ${previewDimensions.width / previewDimensions.height}))`}
           style:transform={`scale(${zoom})`}
           style:touch-action={sensorCanvas ? 'none' : 'auto'}
         >
-          <img src={preview} alt={asset.originalFileName} draggable="false" />
+          <img
+            src={preview}
+            alt={asset.originalFileName}
+            draggable="false"
+            onload={(event) => {
+              previewDimensions = {
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              };
+            }}
+          />
           {#if sensorCanvas && selected?.kind === 'radial'}<div
               class="mask-shape radial"
               style:left={`${(selected.x - selected.radiusX) * 100}%`}
@@ -381,17 +411,29 @@
             ></div>{/if}
           {#if sensorCanvas && selected && ['brush', 'subject', 'sky', 'background'].includes(selected.kind)}<svg
               class="mask-line"
-              viewBox="0 0 1 1"
-              preserveAspectRatio="none"
+              viewBox={`0 0 ${previewDimensions.width} ${previewDimensions.height}`}
+              preserveAspectRatio="xMidYMid meet"
               aria-hidden="true"
-              >{#each [...(selected.strokes ?? []), ...(activeStroke ? [activeStroke] : [])] as stroke}<polyline
-                  points={stroke.points.map(([x, y]) => `${x},${y}`).join(' ')}
-                  fill="none"
-                  stroke={stroke.erase ? '#f87171' : '#fff8'}
-                  stroke-width={stroke.radius * 2}
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />{/each}</svg
+              >{#each [...(selected.strokes ?? []), ...(activeStroke ? [activeStroke] : [])] as stroke}
+                {@const overlay = nativeStrokeOverlay(stroke, previewDimensions.width, previewDimensions.height)}
+                {#if stroke.points.length === 1}
+                  <circle
+                    cx={overlay.first.x}
+                    cy={overlay.first.y}
+                    r={overlay.radius}
+                    fill={stroke.erase ? '#f87171' : '#fff8'}
+                  />
+                {:else}
+                  <polyline
+                    points={overlay.points}
+                    fill="none"
+                    stroke={stroke.erase ? '#f87171' : '#fff8'}
+                    stroke-width={overlay.radius * 2}
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                {/if}
+              {/each}</svg
             >{/if}
           {#if sensorCanvas && selected?.kind === 'linear'}<svg
               class="mask-line"
@@ -660,8 +702,7 @@
                 onclick={async () => {
                   try {
                     await revertAssetDevelop({ id: asset.id, assetDevelopRevertDto: { revisionId: version.id } });
-                    watch();
-                    onRendered?.(asset.id);
+                    watch(version.id);
                   } catch (failure) {
                     failed(failure);
                   }
@@ -672,7 +713,7 @@
                 onclick={async () => {
                   try {
                     await renderAssetDevelopRevision({ id: asset.id, revisionId: version.id });
-                    watch();
+                    watch(version.id);
                   } catch (failure) {
                     failed(failure);
                   }
@@ -766,11 +807,11 @@
   .raw-canvas {
     position: relative;
     max-width: 100%;
-    max-height: calc(100% - 4rem);
     user-select: none;
   }
   .raw-canvas img {
     display: block;
+    width: 100%;
     max-width: 100%;
     max-height: calc(100vh - 210px);
     object-fit: contain;
