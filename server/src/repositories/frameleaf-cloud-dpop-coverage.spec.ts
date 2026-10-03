@@ -101,7 +101,10 @@ describe('every Frameleaf Cloud call sends a DPoP proof (FC-50, CLD-201)', () =>
       expect(source).toContain('const secret = process.env.PHOTOGRAPHY_STRIPE_SECRET_KEY;');
       expect(source).toContain('headers: { Authorization: `Bearer ${this.stripeConfig()}`, ...options.headers },');
       expect(
-        [...source.matchAll(/\bthis\.stripe\(([\s\S]*?)\);/g)].map(([, args]) => args.replace(/\s+/g, ' ').trim()),
+        source
+          .matchAll(/\bthis\.stripe\(([\s\S]*?)\);/g)
+          .toArray()
+          .map(([, args]) => args.replaceAll(/\s+/g, ' ').trim()),
       ).toEqual([
         "'checkout/sessions', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': `photography-${order.id}` }, body: form, }",
         '`payment_intents/${encodeURIComponent(object.payment_intent)}`',
