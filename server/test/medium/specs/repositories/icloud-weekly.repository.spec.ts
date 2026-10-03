@@ -480,11 +480,13 @@ describe('weekly consent foundation, never execution authority', () => {
         await sync.update(f.connection.id, f.user.id, { encryptedSession: 'fixture-only' });
       } else if (kind === 'authenticate') {
         await sync.update(f.connection.id, f.user.id, { state: 'authenticating' });
-        await sync.withSession(f.connection.id, f.user.id, () => ({
-          value: undefined,
-          state: 'connected',
-          encryptedSession: 'new-auth',
-        }));
+        await sync.withSession(f.connection.id, f.user.id, () =>
+          Promise.resolve({
+            value: undefined,
+            state: 'connected',
+            encryptedSession: 'new-auth',
+          }),
+        );
       } else {
         await sql`UPDATE immich_fork.icloud_connection SET "encryptedSession"=NULL
           WHERE id=${f.connection.id}::uuid`.execute(db);
