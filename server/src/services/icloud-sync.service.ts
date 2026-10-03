@@ -26,7 +26,6 @@ import {
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
-import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
 import {
   ICloudConnection,
   ICloudLibrary,
@@ -47,6 +46,7 @@ import {
   type MediaOperationWriteState,
 } from 'src/repositories/media-operation.repository.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
+import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
@@ -610,9 +610,18 @@ export class ICloudSyncService {
    * device approval, a password) fails the run with that reason; the connection has told its owner.
    */
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
-    if (operation.snapshot.task === 'identity-audit') { await this.audits.run(operation,claimToken); return; }
+    if (operation.snapshot.task === 'identity-audit') {
+      await this.audits.run(operation, claimToken);
+      return;
+    }
     if (operation.snapshot.task !== undefined) {
-      await this.operations.fail(operation.id,claimToken,{error:'Invalid iCloud task',errorCode:'icloud_snapshot_invalid'},{retry:false}); return;
+      await this.operations.fail(
+        operation.id,
+        claimToken,
+        { error: 'Invalid iCloud task', errorCode: 'icloud_snapshot_invalid' },
+        { retry: false },
+      );
+      return;
     }
     const claim: Claim = { operation, claimToken };
     const { id, ownerId } = operation;
