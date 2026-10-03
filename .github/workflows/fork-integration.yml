@@ -48,7 +48,30 @@ jobs:
             .github/frameleaf-deploy-test.test.cjs \
             .github/verify-release-bundle.test.cjs \
             scripts/frameleaf-distribution-gates.test.mjs
+      - name: Set up the pinned NAS renderer Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.11.15'
+      - name: Prepare the pinned TrueNAS rendering library
+        run: |
+          catalog="$RUNNER_TEMP/truenas-catalog"
+          test ! -e "$catalog"
+          git init "$catalog"
+          git -C "$catalog" remote add origin https://github.com/truenas/apps.git
+          git -C "$catalog" sparse-checkout set ix-dev/community/actual-budget/templates/library/base_v2_3_4
+          git -C "$catalog" fetch --depth=1 origin db019217d73fc8c4e1d1b9c3e89be5dcc705c95a
+          git -C "$catalog" checkout --detach FETCH_HEAD
+          test "$(git -C "$catalog" rev-parse HEAD)" = db019217d73fc8c4e1d1b9c3e89be5dcc705c95a
+          python3 -m venv "$RUNNER_TEMP/nas-render-venv"
+          source "$RUNNER_TEMP/nas-render-venv/bin/activate"
+          python3 -m pip install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: -r packaging/nas/requirements-render.lock
+          python3 -m pip check
+          printf '%s\n' "$RUNNER_TEMP/nas-render-venv/bin" >> "$GITHUB_PATH"
       - name: Validate NAS package fixtures
+        env:
+          TRUENAS_LIBRARY: ${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4
+          FRAMELEAF_REQUIRE_TRUENAS_RENDER: 'true'
+          PYTHONDONTWRITEBYTECODE: '1'
         run: node --test --test-concurrency=1 packaging/nas/build.test.cjs
       - name: Install plugin WASM, API generation and ffmpeg tools
         env:

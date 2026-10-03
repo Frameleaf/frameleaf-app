@@ -224,6 +224,40 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
   ]);
 });
 
+test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer dependencies", () => {
+  const steps = workflow("fork-integration.yml").jobs.integration.steps;
+  const python = steps.find((step) => step.name === "Set up the pinned NAS renderer Python");
+  const prepare = steps.find((step) => step.name === "Prepare the pinned TrueNAS rendering library");
+  const fixtures = steps.find((step) => step.name === "Validate NAS package fixtures");
+  assert.ok(python && prepare && fixtures);
+  assert.equal(python.with["python-version"], "3.11.15");
+  assert.match(python.uses, /^actions\/setup-python@[a-f0-9]{40}$/);
+  assert.ok(steps.indexOf(python) < steps.indexOf(prepare));
+  assert.ok(steps.indexOf(prepare) < steps.indexOf(fixtures));
+  for (const step of [python, prepare, fixtures]) {
+    assert.equal(step["continue-on-error"], undefined);
+    assert.equal(step.if, undefined);
+  }
+  assert.match(prepare.run, /https:\/\/github\.com\/truenas\/apps\.git/);
+  assert.match(prepare.run, /fetch --depth=1 origin db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/);
+  assert.match(prepare.run, /test "\$\(git -C "\$catalog" rev-parse HEAD\)" = db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/);
+  assert.match(prepare.run, /python3 -m venv "\$RUNNER_TEMP\/nas-render-venv"/);
+  assert.match(prepare.run, /python3 -m pip install --index-url https:\/\/pypi\.org\/simple --require-hashes --only-binary=:all: -r packaging\/nas\/requirements-render\.lock/);
+  assert.match(prepare.run, /python3 -m pip check/);
+  assert.doesNotMatch(prepare.run, /\|\| true|--no-deps|--trusted-host/);
+  assert.equal(fixtures.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER, "true");
+  assert.equal(fixtures.env.PYTHONDONTWRITEBYTECODE, "1");
+  assert.equal(fixtures.env.TRUENAS_LIBRARY,
+    "${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4");
+  assert.equal(fixtures.run, "node --test --test-concurrency=1 packaging/nas/build.test.cjs");
+  const requirements = readFileSync(path.join(root, "packaging/nas/requirements-render.lock"), "utf8")
+    .split("\n").filter((line) => line && !line.startsWith("#"));
+  assert.equal(requirements.length, 10);
+  for (const requirement of requirements) {
+    assert.match(requirement, /^[A-Za-z0-9_-]+==[0-9.]+(?: --hash=sha256:[a-f0-9]{64})+$/);
+  }
+});
+
 test("API generation refuses artifacts recreated outside Git tracking", () => {
   const artifacts = [
     "open-api/immich-openapi-specs.json",
