@@ -958,6 +958,15 @@ export type FrameleafCloudLink = {
      * up to 90 days is shown once, however soon a dismissed notification is cleaned up.
      */
     shownNotices?: Record<string, string>;
+    /**
+     * FC-27: the custom hostname failure episode already announced to administrators. A verified
+     * hostname clears this, so a later failure is announced once for the new episode.
+     */
+    customHostnameFailure?: {
+      host: string;
+      state: 'failing' | 'failed' | 'caa_blocked' | 'missing';
+      noticedAt: string;
+    };
   };
   /** FL-155: sha256 of headless link tokens already used, so a token never links twice. */
   usedLinkTokens?: string[];
