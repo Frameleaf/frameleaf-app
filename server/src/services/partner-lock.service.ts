@@ -31,6 +31,22 @@ export type PartnerLockInput = {
  */
 @Injectable()
 export class PartnerLockService extends BaseService {
+  /**
+   * The lock a copy of this source must carry, decided before the copy exists so it can be inserted
+   * already locked (never visible without the recipient's PIN, even for a moment or after a failed step).
+   */
+  async getCopyLockReason(
+    input: Pick<PartnerLockInput, 'sourceAssetId' | 'sourceOwnerId'>,
+  ): Promise<AssetLockReason | undefined> {
+    const [source] = await this.assetRepository.getLockReasons([input.sourceAssetId]);
+    return source?.reason ?? ((await this.isHiddenByRules(input)) ? AssetLockReason.Marked : undefined);
+  }
+
+  /** Flag the recipient's one-time "set a PIN" notice for a copy that arrived locked. */
+  async noteLockedCopy(targetOwnerId: string): Promise<void> {
+    await BaseService.create(PartnerLockedNoticeService, this).noteLockedCopy(targetOwnerId);
+  }
+
   async mirrorLockedState(input: PartnerLockInput): Promise<'locked' | 'unlocked' | 'unchanged'> {
     const { sourceAssetId, targetAssetId, targetOwnerId } = input;
     const reasons = await this.assetRepository.getLockReasons([sourceAssetId, targetAssetId]);
@@ -51,7 +67,10 @@ export class PartnerLockService extends BaseService {
   }
 
   /** Whether the source owner's Locked rules hide the source item. */
-  private async isHiddenByRules({ sourceAssetId, sourceOwnerId }: PartnerLockInput): Promise<boolean> {
+  private async isHiddenByRules({
+    sourceAssetId,
+    sourceOwnerId,
+  }: Pick<PartnerLockInput, 'sourceAssetId' | 'sourceOwnerId'>): Promise<boolean> {
     const metadata = (await this.userRepository.getMetadata(sourceOwnerId)) ?? [];
     const suppression = getPreferences(metadata).privacy.suppression;
     const filter: HiddenContentFilter = {

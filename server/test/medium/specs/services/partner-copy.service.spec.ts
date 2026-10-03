@@ -346,6 +346,52 @@ describe(PartnerCopyService.name, () => {
       expect(metadata.map(({ key }) => key)).toContain(UserMetadataKey.PartnerLockedNotice);
     });
 
+    it("copies an item the partner's Locked rules hide already locked, even when a later copy step fails", async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id);
+      const { tag } = await ctx.newTag({ userId: alice.id, value: 'Private' });
+      await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [source.id] });
+      await db
+        .insertInto('user_metadata')
+        .values({
+          userId: alice.id,
+          key: UserMetadataKey.Preferences,
+          value: { privacy: { suppression: { tagIds: [tag.id], scope: 'visible' } } },
+        })
+        .execute();
+      const copyFaces = vi
+        .spyOn(sut as unknown as { copyFaces: () => Promise<void> }, 'copyFaces')
+        .mockRejectedValueOnce(new Error('face copy failed'));
+
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).rejects.toThrow('face copy failed');
+
+      const copies = await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute();
+      expect(copies).toHaveLength(1);
+      const copyId = copies[0].id;
+      const ordinary = factory.auth({ user: bob });
+      const readable = () =>
+        checkAccess(ctx.get(AccessRepository), {
+          auth: ordinary,
+          permission: Permission.AssetRead,
+          ids: new Set([copyId]),
+        });
+      await expect(ctx.get(AssetRepository).getLockReasons([copyId])).resolves.toEqual([
+        expect.objectContaining({ assetId: copyId, reason: AssetLockReason.Marked }),
+      ]);
+      await expect(readable()).resolves.toEqual(new Set());
+
+      // a retry finds the copy (one-copy rule) and re-runs the lock mirror, so a copy left unlocked heals
+      await db.deleteFrom('asset_lock').where('assetId', '=', copyId).execute();
+      copyFaces.mockRestore();
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+      await expect(ctx.get(AssetRepository).getLockReasons([copyId])).resolves.toEqual([
+        expect.objectContaining({ assetId: copyId, reason: AssetLockReason.Marked }),
+      ]);
+      await expect(readable()).resolves.toEqual(new Set());
+    });
+
     it("copies a photo's faces and maps its people into the recipient's library (FL-326 Task 12)", async () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();

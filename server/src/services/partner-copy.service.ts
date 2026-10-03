@@ -11,6 +11,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AlbumKind,
   AlbumUserRole,
+  AssetLockReason,
   AssetStatus,
   AssetVisibility,
   ImmichWorker,
@@ -206,7 +207,11 @@ export class PartnerCopyService extends BaseService {
       return;
     }
 
+    const locks = BaseService.create(PartnerLockService, this);
+    const lockInput = { sourceAssetId: source.id, sourceOwnerId: source.ownerId };
     if (await this.partnerOriginRepository.libraryHasChecksum(targetOwnerId, source.checksum)) {
+      // a retry of a copy that failed part-way: its lock state is mirrored again (idempotent)
+      await this.remirrorExistingCopy(source.id, source.ownerId, targetOwnerId);
       return;
     }
 
@@ -216,15 +221,21 @@ export class PartnerCopyService extends BaseService {
       return;
     }
 
+    // spec §4.9: decided before the copy exists, so a Locked item's copy is never visible unlocked
+    const lockReason = await locks.getCopyLockReason(lockInput);
     const copyId = await this.partnerOriginRepository.insertAssetCopy({
       sourceAssetId: source.id,
       ownerId: targetOwnerId,
       rootOwnerId,
       partnerSharedById,
       original: { id: original.id, path: original.path },
+      lockReason,
     });
     if (!copyId) {
       return;
+    }
+    if (lockReason) {
+      await locks.noteLockedCopy(targetOwnerId);
     }
 
     if (source.livePhotoVideoId) {
@@ -233,6 +244,7 @@ export class PartnerCopyService extends BaseService {
         targetOwnerId,
         rootOwnerId,
         partnerSharedById,
+        lockReason,
       );
       if (motionId) {
         await this.assetRepository.update({ id: copyId, livePhotoVideoId: motionId });
@@ -240,18 +252,35 @@ export class PartnerCopyService extends BaseService {
     }
     await this.copyTags(source.id, copyId, targetOwnerId);
     await this.copyFaces({ sourceAssetId: source.id, targetAssetId: copyId, targetOwnerId, partnerSharedById });
-    // spec §4.9: locked where the source is, behind the recipient's own PIN
-    await BaseService.create(PartnerLockService, this).mirrorLockedState({
-      sourceAssetId: source.id,
-      sourceOwnerId: source.ownerId,
-      targetAssetId: copyId,
-      targetOwnerId,
-    });
+    // the source may have been locked or unlocked meanwhile
+    await locks.mirrorLockedState({ ...lockInput, targetAssetId: copyId, targetOwnerId });
     // spec §4.4: an album copy whose membership still follows its source gains the new copy
     for (const albumId of await this.partnerOriginRepository.getFollowingAlbumCopiesHolding(source.id, targetOwnerId)) {
       await this.albumRepository.addAssetIds(albumId, [copyId]);
     }
     return copyId;
+  }
+
+  /**
+   * `targetOwnerId` already holds a copy of this source (a retried copy job, or a re-run): mirror its lock
+   * state again while it follows the source's visibility, so a copy whose earlier attempt failed before
+   * its lock was settled is never left visible.
+   */
+  private async remirrorExistingCopy(sourceAssetId: string, sourceOwnerId: string, targetOwnerId: string) {
+    const copyId = await this.partnerOriginRepository.getCopyId('asset', sourceAssetId, targetOwnerId);
+    if (!copyId) {
+      return;
+    }
+    const origin = await this.partnerOriginRepository.getOrigin('asset', copyId);
+    if (!origin?.following || origin.overriddenFields.includes(AssetOriginField.Visibility)) {
+      return;
+    }
+    await BaseService.create(PartnerLockService, this).mirrorLockedState({
+      sourceAssetId,
+      sourceOwnerId,
+      targetAssetId: copyId,
+      targetOwnerId,
+    });
   }
 
   /**
@@ -269,17 +298,20 @@ export class PartnerCopyService extends BaseService {
     targetOwnerId: string,
     rootOwnerId: string,
     partnerSharedById: string,
+    lockReason?: AssetLockReason,
   ): Promise<string | undefined> {
     const original = await this.resolvePhysicalOriginal(motionAssetId);
     if (!original) {
       return;
     }
+    // both parts of a Live Photo lock as one
     return this.partnerOriginRepository.insertAssetCopy({
       sourceAssetId: motionAssetId,
       ownerId: targetOwnerId,
       rootOwnerId,
       partnerSharedById,
       original: { id: original.id, path: original.path },
+      lockReason,
     });
   }
 

@@ -2,7 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { AlbumKind, AssetFileType, AssetOrder } from 'src/enum.js';
+import { AlbumKind, AssetFileType, AssetLockReason, AssetOrder } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -68,6 +68,11 @@ export type AssetCopyInput = {
   partnerSharedById: string;
   /** The source's original `physical_file`; the copy links to it, nothing on disk is written. */
   original: { id: string; path: string };
+  /**
+   * Spec §4.9: the lock the copy carries from the moment it exists (the source's lock reason, or `marked`
+   * for an item the sharer's Locked rules hide), inserted in the same transaction as the copy.
+   */
+  lockReason?: AssetLockReason;
 };
 
 /** Why a source may not be copied yet (Task 13 lifts the Locked and sensitive skip). */
@@ -442,6 +447,13 @@ export class PartnerOriginRepository {
         })
         .returning('id')
         .executeTakeFirstOrThrow();
+      if (input.lockReason) {
+        // a brand-new row with no stack or Live Photo pairing yet: the lock record alone locks it
+        await trx
+          .insertInto('asset_lock')
+          .values({ assetId: copy.id, reason: input.lockReason, lockedBy: null })
+          .execute();
+      }
 
       const exif = await trx.selectFrom('asset_exif').selectAll().where('assetId', '=', source.id).executeTakeFirst();
       if (exif) {
