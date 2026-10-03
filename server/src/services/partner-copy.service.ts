@@ -223,6 +223,11 @@ export class PartnerCopyService extends BaseService {
       return;
     }
 
+    // a copy the recipient deleted is never made again (its origin row outlives it)
+    if (await this.partnerOriginRepository.hasEverCopied(source.id, targetOwnerId)) {
+      return;
+    }
+
     const original = await this.resolvePhysicalOriginal(source.id);
     if (!original) {
       this.logger.warn(`Partner copy of ${source.id} skipped: its original has no stored file to link`);
