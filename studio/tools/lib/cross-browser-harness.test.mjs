@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import net from 'node:net';
 import { once } from 'node:events';
 import test from 'node:test';
 import { createHarness } from './cross-browser-harness.mjs';
@@ -179,3 +180,50 @@ test('checks overrides in order and only ever uses the first match', async () =>
     await upstream.close();
   }
 });
+
+// Use a real TCP peer and verify data reaches it before exercising teardown. Closing
+// only the HTTP listener must not count as disposal of an established tunnel.
+for (const termination of ['harness shutdown', 'client disconnect']) {
+  test(`disposes both CONNECT peers on ${termination}`, { timeout: 5_000 }, async (t) => {
+    const upstreamServer = net.createServer();
+    const upstreamConnected = once(upstreamServer, 'connection');
+    await new Promise((resolve) => upstreamServer.listen(0, '127.0.0.1', resolve));
+    let clientSocket;
+    let upstreamSocket;
+    const upstreamOrigin = `http://127.0.0.1:${upstreamServer.address().port}`;
+    const harness = createHarness({ upstream: upstreamOrigin });
+    const harnessUrl = new URL(await harness.listen());
+    t.after(async () => {
+      clientSocket?.destroy();
+      upstreamSocket?.destroy();
+      await harness.close();
+      await new Promise((resolve) => upstreamServer.close(resolve));
+    });
+    const connected = await new Promise((resolve, reject) => {
+      const req = http.request({
+        host: harnessUrl.hostname, port: harnessUrl.port,
+        method: 'CONNECT', path: new URL(upstreamOrigin).host,
+      });
+      req.on('connect', (res, socket) => resolve({ res, socket }));
+      req.on('error', reject);
+      req.end();
+    });
+    clientSocket = connected.socket;
+    [upstreamSocket] = await upstreamConnected;
+    assert.equal(connected.res.statusCode, 200);
+    const received = once(upstreamSocket, 'data');
+    clientSocket.write('session frame');
+    assert.equal((await received)[0].toString(), 'session frame');
+    const clientClosed = once(clientSocket, 'close');
+    const upstreamClosed = once(upstreamSocket, 'close');
+    // Consume EOF even when there is no further application data.
+    clientSocket.resume();
+    upstreamSocket.resume();
+    if (termination === 'harness shutdown') await harness.close();
+    else clientSocket.destroy();
+    await Promise.all([clientClosed, upstreamClosed]);
+    assert.equal(clientSocket.destroyed, true);
+    assert.equal(upstreamSocket.destroyed, true);
+    assert.deepEqual(harness.observations.map((entry) => entry.kind), ['tunnelled']);
+  });
+}
