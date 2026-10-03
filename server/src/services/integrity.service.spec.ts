@@ -209,6 +209,7 @@ describe(IntegrityService.name, () => {
     it('unlinks an untracked path only through the reference-counted guard', async () => {
       const path = '/data/upload/orphan.mov';
       mocks.integrityReport.getById.mockResolvedValue({ path } as never);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
       mocks.physicalFile.deleteUnreferencedPath.mockImplementation(async (_path, unlink) => {
         await unlink();
         return { deleted: true, references: 0 };
@@ -224,6 +225,7 @@ describe(IntegrityService.name, () => {
     it('never unlinks a path something references, such as a shared original', async () => {
       const path = '/data/library/primary/shared.jpg';
       mocks.integrityReport.getById.mockResolvedValue({ path } as never);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
       mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: false, references: 2 });
 
       await sut.deleteIntegrityReport('user-id', 'report-id');
@@ -238,6 +240,7 @@ describe(IntegrityService.name, () => {
       const referenced = '/data/upload/admin/ab/asset.mov';
       const untracked = '/data/upload/orphan.mov';
       mocks.storage.unlink.mockResolvedValue();
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
       mocks.physicalFile.deleteUnreferencedPath.mockImplementation(async (path, unlink) => {
         if (path === referenced) {
           return { deleted: false, references: 1 };
