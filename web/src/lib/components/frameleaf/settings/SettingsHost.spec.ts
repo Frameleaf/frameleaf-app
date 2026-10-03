@@ -208,7 +208,7 @@ describe('the Command Center (FL-71)', () => {
     expect(state.goto).toHaveBeenCalledWith('/user-settings?area=utilities&section=missing-media', expect.any(Object));
   });
 
-  it('lists all four repair tools for an administrator, in the Utilities order', () => {
+  it('lists every repair tool for an administrator, in the Utilities order', () => {
     open('/user-settings?area=care');
     const { container } = render(SettingsHost, { sections });
     const tools = within(container.querySelector<HTMLElement>('.cc-directory')!)
@@ -219,6 +219,7 @@ describe('the Command Center (FL-71)', () => {
       'Live Photo pairing',
       'Missing media',
       'Damaged media',
+      'File trash',
     ]);
   });
 
