@@ -17,6 +17,7 @@ import {
   JobName,
   JobStatus,
   QueueName,
+  SystemMetadataKey,
 } from 'src/enum.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import {
@@ -194,7 +195,7 @@ export class PartnerCopyService extends BaseService {
       return;
     }
     // external-library files are never linked (spec §3.2); the motion part of a Live Photo is Hidden
-    // and follows its still, which is copied unpaired for now
+    // and is copied with its still, never on its own
     if (source.libraryId || source.isExternal || source.isOffline || source.visibility === AssetVisibility.Hidden) {
       return;
     }
@@ -226,6 +227,12 @@ export class PartnerCopyService extends BaseService {
       return;
     }
 
+    if (source.livePhotoVideoId) {
+      const motionId = await this.copyMotionPart(source.livePhotoVideoId, targetOwnerId, rootOwnerId, partnerSharedById);
+      if (motionId) {
+        await this.assetRepository.update({ id: copyId, livePhotoVideoId: motionId });
+      }
+    }
     await this.copyTags(source.id, copyId, targetOwnerId);
     await this.copyFaces({ sourceAssetId: source.id, targetAssetId: copyId, targetOwnerId, partnerSharedById });
     // spec §4.9: locked where the source is, behind the recipient's own PIN
@@ -244,12 +251,31 @@ export class PartnerCopyService extends BaseService {
 
   /**
    * The stored original a copy links to: the source's own `physical_file`, registered now if it has
-   * none yet. INTEGRATION (storage-core file trash): a source whose original went to the file trash
-   * must be taken back out of it here (`PhysicalFileTrashRepository.findByChecksum` + `untrash`) before
-   * linking, never duplicated. This is the single call site to wire.
+   * none yet. ponytail: no file-trash lookup here, a copy's source is an active asset that still
+   * references its original, so that original can never be in the file trash.
    */
   private resolvePhysicalOriginal(sourceAssetId: string) {
     return this.physicalFileRepository.ensureOriginalPhysicalFile(sourceAssetId);
+  }
+
+  /** A Live Photo's Hidden motion part, linked to the same stored file, for the still's copy to pair with. */
+  private async copyMotionPart(
+    motionAssetId: string,
+    targetOwnerId: string,
+    rootOwnerId: string,
+    partnerSharedById: string,
+  ): Promise<string | undefined> {
+    const original = await this.resolvePhysicalOriginal(motionAssetId);
+    if (!original) {
+      return;
+    }
+    return this.partnerOriginRepository.insertAssetCopy({
+      sourceAssetId: motionAssetId,
+      ownerId: targetOwnerId,
+      rootOwnerId,
+      partnerSharedById,
+      original: { id: original.id, path: original.path },
+    });
   }
 
   /** Tags by name, reusing the library's own tag of that name (owner decision 2026-09-27). */
@@ -559,8 +585,8 @@ export class PartnerCopyService extends BaseService {
 
   /**
    * Existing partnerships at upgrade (spec §4.7): each is backfilled once, after the universal-storage
-   * migration is done. INTEGRATION (storage-migration): call this when that migration reaches `done`;
-   * at boot it runs when the migration has nothing left to do.
+   * migration is done: when that migration reaches `done` (`StorageMigrationDone`), and at boot when it
+   * has nothing left to do.
    */
   async queueUpgradeBackfills(): Promise<number> {
     const partnerships = await this.partnerOriginRepository.getPartnershipsWithoutBackfill();
@@ -585,11 +611,17 @@ export class PartnerCopyService extends BaseService {
     }
   }
 
-  /**
-   * INTEGRATION (storage-migration): whether the universal-storage migration is done. This branch has
-   * no such migration, so there is nothing to wait for.
-   */
-  protected isStorageMigrationDone(): Promise<boolean> {
-    return Promise.resolve(true);
+  @OnEvent({ name: 'StorageMigrationDone', workers: [ImmichWorker.Microservices] })
+  async onStorageMigrationDone() {
+    const queued = await this.queueUpgradeBackfills();
+    if (queued > 0) {
+      this.logger.log(`Queued the partner sharing backfill of ${queued} existing partnership(s)`);
+    }
+  }
+
+  /** Whether the universal-storage migration is done (spec §3.6); until then existing partnerships wait. */
+  protected async isStorageMigrationDone(): Promise<boolean> {
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.UniversalStorageMigration);
+    return state?.stage === 'done';
   }
 }
