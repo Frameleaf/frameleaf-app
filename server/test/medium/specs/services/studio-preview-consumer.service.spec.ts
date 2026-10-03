@@ -8,7 +8,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioPreviewRepository } from 'src/repositories/studio-preview.repository.js';
@@ -42,6 +42,24 @@ const gate = () => {
   const promise = new Promise<void>((resolve) => { release = resolve; });
   return { promise, release };
 };
+
+// The same immutable fields the public operation retry copies into a new submission.
+const retryInput = (operation: MediaOperation) => ({
+  ownerId: operation.ownerId,
+  kind: operation.kind,
+  destination: operation.destination,
+  destinationDetail: operation.destinationDetail,
+  label: operation.label,
+  assetId: operation.assetId,
+  resultAssetId: null,
+  retryOfId: operation.id,
+  projectId: operation.projectId,
+  revisionId: operation.revisionId,
+  snapshot: operation.snapshot,
+  settings: operation.settings,
+  estimate: operation.estimate,
+  maxAttempts: operation.maxAttempts,
+});
 
 const setup = async () => {
   const { sut: resources, ctx } = newMediumService(StudioResourceService, {
@@ -81,7 +99,7 @@ const setup = async () => {
     const claimed = await operations.claimNext({ kinds: [MediaOperationKind.StudioPreview], workerId: 'preview-fixture', leaseMs: 60_000 });
     return claimed ? { ...claimed.operation, claimToken: claimed.claimToken } : undefined;
   };
-  return { auth, user, asset, project, manifest, frames, operations, storage, sut, request, claim, makeService };
+  return { auth, user, asset, project, manifest, resources, frames, operations, storage, sut, request, claim, makeService };
 };
 
 it('validates explicit null as a typed wire string, refusing omission, empty and JSON null', () => {
@@ -213,12 +231,19 @@ it('serializes allocation with cancellation: null can retire only before real op
   const requestId = randomUUID();
   const requesting = f.request(requestId);
   await entered.promise;
-  const pending = await database.selectFrom('studio_preview_frame').selectAll().where('ownerId', '=', f.user.id).executeTakeFirstOrThrow();
-  expect(pending.operationId).toBeNull(); // Allocated job remains invisible until the same commit.
-  const cancelling = f.sut.cancel(f.auth, pending.id, { consumerRequestId: requestId, expectedOperationId: 'null' });
-  continueAllocation.release();
+  let cancelling: Promise<void>;
+  try {
+    const pending = await database.selectFrom('studio_preview_frame').selectAll()
+      .where('ownerId', '=', f.user.id).executeTakeFirstOrThrow();
+    expect(pending.operationId).toBeNull(); // Allocated job remains invisible until the same commit.
+    cancelling = expect(f.sut.cancel(f.auth, pending.id, {
+      consumerRequestId: requestId, expectedOperationId: 'null',
+    })).rejects.toThrow('The captured preview operation changed');
+  } finally {
+    continueAllocation.release();
+  }
   const frame = await requesting;
-  await expect(cancelling).rejects.toThrow('The captured preview operation changed');
+  await cancelling;
   expect(await f.operations.getForOwner(frame.operationId!, f.user.id)).toMatchObject({ status: MediaOperationStatus.Queued, cancelRequestedAt: null });
   expect(f.storage.unlinkDir).not.toHaveBeenCalled();
 });
@@ -237,9 +262,12 @@ it('cancels before allocation without creating an orphan operation, and cannot r
   const requesting = f.request(requestId);
   await entered.promise;
   const pending = await database.selectFrom('studio_preview_frame').selectAll().where('ownerId', '=', f.user.id).executeTakeFirstOrThrow();
-  const receipt = await f.sut.cancel(f.auth, pending.id, { consumerRequestId: requestId, expectedOperationId: 'null' });
-  expect(receipt).toMatchObject({ admissionReleased: true, cancellationState: 'not-needed', operationId: null });
-  proceed.release();
+  try {
+    const receipt = await f.sut.cancel(f.auth, pending.id, { consumerRequestId: requestId, expectedOperationId: 'null' });
+    expect(receipt).toMatchObject({ admissionReleased: true, cancellationState: 'not-needed', operationId: null });
+  } finally {
+    proceed.release();
+  }
   expect(await requesting).toMatchObject({ id: pending.id, status: StudioPreviewStatus.Evicted, operationId: null });
   expect(await database.selectFrom('media_operation').select('id').where('ownerId', '=', f.user.id).execute()).toEqual([]);
 });
@@ -327,4 +355,157 @@ it.each(['missing', 'wrong'] as const)('a %s scoped discriminator never falls ba
   expect(await f.operations.getForOwner(claim.id, f.user.id)).toMatchObject({ remoteReleasedAt: null, cancelAcknowledgedAt: null });
   await f.makeService().sweep();
   expect(f.storage.unlinkDir).not.toHaveBeenCalled();
+});
+
+it.each(['original', 'missing', 'wrong', 'pruned'] as const)(
+  'generic retry cannot allocate a new operation from a %s scoped admission',
+  async (mutation) => {
+    const f = await setup();
+    const frame = await f.request();
+    await f.sut.cancel(f.auth, frame.id, {
+      consumerRequestId: frame.consumerRequestId,
+      expectedOperationId: frame.operationId!,
+    });
+    const original = (await f.operations.getForOwner(frame.operationId!, f.user.id))!;
+    if (mutation === 'pruned') {
+      await database.updateTable('studio_preview_frame').set({ updatedAt: new Date(0) })
+        .where('id', '=', frame.id).execute();
+      expect(await f.frames.deleteEvictedBefore(new Date(Date.now() + 1000), 100)).toBe(1);
+    } else if (mutation !== 'original') {
+      const snapshot = { ...original.snapshot };
+      if (mutation === 'missing') {
+        delete snapshot.consumerRequestId;
+      } else {
+        snapshot.consumerRequestId = null;
+      }
+      await database.updateTable('media_operation').set({ snapshot }).where('id', '=', original.id).execute();
+    }
+    const retired = (await f.operations.getForOwner(original.id, f.user.id))!;
+    f.storage.unlinkDir.mockClear();
+    await expect(f.operations.createRetry(retryInput(retired)))
+      .rejects.toThrow('Request a new consumer preview from Studio');
+    expect(await database.selectFrom('media_operation').select('id').where('ownerId', '=', f.user.id).execute())
+      .toEqual([{ id: original.id }]);
+    expect(f.storage.unlinkDir).not.toHaveBeenCalled();
+  },
+);
+
+it('retains legacy retry semantics and ignores a consumer flag on a foreign operation kind', async () => {
+  const f = await setup();
+  const frame = (await f.sut.requestForManifest(f.auth, f.manifest, {
+    time: { numerator: '0', denominator: '1' }, quality: StudioPreviewQuality.Draft,
+    viewportWidth: 960, viewportHeight: 540, seekGeneration: 0,
+  })).preview;
+  await f.sut.cancel(f.auth, frame.id);
+  const legacy = (await f.operations.getForOwner(frame.operationId!, f.user.id))!;
+  const retry = await f.operations.createRetry(retryInput(legacy));
+  expect(retry.created).toBe(true);
+  expect(retry.operation).toMatchObject({ retryOfId: legacy.id, snapshot: legacy.snapshot });
+
+  const foreign = await f.operations.create({
+    ...retryInput(legacy), retryOfId: null, kind: MediaOperationKind.StudioExport,
+    snapshot: { ...legacy.snapshot, consumerRequestId: randomUUID() },
+  });
+  await f.operations.requestCancel(foreign.id, f.user.id);
+  const foreignRetry = await f.operations.createRetry(retryInput(foreign));
+  expect(foreignRetry.created).toBe(true);
+  expect(foreignRetry.operation.kind).toBe(MediaOperationKind.StudioExport);
+});
+
+it('an outer commit failure publishes neither the admission fence nor cancellation notification', async () => {
+  const f = await setup();
+  const frame = await f.request();
+  const claim = (await f.claim())!;
+  const changes: string[] = [];
+  const removeListener = f.operations.onChange((rows) => changes.push(...rows.map(({ id }) => id)));
+  await sql`CREATE FUNCTION preview_consumer_commit_failure() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW."status" = 'evicted' THEN RAISE EXCEPTION 'fixture outer commit failure'; END IF;
+      RETURN NEW;
+    END $$`.execute(database);
+  await sql`CREATE CONSTRAINT TRIGGER preview_consumer_commit_failure
+    AFTER UPDATE ON studio_preview_frame DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION preview_consumer_commit_failure()`.execute(database);
+  try {
+    await expect(f.sut.cancel(f.auth, frame.id, {
+      consumerRequestId: frame.consumerRequestId, expectedOperationId: frame.operationId!,
+    })).rejects.toThrow('fixture outer commit failure');
+    expect(await f.frames.getForOwner(frame.id, f.user.id))
+      .toMatchObject({ status: StudioPreviewStatus.Rendering, operationId: claim.id, errorCode: null });
+    expect(await f.operations.getForOwner(claim.id, f.user.id))
+      .toMatchObject({ cancelRequestedAt: null, claimToken: claim.claimToken });
+    expect(changes).toEqual([]);
+    expect(f.storage.unlinkDir).not.toHaveBeenCalled();
+  } finally {
+    removeListener();
+    await sql`DROP TRIGGER preview_consumer_commit_failure ON studio_preview_frame`.execute(database);
+    await sql`DROP FUNCTION preview_consumer_commit_failure()`.execute(database);
+  }
+});
+
+it('a status read suspended in authorization cannot republish the state from before retirement', async () => {
+  const f = await setup();
+  const frame = await f.request();
+  const entered = gate();
+  const proceed = gate();
+  const verify = f.resources.verifyReadGrant.bind(f.resources);
+  vi.spyOn(f.resources, 'verifyReadGrant').mockImplementationOnce(async (...args) => {
+    const result = await verify(...args);
+    entered.release();
+    await proceed.promise;
+    return result;
+  });
+  const reading = f.sut.get(f.auth, frame.id, { consumerRequestId: frame.consumerRequestId });
+  await entered.promise;
+  try {
+    await f.sut.cancel(f.auth, frame.id, {
+      consumerRequestId: frame.consumerRequestId, expectedOperationId: frame.operationId!,
+    });
+  } finally {
+    proceed.release();
+  }
+  expect(await reading).toMatchObject({ id: frame.id, status: StudioPreviewStatus.Evicted });
+});
+
+it('an allocation SQL failure leaves a retryable pending admission without an orphan operation', async () => {
+  const f = await setup();
+  const consumerRequestId = randomUUID();
+  await sql`CREATE FUNCTION preview_consumer_allocation_failure() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'fixture allocation failure'; END $$`.execute(database);
+  await sql`CREATE TRIGGER preview_consumer_allocation_failure BEFORE INSERT ON media_operation
+    FOR EACH ROW EXECUTE FUNCTION preview_consumer_allocation_failure()`.execute(database);
+  try {
+    await expect(f.request(consumerRequestId)).rejects.toThrow('fixture allocation failure');
+    expect(await database.selectFrom('media_operation').select('id').where('ownerId', '=', f.user.id).execute())
+      .toEqual([]);
+  } finally {
+    await sql`DROP TRIGGER preview_consumer_allocation_failure ON media_operation`.execute(database);
+    await sql`DROP FUNCTION preview_consumer_allocation_failure()`.execute(database);
+  }
+  const pending = await database.selectFrom('studio_preview_frame').selectAll()
+    .where('ownerId', '=', f.user.id).executeTakeFirstOrThrow();
+  expect(pending).toMatchObject({ status: StudioPreviewStatus.Pending, operationId: null });
+  const retry = await f.request(consumerRequestId);
+  expect(retry).toMatchObject({ id: pending.id, status: StudioPreviewStatus.Rendering });
+  expect(await f.operations.getForOwner(retry.operationId!, f.user.id))
+    .toMatchObject({ status: MediaOperationStatus.Queued, snapshot: { previewFrameId: pending.id, consumerRequestId } });
+  expect(await database.selectFrom('media_operation').select('id').where('ownerId', '=', f.user.id).execute())
+    .toEqual([{ id: retry.operationId }]);
+});
+
+it('revision supersession retains a claimed directory while retiring a never-claimed admission separately', async () => {
+  const f = await setup();
+  const claimedFrame = await f.request();
+  const claim = (await f.claim())!;
+  const unclaimedFrame = await f.request();
+  await f.sut.revisionCommitted({ projectId: f.project.id, revision: 2 });
+  expect(await f.operations.getForOwner(claim.id, f.user.id))
+    .toMatchObject({ status: MediaOperationStatus.Cancelling, claimToken: claim.claimToken });
+  expect(await f.frames.getForOwner(claimedFrame.id, f.user.id))
+    .toMatchObject({ status: StudioPreviewStatus.Evicted, errorCode: PREVIEW_CANCEL_PENDING });
+  expect(await f.frames.getForOwner(unclaimedFrame.id, f.user.id))
+    .toMatchObject({ status: StudioPreviewStatus.Evicted, errorCode: PREVIEW_CANCEL_CLEANED });
+  expect(f.storage.unlinkDir).toHaveBeenCalledExactlyOnceWith(
+    studioPreviewFrameFolder(f.user.id, unclaimedFrame.id), { recursive: true, force: true },
+  );
 });

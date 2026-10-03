@@ -288,6 +288,9 @@ export class StudioPreviewService {
         await this.dropFrames([frame]);
         throw new ConflictException('This preview is no longer authorized or current');
       }
+      // Authorization awaits cannot recertify state captured before a concurrent retirement.
+      // Scoped rows never revive or renew their binding; return their current admission state.
+      return this.map(await this.findOwned(auth, id, query));
     }
     return this.map(frame);
   }

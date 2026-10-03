@@ -747,6 +747,23 @@ export class MediaOperationRepository {
     operation: MediaOperation;
     created: boolean;
   }> {
+    // A consumer owns one terminal admission and its directory. Copying its snapshot would
+    // create a new worker using that retired frame ID, bypassing fresh Studio authorization.
+    // Read the original server allocation, not an arbitrary flag on the caller's retry payload.
+    const scoped = await this.db
+      .selectFrom('media_operation')
+      .select('id')
+      .where('id', '=', operation.retryOfId)
+      .where('ownerId', '=', operation.ownerId)
+      .where('kind', '=', MediaOperationKind.StudioPreview)
+      .where(sql<boolean>`("snapshot" ? 'consumerRequestId' OR EXISTS (
+        SELECT 1 FROM studio_preview_frame f WHERE f."operationId" = "media_operation"."id"
+        AND f."ownerId" = "media_operation"."ownerId" AND f."cacheKey" LIKE 'fl279c1:%'
+      ))`)
+      .executeTakeFirst();
+    if (scoped) {
+      throw new ConflictException('Request a new consumer preview from Studio');
+    }
     try {
       return { operation: await this.create(operation), created: true };
     } catch (error) {
