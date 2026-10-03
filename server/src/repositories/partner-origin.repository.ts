@@ -161,6 +161,65 @@ export class PartnerOriginRepository {
     return rows;
   }
 
+  /** Of `ids`, those that have at least one live copy following them. */
+  async getIdsWithFollowers(kind: OriginKind, ids: string[]): Promise<string[]> {
+    const list = [...new Set(ids)];
+    if (list.length === 0) {
+      return [];
+    }
+    const { table, key, source, copy } = TABLES[kind];
+    const { rows } = await sql<{ id: string }>`
+      SELECT DISTINCT origin.${sql.id(source)} AS id
+      FROM ${sql.raw(table)} origin
+      JOIN ${sql.raw(copy)} copy ON copy.id = origin.${sql.id(key)}
+      WHERE origin.${sql.id(source)} = ANY(${list}::uuid[]) AND origin.following
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
+
+  /**
+   * Write the source's current values of these followed fields onto one copy (spec §4.6). Tags and
+   * faces are written by the copy engine; favorites and trash are never touched.
+   */
+  async applyAssetFields(sourceAssetId: string, copyAssetId: string, fields: string[]): Promise<void> {
+    const exifColumns = [
+      ...(fields.includes(AssetOriginField.Description) ? ['description'] : []),
+      ...(fields.includes(AssetOriginField.Location) ? ['latitude', 'longitude', 'city', 'state', 'country'] : []),
+      ...(fields.includes(AssetOriginField.DateTimeOriginal) ? ['dateTimeOriginal', 'timeZone'] : []),
+      ...(fields.includes(AssetOriginField.Rating) ? ['rating'] : []),
+    ];
+    const assetColumns = [
+      ...(fields.includes(AssetOriginField.DateTimeOriginal) ? ['fileCreatedAt', 'localDateTime'] : []),
+      ...(fields.includes(AssetOriginField.Visibility) ? ['visibility'] : []),
+    ];
+    if (exifColumns.length === 0 && assetColumns.length === 0) {
+      return;
+    }
+    const assignments = (columns: string[]) =>
+      sql.join(
+        columns.map((column) => sql`${sql.id(column)} = source.${sql.id(column)}`),
+        sql`, `,
+      );
+    await this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, COPY_REFUSAL);
+      if (exifColumns.length > 0) {
+        await sql`
+          UPDATE asset_exif copy SET ${assignments(exifColumns)}
+          FROM asset_exif source
+          WHERE source."assetId" = ${sourceAssetId}::uuid AND copy."assetId" = ${copyAssetId}::uuid
+        `.execute(trx);
+      }
+      if (assetColumns.length > 0) {
+        await sql`
+          UPDATE asset copy SET ${assignments(assetColumns)}
+          FROM asset source
+          WHERE source.id = ${sourceAssetId}::uuid AND copy.id = ${copyAssetId}::uuid
+            AND source.visibility <> 'hidden'
+        `.execute(trx);
+      }
+    });
+  }
+
   /** The copy `ownerId` holds of `sourceId`, if any (followed or not). */
   async getCopyId(kind: OriginKind, sourceId: string, ownerId: string): Promise<string | undefined> {
     const { table, key, source, copy } = TABLES[kind];

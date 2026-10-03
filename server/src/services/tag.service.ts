@@ -14,8 +14,10 @@ import {
   mapTag,
 } from 'src/dtos/tag.dto.js';
 import { AssetVisibility, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { updateLockedColumns } from 'src/utils/database.js';
@@ -144,6 +146,7 @@ export class TagService extends BaseService {
       await this.updateTags(assetId);
       await this.eventRepository.emit('AssetTag', { assetId, userId: auth.user.id });
     }
+    await this.recordTagEdit(auth, [...new Set(results.map((item) => item.assetId))]);
 
     return { count: results.length };
   }
@@ -165,6 +168,7 @@ export class TagService extends BaseService {
       await this.updateTags(assetId);
       await this.eventRepository.emit('AssetTag', { assetId, userId: auth.user.id });
     }
+    await this.recordTagEdit(auth, getSucceededIds(results));
 
     return results;
   }
@@ -186,8 +190,19 @@ export class TagService extends BaseService {
       await this.updateTags(assetId);
       await this.eventRepository.emit('AssetUntag', { assetId });
     }
+    await this.recordTagEdit(auth, getSucceededIds(results));
 
     return results;
+  }
+
+  /** FL-326: a partner copy's tags are its owner's once they change them; copies of these follow. */
+  private recordTagEdit(auth: AuthDto, assetIds: string[]) {
+    return recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      assetIds,
+      [AssetOriginField.Tags],
+    );
   }
 
   @OnJob({ name: JobName.TagCleanup, queue: QueueName.BackgroundTask })
@@ -222,3 +237,5 @@ export class TagService extends BaseService {
     });
   }
 }
+
+const getSucceededIds = (results: BulkIdResponseDto[]) => results.filter(({ success }) => success).map(({ id }) => id);

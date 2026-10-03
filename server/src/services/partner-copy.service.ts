@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { IPartnerBackfillJob, IPartnerCopyAssetJob, JobItem } from 'src/types.js';
+import type { IPartnerBackfillJob, IPartnerCopyAssetJob, IPartnerPropagateJob, JobItem } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { AssetStatus, AssetVisibility, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
-import { PartnerBackfillState, PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import {
+  AssetOriginField,
+  PartnerBackfillState,
+  PartnerOriginRepository,
+} from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { upsertTags } from 'src/utils/tag.js';
 
@@ -32,6 +36,58 @@ export const stopPartnerSharing = async (
 ) => {
   await partnerOrigin.stopBackfill(sharedById, sharedWithId);
   await partnerOrigin.stopFollowing(sharedById, sharedWithId);
+};
+
+const TRACKED_ASSET_FIELDS = new Set<string>(Object.values(AssetOriginField));
+
+/** The followed fields an asset edit touches (spec §4.2). Favorites and trash are never among them. */
+export const getAssetEditFields = (dto: {
+  description?: unknown;
+  latitude?: unknown;
+  longitude?: unknown;
+  city?: unknown;
+  state?: unknown;
+  country?: unknown;
+  dateTimeOriginal?: unknown;
+  dateTimeRelative?: unknown;
+  timeZone?: unknown;
+  rating?: unknown;
+  visibility?: unknown;
+}): AssetOriginField[] => {
+  const touched = (...values: unknown[]) => values.some((value) => value !== undefined);
+  return [
+    ...(touched(dto.description) ? [AssetOriginField.Description] : []),
+    ...(touched(dto.latitude, dto.longitude, dto.city, dto.state, dto.country) ? [AssetOriginField.Location] : []),
+    ...(touched(dto.dateTimeOriginal, dto.dateTimeRelative, dto.timeZone) ? [AssetOriginField.DateTimeOriginal] : []),
+    ...(touched(dto.rating) ? [AssetOriginField.Rating] : []),
+    ...(touched(dto.visibility) ? [AssetOriginField.Visibility] : []),
+  ];
+};
+
+/**
+ * An owner edited these fields of their items (spec §4.6): on their copies the fields become theirs
+ * (no longer followed), and every copy that follows one of the items receives the change.
+ */
+export const recordAssetEdit = async (
+  { partnerOrigin, job }: BackfillRepositories,
+  ownerId: string,
+  assetIds: string[],
+  fields: string[],
+) => {
+  const tracked = fields.filter((field) => TRACKED_ASSET_FIELDS.has(field));
+  if (tracked.length === 0 || assetIds.length === 0) {
+    return;
+  }
+  await partnerOrigin.markOverridden('asset', assetIds, tracked, ownerId);
+  const sources = await partnerOrigin.getIdsWithFollowers('asset', assetIds);
+  if (sources.length > 0) {
+    await job.queueAll(
+      sources.map((sourceId) => ({
+        name: JobName.PartnerPropagate as const,
+        data: { kind: 'asset' as const, sourceId, fields: tracked },
+      })),
+    );
+  }
 };
 
 /**
@@ -191,6 +247,40 @@ export class PartnerCopyService extends BaseService {
   @OnEvent({ name: 'AssetMetadataExtracted', workers: [ImmichWorker.Microservices] })
   async onAssetMetadataExtracted({ assetId, userId }: ArgOf<'AssetMetadataExtracted'>) {
     await this.queueOnward(userId, [assetId]);
+  }
+
+  /**
+   * Push a source's changed fields into each copy that still follows it, skipping every field the
+   * copy's owner has changed, then on to the copies of those copies (A→B→C). Copies form a tree (each
+   * has one source and the one-copy rule never revisits a library), so this always ends.
+   */
+  @OnJob({ name: JobName.PartnerPropagate, queue: QueueName.BackgroundTask })
+  async handlePropagate({ kind, sourceId, fields }: IPartnerPropagateJob): Promise<JobStatus> {
+    if (kind === 'album') {
+      return this.propagateAlbum(sourceId, fields);
+    }
+    const followers = await this.partnerOriginRepository.getFollowers('asset', sourceId);
+    const onward: JobItem[] = [];
+    for (const follower of followers) {
+      const apply = fields.filter((field) => !follower.overriddenFields.includes(field));
+      if (apply.length === 0) {
+        continue;
+      }
+      await this.partnerOriginRepository.applyAssetFields(sourceId, follower.id, apply);
+      if (apply.includes(AssetOriginField.Tags)) {
+        await this.copyTags(sourceId, follower.id, follower.ownerId);
+      }
+      onward.push({ name: JobName.PartnerPropagate, data: { kind, sourceId: follower.id, fields: apply } });
+    }
+    if (onward.length > 0) {
+      await this.jobRepository.queueAll(onward);
+    }
+    return followers.length > 0 ? JobStatus.Success : JobStatus.Skipped;
+  }
+
+  /** Album propagation (Task 11). */
+  protected propagateAlbum(_sourceId: string, _fields: string[]): Promise<JobStatus> {
+    return Promise.resolve(JobStatus.Skipped);
   }
 
   @OnJob({ name: JobName.PartnerBackfill, queue: QueueName.BackgroundTask })

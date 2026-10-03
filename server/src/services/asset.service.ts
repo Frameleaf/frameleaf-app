@@ -46,6 +46,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import {
   getAssetFiles,
@@ -235,6 +236,14 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Asset not found');
     }
 
+    // FL-326: an edited field of a partner copy is the owner's from now on; copies of this item follow it
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      [id],
+      getAssetEditFields(dto),
+    );
+
     // A visibility change that locks or unlocks a whole stack also changes the siblings `id` never
     // mentions (FL-34, FL-53); push the same real-time update to `id` and to every one of them, so every
     // open session reflects the move at once.
@@ -315,6 +324,14 @@ export class AssetService extends BaseService {
     if (Object.keys(assetDto).length > 0) {
       await this.assetRepository.updateAll(ids, assetDto);
     }
+
+    // FL-326: edited fields of partner copies are the owner's from now on; copies of these items follow
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      ids,
+      getAssetEditFields(dto),
+    );
 
     // A lock or unlock carries whole stacks along (FL-34, FL-53), including siblings `ids` never names;
     // push the same real-time update to `ids` and to every one of them, so every open session reflects
