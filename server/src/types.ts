@@ -677,6 +677,7 @@ export type JobItem =
   | { name: JobName.IntegrityChecksumFilesRefresh; data?: IIntegrityPathWithChecksumJob }
   | { name: JobName.IntegrityDeleteReportType; data: IIntegrityDeleteReportTypeJob }
   | { name: JobName.IntegrityDeleteReports; data: IIntegrityDeleteReportsJob }
+  | { name: JobName.PhotographyWorkflowRender; data: IEntityJob & IDelayedJob }
 
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }

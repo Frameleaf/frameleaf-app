@@ -38,6 +38,7 @@ import {
   readPhotographyLogo,
   renderPhotographyRendition,
 } from 'src/utils/photography-rendition.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 
 @Injectable()
 export class PhotographyWorkspaceService {
@@ -401,6 +402,25 @@ export class PhotographyWorkspaceService {
         canRate: asset.ownerId === auth.user.id,
         stackCount: asset.stack?.assetCount ?? 1,
         currentRevisionId: current.get(asset.id) ?? null,
+        camera: [asset.exifInfo?.make, asset.exifInfo?.model].filter(Boolean).join(' '),
+        capturedAt: asset.exifInfo?.dateTimeOriginal ?? asset.fileCreatedAt ?? null,
+        isRaw: mimeTypes.isRaw(asset.originalFileName),
+        stackId: asset.stack?.id ?? null,
+        width: asset.exifInfo?.exifImageWidth ?? null,
+        height: asset.exifInfo?.exifImageHeight ?? null,
+        eligible:
+          asset.ownerId === auth.user.id && !asset.isOffline && !asset.isTrashed && asset.exifInfo?.rating !== -1,
+        exclusion:
+          asset.ownerId === auth.user.id
+            ? asset.isOffline
+              ? 'offline'
+              : asset.isTrashed
+                ? 'trashed'
+                : asset.exifInfo?.rating === -1
+                  ? 'rejected'
+                  : null
+            : 'foreign',
+        processing: asset.isOffline ? 'failed' : asset.thumbhash ? 'ready' : 'pending',
       })),
     };
   }
