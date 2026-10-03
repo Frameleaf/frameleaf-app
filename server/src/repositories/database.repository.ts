@@ -91,7 +91,10 @@ const CLIP_TABLES = [
 const FORK_CATALOG_MANIFEST = forkCatalogManifest as CatalogManifest;
 const OFFICIAL_CATALOG_MANIFEST = officialCatalogManifest as CatalogManifest;
 
-const INERT_LEGACY_CATALOG_ALLOWLIST = new Set<string>();
+const INERT_LEGACY_CATALOG_ALLOWLIST = new Set([
+  'triggers:public.user.icloud_weekly_pin_retirement',
+  'triggers:public.user_metadata.icloud_weekly_privacy_retirement',
+]);
 
 const forkEntries = <T extends { identity: string }>(entries: T[]) =>
   entries.filter(({ identity }) => identity === 'immich_fork' || identity.startsWith('immich_fork.'));
