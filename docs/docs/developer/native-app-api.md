@@ -28,9 +28,11 @@ server only on its home network, for browsing and for backup.
   which enrols only when remote access (entitlement checked) or Buddy backup needs it.
 - **Cloud:** the resources API (`GET /v1/instances`, `GET /v1/instances/:id/connections`) is the authority on which
   remote-access candidates an account sees, because a self-hosted server is not trusted to enforce a plan. See the
-  instance contract in frameleaf-cloud (`docs/instance-contract.md`, Connections).
-- **Apps:** race `local` candidates at home. Race `wan`, `ipv6`, custom or `relay` candidates only when the instance
-  says remote access is entitled; otherwise show "Available on your home network. Remote access needs Frameleaf
+  instance contract in frameleaf-cloud (`docs/instance-contract.md`, Connections). Since
+  Frameleaf/frameleaf-cloud#293 it keeps only `local` entries while the relay policy blocks a server.
+- **Apps:** race `local` candidates at home. Race `wan`, `ipv6`, custom or `relay` candidates only when the
+  `GET /v1/instances` item says `remoteAccess.entitled: true` (Frameleaf/frameleaf-cloud#293, contracts 0.0.5; a
+  missing value means not entitled); otherwise show "Available on your home network. Remote access needs Frameleaf
   Cloud."
 
 ## Gaps
