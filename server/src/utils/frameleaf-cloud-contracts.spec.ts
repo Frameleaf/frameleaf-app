@@ -68,3 +68,30 @@ describe('published Frameleaf Cloud 0.0.3 conformance', () => {
     });
   });
 });
+
+describe('published Frameleaf Cloud 0.0.3 identity receipt', () => {
+  it('pins the independent identity receipt and all eight genuine bytes without changing registry selection', () => {
+    const directory = join(import.meta.dirname, '../../test/fixtures/frameleaf-cloud-contracts');
+    const receiptBytes = readFileSync(join(directory, 'identity-0.0.3.json'));
+    expect(createHash('sha256').update(receiptBytes).digest('hex')).toBe(
+      '0fe0f6d1966d73384d2d9cc62d92b3b72bcdcf43ca8d345d119a933ebab0d706',
+    );
+    const identity = cloudContractFixture<RegistryReceipt>('identity-0.0.3.json');
+    expect(identity.version).toBe('0.0.3');
+    expect(identity.sha256).toBe('23aeee533b7b969473e1a6ab53f1d0299369ea015eb37f85c4cc847cfd194eba');
+    expect(identity.sourceCommit).toBe('b7e9b37b53392694383ecc69fe4d7f18496d4ac2');
+    expect(identity.fixtures.map(({ path }) => path)).toEqual([
+      'identity/device-authorization-request.json',
+      'identity/device-authorization-response.json',
+      'identity/device-token-request.json',
+      'identity/device-token-pending.json',
+      'identity/token-request-client-credentials.json',
+      'identity/token-response-instance.json',
+      'identity/token-response-link.json',
+      'identity/instance-claims.json',
+    ]);
+    for (const { path, sha256 } of identity.fixtures) {
+      expect(createHash('sha256').update(readFileSync(join(directory, path))).digest('hex'), path).toBe(sha256);
+    }
+  });
+});

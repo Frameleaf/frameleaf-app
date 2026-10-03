@@ -189,3 +189,38 @@ The Library owns its parser and copied corpus; it does not import either package
 dependency. Its current conformance covers FC-98's optional discovery push address, explicit
 `FRAMELEAF_PUSH_URL` precedence, and all eleven published push fixtures. This packet introduces no
 additional FL-293 product question or delivery qualification claim.
+
+
+## Published identity receipt: Cloud contracts 0.0.3
+
+`identity-0.0.3.json` is a separate selective import receipt for the SAME verified package above:
+SHA256 `23aeee533b7b969473e1a6ab53f1d0299369ea015eb37f85c4cc847cfd194eba`, source
+`b7e9b37b53392694383ecc69fe4d7f18496d4ac2`, registry version ID 1329556226. It retains the genuine
+registry SHA512 integrity, SHA1 and byte count and records each of eight byte-exact fixture hashes.
+The existing `registry-0.0.3.json` and its 13-file selection/assertions remain unchanged. No runtime
+package dependency or registry credential is introduced. This paragraph supersedes only the earlier
+statement that `identity/instance-claims.json` was not copied; historical provenance above is retained.
+
+The eight files are `identity/device-authorization-{request,response}.json`,
+`identity/device-token-{request,pending}.json`, `identity/token-request-client-credentials.json`,
+`identity/token-response-{instance,link}.json`, and `identity/instance-claims.json`. Actual Library
+consumer tests exercise the device authorization/poll/link registration path, signed live instance
+client assertions and DPoP, and the cryptographically signed OIDC callback. Illustrative client JWT
+bytes are NOT used as a signer: issuer/subject/audience, TTL, fresh JTI and signature are checked using
+the real instance key and dynamic configured resource. OIDC issuer/audience and iat/exp are minted by
+the existing actual test issuer; the fixture's subject, role, access, email/name and session sid are
+consumed by the real callback/account/session path. Existing tests keep the default `fl-sub` unless
+claims explicitly supply a string subject. No picture-field enforcement or full-envelope claim.
+
+The exact published `token-response-instance.json` has no `cnf.jkt`. The actual `accessToken` consumer
+must reject it and must not cache it; this is NEGATIVE conformance, not positive instance token
+qualification. Existing positive bound-token/DPoP controls remain unchanged. The link response is a
+temporary registration credential; device/link tokens are tested not to escape public state or remain
+in metadata after successful registration.
+
+`identity/oidc-client-metadata.json` is deliberately NOT copied: there is no complete Library builder
+or consumer for that registration metadata. Callback/client-assertion tests do not qualify an invented
+registration parser, endpoint, or application registration flow. This remains a Cloud-owned integration
+gap, as does Cloud's quarterly key publication fix. No production auth weakening or generated API
+changes. These are authored source tests pending hosted execution, not deployed identity/provider,
+quarterly rotation, native/store or complete product acceptance.
