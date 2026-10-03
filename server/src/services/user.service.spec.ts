@@ -953,6 +953,51 @@ describe(UserService.name, () => {
     });
   });
 
+  describe('sync reset on preference changes (FL-218)', () => {
+    const personId = 'c5f9f5a1-3b8d-4f6e-9a2b-0d1e2f3a4b5c';
+    const otherPersonId = '9d2c1b0a-8f7e-4d6c-9b5a-4e3d2c1b0a9f';
+    const storedRules = [
+      {
+        key: UserMetadataKey.Preferences,
+        value: { privacy: { suppression: { personIds: [personId, otherPersonId], scope: 'owned' } } },
+      },
+    ] as unknown as UserMetadataItem[];
+    const unlocked = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+
+    beforeEach(() => {
+      mocks.user.upsertMetadata.mockResolvedValue();
+      mocks.session.requestSyncResetForUser.mockResolvedValue();
+      mocks.user.getMetadata.mockResolvedValue(storedRules);
+    });
+
+    it('does not reset sync for a display preference such as Memories', async () => {
+      await sut.updateMyPreferences(authStub.user1, { memories: { enabled: false } });
+
+      expect(mocks.user.upsertMetadata).toHaveBeenCalled();
+      expect(mocks.session.requestSyncResetForUser).not.toHaveBeenCalled();
+    });
+
+    it('does not reset sync when an unlocked session saves the same Locked rules in another order', async () => {
+      await sut.updateMyPreferences(unlocked, {
+        privacy: { suppression: { personIds: [otherPersonId, personId], scope: 'owned' } },
+      });
+
+      expect(mocks.session.requestSyncResetForUser).not.toHaveBeenCalled();
+    });
+
+    it('resets sync for every session when the Locked people change', async () => {
+      await sut.updateMyPreferences(unlocked, { privacy: { suppression: { personIds: [personId] } } });
+
+      expect(mocks.session.requestSyncResetForUser).toHaveBeenCalledWith(unlocked.user.id);
+    });
+
+    it('resets sync for every session when the Locked scope changes', async () => {
+      await sut.updateMyPreferences(unlocked, { privacy: { suppression: { scope: 'visible' } } });
+
+      expect(mocks.session.requestSyncResetForUser).toHaveBeenCalledWith(unlocked.user.id);
+    });
+  });
+
   describe('skipped fork writes are logged (FL-71)', () => {
     it('warns when the preference history is not recorded because the fork schema is not writable', async () => {
       mocks.user.upsertMetadata.mockResolvedValue();

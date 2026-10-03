@@ -265,6 +265,28 @@ describe(UserService.name, () => {
       await expect(sut.getMyPreferences(unlocked)).resolves.toMatchObject({ savedSearches: [] });
     });
 
+    it('resets sync for the account only when its Locked rules change (FL-218)', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { session: phone } = await ctx.newSession({ userId: user.id });
+      const { session: tablet } = await ctx.newSession({ userId: user.id });
+      const unlocked = factory.auth({ user: { id: user.id }, session: { hasElevatedPermission: true } });
+      const pending = async () => {
+        const rows = await defaultDatabase
+          .selectFrom('session')
+          .select(['id', 'isPendingSyncReset'])
+          .where('id', 'in', [phone.id, tablet.id])
+          .execute();
+        return rows.every((row) => row.isPendingSyncReset);
+      };
+
+      await sut.updateMyPreferences(unlocked, { memories: { enabled: false }, ratings: { enabled: true } });
+      await expect(pending()).resolves.toBe(false);
+
+      await sut.updateMyPreferences(unlocked, { privacy: { suppression: { personIds: [newUuid()] } } });
+      await expect(pending()).resolves.toBe(true);
+    });
+
     it('should update memories enabled', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
