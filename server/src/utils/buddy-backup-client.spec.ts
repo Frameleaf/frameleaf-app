@@ -1,7 +1,7 @@
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BuddyBackupClient } from 'src/utils/buddy-backup-client.js';
+import { BuddyBackupClient, BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
 import { verifyBuddyProof } from 'src/utils/buddy-backup-protocol.js';
 import { BuddyVault } from 'src/utils/buddy-backup-vault.js';
 import { BuddyGrantClaims, BuddyGrantResponse } from 'src/utils/frameleaf-buddy.js';
@@ -244,6 +244,35 @@ describe('Buddy peer fetch authentication (FL-310, FC-100)', () => {
 
     await expect(client.request('GET', 'snapshots')).rejects.toThrow('Source key unavailable');
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(['ECONNRESET', 'UND_ERR_SOCKET'])(
+    'preserves retry ownership when a response body ends with %s',
+    async (code) => {
+      const { client } = fixture;
+      const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"data":'));
+              controller.error(new TypeError('terminated', { cause: { code } }));
+            },
+          }),
+          { headers: { 'content-type': 'application/vnd.frameleaf.buddy+json' } },
+        ),
+      );
+
+      await expect(client.request('GET', 'handshake')).rejects.toBeInstanceOf(BuddyPeerUnavailable);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(client.connection).toBeNull();
+    },
+  );
+
+  it('keeps malformed complete replies as terminal protocol failures', async () => {
+    const { client } = fixture;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"data":'));
+    await expect(client.request('GET', 'handshake')).rejects.toBeInstanceOf(SyntaxError);
+    expect(client.connection).toBeNull();
   });
 
   it('sends nothing when the grant has expired', async () => {
