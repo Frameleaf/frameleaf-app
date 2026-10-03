@@ -1,7 +1,9 @@
 import { Kysely } from 'kysely';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerDirection, PartnerRepository } from 'src/repositories/partner.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -16,11 +18,13 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   const services = newMediumService(PartnerService, {
     database: db || defaultDatabase,
-    real: [AccessRepository, PartnerRepository, UserRepository],
-    // FL-54: removing a partner tells both people's open pages; FL-228: and pushes the access change
-    mock: [EventRepository, LoggingRepository, WebsocketRepository],
+    real: [AccessRepository, PartnerOriginRepository, PartnerRepository, UserRepository],
+    // FL-54: removing a partner tells both people's open pages; FL-228: and pushes the access change;
+    // FL-326: a new partnership queues its backfill
+    mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
   });
   services.ctx.getMock(EventRepository).emit.mockResolvedValue();
+  services.ctx.getMock(JobRepository).queue.mockResolvedValue();
   return services;
 };
 
