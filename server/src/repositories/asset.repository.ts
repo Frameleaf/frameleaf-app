@@ -1469,7 +1469,7 @@ export class AssetRepository {
   getForCopy(id: string) {
     return this.db
       .selectFrom('asset')
-      .select(['id', 'stackId', 'originalPath', 'isFavorite'])
+      .select(['id', 'ownerId', 'stackId', 'originalPath', 'physicalOriginalFileId', 'isFavorite'])
       .select(withFiles)
       .where('id', '=', asUuid(id))
       .limit(1)

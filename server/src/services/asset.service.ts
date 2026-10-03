@@ -4,6 +4,7 @@ import { DateTime, Duration } from 'luxon';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -44,6 +45,7 @@ import {
   JobStatus,
   Permission,
   QueueName,
+  StorageFolder,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
@@ -555,24 +557,40 @@ export class AssetService extends BaseService {
     targetAsset,
   }: {
     sourceAsset: { files: AssetFile[] };
-    targetAsset: { id: string; files: AssetFile[]; originalPath: string };
+    targetAsset: {
+      id: string;
+      ownerId: string;
+      files: AssetFile[];
+      originalPath: string;
+      physicalOriginalFileId?: string | null;
+    };
   }) {
     const { sidecarFile: sourceFile } = getAssetFiles(sourceAsset.files);
     if (!sourceFile?.path) {
       return;
     }
 
-    const { sidecarFile: targetFile } = getAssetFiles(targetAsset.files ?? []);
-    if (targetFile?.path) {
-      await this.storageRepository.unlink(targetFile.path);
-    }
+    // universal storage: beside a shared original lives the primary owner's sidecar, so a non-primary
+    // target writes its own, in its owner's upload folder (as metadata extraction does)
+    const isSharedNonCanonical =
+      !!targetAsset.physicalOriginalFileId &&
+      !(await this.physicalFileRepository.isOriginalCanonical(targetAsset.id, targetAsset.physicalOriginalFileId));
+    const targetPath = isSharedNonCanonical
+      ? StorageCore.getNestedPath(StorageFolder.Upload, targetAsset.ownerId, `${targetAsset.id}.xmp`)
+      : `${targetAsset.originalPath}.xmp`;
 
-    await this.storageRepository.copyFile(sourceFile.path, `${targetAsset.originalPath}.xmp`);
+    const { sidecarFile: targetFile } = getAssetFiles(targetAsset.files ?? []);
+
+    await this.storageRepository.copyFile(sourceFile.path, targetPath);
     await this.assetRepository.upsertFile({
       assetId: targetAsset.id,
-      path: `${targetAsset.originalPath}.xmp`,
+      path: targetPath,
       type: AssetFileType.Sidecar,
     });
+    // the replaced sidecar is released through the reference-counted FileDelete, never unlinked here
+    if (targetFile?.path && targetFile.path !== targetPath) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [targetFile.path] } });
+    }
     await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: targetAsset.id } });
   }
 
