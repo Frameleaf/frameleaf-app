@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import { Kysely } from 'kysely';
+import { randomUUID } from 'node:crypto';
+import { SourceType } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000221-PartnerPeopleLinks.js';
-import { SourceType } from 'src/enum.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
@@ -52,6 +52,30 @@ it('matches the private catalog and rolls back without touching the official cat
   }
 });
 
+describe('PartnerOriginRepository.getOriginLabels', () => {
+  it("labels only the owner's own copies with the original uploader's name", async () => {
+    const { ctx, origins } = setup();
+    const { user: alice } = await ctx.newUser({ name: 'Jamie' });
+    const { user: bob } = await ctx.newUser();
+    const { asset: source } = await ctx.newAsset({ ownerId: alice.id });
+    const { asset: copy } = await ctx.newAsset({ ownerId: bob.id });
+    const { asset: own } = await ctx.newAsset({ ownerId: bob.id });
+    await origins.createAssetOrigin({
+      id: copy.id,
+      sourceId: source.id,
+      ownerId: bob.id,
+      rootOwnerId: alice.id,
+      partnerSharedById: alice.id,
+    });
+
+    await expect(origins.getOriginLabels('asset', [copy.id, own.id], bob.id)).resolves.toEqual(
+      new Map([[copy.id, { rootOwnerId: alice.id, rootOwnerName: 'Jamie' }]]),
+    );
+    await expect(origins.getOriginLabels('asset', [copy.id], alice.id)).resolves.toEqual(new Map());
+    await expect(origins.getOriginLabels('album', [], bob.id)).resolves.toEqual(new Map());
+  });
+});
+
 describe('PersonRepository partner people', () => {
   it('copies faces with their exact boxes, embedding and mapped person, once', async () => {
     const { ctx, sut } = setup();
@@ -83,7 +107,11 @@ describe('PersonRepository partner people', () => {
       sut.copyFacesToAsset(copy.id, [{ sourceFaceId: face.id, faceId, personGroupId: bobsEmma.personGroupId }]),
     ).resolves.toBe(1);
 
-    const copied = await ctx.database.selectFrom('asset_face').selectAll().where('id', '=', faceId).executeTakeFirstOrThrow();
+    const copied = await ctx.database
+      .selectFrom('asset_face')
+      .selectAll()
+      .where('id', '=', faceId)
+      .executeTakeFirstOrThrow();
     expect(copied).toMatchObject({
       assetId: copy.id,
       personGroupId: bobsEmma.personGroupId,

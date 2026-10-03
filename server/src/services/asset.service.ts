@@ -193,6 +193,15 @@ export class AssetService extends BaseService {
       data.people = [];
     }
 
+    // FL-326: the viewer's own copy from a partner names the library it came from (info panel)
+    if (!auth.sharedLink && asset.ownerId === auth.user.id) {
+      const labels = await this.partnerOriginRepository.getOriginLabels('asset', [asset.id], auth.user.id);
+      const origin = labels.get(asset.id);
+      if (origin) {
+        data.origin = origin;
+      }
+    }
+
     return data;
   }
 

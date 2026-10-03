@@ -54,6 +54,7 @@ describe(AssetService.name, () => {
     ({ sut, mocks } = newTestService(AssetService));
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
+    mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
     removedExtras = {};
     // the file cleanup is queued inside the removal's transaction, from the files the repository reads
     // there, as the repository does
@@ -120,6 +121,30 @@ describe(AssetService.name, () => {
   });
 
   describe('get', () => {
+    it("names the partner library the viewer's own copy came from (FL-326)", async () => {
+      const asset = AssetFactory.create();
+      const auth = AuthFactory.create({ id: asset.ownerId });
+      const rootOwnerId = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.partnerOrigin.getOriginLabels.mockResolvedValue(
+        new Map([[asset.id, { rootOwnerId, rootOwnerName: 'Jamie' }]]),
+      );
+
+      await expect(sut.get(auth, asset.id)).resolves.toMatchObject({ origin: { rootOwnerId, rootOwnerName: 'Jamie' } });
+      expect(mocks.partnerOrigin.getOriginLabels).toHaveBeenCalledWith('asset', [asset.id], asset.ownerId);
+    });
+
+    it("never names an origin on an asset that is not the viewer's own (FL-326)", async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      const result = await sut.get(authStub.admin, asset.id);
+      expect(result).not.toHaveProperty('origin');
+      expect(mocks.partnerOrigin.getOriginLabels).not.toHaveBeenCalled();
+    });
+
     it('should allow owner access', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
