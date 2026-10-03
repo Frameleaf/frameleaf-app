@@ -71,19 +71,22 @@ const instance = {
   keyFile: '/identity/instance-key.pem',
   createdAt: '2026-09-01T00:00:00.000Z',
 };
-const claim = (overrides: Record<string, unknown> = {}) => ({
-  target: 'byo-s3',
-  bucketRef: ref,
-  endpoint: s3.endpoint,
-  region: 'eu-central-2',
-  bucket: s3.bucket,
-  instanceId: 'instance-1',
-  claimedAt: '2026-09-25T00:00:00.000Z',
-  keyMode: 'server',
-  keyFingerprint: fingerprint,
-  reconciledAt: '2026-09-25T00:00:00.000Z',
-  ...overrides,
-});
+type CloudBackupClaimOverrides = Record<string, unknown> & { target?: FrameleafCloudBackup['target'] };
+
+const claim = (overrides: CloudBackupClaimOverrides = {}): FrameleafCloudBackup =>
+  ({
+    target: 'byo-s3',
+    bucketRef: ref,
+    endpoint: s3.endpoint,
+    region: 'eu-central-2',
+    bucket: s3.bucket,
+    instanceId: 'instance-1',
+    claimedAt: '2026-09-25T00:00:00.000Z',
+    keyMode: 'server',
+    keyFingerprint: fingerprint,
+    reconciledAt: '2026-09-25T00:00:00.000Z',
+    ...overrides,
+  }) as FrameleafCloudBackup;
 const enabledConfig = (keyMode = 'server', include?: { thumbs: boolean; encodedVideo: boolean }) => ({
   frameleafCloud: {
     cloudBackup: {
@@ -249,6 +252,7 @@ describe(CloudBackupService.name, () => {
         streamed.push(Buffer.concat(chunks));
         return { etag: '"manifest"', size: streamed.at(-1)!.length };
       }),
+      get: vi.fn(),
       delete: vi.fn().mockResolvedValue(undefined),
       listAll: vi.fn().mockResolvedValue(0),
       readMarker: vi.fn().mockResolvedValue({
@@ -2620,7 +2624,7 @@ describe(CloudBackupService.name, () => {
     const grant = cloudContractFixture('backup/grant-response.json');
     const cloudUrl = 'https://cloud.frameleaf.test';
     const managedRef = bucketRef(grant.endpoint, grant.bucket);
-    const managedClaim = (overrides: Record<string, unknown> = {}) =>
+    const managedClaim = (overrides: CloudBackupClaimOverrides = {}) =>
       claim({ target: 'managed', bucketRef: managedRef, endpoint: grant.endpoint, bucket: grant.bucket, ...overrides });
     const ALLOWED = ['bucketClaimed', 'claimedAt', 'entitlement', 'firstRun', 'keyLoaded', 'nextRunAt', 'target'];
     const useManaged = ({ linked }: { linked: boolean }) => {
