@@ -1,0 +1,32 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://push.frameleaf.cloud/v1/push/send",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://push.frameleaf.cloud/v1/push/send, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "Updates a running Live Activity on its ActivityKit token (a development build: `apns-sandbox`).",
+    "body": {
+      "platform": "apns-sandbox",
+      "token": "cafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00d",
+      "type": "live-activity-update",
+      "priority": "normal",
+      "ttlSec": 0,
+      "liveActivity": {
+        "state": {
+          "step": "backup-running",
+          "progress": 0.4,
+          "done": 1200,
+          "total": 3000
+        }
+      }
+    }
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "status": "sent"
+  }
+}
