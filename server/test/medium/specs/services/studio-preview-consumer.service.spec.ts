@@ -509,3 +509,46 @@ it('revision supersession retains a claimed directory while retiring a never-cla
     studioPreviewFrameFolder(f.user.id, unclaimedFrame.id), { recursive: true, force: true },
   );
 });
+
+it('retirement during the final recency await denies delivery while retaining the claimed directory', async () => {
+  const f = await setup();
+  const frame = await f.request();
+  const claim = (await f.claim())!;
+  const outputPath = `${studioPreviewFrameFolder(f.user.id, frame.id)}/frame.png`;
+  expect(await f.sut.onRenderCompleted(claim, {
+    path: outputPath, checksum: 'd'.repeat(64), sizeInBytes: '2048', contentType: 'image/png',
+  })).toEqual({ published: true });
+  const ready = (await f.frames.getForOwner(frame.id, f.user.id))!;
+  expect(ready).toMatchObject({ status: StudioPreviewStatus.Ready, framePath: outputPath });
+
+  const entered = gate();
+  const proceed = gate();
+  const admit = f.frames.markConsumerAccessed.bind(f.frames);
+  vi.spyOn(f.frames, 'markConsumerAccessed').mockImplementationOnce(async (...args) => {
+    entered.release();
+    await proceed.promise;
+    return admit(...args);
+  });
+  const reading = expect(f.sut.getFrame(f.auth, frame.id, {
+    consumerRequestId: frame.consumerRequestId,
+  })).rejects.toThrow('This preview admission was retired');
+  await entered.promise;
+  let retired = ready;
+  try {
+    const receipt = await f.sut.cancel(f.auth, frame.id, {
+      consumerRequestId: frame.consumerRequestId, expectedOperationId: frame.operationId!,
+    });
+    expect(receipt).toMatchObject({ admissionReleased: true, cancellationState: 'requested', rendererReleased: null });
+    retired = (await f.frames.getForOwner(frame.id, f.user.id))!;
+    expect(retired).toMatchObject({ status: StudioPreviewStatus.Evicted, framePath: null, operationId: claim.id });
+  } finally {
+    proceed.release();
+  }
+  await reading;
+  const afterRead = (await f.frames.getForOwner(frame.id, f.user.id))!;
+  expect(afterRead.lastAccessedAt).toEqual(retired.lastAccessedAt);
+  expect(afterRead.updateId).toBe(retired.updateId); // Refused CAS must not touch the evicted row.
+  expect(await f.operations.getForOwner(claim.id, f.user.id))
+    .toMatchObject({ status: MediaOperationStatus.Cancelling, cancelAcknowledgedAt: null, remoteReleasedAt: null });
+  expect(f.storage.unlinkDir).not.toHaveBeenCalled();
+});

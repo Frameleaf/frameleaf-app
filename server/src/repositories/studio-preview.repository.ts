@@ -303,6 +303,25 @@ export class StudioPreviewRepository {
     await this.db.updateTable('studio_preview_frame').set({ lastAccessedAt: at }).where('id', '=', id).execute();
   }
 
+  /** Scoped delivery and recency share one admission write after all preceding read awaits. */
+  async markConsumerAccessed(frame: StudioPreviewFrame, at: Date): Promise<boolean> {
+    if (!frame.operationId || !frame.framePath || !isConsumerPreview(frame.cacheKey)) {
+      return false;
+    }
+    const admitted = await this.db
+      .updateTable('studio_preview_frame')
+      .set({ lastAccessedAt: at })
+      .where('id', '=', frame.id)
+      .where('ownerId', '=', frame.ownerId)
+      .where('cacheKey', '=', frame.cacheKey)
+      .where('operationId', '=', frame.operationId)
+      .where('framePath', '=', frame.framePath)
+      .where('status', '=', StudioPreviewStatus.Ready)
+      .returning('id')
+      .executeTakeFirst();
+    return !!admitted;
+  }
+
   async markRendering(id: string, operationId: string): Promise<boolean> {
     const result = await this.db
       .updateTable('studio_preview_frame')

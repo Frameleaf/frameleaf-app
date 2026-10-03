@@ -375,7 +375,11 @@ export class StudioPreviewService {
       etag,
     });
 
-    if (isConsumerPreview(frame.cacheKey) && (decision.deliver || decision.outcome === 'not-modified')) {
+    if (isConsumerPreview(frame.cacheKey) && decision.deliver) {
+      if (!(await this.repository.markConsumerAccessed(frame, new Date()))) {
+        throw new GoneException('This preview admission was retired');
+      }
+    } else if (isConsumerPreview(frame.cacheKey) && decision.outcome === 'not-modified') {
       const current = await this.repository.getForOwner(frame.id, frame.ownerId);
       if (!current || current.status !== StudioPreviewStatus.Ready || current.operationId !== frame.operationId ||
         current.cacheKey !== frame.cacheKey || current.framePath !== frame.framePath) {
@@ -385,7 +389,9 @@ export class StudioPreviewService {
 
     if (decision.deliver) {
       // Recency drives eviction, so the read has to record itself.
-      await this.repository.markAccessed(frame.id, new Date());
+      if (!isConsumerPreview(frame.cacheKey)) {
+        await this.repository.markAccessed(frame.id, new Date());
+      }
       return {
         etag,
         file: new ImmichFileResponse({
