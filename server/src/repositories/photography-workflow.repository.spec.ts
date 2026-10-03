@@ -115,6 +115,69 @@ describe.runIf(!!process.env.PHOTOGRAPHY_TEST_PG_SOCKET)('photography persisted 
     expect((await repository.site(ownerId))?.value).toEqual(site);
     await expect(repository.studioLive(randomUUID())).rejects.toThrow('Studio unavailable');
   });
+  it('preserves legacy website values while sharing studio presets across owned galleries with both CAS bounds', async () => {
+    const repository = new PhotographyWorkflowRepository(db);
+    const existing = (await repository.site(ownerId))!;
+    // Exact legacy flat record is wrapped without changing its website projection.
+    await sql`UPDATE immich_fork.photography_studio_site SET value=${JSON.stringify(existing.value)}::text::jsonb WHERE "ownerId"=${ownerId}::uuid`.execute(
+      db,
+    );
+    const presetId = randomUUID();
+    const saved = await repository.mutateStudio(ownerId, existing.revision, (record) => {
+      record.presets.push({ id: presetId, name: 'Reusable setup', config: initial.config });
+    });
+    expect((await repository.site(ownerId))?.value).toEqual(existing.value);
+    expect((await repository.studioPresets(ownerId)).presets[0].id).toBe(presetId);
+    const secondShootId = randomUUID(),
+      secondAlbumId = randomUUID();
+    await sql`INSERT INTO public.album VALUES(${secondAlbumId}::uuid,NULL)`.execute(db);
+    await sql`INSERT INTO public.album_user VALUES(${secondAlbumId}::uuid,${ownerId}::uuid,'owner')`.execute(db);
+    await repository.mutate(secondShootId, ownerId, secondAlbumId, null, initial, async (value, tx) => {
+      value.config = (await repository.pinnedStudioPreset(tx, ownerId, saved.revision, presetId)).config;
+    });
+    expect((await repository.get(secondShootId))?.value.config).toEqual(initial.config);
+    const first = await repository.get(shootId);
+    await repository.mutate(shootId, ownerId, albumId, first!.revision, initial, async (value, tx) => {
+      value.config = (await repository.pinnedStudioPreset(tx, ownerId, saved.revision, presetId)).config;
+    });
+    const snapshot = (await repository.get(secondShootId))!;
+    await repository.mutateStudio(ownerId, saved.revision, (record) => {
+      record.presets[0].config = { ...initial.config, title: 'Changed setup' };
+    });
+    expect((await repository.get(secondShootId))?.value).toEqual(snapshot.value);
+    await expect(
+      repository.mutate(secondShootId, ownerId, secondAlbumId, snapshot.revision, initial, async (_value, tx) => {
+        await repository.pinnedStudioPreset(tx, ownerId, saved.revision, presetId);
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect((await repository.get(secondShootId))?.revision).toBe(snapshot.revision);
+    await expect(repository.mutateStudio(ownerId, saved.revision, () => {})).rejects.toBeInstanceOf(ConflictException);
+    const studio = await repository.studioPresets(ownerId);
+    await repository.saveSite(ownerId, studio.revision, { ...existing.value!, title: 'Changed website' });
+    expect((await repository.studioPresets(ownerId)).presets).toEqual(studio.presets);
+    await expect(
+      db.transaction().execute((tx) => repository.pinnedStudioPreset(tx, randomUUID(), saved.revision, presetId)),
+    ).rejects.toThrow();
+  });
+  it('holds the reusable preset source snapshot through target commit', async () => {
+    const repository = new PhotographyWorkflowRepository(db);
+    const studio = await repository.studioPresets(ownerId);
+    const { promise: acquired, resolve: entered } = Promise.withResolvers<void>();
+    const { promise: continuation, resolve: release } = Promise.withResolvers<void>();
+    const source = repository.mutate(shootId, ownerId, albumId, undefined, initial, async (value, tx) => {
+      value.config = (await repository.pinnedStudioPreset(tx, ownerId, studio.revision!, studio.presets[0].id)).config;
+      entered();
+      await continuation;
+    });
+    await acquired;
+    const update = repository.mutateStudio(ownerId, studio.revision, (record) => {
+      record.presets[0].name = 'Updated';
+    });
+    release();
+    await source;
+    await update;
+    expect((await repository.get(shootId))?.value.config.title).toBe('Changed setup');
+  });
   it('holds rollback behind an in-flight writer and refuses nonempty history', async () => {
     const repository = new PhotographyWorkflowRepository(db);
     const { promise: writing, resolve: entered } = Promise.withResolvers<void>();
