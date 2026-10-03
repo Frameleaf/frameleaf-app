@@ -396,10 +396,10 @@
             alt={asset.originalFileName}
             draggable="false"
             onload={(event) => {
-              previewDimensions = {
-                width: event.currentTarget.naturalWidth,
-                height: event.currentTarget.naturalHeight,
-              };
+              const image = event.currentTarget;
+              if (image instanceof HTMLImageElement) {
+                previewDimensions = { width: image.naturalWidth, height: image.naturalHeight };
+              }
             }}
           />
           {#if sensorCanvas && selected?.kind === 'radial'}<div
