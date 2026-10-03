@@ -32,6 +32,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { moveFileWithin } from 'src/utils/file-trash.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import {
   PhysicalDeduplicationApplySnapshot,
@@ -863,9 +864,9 @@ export class PhysicalDeduplicationService extends BaseService {
   }
 
   /**
-   * Remove the reviewed copy's old file: never the retained original's path, never a file that no
-   * longer holds the reviewed bytes, and never while any asset or generated file still names it.
-   * Returns the bytes actually removed.
+   * Remove the reviewed copy's old file to the file trash: never the retained original's path, never a
+   * file that no longer holds the reviewed bytes, and never while any asset or generated file still
+   * names it. Returns the bytes taken out of the library.
    */
   private async removeReviewedCopy(
     item: PhysicalDeduplicationPlanItem,
@@ -881,8 +882,23 @@ export class PhysicalDeduplicationService extends BaseService {
       return 0;
     }
 
-    const { deleted, references } = await this.physicalFileRepository.deleteUnreferencedPath(item.originalPath, () =>
-      this.storageRepository.unlink(item.originalPath),
+    // universal storage: an original is never unlinked by a job; the copy's last reference gone, its own
+    // file goes to the file trash like any FileDelete of an original (spec §3.5, §3.6)
+    const { deleted, references } = await this.physicalFileRepository.deleteUnreferencedPath(
+      item.originalPath,
+      () => this.storageRepository.unlink(item.originalPath),
+      {
+        trash: {
+          move: (from, to) => moveFileWithin(this.storageRepository, from, to),
+          original: {
+            checksum: Buffer.from(item.checksum, 'hex'),
+            sizeInBytes: item.sizeInBytes,
+            ownerId: item.ownerId,
+            assetId: item.assetId,
+            originalFileName: parse(item.originalPath).base,
+          },
+        },
+      },
     );
     if (!deleted) {
       this.logger.log(`Physical deduplication: kept ${item.originalPath}; ${references} reference(s) still name it`);
