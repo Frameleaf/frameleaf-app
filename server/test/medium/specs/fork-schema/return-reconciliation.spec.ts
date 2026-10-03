@@ -566,6 +566,11 @@ describe('certified fork return evidence', () => {
     ['asset_storage_reservation missing asset', 'asset_storage_reservation'],
     ['physical_file missing canonical asset', 'physical_file'],
     ['physical_file null canonical asset', 'physical_file'],
+    ['asset_origin missing copy', 'asset_origin'],
+    ['album_origin missing copy', 'album_origin'],
+    ['person_origin missing copy', 'person_origin'],
+    ['partner_backfill missing partnership', 'partner_backfill'],
+    ['partner_person_link missing person', 'partner_person_link'],
   ] as const)('independently archives and deletes %s', async (predicate, sourceTable) => {
     const user = await mediumFactory.userWithClusterGroup(db);
     const asset = mediumFactory.assetInsert({ ownerId: user.id });
@@ -697,6 +702,36 @@ describe('certified fork return evidence', () => {
       }
       case 'physical_file missing canonical asset': {
         await sql`INSERT INTO immich_fork.physical_file (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath", "createdAt", "updatedAt") VALUES (${physicalFileId}::uuid, ${orphanAssetId}::uuid, 'original', ${bytes}, 6, '/orphan.jpg', ${now}, ${now})`.execute(
+          db,
+        );
+        break;
+      }
+      case 'asset_origin missing copy':
+      case 'album_origin missing copy': {
+        // FL-326: the source is live, the copy is gone
+        const [table, key, source] = {
+          'asset_origin missing copy': ['asset_origin', 'assetId', 'sourceAssetId'],
+          'album_origin missing copy': ['album_origin', 'albumId', 'sourceAlbumId'],
+        }[predicate];
+        await sql`INSERT INTO ${sql.table(`immich_fork.${table}`)} (${sql.id(key)}, ${sql.id(source)}, "ownerId", "rootOwnerId", "partnerSharedById") VALUES (${randomUUID()}::uuid, ${asset.id}::uuid, ${user.id}::uuid, ${user.id}::uuid, ${user.id}::uuid)`.execute(
+          db,
+        );
+        break;
+      }
+      case 'person_origin missing copy': {
+        await sql`INSERT INTO immich_fork.person_origin ("ownerId", "personGroupId", "sourceOwnerId", "sourcePersonGroupId", "rootOwnerId", "partnerSharedById") VALUES (${user.id}::uuid, ${randomUUID()}::uuid, ${user.id}::uuid, ${randomUUID()}::uuid, ${user.id}::uuid, ${user.id}::uuid)`.execute(
+          db,
+        );
+        break;
+      }
+      case 'partner_person_link missing person': {
+        await sql`INSERT INTO immich_fork.partner_person_link ("ownerId", "sourcePersonGroupId", "personGroupId", kind, "partnerSharedById") VALUES (${user.id}::uuid, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'created', ${user.id}::uuid)`.execute(
+          db,
+        );
+        break;
+      }
+      case 'partner_backfill missing partnership': {
+        await sql`INSERT INTO immich_fork.partner_backfill ("sharedById", "sharedWithId") VALUES (${user.id}::uuid, ${randomUUID()}::uuid)`.execute(
           db,
         );
         break;

@@ -137,6 +137,7 @@ import { SharedLinks, ShareSheet, useSharedLinks } from "./SharedLinks";
 import { SharedLinkForm } from "./SharedLinkForm";
 import { PublicViewer } from "./PublicViewer";
 import { PartnerHeader } from "./PartnerLibrary";
+import { PartnerLockedNotice } from "./PartnerLockedNotice";
 import {
   resolveLink,
   recordView,
@@ -472,10 +473,6 @@ export function App() {
   const [publicLink, setPublicLink] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState(null);
-  const [partnerSettings, setPartnerSettings] = useState({
-    inTimeline: true,
-    shareLocation: false,
-  });
   const [page, setPage] = useState(1);
   const [uploadTargetId, setUploadTargetId] = useState(null);
   const uploadInput = useRef(null);
@@ -3054,16 +3051,11 @@ export function App() {
                     <PartnerHeader
                       partner={PARTNER}
                       count={visible.length}
-                      settings={partnerSettings}
                       onChange={(patch) => {
                         if (patch?.sharing === false) {
                           setToast(`Stopped sharing with ${PARTNER.name}.`);
                           navigate("Library");
-                        } else
-                          setPartnerSettings((current) => ({
-                            ...current,
-                            ...patch,
-                          }));
+                        }
                       }}
                       onOpenSettings={() => openSettings("sharing", "partner")}
                     />
@@ -3189,6 +3181,13 @@ export function App() {
                     </div>
                     {layoutSwitch}
                   </div>
+                )}
+                {collection === "Library" && (
+                  <PartnerLockedNotice
+                    partnerName={PARTNER.name}
+                    hasPin={false}
+                    onSetPin={() => openSettings("preferences", "account-security")}
+                  />
                 )}
                 {(activeChips.length > 0 || query.text) && (
                   <div className="active-filter-bar">

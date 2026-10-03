@@ -1816,6 +1816,46 @@
   width: 15px;
   height: 15px;
 }
+.cc-partner-shared {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  color: var(--fl-muted);
+}
+.cc-partner-shared li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.cc-partner-progress {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  max-width: 360px;
+}
+.cc-partner-progress [role="progressbar"] {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fl-border);
+  overflow: hidden;
+}
+.cc-partner-progress [role="progressbar"] span {
+  display: block;
+  height: 100%;
+  background: var(--fl-accent);
+  transition: width var(--fl-duration) var(--fl-snappy);
+}
+.cc-partner-progress[data-state="stopped"] [role="progressbar"] span {
+  background: var(--fl-muted);
+}
+.cc-partner-progress small {
+  font-size: 11px;
+  color: var(--fl-muted);
+}
 .cc-sharing-request small {
   display: block;
   color: var(--fl-muted);

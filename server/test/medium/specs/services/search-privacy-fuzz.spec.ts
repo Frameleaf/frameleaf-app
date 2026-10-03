@@ -436,10 +436,10 @@ describe('search privacy fuzz (FL-137 QA-101)', () => {
     await expect(
       ids(lib.auths.owner, { albumIds: [lib.albumIds[0]], withDeleted: true, originalFileName: 'fz-membertrashed' }),
     ).resolves.toEqual([]);
-    // A partner still finds the owner's ordinary timeline item.
+    // FL-326: a partner never finds the owner's own rows; they search their own copies.
     await expect(
       ids(lib.auths.partner, { filter: { originalFileName: { startsWith: 'fz-ordinary' } } }),
-    ).resolves.toEqual([id('ordinary')]);
+    ).resolves.toEqual([]);
   });
 
   it('refuses forged cursors as a client error and never pages past what the filter allows', async () => {

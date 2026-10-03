@@ -325,6 +325,33 @@ export interface IPersonIdentityRefreshJob {
   assetIds?: string[];
 }
 
+/** FL-326: one partnership's backfill. */
+export interface IPartnerBackfillJob {
+  sharedById: string;
+  sharedWithId: string;
+}
+
+/** FL-326: copy `sourceAssetId` into `targetOwnerId`'s library because `partnerSharedById` shares with them. */
+export interface IPartnerCopyAssetJob {
+  sourceAssetId: string;
+  targetOwnerId: string;
+  partnerSharedById: string;
+}
+
+/** FL-326: copy `sourceAlbumId` into `targetOwnerId`'s library because `partnerSharedById` shares with them. */
+export interface IPartnerCopyAlbumJob {
+  sourceAlbumId: string;
+  targetOwnerId: string;
+  partnerSharedById: string;
+}
+
+/** FL-326: push `fields` of a changed source into its following copies (and theirs, onward). */
+export interface IPartnerPropagateJob {
+  kind: 'asset' | 'album';
+  sourceId: string;
+  fields: string[];
+}
+
 export interface IEntityJob extends IBaseJob {
   id: string;
   source?: JobSource;
@@ -622,6 +649,11 @@ export type JobItem =
   // FL-228: push delivery through the Frameleaf push gateway, and the nightly stale-backup wake-up
   | { name: JobName.PushDeliver; data: IPushDeliverJob }
   | { name: JobName.PushBackupStaleCheck; data?: IBaseJob }
+  // FL-326: partner sharing v2 copies
+  | { name: JobName.PartnerBackfill; data: IPartnerBackfillJob }
+  | { name: JobName.PartnerCopyAsset; data: IPartnerCopyAssetJob }
+  | { name: JobName.PartnerCopyAlbum; data: IPartnerCopyAlbumJob }
+  | { name: JobName.PartnerPropagate; data: IPartnerPropagateJob }
 
   // OCR
   | { name: JobName.OcrQueueAll; data: IBaseJob }
@@ -1494,6 +1526,8 @@ export interface UserMetadata extends Record<UserMetadataKey, Record<string, any
     seenAt: string;
     ending: 'finished' | 'skipped' | 'opened-settings' | 'setup';
   };
+  /** FL-326: when Locked partner copies first reached this account without a PIN, and when it was dismissed. */
+  [UserMetadataKey.PartnerLockedNotice]: { flaggedAt: string; dismissedAt: string | null };
 }
 
 export type MaybeDehydrated<T> = T | ShallowDehydrateObject<T>;

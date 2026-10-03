@@ -47,7 +47,9 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
+import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import {
   getAssetFiles,
@@ -67,7 +69,6 @@ import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
-import { applyAlbumLocationPolicy, applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
 const imageEditActions = new Set<AssetEditAction>([
@@ -180,12 +181,7 @@ export class AssetService extends BaseService {
       return mapAsset(asset, { stripMetadata: true, withStack: true, auth });
     }
 
-    // a sharer who hides locations from this viewer never hands over coordinates or place names
-    const locationOptions = { userId: auth.user.id, repository: this.partnerRepository };
-    const [data] = await applyAlbumLocationPolicy(
-      await applyPartnerLocationPolicy([mapAsset(asset, { withStack: true, auth })], locationOptions),
-      locationOptions,
-    );
+    const data = mapAsset(asset, { withStack: true, auth });
 
     if (auth.sharedLink) {
       delete data.owner;
@@ -193,6 +189,15 @@ export class AssetService extends BaseService {
 
     if (auth.sharedLink) {
       data.people = [];
+    }
+
+    // FL-326: the viewer's own copy from a partner names the library it came from (info panel)
+    if (!auth.sharedLink && asset.ownerId === auth.user.id) {
+      const labels = await this.partnerOriginRepository.getOriginLabels('asset', [asset.id], auth.user.id);
+      const origin = labels.get(asset.id);
+      if (origin) {
+        data.origin = origin;
+      }
     }
 
     return data;
@@ -236,6 +241,14 @@ export class AssetService extends BaseService {
     if (!asset) {
       throw new BadRequestException('Asset not found');
     }
+
+    // FL-326: an edited field of a partner copy is the owner's from now on; copies of this item follow it
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      [id],
+      getAssetEditFields(dto),
+    );
 
     // A visibility change that locks or unlocks a whole stack also changes the siblings `id` never
     // mentions (FL-34, FL-53); push the same real-time update to `id` and to every one of them, so every
@@ -318,6 +331,14 @@ export class AssetService extends BaseService {
       await this.assetRepository.updateAll(ids, assetDto);
     }
 
+    // FL-326: edited fields of partner copies are the owner's from now on; copies of these items follow
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      ids,
+      getAssetEditFields(dto),
+    );
+
     // A lock or unlock carries whole stacks along (FL-34, FL-53), including siblings `ids` never names;
     // push the same real-time update to `ids` and to every one of them, so every open session reflects
     // the change at once.
@@ -374,6 +395,13 @@ export class AssetService extends BaseService {
   async lock(auth: AuthDto, dto: BulkIdsDto): Promise<void> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: dto.ids });
     await this.lockAssets(auth, dto.ids, AssetLockReason.Marked);
+    // FL-326: locking a partner copy makes its visibility the owner's; copies of these items follow it
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      dto.ids,
+      [AssetOriginField.Visibility],
+    );
   }
 
   /**

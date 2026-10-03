@@ -244,6 +244,39 @@ const ORPHAN_FAMILIES = [
     'candidate."assetId"::text',
     'NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = candidate."assetId")',
   ],
+  // FL-326: a partner copy's lineage goes with the copy. Its source may be gone (the copy keeps its
+  // last values), so only the copy's own row decides.
+  [
+    'asset_origin',
+    'immich_fork.asset_origin',
+    'candidate."assetId"::text',
+    'NOT EXISTS (SELECT 1 FROM public.asset asset WHERE asset.id = candidate."assetId")',
+  ],
+  [
+    'album_origin',
+    'immich_fork.album_origin',
+    'candidate."albumId"::text',
+    'NOT EXISTS (SELECT 1 FROM public.album album WHERE album.id = candidate."albumId")',
+  ],
+  [
+    'person_origin',
+    'immich_fork.person_origin',
+    `candidate."ownerId"::text || ':' || candidate."personGroupId"::text`,
+    'NOT EXISTS (SELECT 1 FROM public.person person WHERE person."ownerId" = candidate."ownerId" AND person."personGroupId" = candidate."personGroupId")',
+  ],
+  // FL-326: a person mapping goes with the recipient's person it points at.
+  [
+    'partner_person_link',
+    'immich_fork.partner_person_link',
+    `candidate."ownerId"::text || ':' || candidate."sourcePersonGroupId"::text`,
+    'NOT EXISTS (SELECT 1 FROM public.person person WHERE person."ownerId" = candidate."ownerId" AND person."personGroupId" = candidate."personGroupId")',
+  ],
+  [
+    'partner_backfill',
+    'immich_fork.partner_backfill',
+    `candidate."sharedById"::text || ':' || candidate."sharedWithId"::text`,
+    'NOT EXISTS (SELECT 1 FROM public.partner partner WHERE partner."sharedById" = candidate."sharedById" AND partner."sharedWithId" = candidate."sharedWithId")',
+  ],
   [
     'physical_file',
     'immich_fork.physical_file',
@@ -256,6 +289,8 @@ const ORPHAN_RELATIONS = [
   'public.album',
   'public.album_user',
   'public.asset',
+  'public.partner',
+  'public.person',
   'public.user',
   'immich_fork.orphaned_records',
   ...forkCatalogManifest.tables

@@ -29,6 +29,7 @@ describe('PersonService face history (FL-57)', () => {
     mocks.person.reanchorMergeVerdicts.mockResolvedValue(0);
     mocks.person.getVisibleEvidenceAssetIds.mockResolvedValue(new Set());
     mocks.person.getForMergePerson.mockResolvedValue([]);
+    mocks.partnerOrigin.getPersonFollowers.mockResolvedValue([]);
   });
 
   const correction = (overrides: Partial<FaceCorrection> = {}): FaceCorrection => ({
@@ -98,6 +99,8 @@ describe('PersonService face history (FL-57)', () => {
       expect(mocks.person.recordFaceCorrections).toHaveBeenCalledWith([
         expect.objectContaining({ action: 'merge', fromPersonId: low, toPersonId: high, actorId: auth.user.id }),
       ]);
+      // FL-326: a partner person mapped to the merged-away person now maps to the survivor
+      expect(mocks.person.repointPartnerPersonLinks).toHaveBeenCalledWith(auth.user.id, low, high);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.PersonIdentityRefresh,
         data: { ownerId: auth.user.id, personGroupIds: [high] },
@@ -258,6 +261,58 @@ describe('PersonService face history (FL-57)', () => {
       mocks.person.undoFaceCorrection.mockResolvedValue('undone');
       return { auth, current };
     };
+
+    it('undoes a partner auto-merge by moving its faces to a person of their own (FL-326)', async () => {
+      const entry = correction({
+        action: 'partner-merge',
+        faceId: null,
+        assetId: null,
+        fromPersonId: null,
+        fromPersonName: 'Emma',
+      });
+      const auth = AuthFactory.create({ id: entry.ownerId });
+      const sourcePersonGroupId = newUuid();
+      const partnerId = newUuid();
+      const newGroupId = newUuid();
+      mocks.person.getFaceCorrection.mockResolvedValue(entry);
+      mocks.person.getPartnerPersonLinkByCorrection.mockResolvedValue({
+        ownerId: entry.ownerId,
+        sourcePersonGroupId,
+        personGroupId: entry.toPersonId!,
+        kind: 'merged',
+        partnerSharedById: partnerId,
+        correctionId: entry.id,
+      });
+      mocks.person.getPartnerMergedFaceIds.mockResolvedValue(['face-1']);
+      mocks.person.getByGroupId.mockResolvedValue(PersonFactory.create({ ownerId: partnerId, name: 'Emma' }));
+      mocks.person.createGroup.mockResolvedValue({ id: newGroupId } as never);
+      mocks.person.create.mockResolvedValue(PersonFactory.create({ ownerId: entry.ownerId }));
+      mocks.person.undoPartnerMerge.mockResolvedValue(true);
+
+      await expect(sut.undoCorrection(auth, entry.id)).resolves.toEqual(
+        expect.objectContaining({
+          id: entry.id,
+          action: 'partner-merge',
+          undoneAt: expect.any(String),
+          undoable: false,
+        }),
+      );
+      expect(mocks.person.undoPartnerMerge).toHaveBeenCalledWith(entry.id, ['face-1'], newGroupId);
+      expect(mocks.partnerOrigin.createPersonOrigin).toHaveBeenCalledWith(
+        expect.objectContaining({ ownerId: entry.ownerId, personGroupId: newGroupId, sourcePersonGroupId }),
+      );
+      expect(mocks.person.undoFaceCorrection).not.toHaveBeenCalled();
+    });
+
+    it('lists a partner auto-merge as undoable (FL-326)', async () => {
+      const entry = correction({ action: 'partner-merge', faceId: null, assetId: null });
+      const auth = AuthFactory.create({ id: entry.ownerId });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([entry.toPersonId!]));
+      mocks.person.getFaceCorrections.mockResolvedValue({ items: [entry], hasNextPage: false });
+
+      const { corrections } = await sut.getCorrectionHistory(auth, entry.toPersonId!, { page: 1, size: 25 });
+      expect(corrections[0]).toMatchObject({ action: 'partner-merge', undoable: true, evidence: null });
+    });
 
     it('moves the face back and marks the change undone', async () => {
       const entry = correction();

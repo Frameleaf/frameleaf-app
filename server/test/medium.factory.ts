@@ -61,6 +61,7 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
@@ -195,6 +196,11 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
 
       if (options.mock.includes(dep)) {
         return newMockRepository(dep);
+      }
+
+      // FL-326: every asset, tag and partner edit records partner-copy lineage; it is real unless mocked
+      if (dep === PartnerOriginRepository) {
+        return this.get(dep);
       }
     }) as unknown as ClassConstructorsToInstances<BaseServiceDeps>;
   }
@@ -554,6 +560,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case NotificationRepository:
     case OcrRepository:
     case PartnerRepository:
+    case PartnerOriginRepository:
     case PersonRepository:
     case PhysicalFileRepository:
     case PhysicalFileTrashRepository:
@@ -642,6 +649,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     case NotificationRepository:
     case OcrRepository:
     case PartnerRepository:
+    case PartnerOriginRepository:
     case PersonRepository:
     case SessionRepository:
     case SyncRepository:

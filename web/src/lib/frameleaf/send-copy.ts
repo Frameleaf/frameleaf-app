@@ -1,11 +1,4 @@
-import {
-  downloadAsset,
-  getAssetInfo,
-  getPartners,
-  PartnerDirection,
-  type AssetResponseDto,
-  type SharedLinkResponseDto,
-} from '@immich/sdk';
+import { downloadAsset, getAssetInfo, type AssetResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
 import { toastManager, type ToastShow } from '@immich/ui';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
@@ -24,8 +17,6 @@ import { getSharedLink } from '$lib/utils';
  * downloaded it leaves out:
  * - Locked and trashed items, whatever the session can see (owner rule: Locked content is never
  *   revealed through a share);
- * - items of a partner who hides their locations from this user (`partner.shareLocation` off):
- *   an original carries its GPS in its own metadata, which only the API responses strip.
  *
  * A shared link sends copies only when it allows downloads and shows metadata, the same gate as its
  * download (an original carries all of its metadata). Where the browser cannot share files the entry
@@ -138,13 +129,9 @@ export type SendCopyResult = PreparedCopies & {
   retry?: () => Promise<SendCopyResult>;
 };
 
-const locationHiddenOwners = async (): Promise<Set<string>> => {
-  if (!authManager.authenticated || getSharedLink()) {
-    return new Set();
-  }
-  const partners = await getPartners({ direction: PartnerDirection.SharedWith });
-  return new Set(partners.filter((partner) => partner.shareLocation === false).map((partner) => partner.id));
-};
+// FL-326 (owner decision 2026-10-03): locations are always shared with partners, who hold their own
+// copies, so no owner's items are held back for their location any more.
+const locationHiddenOwners = (): Promise<Set<string>> => Promise.resolve(new Set());
 
 const defaultDeps = (): SendCopyDeps => ({
   getInfo: (id) => getAssetInfo({ ...authManager.params, id }),

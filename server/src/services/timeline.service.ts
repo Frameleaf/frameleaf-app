@@ -13,24 +13,22 @@ import { AssetVisibility, Permission } from 'src/enum.js';
 import { TimeBucketOptions } from 'src/repositories/asset.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
-import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getPrivacyQueryOptions, requireSuppressedOnlyAccess } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { getLocationHiddenOwnerIdsForView } from 'src/utils/partner-location.js';
 import { requirePetFilterAllowed } from 'src/utils/search-filter.js';
 
 @Injectable()
 export class TimelineService extends BaseService {
   async getTimeBuckets(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketsResponseDto[]> {
     await this.timeBucketChecks(auth, dto);
-    const timeBucketOptions = await this.buildTimeBucketOptions(auth, dto);
+    const timeBucketOptions = this.buildTimeBucketOptions(auth, dto);
     return await this.assetRepository.getTimeBuckets(timeBucketOptions, auth);
   }
 
   // pre-jsonified response
   async getTimeBucket(auth: AuthDto, dto: TimeBucketAssetDto): Promise<string> {
     await this.timeBucketChecks(auth, dto);
-    const timeBucketOptions = await this.buildTimeBucketOptions(auth, { ...dto });
+    const timeBucketOptions = this.buildTimeBucketOptions(auth, { ...dto });
 
     // TODO: use id cursor for pagination
     const bucket = await this.assetRepository.getTimeBucket(dto.timeBucket, timeBucketOptions, auth);
@@ -48,7 +46,7 @@ export class TimelineService extends BaseService {
       throw new BadRequestException('This link does not allow sorting by file name or rating');
     }
     await this.timeBucketChecks(auth, bucketDto);
-    const timeBucketOptions = await this.buildTimeBucketOptions(auth, bucketDto);
+    const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
     const page = await this.assetRepository.getTimelineOrdered(timeBucketOptions, auth, { sort, skip, take });
     return page.assets;
   }
@@ -60,7 +58,7 @@ export class TimelineService extends BaseService {
   async getTimelineHighlights(auth: AuthDto, dto: TimelineHighlightsDto): Promise<TimelineHighlightResponseDto[]> {
     const { grouping, highlightCount, ...bucketDto } = dto;
     await this.timeBucketChecks(auth, bucketDto);
-    const timeBucketOptions = await this.buildTimeBucketOptions(auth, bucketDto);
+    const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
     return this.assetRepository.getTimelineHighlights(timeBucketOptions, auth, {
       grouping,
       highlightCount: grouping === 'year' ? 0 : (highlightCount ?? TIMELINE_HIGHLIGHT_DEFAULT),
@@ -69,38 +67,14 @@ export class TimelineService extends BaseService {
     });
   }
 
-  private async buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketOptions> {
+  private buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): TimeBucketOptions {
     const { userId, suppressedOnly, lockReason, ...options } = dto;
     let userIds: string[] | undefined;
 
+    // FL-326 (spec §4.8): a timeline holds only its owner's rows; what partners share arrives as copies
     if (userId) {
       userIds = [userId];
-      if (dto.withPartners) {
-        const partnerIds = await getMyPartnerIds({
-          userId: auth.user.id,
-          repository: this.partnerRepository,
-          timelineEnabled: true,
-          // a bounding box is itself a location query, so partners who hide their locations stay out of it
-          locationSharedOnly: !!dto.bbox,
-        });
-        userIds.push(...partnerIds);
-      }
     }
-
-    // FL-54: other people's assets can appear here through partners, albums or people; owners who hide
-    // their locations from this viewer get their location columns nulled in the bucket SQL
-    const canSeeOthersAssets =
-      dto.withPartners || !!dto.albumId || !!dto.personId || (!!userId && userId !== auth.user.id);
-    // an album view also hides owners who hide their locations from the album's owner (owner default)
-    const locationHiddenOwnerIds = canSeeOthersAssets
-      ? [
-          ...(await getLocationHiddenOwnerIdsForView({
-            viewerId: auth.user.id,
-            albumIds: dto.albumId ? [dto.albumId] : [],
-            repository: this.partnerRepository,
-          })),
-        ]
-      : [];
 
     return {
       ...options,
@@ -118,7 +92,6 @@ export class TimelineService extends BaseService {
       ...(dto.visibility === AssetVisibility.Locked &&
         !lockReason &&
         auth.suppressedContent && { lockedRuleMatches: auth.suppressedContent }),
-      ...(locationHiddenOwnerIds.length > 0 && { locationHiddenOwnerIds }),
     };
   }
 
@@ -162,19 +135,6 @@ export class TimelineService extends BaseService {
 
     if (auth.sharedLink && !auth.sharedLink.showExif) {
       dto.withCoordinates = false;
-    }
-
-    if (dto.withPartners) {
-      const isRequestedLocked = dto.visibility === AssetVisibility.Locked;
-      const isRequestedArchived = dto.visibility === AssetVisibility.Archive || dto.visibility === undefined;
-      const isRequestedFavorite = dto.isFavorite === true || dto.isFavorite === false;
-      const isRequestedTrash = dto.isTrashed === true;
-
-      if (isRequestedLocked || isRequestedArchived || isRequestedFavorite || isRequestedTrash) {
-        throw new BadRequestException(
-          'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
-        );
-      }
     }
   }
 }

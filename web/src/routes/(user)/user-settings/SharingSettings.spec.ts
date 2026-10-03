@@ -65,6 +65,32 @@ describe('SharingSettings — People & sharing (CC-52/53/54)', () => {
     );
   });
 
+  it('shows what a partner receives and the copy progress, with no toggles (FL-326)', async () => {
+    sdkMock.getPartners.mockImplementation(({ direction }) =>
+      Promise.resolve(
+        direction === 'shared-by'
+          ? [{ ...(user('sam', 'Sam') as object), backfill: { state: 'running', total: 3200, done: 1240 } } as never]
+          : [],
+      ),
+    );
+    render(SharingSettings);
+
+    const progress = await screen.findByRole('progressbar', { name: 'Copying to their library' });
+    expect(progress).toHaveAttribute('aria-valuenow', '38');
+    expect(screen.getByText('Copying 1,240 of 3,200 items')).toBeInTheDocument();
+    const received = screen.getByRole('list', { name: 'What they receive' });
+    expect([...received.querySelectorAll('li')].map((item) => item.textContent?.trim())).toEqual([
+      'Photos and videos',
+      'Albums you own',
+      'Tags',
+      'People',
+      'Descriptions and locations',
+      'Locked items',
+    ]);
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('switch')).toBeNull();
+  });
+
   it('still offers Add partner when the recognition group cannot be loaded', async () => {
     sdkMock.getMyUser.mockRejectedValue(new Error('offline'));
     render(SharingSettings);

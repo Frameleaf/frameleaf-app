@@ -109,6 +109,8 @@ const samples = [
   ][i],
   addedAt: `2026-08-${18 - Math.floor(i / 5)}T12:00:00Z`,
   ...(i === 18 ? { isLocked: true } : i === 19 ? { isSuppressed: true } : {}),
+  // Partner sharing v2: copies received from Jamie are ordinary items in this library.
+  ...(i === 6 || i === 13 ? { origin: { rootOwnerId: 'jamie' } } : {}),
 }));
 export const people = [
   { id: 'Jamie', name: 'Jamie', image: '/media/avatar-jamie.png' },
