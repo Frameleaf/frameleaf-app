@@ -11,6 +11,7 @@ import { MediaOperation, MediaOperationRepository } from 'src/repositories/media
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
+import { hasWeeklyAuthorityInput } from 'src/utils/icloud-weekly.js';
 
 /** One durable audit lane, dispatched by the existing iCloud worker. */
 @Injectable()
@@ -68,6 +69,8 @@ export class ICloudAuditService {
     const ids = operation.snapshot.auditIds;
     if (
       operation.snapshot.task !== 'identity-audit' ||
+      hasWeeklyAuthorityInput(operation.snapshot) ||
+      (operation.snapshot.purpose!==undefined && operation.snapshot.purpose!=='manual-session') ||
       !Array.isArray(ids) ||
       ids.length > 100 ||
       ids.some((id) => typeof id !== 'string' || !/^[\da-f-]{36}$/i.test(id))

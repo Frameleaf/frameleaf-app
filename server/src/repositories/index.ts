@@ -56,6 +56,7 @@ import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repos
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
+import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
@@ -130,6 +131,7 @@ export const repositories = [
   MediaRecoveryRepository,
   ICloudTransportRepository,
   ICloudSyncRepository,
+  ICloudWeeklyRepository,
   ICloudIdentityRepository,
   PhotographyWorkspaceRepository,
   PhotographyWorkflowRepository,

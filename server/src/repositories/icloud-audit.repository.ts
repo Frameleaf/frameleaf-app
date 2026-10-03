@@ -32,11 +32,10 @@ type AuditSnapshot = {
   algorithm: string | null;
   updateId: string;
 };
-export type ICloudAuditRow = {
+type AuditRowFields = {
   id: string;
   ownerId: string;
   connectionId: string;
-  sessionId: string;
   operationId: string;
   identityId: string;
   originalAssetId: string;
@@ -47,6 +46,10 @@ export type ICloudAuditRow = {
   result: string;
   resultAssetId: string | null;
 };
+export type ICloudAuditRow = AuditRowFields & (
+  | { purpose: 'manual-session'; sessionId: string; grantId: null; grantGeneration: null; cohortId: null; memberOrdinal: null; batchOrdinal: null }
+  | { purpose: 'scheduled-weekly'; sessionId: null; grantId: string; grantGeneration: number; cohortId: string; memberOrdinal: number; batchOrdinal: number }
+);
 type Outcome = { id: string; state: 'queued' | 'unavailable' };
 class Replay extends Error {
   constructor(readonly response: ICloudVerifyResponseDto) {
@@ -127,7 +130,7 @@ async function currentAuth(
 }
 
 export type GuardedAudit = {
-  request: ICloudAuditRow;
+  request: Extract<ICloudAuditRow, { purpose: 'manual-session' }>;
   source: ICloudResource;
   connection: ICloudConnection;
   private: boolean;
@@ -146,7 +149,7 @@ export async function guardAudit(
     WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid`
     .execute(db)
     .then(({ rows }) => rows[0]);
-  if (!request || request.operationId !== authority.operationId || !['queued', 'running'].includes(request.result)) {
+  if (!request || request.purpose !== 'manual-session' || request.operationId !== authority.operationId || !['queued', 'running'].includes(request.result)) {
     return;
   }
   const connection = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
@@ -168,8 +171,9 @@ export async function guardAudit(
     return;
   }
   const current = await sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit
-    WHERE id=${request.id}::uuid AND result IN ('queued','running') ${lock ? sql`FOR UPDATE` : sql``}`.execute(db);
-  if (current.rows.length === 0) {
+    WHERE id=${request.id}::uuid AND purpose='manual-session' AND result IN ('queued','running') ${lock ? sql`FOR UPDATE` : sql``}`.execute(db);
+  const currentRequest = current.rows[0];
+  if (!currentRequest || currentRequest.purpose !== 'manual-session') {
     return;
   }
   const source = await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize"
@@ -294,7 +298,7 @@ export async function guardAudit(
     .where('asset.id', '=', request.originalAssetId)
     .executeTakeFirst();
   return {
-    request: current.rows[0],
+    request: currentRequest,
     source,
     connection,
     private: !visible || source.source.isHidden === true,
