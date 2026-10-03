@@ -11,6 +11,9 @@ import { AssetLockReason, AssetPathType, AssetType, AssetVisibility, ChecksumAlg
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import * as reuseMigration from 'src/fork-schema/migrations/0000000000217-ICloudIdentityReuse.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { ICloudIdentityAdoptionRepository, IdentityAdoptionAuthority } from 'src/repositories/icloud-identity-adoption.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
@@ -306,6 +309,79 @@ describe('iCloud exact identity adoption', () => {
       expect(await service.adopt(fixture.authority)).not.toBe('adopted'); await unpublished(fixture);
     },
   );
+
+  it('refuses publication and replay after the actual classification writer wins metadata authority',async () => {
+    const fixture = await arrange();
+    const privacy = new ForkPrivacyRepository(db);
+    const database = new DatabaseRepository(db,getMocks().logger as never,new ConfigRepository());
+    await privacy.saveClassification(fixture.asset.id,false,null,db);
+    const entered = Promise.withResolvers<number>(); const resume = Promise.withResolvers<void>();
+    const classifying = database.withAssetMetadataLock(fixture.asset.id,async (transaction) => {
+      const pid = await sql<{ pid:number }>`SELECT pg_backend_pid() AS pid`.execute(transaction);
+      entered.resolve(pid.rows[0].pid);
+      await resume.promise;
+      await privacy.saveClassification(fixture.asset.id,true,null,transaction);
+    });
+    const classifierPid = await entered.promise;
+    const running = service.adopt(fixture.authority);
+    void classifying.catch(() => {}); void running.catch(() => {});
+    try {
+      await expect.poll(async () => {
+        const blocked = await sql`SELECT 1 FROM pg_stat_activity
+          WHERE wait_event_type='Lock' AND ${classifierPid}::int=ANY(pg_blocking_pids(pid))`.execute(db);
+        return blocked.rows.length > 0;
+      },{ timeout:1000 }).toBe(true);
+    } finally { resume.resolve(); await Promise.allSettled([classifying,running]); }
+    await classifying;
+    expect(await running).toBe('miss'); await unpublished(fixture);
+    expect(await service.adopt(fixture.authority)).toBe('miss'); await unpublished(fixture);
+    expect(await readFile(fixture.originalPath)).toEqual(fixture.bytes);
+  });
+
+  it('holds classification authority across the final real file check and refuses subsequently classified replay',async () => {
+    const fixture = await arrange();
+    const privacy = new ForkPrivacyRepository(db);
+    const database = new DatabaseRepository(db,getMocks().logger as never,new ConfigRepository());
+    await privacy.saveClassification(fixture.asset.id,false,null,db);
+    const entered = Promise.withResolvers<void>(); const resume = Promise.withResolvers<void>();
+    const adopt = repository.adopt.bind(repository);
+    vi.spyOn(repository,'adopt').mockImplementation((authority,verify) => adopt(authority,async (candidate) => {
+      const evidence = await verify(candidate);
+      if (!evidence || evidence === 'miss') { return evidence; }
+      let checks = 0;
+      return { ...evidence,current:async () => {
+        const current = await evidence.current();
+        if (++checks === 2) { entered.resolve(); await resume.promise; }
+        return current;
+      } };
+    }));
+    const running = service.adopt(fixture.authority);
+    let classifying: Promise<void> | undefined;
+    try {
+      await entered.promise;
+      const holder = await sql<{ pid:number }>`SELECT pid FROM pg_locks
+        WHERE locktype='advisory' AND granted AND classid=4294967295::oid
+          AND objid=(hashtext(${fixture.asset.id})::bigint & 4294967295)::oid AND objsubid=2`.execute(db);
+      expect(holder.rows).toHaveLength(1);
+      classifying = database.withAssetMetadataLock(fixture.asset.id,async (transaction) => {
+        await privacy.saveClassification(fixture.asset.id,true,null,transaction);
+      });
+      void classifying.catch(() => {});
+      await expect.poll(async () => {
+        const blocked = await sql`SELECT 1 FROM pg_stat_activity
+          WHERE wait_event_type='Lock' AND ${holder.rows[0].pid}::int=ANY(pg_blocking_pids(pid))`.execute(db);
+        return blocked.rows.length > 0;
+      },{ timeout:1000 }).toBe(true);
+      const current = await sql<{ isNsfw:boolean }>`SELECT "isNsfw" FROM immich_fork.asset_privacy
+        WHERE "assetId"=${fixture.asset.id}::uuid`.execute(db);
+      expect(current.rows[0].isNsfw).toBe(false);
+    } finally { resume.resolve(); await Promise.allSettled([running,...(classifying ? [classifying] : [])]); }
+    expect(await running).toBe('adopted'); await classifying;
+    expect(await service.adopt(fixture.authority)).toBe('miss');
+    expect((await sql`SELECT id FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(db)).rows).toHaveLength(1);
+    expect((await sync.resource(fixture.resource.id))?.assetId).toBe(fixture.asset.id);
+    expect(await readFile(fixture.originalPath)).toEqual(fixture.bytes);
+  });
 
   it('holds the real managed move path lock through native validation and publication',async () => {
     const fixture = await arrange(); const entered = Promise.withResolvers<void>(); const resume = Promise.withResolvers<void>();

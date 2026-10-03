@@ -115,6 +115,10 @@ export class ICloudIdentityAdoptionRepository {
           || parsed.cplMasterRecordName !== candidate.cplMasterRecordName) { return 'miss'; }
         const fingerprint = (source.resource.source.resource as Record<string, unknown> | undefined)?.fileChecksum;
         if (typeof fingerprint !== 'string' || !isAppleFingerprint(fingerprint)) { return 'miss'; }
+        // Classification can write the active privacy sidecar without touching the asset row.
+        // Match DatabaseRepository.withAssetMetadataLock BEFORE any asset row lock, and hold
+        // its authority through every file await, mapping/receipt publication and replay.
+        await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${candidate.assetId})::int)`.execute(db);
         await lockFilePath(db, candidate.originalPath);
         if (!(await this.destination(db, authority.ownerId, candidate, source.resource.role))) { return 'miss'; }
         let replay: { snapshot: Record<string, unknown> } | undefined;
