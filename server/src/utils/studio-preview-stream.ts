@@ -116,16 +116,18 @@ export const isValidOfferSdp = (sdp: string): boolean => {
   );
 };
 
-/** The browser's answer: it receives the video and sends nothing. */
+/** The browser's answer: one receive-only/inactive video and one control channel, with no other media. */
 export const isValidAnswerSdp = (sdp: string): boolean => {
   if (!looksLikeSdp(sdp)) {
     return false;
   }
   const { media } = sectionsOf(sdp);
   const video = media.filter((section) => section.kind === 'video');
+  const application = media.filter((section) => section.kind === 'application');
   return (
     video.length === 1 &&
-    media.every((section) => section.kind === 'video' || section.kind === 'application') &&
+    application.length === 1 &&
+    media.length === 2 &&
     video.every((section) => ['recvonly', 'inactive'].includes(direction(section)))
   );
 };

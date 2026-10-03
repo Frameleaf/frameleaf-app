@@ -279,6 +279,46 @@ describe(StudioPreviewStreamService.name, () => {
   });
 
   describe('signalling', () => {
+    it.each([
+      { shape: 'missing', sdp: ANSWER.split('m=application', 1)[0], direction: 'recvonly' },
+      { shape: 'missing', sdp: ANSWER.split('m=application', 1)[0], direction: 'inactive' },
+      {
+        shape: 'duplicate',
+        sdp: `${ANSWER}m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n`,
+        direction: 'recvonly',
+      },
+      {
+        shape: 'duplicate',
+        sdp: `${ANSWER}m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n`,
+        direction: 'inactive',
+      },
+    ])('refuses $shape control atomically before a valid $direction answer', async (test) => {
+      const { id } = await sut.open(auth(), openDto());
+      await workerOffers(id);
+      const before = structuredClone(operations.rows.get(id)!);
+      operations.mergeStreamSignal.mockClear();
+
+      await expect(
+        sut.answer(auth(), id, { negotiation: 0, sdp: test.sdp.replace('a=recvonly', `a=${test.direction}`) }),
+      ).rejects.toMatchObject({ status: 400, response: { code: 'studio_preview_stream_invalid_answer' } });
+
+      expect(operations.mergeStreamSignal).not.toHaveBeenCalled();
+      expect(operations.rows.get(id)).toEqual(before);
+
+      const answered = await sut.answer(auth(), id, {
+        negotiation: 0,
+        sdp: ANSWER.replace('a=recvonly', `a=${test.direction}`),
+      });
+      expect(answered).toMatchObject({ state: 'answered', negotiation: 0, offer: null });
+      expect(operations.mergeStreamSignal).toHaveBeenCalledTimes(1);
+      const signal = await sut.workerSignal((await operations.getForWorker(id))!);
+      expect(signal).toMatchObject({ close: false, offerNeeded: false, negotiation: 0 });
+      expect(signal.answer).toContain('b=AS:6000');
+      expect(signal.answer).toContain('b=TIAS:6000000');
+      expect(signal.answer).toContain(`a=${test.direction}`);
+      expect(signal.answer).toContain('m=application 9 UDP/DTLS/SCTP webrtc-datachannel');
+    });
+
     it('relays one offer and one answer per negotiation, with the bitrate bound written in', async () => {
       const { id } = await sut.open(auth(), openDto());
       const claimed = await workerOffers(id);
