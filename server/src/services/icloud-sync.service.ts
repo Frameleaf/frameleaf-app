@@ -26,6 +26,7 @@ import {
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
+import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
 import {
   ICloudConnection,
   ICloudLibrary,
@@ -195,6 +196,7 @@ export class ICloudSyncService {
     private operations: MediaOperationRepository,
     private logger: LoggingRepository,
     private identities: ICloudIdentityRepository,
+    private audits: ICloudAuditService,
   ) {
     this.logger.setContext(ICloudSyncService.name);
   }
@@ -577,6 +579,7 @@ export class ICloudSyncService {
    * operation sweep returns them to the queue, or gives them their automatic retry, for every kind.
    */
   async drain(): Promise<void> {
+    await this.audits.housekeeping();
     while (!this.stopping) {
       const claim = await this.operations.claimNext({
         kinds: [MediaOperationKind.ICloudSync],
@@ -607,6 +610,10 @@ export class ICloudSyncService {
    * device approval, a password) fails the run with that reason; the connection has told its owner.
    */
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
+    if (operation.snapshot.task === 'identity-audit') { await this.audits.run(operation,claimToken); return; }
+    if (operation.snapshot.task !== undefined) {
+      await this.operations.fail(operation.id,claimToken,{error:'Invalid iCloud task',errorCode:'icloud_snapshot_invalid'},{retry:false}); return;
+    }
     const claim: Claim = { operation, claimToken };
     const { id, ownerId } = operation;
     const snapshot = asObject(operation.snapshot);

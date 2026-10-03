@@ -291,7 +291,7 @@ export class ICloudAlbumRepository {
       FROM immich_fork.icloud_membership m JOIN immich_fork.icloud_album s
         ON s."connectionId"=m."connectionId" AND s."libraryKey"=m."libraryKey" AND s."sourceId"=m."sourceAlbumId" AND NOT s.deleted
       LEFT JOIN LATERAL (SELECT r."assetId" FROM immich_fork.icloud_resource r JOIN asset a ON a.id=r."assetId"
-        WHERE r."connectionId"=m."connectionId" AND r."libraryKey"=m."libraryKey" AND r."sourceAssetId"=m."sourceAssetId"
+        WHERE r."auditRequestId" IS NULL AND r."connectionId"=m."connectionId" AND r."libraryKey"=m."libraryKey" AND r."sourceAssetId"=m."sourceAssetId"
           AND r."ownerId"=${ownerId}::uuid AND a."ownerId"=${ownerId}::uuid AND a."deletedAt" IS NULL
           AND coalesce((r.source->>'current')::boolean,true)
           AND r.role='original' AND r.status IN ('committed','finalized','reused') ORDER BY r."updatedAt" DESC,r.id LIMIT 1) r ON true
