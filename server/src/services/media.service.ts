@@ -263,7 +263,16 @@ export class MediaService extends BaseService {
   private async getSharedGeneratedFileTypes(asset: { id: string; files: AssetFile[] }): Promise<Set<AssetFileType>> {
     const shared = new Set<AssetFileType>();
     for (const file of asset.files ?? []) {
-      if (file.isEdited || !file.physicalFileId) {
+      if (file.isEdited) {
+        continue;
+      }
+      if (!file.physicalFileId) {
+        // no physical file yet (pre-upgrade, or a partner copy of such an asset that shares its path):
+        // the file belongs to the oldest asset naming the path, never to a later copy
+        const primaryAssetId = await this.physicalFileRepository.getGeneratedPathPrimaryAssetId(file.path);
+        if (primaryAssetId && primaryAssetId !== asset.id) {
+          shared.add(file.type);
+        }
         continue;
       }
       const physicalFile = await this.physicalFileRepository.getPhysicalFile(file.physicalFileId);
