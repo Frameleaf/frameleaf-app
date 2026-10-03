@@ -792,7 +792,6 @@ describe(AssetRestorationService.name, () => {
     it('refuses a session that may not view the asset', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
       mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set());
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set());
 
       await expect(sut.getPlaybackChoice(authStub.user1, asset.id, 'video')).rejects.toThrow();
       expect(restorations.listRestoredForPlayback).not.toHaveBeenCalled();

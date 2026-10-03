@@ -173,36 +173,27 @@ describe('TimelineService.getTimelineHighlights (FL-33)', () => {
     await expect(sut.getTimeBuckets(auth, {})).resolves.toEqual([{ timeBucket: '2024-06-01', count: 1 }]);
   });
 
-  it("includes partners' shared media but never their Locked media or their hidden locations", async () => {
+  it("never includes a partner's own rows: their items arrive as the viewer's copies (FL-326)", async () => {
     const { sut, ctx } = setup();
     const { user } = await ctx.newUser();
     const { user: partner } = await ctx.newUser();
-    await ctx.get(PartnerRepository).create({
-      sharedById: partner.id,
-      sharedWithId: user.id,
-      inTimeline: true,
-      shareLocation: false,
-    });
+    await ctx.get(PartnerRepository).create({ sharedById: partner.id, sharedWithId: user.id });
 
     const own = await newPhoto(ctx, user.id, '2024-07-01T10:00:00Z', { city: 'Lisbon' });
     const shared = await newPhoto(ctx, partner.id, '2024-07-02T10:00:00Z', { score: 0.5, city: 'PartnerHome' });
-    const partnerLocked = await newPhoto(ctx, partner.id, '2024-07-03T10:00:00Z', {
-      score: 0.99,
-      visibility: AssetVisibility.Locked,
-    });
 
     const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
-    const dto = { userId: user.id, withPartners: true, visibility: AssetVisibility.Timeline };
+    const dto = { userId: user.id, visibility: AssetVisibility.Timeline };
     const [card] = await sut.getTimelineHighlights(elevated, { ...dto, grouping: 'month', highlightCount: 4 });
     expect(card).toEqual({
       timeBucket: '2024-07-01',
-      count: 2,
-      keyAssetId: shared.id,
-      highlightAssetIds: [own.id],
+      count: 1,
+      keyAssetId: own.id,
+      highlightAssetIds: [],
       places: ['Lisbon'],
     });
-    expect(JSON.stringify(card)).not.toContain(partnerLocked.id);
-    await expect(sut.getTimeBuckets(elevated, dto)).resolves.toEqual([{ timeBucket: '2024-07-01', count: 2 }]);
+    expect(JSON.stringify(card)).not.toContain(shared.id);
+    await expect(sut.getTimeBuckets(elevated, dto)).resolves.toEqual([{ timeBucket: '2024-07-01', count: 1 }]);
   });
 
   it('names no places for a shared link that hides EXIF', async () => {

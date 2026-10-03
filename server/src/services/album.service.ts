@@ -27,14 +27,15 @@ import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset
 import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { AlbumKind, AlbumUserRole, Permission, PushEventType, SharedSpaceEventType } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
+import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { getAlbumEditFields, queueAlbumCopies, recordAlbumEdit } from 'src/services/partner-copy.service.js';
 import { albumOrderGroup, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isLockedRow } from 'src/utils/locked.js';
-import { getLocationHiddenOwnerIdsForView } from 'src/utils/partner-location.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { isSharedSpace, requireInvitableRole, requireSpaceOwner } from 'src/utils/shared-space.js';
 
@@ -282,17 +283,8 @@ export class AlbumService extends BaseService {
     // FL-51: the map settings sheet narrows a signed-in viewer's album map. A shared link acts as the
     // link's owner, so its visitors get the album's markers unfiltered: a favorites filter would
     // otherwise tell them which items the owner has favorited.
-    // FL-54: markers are pure location, so an owner who hides their locations from the viewer contributes
-    // none; a shared link is judged as the user who created it
-    const hidden = await getLocationHiddenOwnerIdsForView({
-      viewerId: auth.sharedLink?.userId ?? auth.user.id,
-      albumIds: [id],
-      repository: this.partnerRepository,
-    });
-    const locationHidden = hidden.size > 0 ? { locationHiddenOwnerIds: [...hidden] } : {};
-
     if (auth.sharedLink) {
-      return this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...locationHidden });
+      return this.mapRepository.getAlbumMapMarkers(id, this.nsfwOptions(auth));
     }
 
     // As in the prototype's filterMapAssets, "Partner items" covers every item someone else owns, so
@@ -305,7 +297,7 @@ export class AlbumService extends BaseService {
       options.onlyOwnerId = auth.user.id;
     }
 
-    return this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...options, ...locationHidden });
+    return this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...options });
   }
 
   async create(auth: AuthDto, dto: CreateAlbumDto): Promise<AlbumResponseDto> {
@@ -377,6 +369,11 @@ export class AlbumService extends BaseService {
       await this.eventRepository.emit('AlbumInvite', { id: album.id, userId, senderName: auth.user.name });
     }
 
+    // FL-326 (spec §4.4): a plain album goes to everyone its owner shares their library with
+    if (kind === AlbumKind.Album) {
+      await queueAlbumCopies({ partner: this.partnerRepository, job: this.jobRepository }, auth.user.id, album.id);
+    }
+
     return mapAlbum(album);
   }
 
@@ -424,6 +421,13 @@ export class AlbumService extends BaseService {
         sortOrder: dto.sortOrder,
       },
       auth.user.id,
+    );
+
+    // FL-326: an album copy's edited fields are its own from now on; copies of this album follow it
+    await recordAlbumEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      [album.id],
+      getAlbumEditFields(dto),
     );
 
     // Members' open pages re-read the album (its shared order, name, cover); no email for an edit.
@@ -559,6 +563,12 @@ export class AlbumService extends BaseService {
         SharedSpaceEventType.AssetsAdded,
         results.filter(({ success }) => success).map(({ id }) => id),
       );
+      // FL-326 (spec §4.4): membership changed by hand stops a copy following; copies of this album follow
+      await recordAlbumEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        [id],
+        [AlbumOriginField.Membership],
+      );
     }
 
     return results;
@@ -633,6 +643,12 @@ export class AlbumService extends BaseService {
     for (const { album, assetIds } of spaceEvents) {
       await this.recordSpaceAssets(album, auth, SharedSpaceEventType.AssetsAdded, assetIds);
     }
+    // FL-326 (spec §4.4): membership changed by hand stops a copy following; copies of these albums follow
+    await recordAlbumEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      events.map(({ id }) => id),
+      [AlbumOriginField.Membership],
+    );
 
     return results;
   }
@@ -661,6 +677,12 @@ export class AlbumService extends BaseService {
         recipientIds: [],
       });
       await this.recordSpaceAssets(album, auth, SharedSpaceEventType.AssetsRemoved, removedIds);
+      // FL-326 (spec §4.4): membership changed by hand stops a copy following; copies of this album follow
+      await recordAlbumEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        [id],
+        [AlbumOriginField.Membership],
+      );
     }
 
     return results;
