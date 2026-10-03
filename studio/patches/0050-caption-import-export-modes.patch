@@ -184,7 +184,7 @@
 +export { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
 --- /dev/null
 +++ b/src/features/media-library/services/subtitle-import-service.test.ts
-@@ -0,0 +1,151 @@
+@@ -0,0 +1,164 @@
 +import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +import { fireEvent } from '@testing-library/react'
 +import type { Project } from '@/types/project'
@@ -248,6 +248,19 @@
 +    await hydrateTimelineStoresFromProject({ ...project, timeline: saved })
 +    expect(useItemsStore.getState().items).toEqual(items)
 +    expect(useItemsStore.getState().tracks).toEqual(tracks)
++  })
++
++  it.each(['srt', 'vtt'])('preserves arrow dialogue in a valid %s cue', async (format) => {
++    const header = format === 'vtt' ? 'WEBVTT\n\n' : '1\n'
++    const timing = format === 'vtt'
++      ? '00:00:01.000 --> 00:00:02.000'
++      : '00:00:01,000 --> 00:00:02,000'
++    choose(`${header}${timing}\n60 --> 61\n00:00:61,000 --> 00:01:03,000`, `captions.${format}`)
++    expect(await showSubtitleImport(project.id)).toBe(1)
++    expect(useItemsStore.getState().items[0]).toMatchObject({
++      text: '60 --> 61\n00:00:61,000 --> 00:01:03,000',
++      captionSource: { type: 'subtitle-import', format },
++    })
 +  })
 +
 +  it.each([
@@ -338,7 +351,7 @@
 +})
 --- /dev/null
 +++ b/src/features/media-library/services/subtitle-import-service.ts
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,118 @@
 +import { useProjectStore } from '../deps/projects'
 +import {
 +  useCompositionsStore,
@@ -408,13 +421,20 @@
 +      throw new Error('VTT subtitle files must begin with WEBVTT.')
 +    }
 +    // The reused parser converts fields arithmetically; reject overflow before any cue is imported.
-+    const invalidTimestampFields = text.split(/\r?\n/)
-+      .filter((line) => line.includes('-->'))
-+      .some((line) => line.split('-->').some((part) => {
-+        const timestamp = part.trim().split(/\s+/)[0] ?? ''
-+        const fields = (timestamp.split(/[,.]/)[0] ?? '').split(':')
-+        return fields.slice(-2).some((field) => Number(field) > 59)
-+      }))
++    const invalidTimestampFields = text.replace(/\r\n?/g, '\n').split(/\n{2,}/)
++      .map((block) => block.split('\n').find((line) => line.includes('-->')))
++      .some((line) => {
++        if (!line) return false
++        const timestamps = line.split('-->').slice(0, 2)
++          .map((part) => part.trim().split(/\s+/)[0] ?? '')
++        // Leave dialogue and malformed syntax to the parser; inspect supported timestamp pairs only.
++        if (timestamps.length !== 2 || !timestamps.every((timestamp) =>
++          /^(?:\d{1,2}:)?\d{1,2}:\d{2}[,.]\d{1,3}$/.test(timestamp))) return false
++        return timestamps.some((timestamp) => {
++          const fields = (timestamp.split(/[,.]/)[0] ?? '').split(':')
++          return fields.slice(-2).some((field) => Number(field) > 59)
++        })
++      })
 +    if (invalidTimestampFields) {
 +      throw new Error('Subtitle timestamp minutes and seconds must be between 0 and 59.')
 +    }
