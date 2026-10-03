@@ -263,7 +263,7 @@
     {
       "path": "patches/0052-microphone-finalization-authority.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "7e5d39f477e8b63dcee31d2c444a87ceac845a4c013b2d190628dad0aba78870"
+      "sha256": "477781b250207c9083fcb9be06895b37e94989ea403647e211ad59c454f3a206"
     }
   ],
   "sourceSha256": "6e092f3f9e42df3853d51b51cdb33aa0344104acf40df10bef9af7bd5d2b9ee8"

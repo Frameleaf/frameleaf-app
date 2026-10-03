@@ -1,18 +1,37 @@
 --- a/src/features/media-library/services/media-asset-helpers.ts
 +++ b/src/features/media-library/services/media-asset-helpers.ts
-@@ -8,6 +8,8 @@
+@@ -8,6 +8,7 @@
    saveThumbnail as saveThumbnailDB,
    writeMediaSource,
  } from '@/features/media-library/deps/storage'
-+import { exists } from '@/infrastructure/storage/workspace-fs/fs-primitives'
-+import { mediaDir } from '@/infrastructure/storage/workspace-fs/paths'
++import { MEDIA_DIR } from '@/infrastructure/storage/workspace-fs/paths'
  import { opfsService } from '@/features/media-library/services/opfs-service'
 
  const logger = createLogger('MediaAssetHelpers')
-@@ -93,7 +95,14 @@
+@@ -93,7 +94,34 @@
    return new Response(blob).arrayBuffer()
  }
 
++/** A directory lookup distinguishes an absent namespace from either existing entry kind. */
++async function recordingNamespaceExists(root: FileSystemDirectoryHandle, mediaId: string): Promise<boolean> {
++  let parent: FileSystemDirectoryHandle
++  try {
++    parent = await root.getDirectoryHandle(MEDIA_DIR, { create: false })
++  } catch (error) {
++    if (error instanceof DOMException && error.name === 'NotFoundError') return false
++    throw error
++  }
++  try {
++    await parent.getDirectoryHandle(mediaId, { create: false })
++    return true
++  } catch (error) {
++    // Only the final entry's type mismatch proves a file collision. Parent/read errors still fail.
++    if (error instanceof DOMException && error.name === 'TypeMismatchError') return true
++    if (error instanceof DOMException && error.name === 'NotFoundError') return false
++    throw error
++  }
++}
++
 +/** Admission is checked before the first write; admitted work settles on its origin root. */
 +export interface RecordingAdmission {
 +  root: FileSystemDirectoryHandle
@@ -24,7 +43,7 @@
    file: File
    projectId: string
    mediaMetadata: MediaMetadata
-@@ -109,7 +118,15 @@
+@@ -109,7 +137,15 @@
    thumbnailBlob,
    thumbnailWidth,
    thumbnailHeight,
@@ -33,14 +52,14 @@
 +  if (admission) {
 +    if (!admission.isCurrent()) throw new Error('recording_retired')
 +    // FSA creation is idempotent, not exclusive. Never adopt a known existing namespace.
-+    if (await exists(admission.root, mediaDir(mediaMetadata.id))) throw new Error('recording_namespace_exists')
++    if (await recordingNamespaceExists(admission.root, mediaMetadata.id)) throw new Error('recording_namespace_exists')
 +    if (!admission.isCurrent()) throw new Error('recording_retired')
 +  }
 +  const originRoot = admission?.root
    const opId = createOperationId()
    const event = logger.startEvent('persistGeneratedMediaAsset', opId)
    event.merge({ projectId, mediaId: mediaMetadata.id })
-@@ -124,7 +141,9 @@
+@@ -124,7 +160,9 @@
      // land here — not OPFS, which is origin-scoped and invisible when the
      // same project is opened on another origin. Strict: a failure here means
      // the media isn't durably stored, so roll the whole import back.
@@ -51,7 +70,7 @@
      sourceWritten = true
 
      // Optional OPFS copy — only when a caller still supplies an opfsPath (e.g.
-@@ -144,25 +163,38 @@
+@@ -144,25 +182,38 @@
        const sanitizedHeight = Math.max(1, Math.floor(Math.abs(rawHeight)))
        const thumbnailId = crypto.randomUUID()
 
@@ -227,7 +246,7 @@
 
 --- /dev/null
 +++ b/src/features/media-library/services/microphone-persistence.test.ts
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,157 @@
 +// @vitest-environment node
 +import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 +import { handlesMocks } from '@/infrastructure/storage/test-utils/storage-test-mocks'
@@ -305,6 +324,28 @@
 +    expect(await readFileText(a, 'media', id, 'original.wav')).toBe('original')
 +    expect(JSON.parse((await readFileText(a, 'media', id, 'metadata.json'))!).owner).toBe('existing')
 +    expect(await readFileText(a, 'media', 'unrelated', 'keep.bin')).toBe('keep')
++    expect(await readFileText(a, 'projects', 'p', 'media-links.json')).toBeNull()
++  })
++  it('refuses a file occupying the generated namespace without changing its bytes', async () => {
++    const a = createRoot(); const root = asHandle(a); setWorkspaceRoot(root)
++    const id = '00000000-0000-4000-8000-000000000002'
++    await fs.writeBlob(root, ['media', id], new Blob(['existing namespace file']))
++    await expect(persistGeneratedMediaAsset({ file: new File(['new'], 'take.webm'), projectId: 'p',
++      mediaMetadata: metadata(id), admission: { root, isCurrent: () => true },
++    })).rejects.toThrow('recording_namespace_exists')
++    expect(await readFileText(a, 'media', id)).toBe('existing namespace file')
++    expect(await readFileText(a, 'projects', 'p', 'media-links.json')).toBeNull()
++  })
++  it.each(['NotAllowedError', 'NotReadableError'])('preserves the actual %s namespace read failure', async (name) => {
++    const a = createRoot(); const root = asHandle(a); setWorkspaceRoot(root)
++    const error = new DOMException('Actual namespace read failure', name)
++    const read = vi.spyOn(root, 'getDirectoryHandle').mockRejectedValue(error)
++    try {
++      await expect(persistGeneratedMediaAsset({ file: new File(['new'], 'take.webm'), projectId: 'p',
++        mediaMetadata: metadata('take'), admission: { root, isCurrent: () => true },
++      })).rejects.toBe(error)
++    } finally { read.mockRestore() }
++    expect(await readFileText(a, 'media', 'take', 'take.webm')).toBeNull()
 +    expect(await readFileText(a, 'projects', 'p', 'media-links.json')).toBeNull()
 +  })
 +  it('propagates delayed A permission failure without notifying the current B gate', async () => {
