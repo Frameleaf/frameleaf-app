@@ -3,6 +3,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetDevelopMaskKind } from 'src/dtos/asset-develop.dto.js';
 import {
   DEVELOP_PRESET_MAX,
+  NativeDevelopPresetSchema,
   DevelopPresetCreateDto,
   DevelopPresetResponseDto,
   type DevelopPresetSettings,
@@ -105,6 +106,7 @@ export class PhotoToolsService {
 export function normalizePresetSettings(settings: Partial<DevelopPresetSettings> | null | undefined) {
   const recipe = normalizeDevelopRecipe(settings ?? {});
   const picked: DevelopPresetSettings = {
+    ...(settings?.native && { native: NativeDevelopPresetSchema.parse(settings.native) }),
     ...(Object.fromEntries(STILL_SLIDER_KEYS.map((key) => [key, recipe[key]])) as Pick<
       DevelopPresetSettings,
       (typeof STILL_SLIDER_KEYS)[number]

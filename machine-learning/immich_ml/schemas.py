@@ -32,6 +32,7 @@ class ModelTask(StrEnum):
     OCR = "ocr"
     IMAGE_DESCRIPTION = "image-description-tagging"
     NSFW_DETECTION = "nsfw-detection"
+    SEMANTIC_MASK = "semantic-mask"
 
 
 class ModelType(StrEnum):
@@ -234,6 +235,11 @@ class ImageDescriptionOptions(_OptionsBase):
         return value
 
 
+class SemanticMaskOptions(_OptionsBase):
+    target: Literal["subject", "sky"] = "subject"
+    device: Literal["cpu", "cuda"] = "cpu"
+
+
 # Map of (task, type) -> options pydantic class for per-entry validation.
 OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SEARCH, ModelType.TEXTUAL): ClipOptions,
@@ -244,6 +250,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.OCR, ModelType.RECOGNITION): OcrRecognitionOptions,
     (ModelTask.IMAGE_DESCRIPTION, ModelType.VISUAL): ImageDescriptionOptions,
     (ModelTask.NSFW_DETECTION, ModelType.CLASSIFICATION): NsfwDetectionOptions,
+    (ModelTask.SEMANTIC_MASK, ModelType.VISUAL): SemanticMaskOptions,
 }
 
 

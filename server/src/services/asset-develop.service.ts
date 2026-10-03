@@ -1,4 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import sharp from 'sharp';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { setInterval } from 'node:timers/promises';
@@ -22,6 +25,7 @@ import {
   AssetDevelopRevisionStatus,
   AssetDevelopSaveDto,
   type DarktableDevelopRecipe,
+  AssetDevelopSemanticMaskDto,
 } from 'src/dtos/asset-develop.dto.js';
 import { AssetDevelopImportDto, DevelopExportResponseDto } from 'src/dtos/photo-tools.dto.js';
 import {
@@ -47,13 +51,18 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
-import { DARKTABLE_RENDERER_VERSION, renderDarktable } from 'src/utils/darktable-renderer.js';
+import {
+  DARKTABLE_RENDERER_VERSION,
+  renderDarktable,
+  encodeNativeDevelopOutput,
+} from 'src/utils/darktable-renderer.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import {
   ARTIFACT_ID,
@@ -168,6 +177,7 @@ export class AssetDevelopService {
     private storageRepository: StorageRepository,
     private systemMetadataRepository: SystemMetadataRepository,
     private mediaOperationRepository: MediaOperationRepository,
+    private machineLearningRepository: MachineLearningRepository,
   ) {
     this.logger.setContext(AssetDevelopService.name);
     this.editOperations = new EditOperationTracker(mediaOperationRepository, jobRepository, logger);
@@ -187,6 +197,8 @@ export class AssetDevelopService {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
     const asset = await this.requireEditableStill(assetId);
     const recipe = developEnvelope(dto.recipe);
+    if (recipe.version === 2 && recipe.sensorCanvas)
+      throw new BadRequestException('The mask drawing canvas is for previews only');
     if (dto.render && !dto.sourceRevisionId) {
       assertRenderableDevelopRecipe(recipe);
       await this.requireArtifacts(asset, recipe);
@@ -272,6 +284,7 @@ export class AssetDevelopService {
     auth: AuthDto,
     assetId: string,
     dto: AssetDevelopPreviewDto,
+    signal?: AbortSignal,
   ): Promise<{ buffer: Buffer; contentType: string }> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
@@ -280,18 +293,20 @@ export class AssetDevelopService {
     }
     const { image } = await this.getConfig();
     const recipe = assertRenderableDevelopRecipe(dto.recipe);
-    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe) : undefined;
+    const native = recipe.version === 2 ? await this.renderNativeRecipe(source, recipe, undefined, signal) : undefined;
     // Legacy recipes decode at preview scale; native previews share the full-resolution final pipeline.
     const decoded = native ?? (await this.decodeSource(source, image, dto.size * 2));
     const rendered = native ?? (await this.renderRecipe(decoded, renderDevelopProjection(dto.recipe), 0, source));
     const format = image.preview.format;
-    const buffer = await this.mediaRepository.encodeDevelopOutput(rendered.data, rendered.info, {
-      detail: rendered.detail,
-      colorspace: decoded.colorspace,
-      format,
-      quality: image.preview.quality,
-      size: dto.size,
-    });
+    const buffer = native
+      ? await encodeNativeDevelopOutput(native.nativeBuffer, { format, quality: image.preview.quality, size: dto.size })
+      : await this.mediaRepository.encodeDevelopOutput(rendered.data, rendered.info, {
+          detail: rendered.detail,
+          colorspace: decoded.colorspace,
+          format,
+          quality: image.preview.quality,
+          size: dto.size,
+        });
     return { buffer: buffer!, contentType: format === ImageFormat.Webp ? 'image/webp' : 'image/jpeg' };
   }
 
@@ -738,6 +753,49 @@ export class AssetDevelopService {
     }
   }
 
+  /** Generate a proposal from the unrotated sensor canvas and persist it through owned artifact admission. */
+  async proposeSemanticMask(
+    auth: AuthDto,
+    assetId: string,
+    dto: AssetDevelopSemanticMaskDto,
+    signal?: AbortSignal,
+  ): Promise<AssetDevelopArtifactResponseDto> {
+    await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [assetId] });
+    const source = await this.assetJobRepository.getForGenerateThumbnailJob(assetId);
+    if (!source || !mimeTypes.isRaw(source.originalFileName))
+      throw new BadRequestException('Native semantic masks require a RAW original');
+    const developed = await renderDarktable(
+      source.originalPath,
+      { version: 2, renderer: 'darktable/5.6.1', exposureEV: 0, sensorCanvas: true },
+      signal,
+    );
+    const canvas = await sharp(developed)
+      .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 92 })
+      .toBuffer();
+    signal?.throwIfAborted();
+    const png = await this.machineLearningRepository.semanticMaskLocal(canvas, dto.target, signal);
+    const metadata = await sharp(png, { failOn: 'warning', limitInputPixels: 2048 * 2048 }).metadata();
+    const reference = await sharp(canvas).metadata();
+    if (metadata.format !== 'png' || metadata.width !== reference.width || metadata.height !== reference.height)
+      throw new BadRequestException('Local worker returned an invalid sensor mask');
+    await sharp(png).stats();
+    const directory = await mkdtemp(path.join(tmpdir(), 'frameleaf-semantic-mask-'));
+    const file = path.join(directory, 'mask.png');
+    try {
+      await writeFile(file, png, { flag: 'wx' });
+      signal?.throwIfAborted();
+      return await this.uploadArtifact(
+        auth,
+        assetId,
+        { kind: AssetDevelopArtifactKind.Mask },
+        { path: file, size: png.length },
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+
   /** FL-233: write an artifact's file; the same bitmap written at the same time keeps the first. */
   private async writeArtifactFile(target: string, data: Buffer) {
     try {
@@ -798,14 +856,17 @@ export class AssetDevelopService {
 
   /**
    * FL-233: refuse a recipe whose active masks or enabled Clean Up need an artifact this photo does
-   * not have (or has as the other kind). Only version 1 recipes reference artifacts; a native
-   * (version 2) recipe has none. Call after `assertRenderableDevelopRecipe`.
+   * not have (or has as the other kind). Both recipe versions reference owner-bound artifacts. Call after `assertRenderableDevelopRecipe`.
    */
   private async requireArtifacts(asset: { id: string; ownerId: string }, recipe: unknown) {
-    if (developEnvelope(recipe).version !== ASSET_DEVELOP_RECIPE_VERSION) {
-      return;
-    }
-    const needed = developRenderArtifacts(renderDevelopProjection(recipe));
+    const parsed = assertRenderableDevelopRecipe(recipe);
+    const needed =
+      parsed.version === 2
+        ? {
+            mask: (parsed.masks ?? []).filter((mask) => mask.enabled && mask.artifact).map((mask) => mask.artifact!),
+            fill: [] as string[],
+          }
+        : developRenderArtifacts(parsed);
     const wanted = [...new Set([...needed.mask, ...needed.fill])];
     const stored = await this.assetDevelopRepository.getArtifacts(asset.id, wanted);
     const kinds = new Map(stored.map((artifact) => [artifact.id, artifact.kind]));
@@ -973,7 +1034,12 @@ export class AssetDevelopService {
     return { data: shaped.data, info: shaped.info, detail };
   }
 
-  private async renderNativeRecipe(source: DevelopSource, recipe: DarktableDevelopRecipe, revisionId?: string) {
+  private async renderNativeRecipe(
+    source: DevelopSource,
+    recipe: DarktableDevelopRecipe,
+    revisionId?: string,
+    signal?: AbortSignal,
+  ) {
     if (!mimeTypes.isRaw(source.originalFileName)) {
       throw new BadRequestException('Native develop recipes require a RAW original');
     }
@@ -981,6 +1047,7 @@ export class AssetDevelopService {
       await this.progress(revisionId, 10);
     }
     const controller = new AbortController();
+    const abort = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     // Cancellation may arrive through another API worker; the shared row is authoritative.
     const watching = (async () => {
       if (!revisionId) {
@@ -997,16 +1064,23 @@ export class AssetDevelopService {
       }
     })();
     try {
-      const buffer = await renderDarktable(source.originalPath, recipe, controller.signal);
-      const { data, info } = await this.mediaRepository.decodeImage(buffer, {
+      const artifacts = (recipe.masks ?? [])
+        .filter((mask) => mask.enabled && mask.artifact)
+        .map((mask) => mask.artifact!);
+      const bitmaps = await this.loadArtifacts(source, artifacts, AssetDevelopArtifactKind.Mask);
+      const buffer = await renderDarktable(source.originalPath, recipe, abort, bitmaps);
+      const { width, height } = await this.mediaRepository.getImageMetadata(buffer);
+      abort.throwIfAborted();
+      return {
+        data: buffer,
+        nativeBuffer: buffer,
+        info: { width, height, channels: 3 } as RawImageInfo,
         colorspace: Colorspace.Srgb,
-        processInvalidImages: false,
-      });
-      controller.signal.throwIfAborted();
-      return { data, info: info as RawImageInfo, colorspace: Colorspace.Srgb, detail: { median: 0 as const } };
+        detail: { median: 0 as const },
+      };
     } catch (error) {
-      if (controller.signal.aborted) {
-        throw controller.signal.reason;
+      if (abort.aborted) {
+        throw abort.reason;
       }
       throw error;
     } finally {
@@ -1059,9 +1133,8 @@ export class AssetDevelopService {
     await this.progress(revision.id, 60);
 
     this.storageRepository.mkdirSync(path.dirname(outputs.master));
-    await this.mediaRepository.encodeDevelopOutput(
-      rendered.data,
-      rendered.info,
+    await this.encodeRecipeOutput(
+      rendered,
       {
         detail: rendered.detail,
         colorspace: decoded.colorspace,
@@ -1073,9 +1146,8 @@ export class AssetDevelopService {
     );
     await this.progress(revision.id, 85);
 
-    await this.mediaRepository.encodeDevelopOutput(
-      rendered.data,
-      rendered.info,
+    await this.encodeRecipeOutput(
+      rendered,
       {
         detail: rendered.detail,
         colorspace: decoded.colorspace,
@@ -1103,6 +1175,15 @@ export class AssetDevelopService {
       sourceChecksum,
       renditionChecksum,
     });
+  }
+
+  private async encodeRecipeOutput(
+    rendered: { data: Buffer; info: RawImageInfo; detail: ReturnType<typeof planDevelopDetail>; nativeBuffer?: Buffer },
+    options: Parameters<MediaRepository['encodeDevelopOutput']>[2],
+    output: string,
+  ) {
+    if (rendered.nativeBuffer) return encodeNativeDevelopOutput(rendered.nativeBuffer, options, output);
+    return this.mediaRepository.encodeDevelopOutput(rendered.data, rendered.info, options, output);
   }
 
   /**
