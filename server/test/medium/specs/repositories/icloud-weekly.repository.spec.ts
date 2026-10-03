@@ -1,9 +1,14 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
-import { UserMetadataKey } from 'src/enum.js';
+import { AssetType, UserMetadataKey } from 'src/enum.js';
 import * as auditMigration from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
 import * as weeklyMigration from 'src/fork-schema/migrations/0000000000218-ICloudWeeklyAuthority.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -11,6 +16,8 @@ import { SessionRepository } from 'src/repositories/session.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
+import { decryptICloudSession, encryptICloudSession } from 'src/utils/icloud-sync.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
@@ -284,6 +291,176 @@ describe('weekly consent foundation, never execution authority', () => {
       FROM immich_fork.icloud_identity_audit WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
     expect(rows.rows).toHaveLength(2);
     expect(rows.rows.every((row)=>row.verifiedAt===null && row.result==='queued')).toBe(true);
+  });
+
+  it('retains grant and generation through an actual download and randomized normal session refresh', async () => {
+    const f = await arrange(true);
+    const key = Buffer.alloc(32, 7);
+    const providerSession = { account: 'fixture-account', credential: 'fixture-credential' };
+    const encrypted = encryptICloudSession(key, f.connection.id, providerSession);
+    await sync.update(f.connection.id, f.user.id, { encryptedSession: encrypted });
+    await sut.setAuthority(f.auth, f.connection.id, f.input);
+    const before = await sql`SELECT * FROM immich_fork.icloud_weekly_grant
+      WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
+    const bytes = Buffer.from('owned test transport bytes');
+    const resourceId = randomUUID();
+    await sql`INSERT INTO immich_fork.icloud_resource
+      (id,"connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,
+        fingerprint,source,"expectedSize")
+      VALUES (${resourceId}::uuid,${f.connection.id}::uuid,${f.user.id}::uuid,'fixture-library','{}'::jsonb,
+        'fixture-source','fixture-record','original','original','fixture-fingerprint',
+        ${{type:AssetType.Image,originalFileName:'fixture.jpg',current:true}}::jsonb,${bytes.length})`.execute(db);
+    const resource = (await sync.claim(f.connection.id, f.connection.config.stagingBytes))!;
+    expect(resource.id).toBe(resourceId);
+    const download = vi.fn(async () => ({
+      stream: Readable.from([bytes]), fingerprint: resource.fingerprint, size: bytes.length, session: providerSession,
+    }));
+    const transport = {
+      decodeSession: async (id: string, value: string) => decryptICloudSession(key, id, value),
+      encodeSession: async (id: string, value: unknown) => encryptICloudSession(key, id, value),
+      download,
+    };
+    const root = await mkdtemp(join(tmpdir(), 'fl296-weekly-refresh-'));
+    const priorRoot = process.env.FRAMELEAF_ICLOUD_STAGING_PATH;
+    process.env.FRAMELEAF_ICLOUD_STAGING_PATH = root;
+    try {
+      const staging = new ICloudStagingService(sync, transport as never, { getAll: async () => [] } as never);
+      const connection = (await sync.get(f.connection.id, f.user.id))!;
+      const staged = await staging.download(connection, resource);
+      expect(await readFile(staged)).toEqual(bytes);
+      expect(download).toHaveBeenCalledOnce();
+      const refreshed = (await sync.get(f.connection.id, f.user.id))!;
+      expect(refreshed.encryptedSession).not.toBe(encrypted);
+      expect(decryptICloudSession(key, f.connection.id, refreshed.encryptedSession!)).toEqual(providerSession);
+      expect((await sql`SELECT * FROM immich_fork.icloud_weekly_grant
+        WHERE "connectionId"=${f.connection.id}::uuid`.execute(db)).rows).toEqual(before.rows);
+      expect(await sut.status(f.connection.id, f.user.id)).toMatchObject({ available:true,executionAvailable:false });
+    } finally {
+      if (priorRoot === undefined) {
+        delete process.env.FRAMELEAF_ICLOUD_STAGING_PATH;
+      } else {
+        process.env.FRAMELEAF_ICLOUD_STAGING_PATH = priorRoot;
+      }
+      await rm(root, { recursive:true,force:true });
+    }
+  });
+
+  it.each(['explicit-replacement', 'authenticate', 'credential-loss'] as const)(
+    'irrevocably retires existing authority on %s, including restoration', async (kind) => {
+      const f = await arrange(true);
+      await sut.setAuthority(f.auth, f.connection.id, f.input);
+      const before = await sql<{generation:number}>`SELECT generation FROM immich_fork.icloud_weekly_grant
+        WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
+      if (kind === 'explicit-replacement') {
+        await sync.update(f.connection.id, f.user.id, { encryptedSession:'explicit-replacement' });
+        await sync.update(f.connection.id, f.user.id, { encryptedSession:'fixture-only' });
+      } else if (kind === 'authenticate') {
+        await sync.update(f.connection.id, f.user.id, { state:'authenticating' });
+        await sync.withSession(f.connection.id, f.user.id, async () => ({ value:undefined,state:'connected',encryptedSession:'new-auth' }));
+      } else {
+        await sql`UPDATE immich_fork.icloud_connection SET "encryptedSession"=NULL
+          WHERE id=${f.connection.id}::uuid`.execute(db);
+        await sync.update(f.connection.id, f.user.id, { encryptedSession:'fixture-only' });
+      }
+      expect(await sut.status(f.connection.id, f.user.id)).toMatchObject({enabled:false,available:false,regrantRequired:true});
+      const retired = await sql<{generation:number}>`SELECT generation FROM immich_fork.icloud_weekly_grant
+        WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
+      expect(retired.rows[0].generation).toBeGreaterThan(before.rows[0].generation);
+      await expect(sut.setAuthority(f.auth, f.connection.id, f.input)).rejects.toThrow();
+    },
+  );
+
+  it.each(['inactive', 'handoff'] as const)('refuses every public retirement writer during %s without mutating authority', async (mode) => {
+    const f = await arrange(true);
+    await sut.setAuthority(f.auth, f.connection.id, f.input);
+    const users = new UserRepository(db);
+    const checked = await users.getForPinCode(f.user.id);
+    const preferences = new DatabaseRepository(db, { setContext: vi.fn() } as never, {} as never);
+    const original = await sql<{phase:string}>`SELECT phase FROM immich_fork.state WHERE id=1`.execute(db);
+    const before = await sql`SELECT * FROM immich_fork.icloud_weekly_grant
+      WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
+    let handoffId: string | undefined;
+    try {
+      if (mode === 'inactive') {
+        await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
+      } else {
+        handoffId = (await sql<{id:string}>`INSERT INTO immich_fork.migration_audit(name,phase,status)
+          VALUES ('official-handoff-preparation','ready','running') RETURNING id`.execute(db)).rows[0].id;
+      }
+      const writes = [
+        () => users.setPinCodeAndLockSessions(f.user.id, checked, 'refused-pin'),
+        () => users.update(f.user.id, { pinCode:'refused-pin' }),
+        () => users.update(f.user.id, { deletedAt:new Date() }),
+        () => users.updateAll({ pinCode:'refused-pin' }),
+        () => users.restore(f.user.id),
+        () => users.delete(f.user),
+        () => users.delete(f.user, true),
+        () => users.upsertMetadata(f.user.id, { key:UserMetadataKey.Preferences,value:{privacy:{suppression:{tagIds:[randomUUID()]}}} }),
+        () => users.deleteMetadata(f.user.id, UserMetadataKey.Preferences),
+      ];
+      for (const write of writes) {
+        await expect(write()).rejects.toThrow('This change is unavailable during database handoff');
+      }
+      const callback = vi.fn(async () => {});
+      await expect(preferences.withUserPreferencesLock(f.user.id, callback)).rejects.toThrow('This change is unavailable during database handoff');
+      expect(callback).not.toHaveBeenCalled();
+      expect(await users.getForPinCode(f.user.id)).toEqual(checked);
+      expect((await sql`SELECT * FROM immich_fork.icloud_weekly_grant
+        WHERE "connectionId"=${f.connection.id}::uuid`.execute(db)).rows).toEqual(before.rows);
+      expect((await new SessionRepository(db).get(f.session.id))?.pinExpiresAt).not.toBeNull();
+    } finally {
+      await sql`UPDATE immich_fork.state SET phase=${original.rows[0].phase} WHERE id=1`.execute(db);
+      if (handoffId) {
+        await sql`DELETE FROM immich_fork.migration_audit WHERE id=${handoffId}`.execute(db);
+      }
+    }
+  });
+
+  it.each(['pin', 'preferences'] as const)('takes the phase guard before %s locks and refuses after a concurrent handoff', async (kind) => {
+    const f = await arrange(true);
+    await sut.setAuthority(f.auth, f.connection.id, f.input);
+    const original = await sql<{phase:string}>`SELECT phase FROM immich_fork.state WHERE id=1`.execute(db);
+    const users = new UserRepository(db);
+    const checked = await users.getForPinCode(f.user.id);
+    const preferences = new DatabaseRepository(db, { setContext:vi.fn() } as never, {} as never);
+    const held = Promise.withResolvers<number>();
+    const release = Promise.withResolvers<void>();
+    const blocker = db.transaction().execute(async (transaction) => {
+      await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(transaction);
+      held.resolve((await sql<{pid:number}>`SELECT pg_backend_pid() AS pid`.execute(transaction)).rows[0].pid);
+      await release.promise;
+    });
+    let pending: Promise<unknown> | undefined;
+    try {
+      const pid = await Promise.race([held.promise,blocker.then(() => { throw new Error('Phase did not pause'); })]);
+      pending = kind === 'pin' ? users.setPinCodeAndLockSessions(f.user.id, checked, 'refused-pin') :
+        preferences.withUserPreferencesLock(f.user.id, async (transaction) => {
+          await users.upsertMetadata(f.user.id, {key:UserMetadataKey.Preferences,value:{privacy:{suppression:{tagIds:[randomUUID()]}}}}, transaction);
+        });
+      const outcome = pending.then(() => ({accepted:true}), (error:unknown) => ({accepted:false,error}));
+      await expect.poll(async () => {
+        const observed = await sql<{blocked:boolean}>`SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+          WHERE datname=current_database() AND wait_event_type='Lock' AND ${pid}=ANY(pg_blocking_pids(pid))) AS blocked`.execute(db);
+        return observed.rows[0].blocked;
+      }, {interval:10,timeout:1_000}).toBe(true);
+      // A caller blocked on the phase has not locked any later owner/session/preference rows.
+      await db.transaction().execute(async (transaction) => {
+        await sql`SELECT id FROM public.user WHERE id=${f.user.id}::uuid FOR UPDATE NOWAIT`.execute(transaction);
+        await sql`SELECT id FROM public.session WHERE id=${f.session.id}::uuid FOR UPDATE NOWAIT`.execute(transaction);
+        await sql`SELECT key FROM public.user_metadata WHERE "userId"=${f.user.id}::uuid
+          AND key=${UserMetadataKey.Preferences} FOR UPDATE NOWAIT`.execute(transaction);
+        const advisory = await sql<{free:boolean}>`SELECT pg_try_advisory_xact_lock(-2,hashtext(${f.user.id})::int) AS free`.execute(transaction);
+        expect(advisory.rows[0].free).toBe(true);
+      });
+      release.resolve();
+      expect(await outcome).toMatchObject({accepted:false});
+      expect(await users.getForPinCode(f.user.id)).toEqual(checked);
+      expect((await sut.status(f.connection.id, f.user.id)).available).toBe(true);
+    } finally {
+      release.resolve();
+      await Promise.allSettled([blocker,...(pending ? [pending] : [])]);
+      await sql`UPDATE immich_fork.state SET phase=${original.rows[0].phase} WHERE id=1`.execute(db);
+    }
   });
 
   it.each(['mutation-first', 'elevation-first'] as const)(
