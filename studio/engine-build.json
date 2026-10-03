@@ -259,6 +259,11 @@
       "path": "patches/0051-extracted-caption-export-modes.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "57dc16773bf2bd9a2b9f4c37521c59682cb36d56dfbf19bdcdc9d3fc76a1e68b"
+    },
+    {
+      "path": "patches/0052-microphone-finalization-authority.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "7e5d39f477e8b63dcee31d2c444a87ceac845a4c013b2d190628dad0aba78870"
     }
   ],
   "sourceSha256": "6e092f3f9e42df3853d51b51cdb33aa0344104acf40df10bef9af7bd5d2b9ee8"

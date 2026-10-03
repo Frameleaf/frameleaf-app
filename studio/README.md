@@ -80,6 +80,32 @@ real source-window/speed-aware caption builder and shared serializers/parsers, w
 text, and preserve source provenance and the input graph. Hosted execution, real-container
 subtitle extraction and mux round trips remain unqualified; this is one FL-103 slice.
 
+Patch 0052 binds a microphone take to its original project, workspace handle and
+workspace revision through acquisition, stopping, probe/decode and persistence.
+Cancellation, project or workspace replacement (including A→B→A) and toolbar
+unmount permanently retire that take. Current takes alone publish timeline,
+selection, media-list, error and reset state. Admitted source, thumbnail, metadata
+and association writes finish on the captured workspace; retirement preserves
+successful origin artifacts without placing them in the current editor. Scoped
+recordings avoid the global file-handle registry and the optional eager preview
+warm/conform jobs whose deferred persistence is unbound; ordinary imports retain
+those jobs and normal on-demand preview remains available.
+
+Scoped recording import refuses a known existing generated media namespace or
+source. File System Access provides no exclusive cross-tab namespace allocation:
+failed admitted writes retain possible partial origin artifacts and propagate the
+real failure instead of recursively deleting files with unproven ownership. This
+is not a cross-tab collision guarantee or automated orphan recovery. Stale origin
+permission failures still fail, but do not notify a replacement workspace gate.
+Authored controller/history, real in-memory filesystem and service probe/decode
+barriers cover the boundary; none have been executed locally. Patch ordering and
+raw provenance remain pinned, while the adapted source digest retains the last
+genuine hosted value pending new hosted preparation and artifact recovery.
+Microphone device/permission/hotplug/latency, browser and native recording,
+sample/channel/pitch/EQ/transition rendering, silence/filler undo and full caption
+styling/export acceptance remain open FL-103 gates.
+
+
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
 away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.
 Scopes label their current display-referred sRGB/Rec.709 full-range preview input. Deferred-capture regressions run in the hosted engine suite;
