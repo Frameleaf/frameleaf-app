@@ -1,0 +1,64 @@
+[
+  {
+    "files": {
+      "added_tokens.json": {
+        "git": "45a441f0d1c61f68475ae6cb6aec35cd7d679671"
+      },
+      "config.json": {
+        "git": "9d69359cb5bad2c0ca0346413bbe9dafd5521e8f"
+      },
+      "generation_config.json": {
+        "git": "bd4a1d37522d13285c2f753d75af4c07ca463167"
+      },
+      "merges.txt": {
+        "git": "226b0752cac7789c48f0cb3ec53eda48b7be36cc"
+      },
+      "model.safetensors": {
+        "sha256": "62f3e696da74f8869a68ddb529a9b3e14eb25b21c592cb3dea6179bf944df6a0"
+      },
+      "preprocessor_config.json": {
+        "git": "e7e0dbc98f7a0985ea42428925d863c19ce1b222"
+      },
+      "processor_config.json": {
+        "git": "2dace493360deb05053d62f362df1db802d03aa9"
+      },
+      "special_tokens_map.json": {
+        "git": "d748fe272a81974cb735e2d1d6821bb294566849"
+      },
+      "tokenizer.json": {
+        "git": "d03cc512bed8bc7e6012be4d5b20edb6a2d8ee3e"
+      },
+      "tokenizer_config.json": {
+        "git": "7aec00347e73f5f33f60a05aa382b4defc3931d6"
+      },
+      "vocab.json": {
+        "git": "4ebe4bb3f3114daf2e4cc349f24873a1175a35d7"
+      }
+    },
+    "license": "mit",
+    "repository": "florence-community/Florence-2-base",
+    "revision": "00921df66db728a9ceb750f5eca43e5c203a2051"
+  },
+  {
+    "files": {
+      "config.json": {
+        "git": "be32655f86eff2add48c6f0b234187ca83df32bd"
+      },
+      "model.safetensors": {
+        "sha256": "0a4067b11ce1e23d5229203f11c718a823060d15a4b23fa2372a7d4b77cbbc60"
+      },
+      "preprocessor_config.json": {
+        "git": "8499e53cb79bf1786a890021550e6994b9808f39"
+      },
+      "processor_config.json": {
+        "git": "7556f607c3581a19f545de09d8b3fc98502b9f36"
+      },
+      "video_preprocessor_config.json": {
+        "git": "aceb9b5b612e726cea11ae4db21c0964629aac3a"
+      }
+    },
+    "license": "apache-2.0",
+    "repository": "facebook/sam2.1-hiera-small",
+    "revision": "ee5bba1d82bb8749febdf90f45e84b687142ba03"
+  }
+]

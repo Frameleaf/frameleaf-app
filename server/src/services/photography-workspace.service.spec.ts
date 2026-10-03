@@ -165,7 +165,25 @@ describe(PhotographyWorkspaceService.name, () => {
       sut.photos({ ...auth, session: { ...auth.session!, hasElevatedPermission: true } }, shoot.id, {}),
     ).resolves.toEqual({
       nextCursor: 'cursor',
-      photos: [{ id, fileName: 'photo.CR3', rating: -1, stackCount: 3, currentRevisionId: current, canRate: true }],
+      photos: [
+        {
+          id,
+          fileName: 'photo.CR3',
+          rating: -1,
+          stackCount: 3,
+          currentRevisionId: current,
+          canRate: true,
+          camera: '',
+          capturedAt: null,
+          isRaw: true,
+          stackId: null,
+          width: null,
+          height: null,
+          eligible: false,
+          exclusion: 'rejected',
+          processing: 'pending',
+        },
+      ],
     });
     expect(search.searchMetadata).toHaveBeenCalledWith(
       expect.objectContaining({ session: expect.objectContaining({ hasElevatedPermission: false }) }),
