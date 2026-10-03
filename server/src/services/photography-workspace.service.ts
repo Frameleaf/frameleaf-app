@@ -33,12 +33,12 @@ import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
 import {
   preparePhotographyLogo,
   readPhotographyLogo,
   renderPhotographyRendition,
 } from 'src/utils/photography-rendition.js';
-import { mimeTypes } from 'src/utils/mime-types.js';
 
 @Injectable()
 export class PhotographyWorkspaceService {

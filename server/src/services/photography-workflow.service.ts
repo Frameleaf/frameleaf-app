@@ -9,17 +9,16 @@ import {
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { access, constants, mkdir, open, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import {
-  type PhotographyWatermark,
-  type PhotographyWatermarkPreset,
-  PhotographyWatermarkSchema,
-} from 'src/dtos/photography-rendition.dto.js';
-import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
+import {
+  type PhotographyWatermark,
+  type PhotographyWatermarkPreset,
+  PhotographyWatermarkSchema,
+} from 'src/dtos/photography-rendition.dto.js';
 import {
   PhotographyApprovalDto,
   PhotographyAssemblyDto,
@@ -53,6 +52,7 @@ import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
 import { deliveryBlock, priceSelection, verifyStripeSignature } from 'src/utils/photography-workflow.js';
 
 export type PhotographyCapture = {

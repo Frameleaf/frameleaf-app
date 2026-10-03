@@ -1,6 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
-import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
 import z from 'zod';
+import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
 
 const blockedReasons = ['permission', 'order', 'payment', 'approval', 'render'] as const;
 // Keep runtime null validation while avoiding a null member in generated TypeScript string enums.
