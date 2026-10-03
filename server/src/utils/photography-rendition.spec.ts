@@ -128,6 +128,41 @@ describe('photography pixel renditions', () => {
     await expect(preparePhotographyLogo(logo.subarray(0, 60))).rejects.toThrow();
     await expect(renderPhotographyRendition(source, mark({ type: 'logo' }))).rejects.toThrow();
   });
+  it.each(['jpeg', 'png', 'webp'] as const)(
+    'preserves opaque %s artwork contrast and transparent PNG shape in light/dark variants',
+    async (format) => {
+      const artwork = await sharp({ create: { width: 100, height: 60, channels: 3, background: '#ffffff' } })
+        .composite([
+          { input: await image(20, 40, '#101010'), left: 10, top: 10 },
+          { input: await image(20, 40, '#101010'), left: 70, top: 10 },
+        ])
+        .ensureAlpha()
+        .toFormat(format)
+        .toBuffer();
+      const variants = await preparePhotographyLogo(artwork);
+      for (const variant of ['light', 'dark'] as const) {
+        const { data, info } = await sharp(variants[variant]).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        const letter = data[(20 * info.width + 10) * 4];
+        const gap = data[(20 * info.width + 40) * 4];
+        expect(Math.abs(letter - gap)).toBeGreaterThan(150);
+        expect(variant === 'light' ? letter > gap : letter < gap).toBe(true);
+      }
+      const transparent = await sharp({ create: { width: 80, height: 40, channels: 4, background: '#00000000' } })
+        .composite([
+          { input: await image(20, 40, '#101010'), left: 0, top: 0 },
+          { input: await image(20, 40, '#101010'), left: 60, top: 0 },
+        ])
+        .png()
+        .toBuffer();
+      const transparentVariants = await preparePhotographyLogo(transparent);
+      for (const variant of ['light', 'dark'] as const) {
+        const data = await sharp(transparentVariants[variant]).raw().toBuffer();
+        expect(data[(20 * 80 + 10) * 4]).toBe(variant === 'light' ? 255 : 0);
+        expect(data[(20 * 80 + 10) * 4 + 3]).toBe(255);
+        expect(data[(20 * 80 + 40) * 4 + 3]).toBe(0);
+      }
+    },
+  );
   it('rejects unknown control fields and invalid output limits without falling back to a clean image', async () => {
     const source = await image();
     expect(() => mark({ css: 'hidden' })).toThrow();

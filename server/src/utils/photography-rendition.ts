@@ -61,7 +61,7 @@ export async function preparePhotographyLogo(
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
-    const alpha = metadata.hasAlpha;
+    const alpha = data.some((value, index) => index % 4 === 3 && value < 255);
     let left = info.width,
       top = info.height,
       right = -1,
@@ -89,6 +89,13 @@ export async function preparePhotographyLogo(
       .raw()
       .toBuffer({ resolveWithObject: true });
     const original = await sharp(cropped.data, { raw: cropped.info }).png().toBuffer();
+    // Opaque uploads retain artwork contrast; only real transparency supplies a monochrome silhouette.
+    if (!alpha)
+      return {
+        original,
+        light: await sharp(original).greyscale().negate({ alpha: false }).toColourspace('srgb').png().toBuffer(),
+        dark: await sharp(original).greyscale().toColourspace('srgb').png().toBuffer(),
+      };
     const monochrome = async (color: number) => {
       const output = Buffer.from(cropped.data);
       for (let i = 0; i < output.length; i += 4) {

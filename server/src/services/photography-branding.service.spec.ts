@@ -288,6 +288,65 @@ describe('private studio branding', () => {
       },
     });
   });
+  it.each(['locked', 'missing', 'offline'])(
+    'preserves omitted preset references privately after their logo becomes %s, but refuses supplied references and rendering',
+    async (condition) => {
+      const { sut, auth, brand, logo, revision, repository, search } = setup();
+      const preset = {
+        id: newUuid(),
+        name: 'Protected proofs',
+        version: 1,
+        watermark: PhotographyWatermarkSchema.parse({ text: 'Studio', type: 'logo', logoAssetId: logo.id }),
+      };
+      const saved = { ...brand, watermarkPresets: [preset], proofWatermarkPresetId: preset.id };
+      repository.get.mockResolvedValue({ value: { shoots: [], brand: saved }, updateId: revision });
+      search.searchMetadata.mockResolvedValue({
+        assets: {
+          items:
+            condition === 'missing'
+              ? []
+              : [
+                  {
+                    ...logo,
+                    ...(condition === 'locked' ? { visibility: AssetVisibility.Locked } : { isOffline: true }),
+                  },
+                ],
+          nextCursor: null,
+        },
+      });
+      const {
+        watermarkPresets: _presets,
+        webWatermarkPresetId: _web,
+        proofWatermarkPresetId: _proof,
+        exportWatermarkPresetId: _export,
+        ...legacy
+      } = brand;
+      await expect(sut.saveBrand(auth, { expectedRevision: revision, brand: legacy })).resolves.toMatchObject({
+        logoUnavailable: true,
+        brand: { watermarkPresets: [{ watermark: { logoAssetId: null } }] },
+      });
+      expect(repository.saveBrand).toHaveBeenCalledWith(auth.user.id, saved, revision);
+      repository.saveBrand.mockClear();
+      const changed = {
+        ...saved,
+        watermarkPresets: [{ ...preset, watermark: { ...preset.watermark, text: 'Changed Studio' } }],
+      };
+      await expect(sut.saveBrand(auth, { expectedRevision: revision, brand: changed })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(
+        sut.saveBrand(auth, {
+          expectedRevision: revision,
+          brand: { ...brand, watermarkPresets: [{ ...preset, id: newUuid() }] },
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repository.saveBrand).not.toHaveBeenCalled();
+      await expect(
+        sut.previewWatermark(auth, { watermark: preset.watermark, orientation: 'portrait', background: 'dark' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.logoBytes(auth, logo.id)).rejects.toBeInstanceOf(ForbiddenException);
+    },
+  );
   it('increments changed preset versions while independently selecting web/proof/export defaults', async () => {
     const { sut, auth, brand, revision, repository } = setup();
     const preset = {
