@@ -359,8 +359,9 @@ export class PartnerCopyService extends BaseService {
   /**
    * Copy an album `partnerSharedById` shares into `targetOwnerId`'s library (spec §4.4): only a plain
    * album its owner owns (collections and shared spaces are not copied), never one the target already
-   * sees as a member, never back to its original owner, and once per library. The copy holds the target's
-   * copies of the album's items and follows the source's title, description, cover and membership.
+   * sees as a member, never back to its original owner, and once per library per root album. The copy
+   * holds the target's copies of the album's items and follows the source's title, description, cover
+   * and membership.
    */
   async copyAlbum(
     sourceAlbumId: string,
@@ -380,6 +381,10 @@ export class PartnerCopyService extends BaseService {
       return;
     }
     if (await this.partnerOriginRepository.getCopyId('album', album.id, targetOwnerId)) {
+      return;
+    }
+    // one copy per library per root album: another partner may already have passed this one on
+    if (await this.partnerOriginRepository.hasAlbumCopyOfRoot(album.id, targetOwnerId)) {
       return;
     }
     if (!(await this.partnerRepository.get({ sharedById: partnerSharedById, sharedWithId: targetOwnerId }))) {

@@ -879,6 +879,37 @@ describe(PartnerCopyService.name, () => {
       await expect(sut.copyAlbum(album.id, bob.id, alice.id)).resolves.toBeUndefined();
     });
 
+    it('gives a library one copy of an album however many partners pass it on (A→B, A→C, B→C)', async () => {
+      const { sut, ctx } = setup();
+      const origins = ctx.get(PartnerOriginRepository);
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { user: carol } = await ctx.newUser();
+      for (const [sharedById, sharedWithId] of [
+        [alice.id, bob.id],
+        [alice.id, carol.id],
+        [bob.id, carol.id],
+      ]) {
+        await ctx.newPartner({ sharedById, sharedWithId });
+      }
+      const photo = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id, albumName: 'Lake' }, [photo.id]);
+      // Carol receives the photo straight from Alice, then the album by way of Bob first
+      const carolPhoto = await sut.copyAsset(photo.id, carol.id, alice.id);
+
+      for (const sharedWithId of [bob.id, carol.id]) {
+        await origins.startBackfill(alice.id, sharedWithId, 1);
+        await sut.handleBackfill({ sharedById: alice.id, sharedWithId });
+        await drain(sut, [ctx]);
+      }
+
+      const carolAlbums = await db.selectFrom('album_user').select('albumId').where('userId', '=', carol.id).execute();
+      expect(carolAlbums).toHaveLength(1);
+      // and the copy holds Carol's copy of the photo, though it came from Alice and the album from Bob
+      await expect(albumAssetIds(carolAlbums[0].albumId)).resolves.toEqual([carolPhoto]);
+      expect(album.id).not.toBe(carolAlbums[0].albumId);
+    });
+
     it("never lets a partner read the sharer's own rows: only their copies", async () => {
       const { ctx, bob, first, copyOf } = await shareWithAlbum();
       const access = ctx.get(AccessRepository);
