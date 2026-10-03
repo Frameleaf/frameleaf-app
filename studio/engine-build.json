@@ -253,8 +253,8 @@
     {
       "path": "patches/0050-caption-import-export-modes.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "a7d1e54d36c63835ffa4c1f9c95bba51b1d5f3bd72d88aad60d1a38fa62bb301"
+      "sha256": "8c443377bfc6092dee167926117685eb3257e1489a543bd8ab362565d66b1f3d"
     }
   ],
-  "sourceSha256": "39fd292d3815ab4043cc192d11ec96973e40e4e4b4d722cec8aab9e510160d53"
+  "sourceSha256": "506878be3a2ccf47797835046206d74345c2ed374c59173924bd2c8f0385b16e"
 }
