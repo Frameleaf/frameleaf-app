@@ -331,7 +331,9 @@ describe(ICloudAuditRepository.name, () => {
       .values({ userId: fixture.auth.user.id, key: UserMetadataKey.Preferences, value })
       .onConflict((conflict) => conflict.columns(['userId', 'key']).doUpdateSet({ value }))
       .execute();
-    expect(await sut.publishMatch(fixture.authority, fixture.resource, verified, () => Promise.resolve(verified))).toBe(false);
+    expect(await sut.publishMatch(fixture.authority, fixture.resource, verified, () => Promise.resolve(verified))).toBe(
+      false,
+    );
     expect((await sut.get(fixture.authority.auditRequestId, fixture.auth.user.id))?.result).toBe('running');
   });
 
@@ -712,7 +714,9 @@ describe(ICloudAuditRepository.name, () => {
 
   it('cleans the durable match receipt after a crash, revoked session and disconnect without re-certifying', async () => {
     const fixture = await claimed();
-    expect(await sut.publishMatch(fixture.authority, fixture.resource, verified, () => Promise.resolve(verified))).toBe(true);
+    expect(await sut.publishMatch(fixture.authority, fixture.resource, verified, () => Promise.resolve(verified))).toBe(
+      true,
+    );
     const before = (await identities.identities(fixture.auth.user.id, [ASSET]))[0];
     const cleanup = vi.fn().mockRejectedValueOnce(new Error('fixture_cleanup_failure')).mockResolvedValue(undefined);
     await sut.housekeeping(cleanup);
@@ -733,7 +737,9 @@ describe(ICloudAuditRepository.name, () => {
 
   it('will not clean staging when a committed receipt digest no longer matches its resource', async () => {
     const fixture = await claimed();
-    expect(await sut.publishMatch(fixture.authority, fixture.resource, verified, () => Promise.resolve(verified))).toBe(true);
+    expect(await sut.publishMatch(fixture.authority, fixture.resource, verified, () => Promise.resolve(verified))).toBe(
+      true,
+    );
     await sql`UPDATE immich_fork.icloud_resource SET sha256=${Buffer.alloc(32, 9)} WHERE id=${fixture.resource.id}::uuid`.execute(
       db,
     );

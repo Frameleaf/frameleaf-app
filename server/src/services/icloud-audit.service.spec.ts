@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
-import { AssetType, MediaOperationStatus } from 'src/enum.js';
+import { AssetType, MediaOperationDestination, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
@@ -61,9 +61,50 @@ describe(ICloudAuditService.name, () => {
     operation = {
       id: randomUUID(),
       ownerId,
+      kind: MediaOperationKind.ICloudSync,
+      destination: MediaOperationDestination.Local,
+      destinationDetail: null,
+      label: 'Verify iCloud originals',
+      assetId: null,
+      resultAssetId: null,
+      retryOfId: null,
+      projectId: null,
+      revisionId: null,
       snapshot: { task: 'identity-audit', auditIds: [auditRequestId] },
+      settings: {},
+      estimate: null,
+      result: null,
       status: MediaOperationStatus.Rendering,
-    } as MediaOperation;
+      progress: 0,
+      processedUnits: 0,
+      totalUnits: 1,
+      outputBytes: 0,
+      attempt: 1,
+      attemptStartedAt: new Date('2026-10-03T00:00:00Z'),
+      maxAttempts: 3,
+      autoRetries: 0,
+      retryAt: null,
+      claimToken: token,
+      claimedBy: 'fixture-audit-worker',
+      claimExpiresAt: new Date('2099-10-03T00:00:00Z'),
+      heartbeatAt: new Date('2026-10-03T00:00:00Z'),
+      lastAdmissionRefusalReason: null,
+      lastAdmissionRefusedAt: null,
+      admissionRefusals: 0,
+      cancelRequestedAt: null,
+      cancelAcknowledgedAt: null,
+      pauseRequestedAt: null,
+      remoteJobId: null,
+      remoteReleasedAt: null,
+      error: null,
+      errorCode: null,
+      startedAt: new Date('2026-10-03T00:00:00Z'),
+      finishedAt: null,
+      dismissedAt: null,
+      createdAt: new Date('2026-10-03T00:00:00Z'),
+      updatedAt: new Date('2026-10-03T00:00:00Z'),
+      updateId: randomUUID(),
+    };
     resource = {
       id: randomUUID(),
       auditRequestId,
@@ -77,10 +118,23 @@ describe(ICloudAuditService.name, () => {
       role: 'original',
       fingerprint: 'actual-fingerprint',
       expectedSize: fresh.length,
+      status: 'running',
+      sha1: null,
+      sha256: null,
+      assetId: null,
+      path: null,
       leaseToken: randomUUID(),
+      leaseExpiresAt: new Date('2099-10-03T00:00:00Z'),
       stagingPath: null,
+      promotedPath: null,
+      expectedTarget: null,
+      verification: null,
+      pendingJobs: [],
+      attempts: 1,
+      reservedBytes: 0,
+      lastError: null,
       source: { type: AssetType.Image, originalFileName: 'source.jpg' },
-    } as ICloudResource;
+    };
     const connection = {
       id: connectionId,
       ownerId,
