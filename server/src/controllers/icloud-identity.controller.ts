@@ -3,6 +3,8 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  ICloudAttachDto,
+  ICloudAttachResponseDto,
   ICloudClaimDto,
   ICloudClaimReleaseDto,
   ICloudClaimReleaseResponseDto,
@@ -48,6 +50,19 @@ export class ICloudIdentityController {
   })
   lookupICloudIdentities(@Auth() auth: AuthDto, @Body() dto: ICloudLookupDto): Promise<ICloudLookupResponseDto> {
     return this.service.lookup(auth, dto);
+  }
+
+  @Post('identities/attach')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AssetUpload })
+  @Endpoint({
+    summary: 'Attach iCloud identities to originals already uploaded by this device',
+    description:
+      "Up to 500 resources from one of the caller's registered backup devices. Each attachment requires the device SHA-256 to equal the current original of an active asset the caller owns, with the safety lookup's Locked and hidden rules. Unknown, inaccessible and mismatched assets all answer unavailable. Identifiers remain hints until corroborated; attachment never marks an audit verified or changes media.",
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  attachICloudIdentities(@Auth() auth: AuthDto, @Body() dto: ICloudAttachDto): Promise<ICloudAttachResponseDto> {
+    return this.service.attach(auth, dto);
   }
 
   @Post('claims')

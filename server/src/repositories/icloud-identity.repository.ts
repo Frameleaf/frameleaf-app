@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
+import { AuthDto } from 'src/dtos/auth.dto.js';
 import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
   ICloudIdentityRole,
@@ -327,7 +329,7 @@ export class ICloudIdentityRepository {
       reported: { ...input.parsed, sha256: input.sha256 },
       metadataAgrees: agrees,
     });
-    await this.db.transaction().execute(async (tx) => {
+    const write = async (tx: Transaction<DB>) => {
       await lockForkWrites(tx, 'iCloud identities cannot be recorded while the server is being handed over');
       // the claim stays: it covers the whole item (its other roles may still be on the way), and the
       // device releases it, or it runs out, when the item is done
@@ -346,6 +348,37 @@ export class ICloudIdentityRepository {
           ${input.cloudIdentifier}, ${strength})
         ON CONFLICT ("ownerId", "cplAssetRecordName", role, "editVersion", "assetId") DO NOTHING
       `.execute(tx);
+    };
+    if (this.db.isTransaction) {
+      await write(this.db as Transaction<DB>);
+    } else {
+      await this.db.transaction().execute(write);
+    }
+  }
+
+  /** Validate and hold the current owned original until its identity has been recorded. */
+  async attachDevice(auth: AuthDto, input: Parameters<ICloudIdentityRepository['recordDevice']>[0]): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, 'iCloud identities cannot be attached while the server is being handed over');
+      const asset = await new IntegrityRepository(tx)
+        .getSafetyQuery(auth, [input.sha256.toString('hex')])
+        .where('asset.id', '=', input.assetId)
+        .where('asset.ownerId', '=', input.ownerId)
+        .forShare('asset')
+        .executeTakeFirst();
+      if (!asset) {
+        return false;
+      }
+      await new ICloudIdentityRepository(tx).recordDevice(input);
+      // A repeated key keeps its existing proof; changed originals cannot claim that proof as attached.
+      const { rows } = await sql<{ sha256: Buffer }>`
+        SELECT sha256 FROM immich_fork.icloud_source_identity
+        WHERE "ownerId" = ${input.ownerId}::uuid AND "assetId" = ${input.assetId}::uuid
+          AND "cplAssetRecordName" = ${input.parsed.cplAssetRecordName}
+          AND role = ${input.role} AND "editVersion" = ${input.editVersion}
+        FOR SHARE
+      `.execute(tx);
+      return rows[0]?.sha256.equals(input.sha256) ?? false;
     });
   }
 
