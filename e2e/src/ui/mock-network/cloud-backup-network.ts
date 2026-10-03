@@ -117,7 +117,7 @@ export const cloudBackupStatus = (mock: CloudBackupMockState) => ({
   configured: mock.configured,
   target: mock.configured ? 'byo-s3' : 'off',
   managedAvailable: false,
-  endpoint: mock.configured ? 'https://s3.eu-central-2.wasabisys.test' : null,
+  endpoint: mock.configured ? 'https://s3.eu-central-2.storage.example' : null,
   region: mock.configured ? 'eu-central-2' : null,
   bucket: mock.configured ? 'family-backup' : null,
   instanceId: mock.configured ? '018f3a7c-5e2b-7c91-9a4d-2f6b1e0c8d55' : null,

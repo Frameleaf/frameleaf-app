@@ -8,7 +8,8 @@ import { FrameleafCloudError, cloudErrorCode, pausedMessageOf } from 'src/utils/
  * should not have, fails to parse. The bucket key never appears in any of them: the cloud never receives it.
  *
  * Routes (instance token, DPoP-bound; `{api}` from discovery):
- * - `POST {api}/v1/backup/grant` and `POST {api}/v1/backup/grant/rotate`: empty body; the answer carries a
+ * - `GET {api}/v2/backup/locations`: enabled cities and unauthenticated probe URLs.
+ * - `POST {api}/v2/backup/grant`: a selected location ID; rotation uses an empty body. The answer carries a
  *   bucket-scoped access key once. The backup agent rotates at the start of every operation and keeps
  *   the secret in memory for that operation only.
  * - `GET {api}/v1/backup/usage`: the latest hourly measurement.
@@ -32,10 +33,29 @@ const Timestamp = z.iso.datetime({ offset: true });
  */
 export const BackupReadOnlyReasonSchema = z.string().min(1).max(64).catch('unknown');
 
+export const backupCitySchema = z.strictObject({
+  locationId: z.string().regex(/^loc-\d{2}$/),
+  cityId: z.string().regex(/^[a-z]+(?:-[a-z]+)*$/),
+  city: z.string().min(1).max(80),
+  country: z.string().min(1).max(80),
+  countryCode: z.string().regex(/^[A-Z]{2}$/),
+});
+export type BackupCity = z.infer<typeof backupCitySchema>;
+const brandedEndpoint = z.url().refine((value) => /^https:\/\/s3\.[a-z]{2}-[a-z]+-\d\.backup\.frameleaf\.cloud\/?$/.test(value));
+export const backupLocationSchema = backupCitySchema.extend({ probeUrl: brandedEndpoint });
+export type BackupLocation = z.infer<typeof backupLocationSchema>;
+export const backupLocationsSchema = z.strictObject({ version: z.literal(2), locations: z.array(backupLocationSchema).max(16) });
+export const backupGrantRequestSchema = z.strictObject({ locationId: backupCitySchema.shape.locationId });
+export const managedStorageRef = (storageId: string): string => `frameleaf-storage:${storageId}`;
+
 export const backupGrantMetadataSchema = z.strictObject({
-  provider: z.literal('wasabi'),
+  version: z.literal(2),
+  provider: z.literal('frameleaf'),
+  storageId: z.uuid(),
+  location: backupCitySchema,
+  // This is the explicit SigV4 signing region, independent of the connection hostname.
   region: z.string().regex(/^[a-z]{2}-[a-z]+-\d$/),
-  endpoint: z.url({ protocol: /^https$/ }),
+  endpoint: brandedEndpoint,
   bucket: BackupBucketName,
   accessKeyId: z.string().min(16).max(128).nullable(),
   expiresAt: Timestamp.nullable(),
@@ -149,8 +169,9 @@ const grantRevokedDataSchema = z.object({ reason: z.enum(['unlinked', 'suspended
 export const backupEndpoints = (document: { api: string }) => {
   const api = document.api.replace(/\/+$/, '');
   return {
-    grant: `${api}/v1/backup/grant`,
-    rotate: `${api}/v1/backup/grant/rotate`,
+    locations: `${api}/v2/backup/locations`,
+    grant: `${api}/v2/backup/grant`,
+    rotate: `${api}/v2/backup/grant/rotate`,
     usage: `${api}/v1/backup/usage`,
     runs: `${api}/v1/backup/runs`,
     settings: `${api}/v1/backup/settings`,

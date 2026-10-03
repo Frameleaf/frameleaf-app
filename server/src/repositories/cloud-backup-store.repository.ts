@@ -126,6 +126,83 @@ const xmlValues = (xml: string, tag: string) =>
 
 const xmlValue = (xml: string, tag: string) => xmlValues(xml, tag)[0] ?? null;
 
+const PROVIDER_ERROR_CODES = [
+  'AccessDenied',
+  'BadDigest',
+  'EntityTooLarge',
+  'EntityTooSmall',
+  'InternalError',
+  'InvalidAccessKeyId',
+  'InvalidArgument',
+  'InvalidDigest',
+  'InvalidPart',
+  'InvalidPartOrder',
+  'InvalidRequest',
+  'NoSuchBucket',
+  'NoSuchKey',
+  'NoSuchUpload',
+  'PermanentRedirect',
+  'RequestTimeTooSkewed',
+  'RequestTimeout',
+  'ServiceUnavailable',
+  'SignatureDoesNotMatch',
+  'SlowDown',
+  'TemporaryRedirect',
+] as const;
+
+const providerErrorCode = (code: string | null) => PROVIDER_ERROR_CODES.find((knownCode) => knownCode === code) ?? null;
+
+/** Sanitize only transport reads and cancellation; callers retain their checksum and filesystem errors. */
+export const sanitizeProviderResponse = (response: Response, action: string): Response => {
+  if (!response.body) {
+    return response;
+  }
+  const reader = response.body.getReader();
+  let cancelled = false;
+  const readFailure = () => new CloudBackupStoreError(`The storage response could not be read (${action}).`, null, null);
+  const body = new ReadableStream<Uint8Array>(
+    {
+      async pull(controller) {
+        let chunk: Awaited<ReturnType<typeof reader.read>>;
+        try {
+          chunk = await reader.read();
+        } catch {
+          if (!cancelled) {
+            controller.error(readFailure());
+            reader.releaseLock();
+          }
+          return;
+        }
+        if (cancelled) {
+          return;
+        }
+        if (chunk.done) {
+          controller.close();
+          reader.releaseLock();
+        } else {
+          controller.enqueue(chunk.value);
+        }
+      },
+      async cancel(reason) {
+        cancelled = true;
+        try {
+          await reader.cancel(reason);
+        } catch {
+          throw readFailure();
+        } finally {
+          reader.releaseLock();
+        }
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+};
+
 const escapeXml = (value: string) =>
   value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
@@ -154,7 +231,8 @@ export const describeProviderError = (status: number, code: string | null, actio
   if (code === 'SignatureDoesNotMatch' || code === 'InvalidAccessKeyId') {
     return 'The storage provider refused these credentials. Check the access key ID and secret access key.';
   }
-  return `The storage provider refused ${action}: ${status}${code ? ` ${code}` : ''}`;
+  const safeCode = providerErrorCode(code);
+  return `The storage provider refused ${action}: ${status}${safeCode ? ` ${safeCode}` : ''}`;
 };
 
 /**
@@ -831,9 +909,14 @@ export class CloudBackupStoreRepository {
       const { status } = completed;
       const etag = xmlValue(xml, 'ETag') ?? completed.headers.get('etag');
       // CompleteMultipartUpload can answer 200 with an error in the body.
-      const code = xmlValue(xml, 'Code');
-      if (code) {
-        throw new CloudBackupStoreError(`The storage provider refused to finish ${key} (${code})`, status, code);
+      const rawCode = xmlValue(xml, 'Code');
+      if (rawCode) {
+        const code = providerErrorCode(rawCode);
+        throw new CloudBackupStoreError(
+          `The storage provider refused to finish ${key}${code ? ` (${code})` : ''}`,
+          status,
+          code,
+        );
       }
       if (!etag) {
         throw new CloudBackupStoreError(`The storage provider did not confirm ${key}`, status, 'MissingETag');
@@ -897,7 +980,11 @@ export class CloudBackupStoreRepository {
     }
     throw lastError instanceof CloudBackupStoreError
       ? lastError
-      : new CloudBackupStoreError(`The storage provider could not be reached: ${String(lastError)}`, null, null);
+      : new CloudBackupStoreError(
+          `The storage provider could not be reached (${request.method} ${request.key ?? connection.bucket}).`,
+          null,
+          null,
+        );
   }
 
   private async sendOnce(connection: CloudBackupConnection, request: SignedRequest): Promise<Response> {
@@ -941,9 +1028,9 @@ export class CloudBackupStoreRepository {
         redirect: 'manual',
         signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
       });
-    } catch (error) {
+    } catch {
       throw new CloudBackupStoreError(
-        `The storage provider could not be reached (${action}): ${error instanceof Error ? error.message : String(error)}`,
+        `The storage provider could not be reached (${action}).`,
         null,
         null,
       );
@@ -951,9 +1038,9 @@ export class CloudBackupStoreRepository {
 
     if (!response.ok) {
       const body = request.method === 'HEAD' ? '' : await response.text().catch(() => '');
-      const code = xmlValue(body, 'Code');
+      const code = providerErrorCode(xmlValue(body, 'Code'));
       throw new CloudBackupStoreError(describeProviderError(response.status, code, action), response.status, code);
     }
-    return response;
+    return sanitizeProviderResponse(response, action);
   }
 }

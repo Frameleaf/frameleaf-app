@@ -1,5 +1,7 @@
 import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
+import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
+import { MlAdmissionRefusal } from 'src/enum.js';
 
 describe(FrameleafCloudBackupRepository.name, () => {
   const token = { accessToken: 'token', signer: {} } as never;
@@ -12,22 +14,41 @@ describe(FrameleafCloudBackupRepository.name, () => {
     sut = new FrameleafCloudBackupRepository({ requestJson } as never);
   });
 
-  it('asks for the grant and its rotation with an empty body and the instance token', async () => {
-    await sut.grant(target);
+  it('asks for the selected location and rotates with an empty body using the instance token', async () => {
+    await sut.grant(target, 'loc-07');
     await sut.rotate(target);
 
     expect(requestJson).toHaveBeenNthCalledWith(1, expect.anything(), {
       method: 'POST',
-      url: 'https://api.frameleaf.test/v1/backup/grant',
+      url: 'https://api.frameleaf.test/v2/backup/grant',
       dpop: token,
-      body: {},
+      body: { locationId: 'loc-07' },
     });
     expect(requestJson).toHaveBeenNthCalledWith(2, expect.anything(), {
       method: 'POST',
-      url: 'https://api.frameleaf.test/v1/backup/grant/rotate',
+      url: 'https://api.frameleaf.test/v2/backup/grant/rotate',
       dpop: token,
       body: {},
     });
+  });
+
+  it('fetches authenticated locations and recorded metadata and treats only not-found as an unclaimed server', async () => {
+    await sut.locations(target);
+    await sut.metadata(target);
+    expect(requestJson.mock.calls.map(([, options]) => [options.url, options.dpop])).toEqual([
+      ['https://api.frameleaf.test/v2/backup/locations', token],
+      ['https://api.frameleaf.test/v2/backup/grant', token],
+    ]);
+    requestJson.mockRejectedValue(new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 404, 'missing',
+      errorEnvelopeSchema.parse({ code: 'not-found', message: 'missing', retryable: false })));
+    await expect(sut.metadata(target)).resolves.toBeNull();
+    requestJson.mockRejectedValue(new Error('connection failed'));
+    await expect(sut.metadata(target)).rejects.toThrow('connection failed');
+  });
+
+  it('refuses an invalid location ID before sending any provisioning request', () => {
+    expect(() => sut.grant(target, 'https://outside.example')).toThrow();
+    expect(requestJson).not.toHaveBeenCalled();
   });
 
   it('puts the settings and the escrow blob, and deletes the escrow', async () => {
