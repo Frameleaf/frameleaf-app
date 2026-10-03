@@ -2048,7 +2048,9 @@ describe(AuthService.name, () => {
       expect(mocks.user.getForPinCode).toHaveBeenCalledWith(user.id);
       expect(mocks.crypto.hashBcrypt).toHaveBeenCalledWith('123456', SALT_ROUNDS);
       expect(mocks.user.setPinCodeAndLockSessions).toHaveBeenCalledWith(
-        user.id, { pinCode: null, password: '' }, expect.any(String),
+        user.id,
+        { pinCode: null, password: '' },
+        expect.any(String),
       );
     });
 
@@ -2162,7 +2164,9 @@ describe(AuthService.name, () => {
 
       expect(mocks.crypto.compareBcrypt).toHaveBeenCalledWith('123456', '123456 (hashed)');
       expect(mocks.user.setPinCodeAndLockSessions).toHaveBeenCalledWith(
-        user.id, { pinCode: '123456 (hashed)', password: '' }, '012345 (hashed)',
+        user.id,
+        { pinCode: '123456 (hashed)', password: '' },
+        '012345 (hashed)',
       );
       // an elevation granted by the old PIN ends with it, in every session (FL-34)
       expect(mocks.session.lockAll).not.toHaveBeenCalled();
@@ -2193,7 +2197,9 @@ describe(AuthService.name, () => {
       await sut.resetPinCode(AuthFactory.create(user), { pinCode: '123456' });
 
       expect(mocks.user.setPinCodeAndLockSessions).toHaveBeenCalledWith(
-        user.id, { pinCode: '123456 (hashed)', password: '' }, null,
+        user.id,
+        { pinCode: '123456 (hashed)', password: '' },
+        null,
       );
       expect(mocks.session.lockAll).not.toHaveBeenCalled();
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', user.id);
@@ -2214,9 +2220,12 @@ describe(AuthService.name, () => {
     mocks.user.getForPinCode.mockResolvedValue({ pinCode: kind === 'setup' ? null : '123456 (hashed)', password: '' });
     mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
     mocks.user.setPinCodeAndLockSessions.mockResolvedValue(false);
-    const mutation = kind === 'setup' ? sut.setupPinCode(auth, { pinCode: '123456' }) :
-      kind === 'reset' ? sut.resetPinCode(auth, { pinCode: '123456' }) :
-        sut.changePinCode(auth, { pinCode: '123456', newPinCode: '012345' });
+    const mutation =
+      kind === 'setup'
+        ? sut.setupPinCode(auth, { pinCode: '123456' })
+        : kind === 'reset'
+          ? sut.resetPinCode(auth, { pinCode: '123456' })
+          : sut.changePinCode(auth, { pinCode: '123456', newPinCode: '012345' });
     await expect(mutation).rejects.toThrow('Your PIN or password changed; try again');
     expect(mocks.user.update).not.toHaveBeenCalled();
     expect(mocks.session.lockAll).not.toHaveBeenCalled();
@@ -2229,9 +2238,12 @@ describe(AuthService.name, () => {
     mocks.user.getForPinCode.mockResolvedValue({ pinCode: kind === 'setup' ? null : '123456 (hashed)', password: '' });
     mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
     mocks.user.setPinCodeAndLockSessions.mockRejectedValue(new Error('transaction rolled back'));
-    const mutation = kind === 'setup' ? sut.setupPinCode(auth, { pinCode: '123456' }) :
-      kind === 'reset' ? sut.resetPinCode(auth, { pinCode: '123456' }) :
-        sut.changePinCode(auth, { pinCode: '123456', newPinCode: '012345' });
+    const mutation =
+      kind === 'setup'
+        ? sut.setupPinCode(auth, { pinCode: '123456' })
+        : kind === 'reset'
+          ? sut.resetPinCode(auth, { pinCode: '123456' })
+          : sut.changePinCode(auth, { pinCode: '123456', newPinCode: '012345' });
     await expect(mutation).rejects.toThrow('transaction rolled back');
     expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
   });

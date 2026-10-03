@@ -70,8 +70,8 @@ import {
   canonicalStorageVerificationDigest,
 } from 'src/repositories/fork-cutover-verification.repository.js';
 import { ForkHandoffRepository } from 'src/repositories/fork-handoff.repository.js';
-import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository.js';
+import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import 'src/schema/index.js'; // make sure all schema definitions are imported for schemaFromCode
 import { immich_uuid_v7 } from 'src/schema/functions.js';

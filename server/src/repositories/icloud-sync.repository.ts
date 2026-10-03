@@ -195,7 +195,9 @@ export class ICloudSyncRepository {
       if (update.encryptedSession !== undefined) {
         // This explicit setter replaces credentials. Normal provider refresh uses withSession;
         // randomized ciphertext there must not retire otherwise-current owner consent.
-        const { rows: [installed] } = await sql<{ table: string | null; upgraded: boolean }>`SELECT
+        const {
+          rows: [installed],
+        } = await sql<{ table: string | null; upgraded: boolean }>`SELECT
           to_regclass('immich_fork.icloud_weekly_grant')::text AS table,
           EXISTS (SELECT 1 FROM pg_attribute
             WHERE attrelid=to_regclass('immich_fork.icloud_identity_audit') AND attname='purpose'

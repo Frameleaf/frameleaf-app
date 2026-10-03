@@ -66,8 +66,8 @@ import {
   parseEnrichmentPlanResult,
   parseEnrichmentPlanSnapshot,
 } from 'src/utils/enrichment-plan.js';
-import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { isPrivateICloudOperation } from 'src/utils/icloud-weekly.js';
+import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import {
   ACTIVE_MEDIA_OPERATION_STATUSES,
   PAUSABLE_MEDIA_OPERATION_KINDS,
@@ -242,10 +242,7 @@ const isWithheld = (operation: Pick<MediaOperation, 'assetId' | 'resultAssetId'>
   (!!operation.resultAssetId && hidden.has(operation.resultAssetId));
 
 /** `hidden`: the caller's Locked media, never named to a session that has not unlocked it (FL-34). */
-export const mapOperation = (
-  operation: MediaOperation,
-  hidden: ReadonlySet<string> = new Set(),
-): MediaOperationDto => {
+export const mapOperation = (operation: MediaOperation, hidden: ReadonlySet<string> = new Set()): MediaOperationDto => {
   const privateWeekly = isPrivateICloudOperation(operation);
   return {
     id: operation.id,
@@ -266,8 +263,10 @@ export const mapOperation = (
     cloudJob: privateWeekly ? null : cloudMlJobActivity(operation),
     progress: privateWeekly ? 0 : operation.progress,
     processedUnits: privateWeekly ? '0' : String(operation.processedUnits ?? 0),
-    totalUnits: privateWeekly || operation.totalUnits === null || operation.totalUnits === undefined
-      ? null : String(operation.totalUnits),
+    totalUnits:
+      privateWeekly || operation.totalUnits === null || operation.totalUnits === undefined
+        ? null
+        : String(operation.totalUnits),
     attempt: operation.attempt,
     maxAttempts: operation.maxAttempts,
     autoRetries: operation.autoRetries ?? 0,
