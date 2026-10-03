@@ -2186,7 +2186,39 @@ const handlers: Record<string, Handler> = {
     }
     if (gapEnd === undefined || gapEnd <= gapStart) invalid('track.closeGap: there is no gap on the track at that time')
     const later = onTrack().filter((item) => item.from >= gapEnd!)
+    const before = structuredClone(items())
+    const beforeById = new Map(before.map((item) => [item.id, item]))
+    const linked = linkedSet(later.map((item) => item.id))
+    assertUnlocked(linked, 'track.closeGap')
+    const moves = linked.map((id) => ({ id, from: beforeById.get(id)!.from - (gapEnd! - gapStart) }))
+    if (moves.some((move) => move.from < 0)) failed('track.closeGap: clips would start before the timeline')
+    const affectedTracks = new Set([
+      ...linked.map((id) => beforeById.get(id)!.trackId),
+      ...before.filter((item) => isTrackSyncLockEnabled(trackOf(item))).map((item) => item.trackId),
+    ])
     closeGapAtPosition(track.id, frame)
+    // Sync-lock propagation can split or remove a linked companion across the removed interval.
+    // Refuse that destructive case rather than reconstructing its source window or bookkeeping.
+    for (const id of linked) {
+      const original = beforeById.get(id)!
+      const current = useItemsStore.getState().itemById[id]
+      if (!current || canonicalJson(current) !== canonicalJson({ ...original, from: current.from })) {
+        failed('track.closeGap: sync lock would change a linked source window')
+      }
+    }
+    // Use captured absolute positions: sync-locked companions may already have moved, whereas
+    // linked sound/captions on tracks without sync lock still need the same shift as their clip.
+    const corrections = moves.filter((move) => requireItem(move.id).from !== move.from)
+    if (corrections.length > 0) {
+      useItemsStore.getState()._moveItems(corrections)
+      applyTransitionRepairs(corrections.map((move) => move.id))
+    }
+    for (const move of moves) {
+      if (canonicalJson(requireItem(move.id)) !== canonicalJson({ ...beforeById.get(move.id)!, from: move.from })) {
+        failed('track.closeGap: a linked item could not close the gap without changing its source data')
+      }
+    }
+    assertNoOverlap(affectedTracks, 'track.closeGap')
     for (const item of later) {
       if (requireItem(item.id).from !== item.from - (gapEnd! - gapStart)) failed('track.closeGap: the gap could not be closed')
     }
