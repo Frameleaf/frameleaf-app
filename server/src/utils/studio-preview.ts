@@ -25,6 +25,32 @@
 import { createHash } from 'node:crypto';
 import { type Rational, formatRational } from 'src/utils/rational-time.js';
 
+/** Versioned opt-in admission identity; legacy keys remain the original 64-hex digest. */
+export const PREVIEW_CONSUMER_PREFIX = 'fl279c1:';
+export const PREVIEW_CANCEL_NO_OPERATION = 'preview-cancel-no-operation';
+export const PREVIEW_CANCEL_UNCLAIMED = 'preview-cancel-unclaimed';
+export const PREVIEW_CANCEL_PENDING = 'preview-cancel-pending';
+export const PREVIEW_CANCEL_UNAVAILABLE = 'preview-cancel-unavailable';
+export const PREVIEW_CANCEL_CLEANED = 'preview-cancel-cleaned';
+
+export const previewConsumerSession = (ownerId: string, sessionId?: string): string =>
+  createHash('sha256').update(sessionId ? `session:${sessionId}` : `owner:${ownerId}`).digest('hex');
+
+export const previewConsumerKey = (
+  binding: PreviewBinding,
+  consumerRequestId: string,
+  sessionDigest: string,
+  seekGeneration: number,
+): string =>
+  `${PREVIEW_CONSUMER_PREFIX}${consumerRequestId.toLowerCase()}:${sessionDigest}:${seekGeneration}:${previewCacheKey(binding)}`;
+
+export const previewConsumerOf = (key: string): { requestId: string; sessionDigest: string } | null => {
+  const match = /^fl279c1:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([0-9a-f]{64}):\d+:([0-9a-f]{64})$/.exec(key);
+  return match ? { requestId: match[1], sessionDigest: match[2] } : null;
+};
+
+export const isConsumerPreview = (key: string): boolean => key.startsWith(PREVIEW_CONSUMER_PREFIX);
+
 /* ------------------------------------------------------------------ */
 /* Rational time (FL-93)                                                */
 /* ------------------------------------------------------------------ */
