@@ -45,16 +45,18 @@
   let favoritesOnly = $state(false);
   let limit = $state(80);
   let generation = 0;
+  let previewRequest = 0;
   let disposed = false;
   let thumbnailLoading = false;
   let thumbnailPending = false;
   let expiryTimer: ReturnType<typeof setTimeout> | undefined;
   const storageKey = () => `photography-gallery:${galleryId}`;
-  const visible = $derived(
-    (gallery?.photos ?? [])
-      .filter((photo) => (!chapter || photo.chapterId === chapter) && (!favoritesOnly || choices.includes(photo.id)))
-      .slice(0, limit),
+  const filtered = $derived(
+    (gallery?.photos ?? []).filter(
+      (photo) => (!chapter || photo.chapterId === chapter) && (!favoritesOnly || choices.includes(photo.id)),
+    ),
   );
+  const visible = $derived(filtered.slice(0, limit));
   const downloads = $derived(gallery?.photos.filter((photo) => photo.canDownload) ?? []);
   const readyOutputs = $derived(
     gallery?.photos.flatMap((photo) =>
@@ -64,6 +66,9 @@
   const approvalRevision = $derived(
     openedOutput ? (openedOutput.approvalPreviewUrl ? openedOutput.revisionId : null) : opened?.approvalRevisionId,
   );
+  const chosenOutputs = $derived(readyOutputs.filter(({ output }) => downloadChoices.includes(output.id)));
+  const archiveCount = $derived(readyOutputs.length > 0 ? chosenOutputs.length : downloads.length);
+  const archiveParts = $derived(Math.ceil(archiveCount / 1000));
   const cover = $derived(
     gallery?.photos.find((photo) => photo.id === gallery?.presentation.coverCaptureId) ?? gallery?.photos[0],
   );
@@ -73,12 +78,47 @@
     gallery ? Math.max(0, choices.length - gallery.pricing.includedCount) * gallery.pricing.additionalPrice : 0,
   );
   function blockPhotos(block: PresentationBlock) {
-    const photos = visible.filter(
-      (photo) =>
-        (!block.chapterId || photo.chapterId === block.chapterId) &&
-        (block.captureIds.length === 0 || block.captureIds.includes(photo.id)),
-    );
-    return block.type === 'full' ? photos.slice(0, 1) : block.type === 'pair' ? photos.slice(0, 2) : photos;
+    const candidates = filtered.filter((photo) => !block.chapterId || photo.chapterId === block.chapterId);
+    const byId = new Map(candidates.map((photo) => [photo.id, photo]));
+    const explicit = block.selection === 'explicit' || (block.selection === undefined && block.captureIds.length > 0);
+    const photos = explicit
+      ? block.captureIds.map((id) => byId.get(id)).filter((photo): photo is GuestPhoto => !!photo)
+      : candidates;
+    return block.type === 'full'
+      ? photos.slice(0, 1)
+      : block.type === 'pair'
+        ? photos.slice(0, 2)
+        : block.type === 'slideshow'
+          ? photos
+          : photos.slice(0, limit);
+  }
+  const displayed = $derived.by(() =>
+    gallery?.presentation.blocks?.length
+      ? gallery.presentation.blocks.flatMap((block) => {
+          if (['chapter', 'caption'].includes(block.type)) {
+            return [];
+          }
+          const photos = blockPhotos(block);
+          return block.type === 'slideshow'
+            ? photos.slice(
+                Math.min(slideIndexes[block.id] ?? 0, photos.length - 1),
+                Math.min(slideIndexes[block.id] ?? 0, photos.length - 1) + 1,
+              )
+            : photos;
+        })
+      : visible,
+  );
+  function closePhoto() {
+    previewRequest++;
+    if (preview) {
+      URL.revokeObjectURL(preview);
+    }
+    preview = '';
+    opened = null;
+    openedOutput = null;
+    marking = false;
+    annotationStart = null;
+    annotationDraft = null;
   }
   const clearImages = () => {
     for (const url of Object.values(thumbnails)) {
@@ -87,9 +127,7 @@
     for (const url of Object.values(comparison)) {
       URL.revokeObjectURL(url);
     }
-    if (preview) {
-      URL.revokeObjectURL(preview);
-    }
+    closePhoto();
     if (logo) {
       URL.revokeObjectURL(logo);
     }
@@ -101,12 +139,6 @@
     logo = '';
     thumbnails = {};
     comparison = {};
-    preview = '';
-    opened = null;
-    openedOutput = null;
-    marking = false;
-    annotationStart = null;
-    annotationDraft = null;
     compareOpen = false;
   };
   function endAccess(message = 'This invitation has expired or access has ended.') {
@@ -178,7 +210,11 @@
   }
   function accept(result: GuestGallery, retainDraft = false) {
     const initial = gallery === null;
-    if (gallery?.publication?.id !== result.publication?.id) {
+    const liveGeneration = (value: GuestGallery | null) =>
+      value?.publishedGenerationId === undefined
+        ? `${value?.publication?.id ?? ''}:${value?.publication?.status === 'ready' ? 'ready' : 'pending'}`
+        : value.publishedGenerationId;
+    if (liveGeneration(gallery) !== liveGeneration(result)) {
       clearImages();
     }
     const allowed = new Set(result.photos.map((photo) => photo.id));
@@ -199,11 +235,7 @@
       delete comparison[id];
     }
     if (opened && !allowed.has(opened.id)) {
-      if (preview) {
-        URL.revokeObjectURL(preview);
-      }
-      preview = '';
-      opened = null;
+      closePhoto();
     }
     if (opened) {
       opened = result.photos.find((photo) => photo.id === opened?.id) ?? null;
@@ -289,7 +321,7 @@
         coverPreview = '';
         coverImageId = '';
       }
-      const missing: { photo: GuestPhoto; kind: 'thumbnail' | 'preview' }[] = [cover, ...visible]
+      const missing: { photo: GuestPhoto; kind: 'thumbnail' | 'preview' }[] = [cover, ...displayed]
         .filter((photo): photo is GuestPhoto => !!photo)
         .filter(
           (photo, index, list) =>
@@ -402,23 +434,21 @@
     dirty = true;
   }
   async function openPhoto(photo: GuestPhoto) {
-    if (preview) {
-      URL.revokeObjectURL(preview);
-    }
-    preview = '';
+    closePhoto();
     opened = photo;
     openedOutput = null;
     marking = false;
     error = '';
     const current = generation;
+    const request = previewRequest;
     try {
       const blob = await galleryMedia(galleryId, photo.id, 'preview', session);
-      if (disposed || current !== generation || opened?.id !== photo.id) {
+      if (disposed || current !== generation || request !== previewRequest || opened?.id !== photo.id || openedOutput) {
         return;
       }
       preview = URL.createObjectURL(blob);
     } catch (error_) {
-      if (!disposed && current === generation) {
+      if (!disposed && current === generation && request === previewRequest) {
         failure(error_);
       }
     }
@@ -427,14 +457,12 @@
     if (!output.approvalPreviewUrl || !output.revisionId || busy) {
       return;
     }
-    if (preview) {
-      URL.revokeObjectURL(preview);
-    }
-    preview = '';
+    closePhoto();
     opened = photo;
     openedOutput = output;
     marking = false;
     const current = generation;
+    const request = previewRequest;
     try {
       const blob = await galleryFile(
         galleryId,
@@ -442,11 +470,17 @@
         `/photos/${encodeURIComponent(photo.id)}/outputs/${encodeURIComponent(output.id)}/preview`,
         false,
       );
-      if (!disposed && current === generation && openedOutput?.id === output.id) {
+      if (
+        !disposed &&
+        current === generation &&
+        request === previewRequest &&
+        opened?.id === photo.id &&
+        openedOutput?.id === output.id
+      ) {
         preview = URL.createObjectURL(blob);
       }
     } catch (error_) {
-      if (!disposed && current === generation) {
+      if (!disposed && current === generation && request === previewRequest) {
         failure(error_);
       }
     }
@@ -573,8 +607,8 @@
       }
     }
   }
-  async function zip() {
-    if (busy || (readyOutputs.length > 0 ? downloadChoices.length === 0 : downloads.length === 0)) {
+  async function zip(part = 0) {
+    if (busy || archiveCount === 0 || !Number.isSafeInteger(part) || part < 0 || part >= archiveParts) {
       return;
     }
     busy = true;
@@ -583,18 +617,18 @@
       const request = await galleryRequest<{ id: string }>(galleryId, session, '/zip', 'POST', {
         ...(readyOutputs.length > 0
           ? {
-              outputs: readyOutputs
-                .filter(({ output }) => downloadChoices.includes(output.id))
+              outputs: chosenOutputs
+                .slice(part * 1000, (part + 1) * 1000)
                 .map(({ photo, output }) => ({ captureId: photo.id, outputId: output.id })),
             }
-          : { captureIds: downloads.map((photo) => photo.id) }),
+          : { captureIds: downloads.slice(part * 1000, (part + 1) * 1000).map((photo) => photo.id) }),
       });
       if (disposed || !session) {
         return;
       }
       const blob = await galleryFile(galleryId, session, `/zip/${encodeURIComponent(request.id)}`, true);
       if (!disposed && session) {
-        downloadBlob(blob, 'edited-photographs.zip');
+        downloadBlob(blob, `edited-photographs${archiveParts > 1 ? `-part-${part + 1}` : ''}.zip`);
       }
     } catch (error_) {
       if (!disposed) {
@@ -903,12 +937,14 @@
                     disabled={slide === 0}
                     onclick={() => {
                       slideIndexes[block.id] = slide - 1;
+                      void prepareThumbnails();
                     }}>Previous photograph</button
                   ><span>{slide + 1} / {photos.length}</span><button
                     type="button"
                     disabled={slide >= photos.length - 1}
                     onclick={() => {
                       slideIndexes[block.id] = slide + 1;
+                      void prepareThumbnails();
                     }}>Next photograph</button
                   >
                 </div>{/if}
@@ -978,15 +1014,24 @@
                     : `${item.output.exportSpec.maxEdge}px`} · {item.output.branded
                     ? 'Studio branding'
                     : 'Clean edit'}</label
-                >{/each}<button
-                type="button"
-                class="pc-primary"
-                disabled={busy || downloadChoices.length === 0}
-                onclick={zip}>Download selected files</button
-              >
+                >{/each}
             </div>{:else if downloads.length}<p>{downloads.length} approved photographs ready to download.</p>
-            <button type="button" class="pc-primary" disabled={busy} onclick={zip}>Download edited collection</button
-            >{/if}
+          {/if}
+          {#if readyOutputs.length || downloads.length}
+            {#if archiveParts > 1}<p>
+                {archiveCount} files in {archiveParts} ZIP parts. Download each part separately.
+              </p>
+              {#each Array.from({ length: archiveParts }, (_, part) => part) as part (part)}<button
+                  type="button"
+                  class="pc-primary"
+                  disabled={busy}
+                  onclick={() => zip(part)}
+                  >Download part {part + 1} ({Math.min(1000, archiveCount - part * 1000)} files)</button
+                >{/each}
+            {:else}<button type="button" class="pc-primary" disabled={busy || archiveCount === 0} onclick={() => zip()}
+                >{readyOutputs.length > 0 ? 'Download selected files' : 'Download edited collection'}</button
+              >{/if}
+          {/if}
         </div>
       </section>
     </main>
@@ -1003,14 +1048,10 @@
       title={opened ? `Photo ${opened.number}` : 'Photograph'}
       closeLabel="Close photograph"
       wide
-      onRequestClose={() => {
-        opened = null;
-        if (preview) {
-          URL.revokeObjectURL(preview);
-        }
-        preview = '';
-      }}
+      onRequestClose={closePhoto}
       >{#if opened}<div class="pc-dialog">
+          {#if error}<p role="alert">{error}</p>{/if}
+          {#if notice}<p role="status">{notice}</p>{/if}
           {#if openedOutput}<p>{openedOutput.label} · Review this version</p>{/if}
           {#if preview}<button
               type="button"
@@ -1159,6 +1200,7 @@
       wide
       onRequestClose={() => (compareOpen = false)}
       ><div class="pc-comparison">
+        {#if error}<p role="alert">{error}</p>{/if}
         {#each compareIds as id (id)}<div>
             {#if comparison[id]}<img
                 src={comparison[id]}

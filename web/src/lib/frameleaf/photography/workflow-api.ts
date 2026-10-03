@@ -40,6 +40,7 @@ export type PresentationBlock = {
   chapterId: string | null;
   captureIds: string[];
   text: string;
+  selection?: 'automatic' | 'explicit';
 };
 export type WorkflowConfig = {
   title: string;
@@ -242,6 +243,7 @@ export type GuestGallery = {
   rounds: Round[];
   orders: Order[];
   publication: Publication | null;
+  publishedGenerationId?: string | null;
   presentation: Presentation;
   pricing: {
     currency: string;

@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { loadBrand, saveBrand, type Brand } from '$lib/frameleaf/photography/api';
 import PhotographyBranding from './PhotographyBranding.svelte';

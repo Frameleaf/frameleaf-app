@@ -129,7 +129,14 @@
     if (draft.config.presentation.blocks.length >= 100) {
       return;
     }
-    draft.config.presentation.blocks.push({ id: crypto.randomUUID(), type, chapterId: null, captureIds: [], text: '' });
+    draft.config.presentation.blocks.push({
+      id: crypto.randomUUID(),
+      type,
+      chapterId: null,
+      selection: 'automatic',
+      captureIds: [],
+      text: '',
+    });
   }
   function moveBlock(index: number, direction: number) {
     const blocks = draft?.config.presentation.blocks;
@@ -140,6 +147,15 @@
     const block = blocks[index];
     blocks[index] = blocks[next];
     blocks[next] = block;
+  }
+  function moveBlockPhoto(block: PresentationBlock, index: number, direction: number) {
+    const next = index + direction;
+    if (next < 0 || next >= block.captureIds.length) {
+      return;
+    }
+    const id = block.captureIds[index];
+    block.captureIds[index] = block.captureIds[next];
+    block.captureIds[next] = id;
   }
   async function saveStudioPreset(id: string | null = null) {
     if (!stored || !draft || busy || !presetName.trim()) {
@@ -997,17 +1013,47 @@
               >
             </div>
             {#if !['chapter', 'caption'].includes(block.type)}<details>
-                <summary>Photographs ({block.captureIds.length || 'automatic'})</summary>
+                <summary
+                  >Photographs ({block.selection === 'explicit' || block.captureIds.length > 0
+                    ? block.captureIds.length
+                    : 'automatic'})</summary
+                >
                 <p>
-                  Choose an explicit sequence, or leave empty to use the assembled chapter order. Full photograph and
+                  Choose photographs in their display order, or use the assembled chapter sequence. Full photograph and
                   pair blocks show the first one or two matching photographs.
                 </p>
+                <Button
+                  disabled={busy}
+                  onclick={() => {
+                    block.selection = 'automatic';
+                    block.captureIds = [];
+                  }}>Use assembled sequence</Button
+                >
+                {#each block.captureIds as id, photoIndex (id)}<div class="phd-row">
+                    <span
+                      >{photoIndex + 1}. Photo {eligible.find((capture) => capture.id === id)?.number ??
+                        'unavailable'}</span
+                    >
+                    <div class="phd-actions">
+                      <Button
+                        disabled={busy || photoIndex === 0}
+                        label={`Move selected photo ${photoIndex + 1} earlier`}
+                        onclick={() => moveBlockPhoto(block, photoIndex, -1)}>↑</Button
+                      >
+                      <Button
+                        disabled={busy || photoIndex === block.captureIds.length - 1}
+                        label={`Move selected photo ${photoIndex + 1} later`}
+                        onclick={() => moveBlockPhoto(block, photoIndex, 1)}>↓</Button
+                      >
+                    </div>
+                  </div>{/each}
                 {#each eligible as capture (capture.id)}<label
                     ><input
                       type="checkbox"
                       disabled={busy || (!block.captureIds.includes(capture.id) && block.captureIds.length >= 1000)}
                       checked={block.captureIds.includes(capture.id)}
                       onchange={(event) => {
+                        block.selection = 'explicit';
                         block.captureIds = event.currentTarget.checked
                           ? [...block.captureIds, capture.id]
                           : block.captureIds.filter((id) => id !== capture.id);
