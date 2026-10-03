@@ -638,6 +638,42 @@ describe(PartnerCopyService.name, () => {
       await expect(lockedIds()).resolves.toEqual([]);
     });
 
+    it.each([AssetOriginField.Tags, AssetOriginField.Faces])(
+      "locks a followed copy when a %s edit brings the source under the sharer's Locked rules",
+      async (field) => {
+        const { sut, ctx } = setup();
+        const { user: alice } = await ctx.newUser();
+        const { user: bob } = await ctx.newUser();
+        await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+        const source = await newSourceAsset(ctx, alice.id);
+        const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
+        const { tag } = await ctx.newTag({ userId: alice.id, value: 'Private' });
+        const { person } = await ctx.newPerson({ ownerId: alice.id, name: 'Secret' });
+        await db
+          .insertInto('user_metadata')
+          .values({
+            userId: alice.id,
+            key: UserMetadataKey.Preferences,
+            value: {
+              privacy: { suppression: { tagIds: [tag.id], personIds: [person.personGroupId], scope: 'visible' } },
+            },
+          })
+          .execute();
+        await expect(ctx.get(AssetRepository).getLockReasons([bobCopy!])).resolves.toEqual([]);
+
+        if (field === AssetOriginField.Tags) {
+          await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [source.id] });
+        } else {
+          await ctx.newAssetFace({ assetId: source.id, personGroupId: person.personGroupId });
+        }
+        await sut.handlePropagate({ kind: 'asset', sourceId: source.id, fields: [field] });
+
+        await expect(ctx.get(AssetRepository).getLockReasons([bobCopy!])).resolves.toEqual([
+          expect.objectContaining({ assetId: bobCopy, reason: AssetLockReason.Marked }),
+        ]);
+      },
+    );
+
     it('never propagates favorites or trash', async () => {
       const { sut, ctx } = setup();
       const { assets, assetCtx } = assetService();
