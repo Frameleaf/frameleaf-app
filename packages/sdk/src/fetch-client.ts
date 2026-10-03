@@ -6217,6 +6217,32 @@ export type ICloudCoverageResponseDto = {
     /** False when identity matching is switched off: no connection can then be shown to cover the library */
     identityMatching: boolean;
 };
+export type ICloudAttachItemDto = {
+    assetId: string;
+    /** PHCloudIdentifier.stringValue, as the device reports it */
+    cloudIdentifier: string;
+    creationDate?: string;
+    editVersion?: string;
+    id: string;
+    originalFilename?: string;
+    pixelHeight?: number;
+    pixelWidth?: number;
+    role: ICloudIdentityRole;
+    sha256: string;
+    uti?: string;
+};
+export type ICloudAttachDto = {
+    /** This device's backup identity (the backup device registry's deviceKey) */
+    deviceKey: string;
+    items: ICloudAttachItemDto[];
+};
+export type ICloudAttachAnswerDto = {
+    id: string;
+    state: ICloudAttachState;
+};
+export type ICloudAttachResponseDto = {
+    items: ICloudAttachAnswerDto[];
+};
 export type ICloudLookupItemDto = {
     /** PHCloudIdentifier.stringValue, as the device reports it */
     cloudIdentifier: string;
@@ -17376,6 +17402,21 @@ export function probeICloudCoverage({ iCloudCoverageDto }: {
     })));
 }
 /**
+ * Attach iCloud identities to originals already uploaded by this device
+ */
+export function attachICloudIdentities({ iCloudAttachDto }: {
+    iCloudAttachDto: ICloudAttachDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudAttachResponseDto;
+    }>("/icloud-sync/identities/attach", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudAttachDto
+    })));
+}
+/**
  * Is this iCloud item on the server, or coming from the sync?
  */
 export function lookupICloudIdentities({ iCloudLookupDto }: {
@@ -25417,6 +25458,11 @@ export enum ICloudIdentityRole {
     LiveMotion = "live-motion",
     RawAlternate = "raw-alternate",
     EditRender = "edit-render"
+}
+export enum ICloudAttachState {
+    Attached = "attached",
+    Unavailable = "unavailable",
+    Invalid = "invalid"
 }
 export enum ICloudEditOwnerKind {
     IcloudSync = "icloud-sync",

@@ -244,3 +244,44 @@ export const ICloudClaimReleaseResponseSchema = z
   .object({ released: z.array(z.uuid()) })
   .meta({ id: 'ICloudClaimReleaseResponseDto' });
 export class ICloudClaimReleaseResponseDto extends createZodDto(ICloudClaimReleaseResponseSchema) {}
+
+/** Attach PhotoKit identities to originals this device already uploaded, after matching SHA-256. */
+export const ICloudAttachSchema = z
+  .object({
+    deviceKey: DeviceKey,
+    items: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1).max(256),
+            assetId: z.uuid(),
+            ...ItemFields,
+            role: ICloudIdentityRoleSchema,
+            sha256: Sha256,
+            editVersion: z.string().min(1).max(512).optional(),
+          })
+          .refine((item) => item.role !== 'edit-render' || !!item.editVersion, {
+            message: 'An edit render requires its edit version',
+            path: ['editVersion'],
+          })
+          .meta({ id: 'ICloudAttachItemDto' }),
+      )
+      .min(1)
+      .max(500),
+  })
+  .meta({ id: 'ICloudAttachDto' });
+export class ICloudAttachDto extends createZodDto(ICloudAttachSchema) {}
+
+export const ICloudAttachResponseSchema = z
+  .object({
+    items: z.array(
+      z
+        .object({
+          id: z.string(),
+          state: z.enum(['attached', 'unavailable', 'invalid']).meta({ id: 'ICloudAttachState' }),
+        })
+        .meta({ id: 'ICloudAttachAnswerDto' }),
+    ),
+  })
+  .meta({ id: 'ICloudAttachResponseDto' });
+export class ICloudAttachResponseDto extends createZodDto(ICloudAttachResponseSchema) {}
