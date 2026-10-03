@@ -81,7 +81,25 @@ jobs:
       - name: Verify recovery safeguards
         run: node --test studio/tools/engine.test.mjs
       - name: Recover and verify immutable source, then prepare adapted workspace
+        id: prepare_source
+        env:
+          STUDIO_SOURCE_RECOVERY: '1'
+          REVIEWED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node studio/tools/engine.mjs prepare
+      - name: Check for the genuine source recovery receipt
+        id: source_recovery_receipt
+        if: ${{ always() && steps.prepare_source.outcome != 'skipped' }}
+        run: |
+          if [ -f "$RUNNER_TEMP/frameleaf-studio-source-recovery.json" ]; then
+            echo 'produced=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Retain genuine adapted source inventory for reviewed digest recovery
+        if: ${{ always() && steps.source_recovery_receipt.outputs.produced == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-studio-source-recovery
+          path: ${{ runner.temp }}/frameleaf-studio-source-recovery.json
+          if-no-files-found: error
       - name: Graph allocation audit (FL-97)
         run: node studio/tools/allocation-audit.mjs
       - name: Install locked dependencies without lifecycle scripts
