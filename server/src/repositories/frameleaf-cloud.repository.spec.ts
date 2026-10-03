@@ -22,9 +22,9 @@ import {
 import {
   CLOUD_IDEMPOTENCY_IN_FLIGHT_RETRIES,
   CONSENT_TERMS_FOR_FEATURES,
-  FRAMELEAF_CLOUD_ASSERTION_TTL_SECONDS,
   CloudEstimateRequest,
   CloudJobCreateRequest,
+  FRAMELEAF_CLOUD_ASSERTION_TTL_SECONDS,
   FrameleafCloudError,
   ed25519Thumbprint,
 } from 'src/utils/frameleaf-cloud.js';
@@ -317,7 +317,7 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
         client_assertion: assertion,
       });
       expect(assertion).not.toBe(fixture.client_assertion); // The published JWT is illustrative, not a signer.
-      const [header, payload, signature] = assertion.split('.');
+      const [header, payload, signature] = assertion.split('.', 3);
       expect(
         verify(
           null,
@@ -358,9 +358,9 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     cloud.respond = ({ path }) => (path === '/id/token' ? { status: 200, body: response } : undefined);
     const before = cloud.requests.filter(({ path }) => path === '/id/token').length;
     for (let attempt = 0; attempt < 2; attempt++) {
-      await expect(
-        cloudRepository.accessToken(document, 'instance-1', `${cloud.url}/ml-eu`, signer),
-      ).rejects.toThrow('cnf.jkt');
+      await expect(cloudRepository.accessToken(document, 'instance-1', `${cloud.url}/ml-eu`, signer)).rejects.toThrow(
+        'cnf.jkt',
+      );
     }
     expect(cloud.requests.filter(({ path }) => path === '/id/token')).toHaveLength(before + 2);
     // This is deliberate negative conformance; no JWT mutation adds a binding to the published response.

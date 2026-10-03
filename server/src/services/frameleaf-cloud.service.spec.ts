@@ -329,9 +329,7 @@ describe(FrameleafCloudService.name, () => {
       makeDue();
       const completed = await sut.getLink();
       expect(completed.state).toBe('linked');
-      const register = cloud.requests.find(
-        ({ path, method }) => path === '/api/v1/instances' && method === 'POST',
-      )!;
+      const register = cloud.requests.find(({ path, method }) => path === '/api/v1/instances' && method === 'POST')!;
       expect(register.headers.authorization).toBe(`Bearer ${approved.access_token}`);
       expectRegistrationProof(register);
       expect(storedLink()?.pending).toBeUndefined();
