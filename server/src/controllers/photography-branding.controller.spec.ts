@@ -39,7 +39,7 @@ it('retains private no-store through the actual Express/shared-file send path', 
     expect(response.headers['cache-control']).toBe('private, no-store');
     expect(response.headers['content-type']).toMatch(/^image\/webp/);
     expect(response.headers['content-disposition']).toContain('studio-logo');
-    expect(service.logoThumbnail).toHaveBeenCalledExactlyOnceWith(auth, id);
+    expect(service.logoThumbnail).toHaveBeenCalledExactlyOnceWith(auth, id, 'original');
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

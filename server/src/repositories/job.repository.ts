@@ -16,7 +16,10 @@ import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
 
 /** A queue job as bullmq has it, before the Job manager's account and worker are added (FL-71). */
-export type QueueJobRow = Omit<QueueJobResponseDto, 'account' | 'worker'> & { status: QueueJobStatus };
+export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
+  name: JobName;
+  status: QueueJobStatus;
+};
 
 type JobMapItem = {
   jobName: JobName;
@@ -715,6 +718,12 @@ export class JobRepository {
       case JobName.WorkflowAssetTrigger: {
         // FL-179: one job per execution, so a replayed run that queues its automatic retry again adds none
         return item.data.executionId ? { jobId: `workflow-${item.data.executionId}` } : null;
+      }
+      case JobName.PhotographyWorkflowRender: {
+        return {
+          delay: item.data.delay ?? 0,
+          deduplication: { id: `${JobName.PhotographyWorkflowRender}:${item.data.id}`, keepLastIfActive: true },
+        };
       }
       case JobName.AssetDevelopRender: {
         // The automatic retry of a failed render waits before it is claimed (FL-64).

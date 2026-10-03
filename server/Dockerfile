@@ -50,6 +50,7 @@ RUN . /etc/os-release && \
   # libjpeg62-turbo-dev is only for building libvips; the final image uses jpegli (/usr/local/lib/libjpeg.so.62)
   libjpeg62-turbo-dev \
   liblcms2-dev \
+  libpango1.0-dev \
   librsvg2-dev \
   libspng-dev \
   meson \
@@ -145,6 +146,17 @@ COPY server/base-image/sources/libvips.json server/base-image/sources/libvips.sh
 COPY server/base-image/sources/libvips-patches/ ./libvips-patches/
 RUN ./libvips.sh
 
+# Full native RAW development: reuse the already pinned media libraries and LibRaw.
+FROM base-server-imagemagick AS base-server-darktable
+RUN apt-update-strict && apt-get install --no-install-recommends -yqq \
+  python3 gettext intltool xsltproc desktop-file-utils \
+  libgtk-3-dev libexiv2-dev libjson-glib-dev libpugixml-dev libpotrace-dev \
+  libpng-dev libtiff-dev libsqlite3-dev libxml2-dev libcurl4-openssl-dev libzstd-dev
+COPY server/base-image/sources/darktable.json server/base-image/sources/darktable.sh ./
+COPY server/base-image/verify-darktable.mjs ./
+COPY server/test/native/patch-darktable-lens.py server/test/native/patch-darktable-mask-geometry.py ./darktable-patches/
+RUN ./darktable.sh
+
 FROM base-server-build AS base-server-dev
 
 COPY server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh ./
@@ -155,6 +167,12 @@ COPY --from=base-server-libvips /usr/local/bin/vips* /usr/local/bin/
 COPY --from=base-server-libraw /usr/local/bin/dcraw_emu /usr/local/bin/
 COPY --from=base-server-libvips /usr/local/include/vips/ /usr/local/include/vips/
 COPY --from=base-server-geodata /build/geodata /build/geodata
+COPY --from=base-server-darktable /usr/local/lib/ /usr/local/lib/
+COPY --from=base-server-darktable /usr/local/bin/darktable /usr/local/bin/darktable-cli /usr/local/bin/
+COPY --from=base-server-darktable /usr/local/share/ /usr/local/share/
+COPY server/base-image/verify-darktable.mjs server/base-image/verify-darktable-develop.mjs /build/
+COPY --from=base-server-darktable /build/darktable-runtime-packages.txt /build/darktable-runtime-packages.txt
+RUN apt-update-strict && xargs -r apt-get install --no-install-recommends -yqq < /build/darktable-runtime-packages.txt
 
 ENV LD_LIBRARY_PATH=/usr/lib/wsl/lib
 
@@ -162,7 +180,8 @@ RUN ldconfig /usr/local/lib && \
   ldd /usr/local/bin/dcraw_emu > /tmp/libraw-linkage && \
   grep -Eq 'libraw(_r)?\.so.*=> /usr/local/lib/' /tmp/libraw-linkage && \
   ! grep -q 'not found' /tmp/libraw-linkage && \
-  rm /tmp/libraw-linkage
+  rm /tmp/libraw-linkage && \
+  node /build/verify-darktable.mjs verify /usr/local /build/darktable-runtime.json
 
 # Record the exact source revisions and package versions this base was built from.
 COPY server/base-image/packages/ ./packages/
@@ -193,6 +212,7 @@ ARG GMMLIB_VERSION=22.10.0
 
 WORKDIR /build
 
+COPY --from=base-server-darktable /build/darktable-runtime-packages.txt /build/darktable-runtime-packages.txt
 COPY server/base-image/configure-apt.sh server/base-image/packages/ffmpeg.json server/base-image/packages/ffmpeg.sh ./
 COPY --chmod=755 server/base-image/apt-update-strict.sh /usr/local/sbin/apt-update-strict
 
@@ -217,6 +237,8 @@ RUN . /etc/os-release && \
   libgomp1 \
   libgsf-1-114 \
   liblcms2-2 \
+  libpango-1.0-0 \
+  libpangocairo-1.0-0 \
   liblqr-1-0 \
   libltdl7 \
   libopenexr-3-1-30 \
@@ -238,6 +260,7 @@ RUN . /etc/os-release && \
   libwebpmux3 \
   libhwy1t64 \
   libaom3 && \
+  xargs -r apt-get install --no-install-recommends -yqq < /build/darktable-runtime-packages.txt && \
   ./ffmpeg.sh && \
   if [ $(arch) = "x86_64" ]; then \
   # Old driver
@@ -288,7 +311,8 @@ RUN . /etc/os-release && \
   /usr/share/lintian/overrides/libjpeg62-turbo
 
 COPY --from=base-server-dev /usr/local/lib/ /usr/local/lib/
-COPY --from=base-server-dev /usr/local/bin/dcraw_emu /usr/local/bin/
+COPY --from=base-server-dev /usr/local/bin/dcraw_emu /usr/local/bin/darktable /usr/local/bin/darktable-cli /usr/local/bin/
+COPY --from=base-server-dev /usr/local/share/ /usr/local/share/
 COPY --from=base-server-dev /build/ /build/
 
 WORKDIR /usr/src/app
@@ -301,7 +325,8 @@ RUN ldconfig /usr/local/lib && \
   ldd /usr/local/bin/dcraw_emu > /tmp/libraw-linkage && \
   grep -Eq 'libraw(_r)?\.so.*=> /usr/local/lib/' /tmp/libraw-linkage && \
   ! grep -q 'not found' /tmp/libraw-linkage && \
-  rm /tmp/libraw-linkage
+  rm /tmp/libraw-linkage && \
+  node /build/verify-darktable.mjs verify /usr/local
 
 FROM base-server-dev AS builder
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
@@ -362,6 +387,16 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   pnpm --filter immich --prod --no-optional deploy /output/server-pruned
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir /output/server-pruned/node_modules/sharp exec npm run build
+
+# Explicit manual RAW qualification uses the actual production native base and compiled/pruned
+# server adapter. It builds no web, Studio, CLI or plugin WASM and starts no application service.
+FROM base-server-prod AS native-raw-qualification
+WORKDIR /usr/src/app
+ENV NODE_ENV=production
+COPY --from=server /output/server-pruned ./server
+RUN node /build/verify-darktable.mjs verify /usr/local && \
+  node --input-type=module -e "await import('./server/dist/utils/darktable-renderer.js')"
+ENTRYPOINT ["node", "/build/verify-darktable-develop.mjs"]
 
 # Studio's editor (FL-88): the pinned Freecut revision is recovered from its archive, verified file by
 # file against studio/freecut-provenance.json, patched outside the snapshot, installed from the engine
@@ -449,6 +484,7 @@ FROM base-server-prod AS prod
 
 WORKDIR /usr/src/app
 ENV NODE_ENV=production \
+  FONTCONFIG_FILE=/usr/src/app/server/resources/fonts/fonts.conf \
   NVIDIA_DRIVER_CAPABILITIES=all \
   NVIDIA_VISIBLE_DEVICES=all
 

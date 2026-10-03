@@ -15,6 +15,10 @@ from .facial_recognition.recognition import FaceRecognizer
 
 
 def get_model_class(model_name: str, model_type: ModelType, model_task: ModelTask) -> type[InferenceModel]:
+    if model_task == ModelTask.SEMANTIC_MASK and model_type == ModelType.VISUAL:
+        from immich_ml.models.semantic_mask import SemanticMaskModel
+
+        return SemanticMaskModel
     source = get_model_source(model_name)
     match source, model_type, model_task:
         case ModelSource.OPENCLIP | ModelSource.MCLIP, ModelType.VISUAL, ModelTask.SEARCH:
