@@ -16,7 +16,11 @@ import {
   DEVELOP_RENDER_LEASE_MS,
   developArtifactPath,
 } from 'src/services/asset-develop.service.js';
-import { DARKTABLE_RENDERER_VERSION, renderDarktable } from 'src/utils/darktable-renderer.js';
+import {
+  DARKTABLE_RENDERER_VERSION,
+  renderDarktable,
+  encodeNativeDevelopOutput,
+} from 'src/utils/darktable-renderer.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS } from 'src/utils/media-operation.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
@@ -27,6 +31,7 @@ import { ServiceMocks, getMocks } from 'test/utils.js';
 vi.mock('src/utils/darktable-renderer.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/utils/darktable-renderer.js')>()),
   renderDarktable: vi.fn(),
+  encodeNativeDevelopOutput: vi.fn().mockResolvedValue(Buffer.from('jpeg')),
 }));
 
 const noAdjustments = {
@@ -159,7 +164,10 @@ describe(AssetDevelopService.name, () => {
       mocks.storage as never,
       mocks.systemMetadata as never,
       mocks.mediaOperation as never,
+      mocks.machineLearning as never,
     );
+    mocks.media.getImageMetadata.mockResolvedValue({ width: 4, height: 4, isTransparent: false });
+    vi.mocked(encodeNativeDevelopOutput).mockReset().mockResolvedValue(Buffer.from('jpeg'));
     mocks.mediaOperation.getTrackedRevisionIds.mockResolvedValue(new Set());
     mocks.mediaOperation.listActiveEditsOfRevision.mockResolvedValue([]);
   });
@@ -457,7 +465,7 @@ describe(AssetDevelopService.name, () => {
 
       developRepository.get.mockResolvedValue(created);
       await expect(sut.render(authStub.user1, asset.id, created.id)).resolves.toBeDefined();
-      expect(developRepository.getArtifacts).not.toHaveBeenCalled();
+      expect(developRepository.getArtifacts).toHaveBeenCalledWith(asset.id, []);
     });
 
     it('stores a valid recipe as the next revision and queues the render', async () => {
@@ -598,9 +606,10 @@ describe(AssetDevelopService.name, () => {
       mocks.media.encodeDevelopOutput.mockResolvedValue(Buffer.from('jpeg'));
       const recipe = { version: 2, renderer: 'darktable/5.6.1', exposureEV: 1 };
       await sut.preview(authStub.user1, asset.id, { recipe, size: 640 });
-      expect(renderDarktable).toHaveBeenCalledWith(raw.originalPath, recipe, expect.any(AbortSignal));
+      expect(renderDarktable).toHaveBeenCalledWith(raw.originalPath, recipe, expect.any(AbortSignal), expect.any(Map));
       expect(mocks.media.extract).not.toHaveBeenCalled();
-      expect(mocks.media.decodeImage).toHaveBeenCalledWith(native, { colorspace: 'srgb', processInvalidImages: false });
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+      expect(encodeNativeDevelopOutput).toHaveBeenCalledWith(native, expect.objectContaining({ size: 640 }));
       expect(mocks.media.renderDevelopGeometry).not.toHaveBeenCalled();
     });
     it('renders from the original and returns bytes without writing files', async () => {
@@ -661,11 +670,12 @@ describe(AssetDevelopService.name, () => {
         DARKTABLE_RENDERER_VERSION,
         DEVELOP_RENDER_LEASE_MS / 1000,
       );
-      const calls = mocks.media.encodeDevelopOutput.mock.calls;
+      const calls = vi.mocked(encodeNativeDevelopOutput).mock.calls;
       expect(calls).toHaveLength(2);
       expect(calls[0][0]).toBe(calls[1][0]);
-      expect(calls[0][2]).toMatchObject({ colorspace: 'srgb', detail: { median: 0 } });
-      expect(calls[1][2]).toMatchObject({ colorspace: 'srgb', detail: { median: 0 } });
+      expect(calls[0][1]).toMatchObject({ format: 'jpeg' });
+      expect(calls[1][1]).toMatchObject({ format: 'jpeg' });
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
       expect(mocks.media.extract).not.toHaveBeenCalled();
     });
 
@@ -955,6 +965,8 @@ describe(AssetDevelopService.name, () => {
         { id: 'tracked', status: AssetDevelopRevisionStatus.Queued, updatedAt: new Date() },
         { id: 'untracked', status: AssetDevelopRevisionStatus.Queued, updatedAt: new Date() },
       ]);
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 4, height: 4, isTransparent: false });
+      vi.mocked(encodeNativeDevelopOutput).mockReset().mockResolvedValue(Buffer.from('jpeg'));
       mocks.mediaOperation.getTrackedRevisionIds.mockResolvedValue(new Set(['tracked']));
 
       await sut.onBootstrap();
