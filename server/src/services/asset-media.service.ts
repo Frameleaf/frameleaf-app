@@ -160,7 +160,6 @@ export class AssetMediaService extends BaseService {
       );
     }
 
-    const physicalDeduplication = await this.getPhysicalDeduplicationCandidate(auth.user.id, file);
     return {
       asset: {
         ownerId: auth.user.id,
@@ -188,7 +187,6 @@ export class AssetMediaService extends BaseService {
         dto.visibility === AssetVisibility.Locked
           ? { reason: AssetLockReason.Marked, lockedBy: auth.user.id }
           : undefined,
-      physicalDeduplication,
     };
   }
 
@@ -198,7 +196,6 @@ export class AssetMediaService extends BaseService {
     dto: AssetMediaCreateDto,
     file: UploadFile,
     asset: Asset,
-    physicalDeduplication: Awaited<ReturnType<AssetMediaService['getPhysicalDeduplicationCandidate']>>,
     sidecarFile?: UploadFile,
     options: {
       preparedFile?: boolean;
@@ -207,30 +204,11 @@ export class AssetMediaService extends BaseService {
       checkIngestion?: () => Promise<void>;
     } = {},
   ) {
-    let expectedPhysical:
-      | {
-          masterOwnerId: string;
-          checksum: Buffer;
-          size: number;
-          ingestion: { resourceId: string; token: string; ownerId: string };
-        }
-      | undefined;
-    await options.checkIngestion?.();
-    if (options.quotaCharged) {
-      const { physicalDeduplication: policy } = await this.getConfig({ withCache: false });
-      physicalDeduplication = await this.getPhysicalDeduplicationCandidate(auth.user.id, file, policy);
-      if (physicalDeduplication && policy.masterUserId) {
-        if (!options.ingestion) {
-          throw new BadRequestException('Durable ingestion claim is required');
-        }
-        expectedPhysical = {
-          masterOwnerId: policy.masterUserId,
-          checksum: file.checksum,
-          size: file.size,
-          ingestion: options.ingestion,
-        };
-      }
+    if (options.quotaCharged && !options.ingestion) {
+      // a resumable upload links to a shared file only under its durable ingestion claim
+      throw new BadRequestException('Durable ingestion claim is required');
     }
+    await options.checkIngestion?.();
     if (!options.quotaCharged && dto.metadata?.length) {
       await this.assetRepository.upsertMetadata(asset.id, dto.metadata);
     }
@@ -253,24 +231,22 @@ export class AssetMediaService extends BaseService {
       });
     }
 
-    if (physicalDeduplication) {
-      if (expectedPhysical) {
-        await this.physicalFileRepository.linkAssetToOriginalPhysicalFile(
-          asset.id,
-          physicalDeduplication,
-          expectedPhysical,
-        );
-      } else {
-        await this.physicalFileRepository.linkAssetToOriginalPhysicalFile(asset.id, physicalDeduplication);
-      }
+    // universal storage: one file per content, server-wide. Content another library already holds is
+    // linked to that file and the upload released; new content becomes its own primary file.
+    const stored = await this.physicalFileRepository.linkUploadedOriginal(
+      asset.id,
+      { checksum: file.checksum, sizeInBytes: file.size },
+      {
+        exists: (path) => this.storageRepository.checkFileExists(path),
+        ...(options.quotaCharged && { ingestion: options.ingestion }),
+      },
+    );
+    if (stored?.linked) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [file.originalPath] } });
-      asset.originalPath = physicalDeduplication.path;
-      asset.physicalOriginalFileId = physicalDeduplication.id;
-    } else {
-      const masterPhysicalFile = await this.ensureMasterPhysicalOriginal(auth.user.id, asset.id);
-      if (masterPhysicalFile) {
-        asset.physicalOriginalFileId = masterPhysicalFile.id;
-      }
+      asset.originalPath = stored.physicalFile.path;
+    }
+    if (stored) {
+      asset.physicalOriginalFileId = stored.physicalFile.id;
     }
 
     if (!options.quotaCharged && file.legacyChecksum) {
@@ -305,7 +281,7 @@ export class AssetMediaService extends BaseService {
     try {
       const prepared = await this.prepareUploadAsset(auth, dto, file);
       asset = await this.assetRepository.create(prepared.asset, prepared.lock);
-      await this.finishUploadAsset(auth, dto, file, asset, prepared.physicalDeduplication, sidecarFile);
+      await this.finishUploadAsset(auth, dto, file, asset, sidecarFile);
 
       return { id: asset.id, status: AssetMediaStatus.CREATED };
     } catch (error: any) {
@@ -669,41 +645,6 @@ export class AssetMediaService extends BaseService {
       ...getLockedVisibilityOptions(auth),
     };
     return Object.keys(options).length > 0 ? options : undefined;
-  }
-
-  private async getPhysicalDeduplicationCandidate(
-    ownerId: string,
-    file: UploadFile,
-    policy?: { enabled: boolean; masterUserId: string | null },
-  ) {
-    const physicalDeduplication = policy ?? (await this.getConfig({ withCache: true })).physicalDeduplication;
-    if (
-      !physicalDeduplication.enabled ||
-      !physicalDeduplication.masterUserId ||
-      ownerId === physicalDeduplication.masterUserId
-    ) {
-      return;
-    }
-
-    const masterAsset = await this.physicalFileRepository.getMasterOriginalCandidate(
-      physicalDeduplication.masterUserId,
-      file.checksum,
-      file.size,
-    );
-    if (!masterAsset) {
-      return;
-    }
-
-    return this.physicalFileRepository.ensureOriginalPhysicalFile(masterAsset.id);
-  }
-
-  private async ensureMasterPhysicalOriginal(ownerId: string, assetId: string) {
-    const { physicalDeduplication } = await this.getConfig({ withCache: true });
-    if (!physicalDeduplication.enabled || ownerId !== physicalDeduplication.masterUserId) {
-      return;
-    }
-
-    return this.physicalFileRepository.ensureOriginalPhysicalFile(assetId);
   }
 
   private requireQuota(auth: AuthDto, size: number) {

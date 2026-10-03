@@ -396,84 +396,92 @@ describe(AssetMediaService.name, () => {
       );
     });
 
-    it('should reuse a master physical original for a cross-user duplicate when enabled', async () => {
+    describe('universal storage linking', () => {
       const file = {
         uuid: 'random-uuid',
-        originalPath: 'fake_path/duplicate.jpeg',
+        originalPath: '/data/upload/user1/ra/nd/random-uuid.jpeg',
         mimeType: 'image/jpeg',
         checksum: Buffer.from('file hash', 'utf8'),
         originalName: 'duplicate.jpeg',
         size: 42,
       };
-      const asset = {
-        ...assetEntity,
-        id: 'new-asset',
-        ownerId: authStub.user1.user.id,
-        originalPath: file.originalPath,
-      };
-      const physicalFile = { id: 'physical-file-id', path: '/data/library/master.jpeg' };
 
-      mocks.systemMetadata.get.mockResolvedValue({
-        physicalDeduplication: { enabled: true, masterUserId: 'master-user-id' },
-      });
-      mocks.asset.create.mockResolvedValue(asset);
-      mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue({
-        id: 'master-asset-id',
-        checksum: file.checksum,
-        originalFileName: 'master.jpeg',
-        type: AssetType.Image,
-        originalPath: '/data/library/master.jpeg',
-        physicalOriginalFileId: null,
-        sizeInBytes: file.size,
-        width: null,
-        height: null,
-        duration: null,
-      });
-      mocks.physicalFile.ensureOriginalPhysicalFile.mockResolvedValue(physicalFile as never);
+      it('links content another library already holds to its file and answers created, not duplicate', async () => {
+        const asset = {
+          ...assetEntity,
+          id: 'new-asset',
+          ownerId: authStub.user1.user.id,
+          originalPath: file.originalPath,
+        };
+        const physicalFile = { id: 'physical-file-id', path: '/data/library/other/shared.jpeg' };
+        mocks.asset.create.mockResolvedValue(asset);
+        mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({ physicalFile, linked: true } as never);
 
-      await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
-        id: 'new-asset',
-        status: AssetMediaStatus.CREATED,
-      });
+        await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
+          id: 'new-asset',
+          status: AssetMediaStatus.CREATED,
+        });
 
-      expect(mocks.asset.create).toHaveBeenCalled();
-      expect(mocks.physicalFile.getMasterOriginalCandidate).toHaveBeenCalledWith(
-        'master-user-id',
-        file.checksum,
-        file.size,
-      );
-      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).toHaveBeenCalledWith('new-asset', physicalFile);
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.FileDelete,
-        data: { files: [file.originalPath] },
-      });
-    });
-
-    it('should keep normal storage when no master physical original exists', async () => {
-      const file = {
-        uuid: 'random-uuid',
-        originalPath: 'fake_path/asset_1.jpeg',
-        mimeType: 'image/jpeg',
-        checksum: Buffer.from('file hash', 'utf8'),
-        originalName: 'asset_1.jpeg',
-        size: 42,
-      };
-
-      mocks.systemMetadata.get.mockResolvedValue({
-        physicalDeduplication: { enabled: true, masterUserId: 'master-user-id' },
-      });
-      mocks.asset.create.mockResolvedValue(assetEntity);
-      mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(null as never);
-
-      await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
-        id: 'id_1',
-        status: AssetMediaStatus.CREATED,
+        expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledWith(
+          'new-asset',
+          { checksum: file.checksum, sizeInBytes: file.size },
+          expect.objectContaining({ exists: expect.any(Function) }),
+        );
+        // the temporary upload is released through the reference-counted FileDelete
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [file.originalPath] },
+        });
+        expect(mocks.event.emit).toHaveBeenCalledWith(
+          'AssetCreate',
+          expect.objectContaining({
+            asset: expect.objectContaining({
+              originalPath: physicalFile.path,
+              physicalOriginalFileId: physicalFile.id,
+            }),
+          }),
+        );
       });
 
-      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
-      expect(mocks.job.queue).not.toHaveBeenCalledWith({
-        name: JobName.FileDelete,
-        data: { files: [file.originalPath] },
+      it('needs no master account: the link is attempted with the old settings left unset', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ physicalDeduplication: { enabled: false, masterUserId: null } });
+        mocks.asset.create.mockResolvedValue(assetEntity);
+
+        await sut.uploadAsset(authStub.user1, createDto, file);
+
+        expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalled();
+        expect(mocks.physicalFile.getMasterOriginalCandidate).not.toHaveBeenCalled();
+      });
+
+      it('registers new content as its own primary file and keeps the upload', async () => {
+        const physicalFile = { id: 'own-physical-file', path: file.originalPath };
+        mocks.asset.create.mockResolvedValue({ ...assetEntity });
+        mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({ physicalFile, linked: false } as never);
+
+        await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
+          id: 'id_1',
+          status: AssetMediaStatus.CREATED,
+        });
+
+        expect(mocks.job.queue).not.toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [file.originalPath] },
+        });
+        expect(mocks.event.emit).toHaveBeenCalledWith(
+          'AssetCreate',
+          expect.objectContaining({ asset: expect.objectContaining({ physicalOriginalFileId: physicalFile.id }) }),
+        );
+      });
+
+      it('checks that the linked file exists on disk', async () => {
+        mocks.asset.create.mockResolvedValue(assetEntity);
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+
+        await sut.uploadAsset(authStub.user1, createDto, file);
+
+        const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+        await expect(options.exists('/data/library/other/shared.jpeg')).resolves.toBe(true);
+        expect(mocks.storage.checkFileExists).toHaveBeenCalledWith('/data/library/other/shared.jpeg');
       });
     });
 
