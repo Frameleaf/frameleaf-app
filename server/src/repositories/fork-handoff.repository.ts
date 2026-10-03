@@ -264,6 +264,13 @@ const ORPHAN_FAMILIES = [
     `candidate."ownerId"::text || ':' || candidate."personGroupId"::text`,
     'NOT EXISTS (SELECT 1 FROM public.person person WHERE person."ownerId" = candidate."ownerId" AND person."personGroupId" = candidate."personGroupId")',
   ],
+  // FL-326: a person mapping goes with the recipient's person it points at.
+  [
+    'partner_person_link',
+    'immich_fork.partner_person_link',
+    `candidate."ownerId"::text || ':' || candidate."sourcePersonGroupId"::text`,
+    'NOT EXISTS (SELECT 1 FROM public.person person WHERE person."ownerId" = candidate."ownerId" AND person."personGroupId" = candidate."personGroupId")',
+  ],
   [
     'partner_backfill',
     'immich_fork.partner_backfill',

@@ -44,6 +44,8 @@ describe(PersonService.name, () => {
     mocks.person.getOrphanedFaceCorrections.mockResolvedValue([]);
     mocks.person.getFaceDecisionChecksums.mockResolvedValue(new Map());
     mocks.person.recordFaceCorrections.mockResolvedValue([]);
+    // FL-326: no person copies follow anyone unless a test says so
+    mocks.partnerOrigin.getPersonFollowers.mockResolvedValue([]);
     mocks.person.hasFaces.mockResolvedValue(true);
     mocks.person.reassignFaces.mockResolvedValue(1);
     mocks.person.reanchorMergeVerdicts.mockResolvedValue(0);
@@ -517,6 +519,48 @@ describe(PersonService.name, () => {
         name: 'Person 1',
       });
       expect(mocks.access.person.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([person.personGroupId]));
+    });
+
+    it("records the owner's edit on a partner copy and pushes it to that person's own copies (FL-326)", async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ name: 'Emma' });
+      const follower = { ownerId: newUuid(), personGroupId: newUuid(), overriddenFields: [] };
+
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.update.mockResolvedValue({ ...person, name: 'Em' });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+      mocks.partnerOrigin.getPersonFollowers.mockImplementation((ownerId) =>
+        Promise.resolve(ownerId === person.ownerId ? ([follower] as never) : []),
+      );
+
+      await sut.update(auth, person.personGroupId, { name: 'Em' });
+
+      expect(mocks.partnerOrigin.markPersonOverridden).toHaveBeenCalledWith(
+        person.ownerId,
+        [person.personGroupId],
+        ['name'],
+      );
+      expect(mocks.person.update).toHaveBeenCalledWith(
+        expect.objectContaining({ ownerId: follower.ownerId, personGroupId: follower.personGroupId }),
+      );
+    });
+
+    it('does not push a cover or favorite change to copies (FL-326)', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create();
+
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.update.mockResolvedValue(person);
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+
+      await sut.update(auth, person.personGroupId, { isFavorite: true });
+
+      expect(mocks.partnerOrigin.markPersonOverridden).toHaveBeenCalledWith(
+        person.ownerId,
+        [person.personGroupId],
+        ['favorite'],
+      );
+      expect(mocks.partnerOrigin.getPersonFollowers).not.toHaveBeenCalled();
     });
 
     it("should update a person's date of birth", async () => {

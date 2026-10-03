@@ -2065,6 +2065,34 @@
       "identity": "immich_fork.partner_backfill.updatedAt"
     },
     {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.partner_person_link.correctionId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.partner_person_link.createdAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.partner_person_link.kind"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.partner_person_link.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.partner_person_link.partnerSharedById"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.partner_person_link.personGroupId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.partner_person_link.sourcePersonGroupId"
+    },
+    {
       "definition": "timestamp with time zone|not null|clock_timestamp()||",
       "identity": "immich_fork.person_merge_verdict.createdAt"
     },
@@ -8735,11 +8763,11 @@
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_verifiedCount_check"
     },
     {
-      "definition": "CHECK (action = ANY (ARRAY['reassign'::text, 'new-person'::text, 'unassign'::text, 'remove'::text, 'merge'::text, 'box-move'::text]))",
+      "definition": "CHECK (action = ANY (ARRAY['reassign'::text, 'new-person'::text, 'unassign'::text, 'remove'::text, 'merge'::text, 'box-move'::text, 'partner-merge'::text]))",
       "identity": "immich_fork.face_correction.face_correction_action_check"
     },
     {
-      "definition": "CHECK (action = 'merge'::text OR \"assetId\" IS NOT NULL)",
+      "definition": "CHECK ((action = ANY (ARRAY['merge'::text, 'partner-merge'::text])) OR \"assetId\" IS NOT NULL)",
       "identity": "immich_fork.face_correction.face_correction_anchor_check"
     },
     {
@@ -9261,6 +9289,14 @@
     {
       "definition": "PRIMARY KEY (\"sharedById\", \"sharedWithId\")",
       "identity": "immich_fork.partner_backfill.partner_backfill_pkey"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['created'::text, 'merged'::text]))",
+      "identity": "immich_fork.partner_person_link.partner_person_link_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"ownerId\", \"sourcePersonGroupId\")",
+      "identity": "immich_fork.partner_person_link.partner_person_link_pkey"
     },
     {
       "definition": "CHECK (\"personId\" < \"suggestionId\" AND verdict <> 'ignore'::text OR \"personId\" = \"suggestionId\" AND verdict = 'ignore'::text)",
@@ -11332,7 +11368,8 @@
     "0000000000216-ICloudIdentityAudit",
     "0000000000217-ICloudIdentityReuse",
     "0000000000218-ICloudWeeklyAuthority",
-    "0000000000220-PartnerOrigins"
+    "0000000000220-PartnerOrigins",
+    "0000000000221-PartnerPeopleLinks"
   ],
   "functions": [
     {
@@ -13020,6 +13057,14 @@
     {
       "definition": "CREATE UNIQUE INDEX partner_backfill_pkey ON immich_fork.partner_backfill USING btree (\"sharedById\", \"sharedWithId\")",
       "identity": "immich_fork.partner_backfill.partner_backfill_pkey"
+    },
+    {
+      "definition": "CREATE INDEX partner_person_link_person_idx ON immich_fork.partner_person_link USING btree (\"ownerId\", \"personGroupId\")",
+      "identity": "immich_fork.partner_person_link.partner_person_link_person_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX partner_person_link_pkey ON immich_fork.partner_person_link USING btree (\"ownerId\", \"sourcePersonGroupId\")",
+      "identity": "immich_fork.partner_person_link.partner_person_link_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX person_merge_verdict_pkey ON immich_fork.person_merge_verdict USING btree (\"ownerId\", \"personId\", \"suggestionId\")",
@@ -15887,6 +15932,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.partner_backfill"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.partner_person_link"
     },
     {
       "definition": "table",

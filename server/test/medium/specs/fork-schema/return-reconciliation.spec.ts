@@ -570,6 +570,7 @@ describe('certified fork return evidence', () => {
     ['album_origin missing copy', 'album_origin'],
     ['person_origin missing copy', 'person_origin'],
     ['partner_backfill missing partnership', 'partner_backfill'],
+    ['partner_person_link missing person', 'partner_person_link'],
   ] as const)('independently archives and deletes %s', async (predicate, sourceTable) => {
     const user = await mediumFactory.userWithClusterGroup(db);
     const asset = mediumFactory.assetInsert({ ownerId: user.id });
@@ -719,6 +720,12 @@ describe('certified fork return evidence', () => {
       }
       case 'person_origin missing copy': {
         await sql`INSERT INTO immich_fork.person_origin ("ownerId", "personGroupId", "sourceOwnerId", "sourcePersonGroupId", "rootOwnerId", "partnerSharedById") VALUES (${user.id}::uuid, ${randomUUID()}::uuid, ${user.id}::uuid, ${randomUUID()}::uuid, ${user.id}::uuid, ${user.id}::uuid)`.execute(
+          db,
+        );
+        break;
+      }
+      case 'partner_person_link missing person': {
+        await sql`INSERT INTO immich_fork.partner_person_link ("ownerId", "sourcePersonGroupId", "personGroupId", kind, "partnerSharedById") VALUES (${user.id}::uuid, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'created', ${user.id}::uuid)`.execute(
           db,
         );
         break;

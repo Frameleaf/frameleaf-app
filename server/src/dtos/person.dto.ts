@@ -193,7 +193,7 @@ export class MergeSuggestionsResponseDto extends createZodDto(MergeSuggestionsRe
 // face onto or off them, "not a face of anyone", a merge, a moved face box), kept in
 // `immich_fork.face_correction` so it outlives face reprocessing.
 const PersonCorrectionActionSchema = z
-  .enum(['reassign', 'new-person', 'unassign', 'remove', 'merge', 'box-move'])
+  .enum(['reassign', 'new-person', 'unassign', 'remove', 'merge', 'box-move', 'partner-merge'])
   .describe('What the decision did')
   .meta({ id: 'PersonCorrectionAction' });
 

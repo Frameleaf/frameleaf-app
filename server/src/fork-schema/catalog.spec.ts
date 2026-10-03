@@ -98,9 +98,9 @@ describe('catalog manifests', () => {
     // FL-105), Studio HDR intermediates (FL-97), persisted safety proof facts (FL-226), and the used
     // exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230), develop artifacts
     // (FL-233), iCloud source identities, claims, audit and reuse receipts (FL-296),
-    // photography workflows and studio sites (FL-283), and partner copy origins and backfills (FL-326),
+    // photography workflows and studio sites (FL-283), and partner copy origins, backfills and people links (FL-326),
     // in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(231);
+    expect(getCatalogTableLocks(fork)).toHaveLength(232);
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
         'immich_fork.icloud_weekly_grant',
@@ -163,10 +163,11 @@ describe('catalog manifests', () => {
         'immich_fork.album_origin',
         'immich_fork.person_origin',
         'immich_fork.partner_backfill',
+        'immich_fork.partner_person_link',
       ]),
     );
     // 66 v3.1.0 public + every fork table
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(140);
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(141);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {

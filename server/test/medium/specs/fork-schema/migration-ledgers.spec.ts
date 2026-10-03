@@ -104,6 +104,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000217-ICloudIdentityReuse' },
       { name: '0000000000218-ICloudWeeklyAuthority' },
       { name: '0000000000220-PartnerOrigins' },
+      { name: '0000000000221-PartnerPeopleLinks' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',
