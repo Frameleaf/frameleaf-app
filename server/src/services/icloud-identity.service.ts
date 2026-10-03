@@ -2,6 +2,8 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { OnEvent } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
+  ICloudAttachDto,
+  ICloudAttachResponseDto,
   ICloudClaimDto,
   ICloudClaimReleaseDto,
   ICloudClaimReleaseResponseDto,
@@ -410,6 +412,32 @@ export class ICloudIdentityService {
           : { ...answer, holder: holderKind(claim.holder), expiresAt: iso(claim.expiresAt), state: 'held' as const };
       }),
     };
+  }
+
+  async attach(auth: AuthDto, dto: ICloudAttachDto): Promise<ICloudAttachResponseDto> {
+    await this.requireDevice(auth, dto.deviceKey);
+    const items: ICloudAttachResponseDto['items'] = [];
+    for (const item of dto.items) {
+      const parsed = parseCloudIdentifier(item.cloudIdentifier);
+      if (!parsed) {
+        items.push({ id: item.id, state: 'invalid' });
+        continue;
+      }
+      const attached = await this.repository.attachDevice(auth, {
+        ownerId: auth.user.id,
+        assetId: item.assetId,
+        parsed,
+        cloudIdentifier: item.cloudIdentifier,
+        role: item.role,
+        editVersion: item.role === 'edit-render' ? item.editVersion! : '',
+        sha256: Buffer.from(item.sha256, 'hex'),
+        deviceKey: dto.deviceKey,
+        claimId: null,
+        metadata: item,
+      });
+      items.push({ id: item.id, state: attached ? 'attached' : 'unavailable' });
+    }
+    return { items };
   }
 
   async renewClaims(auth: AuthDto, dto: ICloudClaimRenewDto): Promise<ICloudClaimRenewResponseDto> {

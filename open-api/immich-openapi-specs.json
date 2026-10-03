@@ -19650,6 +19650,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/icloud-sync/identities/attach": {
+      "post": {
+        "description": "Up to 500 resources from one of the caller's registered backup devices. Each attachment requires the device SHA-256 to equal the current original of an active asset the caller owns, with the safety lookup's Locked and hidden rules. Unknown, inaccessible and mismatched assets all answer unavailable. Identifiers remain hints until corroborated; attachment never marks an audit verified or changes media.",
+        "operationId": "attachICloudIdentities",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudAttachDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudAttachResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Attach iCloud identities to originals already uploaded by this device",
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/icloud-sync/identities/lookup": {
       "post": {
         "description": "Up to 1000 items. For each item and role: on-server (with who delivered it and how it was verified), sync-pending, out-of-scope, unknown or review; and who delivers its edit renders. Only the caller's own assets and connections, with the safety lookup's Locked and hidden rules. A hint is reported but never counts as on-server.",
@@ -69172,6 +69228,131 @@
           2160
         ],
         "type": "integer"
+      },
+      "ICloudAttachAnswerDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ICloudAttachState"
+          }
+        },
+        "required": [
+          "id",
+          "state"
+        ],
+        "type": "object"
+      },
+      "ICloudAttachDto": {
+        "properties": {
+          "deviceKey": {
+            "description": "This device's backup identity (the backup device registry's deviceKey)",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudAttachItemDto"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "deviceKey",
+          "items"
+        ],
+        "type": "object"
+      },
+      "ICloudAttachItemDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "cloudIdentifier": {
+            "description": "PHCloudIdentifier.stringValue, as the device reports it",
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "creationDate": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "editVersion": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "originalFilename": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "pixelHeight": {
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pixelWidth": {
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ICloudIdentityRole"
+          },
+          "sha256": {
+            "pattern": "^[\\dA-Fa-f]{64}$",
+            "type": "string"
+          },
+          "uti": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "cloudIdentifier",
+          "id",
+          "role",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "ICloudAttachResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ICloudAttachAnswerDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ICloudAttachState": {
+        "enum": [
+          "attached",
+          "unavailable",
+          "invalid"
+        ],
+        "type": "string"
       },
       "ICloudAuthAction": {
         "enum": [
