@@ -13,12 +13,15 @@ import {
   backupAgentSettingsSchema,
   backupEndpoints,
   backupGrantMetadataSchema,
+  backupGrantRequestSchema,
   backupGrantResponseSchema,
+  backupLocationsSchema,
   backupRunReportSchema,
   backupUsageSchema,
   keyEscrowBlobSchema,
   keyEscrowRecordSchema,
 } from 'src/utils/frameleaf-cloud-backup.js';
+import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 
 /** Where to reach Frameleaf Cloud's API and the DPoP-bound instance token for it (FL-178). */
 export type ManagedBackupApi = { api: string; token: FrameleafInstanceToken };
@@ -33,18 +36,34 @@ export type ManagedBackupApi = { api: string; token: FrameleafInstanceToken };
 export class FrameleafCloudBackupRepository {
   constructor(private cloud: FrameleafCloudRepository) {}
 
-  /** `POST /v1/backup/grant`: provision (201, with a key) or read (200, without) this server's bucket. */
-  grant(target: ManagedBackupApi): Promise<BackupGrantMetadata | BackupGrantResponse> {
+  locations(target: ManagedBackupApi) {
+    return this.cloud.requestJson(backupLocationsSchema, { url: backupEndpoints(target).locations, dpop: target.token });
+  }
+
+  /** A persisted claim also survives a failed or interrupted first provisioning attempt. */
+  async metadata(target: ManagedBackupApi): Promise<BackupGrantMetadata | null> {
+    try {
+      return await this.cloud.requestJson(backupGrantMetadataSchema, { url: backupEndpoints(target).grant, dpop: target.token });
+    } catch (error) {
+      if (error instanceof FrameleafCloudError && error.status === 404 && error.envelope?.code === 'not-found') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /** `POST /v2/backup/grant`: provision at the selected location or read the recorded binding. */
+  grant(target: ManagedBackupApi, locationId: string): Promise<BackupGrantMetadata | BackupGrantResponse> {
     return this.cloud.requestJson(z.union([backupGrantResponseSchema, backupGrantMetadataSchema]), {
       method: 'POST',
       url: backupEndpoints(target).grant,
       dpop: target.token,
-      body: {},
+      body: backupGrantRequestSchema.parse({ locationId }),
     });
   }
 
   /**
-   * `POST /v1/backup/grant/rotate`: a new bucket-scoped key; the previous one is revoked before the answer
+   * `POST /v2/backup/grant/rotate`: a new bucket-scoped key; the previous one is revoked before the answer
    * comes back. Called at the start of every operation that touches the bucket.
    */
   rotate(target: ManagedBackupApi): Promise<BackupGrantResponse> {

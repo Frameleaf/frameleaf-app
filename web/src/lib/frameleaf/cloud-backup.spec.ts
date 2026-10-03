@@ -72,7 +72,7 @@ describe('cloud backup keys in the browser (FL-160)', () => {
   it('checks your own bucket: HTTPS only, a valid bucket name and both keys', () => {
     expect(
       bucketSettingsErrors({
-        endpoint: 'https://s3.eu-central-2.wasabisys.com',
+        endpoint: 'https://s3.eu-central-2.storage.example',
         bucket: 'family-backup',
         accessKeyId: 'AKIA',
         secretAccessKey: 'secret',
@@ -92,7 +92,7 @@ describe('cloud backup keys in the browser (FL-160)', () => {
       accessKeyId: 'frameleaf_cloud_backup_access_key_missing',
       secretAccessKey: 'frameleaf_cloud_backup_secret_missing',
     });
-    expect(endpointHost('https://s3.eu-central-2.wasabisys.com/')).toBe('s3.eu-central-2.wasabisys.com');
+    expect(endpointHost('https://s3.eu-central-2.storage.example/')).toBe('s3.eu-central-2.storage.example');
   });
 });
 

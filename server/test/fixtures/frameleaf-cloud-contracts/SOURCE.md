@@ -1,5 +1,5 @@
-Golden fixtures copied unchanged from the Frameleaf Cloud contracts package, so the server's parsers are
-tested against what the cloud publishes (FL-177).
+Golden fixtures from the Frameleaf Cloud contracts package, so the server's parsers are tested against
+what the cloud publishes (FL-177). Provenance and any pending candidate verification are recorded below.
 
 - Repository: `Frameleaf/frameleaf-cloud`
 - Path: `packages/contracts/fixtures/` (`errors/`, `instance/`, `ml/`, `ml/rejected/` and `licence/`, every file
@@ -61,8 +61,7 @@ tested against what the cloud publishes (FL-177).
   they gained `rolloutPercent` and `fallback` (FL-142). Earlier copies: #54 at `517cbd3da9`, which reads the app's
   real `frameleaf-v<semver>-<sequence>` tags, and #43 at `86adf20`. The contract is
   `packages/contracts/src/releases/latest.ts`; `server/src/utils/frameleaf-release.ts` reads them (FL-192).
-- FL-164 managed backup (BAK-001 FC-33, BAK-002 FC-38): `backup/grant-response.json`,
-  `backup/grant-rotate-response.json`, `backup/grant-metadata.json`, `backup/usage.json`, `backup/escrow-blob.json`,
+- FL-164 managed backup (BAK-001 FC-33, BAK-002 FC-38): `backup/usage.json`, `backup/escrow-blob.json`,
   `backup/escrow-record.json`, `backup/run-report.json` and `backup/settings.json`, and the backup refusals
   `errors/grant-revoked.json`, `errors/clone-suspected.json`, `errors/escrow-not-allowed.json`,
   `errors/rate-limited.json` and `errors/region-unavailable.json`, are byte-identical to `origin/main` at
@@ -71,6 +70,17 @@ tested against what the cloud publishes (FL-177).
   them, and `errors/entitlement-missing.json` was checked byte-identical at that commit. Not copied, because nothing
   here parses them yet: `backup/purge.json`, `backup/run-list.json` and `errors/purge-not-cancellable.json` (a
   purge is started from the Frameleaf account).
+  The original v1 grant trio from this source commit is superseded by the FL-325 / FC-101 refresh below.
+- FL-325 / FC-101 managed backup v2 (2026-10-03): `backup/grant-response.json`,
+  `backup/grant-rotate-response.json` and `backup/grant-metadata.json` are byte-identical to Cloud's
+  new `packages/contracts/fixtures/backup/v2/` trio with the same filenames at source commit
+  `c65ede160b91c02ca2947e516dd59dde1919b26d` on `Frameleaf/frameleaf-cloud`
+  `aj/FC-101-city-backup-domains` (reviewed candidate; merge and hosted qualification tracked separately).
+  The SHA-256 hashes were compared after copying the authoritative files. These fixtures carry
+  `version: 2`, `provider: frameleaf`, storage ID
+  `0194b445-9c8a-7001-8000-000000000002` and location `loc-07` / `amsterdam` / Amsterdam / Netherlands / NL,
+  with explicit `eu-central-1` region and `https://s3.eu-central-1.backup.frameleaf.cloud` endpoint. The
+  existing bucket, credentials, encryption and policy fields are preserved.
 - FL-165 remote access: `remote/enroll-response.json`, `remote/dns-txt-put-request.json`,
   `remote/dns-txt-put-response.json`, `remote/certs-request.json`, `remote/caa-put-request.json`,
   `remote/hostname-put-request.json`, `remote/hostnames-list.json` and `remote/label-vectors.json` are

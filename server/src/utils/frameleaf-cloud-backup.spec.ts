@@ -5,6 +5,9 @@ import {
   backupGrantMetadataSchema,
   backupGrantProblem,
   backupGrantResponseSchema,
+  backupGrantRequestSchema,
+  backupLocationsSchema,
+  managedStorageRef,
   backupRunReportSchema,
   backupUsageSchema,
   keyEscrowRecordSchema,
@@ -43,6 +46,17 @@ describe('Frameleaf Cloud managed backup contract (FL-164)', () => {
 
     expect(backupGrantMetadataSchema.safeParse(grant).success).toBe(false);
     expect(backupGrantProblem(backupGrantResponseSchema.parse(permissive))).toContain('s3:DeleteObjectVersion');
+  });
+
+  it('requires versioned branded grant metadata, stable identity and a location-only request', () => {
+    const grant = cloudContractFixture('backup/grant-response.json');
+    expect(managedStorageRef(grant.storageId)).toBe(`frameleaf-storage:${grant.storageId}`);
+    expect(backupGrantResponseSchema.safeParse({ ...grant, version: 1 }).success).toBe(false);
+    expect(backupGrantResponseSchema.safeParse({ ...grant, endpoint: 'https://storage.example' }).success).toBe(false);
+    expect(backupGrantRequestSchema.safeParse({ locationId: 'loc-07', endpoint: grant.endpoint }).success).toBe(false);
+    const location = { ...grant.location, probeUrl: grant.endpoint };
+    expect(backupLocationsSchema.parse({ version: 2, locations: [location] }).locations).toEqual([location]);
+    expect(backupLocationsSchema.safeParse({ version: 2, locations: [{ ...location, region: grant.region }] }).success).toBe(false);
   });
 
   it("accepts the cloud's plan_full read-only reason (FL-301, FC-91)", () => {
@@ -86,8 +100,9 @@ describe('Frameleaf Cloud managed backup contract (FL-164)', () => {
 
   it('builds every route from discovery', () => {
     expect(backupEndpoints({ api: 'https://api.frameleaf.test/' })).toEqual({
-      grant: 'https://api.frameleaf.test/v1/backup/grant',
-      rotate: 'https://api.frameleaf.test/v1/backup/grant/rotate',
+      locations: 'https://api.frameleaf.test/v2/backup/locations',
+      grant: 'https://api.frameleaf.test/v2/backup/grant',
+      rotate: 'https://api.frameleaf.test/v2/backup/grant/rotate',
       usage: 'https://api.frameleaf.test/v1/backup/usage',
       runs: 'https://api.frameleaf.test/v1/backup/runs',
       settings: 'https://api.frameleaf.test/v1/backup/settings',

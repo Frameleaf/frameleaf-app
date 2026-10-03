@@ -18,7 +18,7 @@ const SCRYPT_TEST_TIMEOUT_MS = 30_000;
 const key = Buffer.alloc(32, 7);
 const options = {
   bucket: 'family-backup',
-  endpoint: 'https://s3.eu-central-2.wasabisys.test',
+  endpoint: 'https://s3.eu-central-2.storage.example',
   accessKeyId: 'AKIAEXAMPLE',
 };
 
