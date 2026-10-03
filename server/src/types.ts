@@ -15,6 +15,7 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { SetMaintenanceModeDto } from 'src/dtos/maintenance.dto.js';
+import type { StorageMigrationState } from 'src/utils/storage-migration.js';
 import {
   PhysicalDeduplicationCopyState,
   PhysicalDeduplicationRetainedState,
@@ -520,6 +521,7 @@ export type JobItem =
   | { name: JobName.StorageTemplateMigrationSingle; data: IEntityJob }
   | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IPhysicalDeduplicationDryRunJob }
   | { name: JobName.PhysicalDeduplicationMigrationApply; data?: IBaseJob }
+  | { name: JobName.UniversalStorageMigration; data?: IDelayedJob }
 
   // Migration
   | { name: JobName.FileMigrationQueueAll; data?: IBaseJob }
@@ -1342,6 +1344,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
   [SystemMetadataKey.PhysicalDeduplicationMigration]: PhysicalDeduplicationMigrationState;
+  [SystemMetadataKey.UniversalStorageMigration]: StorageMigrationState;
   [SystemMetadataKey.ReverseGeocodingState]: { lastUpdate?: string; lastImportFileName?: string };
   [SystemMetadataKey.SystemConfig]: DeepPartial<SystemConfig>;
   [SystemMetadataKey.SystemFlags]: DeepPartial<SystemFlags>;

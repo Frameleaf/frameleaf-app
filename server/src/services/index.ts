@@ -88,6 +88,7 @@ import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
+import { StorageMigrationService } from 'src/services/storage-migration.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
@@ -234,6 +235,7 @@ export const services = [
   PetRecognitionService,
   PetService,
   PhysicalDeduplicationPlanService,
+  StorageMigrationService,
   PhysicalDeduplicationService,
   PluginService,
   PreservationService,

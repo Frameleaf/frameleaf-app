@@ -813,6 +813,111 @@ describe(PhysicalDeduplicationService.name, () => {
     });
   });
 
+  describe('linkToPrimary (FL-326 universal storage)', () => {
+    const hex = 'aa'.repeat(20);
+    const evidence = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      ownerId: id === MASTER_ID ? 'taylor' : 'jamie',
+      originalPath: id === MASTER_ID ? '/upload/taylor/a.jpg' : '/upload/jamie/copy.jpg',
+      checksum: Buffer.from(hex, 'hex'),
+      sizeInBytes: 10,
+      deletedAt: null,
+      status: AssetStatus.Active,
+      isExternal: false,
+      isOffline: false,
+      libraryId: null,
+      physicalOriginalFileId: null,
+      ...overrides,
+    });
+    const setup = (rows = [evidence(MASTER_ID), evidence(COPY_1)]) => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback());
+      mocks.physicalFile.getPlanEvidence.mockResolvedValue(rows as never);
+      mocks.physicalFile.ensureOriginalPhysicalFile.mockImplementation((assetId) =>
+        Promise.resolve(
+          (assetId === MASTER_ID
+            ? { id: 'pf-primary', path: '/upload/taylor/a.jpg' }
+            : { id: 'pf-copy', path: '/upload/jamie/copy.jpg' }) as never,
+        ),
+      );
+      mocks.physicalFile.getGeneratedFiles.mockResolvedValue([]);
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(!path.endsWith('.xmp')));
+      mocks.storage.stat.mockResolvedValue({ size: 10 } as never);
+      mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from(hex, 'hex'));
+      return { sut, mocks };
+    };
+
+    it('links a verified copy to the primary under the storage lock and unlinks nothing', async () => {
+      const { sut, mocks } = setup();
+
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'linked', copyMissing: false });
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.StorageTemplateMigration, expect.any(Function));
+      // the copy's own file is registered first, so the trashing stage can find it
+      expect(mocks.physicalFile.ensureOriginalPhysicalFile).toHaveBeenCalledWith(COPY_1);
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).toHaveBeenCalledWith(COPY_1, {
+        id: 'pf-primary',
+        path: '/upload/taylor/a.jpg',
+      });
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('links a copy whose own file is missing: its relink', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/upload/taylor/a.jpg'));
+
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'linked', copyMissing: true });
+      expect(mocks.physicalFile.ensureOriginalPhysicalFile).not.toHaveBeenCalledWith(COPY_1);
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['primary-missing', (path: string) => path !== '/upload/taylor/a.jpg', hex],
+      ['primary-mismatch', () => true, 'bb'.repeat(20)],
+    ])('refuses when the primary is not verified (%s)', async (reason, exists, digest) => {
+      const { sut, mocks } = setup();
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(exists(path)));
+      mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from(digest, 'hex'));
+
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'skipped', reason });
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+    });
+
+    it('leaves a copy whose bytes no longer match', async () => {
+      const { sut, mocks } = setup();
+      mocks.crypto.hashFileMatching.mockImplementation((path) =>
+        Promise.resolve(Buffer.from(path === '/upload/taylor/a.jpg' ? hex : 'bb'.repeat(20), 'hex')),
+      );
+
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({
+        state: 'skipped',
+        reason: 'copy-mismatch',
+      });
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an external copy', { isExternal: true, libraryId: 'library-1' }],
+      ['a trashed copy', { deletedAt: new Date() }],
+      ['a different size', { sizeInBytes: 11 }],
+      ['a different checksum', { checksum: Buffer.from('bb'.repeat(20), 'hex') }],
+    ])('never links %s', async (_name, overrides) => {
+      const { sut, mocks } = setup([evidence(MASTER_ID), evidence(COPY_1, overrides)]);
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'skipped', reason: 'changed' });
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+    });
+
+    it('reads a copy already on the primary file as already linked (a repeated batch)', async () => {
+      const { sut, mocks } = setup([
+        evidence(MASTER_ID, { physicalOriginalFileId: 'pf-primary' }),
+        evidence(COPY_1, { physicalOriginalFileId: 'pf-primary', originalPath: '/upload/taylor/a.jpg' }),
+      ]);
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'already-linked' });
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+    });
+  });
+
   describe('requestPreview', () => {
     it('rejects a preview without a chosen or saved retained account', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
