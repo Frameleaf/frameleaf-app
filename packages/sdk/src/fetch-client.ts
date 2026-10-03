@@ -386,9 +386,17 @@ export type CloudBackupLastVerifyDto = {
     operationId: string;
     status: CloudBackupVerifyStatus;
 };
+export type CloudBackupLocationDto = {
+    city: string;
+    cityId: string;
+    country: string;
+    countryCode: string;
+    locationId: string;
+};
 export type CloudBackupManagedDto = {
     allowanceBytes: number | null;
     extraBlocks: number | null;
+    location?: (CloudBackupLocationDto) | null;
     measuredAt: string | null;
     objects: number | null;
     /** Storage included with the plan; more is added in 1 TB blocks */
@@ -399,6 +407,7 @@ export type CloudBackupManagedDto = {
     readOnlyReason: string | null;
     /** Why Frameleaf Cloud last refused backup storage */
     refusal: string | null;
+    storageId?: string | null;
     usedBytes: number | null;
 };
 export type CloudBackupStatusResponseDto = {
@@ -6203,6 +6212,14 @@ export type ICloudConnectionResponseDto = {
         [key: string]: number;
     };
     id: string;
+    identityReuseAuthority?: {
+        available: boolean;
+        enabled: boolean;
+        /** Foundation consent does not enable weekly execution or identity reuse */
+        executionAvailable: false;
+        includeProtected: boolean;
+        regrantRequired: boolean;
+    };
     label: string;
     lastError: string | null;
     nextRunAt: string | null;
@@ -6248,6 +6265,19 @@ export type ICloudAuthDto = {
 };
 export type ICloudControlDto = {
     action: ICloudControlAction;
+};
+export type ICloudIdentityReuseAuthorityDto = {
+    enabled: boolean;
+    includeProtected: boolean;
+    requestKey: string;
+};
+export type ICloudIdentityReuseAuthorityStatusDto = {
+    available: boolean;
+    enabled: boolean;
+    /** Foundation consent does not enable weekly execution or identity reuse */
+    executionAvailable: boolean;
+    includeProtected: boolean;
+    regrantRequired: boolean;
 };
 export type ICloudInventoryResponseDto = {
     albums: {
@@ -19555,6 +19585,19 @@ export function controlICloudConnection({ id, iCloudControlDto }: {
         ...opts,
         method: "POST",
         body: iCloudControlDto
+    })));
+}
+export function updateICloudIdentityReuseAuthority({ id, iCloudIdentityReuseAuthorityDto }: {
+    id: string;
+    iCloudIdentityReuseAuthorityDto: ICloudIdentityReuseAuthorityDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudIdentityReuseAuthorityStatusDto;
+    }>(`/icloud-sync/connections/${encodeURIComponent(id)}/identity-reuse-authority`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: iCloudIdentityReuseAuthorityDto
     })));
 }
 export function getICloudInventory({ id }: {
