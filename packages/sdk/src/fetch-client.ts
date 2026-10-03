@@ -386,9 +386,17 @@ export type CloudBackupLastVerifyDto = {
     operationId: string;
     status: CloudBackupVerifyStatus;
 };
+export type CloudBackupLocationDto = {
+    city: string;
+    cityId: string;
+    country: string;
+    countryCode: string;
+    locationId: string;
+};
 export type CloudBackupManagedDto = {
     allowanceBytes: number | null;
     extraBlocks: number | null;
+    location?: (CloudBackupLocationDto) | null;
     measuredAt: string | null;
     objects: number | null;
     /** Storage included with the plan; more is added in 1 TB blocks */
@@ -399,6 +407,7 @@ export type CloudBackupManagedDto = {
     readOnlyReason: string | null;
     /** Why Frameleaf Cloud last refused backup storage */
     refusal: string | null;
+    storageId?: string | null;
     usedBytes: number | null;
 };
 export type CloudBackupStatusResponseDto = {
@@ -3078,6 +3087,12 @@ export type ContributorCountResponseDto = {
     /** User ID */
     userId: string;
 };
+export type PartnerOriginDto = {
+    /** The account that originally uploaded or created it */
+    rootOwnerId: string;
+    /** That account's name */
+    rootOwnerName: string;
+};
 export type AlbumResponseDto = {
     /** Album name */
     albumName: string;
@@ -3110,6 +3125,8 @@ export type AlbumResponseDto = {
     /** Last modified asset timestamp */
     lastModifiedAssetTimestamp?: string;
     order?: AssetOrder;
+    /** FL-326: present on your own album when partner sharing copied it from another library */
+    origin?: PartnerOriginDto;
     /** Collection this album belongs to (null = top-level) */
     parentId: string | null;
     /** Is shared album */
@@ -4054,6 +4071,8 @@ export type AssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    /** FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
+    origin?: PartnerOriginDto;
     /** Original file name */
     originalFileName: string;
     /** Original MIME type */
@@ -4825,6 +4844,8 @@ export type BestPhotoAssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    /** FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
+    origin?: PartnerOriginDto;
     /** Original file name */
     originalFileName: string;
     /** Original MIME type */
@@ -6203,6 +6224,14 @@ export type ICloudConnectionResponseDto = {
         [key: string]: number;
     };
     id: string;
+    identityReuseAuthority?: {
+        available: boolean;
+        enabled: boolean;
+        /** Foundation consent does not enable weekly execution or identity reuse */
+        executionAvailable: false;
+        includeProtected: boolean;
+        regrantRequired: boolean;
+    };
     label: string;
     lastError: string | null;
     nextRunAt: string | null;
@@ -6248,6 +6277,19 @@ export type ICloudAuthDto = {
 };
 export type ICloudControlDto = {
     action: ICloudControlAction;
+};
+export type ICloudIdentityReuseAuthorityDto = {
+    enabled: boolean;
+    includeProtected: boolean;
+    requestKey: string;
+};
+export type ICloudIdentityReuseAuthorityStatusDto = {
+    available: boolean;
+    enabled: boolean;
+    /** Foundation consent does not enable weekly execution or identity reuse */
+    executionAvailable: boolean;
+    includeProtected: boolean;
+    regrantRequired: boolean;
 };
 export type ICloudInventoryResponseDto = {
     albums: {
@@ -7732,6 +7774,12 @@ export type PartnerResponseDto = {
 export type PartnerCreateDto = {
     /** User ID to share with */
     sharedWithId: string;
+};
+export type PartnerLockedNoticeResponseDto = {
+    /** When the first Locked item arrived for an account without a PIN */
+    flaggedAt: string | null;
+    /** Whether to show the notice: Locked items arrived from a partner, no PIN is set, and it was not dismissed */
+    show: boolean;
 };
 export type PartnerUpdateDto = {
     /** Show partner assets in timeline */
@@ -19557,6 +19605,19 @@ export function controlICloudConnection({ id, iCloudControlDto }: {
         body: iCloudControlDto
     })));
 }
+export function updateICloudIdentityReuseAuthority({ id, iCloudIdentityReuseAuthorityDto }: {
+    id: string;
+    iCloudIdentityReuseAuthorityDto: ICloudIdentityReuseAuthorityDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudIdentityReuseAuthorityStatusDto;
+    }>(`/icloud-sync/connections/${encodeURIComponent(id)}/identity-reuse-authority`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: iCloudIdentityReuseAuthorityDto
+    })));
+}
 export function getICloudInventory({ id }: {
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
@@ -21139,6 +21200,29 @@ export function createPartner({ partnerCreateDto }: {
         method: "POST",
         body: partnerCreateDto
     })));
+}
+/**
+ * Get the Locked partner items notice
+ */
+export function getPartnerLockedNotice(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerLockedNoticeResponseDto;
+    }>("/partners/locked-notice", {
+        ...opts
+    }));
+}
+/**
+ * Dismiss the Locked partner items notice
+ */
+export function dismissPartnerLockedNotice(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerLockedNoticeResponseDto;
+    }>("/partners/locked-notice", {
+        ...opts,
+        method: "PUT"
+    }));
 }
 /**
  * Remove a partner
@@ -28491,7 +28575,8 @@ export enum PersonCorrectionAction {
     Unassign = "unassign",
     Remove = "remove",
     Merge = "merge",
-    BoxMove = "box-move"
+    BoxMove = "box-move",
+    PartnerMerge = "partner-merge"
 }
 export enum PersonMergeVerdict {
     Same = "same",
@@ -29849,5 +29934,6 @@ export enum UserMetadataKey {
     PhotographyWorkspace = "photography-workspace",
     License = "license",
     Onboarding = "onboarding",
-    FrameleafCloudTour = "frameleaf-cloud-tour"
+    FrameleafCloudTour = "frameleaf-cloud-tour",
+    PartnerLockedNotice = "partner-locked-notice"
 }
