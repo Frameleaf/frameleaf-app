@@ -12579,6 +12579,8 @@ export type StudioPreviewStreamAnswerDto = {
     sdp: string;
 };
 export type StudioPreviewRequestDto = {
+    /** Opt in to a session-isolated admission; use a fresh UUID for each logical request */
+    consumerRequestId?: string;
     /** Studio project the frame belongs to */
     projectId: string;
     quality: StudioPreviewQuality;
@@ -12591,6 +12593,11 @@ export type StudioPreviewRequestDto = {
     viewportWidth: number;
 };
 export type StudioPreviewDto = {
+    /** Delivery was durably fenced; does not establish renderer termination */
+    admissionReleased?: boolean;
+    cancellationState?: CancellationState;
+    /** Captured opt-in consumer admission identity */
+    consumerRequestId?: string;
     contentType: string | null;
     /** Stable code the client turns into a message */
     errorCode: string | null;
@@ -12606,6 +12613,8 @@ export type StudioPreviewDto = {
     projectId: string;
     quality: StudioPreviewQuality;
     readyAt: string | null;
+    /** True only after the captured operation acknowledged cancellation with resources released */
+    rendererReleased?: boolean | null;
     requestedAt: string;
     /** The stored project revision this frame was rendered for */
     revision: number;
@@ -24467,13 +24476,18 @@ export function requestStudioPreview({ studioPreviewRequestDto }: {
 /**
  * Cancel a Studio preview
  */
-export function cancelStudioPreview({ id }: {
+export function cancelStudioPreview({ consumerRequestId, expectedOperationId, id }: {
+    consumerRequestId?: string;
+    expectedOperationId?: string | "null";
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: StudioPreviewDto;
-    }>(`/studio/previews/${encodeURIComponent(id)}`, {
+    }>(`/studio/previews/${encodeURIComponent(id)}${QS.query(QS.explode({
+        consumerRequestId,
+        expectedOperationId
+    }))}`, {
         ...opts,
         method: "DELETE"
     }));
@@ -24481,26 +24495,32 @@ export function cancelStudioPreview({ id }: {
 /**
  * Get a Studio preview
  */
-export function getStudioPreview({ id }: {
+export function getStudioPreview({ consumerRequestId, id }: {
+    consumerRequestId?: string;
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: StudioPreviewDto;
-    }>(`/studio/previews/${encodeURIComponent(id)}`, {
+    }>(`/studio/previews/${encodeURIComponent(id)}${QS.query(QS.explode({
+        consumerRequestId
+    }))}`, {
         ...opts
     }));
 }
 /**
  * View a Studio preview frame
  */
-export function viewStudioPreviewFrame({ id }: {
+export function viewStudioPreviewFrame({ consumerRequestId, id }: {
+    consumerRequestId?: string;
     id: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
         data: Blob;
-    }>(`/studio/previews/${encodeURIComponent(id)}/frame`, {
+    }>(`/studio/previews/${encodeURIComponent(id)}/frame${QS.query(QS.explode({
+        consumerRequestId
+    }))}`, {
         ...opts
     }));
 }
@@ -29392,6 +29412,12 @@ export enum StudioPreviewStreamState {
     Offered = "offered",
     Answered = "answered",
     Closed = "closed"
+}
+export enum CancellationState {
+    NotNeeded = "not-needed",
+    Requested = "requested",
+    Acknowledged = "acknowledged",
+    Unavailable = "unavailable"
 }
 export enum StudioPreviewStatus {
     Pending = "pending",
