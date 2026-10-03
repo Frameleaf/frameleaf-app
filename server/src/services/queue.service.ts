@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { QueueJobRow } from 'src/repositories/job.repository.js';
 import type { ConcurrentQueueName, JobItem } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
@@ -26,6 +27,7 @@ import {
   DatabaseLock,
   ImmichWorker,
   JobName,
+  JobNameSchema,
   MlDestinationKind,
   MlWorkload,
   QueueCleanType,
@@ -229,7 +231,10 @@ export class QueueService extends BaseService {
    * request went to, and any other job the destination its workload is routed to now.
    */
   async searchJobs(auth: AuthDto, name: QueueName, dto: QueueJobSearchDto): Promise<QueueJobResponseDto[]> {
-    const jobs = await this.jobRepository.searchJobs(name, dto);
+    // Filter the actual response as well as its schema: older clients cannot decode internal job names.
+    const jobs = (await this.jobRepository.searchJobs(name, dto)).filter(
+      (job): job is QueueJobRow & Pick<QueueJobResponseDto, 'name'> => JobNameSchema.safeParse(job.name).success,
+    );
     if (jobs.length === 0) {
       return [];
     }

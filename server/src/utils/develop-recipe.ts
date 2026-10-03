@@ -324,7 +324,7 @@ export const developRenderArtifacts = (recipe: {
  * `px`/`py` and the mask coordinates are fractions of the frame; `aspect` is its width over its
  * height, so a radial feather and a linear gradient are measured in real distances.
  */
-export function maskWeight(mask: AssetDevelopMask, px: number, py: number, aspect = 1): number {
+export function maskWeight(mask: Omit<AssetDevelopMask, 'adjustments'>, px: number, py: number, aspect = 1): number {
   let weight: number;
   if (mask.kind !== AssetDevelopMaskKind.Radial && mask.kind !== AssetDevelopMaskKind.Linear) {
     // brush and bitmap masks live in original-image coordinates: `originalMaskWeight`
@@ -356,7 +356,7 @@ export function maskWeight(mask: AssetDevelopMask, px: number, py: number, aspec
  * greyscale bitmap, stretched over the whole original, bilinearly.
  */
 export function originalMaskWeight(
-  mask: AssetDevelopMask,
+  mask: Omit<AssetDevelopMask, 'adjustments'>,
   ux: number,
   uy: number,
   original: { width: number; height: number },
@@ -367,19 +367,51 @@ export function originalMaskWeight(
     weight = sampleCoverage(brushCoverage(mask, original), ux, uy);
   } else if (ASSET_DEVELOP_BITMAP_MASK_KINDS.includes(mask.kind)) {
     const bitmap = mask.artifact ? bitmaps.get(mask.artifact) : undefined;
-    weight = bitmap ? sampleBitmap(bitmap, ux / original.width, uy / original.height, 0) / 255 : 0;
+    weight = bitmap
+      ? mask.strokes?.length
+        ? sampleCoverage(refinedBitmapCoverage(mask, original, bitmap), ux, uy)
+        : sampleBitmap(bitmap, ux / original.width, uy / original.height, 0) / 255
+      : 0;
   } else {
     return 0;
   }
   return mask.invert ? 1 - weight : weight;
 }
 
+/** Native semantic proposals may be refined with bounded sensor-space paint/erase strokes. */
+const refinedBitmapCoverages = new WeakMap<
+  Omit<AssetDevelopMask, 'adjustments'>,
+  { key: string; bitmap: DevelopBitmap; coverage: DevelopCoverage }
+>();
+function refinedBitmapCoverage(
+  mask: Omit<AssetDevelopMask, 'adjustments'>,
+  original: { width: number; height: number },
+  bitmap: DevelopBitmap,
+) {
+  const key = `${original.width}x${original.height}`;
+  const cached = refinedBitmapCoverages.get(mask);
+  if (cached?.key === key && cached.bitmap === bitmap) return cached.coverage;
+  const { bounds, scale } = brushGrid(original, mask.strokes ?? []);
+  const width = Math.ceil(original.width * scale),
+    height = Math.ceil(original.height * scale);
+  const initial = new Float32Array(width * height);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++)
+      initial[y * width + x] = sampleBitmap(bitmap, (x + 0.5) / width, (y + 0.5) / height, 0) / 255;
+  const coverage = rasterizeStrokes(mask.strokes ?? [], original, mask.feather, bounds, scale, initial);
+  refinedBitmapCoverages.set(mask, { key, bitmap, coverage });
+  return coverage;
+}
+
 /**
  * A brush mask's strokes drawn once per original size (`brushGrid`), then sampled for every pixel:
  * the cost follows the painted area, never pixels × points.
  */
-const brushCoverages = new WeakMap<AssetDevelopMask, { key: string; coverage: DevelopCoverage }>();
-function brushCoverage(mask: AssetDevelopMask, original: { width: number; height: number }): DevelopCoverage {
+const brushCoverages = new WeakMap<Omit<AssetDevelopMask, 'adjustments'>, { key: string; coverage: DevelopCoverage }>();
+function brushCoverage(
+  mask: Omit<AssetDevelopMask, 'adjustments'>,
+  original: { width: number; height: number },
+): DevelopCoverage {
   const key = `${original.width}x${original.height}`;
   const cached = brushCoverages.get(mask);
   if (cached?.key === key) {

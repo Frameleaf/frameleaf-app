@@ -1,4 +1,292 @@
 /* PhotographyWorkspace.jsx layout, ported to the production Frameleaf theme. */
+@font-face {
+  font-family: 'Studio Script';
+  src: url('/fonts/great-vibes.ttf');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Studio Serif';
+  src: url('/fonts/noto-serif.ttf');
+  font-display: swap;
+}
+.phd-checksum {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.phd {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1440px;
+  margin: auto;
+}
+.phd h2 {
+  font-size: 25px;
+  font-weight: 600;
+  margin: 4px 0;
+}
+.phd h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+.phd h4 {
+  font-weight: 600;
+}
+.phd p {
+  color: var(--fl-muted);
+  line-height: 1.6;
+  margin: 8px 0 16px;
+}
+.phd-eyebrow {
+  color: var(--fl-muted);
+  font-size: 12px;
+}
+.phd-toolbar,
+.phd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.phd-actions,
+.phd-project-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.phd-project-actions {
+  margin: 0 0 18px;
+}
+.phd-card {
+  background: var(--fl-panel);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  padding: 24px;
+}
+.phd-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.phd label,
+.phd-project-picker label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  min-width: 0;
+}
+.phd label:has(input[type='checkbox']) {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin: 12px 0;
+}
+.phd :where(input:not([type='checkbox'], [type='range'], [type='color']), select, textarea),
+.phd-project-picker select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-input, var(--fl-canvas));
+  color: var(--fl-text);
+}
+.phd :where(input, select, textarea, a, button):focus-visible {
+  outline: 2px solid var(--fl-accent);
+  outline-offset: 3px;
+}
+.phd textarea {
+  resize: vertical;
+}
+.phd input[type='range'] {
+  width: 100%;
+}
+.phd input[type='color'] {
+  height: 38px;
+  width: 100%;
+}
+.phd small {
+  display: block;
+  color: var(--fl-muted);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.phd-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+  margin-bottom: 16px;
+}
+.phd-metrics div {
+  padding: 22px;
+  border-inline-end: 1px solid var(--fl-border);
+}
+.phd-metrics div:last-child {
+  border: 0;
+}
+.phd-metrics strong {
+  font-size: 28px;
+  font-weight: 600;
+  display: block;
+}
+.phd-metrics span {
+  color: var(--fl-muted);
+  font-size: 12px;
+}
+.phd-project-picker {
+  max-width: 420px;
+  margin-bottom: 24px;
+}
+.phd-project-filters {
+  margin-bottom: 18px;
+}
+.phd-chapter {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr 90px;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--fl-border);
+  margin-bottom: 12px;
+}
+.phd-captures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+}
+.phd-capture {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 16px;
+  border: 1px solid var(--fl-border);
+  padding: 16px;
+  border-radius: var(--fl-radius-control);
+  background: var(--fl-panel);
+}
+.phd-capture-image {
+  aspect-ratio: 2/3;
+  background: var(--fl-raised);
+  align-self: start;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  overflow: hidden;
+}
+.phd-capture-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.phd-capture .phd-fields {
+  grid-template-columns: 1fr;
+  margin: 10px 0;
+}
+.phd-capture label {
+  margin-top: 12px;
+}
+.phd-watermark-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.8fr);
+  gap: 24px;
+  margin: 20px 0;
+}
+.phd-watermark-editor fieldset {
+  min-width: 0;
+}
+.phd-watermark-editor legend {
+  font-weight: 600;
+}
+.phd-preview {
+  min-width: 0;
+}
+.phd-preview img {
+  width: 100%;
+  margin-top: 20px;
+  object-fit: contain;
+  max-height: 440px;
+  border: 1px solid var(--fl-border);
+}
+.phd-preview img.portrait {
+  max-width: 300px;
+}
+.phd-templates {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 22px 0;
+}
+.phd-templates button {
+  padding: 24px 18px;
+  text-align: start;
+  min-height: 150px;
+  background: var(--fl-canvas);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+}
+.phd-templates button.selected {
+  border-color: var(--fl-accent);
+  background: color-mix(in srgb, var(--fl-accent) 10%, var(--fl-canvas));
+}
+.phd-templates strong,
+.phd-templates span {
+  display: block;
+}
+.phd-templates span {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fl-muted);
+}
+.phd-order {
+  border-top: 1px solid var(--fl-border);
+  padding: 20px 0;
+}
+.phd-portfolio-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.phd-portfolio-choices img {
+  width: 100%;
+  aspect-ratio: 4/5;
+  object-fit: cover;
+}
+@media (max-width: 1100px) {
+  .phd-templates {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .phd-watermark-editor {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 700px) {
+  .phd-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .phd-metrics div {
+    padding: 16px;
+  }
+  .phd-captures {
+    grid-template-columns: 1fr;
+  }
+  .phd-capture {
+    grid-template-columns: 80px 1fr;
+  }
+  .phd-chapter {
+    grid-template-columns: 1fr;
+  }
+  .phd-card {
+    padding: 16px;
+  }
+  .phd-templates {
+    grid-template-columns: 1fr;
+  }
+}
 .phw {
   display: flex;
   flex: 1;
@@ -825,5 +1113,35 @@
 @media (max-width: 800px) {
   .phw-brand-controls {
     display: block;
+  }
+}
+.phd-owner-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.phd-owner-compare figure {
+  margin: 0;
+  min-width: 0;
+}
+.phd-owner-compare img {
+  width: 100%;
+  height: 60dvh;
+  object-fit: contain;
+  background: var(--fl-raised);
+}
+.phd-owner-compare figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding-top: 10px;
+}
+@media (max-width: 650px) {
+  .phd-owner-compare {
+    grid-template-columns: 1fr;
+  }
+  .phd-owner-compare img {
+    height: 40dvh;
   }
 }

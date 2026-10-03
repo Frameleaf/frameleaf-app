@@ -57,6 +57,7 @@ import { PartnerController } from 'src/controllers/partner.controller.js';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { PetController } from 'src/controllers/pet.controller.js';
 import { PhotoToolsController } from 'src/controllers/photo-tools.controller.js';
+import { PhotographyWorkflowController } from 'src/controllers/photography-workflow.controller.js';
 import { PhotographyWorkspaceController } from 'src/controllers/photography-workspace.controller.js';
 import { PhysicalDeduplicationController } from 'src/controllers/physical-deduplication.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
@@ -95,6 +96,7 @@ import { WorkflowController } from 'src/controllers/workflow.controller.js';
 
 export const controllers = [
   PhotographyWorkspaceController,
+  PhotographyWorkflowController,
   AssetUploadResourceController,
   BackupDeviceAdminController,
   BackupDeviceController,
