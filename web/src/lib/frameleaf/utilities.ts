@@ -1,6 +1,7 @@
 import {
   mdiCloudOutline,
   mdiCompare,
+  mdiDeleteRestore,
   mdiDevices,
   mdiDownload,
   mdiFolderSearchOutline,
@@ -22,6 +23,7 @@ export type UtilityId =
   | 'icloud'
   | 'missing-media'
   | 'corrupt-media'
+  | 'file-trash'
   | 'workflows'
   | 'downloads'
   | 'obtainium';
@@ -79,6 +81,15 @@ export const UTILITY_TOOLS: UtilityTool[] = [
     adminOnly: true,
   },
   {
+    // universal storage: originals no library references any more, until an administrator acts
+    id: 'file-trash',
+    group: 'repair',
+    icon: mdiDeleteRestore,
+    titleKey: 'library_care_tool_file_trash',
+    descriptionKey: 'library_care_tool_file_trash_description',
+    adminOnly: true,
+  },
+  {
     id: 'icloud',
     group: 'import',
     icon: mdiCloudOutline,
@@ -119,6 +130,7 @@ export const LIBRARY_CARE_TOOLS: readonly UtilityId[] = Object.freeze([
   'duplicates',
   'missing-media',
   'corrupt-media',
+  'file-trash',
   'live-photos',
 ]);
 export const libraryCareToolsFor = (isAdmin: boolean) =>
