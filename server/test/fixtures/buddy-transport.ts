@@ -44,8 +44,7 @@ export const startBuddyTransport = async (root: string, side: BuddySide, instanc
             if (/\/objects\/[a-f\d]{64}$/.test(request.url ?? '')) {
               if (request.method === 'GET') {
                 metrics.objectReads++;
-              }
-              if (request.method === 'PUT') {
+              } else if (request.method === 'PUT') {
                 metrics.objectWrites++;
               }
             }
@@ -68,7 +67,7 @@ export const startBuddyTransport = async (root: string, side: BuddySide, instanc
     let claims: { nonce?: string } | null = null;
     try {
       if (typeof proof === 'string') {
-        claims = JSON.parse(Buffer.from(proof.split('.')[1], 'base64url').toString());
+        claims = JSON.parse(Buffer.from(proof.split('.', 2)[1], 'base64url').toString());
       }
     } catch {
       failures.push('Unreadable proof from real peer');

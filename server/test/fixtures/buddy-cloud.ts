@@ -25,7 +25,7 @@ import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js
 export type BuddySide = 'a' | 'b';
 export const BUDDY_SIDES = ['a', 'b'] as const;
 export const buddyHost = (side: BuddySide) => `r.buddyfixture${side.repeat(4)}.buddy.test`;
-export const buddyPort = (side: BuddySide) => (side === 'a' ? 38443 : 38444);
+export const buddyPort = (side: BuddySide) => (side === 'a' ? 38_443 : 38_444);
 const publicKey = z.strictObject({ kty: z.literal('OKP'), crv: z.literal('Ed25519'), x: z.string().length(43) });
 const permissions = z.strictObject({
   allowRemoteEnable: z.boolean(),
@@ -70,7 +70,7 @@ const strictForm = <T extends z.ZodType>(request: FakeCloudRequest, schema: T): 
 export const startBuddyCloud = async () => {
   const cloud = await startFakeCloud({
     listenHost: '0.0.0.0',
-    listenPort: 30186,
+    listenPort: 30_186,
     advertisedHost: 'host.docker.internal',
   });
   const accounts = { a: randomUUID(), b: randomUUID() };
@@ -183,11 +183,11 @@ export const startBuddyCloud = async () => {
         scope: z.literal('instance'),
       }),
     );
-    const instance = [...instances.values()].find((entry) => entry.id === form.client_id);
+    const instance = instances.values().find((entry) => entry.id === form.client_id);
     if (!instance || request.dpop?.jkt !== instance.jkt) {
       return refused();
     }
-    const [header, payload, signature] = form.client_assertion.split('.');
+    const [header, payload, signature] = form.client_assertion.split('.', 3);
     const claims = z
       .strictObject({
         iss: z.literal(instance.id),
@@ -245,7 +245,7 @@ export const startBuddyCloud = async () => {
       registered.jwk.kid !== jkt ||
       pending.jkt !== jkt ||
       request.dpop?.jkt !== jkt ||
-      [...instances.values()].some((entry) => entry.id === registered.instanceId || entry.jkt === jkt)
+      instances.values().some((entry) => entry.id === registered.instanceId || entry.jkt === jkt)
     ) {
       return refused();
     }
@@ -370,7 +370,7 @@ export const startBuddyCloud = async () => {
     if (!pairing || pairing.state !== 'active' || input.pairId !== pairing.pairId || !vault) {
       return refused();
     }
-    const destination = [...instances.values()].find((entry) => entry.id === vault.destinationInstanceId)!;
+    const destination = instances.values().find((entry) => entry.id === vault.destinationInstanceId)!;
     const iat = Math.floor(Date.now() / 1000);
     const claims = BuddyGrantClaims.parse({
       version: 1,
@@ -458,7 +458,7 @@ export const startBuddyCloud = async () => {
     return answer({ version: 1 });
   });
   protectedRoute('GET /v1/buddy/status', () =>
-    answer({ version: 1, pairId: pairing?.pairId, reports: [...reports.values()] }),
+    answer({ version: 1, pairId: pairing?.pairId, reports: reports.values().toArray() }),
   );
 
   return { cloud, accounts, instances, errors, pairing: () => pairing };
