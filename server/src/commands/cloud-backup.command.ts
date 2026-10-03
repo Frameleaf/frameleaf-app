@@ -43,7 +43,7 @@ export class CloudBackupRestoreCommand extends CommandRunner {
 
   @Option({
     flags: '--endpoint <url>',
-    description: 'The storage address, for example https://s3.eu-central-2.wasabisys.com',
+    description: 'The storage address, for example https://s3.eu-central-2.storage.example',
   })
   parseEndpoint(value: string): string {
     return value;

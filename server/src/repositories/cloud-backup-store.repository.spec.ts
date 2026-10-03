@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { inspect } from 'node:util';
 import {
   CloudBackupClaimError,
   CloudBackupConnection,
@@ -9,6 +10,8 @@ import {
   CloudBackupStoreError,
   CloudBackupStoreRepository,
   SSE_C_REFUSED_MESSAGE,
+  describeProviderError,
+  sanitizeProviderResponse,
   signS3Request,
 } from 'src/repositories/cloud-backup-store.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -174,7 +177,7 @@ class FakeS3 {
 }
 
 const connection: CloudBackupConnection = {
-  endpoint: 'https://s3.eu-central-2.wasabisys.test',
+  endpoint: 'https://s3.eu-central-2.storage.example',
   region: 'eu-central-2',
   bucket: 'family-backup',
   accessKeyId: 'AKIAEXAMPLE',
@@ -197,13 +200,15 @@ const expectStored = (stored: { body: Buffer } | undefined, expected: Buffer) =>
 describe(CloudBackupStoreRepository.name, () => {
   let s3: FakeS3;
   let sut: CloudBackupStoreRepository;
+  let logger: LoggingRepository;
   let directory: string;
   const bucketKey = randomBytes(32);
 
   beforeEach(async () => {
     s3 = new FakeS3();
     vi.stubGlobal('fetch', s3.fetch);
-    sut = new CloudBackupStoreRepository(LoggingRepository.create());
+    logger = LoggingRepository.create();
+    sut = new CloudBackupStoreRepository(logger);
     sut.retryDelaysMs = [0, 0];
     directory = await mkdtemp(join(tmpdir(), 'cloud-backup-store-'));
   });
@@ -476,6 +481,28 @@ describe(CloudBackupStoreRepository.name, () => {
     expect(s3.seen.some(({ method, key }) => method === 'HEAD' && key === `o/${sha256(content)}`)).toBe(true);
   });
 
+  it('rejects NoSuchUpload recovery when HEAD finds an object with the wrong size', async () => {
+    const content = randomBytes(CLOUD_BACKUP_PART_BYTES + 100);
+    const path = join(directory, 'wrong-size.mov');
+    await writeFile(path, content);
+    s3.loseCompleteAnswer = true;
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const response = await s3.fetch(input, init);
+      if (init?.method === 'HEAD') {
+        response.headers.set('content-length', String(content.length + 1));
+      }
+      return response;
+    });
+
+    await expect(
+      sut.uploadFile(connection, `o/${sha256(content)}`, path, bucketKey, sha256(content)),
+    ).rejects.toMatchObject({
+      status: 404,
+      code: 'NoSuchUpload',
+    });
+    expect(s3.seen.some(({ method }) => method === 'HEAD')).toBe(true);
+  });
+
   it('says a bucket refuses SSE-C when a customer-key PUT is refused after the listing was allowed', async () => {
     s3.refusesSseC = true;
 
@@ -513,6 +540,309 @@ describe(CloudBackupStoreRepository.name, () => {
 
     expect(error.message).not.toContain(bucketKey.toString('base64'));
     expect(error.message).not.toContain(connection.secretAccessKey);
+  });
+
+  describe('FL-325 provider error privacy', () => {
+    const upstreamFailure = `https://s3.eu-central-2.${['wasa', 'bisys'].join('')}.test/?secret=${connection.secretAccessKey}`;
+
+    it.each([
+      { name: 'Error', failure: new Error(upstreamFailure) },
+      { name: 'thrown text', failure: upstreamFailure },
+    ])('keeps network $name text out of customer errors after retries', async ({ failure }) => {
+      const fetch = vi.fn().mockRejectedValue(failure);
+      vi.stubGlobal('fetch', fetch);
+
+      const error = await sut.get(connection, 'o/abc', bucketKey).catch((error_: unknown) => error_);
+
+      expect(error).toBeInstanceOf(CloudBackupStoreError);
+      expect(error).toMatchObject({
+        message: 'The storage provider could not be reached (GET o/abc).',
+        status: null,
+        code: null,
+      });
+      expect(String(error)).not.toContain(upstreamFailure);
+      expect(String(error)).not.toContain(connection.secretAccessKey);
+      expect(fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('keeps unexpected request failures out of the retry fallback error', async () => {
+      const failingConnection = {
+        ...connection,
+        get endpoint(): string {
+          throw new Error(upstreamFailure);
+        },
+      };
+
+      const error = await sut.get(failingConnection, 'o/abc', bucketKey).catch((error_: unknown) => error_);
+
+      expect(error).toBeInstanceOf(CloudBackupStoreError);
+      expect(error).toMatchObject({
+        message: 'The storage provider could not be reached (GET o/abc).',
+        status: null,
+        code: null,
+      });
+      expect(String(error)).not.toContain(upstreamFailure);
+      expect(String(error)).not.toContain(connection.secretAccessKey);
+      expect(s3.seen).toHaveLength(0);
+    });
+
+    it.each([
+      { name: 'URL and secret', code: upstreamFailure },
+      { name: 'credential alone', code: connection.secretAccessKey },
+      { name: 'alphanumeric credential alone', code: connection.accessKeyId },
+      { name: 'unknown machine code', code: 'Storage_Rate-Limit' },
+      { name: 'trailing newline', code: 'AccessDenied\n' },
+      { name: 'spaces', code: 'Access Denied' },
+      { name: 'overlong code', code: 'X'.repeat(65) },
+    ])('omits arbitrary XML Code text: $name', async ({ code }) => {
+      s3.failures = [{ status: 403, code }];
+
+      const error = await sut.list(connection, '').catch((error_: unknown) => error_);
+
+      expect(error).toBeInstanceOf(CloudBackupStoreError);
+      expect(error).toMatchObject({
+        message: 'The storage provider refused GET family-backup: 403',
+        status: 403,
+        code: null,
+      });
+      expect(String(error)).not.toContain(upstreamFailure);
+      expect(String(error)).not.toContain(connection.secretAccessKey);
+      expect(String(error)).not.toContain(connection.accessKeyId);
+      expect(describeProviderError(403, code, 'GET family-backup')).toBe(
+        'The storage provider refused GET family-backup: 403',
+      );
+    });
+
+    it.each(['AccessDenied', 'InvalidRequest'])('keeps the recognized machine code %s', async (code) => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(`<Error><Code>${code}</Code><Message>${upstreamFailure}</Message></Error>`, { status: 403 }),
+          ),
+      );
+
+      await expect(sut.list(connection, '')).rejects.toMatchObject({
+        message: `The storage provider refused GET family-backup: 403 ${code}`,
+        status: 403,
+        code,
+      });
+    });
+
+    it.each([
+      { name: 'URL and secret', code: upstreamFailure },
+      { name: 'credential alone', code: connection.secretAccessKey },
+      { name: 'alphanumeric credential alone', code: connection.accessKeyId },
+    ])('rejects an HTTP-200 completion error without exposing $name', async ({ code }) => {
+      vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        const url = new URL(input.toString());
+        if (init?.method === 'POST' && url.searchParams.has('uploadId')) {
+          return Promise.resolve(
+            new Response(`<Error><Code>${code}</Code><Message>${upstreamFailure}</Message></Error>`, {
+              headers: { etag: '"must-not-accept"' },
+            }),
+          );
+        }
+        return s3.fetch(input, init);
+      });
+
+      const error = await sut
+        .uploadStream(
+          connection,
+          'm/private.json.gz',
+          [Buffer.alloc(CLOUD_BACKUP_PART_BYTES + 1)],
+          bucketKey,
+          'application/gzip',
+        )
+        .catch((error_: unknown) => error_);
+
+      expect(error).toBeInstanceOf(CloudBackupStoreError);
+      expect(error).toMatchObject({
+        message: 'The storage provider refused to finish m/private.json.gz',
+        status: 200,
+        code: null,
+      });
+      expect(String(error)).not.toContain(upstreamFailure);
+      expect(String(error)).not.toContain(connection.secretAccessKey);
+      expect(String(error)).not.toContain(connection.accessKeyId);
+      expect(s3.uploads.size).toBe(0);
+      expect(s3.objects.has('m/private.json.gz')).toBe(false);
+    });
+  });
+
+  describe('FL-325 response-consumption privacy', () => {
+    const privateHostname = 'private-backup.storage.internal';
+    const bodyFailure = () =>
+      new Error(`Read failed at https://${privateHostname}/?key=${connection.secretAccessKey}`, {
+        cause: new Error(connection.secretAccessKey),
+      });
+
+    const expectSafeReadFailure = (error: unknown, action: string) => {
+      expect(error).toBeInstanceOf(CloudBackupStoreError);
+      expect(error).toMatchObject({
+        message: `The storage response could not be read (${action}).`,
+        status: null,
+        code: null,
+      });
+      expect(error).not.toHaveProperty('cause');
+      const diagnostic = inspect(error, { depth: 10 });
+      expect(diagnostic).not.toContain(privateHostname);
+      expect(diagnostic).not.toContain(connection.secretAccessKey);
+    };
+
+    const failedResponse = () => {
+      let first = true;
+      return new Response(
+        new ReadableStream<Uint8Array>(
+          {
+            pull(controller) {
+              if (first) {
+                first = false;
+                controller.enqueue(new Uint8Array([1, 2, 3]));
+              } else {
+                controller.error(bodyFailure());
+              }
+            },
+          },
+          { highWaterMark: 0 },
+        ),
+        { status: 206 },
+      );
+    };
+
+    it.each([
+      { name: 'get', read: () => sut.get(connection, 'o/private', bucketKey), action: 'GET o/private' },
+      { name: 'list', read: () => sut.list(connection, ''), action: 'GET family-backup' },
+      { name: 'hash', read: () => sut.hashObject(connection, 'o/private', bucketKey), action: 'GET o/private' },
+      {
+        name: 'preview',
+        read: () => sut.getPreview(connection, 'o/private', bucketKey, 'a'.repeat(64), 100),
+        action: 'GET o/private',
+      },
+      { name: 'marker', read: () => sut.readMarker(connection, bucketKey), action: `GET ${CLOUD_BACKUP_MARKER}` },
+    ])('sanitizes a body failure after successful $name headers', async ({ read, action }) => {
+      vi.stubGlobal('fetch', vi.fn().mockImplementation(failedResponse));
+
+      const error = await read().catch((error_: unknown) => error_);
+
+      expectSafeReadFailure(error, action);
+    });
+
+    it('sanitizes streaming download failures, removes the partial file and preserves the destination', async () => {
+      const destination = join(directory, 'restored.bin');
+      await writeFile(destination, 'already here');
+      vi.stubGlobal('fetch', vi.fn().mockImplementation(failedResponse));
+
+      const error = await sut
+        .download(connection, 'o/private', bucketKey, destination, null)
+        .catch((error_: unknown) => error_);
+
+      expectSafeReadFailure(error, 'GET o/private');
+      expect(await readFile(destination, 'utf8')).toBe('already here');
+      expect(await readdir(directory)).toEqual(['restored.bin']);
+    });
+
+    it('sanitizes completion reads and unfinished-upload log diagnostics, including chained errors', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        const url = new URL(input.toString());
+        if (url.searchParams.has('uploadId')) {
+          if (init?.method === 'POST') {
+            return Promise.resolve(failedResponse());
+          }
+          if (init?.method === 'DELETE') {
+            return Promise.reject(bodyFailure());
+          }
+        }
+        return s3.fetch(input, init);
+      });
+
+      const error = await sut
+        .uploadStream(
+          connection,
+          'm/private.json.gz',
+          [Buffer.alloc(CLOUD_BACKUP_PART_BYTES + 1)],
+          bucketKey,
+          'application/gzip',
+        )
+        .catch((error_: unknown) => error_);
+
+      expectSafeReadFailure(error, 'POST m/private.json.gz');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Could not abandon the unfinished upload'));
+      const diagnostic = inspect(warn.mock.calls, { depth: 10 });
+      expect(diagnostic).not.toContain(privateHostname);
+      expect(diagnostic).not.toContain(connection.secretAccessKey);
+    });
+
+    it('preserves response metadata, demand-driven reads and cancellation of the underlying body', async () => {
+      const cancel = vi.fn();
+      const pull = vi.fn((controller: ReadableStreamDefaultController<Uint8Array>) => {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+      });
+      const original = new Response(new ReadableStream<Uint8Array>({ pull, cancel }, { highWaterMark: 0 }), {
+        status: 206,
+        statusText: 'Partial Content',
+        headers: { etag: '"e"', 'x-amz-server-side-encryption-customer-algorithm': 'AES256' },
+      });
+      const response = sanitizeProviderResponse(original, 'GET o/private');
+      expect(response.status).toBe(original.status);
+      expect(response.statusText).toBe(original.statusText);
+      expect([...response.headers]).toEqual([...original.headers]);
+      await Promise.resolve();
+      expect(pull).not.toHaveBeenCalled();
+      const reader = response.body!.getReader();
+      await expect(reader.read()).resolves.toEqual({ value: new Uint8Array([1, 2, 3]), done: false });
+      await Promise.resolve();
+      expect(pull).toHaveBeenCalledTimes(1);
+      const reason = new Error('preview limit');
+      await reader.cancel(reason);
+      expect(cancel).toHaveBeenCalledWith(reason);
+    });
+
+    it('preserves cancellation while a body read is pending', async () => {
+      const cancel = vi.fn();
+      const response = sanitizeProviderResponse(
+        new Response(new ReadableStream<Uint8Array>({ cancel }, { highWaterMark: 0 })),
+        'GET o/private',
+      );
+      const reader = response.body!.getReader();
+      const pending = reader.read();
+      await Promise.resolve();
+
+      await reader.cancel('stop');
+
+      await expect(pending).resolves.toEqual({ value: undefined, done: true });
+      expect(cancel).toHaveBeenCalledWith('stop');
+    });
+
+    it('sanitizes errors from underlying cancellation without chaining the original', async () => {
+      const response = sanitizeProviderResponse(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            cancel() {
+              throw bodyFailure();
+            },
+          }),
+        ),
+        'GET o/private',
+      );
+
+      const error = await response.body!.cancel('stop').catch((error_: unknown) => error_);
+
+      expectSafeReadFailure(error, 'GET o/private');
+    });
+
+    it('preserves local filesystem failures during a streaming download', async () => {
+      const content = Buffer.from('original');
+      s3.objects.set('o/local-error', { body: content, keyMd5: null });
+      const error = await sut
+        .download(connection, 'o/local-error', bucketKey, join(directory, 'missing', 'restored.bin'), null)
+        .catch((error_: unknown) => error_);
+
+      expect(error).toMatchObject({ code: 'ENOENT' });
+      expect(error).not.toBeInstanceOf(CloudBackupStoreError);
+    });
   });
 
   describe('FL-164', () => {
