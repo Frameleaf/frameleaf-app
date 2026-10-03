@@ -97,8 +97,9 @@ describe('catalog manifests', () => {
     // person (FL-83 AL-30b), generated Studio resources (FL-111) and Studio project imports (FL-103,
     // FL-105), Studio HDR intermediates (FL-97), persisted safety proof facts (FL-226), and the used
     // exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230), develop artifacts
-    // (FL-233), and iCloud source identities, claims and audit requests (FL-296), in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(221);
+    // (FL-233), and iCloud source identities, claims, audit requests and actual reuse receipts (FL-296),
+    // in the integrated catalog. Migration 0217 adds one table; hosted generation must supply it.
+    expect(getCatalogTableLocks(fork)).toHaveLength(222);
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
         'public.pet_audit',
@@ -144,13 +145,14 @@ describe('catalog manifests', () => {
         'immich_fork.icloud_source_identity',
         'immich_fork.icloud_claim',
         'immich_fork.icloud_identity_audit',
+        'immich_fork.icloud_identity_reuse',
         'immich_fork.album_cover_follows_newest',
         'immich_fork.asset_user_share',
         'immich_fork.buddy_backup_reference',
       ]),
     );
     // 66 v3.1.0 public + every fork table
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(130);
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(131);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {
