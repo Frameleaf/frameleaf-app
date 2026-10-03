@@ -335,7 +335,7 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     ).rejects.toThrow('rollback original-official lock probe');
 
     expect(observedLocks).toEqual(report.tableEvidence.map(({ table }) => table).toSorted());
-    // 66 v3.1.0 public + the 67 fork tables: the video version (FL-39), archive operation (FL-32),
+    // 66 v3.1.0 public + the 70 fork tables: the video version (FL-39), archive operation (FL-32),
     // merge verdict (FL-57), album position (FL-52), recipient group (FL-55), preference
     // history (FL-71), face correction history (FL-57), pet recognition run (FL-58), memory curation
     // and show-less (FL-62), render worker session capability (FL-95), Studio workspace layout
@@ -346,11 +346,14 @@ describe('exact v3.1.0 public schema cutover evidence', () => {
     // used exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230), develop
     // artifacts (FL-233), iCloud source identities, claims, audit and identity-reuse receipts (FL-296),
     // Buddy capture references (FL-310), and photography workflows and studio sites (FL-283).
-    expect(observedLocks).toHaveLength(133);
+    expect(observedLocks).toHaveLength(136);
     expect(observedLocks).toEqual(
       expect.arrayContaining([
         'immich_fork.buddy_backup_reference',
         'immich_fork.icloud_identity_reuse',
+        'immich_fork.icloud_weekly_grant',
+        'immich_fork.icloud_weekly_cohort',
+        'immich_fork.icloud_weekly_member',
         'immich_fork.photography_workflow',
         'immich_fork.photography_studio_site',
         'immich_fork.video_edit_version',

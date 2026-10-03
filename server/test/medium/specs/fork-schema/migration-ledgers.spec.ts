@@ -102,6 +102,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000215-PhotographyWorkflow' },
       { name: '0000000000216-ICloudIdentityAudit' },
       { name: '0000000000217-ICloudIdentityReuse' },
+      { name: '0000000000218-ICloudWeeklyAuthority' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',

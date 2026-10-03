@@ -117,6 +117,49 @@ describe(MediaOperationService.name, () => {
     );
   });
 
+  describe('private weekly operation surfaces', () => {
+    const privateOperation = () => operationStub({
+      kind: MediaOperationKind.ICloudSync,
+      snapshot: { task: 'identity-audit-weekly', purpose: 'scheduled-weekly', connectionId: 'private-connection',
+        grantId: 'PRIVATE-SENTINEL', cohortId: 'PRIVATE-SENTINEL', auditIds: ['PRIVATE-SENTINEL'] },
+      label: 'PRIVATE-SENTINEL', destinationDetail: 'PRIVATE-SENTINEL',
+      assetId: 'PRIVATE-SENTINEL', resultAssetId: 'PRIVATE-SENTINEL', retryOfId: 'PRIVATE-SENTINEL',
+      projectId: 'PRIVATE-SENTINEL', revisionId: 'PRIVATE-SENTINEL',
+      settings: { seed: 'PRIVATE-SENTINEL' }, result: { path: 'PRIVATE-SENTINEL' },
+      error: 'PRIVATE-SENTINEL', errorCode: 'PRIVATE-SENTINEL',
+    });
+
+    it.each([false,true])('withholds all private surfaces independently of reader PIN elevation %s', async (elevated) => {
+      const auth = { ...authStub.user1, session: { ...authStub.user1.session!,hasElevatedPermission:elevated } };
+      const operation = privateOperation();
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.list).mockResolvedValue({ items: [operation], total: 1 });
+      vi.mocked(repository.getCheckpoints).mockResolvedValue([{ chunkKey: 'PRIVATE-SENTINEL' }] as never);
+      const detail = await sut.get(auth, operation.id);
+      const list = await sut.search(auth, {} as never);
+      const unfinished = await sut.listUnfinished(auth, 100);
+      expect(JSON.stringify([detail, list, unfinished])).not.toContain('PRIVATE-SENTINEL');
+      expect(detail).toMatchObject({ label: 'iCloud integrity verification', withheld: true,
+        assetId: null, resultAssetId: null, settings: {}, estimate: null, bulk: null, cloudJob: null,
+        snapshot: { task: 'identity-audit-weekly', executionAvailable: false }, checkpoints: [],
+        bulkItems: [], bulkRetryPending: [], error: null, errorCode: null, totalUnits: null, processedUnits: '0' });
+      expect(repository.getCheckpoints).not.toHaveBeenCalled();
+      expect(repository.getLockedAssetIds).not.toHaveBeenCalled();
+    });
+
+    it('refuses generic retry and cancels without ending an ordinary connection run', async () => {
+      const operation = privateOperation();
+      vi.mocked(repository.getForOwner).mockResolvedValue({ ...operation, status: MediaOperationStatus.Failed });
+      await expect(sut.retry(authStub.user1, operation.id)).rejects.toThrow('Weekly integrity work cannot be retried');
+      expect(icloud.queueOperation).not.toHaveBeenCalled();
+      vi.mocked(repository.getForOwner).mockResolvedValue(operation);
+      vi.mocked(repository.requestCancel).mockResolvedValue({ ...operation, status: MediaOperationStatus.Cancelled });
+      const cancelled = await sut.cancel(authStub.user1, operation.id);
+      expect(icloud.endRun).not.toHaveBeenCalled();
+      expect(JSON.stringify(cancelled)).not.toContain('PRIVATE-SENTINEL');
+    });
+  });
+
   describe('search', () => {
     it('only ever asks for the signed-in account', async () => {
       vi.mocked(repository.list).mockResolvedValue({ items: [operationStub()], total: 1 });
