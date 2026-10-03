@@ -521,6 +521,27 @@ describe(PartnerCopyService.name, () => {
       expect(exif.longitude).toBeCloseTo(-114.07);
     });
 
+    it("re-copies the source's faces to a following copy until its owner edits the copy's faces", async () => {
+      const { sut, ctx, origins } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
+      const facesOf = (assetId: string) =>
+        db.selectFrom('asset_face').select('boundingBoxX1').where('assetId', '=', assetId).execute();
+      expect(await facesOf(bobCopy!)).toHaveLength(0);
+
+      await ctx.newAssetFace({ assetId: source.id, boundingBoxX1: 10 });
+      await sut.handlePropagate({ kind: 'asset', sourceId: source.id, fields: [AssetOriginField.Faces] });
+      expect(await facesOf(bobCopy!)).toEqual([{ boundingBoxX1: 10 }]);
+
+      await origins.markOverridden('asset', [bobCopy!], [AssetOriginField.Faces], bob.id);
+      await ctx.newAssetFace({ assetId: source.id, boundingBoxX1: 20 });
+      await sut.handlePropagate({ kind: 'asset', sourceId: source.id, fields: [AssetOriginField.Faces] });
+      expect(await facesOf(bobCopy!)).toEqual([{ boundingBoxX1: 10 }]);
+    });
+
     it('carries a lock and unlock to a followed copy until its owner changes it (FL-326 Task 13)', async () => {
       const { sut, ctx } = setup();
       const { assets, assetCtx } = assetService();

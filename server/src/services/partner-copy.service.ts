@@ -473,6 +473,15 @@ export class PartnerCopyService extends BaseService {
       if (apply.includes(AssetOriginField.Tags)) {
         await this.copyTags(sourceId, follower.id, follower.ownerId);
       }
+      if (apply.includes(AssetOriginField.Faces)) {
+        await this.personRepository.deleteFacesOfAsset(follower.id);
+        await this.copyFaces({
+          sourceAssetId: sourceId,
+          targetAssetId: follower.id,
+          targetOwnerId: follower.ownerId,
+          partnerSharedById: follower.partnerSharedById,
+        });
+      }
       // spec §4.9: a lock or unlock carries over while the copy's visibility is followed
       if (apply.includes(AssetOriginField.Visibility)) {
         await BaseService.create(PartnerLockService, this).mirrorLockedState({

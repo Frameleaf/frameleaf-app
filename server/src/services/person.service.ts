@@ -62,7 +62,9 @@ import {
   SystemMetadataKey,
   VectorIndex,
 } from 'src/enum.js';
+import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
@@ -605,6 +607,7 @@ export class PersonService extends BaseService {
     }
     await this.recordFaceCorrections(corrections);
     await this.refreshIdentities(auth.user.id, { assetIds });
+    await this.noteFaceEdit(auth.user.id, assetIds);
     return result;
   }
 
@@ -635,6 +638,7 @@ export class PersonService extends BaseService {
       },
     ]);
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
+    await this.noteFaceEdit(auth.user.id, [face.assetId]);
 
     return mapPerson(await this.findOrFail(auth, personGroupId));
   }
@@ -1451,6 +1455,7 @@ export class PersonService extends BaseService {
     }
     // FL-57: a new face of a named person can change what generated text should say
     await this.refreshIdentities(asset.ownerId, { assetIds: [asset.id] });
+    await this.noteFaceEdit(auth.user.id, [asset.id]);
 
     return this.mapStoredFace(auth, id);
   }
@@ -1635,6 +1640,17 @@ export class PersonService extends BaseService {
     }
     await this.refreshFeaturePhotos(auth.user.id, [face.personGroupId], id);
     await this.refreshIdentities(auth.user.id, { assetIds: [face.assetId] });
+    await this.noteFaceEdit(auth.user.id, [face.assetId]);
+  }
+
+  /** FL-326: a face edit makes a partner copy's faces its owner's; copies of these items re-copy them. */
+  private noteFaceEdit(userId: string, assetIds: string[]) {
+    return recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      userId,
+      [...new Set(assetIds)],
+      [AssetOriginField.Faces],
+    );
   }
 
   private async requireFaceSource(asset: FaceSource, assetId: string, expectedSourceRevision?: string) {

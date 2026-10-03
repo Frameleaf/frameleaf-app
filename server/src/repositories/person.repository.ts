@@ -1076,6 +1076,11 @@ export class PersonRepository {
     await this.db.insertInto('asset_face').values(face).execute();
   }
 
+  /** FL-326: a followed partner copy's faces, replaced by its source's when they change. */
+  async deleteFacesOfAsset(assetId: string): Promise<void> {
+    await this.db.deleteFrom('asset_face').where('asset_face.assetId', '=', assetId).execute();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   async deleteAssetFace(id: string): Promise<void> {
     await this.db.deleteFrom('asset_face').where('asset_face.id', '=', id).execute();
