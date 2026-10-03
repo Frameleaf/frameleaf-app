@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import { AssetType, UserMetadataKey } from 'src/enum.js';
 import * as auditMigration from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
@@ -167,10 +168,10 @@ describe('weekly consent foundation, never execution authority', () => {
           }),
         ]);
         // Capture rejection immediately; finally always settles both real transactions.
-        submission = sut.setAuthority(f.auth, f.connection.id, f.input).then(
-          () => ({ accepted: true }),
-          (error: unknown) => ({ accepted: false, error }),
-        );
+        submission = sut
+          .setAuthority(f.auth, f.connection.id, f.input)
+          .then(() => ({ accepted: true }))
+          .catch((error: unknown) => ({ accepted: false, error }));
         await expect
           .poll(
             async () => {
@@ -371,7 +372,7 @@ describe('weekly consent foundation, never execution authority', () => {
         CASE WHEN ${scheduled} THEN "grantId" ELSE NULL END,
         CASE WHEN ${scheduled} THEN "grantGeneration" ELSE NULL END,
         CASE WHEN ${scheduled} THEN id ELSE NULL END,
-        CASE WHEN ${scheduled} THEN ${ordinal} ELSE NULL END,
+        CASE WHEN ${scheduled} THEN ${ordinal}::bigint ELSE NULL END,
         CASE WHEN ${scheduled} THEN 0 ELSE NULL END
       FROM immich_fork.icloud_weekly_cohort WHERE id=${cohortId}::uuid`.execute(db);
     await insert('manual-session', f.session.id, false);
@@ -411,22 +412,31 @@ describe('weekly consent foundation, never execution authority', () => {
     );
     const resource = (await sync.claim(f.connection.id, f.connection.config.stagingBytes))!;
     expect(resource.id).toBe(resourceId);
-    const download = vi.fn(async () => ({
-      stream: Readable.from([bytes]),
-      fingerprint: resource.fingerprint,
-      size: bytes.length,
-      session: providerSession,
-    }));
+    const download = vi.fn(() =>
+      Promise.resolve({
+        stream: Readable.from([bytes]),
+        fingerprint: resource.fingerprint,
+        size: bytes.length,
+        session: providerSession,
+      }),
+    );
     const transport = {
-      decodeSession: async (id: string, value: string) => decryptICloudSession(key, id, value),
-      encodeSession: async (id: string, value: unknown) => encryptICloudSession(key, id, value),
+      decodeSession: (id: string, value: string) => decryptICloudSession(key, id, value),
+      encodeSession: (id: string, value: unknown) => encryptICloudSession(key, id, value),
       download,
     };
     const root = await mkdtemp(join(tmpdir(), 'fl296-weekly-refresh-'));
     const priorRoot = process.env.FRAMELEAF_ICLOUD_STAGING_PATH;
-    process.env.FRAMELEAF_ICLOUD_STAGING_PATH = root;
+    let priorMediaLocation: string | undefined;
     try {
-      const staging = new ICloudStagingService(sync, transport as never, { getAll: async () => [] } as never);
+      priorMediaLocation = StorageCore.getMediaLocation();
+    } catch {
+      priorMediaLocation = undefined;
+    }
+    process.env.FRAMELEAF_ICLOUD_STAGING_PATH = root;
+    StorageCore.setMediaLocation(root);
+    try {
+      const staging = new ICloudStagingService(sync, transport as never, { getAll: () => Promise.resolve([]) } as never);
       const connection = (await sync.get(f.connection.id, f.user.id))!;
       const staged = await staging.download(connection, resource);
       expect(await readFile(staged)).toEqual(bytes);
@@ -450,6 +460,10 @@ describe('weekly consent foundation, never execution authority', () => {
       } else {
         process.env.FRAMELEAF_ICLOUD_STAGING_PATH = priorRoot;
       }
+      StorageCore.reset();
+      if (priorMediaLocation) {
+        StorageCore.setMediaLocation(priorMediaLocation);
+      }
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -466,7 +480,7 @@ describe('weekly consent foundation, never execution authority', () => {
         await sync.update(f.connection.id, f.user.id, { encryptedSession: 'fixture-only' });
       } else if (kind === 'authenticate') {
         await sync.update(f.connection.id, f.user.id, { state: 'authenticating' });
-        await sync.withSession(f.connection.id, f.user.id, async () => ({
+        await sync.withSession(f.connection.id, f.user.id, () => ({
           value: undefined,
           state: 'connected',
           encryptedSession: 'new-auth',
@@ -583,10 +597,9 @@ describe('weekly consent foundation, never execution authority', () => {
                   transaction,
                 );
               });
-        const outcome = pending.then(
-          () => ({ accepted: true }),
-          (error: unknown) => ({ accepted: false, error }),
-        );
+        const outcome = pending
+          .then(() => ({ accepted: true }))
+          .catch((error: unknown) => ({ accepted: false, error }));
         await expect
           .poll(
             async () => {
@@ -654,10 +667,7 @@ describe('weekly consent foundation, never execution authority', () => {
             ? users.setPinCodeAndLockSessions(f.user.id, checked, 'new-checked-pin')
             : sessions.elevate(f.session.id, f.user.id, checked, new Date(Date.now() + 3_600_000));
         // Catch immediately while preserving the assertion's eventual result.
-        const firstResult = first.then(
-          (accepted) => ({ accepted }),
-          (error: unknown) => ({ error }),
-        );
+        const firstResult = first.then((accepted) => ({ accepted })).catch((error: unknown) => ({ error }));
         let firstPid = 0;
         await expect
           .poll(
@@ -675,10 +685,7 @@ describe('weekly consent foundation, never execution authority', () => {
           order === 'mutation-first'
             ? sut.setAuthority(f.auth, f.connection.id, { ...f.input, requestKey: randomUUID() })
             : users.setPinCodeAndLockSessions(f.user.id, checked, 'new-checked-pin');
-        const secondResult = second.then(
-          (result) => ({ result }),
-          (error: unknown) => ({ error }),
-        );
+        const secondResult = second.then((result) => ({ result })).catch((error: unknown) => ({ error }));
         await expect
           .poll(
             async () => {
