@@ -16,7 +16,10 @@ import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
 
 /** A queue job as bullmq has it, before the Job manager's account and worker are added (FL-71). */
-export type QueueJobRow = Omit<QueueJobResponseDto, 'account' | 'worker'> & { status: QueueJobStatus };
+export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
+  name: JobName;
+  status: QueueJobStatus;
+};
 
 type JobMapItem = {
   jobName: JobName;

@@ -2358,7 +2358,12 @@ export enum JobName {
   IntegrityDeleteReports = 'IntegrityDeleteReports',
 }
 
-export const JobNameSchema = z.enum(JobName).describe('Job name').meta({ id: 'JobName' });
+// Internal photography jobs are observed through the scoped workflow API, not legacy queue clients.
+export const JobNameSchema = z
+  .enum(JobName)
+  .exclude([JobName.PhotographyWorkflowRender])
+  .describe('Job name')
+  .meta({ id: 'JobName' });
 
 export enum QueueCommand {
   Start = 'start',
