@@ -1,4 +1,5 @@
 import { defaults, getBaseUrl } from '@immich/sdk';
+import type { Watermark } from './workflow-api';
 
 export const shootStages = ['Imported', 'Selected', 'Edited', 'Proofing', 'Delivered'] as const;
 export const shootTypes = [
@@ -89,6 +90,10 @@ export type Brand = {
   watermarkOpacity: number;
   watermarkPosition: 'bottom-right' | 'bottom-left' | 'center' | 'top-right';
   watermarkSize: number;
+  watermarkPresets?: { id: string; name: string; version: number; watermark: Watermark }[];
+  webWatermarkPresetId?: string | null;
+  proofWatermarkPresetId?: string | null;
+  exportWatermarkPresetId?: string | null;
 };
 export type Branding = { revision: string | null; brand: Brand; logoUnavailable: boolean };
 export type LogoPage = { nextCursor: string | null; logos: { id: string; fileName: string }[] };

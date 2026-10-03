@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { PhotographyWatermarkPresetSchema } from 'src/dtos/photography-rendition.dto.js';
 
 export const SHOOT_STAGES = ['Imported', 'Selected', 'Edited', 'Proofing', 'Delivered'] as const;
 export const SHOOT_TYPES = [
@@ -67,6 +68,15 @@ export class PhotographyPhotosDto extends createZodDto(
         canRate: z.boolean(),
         stackCount: z.int().nonnegative(),
         currentRevisionId: z.uuidv4().nullable(),
+        camera: z.string(),
+        capturedAt: z.string().nullable(),
+        isRaw: z.boolean(),
+        stackId: z.uuidv4().nullable(),
+        width: z.int().nullable(),
+        height: z.int().nullable(),
+        eligible: z.boolean(),
+        exclusion: z.string().nullable(),
+        processing: z.enum(['ready', 'pending', 'failed']),
       }),
     ),
   }),
@@ -88,12 +98,20 @@ export const PhotographyBrandSchema = z.strictObject({
   watermarkOpacity: z.int().min(10).max(100),
   watermarkPosition: z.enum(['bottom-right', 'bottom-left', 'center', 'top-right']),
   watermarkSize: z.int().min(3).max(12),
+  watermarkPresets: z.array(PhotographyWatermarkPresetSchema).max(30).default([]),
+  webWatermarkPresetId: z.uuidv4().nullable().default(null),
+  proofWatermarkPresetId: z.uuidv4().nullable().default(null),
+  exportWatermarkPresetId: z.uuidv4().nullable().default(null),
 });
 export type PhotographyBrand = z.infer<typeof PhotographyBrandSchema>;
 export class PhotographyBrandSaveDto extends createZodDto(
   z.strictObject({
     expectedRevision: z.uuid().nullable(),
     brand: PhotographyBrandSchema.omit({ logoAssetId: true }).extend({
+      watermarkPresets: PhotographyBrandSchema.shape.watermarkPresets.removeDefault().optional(),
+      webWatermarkPresetId: PhotographyBrandSchema.shape.webWatermarkPresetId.removeDefault().optional(),
+      proofWatermarkPresetId: PhotographyBrandSchema.shape.proofWatermarkPresetId.removeDefault().optional(),
+      exportWatermarkPresetId: PhotographyBrandSchema.shape.exportWatermarkPresetId.removeDefault().optional(),
       logoAssetId: z
         .uuidv4()
         .nullable()
