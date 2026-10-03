@@ -1017,9 +1017,13 @@ export class ICloudSyncService {
             return;
           }
           const adopted = await this.adoption.adopt({
-            ownerId: connection.ownerId, connectionId: connection.id, config: canonicalJson(connection.config),
-            operationId: claim.operation.id, operationClaimToken: claim.claimToken,
-            resourceId: resource.id, resourceLeaseToken: resource.leaseToken!,
+            ownerId: connection.ownerId,
+            connectionId: connection.id,
+            config: canonicalJson(connection.config),
+            operationId: claim.operation.id,
+            operationClaimToken: claim.claimToken,
+            resourceId: resource.id,
+            resourceLeaseToken: resource.leaseToken!,
           });
           if (adopted === 'retry') {
             await this.repository.finish(resource, 'retry', 'identity_adoption_unavailable');
