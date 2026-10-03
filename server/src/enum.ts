@@ -628,6 +628,8 @@ export enum UserMetadataKey {
   Onboarding = 'onboarding',
   /** FL-196: when this administrator ended the linked-server tour, and how. */
   FrameleafCloudTour = 'frameleaf-cloud-tour',
+  /** FL-326: Locked items arrived from a partner for an account without a PIN; one-time notice. */
+  PartnerLockedNotice = 'partner-locked-notice',
 }
 
 export const UserMetadataKeySchema = z
