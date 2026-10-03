@@ -352,8 +352,8 @@ class ImageDescriptionModel(InferenceModel):
             )
 
         # Move the loaded instance in place; the decorated .to return annotation is unreliable.
-        model.to(device)
-        model.eval()
+        cast(Callable[[str], object], getattr(model, "to"))(device)
+        cast(Callable[[], object], getattr(model, "eval"))()
         return {"model": model, "processor": processor, "device": device, "torch": torch, "torch_dtype": torch_dtype}
 
     def _predict_cuda(self, image: Image.Image, nsfw: Any = None, external_prompt: str | None = None) -> dict[str, Any]:

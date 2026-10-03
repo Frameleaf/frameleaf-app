@@ -72,14 +72,15 @@ class SemanticMaskModel(InferenceModel):
         self.florence = Florence2ForConditionalGeneration.from_pretrained(
             paths[0], use_safetensors=True, local_files_only=True, trust_remote_code=False
         )
-        self.florence.to(self.device_name)
-        self.florence.eval()
+        # Pin boundaries to these dynamic vendor methods, not to the entire model's type.
+        cast(Callable[[str], object], getattr(self.florence, "to"))(self.device_name)
+        cast(Callable[[], object], getattr(self.florence, "eval"))()
         self.sam_processor = Sam2Processor.from_pretrained(paths[1], local_files_only=True, trust_remote_code=False)
         self.sam = Sam2Model.from_pretrained(
             paths[1], use_safetensors=True, local_files_only=True, trust_remote_code=False
         )
-        self.sam.to(self.device_name)
-        self.sam.eval()
+        cast(Callable[[str], object], getattr(self.sam, "to"))(self.device_name)
+        cast(Callable[[], object], getattr(self.sam, "eval"))()
         return None
 
     def _predict(self, image: Image.Image, target: str = "subject", **kwargs: Any) -> dict[str, Any]:
@@ -94,7 +95,9 @@ class SemanticMaskModel(InferenceModel):
             task = "<CAPTION_TO_PHRASE_GROUNDING>"
             phrase = "sky" if target == "sky" else "the main foreground subject"
             inputs = self.florence_processor(text=task + phrase, images=image, return_tensors="pt").to(self.device_name)
-            generated = self.florence.generate(**inputs, max_new_tokens=512, num_beams=1, do_sample=False)
+            # The mixin's self annotation excludes Florence despite its supported runtime inheritance.
+            generate = cast(Callable[..., object], getattr(self.florence, "generate"))
+            generated = generate(**inputs, max_new_tokens=512, num_beams=1, do_sample=False)
             # These vendor processor methods are unannotated in the pinned Transformers release.
             decode = cast(Callable[..., list[str]], self.florence_processor.batch_decode)
             text = decode(generated, skip_special_tokens=False)[0]
