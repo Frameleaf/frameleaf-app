@@ -2,7 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { AlbumKind, AssetFileType, AssetOrder } from 'src/enum.js';
+import { AlbumKind, AssetFileType, AssetLockReason, AssetOrder } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -68,6 +68,11 @@ export type AssetCopyInput = {
   partnerSharedById: string;
   /** The source's original `physical_file`; the copy links to it, nothing on disk is written. */
   original: { id: string; path: string };
+  /**
+   * Spec §4.9: the lock the copy carries from the moment it exists (the source's lock reason, or `marked`
+   * for an item the sharer's Locked rules hide), inserted in the same transaction as the copy.
+   */
+  lockReason?: AssetLockReason;
 };
 
 /** Why a source may not be copied yet (Task 13 lifts the Locked and sensitive skip). */
@@ -80,7 +85,24 @@ const GENERATED_FILE_TYPES = [
   AssetFileType.EncodedVideo,
 ];
 
+/** Copies form chains (A→B→C…); lineage walks stop here, far beyond any real chain, as a guard. */
+const MAX_LINEAGE_DEPTH = 64;
+
 const COPY_REFUSAL = 'Partner sharing is unavailable during database handoff';
+
+/**
+ * Whether `sharedById` still shares with `sharedWithId`, holding the partner row FOR SHARE until the
+ * caller's transaction ends: `PartnerService.remove` deletes that row before it stops following, so a copy
+ * either commits first (and then stops following with the rest) or sees no partnership and is not made.
+ */
+const lockPartnership = async (trx: Transaction<DB>, sharedById: string, sharedWithId: string) => {
+  const { rows } = await sql<{ present: number }>`
+    SELECT 1 AS present FROM partner
+    WHERE "sharedById" = ${sharedById}::uuid AND "sharedWithId" = ${sharedWithId}::uuid
+    FOR SHARE
+  `.execute(trx);
+  return rows.length > 0;
+};
 
 /** Serializes copies of the same content into the same library (the one-copy rule under concurrency). */
 const lockLibraryContent = async (trx: Transaction<DB>, ownerId: string, checksum: Buffer) => {
@@ -145,6 +167,20 @@ export class PartnerOriginRepository {
         ${input.partnerSharedById}::uuid)
       ON CONFLICT (${sql.id(key)}) DO NOTHING
     `.execute(kysely);
+  }
+
+  /**
+   * Record an album copy's origin, only while its partnership still exists (held FOR SHARE, see
+   * `lockPartnership`). Returns false when the partnership has ended: the caller removes the album copy.
+   */
+  async createAlbumOriginIfPartnered(input: OriginInput): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      if (!(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
+        return false;
+      }
+      await this.createOrigin('album', input, trx);
+      return true;
+    });
   }
 
   createAssetOrigin(input: OriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
@@ -349,6 +385,22 @@ export class PartnerOriginRepository {
     return rows[0]?.present ?? false;
   }
 
+  /**
+   * Whether `ownerId`'s library ever received a copy of `sourceAssetId`, even one its owner has since
+   * permanently deleted: the origin row outlives the copy (fork tables never foreign-key into the
+   * official schema), and a copy a library once had is never made again (a re-read of the source's
+   * metadata, a retried job or a re-run backfill must not undo the recipient's delete).
+   */
+  async hasEverCopied(sourceAssetId: string, ownerId: string, kysely: Kysely<DB> = this.db): Promise<boolean> {
+    const { rows } = await sql<{ present: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM immich_fork.asset_origin
+        WHERE "sourceAssetId" = ${sourceAssetId}::uuid AND "ownerId" = ${ownerId}::uuid
+      ) AS present
+    `.execute(kysely);
+    return rows[0]?.present ?? false;
+  }
+
   /** Locked or sensitive evidence on a source, from either store (positive evidence anywhere counts). */
   async getCopyBlockers(assetId: string): Promise<AssetCopyBlockers> {
     const { rows } = await sql<AssetCopyBlockers>`
@@ -373,11 +425,15 @@ export class PartnerOriginRepository {
    * Favorites, trash, stacks, duplicates, edits and the Live Photo pairing are never copied: the copy
    * starts as the owner's own unedited, unfavorited item. The library is charged the full file size.
    *
-   * Returns the copy's id, or undefined when the library already holds the content.
+   * Returns the copy's id, or undefined when the library already holds the content (or once received a
+   * copy of this source), or the partnership it is made for has ended.
    */
   async insertAssetCopy(input: AssetCopyInput): Promise<string | undefined> {
     return this.db.transaction().execute(async (trx) => {
       await lockPublicForkWrites(trx, COPY_REFUSAL);
+      if (!(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
+        return;
+      }
       const source = await trx.selectFrom('asset').selectAll().where('id', '=', input.sourceAssetId).executeTakeFirst();
       if (!source) {
         return;
@@ -411,7 +467,7 @@ export class PartnerOriginRepository {
         .where('ownerId', '=', input.ownerId)
         .where('checksum', '=', source.checksum)
         .executeTakeFirst();
-      if (existing) {
+      if (existing || (await this.hasEverCopied(source.id, input.ownerId, trx))) {
         return;
       }
 
@@ -442,6 +498,13 @@ export class PartnerOriginRepository {
         })
         .returning('id')
         .executeTakeFirstOrThrow();
+      if (input.lockReason) {
+        // a brand-new row with no stack or Live Photo pairing yet: the lock record alone locks it
+        await trx
+          .insertInto('asset_lock')
+          .values({ assetId: copy.id, reason: input.lockReason, lockedBy: null })
+          .execute();
+      }
 
       const exif = await trx.selectFrom('asset_exif').selectAll().where('assetId', '=', source.id).executeTakeFirst();
       if (exif) {
@@ -583,17 +646,60 @@ export class PartnerOriginRepository {
     return rows[0]?.present ?? false;
   }
 
-  /** `ownerId`'s copies of the items in `sourceAlbumId`, in the source album's order of addition. */
+  /**
+   * `ownerId`'s copies of the items in `sourceAlbumId`. An item counts as copied when the library holds a
+   * copy of it or of anything it was itself copied from: with A→B, A→C and B→C, C's copy of A's photo is
+   * the one that belongs in C's copy of B's album (the one-copy rule never gave C a copy of B's copy).
+   */
   async getAlbumAssetCopyIds(sourceAlbumId: string, ownerId: string): Promise<string[]> {
     const { rows } = await sql<{ id: string }>`
+      WITH RECURSIVE lineage(id, depth) AS (
+        SELECT album_asset."assetId", 0 FROM album_asset WHERE album_asset."albumId" = ${sourceAlbumId}::uuid
+        UNION
+        SELECT up."sourceAssetId", lineage.depth + 1
+        FROM lineage
+        JOIN immich_fork.asset_origin up ON up."assetId" = lineage.id
+        WHERE up."sourceAssetId" IS NOT NULL AND lineage.depth < ${MAX_LINEAGE_DEPTH}
+      )
       SELECT DISTINCT origin."assetId" AS id
-      FROM album_asset
-      JOIN immich_fork.asset_origin origin ON origin."sourceAssetId" = album_asset."assetId"
+      FROM lineage
+      JOIN immich_fork.asset_origin origin ON origin."sourceAssetId" = lineage.id
         AND origin."ownerId" = ${ownerId}::uuid
       JOIN asset copy ON copy.id = origin."assetId" AND copy."deletedAt" IS NULL
-      WHERE album_asset."albumId" = ${sourceAlbumId}::uuid
     `.execute(this.db);
     return rows.map(({ id }) => id);
+  }
+
+  /**
+   * Whether `ownerId` already holds a copy of this album or of any album it descends from or that
+   * descends from the same original (the root album): one copy per library per root album, however many
+   * partners pass it on (A→B, A→C, B→C must not give C two).
+   */
+  async hasAlbumCopyOfRoot(albumId: string, ownerId: string): Promise<boolean> {
+    const { rows } = await sql<{ present: boolean }>`
+      WITH RECURSIVE source_lineage(id, depth) AS (
+        SELECT ${albumId}::uuid, 0
+        UNION
+        SELECT up."sourceAlbumId", source_lineage.depth + 1
+        FROM source_lineage
+        JOIN immich_fork.album_origin up ON up."albumId" = source_lineage.id
+        WHERE up."sourceAlbumId" IS NOT NULL AND source_lineage.depth < ${MAX_LINEAGE_DEPTH}
+      ),
+      root AS (SELECT id FROM source_lineage ORDER BY depth DESC LIMIT 1),
+      copy_lineage(id, depth) AS (
+        SELECT origin."sourceAlbumId", 1
+        FROM immich_fork.album_origin origin
+        JOIN album copy ON copy.id = origin."albumId"
+        WHERE origin."ownerId" = ${ownerId}::uuid AND origin."sourceAlbumId" IS NOT NULL
+        UNION
+        SELECT up."sourceAlbumId", copy_lineage.depth + 1
+        FROM copy_lineage
+        JOIN immich_fork.album_origin up ON up."albumId" = copy_lineage.id
+        WHERE up."sourceAlbumId" IS NOT NULL AND copy_lineage.depth < ${MAX_LINEAGE_DEPTH}
+      )
+      SELECT EXISTS (SELECT 1 FROM copy_lineage WHERE id IN (SELECT id FROM root)) AS present
+    `.execute(this.db);
+    return rows[0]?.present ?? false;
   }
 
   /** The items in an album. */

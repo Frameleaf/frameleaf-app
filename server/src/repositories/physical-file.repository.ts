@@ -390,8 +390,13 @@ export class PhysicalFileRepository {
           ? await this.getPhysicalFile(candidate.physicalOriginalFileId, trx)
           : undefined;
         const path = target?.path ?? candidate.originalPath;
-        if (path !== asset.originalPath && (await options.exists(path))) {
+        // checked again under the path lock: a FileDelete that held it may have moved the file to the file
+        // trash meanwhile, and then the upload keeps its own file (or takes the trashed one back, below)
+        const existsUnderLock = async () => {
           await this.lockPath(trx, path);
+          return options.exists(path);
+        };
+        if (path !== asset.originalPath && (await options.exists(path)) && (await existsUnderLock())) {
           if (options.ingestion) {
             await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
           }
@@ -463,6 +468,43 @@ export class PhysicalFileRepository {
         .execute();
       return { physicalFile, linked: false };
     });
+  }
+
+  /**
+   * For a generated file with no `physical_file` row (made before universal storage, and inherited by a
+   * partner copy of such an asset): the asset that owns the file at `path`, chosen as a primary is
+   * (`electNextCanonical`): the oldest live asset whose unedited generated file is there. Undefined when
+   * no asset names the path.
+   */
+  async getGeneratedPathPrimaryAssetId(path: string): Promise<string | undefined> {
+    const row = await this.db
+      .selectFrom('asset_file')
+      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
+      .select('asset.id')
+      .where('asset_file.path', '=', path)
+      .where('asset_file.isEdited', '=', false)
+      .orderBy(sql`asset."deletedAt" IS NOT NULL`)
+      .orderBy('asset.createdAt', 'asc')
+      .orderBy('asset.id', 'asc')
+      .limit(1)
+      .executeTakeFirst();
+    return row?.id;
+  }
+
+  /**
+   * The stored originals whose primary asset is one of `ownerId`'s: read before that account's assets are
+   * removed, so each can be handed to its next primary afterwards (`electNextCanonical`).
+   */
+  async getOriginalIdsWithPrimaryOwnedBy(ownerId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('physical_file')
+      .innerJoin('asset', 'asset.id', 'physical_file.canonicalAssetId')
+      .select('physical_file.id')
+      .where('asset.ownerId', '=', asUuid(ownerId))
+      .where('physical_file.type', '=', PhysicalFileType.Original)
+      .orderBy('physical_file.id')
+      .execute();
+    return rows.map(({ id }) => id);
   }
 
   /**

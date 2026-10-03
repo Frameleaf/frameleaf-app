@@ -11,6 +11,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AlbumKind,
   AlbumUserRole,
+  AssetLockReason,
   AssetStatus,
   AssetVisibility,
   ImmichWorker,
@@ -59,6 +60,14 @@ export const stopPartnerSharing = async (
 };
 
 const TRACKED_ASSET_FIELDS = new Set<string>(Object.values(AssetOriginField));
+
+/** Edits that can lock or unlock an item: its lock itself, and the tags and faces Locked rules match. */
+const LOCK_RELEVANT_FIELDS: string[] = [
+  AssetOriginField.Visibility,
+  AssetOriginField.Sensitive,
+  AssetOriginField.Tags,
+  AssetOriginField.Faces,
+];
 
 /** The followed fields an asset edit touches (spec §4.2). Favorites and trash are never among them. */
 export const getAssetEditFields = (dto: {
@@ -206,7 +215,16 @@ export class PartnerCopyService extends BaseService {
       return;
     }
 
+    const locks = BaseService.create(PartnerLockService, this);
+    const lockInput = { sourceAssetId: source.id, sourceOwnerId: source.ownerId };
     if (await this.partnerOriginRepository.libraryHasChecksum(targetOwnerId, source.checksum)) {
+      // a retry of a copy that failed part-way: its lock state is mirrored again (idempotent)
+      await this.remirrorExistingCopy(source.id, source.ownerId, targetOwnerId);
+      return;
+    }
+
+    // a copy the recipient deleted is never made again (its origin row outlives it)
+    if (await this.partnerOriginRepository.hasEverCopied(source.id, targetOwnerId)) {
       return;
     }
 
@@ -216,15 +234,21 @@ export class PartnerCopyService extends BaseService {
       return;
     }
 
+    // spec §4.9: decided before the copy exists, so a Locked item's copy is never visible unlocked
+    const lockReason = await locks.getCopyLockReason(lockInput);
     const copyId = await this.partnerOriginRepository.insertAssetCopy({
       sourceAssetId: source.id,
       ownerId: targetOwnerId,
       rootOwnerId,
       partnerSharedById,
       original: { id: original.id, path: original.path },
+      lockReason,
     });
     if (!copyId) {
       return;
+    }
+    if (lockReason) {
+      await locks.noteLockedCopy(targetOwnerId);
     }
 
     if (source.livePhotoVideoId) {
@@ -233,6 +257,7 @@ export class PartnerCopyService extends BaseService {
         targetOwnerId,
         rootOwnerId,
         partnerSharedById,
+        lockReason,
       );
       if (motionId) {
         await this.assetRepository.update({ id: copyId, livePhotoVideoId: motionId });
@@ -240,18 +265,35 @@ export class PartnerCopyService extends BaseService {
     }
     await this.copyTags(source.id, copyId, targetOwnerId);
     await this.copyFaces({ sourceAssetId: source.id, targetAssetId: copyId, targetOwnerId, partnerSharedById });
-    // spec §4.9: locked where the source is, behind the recipient's own PIN
-    await BaseService.create(PartnerLockService, this).mirrorLockedState({
-      sourceAssetId: source.id,
-      sourceOwnerId: source.ownerId,
-      targetAssetId: copyId,
-      targetOwnerId,
-    });
+    // the source may have been locked or unlocked meanwhile
+    await locks.mirrorLockedState({ ...lockInput, targetAssetId: copyId, targetOwnerId });
     // spec §4.4: an album copy whose membership still follows its source gains the new copy
     for (const albumId of await this.partnerOriginRepository.getFollowingAlbumCopiesHolding(source.id, targetOwnerId)) {
       await this.albumRepository.addAssetIds(albumId, [copyId]);
     }
     return copyId;
+  }
+
+  /**
+   * `targetOwnerId` already holds a copy of this source (a retried copy job, or a re-run): mirror its lock
+   * state again while it follows the source's visibility, so a copy whose earlier attempt failed before
+   * its lock was settled is never left visible.
+   */
+  private async remirrorExistingCopy(sourceAssetId: string, sourceOwnerId: string, targetOwnerId: string) {
+    const copyId = await this.partnerOriginRepository.getCopyId('asset', sourceAssetId, targetOwnerId);
+    if (!copyId) {
+      return;
+    }
+    const origin = await this.partnerOriginRepository.getOrigin('asset', copyId);
+    if (!origin?.following || origin.overriddenFields.includes(AssetOriginField.Visibility)) {
+      return;
+    }
+    await BaseService.create(PartnerLockService, this).mirrorLockedState({
+      sourceAssetId,
+      sourceOwnerId,
+      targetAssetId: copyId,
+      targetOwnerId,
+    });
   }
 
   /**
@@ -269,17 +311,20 @@ export class PartnerCopyService extends BaseService {
     targetOwnerId: string,
     rootOwnerId: string,
     partnerSharedById: string,
+    lockReason?: AssetLockReason,
   ): Promise<string | undefined> {
     const original = await this.resolvePhysicalOriginal(motionAssetId);
     if (!original) {
       return;
     }
+    // both parts of a Live Photo lock as one
     return this.partnerOriginRepository.insertAssetCopy({
       sourceAssetId: motionAssetId,
       ownerId: targetOwnerId,
       rootOwnerId,
       partnerSharedById,
       original: { id: original.id, path: original.path },
+      lockReason,
     });
   }
 
@@ -314,8 +359,9 @@ export class PartnerCopyService extends BaseService {
   /**
    * Copy an album `partnerSharedById` shares into `targetOwnerId`'s library (spec §4.4): only a plain
    * album its owner owns (collections and shared spaces are not copied), never one the target already
-   * sees as a member, never back to its original owner, and once per library. The copy holds the target's
-   * copies of the album's items and follows the source's title, description, cover and membership.
+   * sees as a member, never back to its original owner, and once per library per root album. The copy
+   * holds the target's copies of the album's items and follows the source's title, description, cover
+   * and membership.
    */
   async copyAlbum(
     sourceAlbumId: string,
@@ -337,6 +383,13 @@ export class PartnerCopyService extends BaseService {
     if (await this.partnerOriginRepository.getCopyId('album', album.id, targetOwnerId)) {
       return;
     }
+    // one copy per library per root album: another partner may already have passed this one on
+    if (await this.partnerOriginRepository.hasAlbumCopyOfRoot(album.id, targetOwnerId)) {
+      return;
+    }
+    if (!(await this.partnerRepository.get({ sharedById: partnerSharedById, sharedWithId: targetOwnerId }))) {
+      return;
+    }
 
     const assetIds = await this.partnerOriginRepository.getAlbumAssetCopyIds(album.id, targetOwnerId);
     const cover = album.albumThumbnailAssetId
@@ -354,13 +407,18 @@ export class PartnerCopyService extends BaseService {
       [{ userId: targetOwnerId, role: AlbumUserRole.Owner }],
       targetOwnerId,
     );
-    await this.partnerOriginRepository.createOrigin('album', {
+    const recorded = await this.partnerOriginRepository.createAlbumOriginIfPartnered({
       id: copy.id,
       sourceId: album.id,
       ownerId: targetOwnerId,
       rootOwnerId,
       partnerSharedById,
     });
+    if (!recorded) {
+      // the partnership ended while the album was being copied: no copy is made for it
+      await this.albumRepository.delete(copy.id);
+      return;
+    }
     return copy.id;
   }
 
@@ -487,8 +545,12 @@ export class PartnerCopyService extends BaseService {
           partnerSharedById: follower.partnerSharedById,
         });
       }
-      // spec §4.9: a lock or unlock carries over while the copy's visibility is followed
-      if (apply.includes(AssetOriginField.Visibility)) {
+      // spec §4.9: a lock or unlock carries over while the copy's visibility is followed, including one a
+      // tag or face edit causes by bringing the source under (or out of) the sharer's Locked rules
+      if (
+        !follower.overriddenFields.includes(AssetOriginField.Visibility) &&
+        LOCK_RELEVANT_FIELDS.some((field) => apply.includes(field))
+      ) {
         await BaseService.create(PartnerLockService, this).mirrorLockedState({
           sourceAssetId: sourceId,
           sourceOwnerId: follower.partnerSharedById,
