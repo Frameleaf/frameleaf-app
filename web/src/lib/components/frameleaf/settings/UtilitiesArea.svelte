@@ -4,6 +4,7 @@
   import ApplicationSetup from '$lib/components/frameleaf/ApplicationSetup.svelte';
   import WorkflowsPanel from '$lib/components/frameleaf/WorkflowsPanel.svelte';
   import DuplicateUtility from '$lib/components/frameleaf/DuplicateUtility.svelte';
+  import FileTrashUtility from '$lib/components/frameleaf/FileTrashUtility.svelte';
   import LargeFilesUtility from '$lib/components/frameleaf/LargeFilesUtility.svelte';
   import LivePhotosUtility from '$lib/components/frameleaf/LivePhotosUtility.svelte';
   import GeolocationUtility from '$lib/components/frameleaf/GeolocationUtility.svelte';
@@ -142,6 +143,7 @@
       {:else if data.tool === 'downloads' || data.tool === 'obtainium'}
         <ApplicationSetup tool={data.tool} />
       {:else if data.tool === 'icloud'}<ICloudSyncPanel initial={data.initial} />
+      {:else if data.tool === 'file-trash'}<FileTrashUtility initial={data.initial} />
       {:else if data.tool === 'missing-media' || data.tool === 'corrupt-media'}
         <!-- FL-326: the storage migration's progress, and the missing originals it left for review -->
         {#if data.tool === 'missing-media' && authManager.user.isAdmin}<StorageMigrationCard />{/if}
@@ -157,7 +159,7 @@
       {/if}
       <!-- UT-11: every tool but Duplicate review shows the shared history (UtilitiesManager.jsx:946);
            Missing and Damaged media show Library Care's own, with its scans and searches. -->
-      {#if !['duplicates', 'missing-media', 'corrupt-media'].includes(data.tool)}
+      {#if !['duplicates', 'missing-media', 'corrupt-media', 'file-trash'].includes(data.tool)}
         <UtilityHistory />
       {/if}
     </div>

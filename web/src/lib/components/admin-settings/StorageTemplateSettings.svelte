@@ -3,10 +3,8 @@
   import SupportedVariablesPanel from '$lib/components/admin-settings/SupportedVariablesPanel.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import SettingField from '$lib/components/frameleaf/settings/SettingField.svelte';
-  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
   import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
-  import { QueryParameter, SettingInputFieldType } from '$lib/constants';
-  import { DEDUP_OWNER_SETTING } from '$lib/frameleaf/physical-dedup';
+  import { SettingInputFieldType } from '$lib/constants';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
   import { helpLinks } from '$lib/frameleaf/help-links.svelte';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
@@ -15,17 +13,11 @@
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { Route } from '$lib/route';
   import { handleSystemConfigSave } from '$lib/services/system-config.service';
-  import {
-    getStorageTemplateOptions,
-    searchUsersAdmin,
-    type SystemConfigTemplateStorageOptionDto,
-    type UserAdminResponseDto,
-  } from '@immich/sdk';
+  import { getStorageTemplateOptions, type SystemConfigTemplateStorageOptionDto } from '@immich/sdk';
   import { Heading, Link, LoadingSpinner, Text } from '@immich/ui';
   import handlebar from 'handlebars';
   import * as luxon from 'luxon';
-  import { page } from '$app/state';
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import { createBubbler, preventDefault } from 'svelte/legacy';
   import { motionFade } from '$lib/frameleaf/motion';
@@ -45,44 +37,9 @@
   const standalone = $state(settingsDraft ? undefined : systemConfigManager.cloneValue());
   const configToEdit = $derived(settingsDraft ? settingsDraft.draft : standalone!);
   const config = $derived(settingsDraft ? settingsDraft.baseline : systemConfigManager.value);
-  const physicalDeduplication = $derived(configToEdit.physicalDeduplication ?? { enabled: false, masterUserId: null });
-  const savedPhysicalDeduplication = $derived(config.physicalDeduplication ?? { enabled: false, masterUserId: null });
-
-  const setPhysicalDeduplication = (patch: Partial<typeof physicalDeduplication>) => {
-    configToEdit.physicalDeduplication = { ...physicalDeduplication, ...patch };
-  };
-
-  let ownerSetting = $state<HTMLElement>();
-  let ownerSettingOpened = false;
-
-  // Deep link from the deduplication page's "Change" and "Open settings" (FL-73): scroll to the
-  // file reuse group and focus the retained-account choice once it has rendered.
-  $effect(() => {
-    // Waits for the account list while file reuse is on, since the choice renders once it loads.
-    const ready = users.length > 0 || !physicalDeduplication.enabled;
-    if (
-      ownerSetting &&
-      ready &&
-      !ownerSettingOpened &&
-      page.url.searchParams.get(QueryParameter.OPEN_SETTING) === DEDUP_OWNER_SETTING
-    ) {
-      ownerSettingOpened = true;
-      const target = ownerSetting;
-      void tick().then(() => {
-        target.scrollIntoView({ block: 'center' });
-        // The account choice once file reuse is on; the file reuse switch while it is off.
-        const control =
-          target.querySelector<HTMLElement>('select:not(:disabled)') ??
-          target.querySelector<HTMLElement>('input, button, [role="switch"]');
-        control?.focus({ preventScroll: true });
-      });
-    }
-  });
-
   const bubble = createBubbler();
   let templateOptions: SystemConfigTemplateStorageOptionDto | undefined = $state();
   let selectedPreset = $state('');
-  let users = $state<UserAdminResponseDto[]>([]);
 
   const getTemplateOptions = async () => {
     templateOptions = await getStorageTemplateOptions();
@@ -139,21 +96,6 @@
   const handlePresetSelection = () => {
     configToEdit.storageTemplate.template = selectedPreset;
   };
-
-  const getUsers = async () => {
-    users = await searchUsersAdmin({ withDeleted: false });
-  };
-
-  // The retained account is saved here; previewing and applying a plan live on the
-  // Physical deduplication page, which reads this saved value.
-  const handlePhysicalDeduplicationMasterSelection = (value: string | number) => {
-    setPhysicalDeduplication({ masterUserId: value ? String(value) : null });
-  };
-
-  const masterOptions = $derived([
-    { value: '', text: $t('admin.physical_deduplication_select_master_user') },
-    ...users.map((user) => ({ value: user.id, text: `${user.name} (${user.email})` })),
-  ]);
 
   let parsedTemplate = $derived(() => {
     try {
@@ -215,36 +157,12 @@
       {#if !minified}
         <hr />
 
-        <!-- The prototype's `advanced-dedup-owner` setting; the deduplication page opens it (FL-73). -->
-        <div class="flex flex-col gap-4" id={DEDUP_OWNER_SETTING} bind:this={ownerSetting}>
+        <!-- Universal storage replaces the master-user deduplication setting: always on, nothing to choose. -->
+        <div class="flex flex-col gap-2">
           <Heading size="tiny" color="primary">
-            {$t('admin.physical_deduplication')}
+            {$t('frameleaf_universal_storage_title')}
           </Heading>
-
-          <SettingToggle
-            title={$t('admin.physical_deduplication_enable')}
-            {disabled}
-            subtitle={$t('admin.physical_deduplication_description')}
-            checked={physicalDeduplication.enabled}
-            onToggle={(enabled) => setPhysicalDeduplication({ enabled })}
-            isEdited={physicalDeduplication.enabled !== savedPhysicalDeduplication.enabled}
-          />
-
-          {#await getUsers() then}
-            <SettingSelect
-              label={$t('admin.physical_deduplication_master_user')}
-              desc={$t('admin.physical_deduplication_master_user_description')}
-              name="physical-deduplication-master-user"
-              value={physicalDeduplication.masterUserId ?? ''}
-              options={masterOptions}
-              disabled={disabled || !physicalDeduplication.enabled}
-              isEdited={physicalDeduplication.masterUserId !== savedPhysicalDeduplication.masterUserId}
-              onSelect={handlePhysicalDeduplicationMasterSelection}
-            />
-          {:catch}
-            <Text size="small">{$t('errors.unable_to_load_users')}</Text>
-          {/await}
-
+          <Text size="small">{$t('frameleaf_universal_storage_description')}</Text>
           <p class="text-sm">
             <Link href={Route.physicalDeduplication()}>{$t('frameleaf_settings_dedup_link')}</Link>
           </p>
@@ -373,7 +291,7 @@
       {/if}
 
       {#if !minified}
-        <SettingActions keys={['storageTemplate', 'physicalDeduplication']} {disabled} />
+        <SettingActions keys={['storageTemplate']} {disabled} />
       {/if}
     </div>
   {/await}

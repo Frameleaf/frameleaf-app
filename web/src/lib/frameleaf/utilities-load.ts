@@ -1,6 +1,7 @@
 import {
   getDuplicateDecisions,
   getDuplicateReview,
+  getFileTrash,
   getLivePhotoCandidates,
   listICloudConnections,
   MediaHealthCategory,
@@ -38,6 +39,9 @@ export const loadUtility = async (tool: UtilityId, url: URL, isAdmin: boolean) =
           tool === 'missing-media' ? MediaHealthCategory.Missing : MediaHealthCategory.Corrupt,
         )),
       };
+    }
+    case 'file-trash': {
+      return { tool, initial: await getFileTrash({ page: 1, size: 100 }) };
     }
     case 'geolocation': {
       return { tool };
