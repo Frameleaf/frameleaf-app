@@ -228,7 +228,12 @@ export class PartnerCopyService extends BaseService {
     }
 
     if (source.livePhotoVideoId) {
-      const motionId = await this.copyMotionPart(source.livePhotoVideoId, targetOwnerId, rootOwnerId, partnerSharedById);
+      const motionId = await this.copyMotionPart(
+        source.livePhotoVideoId,
+        targetOwnerId,
+        rootOwnerId,
+        partnerSharedById,
+      );
       if (motionId) {
         await this.assetRepository.update({ id: copyId, livePhotoVideoId: motionId });
       }

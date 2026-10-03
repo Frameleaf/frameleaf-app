@@ -1,5 +1,13 @@
 import { Kysely } from 'kysely';
-import { AlbumUserRole, AssetFileType, AssetLockReason, AssetVisibility, JobName, Permission, UserMetadataKey } from 'src/enum.js';
+import {
+  AlbumUserRole,
+  AssetFileType,
+  AssetLockReason,
+  AssetVisibility,
+  JobName,
+  Permission,
+  UserMetadataKey,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
