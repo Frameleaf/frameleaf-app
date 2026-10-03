@@ -93,7 +93,7 @@ export class MediaIntegrityService {
     const timer = setTimeout(cancel, this.timeoutMs);
     return {
       result: Promise.race([work, refusal.promise]).finally(() => clearTimeout(timer)),
-      settled: work.then(() => {}, () => {}),
+      settled: work.then(() => {}).catch(() => {}),
       cancel,
     };
   }

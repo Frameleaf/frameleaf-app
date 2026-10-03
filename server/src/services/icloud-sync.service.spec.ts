@@ -235,11 +235,19 @@ describe(ICloudSyncService.name, () => {
     it('adopts only after the item claim and forwards the actual operation/resource authority without downloading', async () => {
       adoption.adopt.mockResolvedValue('adopted');
       await sut.run(operation(), 'token');
-      expect(adoption.adopt).toHaveBeenCalledWith(expect.objectContaining({
-        operationId: 'run', operationClaimToken: 'token', resourceId: 'resource', resourceLeaseToken: 'lease',
-        ownerId: 'owner', connectionId: 'connection',
-      }));
-      expect(adoption.adopt.mock.invocationCallOrder[0]).toBeGreaterThan(identities.claimForSync.mock.invocationCallOrder[0]);
+      expect(adoption.adopt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operationId: 'run',
+          operationClaimToken: 'token',
+          resourceId: 'resource',
+          resourceLeaseToken: 'lease',
+          ownerId: 'owner',
+          connectionId: 'connection',
+        }),
+      );
+      expect(adoption.adopt.mock.invocationCallOrder[0]).toBeGreaterThan(
+        identities.claimForSync.mock.invocationCallOrder[0],
+      );
       expect(staging.download).not.toHaveBeenCalled();
       expect(recovery.reconcile).not.toHaveBeenCalled();
       expect(repository.finalize).toHaveBeenCalled();

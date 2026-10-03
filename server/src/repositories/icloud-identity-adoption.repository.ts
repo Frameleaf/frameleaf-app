@@ -78,14 +78,26 @@ export class ICloudIdentityAdoptionRepository {
             AND i."cplMasterRecordName"=r.source->>'sourceMasterId' LIMIT 2`.execute(db);
         const digest = hints.rows.length === 1 ? hints.rows[0].sha256 : undefined;
         if (digest) {
-          const key = createHash('sha1').update(`icloud-content:${authority.ownerId}:${digest.toString('hex')}`).digest().readBigInt64BE(0);
+          const key = createHash('sha1')
+            .update(`icloud-content:${authority.ownerId}:${digest.toString('hex')}`)
+            .digest()
+            .readBigInt64BE(0);
           await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
         }
-        const owner = await db.selectFrom('user').select('id').where('id', '=', authority.ownerId)
-          .where('deletedAt', 'is', null).forUpdate().executeTakeFirst();
-        if (!owner) { throw new Retired(); }
+        const owner = await db
+          .selectFrom('user')
+          .select('id')
+          .where('id', '=', authority.ownerId)
+          .where('deletedAt', 'is', null)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!owner) {
+          throw new Retired();
+        }
         const source = await this.source(db, authority);
-        if (!['original', 'motion', 'raw'].includes(source.resource.role) || source.resource.source.isHidden === true) { return 'miss'; }
+        if (!['original', 'motion', 'raw'].includes(source.resource.role) || source.resource.source.isHidden === true) {
+          return 'miss';
+        }
         const { rows } = await sql<IdentityAdoptionCandidate>`
           SELECT i.id AS "identityId",i."assetId",i.sha256,i."cplMasterRecordName",i."cloudIdentifier",i."libraryKey",
             a."originalPath",a."originalFileName",a.type,a.checksum,a."checksumAlgorithm",a."updateId",
@@ -98,54 +110,91 @@ export class ICloudIdentityAdoptionRepository {
             AND (i."libraryKey" IS NULL OR i."libraryKey"=${source.resource.libraryKey})
             AND i."deliveredBy" LIKE 'device:%' AND i."lastAuditResult" IS DISTINCT FROM 'mismatch'
           ORDER BY i.id LIMIT 2`.execute(db);
-        if (rows.length !== 1) { return 'miss'; }
+        if (rows.length !== 1) {
+          return 'miss';
+        }
         const candidate = rows[0];
-        if (!digest?.equals(candidate.sha256)) { return 'miss'; }
-        if (candidate.type !== source.resource.source.type) { return 'miss'; }
+        if (!digest?.equals(candidate.sha256)) {
+          return 'miss';
+        }
+        if (candidate.type !== source.resource.source.type) {
+          return 'miss';
+        }
         if (!candidate.libraryKey) {
           const inventories = await sql<{ count: number }>`SELECT count(DISTINCT a."connectionId")::int AS count
             FROM immich_fork.icloud_record a JOIN immich_fork.icloud_connection c ON c.id=a."connectionId"
             WHERE c."ownerId"=${authority.ownerId}::uuid AND c.state='connected' AND c."encryptedSession" IS NOT NULL
               AND a."recordType"='CPLAsset' AND NOT a.deleted AND upper(a."recordId")=upper(${source.resource.sourceAssetId})
               AND a."masterId"=${candidate.cplMasterRecordName}`.execute(db);
-          if (inventories.rows[0]?.count !== 1) { return 'miss'; }
+          if (inventories.rows[0]?.count !== 1) {
+            return 'miss';
+          }
         }
         const parsed = parseCloudIdentifier(candidate.cloudIdentifier ?? '');
-        if (!parsed || parsed.cplAssetRecordName !== source.resource.sourceAssetId.toUpperCase()
-          || parsed.cplMasterRecordName !== candidate.cplMasterRecordName) { return 'miss'; }
+        if (
+          !parsed ||
+          parsed.cplAssetRecordName !== source.resource.sourceAssetId.toUpperCase() ||
+          parsed.cplMasterRecordName !== candidate.cplMasterRecordName
+        ) {
+          return 'miss';
+        }
         const fingerprint = (source.resource.source.resource as Record<string, unknown> | undefined)?.fileChecksum;
-        if (typeof fingerprint !== 'string' || !isAppleFingerprint(fingerprint)) { return 'miss'; }
+        if (typeof fingerprint !== 'string' || !isAppleFingerprint(fingerprint)) {
+          return 'miss';
+        }
         // Classification can write the active privacy sidecar without touching the asset row.
         // Match DatabaseRepository.withAssetMetadataLock BEFORE any asset row lock, and hold
         // its authority through every file await, mapping/receipt publication and replay.
         await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${candidate.assetId})::int)`.execute(db);
         await lockFilePath(db, candidate.originalPath);
-        if (!(await this.destination(db, authority.ownerId, candidate, source.resource.role))) { return 'miss'; }
+        if (!(await this.destination(db, authority.ownerId, candidate, source.resource.role))) {
+          return 'miss';
+        }
         let replay: { snapshot: Record<string, unknown> } | undefined;
         if (source.resource.assetId !== null) {
           // A prior hash mapping cannot be relabelled as adoption. Replays need this producer's receipt.
-          const receipt = await sql<{ snapshot: Record<string, unknown> }>`SELECT snapshot FROM immich_fork.icloud_identity_reuse
+          const receipt = await sql<{
+            snapshot: Record<string, unknown>;
+          }>`SELECT snapshot FROM immich_fork.icloud_identity_reuse
             WHERE "sourceResourceId"=${source.resource.id}::uuid AND "ownerId"=${authority.ownerId}::uuid
               AND "connectionId"=${authority.connectionId}::uuid AND "identityId"=${candidate.identityId}::uuid
               AND "assetId"=${candidate.assetId}::uuid AND "expectedSha256"=${candidate.sha256}`.execute(db);
-          if (source.resource.assetId !== candidate.assetId || !source.resource.sha256?.equals(candidate.sha256)
-            || receipt.rows.length !== 1) { return 'miss'; }
+          if (
+            source.resource.assetId !== candidate.assetId ||
+            !source.resource.sha256?.equals(candidate.sha256) ||
+            receipt.rows.length !== 1
+          ) {
+            return 'miss';
+          }
           replay = receipt.rows[0];
         }
         const evidence = await verify(candidate);
-        if (evidence === 'miss') { return 'miss'; }
-        if (!evidence) { return 'retry'; }
-        if (!evidence.sha256.equals(candidate.sha256) || evidence.appleFingerprint !== fingerprint
-          || evidence.sizeInBytes !== source.resource.expectedSize
-          || !(candidate.checksumAlgorithm === ChecksumAlgorithm.sha256File
-            ? candidate.checksum.equals(evidence.sha256)
-            : candidate.checksumAlgorithm === ChecksumAlgorithm.sha1File && candidate.checksum.equals(evidence.sha1))) {
+        if (evidence === 'miss') {
           return 'miss';
         }
-        if (!(await evidence.current())) { return 'retry'; }
+        if (!evidence) {
+          return 'retry';
+        }
+        if (
+          !evidence.sha256.equals(candidate.sha256) ||
+          evidence.appleFingerprint !== fingerprint ||
+          evidence.sizeInBytes !== source.resource.expectedSize ||
+          !(candidate.checksumAlgorithm === ChecksumAlgorithm.sha256File
+            ? candidate.checksum.equals(evidence.sha256)
+            : candidate.checksumAlgorithm === ChecksumAlgorithm.sha1File && candidate.checksum.equals(evidence.sha1))
+        ) {
+          return 'miss';
+        }
+        if (!(await evidence.current())) {
+          return 'retry';
+        }
         const finalSource = await this.source(db, authority);
-        if (canonicalJson(finalSource) !== canonicalJson(source)
-          || !(await this.destination(db, authority.ownerId, candidate, source.resource.role))) { throw new Retired(); }
+        if (
+          canonicalJson(finalSource) !== canonicalJson(source) ||
+          !(await this.destination(db, authority.ownerId, candidate, source.resource.role))
+        ) {
+          throw new Retired();
+        }
         const identity = await sql`SELECT id FROM immich_fork.icloud_source_identity
           WHERE id=${candidate.identityId}::uuid AND "ownerId"=${authority.ownerId}::uuid
             AND "assetId"=${candidate.assetId}::uuid AND sha256=${evidence.sha256}
@@ -154,17 +203,28 @@ export class ICloudIdentityAdoptionRepository {
             AND "cloudIdentifier"=${candidate.cloudIdentifier} AND "deliveredBy" LIKE 'device:%'
             AND ("libraryKey" IS NULL OR "libraryKey"=${source.resource.libraryKey})
             AND "editVersion"='' AND "lastAuditResult" IS DISTINCT FROM 'mismatch' FOR SHARE`.execute(db);
-        if (identity.rows.length !== 1) { throw new Retired(); }
+        if (identity.rows.length !== 1) {
+          throw new Retired();
+        }
         const snapshot = {
-          config: authority.config, resourceKey: source.resource.resourceKey, fingerprint: source.resource.fingerprint,
-          sourceRevision: source.sourceRevision, masterRevision: source.masterRevision,
-          originalPath: candidate.originalPath, updateId: candidate.updateId,
-          checksum: candidate.checksum.toString('hex'), algorithm: candidate.checksumAlgorithm,
-          physicalId: candidate.physicalId, forkPhysicalId: candidate.forkPhysicalId,
-          fileIdentity: evidence.identity, sourceChecksum: fingerprint,
+          config: authority.config,
+          resourceKey: source.resource.resourceKey,
+          fingerprint: source.resource.fingerprint,
+          sourceRevision: source.sourceRevision,
+          masterRevision: source.masterRevision,
+          originalPath: candidate.originalPath,
+          updateId: candidate.updateId,
+          checksum: candidate.checksum.toString('hex'),
+          algorithm: candidate.checksumAlgorithm,
+          physicalId: candidate.physicalId,
+          forkPhysicalId: candidate.forkPhysicalId,
+          fileIdentity: evidence.identity,
+          sourceChecksum: fingerprint,
         };
         // Keep the same handle and pathname evidence current after the final awaited row checks.
-        if (!(await evidence.current())) { return 'retry'; }
+        if (!(await evidence.current())) {
+          return 'retry';
+        }
         if (replay) {
           const live = await sql`SELECT r.id FROM immich_fork.icloud_resource r
             JOIN public.media_operation o ON o.id=${authority.operationId}::uuid
@@ -176,7 +236,9 @@ export class ICloudIdentityAdoptionRepository {
               AND o."cancelRequestedAt" IS NULL AND o."pauseRequestedAt" IS NULL
               AND c."ownerId"=r."ownerId" AND c.holder=${`icloud-sync:${authority.connectionId}`}
               AND c."expiresAt">clock_timestamp()`.execute(db);
-          return live.rows.length === 1 && canonicalJson(replay.snapshot) === canonicalJson(snapshot) ? 'adopted' : 'retry';
+          return live.rows.length === 1 && canonicalJson(replay.snapshot) === canonicalJson(snapshot)
+            ? 'adopted'
+            : 'retry';
         }
         // Final SQL uses database time after every awaited file/privacy check. It cannot resurrect an expired claim.
         const mapped = await sql`UPDATE immich_fork.icloud_resource SET "assetId"=${candidate.assetId}::uuid,
@@ -192,7 +254,9 @@ export class ICloudIdentityAdoptionRepository {
             AND EXISTS (SELECT 1 FROM immich_fork.icloud_claim WHERE id=${source.itemClaimId}::uuid
               AND "ownerId"=${authority.ownerId}::uuid AND holder=${`icloud-sync:${authority.connectionId}`}
               AND "expiresAt">clock_timestamp()) RETURNING id`.execute(db);
-        if (mapped.rows.length !== 1) { throw new Retired(); }
+        if (mapped.rows.length !== 1) {
+          throw new Retired();
+        }
         await sql`INSERT INTO immich_fork.icloud_identity_reuse
           ("ownerId","connectionId","sourceResourceId","identityId","assetId","operationId","itemClaimId",basis,
            "libraryKey","cplAssetRecordName","cplMasterRecordName",role,"expectedSha256","appleFingerprint",snapshot)
@@ -212,77 +276,169 @@ export class ICloudIdentityAdoptionRepository {
     const connection = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
       WHERE id=${authority.connectionId}::uuid AND "ownerId"=${authority.ownerId}::uuid AND state='connected'
         AND "encryptedSession" IS NOT NULL AND "lastError" IS DISTINCT FROM 'owner_removed' FOR SHARE`
-      .execute(db).then(({ rows }) => rows[0]);
+      .execute(db)
+      .then(({ rows }) => rows[0]);
     const operation = await sql`SELECT id FROM public.media_operation WHERE id=${authority.operationId}::uuid
       AND "ownerId"=${authority.ownerId}::uuid AND kind='icloud_sync'
       AND snapshot->>'connectionId'=${authority.connectionId} AND snapshot->>'task' IS NULL
       AND "claimToken"=${authority.operationClaimToken}::uuid AND "claimExpiresAt">clock_timestamp()
       AND status IN ('preparing','rendering','validating') AND "cancelRequestedAt" IS NULL AND "pauseRequestedAt" IS NULL
       FOR SHARE`.execute(db);
-    if (!connection || canonicalJson(connection.config) !== authority.config || operation.rows.length !== 1) { throw new Retired(); }
+    if (!connection || canonicalJson(connection.config) !== authority.config || operation.rows.length !== 1) {
+      throw new Retired();
+    }
     const resource = await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize"
       FROM immich_fork.icloud_resource WHERE id=${authority.resourceId}::uuid AND "ownerId"=${authority.ownerId}::uuid
         AND "connectionId"=${authority.connectionId}::uuid AND "auditRequestId" IS NULL
         AND status IN ('pending','retry','staging','committed') AND coalesce((source->>'current')::boolean,true)
         AND "leaseToken"=${authority.resourceLeaseToken}::uuid AND "leaseExpiresAt">clock_timestamp() FOR UPDATE`
-      .execute(db).then(({ rows }) => rows[0]);
-    if (!resource || (resource.source.isHidden === true && !connection.config.includeHidden)
-      || (resource.role.startsWith('edited-') && !connection.config.includeEdits) || resource.stagingPath || resource.expectedTarget
-      || (connection.config.libraries.length > 0 && !connection.config.libraries.includes(resource.libraryKey))) { throw new Retired(); }
-    const records = await sql<{ recordId: string; recordType: string; revision: string; fields: Record<string, unknown> }>`
+      .execute(db)
+      .then(({ rows }) => rows[0]);
+    if (
+      !resource ||
+      (resource.source.isHidden === true && !connection.config.includeHidden) ||
+      (resource.role.startsWith('edited-') && !connection.config.includeEdits) ||
+      resource.stagingPath ||
+      resource.expectedTarget ||
+      (connection.config.libraries.length > 0 && !connection.config.libraries.includes(resource.libraryKey))
+    ) {
+      throw new Retired();
+    }
+    const records = await sql<{
+      recordId: string;
+      recordType: string;
+      revision: string;
+      fields: Record<string, unknown>;
+    }>`
       SELECT "recordId","recordType",revision,fields FROM immich_fork.icloud_record
       WHERE "connectionId"=${authority.connectionId}::uuid AND "libraryKey"=${resource.libraryKey} AND NOT deleted
-        AND "recordId" IN (${resource.sourceAssetId},${String(resource.source.sourceMasterId ?? '')}) FOR SHARE`.execute(db);
+        AND "recordId" IN (${resource.sourceAssetId},${String(resource.source.sourceMasterId ?? '')}) FOR SHARE`.execute(
+      db,
+    );
     const asset = records.rows.find((row) => row.recordId === resource.sourceAssetId);
     const master = records.rows.find((row) => row.recordId === resource.source.sourceMasterId);
-    if (!asset || !master) { throw new Retired(); }
-    const normalize = (r: NonNullable<typeof asset>) => ({ recordName: r.recordId, recordType: r.recordType, recordChangeTag: r.revision, fields: r.fields });
-    if (!resourcesForICloudAsset(normalize(asset),normalize(master)).some((r) => r.recordId === resource.recordId
-      && r.resourceKey === resource.resourceKey && r.role === resource.role && r.fingerprint === resource.fingerprint
-      && r.expectedSize === resource.expectedSize && r.source.type === resource.source.type
-      && r.source.isHidden === resource.source.isHidden
-      && canonicalJson(r.source.resource) === canonicalJson(resource.source.resource))) {
+    if (!asset || !master) {
+      throw new Retired();
+    }
+    const normalize = (r: NonNullable<typeof asset>) => ({
+      recordName: r.recordId,
+      recordType: r.recordType,
+      recordChangeTag: r.revision,
+      fields: r.fields,
+    });
+    if (
+      resourcesForICloudAsset(normalize(asset), normalize(master)).every(
+        (r) =>
+          !(
+            r.recordId === resource.recordId &&
+            r.resourceKey === resource.resourceKey &&
+            r.role === resource.role &&
+            r.fingerprint === resource.fingerprint &&
+            r.expectedSize === resource.expectedSize &&
+            r.source.type === resource.source.type &&
+            r.source.isHidden === resource.source.isHidden &&
+            canonicalJson(r.source.resource) === canonicalJson(resource.source.resource)
+          ),
+      )
+    ) {
       throw new Retired();
     }
     if (connection.config.albums.length > 0) {
-      const member = await sql`SELECT 1 FROM immich_fork.icloud_membership WHERE "connectionId"=${authority.connectionId}::uuid
+      const member =
+        await sql`SELECT 1 FROM immich_fork.icloud_membership WHERE "connectionId"=${authority.connectionId}::uuid
         AND "libraryKey"=${resource.libraryKey} AND "sourceAssetId"=${resource.sourceAssetId} AND "sourcePresent"
         AND ("libraryKey"||':'||"sourceAlbumId")=ANY(${connection.config.albums}::text[]) FOR SHARE`.execute(db);
-      if (member.rows.length === 0) { throw new Retired(); }
+      if (member.rows.length === 0) {
+        throw new Retired();
+      }
     }
-    const claim = await sql<{ id: string }>`SELECT id FROM immich_fork.icloud_claim WHERE "ownerId"=${authority.ownerId}::uuid
+    const claim = await sql<{
+      id: string;
+    }>`SELECT id FROM immich_fork.icloud_claim WHERE "ownerId"=${authority.ownerId}::uuid
       AND "cplAssetRecordName"=upper(${resource.sourceAssetId}) AND holder=${`icloud-sync:${authority.connectionId}`}
-      AND "expiresAt">clock_timestamp() FOR SHARE`.execute(db).then(({ rows }) => rows[0]);
-    if (!claim) { throw new Retired(); }
+      AND "expiresAt">clock_timestamp() FOR SHARE`
+      .execute(db)
+      .then(({ rows }) => rows[0]);
+    if (!claim) {
+      throw new Retired();
+    }
     return { resource, sourceRevision: asset.revision, masterRevision: master.revision, itemClaimId: claim.id };
   }
 
-  private async destination(db: Transaction<DB>, ownerId: string, candidate: IdentityAdoptionCandidate, role: string): Promise<boolean> {
-    const metadata = await db.selectFrom('user_metadata').selectAll().where('userId','=',ownerId)
-      .where('key','=',UserMetadataKey.Preferences).forShare().execute();
+  private async destination(
+    db: Transaction<DB>,
+    ownerId: string,
+    candidate: IdentityAdoptionCandidate,
+    role: string,
+  ): Promise<boolean> {
+    const metadata = await db
+      .selectFrom('user_metadata')
+      .selectAll()
+      .where('userId', '=', ownerId)
+      .where('key', '=', UserMetadataKey.Preferences)
+      .forShare()
+      .execute();
     const suppression = getPreferences(metadata).privacy.suppression;
-    const row = await db.selectFrom('asset').selectAll().where('id','=',candidate.assetId).where('ownerId','=',ownerId)
-      .where('deletedAt','is',null).where('status','=',AssetStatus.Active).where('isExternal','=',false).where('isOffline','=',false)
-      .$if(role !== 'motion', (qb) => qb.where('visibility','!=',AssetVisibility.Hidden))
-      .where(isNotLocked('asset')).where((eb) => eb.not(isMotionOfLockedStill(eb)))
-      .where(sql<boolean>`NOT ${hiddenContentAssetIdExists(sql.ref('asset.id'), { userId: ownerId, scope: 'owned', includeNsfw: true, ...suppression })}`)
-      .forUpdate().executeTakeFirst();
-    if (!row || row.originalPath !== candidate.originalPath || row.updateId !== candidate.updateId
-      || row.type !== candidate.type || row.originalFileName !== candidate.originalFileName
-      || row.checksumAlgorithm !== candidate.checksumAlgorithm || !row.checksum.equals(candidate.checksum)) { return false; }
-    if (row.libraryId) {
-      const library = await db.selectFrom('library').select('id').where('id','=',row.libraryId)
-        .where('deletedAt','is',null).forShare().executeTakeFirst();
-      if (!library) { return false; }
+    const row = await db
+      .selectFrom('asset')
+      .selectAll()
+      .where('id', '=', candidate.assetId)
+      .where('ownerId', '=', ownerId)
+      .where('deletedAt', 'is', null)
+      .where('status', '=', AssetStatus.Active)
+      .where('isExternal', '=', false)
+      .where('isOffline', '=', false)
+      .$if(role !== 'motion', (qb) => qb.where('visibility', '!=', AssetVisibility.Hidden))
+      .where(isNotLocked('asset'))
+      .where((eb) => eb.not(isMotionOfLockedStill(eb)))
+      .where(
+        sql<boolean>`NOT ${hiddenContentAssetIdExists(sql.ref('asset.id'), { userId: ownerId, includeNsfw: true, ...suppression })}`,
+      )
+      .forUpdate()
+      .executeTakeFirst();
+    if (
+      !row ||
+      row.originalPath !== candidate.originalPath ||
+      row.updateId !== candidate.updateId ||
+      row.type !== candidate.type ||
+      row.originalFileName !== candidate.originalFileName ||
+      row.checksumAlgorithm !== candidate.checksumAlgorithm ||
+      !row.checksum.equals(candidate.checksum)
+    ) {
+      return false;
     }
-    const mapping = await sql<{ physicalId: string | null; forkPhysicalId: string | null; upstreamPath: string | null }>`
+    if (row.libraryId) {
+      const library = await db
+        .selectFrom('library')
+        .select('id')
+        .where('id', '=', row.libraryId)
+        .where('deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      if (!library) {
+        return false;
+      }
+    }
+    const mapping = await sql<{
+      physicalId: string | null;
+      forkPhysicalId: string | null;
+      upstreamPath: string | null;
+    }>`
       SELECT to_jsonb(a)->>'physicalOriginalFileId' AS "physicalId",p."physicalFileId" AS "forkPhysicalId",p."upstreamPath"
       FROM public.asset a LEFT JOIN immich_fork.asset_physical_file p ON p."assetId"=a.id
       WHERE a.id=${candidate.assetId}::uuid`.execute(db);
-    if (mapping.rows[0]?.physicalId !== candidate.physicalId || mapping.rows[0]?.forkPhysicalId !== candidate.forkPhysicalId
-      || (candidate.forkPhysicalId && mapping.rows[0]?.upstreamPath !== candidate.originalPath)) { return false; }
-    await sql`SELECT "assetId" FROM immich_fork.asset_physical_file WHERE "assetId"=${candidate.assetId}::uuid FOR UPDATE`.execute(db);
-    const unsafe = await sql`SELECT 1 FROM immich_fork.asset_storage_reservation WHERE "assetId"=${candidate.assetId}::uuid AND status='reserved'
+    if (
+      mapping.rows[0]?.physicalId !== candidate.physicalId ||
+      mapping.rows[0]?.forkPhysicalId !== candidate.forkPhysicalId ||
+      (candidate.forkPhysicalId && mapping.rows[0]?.upstreamPath !== candidate.originalPath)
+    ) {
+      return false;
+    }
+    await sql`SELECT "assetId" FROM immich_fork.asset_physical_file WHERE "assetId"=${candidate.assetId}::uuid FOR UPDATE`.execute(
+      db,
+    );
+    const unsafe =
+      await sql`SELECT 1 FROM immich_fork.asset_storage_reservation WHERE "assetId"=${candidate.assetId}::uuid AND status='reserved'
       UNION ALL SELECT 1 FROM immich_fork.asset_health WHERE "assetId"=${candidate.assetId}::uuid AND category IN ('missing','corrupt')
         AND "resolvedAt" IS NULL AND status NOT IN ('resolved','relinked','trashed')`.execute(db);
     return unsafe.rows.length === 0;
