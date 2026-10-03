@@ -4,13 +4,12 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
-import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
-import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { WorkflowRow } from 'src/repositories/photography-workflow.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
+import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
 import {
   PhotographyGalleryDto,
   PhotographyPublicSiteDto,
@@ -20,6 +19,7 @@ import {
 } from 'src/dtos/photography-workflow.dto.js';
 import { JobStatus } from 'src/enum.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
+import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
 
 vi.mock('src/repositories/job.repository.js', () => ({ JobRepository: class {} }));
 vi.mock('src/services/album.service.js', () => ({ AlbumService: class {} }));
