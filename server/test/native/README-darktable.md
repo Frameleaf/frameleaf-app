@@ -105,6 +105,35 @@ and original checksum. To require positive or refused lens calibration, append t
 path `/usr/src/app/server/dist/utils/darktable-renderer.js` and `calibrated` or `missing` for a fixture
 with that independently established expectation. Missing metadata or a wrong oracle fails; nothing skips.
 
-The older workflow's unmodified AppImage qualification is insufficient for the full patched engine.
-No workflow, image build or deployment was executed in this packet. The same genuine fixture matrix,
-thin-edge geometry, worker lifetime/restart/batch and photographer acceptance gates above still apply.
+The existing `Fork integration` manual dispatch now accepts `raw_engine=darktable` and builds
+`native-raw-qualification` fresh on native `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` (arm64).
+The stage reuses `base-server-prod` and the compiled/pruned `server` stage; it does not build Studio,
+web, CLI or plugin WASM. Both source patches, Lensfun data, native profiles/resources and ELF hashes
+are the production artifacts, with a native package gate and compiled-adapter import gate.
+
+```sh
+gh workflow run fork-integration.yml --ref <candidate-ref> -f raw_engine=darktable
+# Reproduce on each native host, substituting linux/arm64 on arm64:
+docker build --pull --no-cache --platform linux/amd64 --target native-raw-qualification -f server/Dockerfile -t frameleaf-native-raw:qualification .
+docker run --rm --network none --entrypoint node \
+  --mount "type=bind,src=$PWD/e2e/test-assets/formats/raw,dst=/fixtures,readonly" \
+  frameleaf-native-raw:qualification /build/verify-darktable-develop.mjs \
+  /fixtures/Canon/EOS_70D.CR2 5496 3670 /usr/src/app/server/dist/utils/darktable-renderer.js calibrated
+```
+
+Checkout the e2e submodule first (`git submodule update --init e2e/test-assets`). The workflow verifies
+the genuine EOS70D fixture SHA256 `f3e703f0461707a16b76a0bfae9a42f90b6ab9019e2c8cea90a17ebbe806c7fd`,
+mounts all inputs read-only and denies network during rendering. Its orientation-1 active dimensions
+are independently derived from the fixture's 5568x3708 sensor and the pinned
+[RawSpeed EOS70D crop x72/y38](https://github.com/darktable-org/rawspeed/blob/7cf3dc3b9d9c82b414198b1f57460478be6c6c9d/data/cameras.xml#L478).
+The fixture's EF17-40mm f/4L USM calibration is present in pinned
+[Lensfun data](https://github.com/lensfun/lensfun/blob/101c745e847a5de4a1e569a94368ce2027198598/data/db/slr-canon.xml#L1111);
+the gate requires successful calibration, never treats absence as success. It invokes the full oracle
+above and retains the local image ID/config, package/dependency manifests and fixture log as an
+architecture/candidate-specific artifact. Missing fixtures, hash drift, failed build, absent calibration,
+unsupported native history and unchanged isolated-control pixels fail the explicit job; nothing skips.
+
+No workflow, image build or deployment was executed in this source packet. Actual engine builds and
+this first camera qualification remain open on both architectures. Additional camera/lens-negative
+fixtures, brush/gradient/bitmap and thin-edge mask geometry, worker lifetime/restart/batch, semantic
+models and photographer acceptance remain separate gates; this one RAW does not qualify them.
