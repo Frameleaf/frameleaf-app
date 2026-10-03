@@ -160,6 +160,23 @@ it('retains causal forwarding state without leaking request identities or error 
     expect(diagnostic.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(JSON.stringify(diagnostic)).not.toContain(secret);
   }
+  for (const phase of [
+    'delete-before-restart',
+    'owned-compose-restart',
+    'awaiting-both-peer-apis',
+    'restore-after-peer-readiness',
+  ]) {
+    const diagnostic = buddyForwardingDiagnostic(
+      'GET',
+      `/api/buddy/v1/vaults/${secret}/handshake?token=${secret}`,
+      'ECONNRESET',
+      phase,
+      phase,
+      state,
+    );
+    expect(diagnostic).toMatchObject({ phase, admittedPhase: phase });
+    expect(JSON.stringify(diagnostic)).not.toContain(secret);
+  }
   const unknown = buddyForwardingDiagnostic(secret, `/api/${secret}`, new Error(secret), secret, secret, state);
   expect(unknown).toMatchObject({
     method: 'OTHER',
@@ -184,6 +201,16 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
     phase: 'setup',
     passed: false,
   };
+  const lifecycle: Array<{
+    timestamp: string;
+    event: string;
+    side?: BuddySide;
+    backupComplete?: boolean;
+    verificationComplete?: boolean;
+    runState?: string | null;
+    sendingPaused?: boolean;
+  }> = [];
+  report.lifecycle = lifecycle;
   const apps: App[] = [];
   const transports: Array<Awaited<ReturnType<typeof startBuddyTransport>>> = [];
   let coordinator: Awaited<ReturnType<typeof startBuddyCloud>> | undefined;
@@ -478,7 +505,8 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       await json(app, `${adminRoute}/probe`, 'POST', app.admin.token, undefined, 201);
     }
 
-    report.phase = 'delete-restart-and-restore';
+    report.phase = 'delete-before-restart';
+    lifecycle.push({ timestamp: new Date().toISOString(), event: 'delete-started' });
     for (const [index, app] of apps.entries()) {
       await unlock(app);
       const [currentPath] = await app.db<{ originalPath: string }[]>`
@@ -499,8 +527,25 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
         isFavorite: false,
       });
     }
+    // Observe actual state without pausing or changing outstanding backup/verification work.
+    for (const app of apps) {
+      const beforeRestart = await status(app);
+      lifecycle.push({
+        timestamp: new Date().toISOString(),
+        event: 'before-restart-state',
+        side: app.side,
+        backupComplete: beforeRestart.lastCompleteAt !== null,
+        verificationComplete: beforeRestart.lastVerifiedAt !== null,
+        runState: beforeRestart.run?.state ?? null,
+        sendingPaused: beforeRestart.settings?.pausedSending,
+      });
+    }
+    report.phase = 'owned-compose-restart';
+    lifecycle.push({ timestamp: new Date().toISOString(), event: 'compose-restart-started' });
     // Restart only the services in the owned compose file; no external stack/container names are accepted.
     await docker('docker', ['compose', '-f', compose, 'restart', 'buddy-a', 'buddy-b'], { timeout: 60_000 });
+    lifecycle.push({ timestamp: new Date().toISOString(), event: 'compose-restart-returned' });
+    report.phase = 'awaiting-both-peer-apis';
     for (const app of apps) {
       await until(
         'Restarted API',
@@ -516,8 +561,20 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
         Boolean,
       );
       await unlock(app);
-      expect((await status(app)).pairing).toEqual(pair);
+      const restarted = await status(app);
+      expect(restarted.pairing).toEqual(pair);
+      lifecycle.push({
+        timestamp: new Date().toISOString(),
+        event: 'peer-api-ready',
+        side: app.side,
+        backupComplete: restarted.lastCompleteAt !== null,
+        verificationComplete: restarted.lastVerifiedAt !== null,
+        runState: restarted.run?.state ?? null,
+        sendingPaused: restarted.settings?.pausedSending,
+      });
     }
+    lifecycle.push({ timestamp: new Date().toISOString(), event: 'both-peer-apis-ready' });
+    report.phase = 'restore-after-peer-readiness';
     const restore = async (app: App, snapshotId: string, ids: string[], mode: 'keep' | 'replace') => {
       await unlock(app);
       const input = { snapshotId, scope: 'asset', assetIds: ids, mode };
