@@ -50,6 +50,12 @@ export type MediaIntegrityInput = {
   expected?: { sha1?: Buffer; sha256?: Buffer; sizeInBytes?: number };
   deep?: boolean;
 };
+export type MediaIntegrityValidation = {
+  result: Promise<MediaIntegrityResult>;
+  /** Actual hashing/decoder completion, including noncooperative work after the deadline. */
+  settled: Promise<void>;
+  cancel: () => void;
+};
 
 @Injectable()
 export class MediaIntegrityService {
@@ -63,27 +69,33 @@ export class MediaIntegrityService {
   ) {}
 
   async validate(input: MediaIntegrityInput): Promise<MediaIntegrityResult> {
+    return this.validateWithSettlement(input).result;
+  }
+
+  validateWithSettlement(input: MediaIntegrityInput): MediaIntegrityValidation {
     if (this.activeValidations >= 2) {
-      return { status: 'transient', reason: 'validation_busy' };
+      return {
+        result: Promise.resolve({ status: 'transient', reason: 'validation_busy' }),
+        settled: Promise.resolve(),
+        cancel: () => {},
+      };
     }
     this.activeValidations++;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
-    try {
-      return await Promise.race([
-        this.validateFile(input, controller.signal).finally(() => {
-          this.activeValidations--;
-        }),
-        new Promise<MediaIntegrityResult>((resolve) => {
-          timer = setTimeout(() => {
-            controller.abort();
-            resolve({ status: 'timeout', reason: 'validation_timeout' });
-          }, this.timeoutMs);
-        }),
-      ]);
-    } finally {
-      clearTimeout(timer);
-    }
+    const refusal = Promise.withResolvers<MediaIntegrityResult>();
+    const cancel = () => {
+      controller.abort();
+      refusal.resolve({ status: 'timeout', reason: 'validation_timeout' });
+    };
+    const work = this.validateFile(input, controller.signal).finally(() => {
+      this.activeValidations--;
+    });
+    const timer = setTimeout(cancel, this.timeoutMs);
+    return {
+      result: Promise.race([work, refusal.promise]).finally(() => clearTimeout(timer)),
+      settled: work.then(() => {}, () => {}),
+      cancel,
+    };
   }
 
   private async validateFile(input: MediaIntegrityInput, signal: AbortSignal): Promise<MediaIntegrityResult> {
