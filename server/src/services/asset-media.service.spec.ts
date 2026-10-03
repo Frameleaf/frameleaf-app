@@ -396,84 +396,105 @@ describe(AssetMediaService.name, () => {
       );
     });
 
-    it('should reuse a master physical original for a cross-user duplicate when enabled', async () => {
+    describe('universal storage linking', () => {
       const file = {
         uuid: 'random-uuid',
-        originalPath: 'fake_path/duplicate.jpeg',
+        originalPath: '/data/upload/user1/ra/nd/random-uuid.jpeg',
         mimeType: 'image/jpeg',
         checksum: Buffer.from('file hash', 'utf8'),
         originalName: 'duplicate.jpeg',
         size: 42,
       };
-      const asset = {
-        ...assetEntity,
-        id: 'new-asset',
-        ownerId: authStub.user1.user.id,
-        originalPath: file.originalPath,
-      };
-      const physicalFile = { id: 'physical-file-id', path: '/data/library/master.jpeg' };
 
-      mocks.systemMetadata.get.mockResolvedValue({
-        physicalDeduplication: { enabled: true, masterUserId: 'master-user-id' },
-      });
-      mocks.asset.create.mockResolvedValue(asset);
-      mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue({
-        id: 'master-asset-id',
-        checksum: file.checksum,
-        originalFileName: 'master.jpeg',
-        type: AssetType.Image,
-        originalPath: '/data/library/master.jpeg',
-        physicalOriginalFileId: null,
-        sizeInBytes: file.size,
-        width: null,
-        height: null,
-        duration: null,
-      });
-      mocks.physicalFile.ensureOriginalPhysicalFile.mockResolvedValue(physicalFile as never);
+      it('links content another library already holds to its file and answers created, not duplicate', async () => {
+        const asset = {
+          ...assetEntity,
+          id: 'new-asset',
+          ownerId: authStub.user1.user.id,
+          originalPath: file.originalPath,
+        };
+        const physicalFile = { id: 'physical-file-id', path: '/data/library/other/shared.jpeg' };
+        mocks.asset.create.mockResolvedValue(asset);
+        mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({ physicalFile, linked: true } as never);
 
-      await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
-        id: 'new-asset',
-        status: AssetMediaStatus.CREATED,
-      });
+        await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
+          id: 'new-asset',
+          status: AssetMediaStatus.CREATED,
+        });
 
-      expect(mocks.asset.create).toHaveBeenCalled();
-      expect(mocks.physicalFile.getMasterOriginalCandidate).toHaveBeenCalledWith(
-        'master-user-id',
-        file.checksum,
-        file.size,
-      );
-      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).toHaveBeenCalledWith('new-asset', physicalFile);
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.FileDelete,
-        data: { files: [file.originalPath] },
-      });
-    });
-
-    it('should keep normal storage when no master physical original exists', async () => {
-      const file = {
-        uuid: 'random-uuid',
-        originalPath: 'fake_path/asset_1.jpeg',
-        mimeType: 'image/jpeg',
-        checksum: Buffer.from('file hash', 'utf8'),
-        originalName: 'asset_1.jpeg',
-        size: 42,
-      };
-
-      mocks.systemMetadata.get.mockResolvedValue({
-        physicalDeduplication: { enabled: true, masterUserId: 'master-user-id' },
-      });
-      mocks.asset.create.mockResolvedValue(assetEntity);
-      mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(null as never);
-
-      await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
-        id: 'id_1',
-        status: AssetMediaStatus.CREATED,
+        expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalledWith(
+          'new-asset',
+          { checksum: file.checksum, sizeInBytes: file.size },
+          expect.objectContaining({ exists: expect.any(Function) }),
+        );
+        // the temporary upload is released through the reference-counted FileDelete
+        expect(mocks.job.queue).toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [file.originalPath] },
+        });
+        expect(mocks.event.emit).toHaveBeenCalledWith(
+          'AssetCreate',
+          expect.objectContaining({
+            asset: expect.objectContaining({
+              originalPath: physicalFile.path,
+              physicalOriginalFileId: physicalFile.id,
+            }),
+          }),
+        );
       });
 
-      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
-      expect(mocks.job.queue).not.toHaveBeenCalledWith({
-        name: JobName.FileDelete,
-        data: { files: [file.originalPath] },
+      it('needs no master account: the link is attempted with the old settings left unset', async () => {
+        mocks.systemMetadata.get.mockResolvedValue({ physicalDeduplication: { enabled: false, masterUserId: null } });
+        mocks.asset.create.mockResolvedValue(assetEntity);
+
+        await sut.uploadAsset(authStub.user1, createDto, file);
+
+        expect(mocks.physicalFile.linkUploadedOriginal).toHaveBeenCalled();
+        expect(mocks.physicalFile.getMasterOriginalCandidate).not.toHaveBeenCalled();
+      });
+
+      it('registers new content as its own primary file and keeps the upload', async () => {
+        const physicalFile = { id: 'own-physical-file', path: file.originalPath };
+        mocks.asset.create.mockResolvedValue({ ...assetEntity });
+        mocks.physicalFile.linkUploadedOriginal.mockResolvedValue({ physicalFile, linked: false } as never);
+
+        await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
+          id: 'id_1',
+          status: AssetMediaStatus.CREATED,
+        });
+
+        expect(mocks.job.queue).not.toHaveBeenCalledWith({
+          name: JobName.FileDelete,
+          data: { files: [file.originalPath] },
+        });
+        expect(mocks.event.emit).toHaveBeenCalledWith(
+          'AssetCreate',
+          expect.objectContaining({ asset: expect.objectContaining({ physicalOriginalFileId: physicalFile.id }) }),
+        );
+      });
+
+      it('takes content in the file trash back out instead of storing it twice (Review Focus 3)', async () => {
+        mocks.asset.create.mockResolvedValue({ ...assetEntity });
+
+        await sut.uploadAsset(authStub.user1, createDto, file);
+
+        const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+        await options.untrash!('/data/file-trash/id/duplicate.jpeg', '/data/upload/restored.jpeg');
+        expect(mocks.storage.rename).toHaveBeenCalledWith(
+          '/data/file-trash/id/duplicate.jpeg',
+          '/data/upload/restored.jpeg',
+        );
+      });
+
+      it('checks that the linked file exists on disk', async () => {
+        mocks.asset.create.mockResolvedValue(assetEntity);
+        mocks.storage.checkFileExists.mockResolvedValue(true);
+
+        await sut.uploadAsset(authStub.user1, createDto, file);
+
+        const options = mocks.physicalFile.linkUploadedOriginal.mock.calls[0][2];
+        await expect(options.exists('/data/library/other/shared.jpeg')).resolves.toBe(true);
+        expect(mocks.storage.checkFileExists).toHaveBeenCalledWith('/data/library/other/shared.jpeg');
       });
     });
 
@@ -693,7 +714,6 @@ describe(AssetMediaService.name, () => {
         undefined,
       );
       expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['asset-1']));
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['asset-1']));
     });
 
     it('should download a file', async () => {
@@ -798,7 +818,7 @@ describe(AssetMediaService.name, () => {
       const me = UserFactory.create();
       const owner = UserFactory.create();
       const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
       mocks.partner.getAll.mockResolvedValue([
         getForPartner(PartnerFactory.from({ shareLocation }).sharedBy(owner).sharedWith(me).build()),
@@ -821,7 +841,7 @@ describe(AssetMediaService.name, () => {
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
     });
 
-    it('serves a partner who may see locations the original bytes', async () => {
+    it('serves anyone who can reach an original its bytes untouched (FL-326: locations are always shared)', async () => {
       const { auth, asset } = setup({ shareLocation: true });
 
       const response = await sut.downloadOriginal(auth, asset.id, {});
@@ -830,42 +850,9 @@ describe(AssetMediaService.name, () => {
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
     });
 
-    it('serves a location-free copy to a partner the owner hides locations from', async () => {
-      const { auth, asset } = setup({ shareLocation: false });
-
-      const response = await sut.downloadOriginal(auth, asset.id, {});
-
-      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/original/photo.jpg');
-      expect(response).toEqual(
-        new ImmichFileResponse({
-          path: lease.path,
-          fileName: asset.originalFileName,
-          contentType: 'image/jpeg',
-          cacheControl: CacheControl.PrivateWithCache,
-          release: lease.release,
-        }),
-      );
-    });
-
-    it('cleans an existing fullsize preview lazily for a viewer who may not see its location', async () => {
-      const { auth, asset } = setup({ shareLocation: false });
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({
-        ownerId: asset.ownerId,
-        originalPath: '/original/photo.cr2',
-        originalFileName: 'photo.cr2',
-        path: '/thumbs/photo-fullsize.jpeg',
-      });
-
-      const response = await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.FULLSIZE });
-
-      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/thumbs/photo-fullsize.jpeg');
-      expect(response).toMatchObject({ path: lease.path, release: lease.release });
-    });
-
     it('never checks thumbnails or previews, which are re-encoded without metadata', async () => {
       const { auth, asset } = setup({ shareLocation: false });
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForThumbnail.mockResolvedValue({
         ownerId: asset.ownerId,
         originalPath: '/original/photo.cr2',
@@ -878,28 +865,6 @@ describe(AssetMediaService.name, () => {
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
     });
 
-    it('strips the location of an original reached through a hidden album owner (owner default)', async () => {
-      const me = UserFactory.create();
-      const owner = UserFactory.create();
-      const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
-      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
-      mocks.partner.getLocationHiddenThroughAlbums.mockResolvedValue(new Set([asset.id]));
-      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue(lease);
-
-      await expect(sut.downloadOriginal(AuthFactory.create(me), asset.id, {})).resolves.toMatchObject({
-        path: lease.path,
-      });
-      expect(mocks.partner.getLocationHiddenThroughAlbums).toHaveBeenCalledWith(me.id, [asset.id]);
-    });
-
-    it('refuses rather than leak when the location cannot be removed', async () => {
-      const { auth, asset } = setup({ shareLocation: false });
-      mocks.metadata.acquireLocationFreeOriginal.mockRejectedValue(new Error('exiftool failed'));
-
-      await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
     it('refuses a shared link that hides metadata even when its download flag is on', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
@@ -908,23 +873,6 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toBeInstanceOf(ForbiddenException);
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
-    });
-
-    it('serves a location-free copy through a link the hidden partner created (review B1)', async () => {
-      const me = UserFactory.create();
-      const owner = UserFactory.create();
-      const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
-      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
-      mocks.partner.getAll.mockResolvedValue([
-        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(owner).sharedWith(me).build()),
-      ]);
-      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue(lease);
-      const auth = AuthFactory.from(me).sharedLink({ userId: me.id, showExif: true, allowDownload: true }).build();
-
-      await expect(sut.downloadOriginal(auth, asset.id, {})).resolves.toMatchObject({ path: lease.path });
-      expect(mocks.partner.getAll).toHaveBeenCalledWith(me.id);
-      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/original/photo.jpg');
     });
 
     it('serves a shared link that shows metadata the file untouched', async () => {
@@ -971,7 +919,6 @@ describe(AssetMediaService.name, () => {
 
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']), undefined);
       expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
     });
 
     it('allows full-size files except through the relay while originals are not allowed there (FL-161)', async () => {
@@ -1197,40 +1144,11 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('playbackVideo', () => {
-    it('plays a location-free copy of the original for a partner the owner hides locations from', async () => {
-      const me = UserFactory.create();
-      const owner = UserFactory.create();
-      const asset = AssetFactory.create({ type: AssetType.Video, ownerId: owner.id, originalPath: '/original/v.mp4' });
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForVideo.mockResolvedValue({
-        originalPath: asset.originalPath,
-        encodedVideoPath: null,
-        editedVideoPath: null,
-        ownerId: owner.id,
-      });
-      mocks.partner.getAll.mockResolvedValue([
-        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(owner).sharedWith(me).build()),
-      ]);
-      const release = vitest.fn();
-      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue({ path: '/tmp/copy.mp4', release });
-
-      await expect(sut.playbackVideo(AuthFactory.create(me), asset.id)).resolves.toEqual(
-        new ImmichFileResponse({
-          path: '/tmp/copy.mp4',
-          contentType: 'video/mp4',
-          cacheControl: CacheControl.PrivateWithCache,
-          release,
-        }),
-      );
-      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/original/v.mp4');
-    });
-
     it('should require asset.view permissions', async () => {
       await expect(sut.playbackVideo(authStub.admin, 'id')).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']), undefined);
       expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
     });
 
     it('should throw an error if the video asset could not be found', async () => {

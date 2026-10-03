@@ -108,6 +108,17 @@ export class StorageCore {
     return mediaLocation;
   }
 
+  /** Universal storage file trash: `<media>/file-trash/<folderId>/<file name>`, one folder per entry. */
+  static getFileTrashPath(folderId: string, originalFileName: string) {
+    const name = originalFileName.replaceAll('/', '_').replaceAll('\0', '') || 'original';
+    return join(
+      StorageCore.getMediaLocation(),
+      'file-trash',
+      folderId,
+      name === '.' || name === '..' ? 'original' : name,
+    );
+  }
+
   static setMediaLocation(location: string) {
     mediaLocation = location;
   }

@@ -4911,6 +4911,187 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/file-trash": {
+      "get": {
+        "description": "Originals no library references any more, newest first, with the total disk space the file trash holds. Nothing here is deleted automatically.",
+        "operationId": "getFileTrash",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number, from 1",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "description": "Entries per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileTrashResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the file trash",
+        "tags": [
+          "File trash (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/file-trash/{id}": {
+      "delete": {
+        "description": "Delete the file from disk for good. This cannot be undone.",
+        "operationId": "deleteFileTrashItem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a file permanently",
+        "tags": [
+          "File trash (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/file-trash/{id}/restore": {
+      "post": {
+        "description": "Re-import the file as a new asset in the library it was last in, reading its metadata again. Answers 400 when that account is unknown or gone and 409 when its library already holds the file.",
+        "operationId": "restoreFileTrashItem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileTrashRestoreResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a file from the file trash",
+        "tags": [
+          "File trash (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/hardware": {
       "get": {
         "description": "The last check of the GPU the server container and the ML container can each use, with any set-up problems found and the last benchmark. Runs a first check when there is none.",
@@ -21260,15 +21441,6 @@
             }
           },
           {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include partner assets",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
             "name": "withSharedAlbums",
             "required": false,
             "in": "query",
@@ -21443,15 +21615,6 @@
             "required": false,
             "in": "query",
             "description": "Filter by favorite status",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include partner assets",
             "schema": {
               "type": "boolean"
             }
@@ -25972,6 +26135,86 @@
         "x-immich-state": "Stable"
       }
     },
+    "/partners/locked-notice": {
+      "get": {
+        "description": "Whether to show the one-time notice that Locked items arrived from a partner and stay hidden until you set a PIN.",
+        "operationId": "getPartnerLockedNotice",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerLockedNoticeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the Locked partner items notice",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.read"
+      },
+      "put": {
+        "description": "Dismisses the one-time notice about Locked partner items for good. The items stay locked.",
+        "operationId": "dismissPartnerLockedNotice",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerLockedNoticeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Dismiss the Locked partner items notice",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.update"
+      }
+    },
     "/partners/{id}": {
       "delete": {
         "description": "Stop sharing assets with a partner.",
@@ -26084,7 +26327,7 @@
         "x-immich-state": "Deprecated"
       },
       "put": {
-        "description": "Specify whether a partner's assets should appear in the user's timeline (inTimeline), or, as the sharing user, whether that partner may see the locations of shared assets (shareLocation). Exactly one field per request.",
+        "description": "A partnership has no settings left (FL-326): partners receive their own copies and locations are always shared. Kept for older clients; returns the partner who shares with the user.",
         "operationId": "updatePartner",
         "parameters": [
           {
@@ -36155,6 +36398,87 @@
         "x-immich-state": "Stable"
       }
     },
+    "/server/storage-migration": {
+      "get": {
+        "description": "The progress of the one-time universal storage migration that combines duplicate files, as counts only. Public, like the Getting Ready screen that shows it before anyone signs in.",
+        "operationId": "getStorageMigrationStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Get storage migration status",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/storage-migration/background": {
+      "post": {
+        "description": "Stop the Getting Ready screen waiting for the storage migration. It carries on in the background and its progress shows in Library Care; extra copies are not freed until it finishes.",
+        "operationId": "runStorageMigrationInBackground",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run the storage migration in the background",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemMetadata.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/server/version": {
       "get": {
         "description": "Retrieve the current server version in semantic versioning (semver) format.",
@@ -44958,15 +45282,6 @@
             }
           },
           {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include assets shared by partners",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
             "name": "withStacked",
             "required": false,
             "in": "query",
@@ -45189,15 +45504,6 @@
             "required": false,
             "in": "query",
             "description": "Include location data in the response",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include assets shared by partners",
             "schema": {
               "type": "boolean"
             }
@@ -45447,15 +45753,6 @@
             "required": false,
             "in": "query",
             "description": "Include location data in the response",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include assets shared by partners",
             "schema": {
               "type": "boolean"
             }
@@ -45718,15 +46015,6 @@
             "required": false,
             "in": "query",
             "description": "Include location data in the response",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include assets shared by partners",
             "schema": {
               "type": "boolean"
             }
@@ -49078,6 +49366,10 @@
       "description": "Restoration, upscaling and Smooth motion on Frameleaf Cloud for your own media: an estimate from metered GPU time, a confirmation with consent, then a durable job in Activity. Nothing is sent without that confirmation."
     },
     {
+      "name": "File trash (admin)",
+      "description": "The Library Care file trash holds originals no library references any more, until an administrator restores them or deletes them permanently."
+    },
+    {
       "name": "Integrity (admin)",
       "description": "Endpoints for viewing and managing integrity reports."
     },
@@ -49738,9 +50030,6 @@
           },
           "passwordLogin": {
             "$ref": "#/components/schemas/AdminConfigPasswordLoginDto"
-          },
-          "physicalDeduplication": {
-            "$ref": "#/components/schemas/AdminConfigPhysicalDeduplicationDto"
           },
           "reverseGeocoding": {
             "$ref": "#/components/schemas/AdminConfigReverseGeocodingDto"
@@ -51625,26 +51914,6 @@
         ],
         "type": "object"
       },
-      "AdminConfigPhysicalDeduplicationDto": {
-        "properties": {
-          "enabled": {
-            "description": "Enabled",
-            "type": "boolean"
-          },
-          "masterUserId": {
-            "description": "Master user ID",
-            "format": "uuid",
-            "nullable": true,
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          }
-        },
-        "required": [
-          "enabled",
-          "masterUserId"
-        ],
-        "type": "object"
-      },
       "AdminConfigReverseGeocodingDto": {
         "properties": {
           "enabled": {
@@ -52285,6 +52554,10 @@
           },
           "order": {
             "$ref": "#/components/schemas/AssetOrder"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/PartnerOriginDto",
+            "description": "FL-326: present on your own album when partner sharing copied it from another library"
           },
           "parentId": {
             "description": "Collection this album belongs to (null = top-level)",
@@ -57854,6 +58127,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "origin": {
+            "$ref": "#/components/schemas/PartnerOriginDto",
+            "description": "FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
+          },
           "originalFileName": {
             "description": "Original file name",
             "type": "string"
@@ -59204,6 +59481,10 @@
             "description": "The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by \"local\" days and months.",
             "format": "date-time",
             "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/PartnerOriginDto",
+            "description": "FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
           },
           "originalFileName": {
             "description": "Original file name",
@@ -68304,6 +68585,99 @@
         ],
         "type": "object"
       },
+      "FileTrashItemResponseDto": {
+        "properties": {
+          "checksum": {
+            "description": "Hex-encoded SHA-256 checksum of the file",
+            "type": "string"
+          },
+          "id": {
+            "description": "File trash entry id",
+            "type": "string"
+          },
+          "lastAssetId": {
+            "description": "Asset that held the file last, when known",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastOwnerId": {
+            "description": "Account whose library held the file last, when known",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastOwnerName": {
+            "description": "Name of that account, while it exists",
+            "nullable": true,
+            "type": "string"
+          },
+          "originalFileName": {
+            "description": "Name of the file when it was last in a library",
+            "type": "string"
+          },
+          "sizeInBytes": {
+            "description": "Size of the file in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trashedAt": {
+            "description": "When the file was moved to the file trash",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checksum",
+          "id",
+          "lastAssetId",
+          "lastOwnerId",
+          "lastOwnerName",
+          "originalFileName",
+          "sizeInBytes",
+          "trashedAt"
+        ],
+        "type": "object"
+      },
+      "FileTrashResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileTrashItemResponseDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Entries in the file trash",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "totalBytes": {
+            "description": "Disk space the file trash holds, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "totalBytes"
+        ],
+        "type": "object"
+      },
+      "FileTrashRestoreResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "The new asset the file was restored as, in its last owner’s library",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "type": "object"
+      },
       "FolderSummaryResponseDto": {
         "properties": {
           "count": {
@@ -71699,6 +72073,7 @@
           "StorageTemplateMigrationSingle",
           "PhysicalDeduplicationMigrationDryRun",
           "PhysicalDeduplicationMigrationApply",
+          "UniversalStorageMigration",
           "TagCleanup",
           "VersionCheck",
           "FrameleafHeartbeat",
@@ -71708,6 +72083,10 @@
           "CloudBackupVerify",
           "PushDeliver",
           "PushBackupStaleCheck",
+          "PartnerBackfill",
+          "PartnerCopyAsset",
+          "PartnerCopyAlbum",
+          "PartnerPropagate",
           "OcrQueueAll",
           "Ocr",
           "ImageDescriptionQueueAll",
@@ -73441,7 +73820,7 @@
             "type": "integer"
           },
           "partner": {
-            "description": "Located timeline items of partners who share their locations with the viewer",
+            "description": "Always 0: partners' items arrive as the viewer's own copies (kept for older clients)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -78585,6 +78964,38 @@
         ],
         "type": "object"
       },
+      "PartnerBackfillDto": {
+        "properties": {
+          "done": {
+            "description": "Items copied so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "Where the first copy stands",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "stopped"
+            ],
+            "type": "string"
+          },
+          "total": {
+            "description": "Items to copy",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "state",
+          "total"
+        ],
+        "type": "object"
+      },
       "PartnerCreateDto": {
         "properties": {
           "sharedWithId": {
@@ -78607,11 +79018,58 @@
         ],
         "type": "string"
       },
+      "PartnerLockedNoticeResponseDto": {
+        "properties": {
+          "flaggedAt": {
+            "description": "When the first Locked item arrived for an account without a PIN",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "show": {
+            "description": "Whether to show the notice: Locked items arrived from a partner, no PIN is set, and it was not dismissed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "flaggedAt",
+          "show"
+        ],
+        "type": "object"
+      },
+      "PartnerOriginDto": {
+        "properties": {
+          "rootOwnerId": {
+            "description": "The account that originally uploaded or created it",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "rootOwnerName": {
+            "description": "That account's name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rootOwnerId",
+          "rootOwnerName"
+        ],
+        "type": "object"
+      },
       "PartnerResponseDto": {
         "description": "Partner response",
         "properties": {
           "avatarColor": {
             "$ref": "#/components/schemas/UserAvatarColor"
+          },
+          "backfill": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PartnerBackfillDto"
+              }
+            ],
+            "description": "FL-326: copy progress of the library shared this way; null when it was never copied",
+            "nullable": true
           },
           "email": {
             "description": "User email",
@@ -78625,10 +79083,6 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
-          "inTimeline": {
-            "description": "Show in timeline",
-            "type": "boolean"
-          },
           "name": {
             "description": "User name",
             "type": "string"
@@ -78641,10 +79095,6 @@
           "profileImagePath": {
             "description": "Profile image path",
             "type": "string"
-          },
-          "shareLocation": {
-            "description": "Sharer allows this partner to see asset locations",
-            "type": "boolean"
           }
         },
         "required": [
@@ -78658,16 +79108,7 @@
         "type": "object"
       },
       "PartnerUpdateDto": {
-        "properties": {
-          "inTimeline": {
-            "description": "Show partner assets in timeline",
-            "type": "boolean"
-          },
-          "shareLocation": {
-            "description": "Share asset locations with this partner; only the sharing user can change it",
-            "type": "boolean"
-          }
-        },
+        "properties": {},
         "type": "object"
       },
       "PeopleListItemDto": {
@@ -79125,7 +79566,8 @@
           "unassign",
           "remove",
           "merge",
-          "box-move"
+          "box-move",
+          "partner-merge"
         ],
         "type": "string"
       },
@@ -105854,6 +106296,138 @@
         ],
         "type": "string"
       },
+      "StorageMigrationStage": {
+        "description": "Current stage; pending until the server has started the migration",
+        "enum": [
+          "pending",
+          "checking",
+          "relinking",
+          "linking",
+          "trashing",
+          "done"
+        ],
+        "type": "string"
+      },
+      "StorageMigrationStageProgressDto": {
+        "properties": {
+          "done": {
+            "description": "Items finished in this stage",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items this stage covers",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StorageMigrationStatusResponseDto": {
+        "properties": {
+          "background": {
+            "description": "An administrator chose to let it finish in the background",
+            "type": "boolean"
+          },
+          "bytesFreed": {
+            "description": "Bytes of extra copies moved to the file trash",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "estimatedSecondsLeft": {
+            "description": "Estimated time left, from the measured rate",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "finishedAt": {
+            "description": "When the migration finished",
+            "nullable": true,
+            "type": "string"
+          },
+          "relinked": {
+            "description": "Missing originals relinked automatically",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "required": {
+            "description": "False when the library had nothing to combine (a fresh install)",
+            "type": "boolean"
+          },
+          "showInGettingReady": {
+            "description": "Whether the Getting Ready screen waits for it",
+            "type": "boolean"
+          },
+          "skipped": {
+            "description": "Files that could not be read or verified, skipped",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/StorageMigrationStage"
+          },
+          "stages": {
+            "description": "Progress of each stage",
+            "properties": {
+              "checking": {
+                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
+              },
+              "linking": {
+                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
+              },
+              "relinking": {
+                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
+              },
+              "trashing": {
+                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
+              }
+            },
+            "required": [
+              "checking",
+              "relinking",
+              "linking",
+              "trashing"
+            ],
+            "type": "object"
+          },
+          "startedAt": {
+            "description": "When the migration started",
+            "nullable": true,
+            "type": "string"
+          },
+          "toReview": {
+            "description": "Missing originals left for review in Library Care",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "background",
+          "bytesFreed",
+          "estimatedSecondsLeft",
+          "finishedAt",
+          "relinked",
+          "required",
+          "showInGettingReady",
+          "skipped",
+          "stage",
+          "stages",
+          "startedAt",
+          "toReview"
+        ],
+        "type": "object"
+      },
       "StraightenParameters": {
         "properties": {
           "angle": {
@@ -114913,7 +115487,8 @@
           "photography-workspace",
           "license",
           "onboarding",
-          "frameleaf-cloud-tour"
+          "frameleaf-cloud-tour",
+          "partner-locked-notice"
         ],
         "type": "string"
       },

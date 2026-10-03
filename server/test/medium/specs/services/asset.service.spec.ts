@@ -315,7 +315,11 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [thumbnailPath, previewPath, sidecarPath, asset.originalPath], removedAssetId: asset.id },
+        data: {
+          files: [thumbnailPath, previewPath, sidecarPath, asset.originalPath],
+          removedAssetId: asset.id,
+          original: expect.objectContaining({ path: asset.originalPath, ownerId: user.id, assetId: asset.id }),
+        },
       });
     });
 

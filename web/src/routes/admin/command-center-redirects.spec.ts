@@ -60,7 +60,7 @@ describe('old addresses of Command Center sections', () => {
     [
       '/admin/physical-deduplication',
       () => deduplication({ url: at('/admin/physical-deduplication') } as never),
-      '/user-settings?area=storage&section=deduplication',
+      '/user-settings?area=care&section=deduplication',
     ],
     [
       '/admin/processing-destinations',

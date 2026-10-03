@@ -2,6 +2,7 @@ import { Kysely, sql } from 'kysely';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000175-FaceCorrectionHistory.js';
+import * as partnerPeople from 'src/fork-schema/migrations/0000000000221-PartnerPeopleLinks.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -27,8 +28,11 @@ it('matches the private catalog and rolls back without modifying the official ca
     );
   }
 
+  // FL-326: 0000000000221 widens the action checks for partner merges; roll it back and forward around 175
+  await partnerPeople.down(db);
   await migration.down(db);
   await migration.up(db);
+  await partnerPeople.up(db);
   const after = await getCatalogEvidence(db);
   for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
     expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
@@ -62,8 +66,11 @@ it('records the decisions made before the history existed', async () => {
   await people.reassignFace(moved.id, person.personGroupId);
   await people.softDeleteAssetFaces(removed.id);
 
+  // FL-326: 0000000000221 widens the action checks for partner merges; roll it back and forward around 175
+  await partnerPeople.down(db);
   await migration.down(db);
   await migration.up(db);
+  await partnerPeople.up(db);
 
   const { rows } = await sql<{
     faceId: string;

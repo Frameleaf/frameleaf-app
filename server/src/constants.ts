@@ -270,6 +270,8 @@ export const endpointTags: Record<ApiTag, string> = {
     'Frameleaf Cloud as an explicit processing destination: created only by an administrator, admitted only with consent, entitlement and AI Wallet balance, and never used as a fallback.',
   [ApiTag.FrameleafCloudJobs]:
     'Restoration, upscaling and Smooth motion on Frameleaf Cloud for your own media: an estimate from metered GPU time, a confirmation with consent, then a durable job in Activity. Nothing is sent without that confirmation.',
+  [ApiTag.FileTrash]:
+    'The Library Care file trash holds originals no library references any more, until an administrator restores them or deletes them permanently.',
   [ApiTag.Integrity]: 'Endpoints for viewing and managing integrity reports.',
   [ApiTag.Jobs]:
     'Queues and background jobs are used for processing tasks asynchronously. Queues can be paused and resumed as needed.',

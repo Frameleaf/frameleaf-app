@@ -165,10 +165,8 @@ export class CloudBackupDetailsService extends BaseService {
       exif: { assetId: input.assetId, fileSizeInByte: input.size },
       lockedPropertiesBehavior: 'override',
     });
-    const { physicalDeduplication } = await this.getConfig({ withCache: true });
-    if (physicalDeduplication.enabled && input.ownerId === physicalDeduplication.masterUserId) {
-      await repositories.physicalFile.ensureOriginalPhysicalFile(input.assetId);
-    }
+    // universal storage: every managed original is registered as its own primary physical file
+    await repositories.physicalFile.ensureOriginalPhysicalFile(input.assetId);
 
     // everything but what the record already set: favourite and visibility went in with it
     const changes = detailChanges(

@@ -13,6 +13,7 @@
   import ViewerDetailRows from '$lib/components/frameleaf/ViewerDetailRows.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
   import { ownerLine, type DescriptionReview } from '$lib/frameleaf/info-panel';
+  import { originOwnerName } from '$lib/frameleaf/partner-sharing';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -28,7 +29,7 @@
     type AssetResponseDto,
   } from '@immich/sdk';
   import { Icon, IconButton, Link, LoadingSpinner, Text } from '@immich/ui';
-  import { mdiAccountOutline, mdiClose } from '@mdi/js';
+  import { mdiAccountArrowLeftOutline, mdiAccountOutline, mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import OnEvents from '../OnEvents.svelte';
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
@@ -52,6 +53,8 @@
       sharedAlbum: !!currentAlbum && currentAlbum.albumUsers.length > 1,
     }),
   );
+  // FL-326: a copy partner sharing brought into this library names the library it came from (MediaViewer.jsx .mv-origin)
+  const originName = $derived(originOwnerName(asset.origin));
   let latlng = $derived(
     (() => {
       const lat = asset.exifInfo?.latitude;
@@ -262,6 +265,13 @@
     {owner.kind === 'shared'
       ? $t('frameleaf_info_shared_by', { values: { name: owner.name } })
       : $t('frameleaf_info_owned_by', { values: { name: owner.name } })}
+  </p>
+{/if}
+
+{#if originName}
+  <p class="fl-owner" data-testid="detail-panel-origin">
+    <Icon icon={mdiAccountArrowLeftOutline} size="16" aria-hidden />
+    {$t('frameleaf_partner_origin', { values: { name: originName } })}
   </p>
 {/if}
 

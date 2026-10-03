@@ -81,6 +81,10 @@ import { MlDestinationService } from 'src/services/ml-destination.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { OcrService } from 'src/services/ocr.service.js';
+import { PartnerCopyService } from 'src/services/partner-copy.service.js';
+import { PartnerLockService } from 'src/services/partner-lock.service.js';
+import { PartnerLockedNoticeService } from 'src/services/partner-locked-notice.service.js';
+import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
@@ -90,6 +94,7 @@ import { PhotographyWorkflowService } from 'src/services/photography-workflow.se
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
+import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
@@ -108,6 +113,7 @@ import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { StackService } from 'src/services/stack.service.js';
+import { StorageMigrationService } from 'src/services/storage-migration.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
@@ -230,13 +236,19 @@ export const services = [
   NotificationAdminService,
   OcrService,
   ClusterGroupService,
+  PartnerLockService,
+  PartnerLockedNoticeService,
+  PartnerPeopleService,
   PartnerService,
+  PartnerCopyService,
   PersonService,
   PinnedCollectionService,
   PetRecognitionService,
   PetService,
   PhysicalDeduplicationPlanService,
+  StorageMigrationService,
   PhysicalDeduplicationService,
+  PhysicalFileTrashService,
   PluginService,
   PreservationService,
   PreservationWorkerService,

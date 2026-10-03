@@ -1250,21 +1250,27 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.ph-toggles {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 8px;
-}
-.ph-toggles .slf-toggle {
+/* ---------- Partner Locked items notice (FL-326) ---------- */
+.pl-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: var(--fl-radius-card);
   background: var(--fl-raised);
-  border-radius: var(--fl-radius-control);
-  padding: 10px 12px;
+  color: var(--fl-text);
 }
-.ph-toggles .slf-toggle + .slf-toggle {
-  border-top: 0;
+.pl-notice p {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: 13px;
 }
-
+.pl-notice p span {
+  color: var(--fl-muted);
+}
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {
   .slf-grid {

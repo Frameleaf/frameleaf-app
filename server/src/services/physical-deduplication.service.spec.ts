@@ -126,7 +126,7 @@ describe(PhysicalDeduplicationService.name, () => {
     mocks.database.withLock.mockImplementation((_lock, callback) => callback());
     mocks.physicalFile.getMigrationCandidates.mockReturnValue(stream() as never);
 
-    await expect(sut[handler]({})).resolves.toBe(JobStatus.Success);
+    await expect(sut[handler]({ masterUserId: 'master-user' })).resolves.toBe(JobStatus.Success);
 
     expect(mocks.physicalFile.getMigrationCandidates).toHaveBeenCalledWith('master-user');
   });
@@ -185,7 +185,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master() as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
 
-      await expect(sut.handleDryRun({})).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleDryRun({ masterUserId: 'master-user' })).resolves.toBe(JobStatus.Success);
 
       const [, summary] = mocks.systemMetadata.set.mock.calls[0] as [unknown, Record<string, unknown>];
       expect(summary).toEqual(
@@ -227,7 +227,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMigrationCandidates.mockReturnValue(stream(candidate()) as never);
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(undefined as never);
 
-      await sut.handleDryRun({});
+      await sut.handleDryRun({ masterUserId: 'master-user' });
 
       const [, summary] = mocks.systemMetadata.set.mock.calls[0] as [unknown, Record<string, unknown>];
       expect(summary).toEqual(expect.objectContaining({ eligibleAssets: 0, skippedMissingMaster: 1, retained: [] }));
@@ -253,7 +253,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master() as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(2);
 
-      await sut.handleDryRun({});
+      await sut.handleDryRun({ masterUserId: 'master-user' });
 
       const [, summary] = mocks.systemMetadata.set.mock.calls[0] as [unknown, Record<string, unknown>];
       expect(summary).toEqual(expect.objectContaining({ eligibleAssets: 0, reclaimableBytes: 0, skippedExternal: 1 }));
@@ -278,7 +278,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master() as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
 
-      await sut.handleDryRun({ scopeUserId: 'emma' });
+      await sut.handleDryRun({ masterUserId: 'master-user', scopeUserId: 'emma' });
 
       const [, summary] = mocks.systemMetadata.set.mock.calls[0] as [unknown, Record<string, unknown>];
       expect(summary).toEqual(expect.objectContaining({ scopeUserId: 'emma', eligibleAssets: 1 }));
@@ -312,7 +312,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master({ width: 6000, height: 4000 }) as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
 
-      await sut.handleDryRun({});
+      await sut.handleDryRun({ masterUserId: 'master-user' });
 
       const summary = saved(mocks);
       expect(summary.eligibleAssets).toBe(3);
@@ -343,7 +343,7 @@ describe(PhysicalDeduplicationService.name, () => {
       mocks.physicalFile.getMasterOriginalCandidate.mockResolvedValue(master() as never);
       mocks.physicalFile.countOriginalReferences.mockResolvedValue(1);
 
-      await sut.handleDryRun({});
+      await sut.handleDryRun({ masterUserId: 'master-user' });
 
       const summary = saved(mocks);
       expect(summary).toEqual(
@@ -571,21 +571,15 @@ describe(PhysicalDeduplicationService.name, () => {
   });
 
   describe('requireApplyAllowed (FL-73)', () => {
-    it.each([
-      [{ enabled: false, masterUserId: 'master-user' }, BadRequestException],
-      [{ enabled: true, masterUserId: null }, BadRequestException],
-      [{ enabled: true, masterUserId: 'someone-else' }, ConflictException],
-    ])('refuses %o', async (physicalDeduplication, error) => {
+    it('refuses once the account the plan retains originals in is gone', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mockConfig(mocks, physicalDeduplication);
-      mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
+      mocks.user.get.mockResolvedValue(undefined as never);
 
-      await expect(sut.requireApplyAllowed({ masterUserId: 'master-user' })).rejects.toBeInstanceOf(error);
+      await expect(sut.requireApplyAllowed({ masterUserId: 'master-user' })).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it('allows the saved, enabled, existing retained account', async () => {
+    it('allows the plan’s existing retained account; universal storage has no saved setting to match', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mockConfig(mocks, { enabled: true, masterUserId: 'master-user' });
       mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
 
       await expect(sut.requireApplyAllowed({ masterUserId: 'master-user' })).resolves.toBeUndefined();
@@ -673,9 +667,16 @@ describe(PhysicalDeduplicationService.name, () => {
         path: '/upload/master/a.jpg',
       });
       expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledTimes(1);
+      // universal storage: the copy's own original goes to the file trash, never unlinked
       expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
         '/upload/jamie/copy.jpg',
         expect.any(Function),
+        {
+          trash: {
+            move: expect.any(Function),
+            original: expect.objectContaining({ ownerId: 'jamie', originalFileName: 'copy.jpg' }),
+          },
+        },
       );
       // The asset row stays: albums, faces, stacks, shared links and lock records keep pointing at it.
       expect(mocks.asset.remove).not.toHaveBeenCalled();
@@ -747,9 +748,16 @@ describe(PhysicalDeduplicationService.name, () => {
         expect.objectContaining({ state: 'already-applied', reclaimedBytes: 10 }),
       );
       expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+      // universal storage: the copy's own original goes to the file trash, never unlinked
       expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
         '/upload/jamie/copy.jpg',
         expect.any(Function),
+        {
+          trash: {
+            move: expect.any(Function),
+            original: expect.objectContaining({ ownerId: 'jamie', originalFileName: 'copy.jpg' }),
+          },
+        },
       );
     });
 
@@ -813,6 +821,111 @@ describe(PhysicalDeduplicationService.name, () => {
     });
   });
 
+  describe('linkToPrimary (FL-326 universal storage)', () => {
+    const hex = 'aa'.repeat(20);
+    const evidence = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      ownerId: id === MASTER_ID ? 'taylor' : 'jamie',
+      originalPath: id === MASTER_ID ? '/upload/taylor/a.jpg' : '/upload/jamie/copy.jpg',
+      checksum: Buffer.from(hex, 'hex'),
+      sizeInBytes: 10,
+      deletedAt: null,
+      status: AssetStatus.Active,
+      isExternal: false,
+      isOffline: false,
+      libraryId: null,
+      physicalOriginalFileId: null,
+      ...overrides,
+    });
+    const setup = (rows = [evidence(MASTER_ID), evidence(COPY_1)]) => {
+      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
+      mocks.database.withLock.mockImplementation((_lock, callback) => callback());
+      mocks.physicalFile.getPlanEvidence.mockResolvedValue(rows as never);
+      mocks.physicalFile.ensureOriginalPhysicalFile.mockImplementation((assetId) =>
+        Promise.resolve(
+          (assetId === MASTER_ID
+            ? { id: 'pf-primary', path: '/upload/taylor/a.jpg' }
+            : { id: 'pf-copy', path: '/upload/jamie/copy.jpg' }) as never,
+        ),
+      );
+      mocks.physicalFile.getGeneratedFiles.mockResolvedValue([]);
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(!path.endsWith('.xmp')));
+      mocks.storage.stat.mockResolvedValue({ size: 10 } as never);
+      mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from(hex, 'hex'));
+      return { sut, mocks };
+    };
+
+    it('links a verified copy to the primary under the storage lock and unlinks nothing', async () => {
+      const { sut, mocks } = setup();
+
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'linked', copyMissing: false });
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.StorageTemplateMigration, expect.any(Function));
+      // the copy's own file is registered first, so the trashing stage can find it
+      expect(mocks.physicalFile.ensureOriginalPhysicalFile).toHaveBeenCalledWith(COPY_1);
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).toHaveBeenCalledWith(COPY_1, {
+        id: 'pf-primary',
+        path: '/upload/taylor/a.jpg',
+      });
+      expect(mocks.physicalFile.deleteUnreferencedPath).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('links a copy whose own file is missing: its relink', async () => {
+      const { sut, mocks } = setup();
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/upload/taylor/a.jpg'));
+
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'linked', copyMissing: true });
+      expect(mocks.physicalFile.ensureOriginalPhysicalFile).not.toHaveBeenCalledWith(COPY_1);
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['primary-missing', (path: string) => path !== '/upload/taylor/a.jpg', hex],
+      ['primary-mismatch', () => true, 'bb'.repeat(20)],
+    ])('refuses when the primary is not verified (%s)', async (reason, exists, digest) => {
+      const { sut, mocks } = setup();
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(exists(path)));
+      mocks.crypto.hashFileMatching.mockResolvedValue(Buffer.from(digest, 'hex'));
+
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'skipped', reason });
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+    });
+
+    it('leaves a copy whose bytes no longer match', async () => {
+      const { sut, mocks } = setup();
+      mocks.crypto.hashFileMatching.mockImplementation((path) =>
+        Promise.resolve(Buffer.from(path === '/upload/taylor/a.jpg' ? hex : 'bb'.repeat(20), 'hex')),
+      );
+
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({
+        state: 'skipped',
+        reason: 'copy-mismatch',
+      });
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an external copy', { isExternal: true, libraryId: 'library-1' }],
+      ['a trashed copy', { deletedAt: new Date() }],
+      ['a different size', { sizeInBytes: 11 }],
+      ['a different checksum', { checksum: Buffer.from('bb'.repeat(20), 'hex') }],
+    ])('never links %s', async (_name, overrides) => {
+      const { sut, mocks } = setup([evidence(MASTER_ID), evidence(COPY_1, overrides)]);
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'skipped', reason: 'changed' });
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+    });
+
+    it('reads a copy already on the primary file as already linked (a repeated batch)', async () => {
+      const { sut, mocks } = setup([
+        evidence(MASTER_ID, { physicalOriginalFileId: 'pf-primary' }),
+        evidence(COPY_1, { physicalOriginalFileId: 'pf-primary', originalPath: '/upload/taylor/a.jpg' }),
+      ]);
+      await expect(sut.linkToPrimary(COPY_1, MASTER_ID)).resolves.toEqual({ state: 'already-linked' });
+      expect(mocks.physicalFile.linkAssetToOriginalPhysicalFile).not.toHaveBeenCalled();
+    });
+  });
+
   describe('requestPreview', () => {
     it('rejects a preview without a chosen or saved retained account', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
@@ -841,15 +954,6 @@ describe(PhysicalDeduplicationService.name, () => {
       );
     });
 
-    it('rejects a preview while file reuse is off (FL-73 configuration error)', async () => {
-      const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mockConfig(mocks, { enabled: false, masterUserId: 'master-user' }, null);
-      mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
-
-      await expect(sut.requestPreview({})).rejects.toThrow('Enable file reuse before preparing a plan.');
-      expect(mocks.job.queue).not.toHaveBeenCalled();
-    });
-
     it('queues the dry run with the chosen account and scope', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
       mockConfig(mocks, { enabled: true, masterUserId: null }, null);
@@ -863,24 +967,19 @@ describe(PhysicalDeduplicationService.name, () => {
       });
     });
 
-    it('falls back to the saved retained account', async () => {
+    it('needs the account named on the page: universal storage has no saved one', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mockConfig(mocks, { enabled: true, masterUserId: 'master-user' }, null);
       mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
 
-      await sut.requestPreview({});
-
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.PhysicalDeduplicationMigrationDryRun,
-        data: { masterUserId: 'master-user', scopeUserId: undefined },
-      });
+      await expect(sut.requestPreview({})).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 
   describe('getPreview', () => {
     const counts = { active: 0, completed: 0, failed: 0, delayed: 0, waiting: 0, paused: 0 };
 
-    it('returns the saved configuration and no plan before any run', async () => {
+    it('reports universal storage as always on, with no saved account and no plan before any run', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
       mockConfig(mocks, { enabled: false, masterUserId: null }, null);
       mocks.job.getJobCounts.mockResolvedValue(counts);
@@ -888,7 +987,7 @@ describe(PhysicalDeduplicationService.name, () => {
       await expect(sut.getPreview(authStub.admin)).resolves.toEqual({
         plan: null,
         savedMasterUserId: null,
-        enabled: false,
+        enabled: true,
         running: false,
         applying: false,
         applies: [],
