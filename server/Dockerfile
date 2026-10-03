@@ -388,6 +388,16 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
 RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
   SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir /output/server-pruned/node_modules/sharp exec npm run build
 
+# Explicit manual RAW qualification uses the actual production native base and compiled/pruned
+# server adapter. It builds no web, Studio, CLI or plugin WASM and starts no application service.
+FROM base-server-prod AS native-raw-qualification
+WORKDIR /usr/src/app
+ENV NODE_ENV=production
+COPY --from=server /output/server-pruned ./server
+RUN node /build/verify-darktable.mjs verify /usr/local && \
+  node --input-type=module -e "await import('./server/dist/utils/darktable-renderer.js')"
+ENTRYPOINT ["node", "/build/verify-darktable-develop.mjs"]
+
 # Studio's editor (FL-88): the pinned Freecut revision is recovered from its archive, verified file by
 # file against studio/freecut-provenance.json, patched outside the snapshot, installed from the engine
 # lockfile without lifecycle scripts, and built with Frameleaf's adapter into web/static/studio-engine,
