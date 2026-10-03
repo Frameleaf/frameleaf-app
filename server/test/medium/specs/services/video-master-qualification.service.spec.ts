@@ -175,7 +175,8 @@ const frameIds = (file: string, x = 0.5, y = 0.5) => {
     expect(Math.max(...grey) - Math.min(...grey)).toBeLessThanOrEqual(6);
     const identity = Math.round((grey[0] - 32) / 16);
     expect(Math.abs(grey[0] - (32 + identity * 16))).toBeLessThanOrEqual(6);
-    return identity;
+    // Lossy grey noise can round to -0; the authored zero frame ID has no sign.
+    return identity === 0 ? 0 : identity;
   });
 };
 const audioPackets = (file: string) =>
@@ -431,7 +432,7 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
       type: AssetType.Video,
       originalPath: source,
       checksum: Buffer.from(digest(source), 'hex'),
-      duration: info.format.duration,
+      duration: Math.round(info.format.duration * 1000),
     });
     await ctx.get(AssetRepository).upsertExif({
       exif: {

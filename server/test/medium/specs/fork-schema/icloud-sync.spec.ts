@@ -104,7 +104,11 @@ describe('fork-owned iCloud state', () => {
 
     const actual = await getCatalogEvidence(db, { includeForkLedger: false });
     for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-      expect(cloud(actual[kind])).toEqual(cloud(manifest[kind]));
+      expect(cloud(actual[kind])).toEqual(
+        cloud(manifest[kind]).toSorted(
+          (left, right) => left.identity.localeCompare(right.identity) || left.definition.localeCompare(right.definition),
+        ),
+      );
     }
     // The seven sync tables, source identities and claims, and fresh audit receipts (FL-296).
     expect(getCatalogTableLocks(manifest).filter((table) => table.startsWith('immich_fork.icloud_'))).toHaveLength(10);
