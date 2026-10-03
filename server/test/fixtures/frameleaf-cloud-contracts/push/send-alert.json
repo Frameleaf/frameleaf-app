@@ -1,0 +1,26 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://push.frameleaf.cloud/v1/push/send",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://push.frameleaf.cloud/v1/push/send, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "A visible notification to an APNs device token; the app decrypts `payload`.",
+    "body": {
+      "platform": "apns",
+      "token": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "type": "alert",
+      "priority": "high",
+      "collapseId": "shared-album-0192f1b0",
+      "ttlSec": 86400,
+      "payload": "ZmFrZS1jaXBoZXJ0ZXh0LWZvci1maXh0dXJlcy1vbmx5LW5vdC1hLXJlYWwtcHVzaC1lbnZlbG9wZQ"
+    }
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "status": "sent"
+  }
+}

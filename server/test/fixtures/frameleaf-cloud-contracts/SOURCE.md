@@ -154,3 +154,23 @@ above.
   `packages/contracts/src/billing/stores.ts` and `INSTANCE_CAPABILITY_BACKUP_PLAN` in `src/instance/heartbeat.ts`;
   `server/src/utils/frameleaf-cloud-link.ts` reads it and `server/src/services/frameleaf-cloud.service.spec.ts` checks the
   pushes, `server/src/utils/frameleaf-cloud-backup.spec.ts` the `plan_full` reason.
+
+## Published registry receipt: Cloud contracts 0.0.3
+
+The selective 0.0.3 import is pinned by `registry-0.0.3.json`, copied from the verified registry receipt
+with per-file SHA256 values from the genuine package. Package `@frameleaf/cloud-contracts` version
+0.0.3, registry version ID 1329556226, is Apache-2.0 and restricted on GitHub Packages; this import
+adds no runtime dependency or registry credentials. The annotated `contracts-v0.0.3` tag resolves to
+`b7e9b37b53392694383ecc69fe4d7f18496d4ac2`. Tarball SHA256:
+`23aeee533b7b969473e1a6ab53f1d0299369ea015eb37f85c4cc847cfd194eba`; its registry SHA512 integrity
+and SHA1 are retained in the receipt.
+
+Only `instance/discovery.json` and `instance/discovery-instance.json` are refreshed (the published
+`endpoints.push` address), plus eleven new `push/` fixtures. Every imported file is byte-identical to
+`fixtures/` in that tarball. Other copied files remain unchanged. In particular both heartbeat
+backup-plan fixtures and `backup/usage-plan-full.json` were compared byte-for-byte with 0.0.3 and
+remain unchanged; their hashes and actual parser assertions are in `frameleaf-cloud-contracts.spec.ts`.
+
+The discovery and push parsers remain Library-owned. Conformance covers actual DPoP request bodies,
+API token audience, push proof address, response/error envelopes and local rejection of the published
+invalid request. It does not qualify APNs delivery, relay, linked servers, top-ups or provider behavior.

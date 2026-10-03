@@ -1,0 +1,32 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://push.frameleaf.cloud/v1/push/send",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://push.frameleaf.cloud/v1/push/send, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "Starts a Live Activity on a push-to-start token; `attributesType` is required and the gateway sends `attributes: {}`.",
+    "body": {
+      "platform": "apns",
+      "token": "feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface",
+      "type": "live-activity-start",
+      "priority": "high",
+      "ttlSec": 86400,
+      "liveActivity": {
+        "state": {
+          "step": "storage-ready",
+          "progress": 0.75
+        },
+        "attributesType": "ActivationAttributes",
+        "staleAfterSec": 3600
+      }
+    }
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "status": "sent"
+  }
+}

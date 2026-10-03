@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://push.frameleaf.cloud/v1/push/send",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://push.frameleaf.cloud/v1/push/send, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "More than 600 sends a minute from one server. The wait is the `Retry-After` header (seconds, at most 60); the body carries no `data`.",
+    "body": {
+      "platform": "apns",
+      "token": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "type": "alert",
+      "priority": "high",
+      "ttlSec": 86400,
+      "payload": "ZmFrZS1jaXBoZXJ0ZXh0LWZvci1maXh0dXJlcy1vbmx5LW5vdC1hLXJlYWwtcHVzaC1lbnZlbG9wZQ"
+    }
+  },
+  "status": 429,
+  "headers": {
+    "Retry-After": "60"
+  },
+  "body": {
+    "code": "rate-limited",
+    "message": "This server is sending too many notifications. Try again in a minute.",
+    "retryable": true,
+    "requestId": "req_01J8ZK3M4N5P6Q7Z"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "name": "@frameleaf/cloud-contracts",
+  "version": "0.0.3",
+  "integrity": "sha512-hRIbOApFFDYvGCAidqtPuDUvZWxJNRUXhN3k2eRFJRBG0XY7on2Y5ztbfX51XH/cpBOsUqEdkg0OdQ+9pXwqvA==",
+  "sha256": "23aeee533b7b969473e1a6ab53f1d0299369ea015eb37f85c4cc847cfd194eba",
+  "sha1": "cb41d2f904172121f005e7c1b8897cdb88d5fa64",
+  "bytes": 441952,
+  "sourceTag": "contracts-v0.0.3",
+  "sourceCommit": "b7e9b37b53392694383ecc69fe4d7f18496d4ac2",
+  "registryVersionID": 1329556226,
+  "fixtures": [
+    {
+      "path": "instance/discovery-instance.json",
+      "sha256": "a60cb7dfe91aec057e6df1395a214172512752834b7bab7cefaf480f59156b03"
+    },
+    {
+      "path": "instance/discovery.json",
+      "sha256": "04c16514e5a736d2ac26c6c5dabdf8a98264400f0ad93cf60642c6b0a680c59a"
+    },
+    {
+      "path": "push/error-push-unavailable.json",
+      "sha256": "c5b77ac690f8f182baab20e8b74dd7c6080e0a95844fc12949c927ce2bd8b005"
+    },
+    {
+      "path": "push/error-rate-limited.json",
+      "sha256": "69c0039f625452b018f5130fea996f541752fa641d7ec02dc2777938f1fa42db"
+    },
+    {
+      "path": "push/error-request-invalid.json",
+      "sha256": "ee85a8ef8cabc5b79453c1a6d9a2a1a6db163e8eedfada61b6a943f26b133453"
+    },
+    {
+      "path": "push/send-alert.json",
+      "sha256": "73fc9286265cd1dbf3f17c4ebec62d57bda7ff61a4ffc6774bf38cb6752a1160"
+    },
+    {
+      "path": "push/send-background.json",
+      "sha256": "93c854ad1e48d49b74fa9175b432018c2b023af0e6faf98d184998bd7b01be5e"
+    },
+    {
+      "path": "push/send-invalid-token.json",
+      "sha256": "9911d1428efe04197af2d617d9ca1bc8419a057c80bde67a9dc263800182565e"
+    },
+    {
+      "path": "push/send-live-activity-end.json",
+      "sha256": "5439072b7766cfb6dcbcaf45df68106c48f782eee5e6be52763a21fe0571d5dd"
+    },
+    {
+      "path": "push/send-live-activity-start.json",
+      "sha256": "2661055ff8941effa8d7bf1a597435375daf6d24ebc70d7966a5b71c3eed3d2e"
+    },
+    {
+      "path": "push/send-live-activity-update.json",
+      "sha256": "3387458d4f76bd592eb365abd4e04a7de8a948b44e7c542ded8ad9a0a3a282fd"
+    },
+    {
+      "path": "push/send-retry.json",
+      "sha256": "8d1c27b687e1ed071e18df637494da22d1f68b05c63d7810cdf604c7aa0381cf"
+    },
+    {
+      "path": "push/send-throttled.json",
+      "sha256": "81ffb7c765cfe3cfcb41fd1d31316ebd7a96a762871948886e1f9caa04e49f89"
+    }
+  ]
+}
