@@ -7,6 +7,34 @@ const { load } = createRequire(resolve(__dirname, "../server/package.json"))(
   "js-yaml",
 );
 
+test("host pnpm setup and cache run only for the LibRaw qualification path", () => {
+  const workflow = load(
+    readFileSync(resolve(__dirname, "workflows/fork-integration.yml"), "utf8"),
+  );
+  const steps = workflow.jobs["native-raw"].steps;
+  const hostActions = ["pnpm/action-setup", "actions/setup-node"];
+  for (const engine of ["libraw", "darktable"]) {
+    const selected = steps.filter(
+      (step) => !step.if || step.if === `inputs.raw_engine == '${engine}'`,
+    );
+    assert.deepEqual(
+      selected
+        .map((step) => step.uses?.split("@")[0])
+        .filter((action) => hostActions.includes(action)),
+      engine === "libraw" ? hostActions : [],
+      `${engine} must only schedule host package setup when it installs dependencies`,
+    );
+    assert.equal(
+      selected.some((step) => step.run === "pnpm install --frozen-lockfile"),
+      engine === "libraw",
+    );
+  }
+  const node = steps.find((step) =>
+    step.uses?.startsWith("actions/setup-node@"),
+  );
+  assert.equal(node.with.cache, "pnpm", "LibRaw retains its dependency cache");
+});
+
 test("manual full RAW qualification builds candidate production native runtime on both architectures", () => {
   const workflow = load(
     readFileSync(resolve(__dirname, "workflows/fork-integration.yml"), "utf8"),

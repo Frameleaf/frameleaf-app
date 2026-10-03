@@ -213,7 +213,9 @@ jobs:
           persist-credentials: false
           submodules: recursive
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
+        if: inputs.raw_engine == 'libraw'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        if: inputs.raw_engine == 'libraw'
         with:
           node-version-file: '.nvmrc'
           cache: pnpm
