@@ -162,7 +162,11 @@ it('retains causal forwarding state without leaking request identities or error 
   }
   const unknown = buddyForwardingDiagnostic(secret, `/api/${secret}`, new Error(secret), secret, secret, state);
   expect(unknown).toMatchObject({
-    method: 'OTHER', category: 'other', code: 'UNKNOWN', phase: 'unknown', admittedPhase: 'unknown',
+    method: 'OTHER',
+    category: 'other',
+    code: 'UNKNOWN',
+    phase: 'unknown',
+    admittedPhase: 'unknown',
   });
   expect(JSON.stringify(unknown)).not.toContain(secret);
 });
