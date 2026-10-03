@@ -104,18 +104,25 @@ describe('owner and byte-validated iCloud identity attachment', () => {
     const { sut, auth, input, asset } = await setup();
     // Hold a concurrent original change until it commits; attachment must not trust the old digest.
     const { promise: released, resolve: release } = Promise.withResolvers<void>();
-    const { promise: ready, resolve: locked } = Promise.withResolvers<void>();
+    const { promise: ready, resolve: locked } = Promise.withResolvers<number>();
     const replacement = db.transaction().execute(async (tx) => {
       await tx
         .updateTable('asset')
         .set({ checksum: Buffer.alloc(32, 2) })
         .where('id', '=', asset.id)
         .execute();
-      locked();
+      const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx);
+      locked(rows[0].pid);
       await released;
     });
-    await ready;
+    const blockerPid = await Promise.race([
+      ready,
+      replacement.then(() => {
+        throw new Error('Replacement did not pause');
+      }),
+    ]);
     const attachment = sut.attachDevice(auth, input);
+    void attachment.catch(() => {});
     try {
       await expect
         .poll(
@@ -123,17 +130,18 @@ describe('owner and byte-validated iCloud identity attachment', () => {
             const { rows } = await sql`
               SELECT 1 FROM pg_stat_activity
               WHERE datname = current_database() AND wait_event_type = 'Lock'
-                AND query ILIKE '%for share of "asset"%'
+                AND pg_blocking_pids(pid) @> ARRAY[${blockerPid}]::integer[]
             `.execute(db);
             return rows.length > 0;
           },
-          { timeout: 5000 },
+          { timeout: 1000 },
         )
         .toBe(true);
     } finally {
       release();
-      await replacement;
+      await Promise.allSettled([replacement, attachment]);
     }
+    await replacement;
     expect(await attachment).toBe(false);
     expect(
       await sql`SELECT id FROM immich_fork.icloud_source_identity WHERE "assetId" = ${asset.id}::uuid`.execute(db),
