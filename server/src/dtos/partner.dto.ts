@@ -22,7 +22,22 @@ const PartnerSearchSchema = z
   })
   .meta({ id: 'PartnerSearchDto' });
 
-const PartnerResponseSchema = UserResponseSchema.describe('Partner response').meta({ id: 'PartnerResponseDto' });
+// FL-326 (spec §5.2): the first copy of the library shared this way, for the partner card's progress
+const PartnerBackfillSchema = z
+  .object({
+    state: z.enum(['pending', 'running', 'done', 'stopped']).describe('Where the first copy stands'),
+    total: z.int().min(0).describe('Items to copy'),
+    done: z.int().min(0).describe('Items copied so far'),
+  })
+  .meta({ id: 'PartnerBackfillDto' });
+
+const PartnerResponseSchema = UserResponseSchema.extend({
+  backfill: PartnerBackfillSchema.nullable()
+    .optional()
+    .describe('FL-326: copy progress of the library shared this way; null when it was never copied'),
+})
+  .describe('Partner response')
+  .meta({ id: 'PartnerResponseDto' });
 
 export class PartnerCreateDto extends createZodDto(PartnerCreateSchema) {}
 export class PartnerUpdateDto extends createZodDto(PartnerUpdateSchema) {}

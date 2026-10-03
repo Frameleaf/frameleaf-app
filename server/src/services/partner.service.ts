@@ -71,10 +71,19 @@ export class PartnerService extends BaseService {
   async search(auth: AuthDto, { direction }: PartnerSearchDto): Promise<PartnerResponseDto[]> {
     const partners = await this.partnerRepository.getAll(auth.user.id);
     const key = direction === PartnerDirection.SharedBy ? 'sharedById' : 'sharedWithId';
-    return partners
+    const mine = partners
       .filter((partner): partner is Partner => !!(partner.sharedBy && partner.sharedWith)) // Filter out soft deleted users
-      .filter((partner) => partner[key] === auth.user.id)
-      .map((partner) => this.mapPartner(partner, direction));
+      .filter((partner) => partner[key] === auth.user.id);
+    // FL-326: how far the first copy of the library shared this way has come (the partner card)
+    return Promise.all(
+      mine.map(async (partner) => {
+        const backfill = await this.partnerOriginRepository.getBackfill(partner.sharedById, partner.sharedWithId);
+        return {
+          ...this.mapPartner(partner, direction),
+          backfill: backfill ? { state: backfill.state, total: backfill.total, done: backfill.done } : null,
+        };
+      }),
+    );
   }
 
   /** FL-326: a partnership has no settings left; this answers the partner who shares with the caller. */
