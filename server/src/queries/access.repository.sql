@@ -227,50 +227,6 @@ where
     )
   )
 
--- AccessRepository.asset.checkPartnerAccess
-select
-  "asset"."id"
-from
-  "partner"
-  inner join "user" as "sharedBy" on "sharedBy"."id" = "partner"."sharedById"
-  and "sharedBy"."deletedAt" is null
-  inner join "asset" on "asset"."ownerId" = "sharedBy"."id"
-  and "asset"."deletedAt" is null
-where
-  "partner"."sharedWithId" = $1
-  and (
-    "asset"."visibility" = 'timeline'
-    or "asset"."visibility" = 'hidden'
-  )
-  and not exists (
-    select
-      1
-    from
-      asset_lock
-    where
-      asset_lock."assetId" = "asset"."id"
-  )
-  and "asset"."id" in ($2)
-  and not (
-    "asset"."visibility" = 'hidden'
-    and exists (
-      select
-        1 as "exists"
-      from
-        "asset" as "lockedStill"
-      where
-        "lockedStill"."livePhotoVideoId" = "asset"."id"
-        and exists (
-          select
-            1
-          from
-            asset_lock
-          where
-            asset_lock."assetId" = "lockedStill"."id"
-        )
-    )
-  )
-
 -- AccessRepository.asset.checkSharedLinkAccess
 select
   "asset"."id" as "assetId",
@@ -930,15 +886,6 @@ where
         )
     )
   )
-
--- AccessRepository.timeline.checkPartnerAccess
-select
-  "partner"."sharedById"
-from
-  "partner"
-where
-  "partner"."sharedById" in ($1)
-  and "partner"."sharedWithId" = $2
 
 -- AccessRepository.workflow.checkOwnerAccess
 select
