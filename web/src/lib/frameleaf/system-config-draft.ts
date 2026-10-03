@@ -93,7 +93,7 @@ export const SECTION_CONFIG_KEYS: Readonly<Record<string, readonly (keyof AdminC
   notifications: ['notifications', 'templates'],
   server: ['server'],
   'smart-albums': ['smartAlbums'],
-  'storage-template': ['storageTemplate', 'physicalDeduplication'],
+  'storage-template': ['storageTemplate'],
   theme: ['theme'],
   trash: ['trash'],
   'user-settings': ['user'],

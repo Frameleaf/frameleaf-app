@@ -1696,12 +1696,6 @@ export type AdminConfigPasswordLoginDto = {
     /** Enabled */
     enabled: boolean;
 };
-export type AdminConfigPhysicalDeduplicationDto = {
-    /** Enabled */
-    enabled: boolean;
-    /** Master user ID */
-    masterUserId: string | null;
-};
 export type AdminConfigReverseGeocodingDto = {
     /** Enabled */
     enabled: boolean;
@@ -1803,7 +1797,6 @@ export type AdminConfigDto = {
     notifications: AdminConfigNotificationsDto;
     oauth: AdminConfigOAuthDto;
     passwordLogin: AdminConfigPasswordLoginDto;
-    physicalDeduplication?: AdminConfigPhysicalDeduplicationDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;

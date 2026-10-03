@@ -75,7 +75,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'storage',
     group: 'library',
-    sections: ['storage-template', 'deduplication', 'trash', 'user-settings', 'migration'],
+    sections: ['storage-template', 'trash', 'user-settings', 'migration'],
   },
   // FL-74 / FL-65: imports and "Originals & preservation" belong to every account; database backups
   // are the server's. One mount of each, in the template's order.
@@ -96,9 +96,10 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   {
     id: 'care',
     group: 'library',
-    sections: ['integrity-checks', 'enrichment-care'],
+    // universal storage: the deduplication history and verification live in Library Care
+    sections: ['integrity-checks', 'deduplication', 'enrichment-care'],
     personal: ['repair'],
-    order: ['integrity-checks', 'repair', 'enrichment-care'],
+    order: ['integrity-checks', 'repair', 'deduplication', 'enrichment-care'],
   },
   // FL-71: the old /admin/processing-destinations (workers, workload destinations), /admin/queues
   // and /admin/render-workers pages are sections of Compute & jobs, with the nightly settings. As in
@@ -438,7 +439,6 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   storage: {
     'storage-template': 'storage',
     migration: 'storage',
-    deduplication: 'identical_files',
     trash: 'trash',
     'user-settings': 'trash',
   },
@@ -446,7 +446,12 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
   intelligence: { 'machine-learning': 'search', 'smart-albums': 'smart_albums', metadata: 'recognition' },
   editing: { image: 'photos', 'video-transcoding': 'video_playback' },
   sharing: { sharing: 'sharing' },
-  care: { 'integrity-checks': 'health', repair: 'repairs', 'enrichment-care': 'repairs' },
+  care: {
+    'integrity-checks': 'health',
+    repair: 'repairs',
+    deduplication: 'identical_files',
+    'enrichment-care': 'repairs',
+  },
   processing: {
     workers: 'workers',
     routing: 'workers',

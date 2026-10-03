@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { JobOf } from 'src/types.js';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { BootstrapEventPriority, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { OfficialAdoptionResult } from 'src/fork-schema/official-adoption.js';
@@ -34,6 +35,23 @@ const CLAIM_EXPIRY_GRACE_MS = 5000;
 
 /** The backfill already completed (`ready`) or the library is fully active: start/resume only report. */
 const isBackfillFinished = ({ phase }: ForkState) => phase === 'ready' || phase === 'active';
+
+/**
+ * Universal storage: returning to an official server gives each asset that shares another asset's
+ * original its own copy. Refused up front, before anything is claimed, when the media folder's disk
+ * cannot hold those copies.
+ */
+export class ReturnSpaceError extends Error {
+  constructor(
+    readonly requiredBytes: number,
+    readonly availableBytes: number,
+  ) {
+    super(
+      `Returning needs ${requiredBytes} bytes of free disk space to give every shared original its own copy, but only ${availableBytes} bytes are available. Free up space and try again.`,
+    );
+    this.name = 'ReturnSpaceError';
+  }
+}
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -282,6 +300,7 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
     if (!Number.isSafeInteger(batchSize) || batchSize <= 0) {
       throw new Error('Backfill batch size must be a positive integer');
     }
+    await this.assertReturnSpace();
     await this.forkSchemaRepository.beginOrResumeReturnReconciliation();
     let configEvidence = await this.forkSchemaRepository.getReturnConfigReconciliation();
     if (!configEvidence) {
@@ -323,6 +342,18 @@ export class ForkSchemaMigrationService extends BaseService implements OnModuleI
       }
     }
     return this.status();
+  }
+
+  /** Refuses the return while the disk cannot hold a copy of every original still shared (see ReturnSpaceError). */
+  private async assertReturnSpace() {
+    const requiredBytes = await this.physicalFileRepository.getReturnSplitRequiredBytes();
+    if (!(requiredBytes > 0)) {
+      return;
+    }
+    const { available } = await this.storageRepository.checkDiskUsage(StorageCore.getMediaLocation());
+    if (available < requiredBytes) {
+      throw new ReturnSpaceError(requiredBytes, available);
+    }
   }
 
   @OnJob({ name: JobName.ForkSchemaBackfill, queue: QueueName.BackgroundTask })

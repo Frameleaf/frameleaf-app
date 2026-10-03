@@ -178,21 +178,12 @@ describe(CloudBackupDetailsService.name, () => {
     expect(unchanged.details.faces).toEqual([]);
   });
 
-  it('joins configured-master owner recreation and rolls back the asset and physical original together', async () => {
+  it('joins owner recreation and rolls back the asset and physical original together (universal storage)', async () => {
     const { ctx, sut, index } = setup();
     const { user } = await ctx.newUser();
     const { asset } = await ctx.newAsset({ ownerId: user.id });
     const saved = (await index.getAssetDetails([asset.id])).get(asset.id)!;
     await defaultDatabase.deleteFrom('asset').where('id', '=', asset.id).execute();
-    const config = await sut.getConfig({ withCache: false });
-    await sut.updateConfig({
-      ...config,
-      physicalDeduplication: {
-        ...config.physicalDeduplication,
-        enabled: true,
-        masterUserId: user.id,
-      },
-    });
     const input = {
       assetId: asset.id,
       ownerId: user.id,
