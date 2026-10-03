@@ -1,0 +1,11 @@
+{
+  "sub": "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+  "email": "owner@example.com",
+  "email_verified": true,
+  "name": "Sam Owner",
+  "picture": "https://frameleaf.cloud/avatars/0199a1b2.png",
+  "frameleaf_role": "admin",
+  "frameleaf_access": "owner",
+  "sid": "Xh3bQ0yVwU2kLr9s8nCq1",
+  "auth_time": 1790000000
+}

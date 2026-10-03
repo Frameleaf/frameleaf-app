@@ -22,6 +22,7 @@ import {
 import {
   CLOUD_IDEMPOTENCY_IN_FLIGHT_RETRIES,
   CONSENT_TERMS_FOR_FEATURES,
+  FRAMELEAF_CLOUD_ASSERTION_TTL_SECONDS,
   CloudEstimateRequest,
   CloudJobCreateRequest,
   FrameleafCloudError,
@@ -294,6 +295,75 @@ describe('Frameleaf Cloud client against a fake cloud (FL-159)', () => {
     await expect(resolveCloudGateway(deps)).resolves.toMatchObject({ state: CloudConnectionState.NotLinked });
 
     expect(cloud.requests).toEqual([]);
+  });
+
+  it('matches published client credentials fields with independently verified live assertions and a fresh uncached JTI', async () => {
+    const fixture = cloudContractFixture<Record<string, string>>('identity/token-request-client-credentials.json');
+    metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
+    await expect(resolveCloudGateway(deps)).resolves.toMatchObject({ state: CloudConnectionState.Ready });
+    cloudRepository.forget();
+    await expect(resolveCloudGateway(deps)).resolves.toMatchObject({ state: CloudConnectionState.Ready });
+
+    const requests = cloud.requests.filter(({ path }) => path === '/id/token');
+    expect(requests).toHaveLength(2);
+    const identity = metadata.get(SystemMetadataKey.FrameleafInstance) as FrameleafInstanceIdentity;
+    const assertions = requests.map((request) => {
+      const form = new URLSearchParams(request.body);
+      const assertion = form.get('client_assertion')!;
+      expect(Object.fromEntries(form)).toEqual({
+        ...fixture,
+        client_id: 'instance-1',
+        resource: `${cloud.url}/ml-eu`,
+        client_assertion: assertion,
+      });
+      expect(assertion).not.toBe(fixture.client_assertion); // The published JWT is illustrative, not a signer.
+      const [header, payload, signature] = assertion.split('.');
+      expect(
+        verify(
+          null,
+          Buffer.from(`${header}.${payload}`),
+          createPublicKey({ key: identity.publicJwk, format: 'jwk' }),
+          Buffer.from(signature, 'base64url'),
+        ),
+      ).toBe(true);
+      expect(part(assertion, 0)).toEqual({ alg: 'EdDSA', typ: 'JWT', kid: identity.kid });
+      const claims = part(assertion, 1);
+      expect(claims).toEqual({
+        iss: 'instance-1',
+        sub: 'instance-1',
+        aud: `${cloud.url}/id/token`,
+        jti: expect.any(String),
+        iat: expect.any(Number),
+        exp: expect.any(Number),
+      });
+      expect(claims.exp - claims.iat).toBe(FRAMELEAF_CLOUD_ASSERTION_TTL_SECONDS);
+      expect(claims.exp - claims.iat).toBeLessThanOrEqual(300);
+      expect(claims.iat).toBeLessThanOrEqual(Math.floor(Date.now() / 1000));
+      expect(claims.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+      expect(proofKey(request.dpop ?? undefined, 'POST', `${cloud.url}/id/token`)).toBe(identity.kid);
+      return claims;
+    });
+    expect(assertions[0].jti).not.toBe(assertions[1].jti);
+    expect(part(cloud.token!, 1).cnf.jkt).toBe(identity.kid); // Retains the actual bound positive control.
+  });
+
+  it('rejects the exact published unbound instance response through accessToken and never caches it', async () => {
+    const response = cloudContractFixture<{ access_token: string }>('identity/token-response-instance.json');
+    expect(part(response.access_token, 1)).not.toHaveProperty('cnf');
+    metadata.set(SystemMetadataKey.FrameleafCloudLink, link());
+    await expect(resolveCloudGateway(deps)).resolves.toMatchObject({ state: CloudConnectionState.Ready });
+    cloudRepository.forget();
+    const document = await cloudRepository.discovery(cloud.url);
+    const signer = identity.currentSigner();
+    cloud.respond = ({ path }) => (path === '/id/token' ? { status: 200, body: response } : undefined);
+    const before = cloud.requests.filter(({ path }) => path === '/id/token').length;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(
+        cloudRepository.accessToken(document, 'instance-1', `${cloud.url}/ml-eu`, signer),
+      ).rejects.toThrow('cnf.jkt');
+    }
+    expect(cloud.requests.filter(({ path }) => path === '/id/token')).toHaveLength(before + 2);
+    // This is deliberate negative conformance; no JWT mutation adds a binding to the published response.
   });
 
   it('creates the identity key once (0600, RFC 7638 kid) and mints a token for the regional gateway', async () => {
