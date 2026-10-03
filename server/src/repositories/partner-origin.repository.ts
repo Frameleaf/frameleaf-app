@@ -293,6 +293,28 @@ export class PartnerOriginRepository {
     `.execute(this.db);
   }
 
+  /**
+   * FL-326 (spec §5.2, partner-people-locked): the "From {owner}'s library" label of `ownerId`'s own copies
+   * among `ids`: the original uploader's id and current name. Copies of other owners are never labelled.
+   */
+  async getOriginLabels(
+    kind: OriginKind,
+    ids: string[],
+    ownerId: string,
+  ): Promise<Map<string, { rootOwnerId: string; rootOwnerName: string }>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const { table, key } = TABLES[kind];
+    const { rows } = await sql<{ id: string; rootOwnerId: string; rootOwnerName: string }>`
+      SELECT origin.${sql.id(key)} AS id, origin."rootOwnerId", root.name AS "rootOwnerName"
+      FROM ${sql.raw(table)} origin
+      JOIN public."user" root ON root.id = origin."rootOwnerId"
+      WHERE origin.${sql.id(key)} = ANY(${ids}::uuid[]) AND origin."ownerId" = ${ownerId}::uuid
+    `.execute(this.db);
+    return new Map(rows.map(({ id, rootOwnerId, rootOwnerName }) => [id, { rootOwnerId, rootOwnerName }]));
+  }
+
   /** Partnerships that have never been backfilled (existing ones at upgrade, spec §4.7). */
   async getPartnershipsWithoutBackfill(): Promise<{ sharedById: string; sharedWithId: string }[]> {
     const { rows } = await sql<{ sharedById: string; sharedWithId: string }>`

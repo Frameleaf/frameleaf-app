@@ -83,7 +83,17 @@ export class AlbumService extends BaseService {
     albums = await this.hideNsfwAlbumThumbnails(auth, albums, privacyOptions, albumMetadata);
 
     const readable = await this.readableParents(auth, albums);
-    return albums.map((album) => this.withReadableParent(this.toListItem(album, albumMetadata), readable));
+    // FL-326: the viewer's own albums copied from a partner name the library they came from
+    const origins = await this.partnerOriginRepository.getOriginLabels(
+      'album',
+      albums.map((album) => album.id),
+      ownerId,
+    );
+    return albums.map((album) => {
+      const item = this.withReadableParent(this.toListItem(album, albumMetadata), readable);
+      const origin = origins.get(album.id);
+      return origin ? { ...item, origin } : item;
+    });
   }
 
   /**
@@ -203,6 +213,16 @@ export class AlbumService extends BaseService {
     };
   }
 
+  /** FL-326: the partner library the viewer's own album was copied from; never shown through a shared link. */
+  private async originOf(auth: AuthDto, albumId: string) {
+    if (auth.sharedLink) {
+      return {};
+    }
+    const labels = await this.partnerOriginRepository.getOriginLabels('album', [albumId], auth.user.id);
+    const origin = labels.get(albumId);
+    return origin ? { origin } : {};
+  }
+
   async get(auth: AuthDto, id: string, { suppressedOnly }: GetAlbumInfoDto = {}): Promise<AlbumResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
     await this.albumRepository.updateThumbnails();
@@ -229,6 +249,7 @@ export class AlbumService extends BaseService {
         : undefined,
       coverFollowsNewest: (await this.albumRepository.isCoverFollowingNewest(album.id)) === true,
       ...(await this.smartStateOf(auth, album.id)),
+      ...(await this.originOf(auth, album.id)),
     };
   }
 
