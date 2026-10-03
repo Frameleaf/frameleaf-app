@@ -46,6 +46,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
+  import { locale } from '$lib/stores/preferences.store';
   import '$lib/frameleaf/photography/workspace.css';
 
   let section = $state<
@@ -115,7 +116,7 @@
   );
   const cover = (id: string) => getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail });
   const dateLabel = (date: string) =>
-    new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    new Date(`${date}T12:00:00`).toLocaleDateString($locale, { month: 'short', day: 'numeric', year: 'numeric' });
   const failure = (cause: unknown) =>
     cause instanceof Error ? cause.message : 'The request could not be completed. Try again.';
 
@@ -852,7 +853,7 @@
                 {#if summary}<small class="phw-small"
                     >{summary.submittedRounds} selection {summary.submittedRounds === 1 ? 'round' : 'rounds'} · {summary.unpaidOrders}
                     unpaid {summary.unpaidOrders === 1 ? 'order' : 'orders'} · {summary.pendingEdits ?? 0} awaiting editing{#if summary.selectionDeadline}
-                      · Selections due {new Date(summary.selectionDeadline).toLocaleDateString()}{/if}</small
+                      · Selections due {new Date(summary.selectionDeadline).toLocaleDateString($locale)}{/if}</small
                   >{/if}
                 <footer>
                   <time datetime={shoot.date}>{dateLabel(shoot.date)}</time><span
