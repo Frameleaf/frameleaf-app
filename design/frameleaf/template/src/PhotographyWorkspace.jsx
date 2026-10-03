@@ -18,11 +18,28 @@ import {
   readSession,
 } from "./photography-edit.mjs";
 import "./photography-workspace.css";
+import {
+  PhotographyWorkflow,
+  PhotographyProjectNav,
+  PhotographyProjectsSummary,
+} from "./PhotographyWorkflow";
+import { Watermark } from "./PhotographyWatermark";
+import {
+  seedPhotographyProjects,
+  deliveryBlockers,
+  projectNextAction,
+  createSelectionOrder,
+} from "./photography-workflow.mjs";
 
 const sections = [
-  ["shoots", "Shoots", "mdiCameraOutline"],
+  ["shoots", "Projects", "mdiCameraOutline"],
+  ["intake", "Intake & assembly", "mdiFolderDownloadOutline"],
+  ["workflow", "Client workflow", "mdiAccountHeartOutline"],
+  ["orders", "Orders & delivery", "mdiClipboardCheckOutline"],
   ["galleries", "Galleries", "mdiImageMultipleOutline"],
+  ["templates", "Presentation", "mdiViewDashboardOutline"],
   ["website", "Website", "mdiWeb"],
+  ["watermarks", "Watermarks", "mdiBrushOutline"],
   ["branding", "Branding", "mdiPaletteOutline"],
   ["publishing", "Publishing", "mdiCloudUploadOutline"],
 ];
@@ -61,26 +78,6 @@ function Toggle({ label, checked, onChange, hint, disabled }) {
   );
 }
 
-function Watermark({ brand, enabled = true }) {
-  if (!enabled) return null;
-  return (
-    <span
-      className={`phw-watermark at-${brand.watermarkPosition}`}
-      style={{
-        color: brand.watermarkColor,
-        opacity: brand.watermarkOpacity / 100,
-        fontSize: `${brand.watermarkSize}cqw`,
-      }}
-    >
-      {brand.logoImage ? (
-        <img src={brand.logoImage} alt={brand.name} />
-      ) : (
-        brand.logo || brand.name
-      )}
-    </span>
-  );
-}
-
 // This workspace is a local design simulation: invitations, publication and
 // ZIP exports change preview state only. All original media stays untouched.
 export function PhotographyWorkspace({
@@ -96,9 +93,12 @@ export function PhotographyWorkspace({
 }) {
   const [state, setState] = useState(() => {
     try {
-      return readStudioState(window.localStorage);
+      return seedPhotographyProjects(
+        readStudioState(window.localStorage),
+        createProofGallery,
+      );
     } catch {
-      return readStudioState(null);
+      return seedPhotographyProjects(readStudioState(null), createProofGallery);
     }
   });
   const [editSessions] = useState(() => {
@@ -130,6 +130,7 @@ export function PhotographyWorkspace({
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
+  const [projectFilter, setProjectFilter] = useState("All projects");
   const [dialog, setDialog] = useState(null);
   const [saving, setSaving] = useState(true);
   const [message, setMessage] = useState("");
@@ -236,13 +237,22 @@ export function PhotographyWorkspace({
     }));
   }
   function changeGallery(patch) {
-    setState((current) => ({
-      ...current,
-      galleries: {
-        ...current.galleries,
-        [shoot.id]: { ...current.galleries[shoot.id], ...patch },
-      },
-    }));
+    setState((current) => {
+      const previous = {
+        ...createProofGallery(shoot.id),
+        ...current.galleries[shoot.id],
+      };
+      const next = { ...previous, ...patch };
+      if (next.workflowEnabled && patch.submitted && !previous.order)
+        next.order = createSelectionOrder(next, next.clientSelected);
+      return {
+        ...current,
+        galleries: {
+          ...current.galleries,
+          [shoot.id]: next,
+        },
+      };
+    });
   }
   function changeExport(patch) {
     changeGallery({ export: { ...gallery.export, ...patch }, zipReady: false });
@@ -258,13 +268,22 @@ export function PhotographyWorkspace({
       const next = current.photos.map((photo) =>
         ids.includes(photo.id) ? { ...photo, ...patch } : photo,
       );
-      const allowed = next
-        .filter(
-          (photo) =>
-            photo.shootId === shoot.id && photo.selected && !photo.rejected,
-        )
-        .map((photo) => photo.id);
+      const allowed = proofPhotos({ ...current, photos: next }, shoot.id).map(
+        (photo) => photo.id,
+      );
       const previous = current.galleries[shoot.id];
+      const affectsProof = [
+        "selected",
+        "rejected",
+        "locked",
+        "withheld",
+        "importFailed",
+        "edited",
+      ].some((key) => key in patch);
+      const affectsFinals =
+        affectsProof &&
+        (!previous?.workflowEnabled ||
+          previous.order?.photoIds.some((id) => ids.includes(id)));
       return {
         ...current,
         photos: next,
@@ -279,8 +298,16 @@ export function PhotographyWorkspace({
                 submitted:
                   previous.clientSelected.every((id) => allowed.includes(id)) &&
                   previous.submitted,
-                approved: false,
-                zipReady: false,
+                approved: affectsFinals ? false : previous.approved,
+                zipReady: affectsFinals ? false : previous.zipReady,
+                delivered:
+                  affectsFinals && previous.workflowEnabled
+                    ? false
+                    : previous.delivered,
+                published: false,
+                ...(affectsFinals && previous.order
+                  ? { order: { ...previous.order, finalsApproved: false } }
+                  : {}),
               },
             }
           : current.galleries,
@@ -291,7 +318,13 @@ export function PhotographyWorkspace({
   function openEditor(
     items = chosen.length ? chosen : photos.filter((photo) => !photo.rejected),
   ) {
-    if (items.length) onOpenEditor?.({ photos: items, shoot });
+    if (items.length)
+      onOpenEditor?.({
+        photos: items,
+        shoot,
+        returnSection: section,
+        returnDetail: section === "shoots",
+      });
   }
 
   function createGallery() {
@@ -315,11 +348,90 @@ export function PhotographyWorkspace({
 
   function previewGallery() {
     onPreviewGallery?.({
-      photos: gallery?.delivered ? clientPhotos : proofs,
+      photos: gallery?.workflowEnabled
+        ? proofs
+        : gallery?.delivered
+          ? clientPhotos
+          : proofs,
       shoot,
       brand,
-      gallery: { ...gallery, expired, delivered: !!gallery?.delivered },
+      layout: gallery?.template || "portrait",
+      returnSection: section,
+      spacing: gallery?.spacing || "comfortable",
+      gallery: {
+        ...gallery,
+        expired,
+        delivered: !!gallery?.delivered,
+        photoChapters: Object.fromEntries(
+          proofs.map((photo) => [photo.id, photo.chapter || "The collection"]),
+        ),
+        photoNumbers: Object.fromEntries(
+          photos.map((photo, index) => [
+            photo.id,
+            String(index + 1).padStart(3, "0"),
+          ]),
+        ),
+      },
     });
+  }
+
+  function ingestFiles(files) {
+    const supported =
+      /\.(cr2|cr3|nef|arw|raf|dng|orf|rw2|jpe?g|png|webp|heic)$/i;
+    const known = new Set(
+      photos
+        .flatMap((photo) =>
+          [photo.fileName, photo.jpegFileName].filter(Boolean),
+        )
+        .map((name) => name.toLowerCase()),
+    );
+    const batch = new Map();
+    let duplicates = 0;
+    for (const file of files) {
+      if (known.has(file.name.toLowerCase())) {
+        duplicates++;
+        continue;
+      }
+      known.add(file.name.toLowerCase());
+      const stem = file.name.replace(/\.[^.]+$/, "").toLowerCase();
+      const raw = /\.(cr2|cr3|nef|arw|raf|dng|orf|rw2)$/i.test(file.name);
+      const jpeg = /\.jpe?g$/i.test(file.name);
+      const previous = batch.get(stem);
+      if (previous && (raw || jpeg)) {
+        if (raw)
+          Object.assign(previous, {
+            raw: true,
+            fileName: file.name,
+            extension: file.name.split(".").pop().toUpperCase(),
+          });
+        else previous.jpegFileName = file.name;
+        continue;
+      }
+      batch.set(stem, {
+        id: `${shoot.id}-intake-${Date.now()}-${batch.size}`,
+        shootId: shoot.id,
+        name: file.name,
+        fileName: file.name,
+        jpegFileName: jpeg ? file.name : "",
+        raw,
+        extension: file.name.split(".").pop().toUpperCase(),
+        image: demoPhotos[batch.size % demoPhotos.length].image,
+        rating: 0,
+        selected: false,
+        edited: false,
+        rejected: false,
+        deliverable: false,
+        chapter: gallery?.chapters?.[0] || "",
+        importFailed: !supported.test(file.name),
+      });
+    }
+    setState((current) => ({
+      ...current,
+      photos: [...current.photos, ...batch.values()],
+    }));
+    say(
+      `${batch.size} sample captures added; ${duplicates} duplicate filenames skipped. Files are not uploaded or decoded in this prototype.`,
+    );
   }
 
   function createShoot(event) {
@@ -415,6 +527,10 @@ export function PhotographyWorkspace({
 
   function prepareZip() {
     if (!gallery.approved || !clientPhotos.length) return;
+    if (deliveryBlockers(gallery, photos).length) {
+      say(deliveryBlockers(gallery, photos)[0]);
+      return;
+    }
     changeGallery({ zipReady: true });
     say(
       `${clientPhotos.length} ${gallery.export.format} files prepared in the ZIP preview. No files were downloaded.`,
@@ -423,6 +539,10 @@ export function PhotographyWorkspace({
 
   function deliverFinals() {
     if (!gallery.approved || !gallery.zipReady || !clientPhotos.length) return;
+    if (deliveryBlockers(gallery, photos).length) {
+      say(deliveryBlockers(gallery, photos)[0]);
+      return;
+    }
     const ids = clientPhotos.map((photo) => photo.id);
     setState((current) => ({
       ...current,
@@ -438,7 +558,6 @@ export function PhotographyWorkspace({
           ...current.galleries[shoot.id],
           delivered: true,
           downloadAllowed: true,
-          watermark: gallery.export.watermark,
         },
       },
     }));
@@ -460,12 +579,27 @@ export function PhotographyWorkspace({
           ? "Your work, in your own space."
           : section === "branding"
             ? "Keep every gallery and delivery recognisably yours."
-            : "Publish when you are ready. Keep working anywhere.";
+            : {
+                intake: "Bring every capture into a considered collection.",
+                workflow: "Proof, choose, finish and deliver — on your terms.",
+                orders:
+                  "The chosen photographs, their finishing touches and the final handoff.",
+                templates:
+                  "Thoughtful covers, chapters and layouts for every kind of shoot.",
+                watermarks:
+                  "Full studio names, script signatures and your uploaded logo.",
+              }[section] ||
+              "Publish when you are ready. Keep working anywhere.";
   const listing = state.shoots
-    .filter((item) =>
-      `${item.name} ${item.client} ${item.type}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+    .filter(
+      (item) =>
+        `${item.name} ${item.client} ${item.type}`
+          .toLowerCase()
+          .includes(search.toLowerCase()) &&
+        (projectFilter === "All projects" ||
+          (projectFilter === "Active"
+            ? item.status !== "Delivered"
+            : item.status === projectFilter)),
     )
     .sort((a, b) =>
       sort === "name"
@@ -500,6 +634,7 @@ export function PhotographyWorkspace({
               aria-current={section === id ? "page" : undefined}
               onClick={() => {
                 setSection(id);
+                if (id === "shoots") setDetail(false);
                 setMessage("");
               }}
             >
@@ -549,13 +684,32 @@ export function PhotographyWorkspace({
                 primary
                 onClick={() => setDialog("new-shoot")}
               >
-                New shoot
+                New project
               </Button>
             )}
             {section === "galleries" && gallery && (
               <Button icon="mdiEyeOutline" primary onClick={previewGallery}>
                 Client preview
               </Button>
+            )}
+            {[
+              "intake",
+              "workflow",
+              "orders",
+              "templates",
+              "watermarks",
+            ].includes(section) && (
+              <select
+                aria-label="Current project"
+                value={shoot.id}
+                onChange={(event) => selectShoot(event.target.value)}
+              >
+                {state.shoots.map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
             )}
             {section === "website" && (
               <Button
@@ -595,25 +749,49 @@ export function PhotographyWorkspace({
         <main className="phw-scroll">
           {section === "shoots" && !detail && (
             <>
+              <PhotographyProjectsSummary
+                state={state}
+                onOpen={(id, next) => {
+                  selectShoot(id);
+                  setSection(next);
+                  setDetail(next === "shoots");
+                }}
+              />
+              <div
+                className="phw-tabs phx-project-filters"
+                aria-label="Project status"
+              >
+                {["All projects", "Active", "Proofing", "Delivered"].map(
+                  (name) => (
+                    <button
+                      key={name}
+                      aria-pressed={projectFilter === name}
+                      onClick={() => setProjectFilter(name)}
+                    >
+                      {name}
+                    </button>
+                  ),
+                )}
+              </div>
               <div className="phw-list-tools">
                 <label className="phw-search">
                   <Icon name="mdiMagnify" />
                   <input
-                    aria-label="Search shoots"
-                    placeholder="Search shoots or clients"
+                    aria-label="Search projects"
+                    placeholder="Search projects or clients"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                   />
                 </label>
                 <select
-                  aria-label="Sort shoots"
+                  aria-label="Sort projects"
                   value={sort}
                   onChange={(event) => setSort(event.target.value)}
                 >
                   <option value="date">Newest first</option>
-                  <option value="name">Shoot name</option>
+                  <option value="name">Project name</option>
                 </select>
-                <span>{listing.length} shoots</span>
+                <span>{listing.length} projects</span>
               </div>
               <div className="phw-shoot-grid">
                 {listing.map((item) => (
@@ -622,6 +800,7 @@ export function PhotographyWorkspace({
                     key={item.id}
                     onClick={() => {
                       selectShoot(item.id);
+                      setSection("shoots");
                       setDetail(true);
                     }}
                   >
@@ -632,6 +811,23 @@ export function PhotographyWorkspace({
                     <div className="phw-shoot-text">
                       <strong>{item.name}</strong>
                       <span>{item.client}</span>
+                      <span className="phx-card-action">
+                        <Icon
+                          name={
+                            projectNextAction(
+                              state.galleries[item.id],
+                              photosForShoot(state, item.id),
+                            ).icon
+                          }
+                          size={13}
+                        />
+                        {
+                          projectNextAction(
+                            state.galleries[item.id],
+                            photosForShoot(state, item.id),
+                          ).label
+                        }
+                      </span>
                       <footer>
                         <time>{dateLabel(item.date)}</time>
                         <span>
@@ -646,7 +842,7 @@ export function PhotographyWorkspace({
               {!listing.length && (
                 <div className="phw-empty">
                   <Icon name="mdiFolderSearchOutline" size={36} />
-                  <h2>No shoots match that search</h2>
+                  <h2>No projects match that search</h2>
                   <p>Try a client name, or start a new shoot.</p>
                   <Button onClick={() => setSearch("")}>Clear search</Button>
                 </div>
@@ -669,7 +865,7 @@ export function PhotographyWorkspace({
                     setSelected([]);
                   }}
                 >
-                  All shoots
+                  All projects
                 </Button>
                 <div className="phw-stages" aria-label="Shoot workflow">
                   {shootStages.map((stage, index) => (
@@ -691,6 +887,7 @@ export function PhotographyWorkspace({
                   ))}
                 </div>
               </div>
+              <PhotographyProjectNav section="shoots" onSection={setSection} />
               <div className="phw-detail-layout">
                 <section className="phw-contact-sheet">
                   <div className="phw-contact-toolbar">
@@ -1046,6 +1243,13 @@ export function PhotographyWorkspace({
 
           {section === "galleries" && (
             <>
+              <PhotographyProjectNav
+                section="galleries"
+                onSection={(next) => {
+                  setSection(next);
+                  if (next === "shoots") setDetail(true);
+                }}
+              />
               <div className="phw-list-tools">
                 <Field label="Shoot">
                   <select
@@ -1115,7 +1319,15 @@ export function PhotographyWorkspace({
                       </div>
                       <Watermark
                         brand={brand}
-                        enabled={gallery.watermark && !gallery.delivered}
+                        enabled={
+                          gallery.delivered
+                            ? gallery.webWatermark
+                            : gallery.watermark
+                        }
+                        variant={gallery.delivered ? "web" : "proof"}
+                        pattern={
+                          gallery.delivered ? undefined : gallery.proofPattern
+                        }
                       />
                     </div>
                     <div className="phw-gallery-summary">
@@ -1222,13 +1434,21 @@ export function PhotographyWorkspace({
                           }
                           icon="mdiCheckCircleOutline"
                           onClick={() => {
+                            if (gallery.workflowEnabled) {
+                              setSection("orders");
+                              return;
+                            }
                             changeGallery({ approved: true });
                             say(
                               "Client selection approved for final delivery.",
                             );
                           }}
                         >
-                          {gallery.approved ? "Approved" : "Approve selection"}
+                          {gallery.workflowEnabled
+                            ? "Review order & finals"
+                            : gallery.approved
+                              ? "Approved"
+                              : "Approve selection"}
                         </Button>
                       </div>
                       <div className="phw-export-fields">
@@ -1291,7 +1511,11 @@ export function PhotographyWorkspace({
                         <Button
                           icon="mdiPackageVariant"
                           primary
-                          disabled={!gallery.approved || !clientPhotos.length}
+                          disabled={
+                            !gallery.approved ||
+                            !clientPhotos.length ||
+                            deliveryBlockers(gallery, photos).length > 0
+                          }
                           onClick={prepareZip}
                         >
                           {gallery.zipReady
@@ -1300,7 +1524,11 @@ export function PhotographyWorkspace({
                         </Button>
                         <Button
                           icon="mdiCheckAll"
-                          disabled={!gallery.zipReady || gallery.delivered}
+                          disabled={
+                            !gallery.zipReady ||
+                            gallery.delivered ||
+                            deliveryBlockers(gallery, photos).length > 0
+                          }
                           onClick={deliverFinals}
                         >
                           Deliver finals
@@ -1372,6 +1600,9 @@ export function PhotographyWorkspace({
                           min="1"
                           max="50"
                           value={gallery.selectionLimit}
+                          disabled={
+                            gallery.workflowEnabled && gallery.submitted
+                          }
                           onChange={(event) =>
                             changeGallery({
                               selectionLimit: Math.max(
@@ -1426,7 +1657,9 @@ export function PhotographyWorkspace({
                         Edit proof selection
                       </Button>
                       <p className="phw-small">
-                        Only selected, kept photos enter a proof gallery.
+                        {gallery.proofScope === "all"
+                          ? "Every eligible ingested capture enters this proof gallery."
+                          : "Only selected, kept photos enter this proof gallery."}
                         Originals are never shared by these previews.
                       </p>
                     </div>
@@ -1561,6 +1794,10 @@ export function PhotographyWorkspace({
                       <option value="editorial">Editorial</option>
                       <option value="grid">Gallery grid</option>
                       <option value="slideshow">Full-screen slideshow</option>
+                      <option value="wedding">Wedding story</option>
+                      <option value="portrait">Family & portrait</option>
+                      <option value="fine-art">Editorial & fine art</option>
+                      <option value="proofing">Proofing & sales</option>
                     </select>
                   </Field>
                   <Field label="Typography">
@@ -1647,6 +1884,36 @@ export function PhotographyWorkspace({
                 </div>
               </aside>
             </div>
+          )}
+
+          {["intake", "workflow", "orders", "templates", "watermarks"].includes(
+            section,
+          ) && (
+            <PhotographyWorkflow
+              key={`${shoot.id}-${section}`}
+              section={section}
+              shoot={shoot}
+              photos={photos}
+              gallery={gallery || createProofGallery(shoot.id)}
+              brand={brand}
+              onGalleryChange={changeGallery}
+              onBrandChange={changeBrand}
+              onShootChange={changeShoot}
+              onPhotoChange={changePhotos}
+              onSection={(next) => {
+                setSection(next);
+                if (next === "shoots") setDetail(true);
+              }}
+              onImport={importSamples}
+              onIngest={ingestFiles}
+              onEdit={openEditor}
+              onPreview={previewGallery}
+              onPrepare={prepareZip}
+              onDeliver={deliverFinals}
+              uploadLogo={uploadLogo}
+              logoError={logoError}
+              notify={say}
+            />
           )}
 
           {section === "branding" && (

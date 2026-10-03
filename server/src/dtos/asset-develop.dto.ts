@@ -14,17 +14,6 @@ import { ApiCustomExtension } from 'src/enum.js';
  */
 export const ASSET_DEVELOP_RECIPE_VERSION = 1;
 
-/** FL-282: explicit native semantics; version 1 keeps its existing renderer. */
-export const DarktableDevelopRecipeSchema = z
-  .strictObject({
-    version: z.literal(2),
-    renderer: z.literal('darktable/5.6.1'),
-    exposureEV: z.number().min(-18).max(18).describe('Manual native exposure in EV, without camera bias compensation'),
-  })
-  .meta({ id: 'DarktableDevelopRecipe' });
-
-export type DarktableDevelopRecipe = z.infer<typeof DarktableDevelopRecipeSchema>;
-
 export enum AssetDevelopPreset {
   Original = 'Original',
   Vivid = 'Vivid',
@@ -363,6 +352,114 @@ export const AssetDevelopMaskSchema = AssetDevelopMaskFields.refine(
   )
   .meta({ id: 'AssetDevelopMask' });
 
+/** Native controls are explicit darktable units; version 1 remains the quick-edit protocol. */
+const NativeCurveSchema = z
+  .array(z.strictObject({ x: unit('Input'), y: unit('Output') }))
+  .min(2)
+  .max(20)
+  .refine(
+    (points) =>
+      points[0].x === 0 &&
+      points.at(-1)!.x === 1 &&
+      points.every((point, i) => i === 0 || point.x - points[i - 1].x >= 0.0025),
+    { error: 'Curves need x coordinates at least 0.0025 apart with endpoints at 0 and 1' },
+  );
+const NativeToneFields = {
+  exposureEV: z.number().meta({ format: 'double' }).min(-18).max(18).default(0),
+  shadows: z.number().meta({ format: 'double' }).min(-100).max(100).optional(),
+  highlights: z.number().meta({ format: 'double' }).min(-100).max(100).optional(),
+  saturation: z.number().meta({ format: 'double' }).min(0).max(2).optional(),
+  contrast: z.number().meta({ format: 'double' }).min(0.01).max(1.99).optional(),
+  curve: NativeCurveSchema.optional(),
+};
+const NativeMaskSchema = AssetDevelopMaskFields.omit({ adjustments: true, detector: true })
+  .extend({
+    coordinates: z.literal('sensor-active'),
+    adjustments: z.strictObject(NativeToneFields),
+    strokes: z.array(AssetDevelopStrokeSchema.strict()).max(ASSET_DEVELOP_MAX_STROKES).optional(),
+  })
+  .strict()
+  .refine((mask) => mask.kind !== AssetDevelopMaskKind.Linear || mask.x !== mask.endX || mask.y !== mask.endY, {
+    error: 'A gradient needs distinct endpoints',
+  })
+  .refine((mask) => mask.kind !== AssetDevelopMaskKind.Brush || !mask.enabled || !!mask.strokes?.length, {
+    error: 'A brush needs strokes',
+  })
+  .refine((mask) => !ASSET_DEVELOP_BITMAP_MASK_KINDS.includes(mask.kind) || !!mask.artifact, {
+    error: 'A raster mask needs an uploaded artifact',
+  })
+  .refine(
+    (mask) =>
+      mask.kind === AssetDevelopMaskKind.Brush || ASSET_DEVELOP_BITMAP_MASK_KINDS.includes(mask.kind) || !mask.strokes,
+    { error: 'Only brush and raster masks have refinement strokes' },
+  )
+  .refine((mask) => ASSET_DEVELOP_BITMAP_MASK_KINDS.includes(mask.kind) || !mask.artifact, {
+    error: 'Only raster masks have artifacts',
+  });
+
+export const DarktableDevelopRecipeSchema = z
+  .strictObject({
+    version: z.literal(2).meta({ type: 'integer', format: 'int32' }),
+    renderer: z.literal('darktable/5.6.1'),
+    ...NativeToneFields,
+    whiteBalance: z
+      .strictObject({
+        red: z.number().meta({ format: 'double' }).min(0.1).max(8),
+        green: z.number().meta({ format: 'double' }).min(0.1).max(8),
+        blue: z.number().meta({ format: 'double' }).min(0.1).max(8),
+      })
+      .optional()
+      .describe('Multipliers of native camera white-balance coefficients, not Kelvin estimates'),
+    noiseThreshold: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .max(1)
+      .optional()
+      .describe('Native pre-demosaic wavelet noise threshold'),
+    sharpen: z
+      .strictObject({
+        radius: z.number().meta({ format: 'double' }).min(0).max(99),
+        amount: z.number().meta({ format: 'double' }).min(0).max(2),
+        threshold: z.number().meta({ format: 'double' }).min(0).max(100),
+      })
+      .optional(),
+    lensCorrection: z
+      .boolean()
+      .optional()
+      .describe('Use native embedded metadata or Lensfun; refuse absent calibration'),
+    crop: AssetDevelopCropSchema.strict().optional(),
+    straighten: z.number().meta({ format: 'double' }).min(-45).max(45).optional(),
+    rotation: z
+      .union([
+        z.literal(0).meta({ type: 'integer', format: 'int32' }),
+        z.literal(90).meta({ type: 'integer', format: 'int32' }),
+        z.literal(180).meta({ type: 'integer', format: 'int32' }),
+        z.literal(270).meta({ type: 'integer', format: 'int32' }),
+      ])
+      .optional()
+      .describe('Additional clockwise rotation after camera orientation'),
+    flipHorizontal: z.boolean().optional(),
+    flipVertical: z.boolean().optional(),
+    sensorCanvas: z
+      .boolean()
+      .optional()
+      .describe('Unrotated, uncropped, uncorrected canvas for selecting sensor-space masks'),
+    masks: z
+      .array(NativeMaskSchema)
+      .max(ASSET_DEVELOP_MAX_MASKS)
+      .refine((masks) => new Set(masks.map((mask) => mask.id)).size === masks.length, {
+        error: 'Mask identifiers must be unique',
+      })
+      .optional(),
+  })
+  .refine((recipe) => recipeStrokePoints(recipe) <= ASSET_DEVELOP_MAX_RECIPE_POINTS, {
+    error: 'Too many mask stroke points',
+  })
+  .meta({ id: 'DarktableDevelopRecipe' });
+export type DarktableDevelopRecipe = z.infer<typeof DarktableDevelopRecipeSchema>;
+export type DarktableDevelopMask = NonNullable<DarktableDevelopRecipe['masks']>[number];
+
 /** The recipe fields without the whole-recipe checks, for `.pick` and the envelope's shape. */
 export const KnownAssetDevelopRecipeFields = z.object({
   version: z.literal(ASSET_DEVELOP_RECIPE_VERSION).meta({ format: 'double' }).describe('Recipe contract version'),
@@ -688,3 +785,5 @@ export class AssetDevelopFileQueryDto extends createZodDto(AssetDevelopFileQuery
 export class AssetDevelopRevisionParamDto extends createZodDto(AssetDevelopRevisionParamSchema) {}
 export class AssetDevelopRevisionResponseDto extends createZodDto(AssetDevelopRevisionResponseSchema) {}
 export class AssetDevelopResponseDto extends createZodDto(AssetDevelopResponseSchema) {}
+
+export class AssetDevelopSemanticMaskDto extends createZodDto(z.strictObject({ target: z.enum(['subject', 'sky']) })) {}

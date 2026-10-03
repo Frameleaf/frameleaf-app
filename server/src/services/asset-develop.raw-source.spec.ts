@@ -36,6 +36,7 @@ describe('AssetDevelopService sensor source', () => {
       mocks.storage as never,
       mocks.systemMetadata as never,
       mocks.mediaOperation as never,
+      mocks.machineLearning as never,
     );
   });
 

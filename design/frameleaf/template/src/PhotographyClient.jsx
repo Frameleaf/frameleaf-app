@@ -7,6 +7,12 @@ import {
   publicPhoto,
 } from "./photography-client.mjs";
 import "./photography-client.css";
+import { Watermark } from "./PhotographyWatermark";
+import {
+  selectionPrice,
+  money,
+  downloadablePhotos,
+} from "./photography-workflow.mjs";
 
 const fallbackPhotos = [
   "portrait",
@@ -62,21 +68,41 @@ export function PhotographyClient({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
+  const [chapter, setChapter] = useState("all");
+  const [compare, setCompare] = useState([]);
   const [opened, setOpened] = useState(null);
   const [comments, setComments] = useState(
     Array.isArray(context.gallery?.comments) ? context.gallery.comments : [],
   );
   const [comment, setComment] = useState("");
   const [dialog, setDialog] = useState(null);
-  const [page, setPage] = useState("Portfolio");
+  const [downloadPhotoId, setDownloadPhotoId] = useState(null);
+  const [page, setPage] = useState(website ? "Portfolio" : "Gallery");
   const [layout, setLayout] = useState(context.layout || "editorial");
   const [phone, setPhone] = useState(false);
   const [slide, setSlide] = useState(0);
   const access = website ? "open" : proofAccess(gallery, unlocked);
-  const shown =
-    filter === "selected"
-      ? photos.filter((photo) => selection.includes(photo.id))
-      : photos;
+  const shown = photos.filter(
+    (photo) =>
+      (filter !== "selected" || selection.includes(photo.id)) &&
+      (chapter === "all" || gallery.photoChapters?.[photo.id] === chapter),
+  );
+  const price = selectionPrice(gallery, selection);
+  const downloadable = gallery.workflowEnabled
+    ? downloadablePhotos(gallery, context.photos || []).map(publicPhoto)
+    : gallery.downloadAllowed
+      ? photos
+      : [];
+  const downloadSelection = downloadPhotoId
+    ? downloadable.filter((photo) => photo.id === downloadPhotoId)
+    : downloadable;
+  const chapters = gallery.chapters || [
+    ...new Set(Object.values(gallery.photoChapters || {})),
+  ];
+  const cover =
+    photos.find((photo) => photo.id === gallery.coverId) ||
+    photos.find((photo) => photo.image === shoot.cover) ||
+    photos[0];
   const current = photos.find((photo) => photo.id === opened);
   useEffect(() => {
     if (
@@ -98,10 +124,19 @@ export function PhotographyClient({
     setError(result.error || "");
   };
   const watermark = gallery.delivered
-    ? !!gallery.export?.watermark
+    ? (gallery.webWatermark ?? gallery.watermark)
     : gallery.watermark;
-  const renderPhoto = (photo, large = false) =>
-    !photo ? (
+  const renderPhoto = (
+    photo,
+    large = false,
+    marked = true,
+    finalExport = false,
+  ) => {
+    const finished =
+      gallery.delivered &&
+      (!gallery.workflowEnabled ||
+        downloadable.some((item) => item.id === photo?.id));
+    return !photo ? (
       <div className="pc-empty">
         Your published photographs will appear here.
       </div>
@@ -113,26 +148,23 @@ export function PhotographyClient({
           style={{ filter: photo.previewFilter }}
           loading={large ? "eager" : "lazy"}
         />
-        {!website && watermark && (
-          <span
-            className={`pc-watermark pc-watermark-${brand.watermarkPosition || "center"}`}
-            style={{
-              color: brand.watermarkColor || "#fff",
-              opacity: (brand.watermarkOpacity ?? 70) / 100,
-              fontSize: `${brand.watermarkSize || 6}cqw`,
-            }}
-            aria-label="Watermarked preview"
-          >
-            {brand.logoImage ? (
-              <img src={brand.logoImage} alt="" />
-            ) : (
-              brand.logo || brand.name
-            )}
-            {!gallery.delivered && <small>PROOF</small>}
-          </span>
+        {!website && marked && (
+          <Watermark
+            brand={brand}
+            enabled={
+              finalExport
+                ? !!gallery.export?.watermark
+                : finished
+                  ? (gallery.webWatermark ?? gallery.watermark)
+                  : gallery.watermark
+            }
+            variant={finished || finalExport ? "web" : "proof"}
+            pattern={finished || finalExport ? undefined : gallery.proofPattern}
+          />
         )}
       </div>
     );
+  };
   return (
     <main className={`pc-preview ${phone ? "pc-phone-preview" : ""}`}>
       <div className="pc-preview-bar">
@@ -183,6 +215,10 @@ export function PhotographyClient({
             <option value="editorial">Editorial</option>
             <option value="grid">Grid</option>
             <option value="slideshow">Slideshow</option>
+            <option value="wedding">Wedding story</option>
+            <option value="portrait">Family & portrait</option>
+            <option value="fine-art">Editorial & fine art</option>
+            <option value="proofing">Proofing & sales</option>
           </select>
         ) : (
           <select
@@ -216,15 +252,15 @@ export function PhotographyClient({
         )}
       </div>
       <section
-        className="pc-site"
+        className={`pc-site pc-family-${layout} pc-theme-${gallery.theme || "studio"} pc-type-${gallery.typography || "editorial"}`}
         style={{
           "--pc-ink": brand.color || "#33483f",
           "--pc-paper": brand.background || "#fafbf9",
           "--pc-text": brand.textColor || "#292e2a",
           "--pc-gap":
-            context.spacing === "compact"
+            (gallery.spacing || context.spacing) === "compact"
               ? "14px"
-              : context.spacing === "airy"
+              : (gallery.spacing || context.spacing) === "airy"
                 ? "44px"
                 : "28px",
           "--pc-font": ["editorial", "classic"].includes(brand.font)
@@ -233,7 +269,10 @@ export function PhotographyClient({
         }}
       >
         <header className="pc-header">
-          <button className="pc-brand" onClick={() => setPage("Portfolio")}>
+          <button
+            className="pc-brand"
+            onClick={() => setPage(website ? "Portfolio" : "Gallery")}
+          >
             {brand.logoImage ? (
               <img className="pc-logo" src={brand.logoImage} alt="" />
             ) : (
@@ -313,7 +352,7 @@ export function PhotographyClient({
                 ? "Enter the password your photographer shared with you."
                 : access === "expired"
                   ? "Contact your photographer to request a new link."
-                  : "Please try again shortly. Your photographs are still with the studio."}
+                  : "Please try again shortly."}
             </p>
             {access === "locked" && (
               <form
@@ -374,21 +413,37 @@ export function PhotographyClient({
                 {renderPhoto(photos[layout === "slideshow" ? slide : 0], true)}
               </section>
             ) : (
-              <section className="pc-gallery-intro">
-                <p className="pc-kicker">
-                  {gallery.delivered
-                    ? "YOUR FINISHED COLLECTION"
-                    : "YOUR PRIVATE GALLERY"}
-                </p>
-                <h1>{shoot.name}</h1>
-                <p>
-                  {shoot.client} · {shoot.date || "September 21, 2026"}
-                </p>
-                <p>
-                  {gallery.delivered
-                    ? "Your photographs are ready to keep, print, and share."
-                    : `Choose your ${gallery.selectionLimit} favourite photographs. We’ll take care of the finishing touches.`}
-                </p>
+              <section
+                className={`pc-gallery-cover pc-cover-${gallery.coverStyle || "split"}`}
+                style={{ "--pc-focal": `${gallery.focalPoint ?? 50}%` }}
+              >
+                {renderPhoto(cover, true)}
+                <div className="pc-gallery-intro">
+                  <p className="pc-kicker">
+                    {gallery.delivered
+                      ? "YOUR FINISHED COLLECTION"
+                      : "YOUR PRIVATE GALLERY"}
+                  </p>
+                  <h1>{shoot.name}</h1>
+                  <p>
+                    {shoot.client} · {shoot.date || "September 21, 2026"}
+                  </p>
+                  <p>
+                    {gallery.introduction ||
+                      (gallery.delivered
+                        ? "Your photographs are ready to keep, print, and share."
+                        : gallery.workflowEnabled
+                          ? `Take your time. Choose the photographs you love; we’ll finish your favourites.`
+                          : `Choose your ${gallery.selectionLimit} favourite photographs. We’ll take care of the finishing touches.`)}
+                  </p>
+                  {gallery.workflowEnabled && !gallery.delivered && (
+                    <p className="pc-package-line">
+                      {gallery.includedCount} finished photographs included
+                      {gallery.extraPriceCents > 0 &&
+                        ` · ${money(gallery.extraPriceCents, gallery.currency)} per additional photograph`}
+                    </p>
+                  )}
+                </div>
               </section>
             )}
             {!website && (
@@ -407,11 +462,34 @@ export function PhotographyClient({
                     Your favourites <small>{selection.length}</small>
                   </button>
                 </div>
+                {chapters.length > 1 && (
+                  <select
+                    aria-label="Gallery chapter"
+                    value={chapter}
+                    onChange={(e) => setChapter(e.target.value)}
+                  >
+                    <option value="all">Every chapter</option>
+                    {chapters.map((name) => (
+                      <option key={name}>{name}</option>
+                    ))}
+                  </select>
+                )}
                 <span className="grow" />
-                {gallery.downloadAllowed && (
+                {compare.length > 0 && (
+                  <Button
+                    disabled={compare.length !== 2}
+                    onClick={() => setDialog("compare")}
+                  >
+                    Compare {compare.length} photographs
+                  </Button>
+                )}
+                {downloadable.length > 0 && (
                   <Button
                     icon="mdiDownload"
-                    onClick={() => setDialog("download")}
+                    onClick={() => {
+                      setDownloadPhotoId(null);
+                      setDialog("download");
+                    }}
                   >
                     {gallery.delivered
                       ? "Download photographs"
@@ -436,7 +514,7 @@ export function PhotographyClient({
                 {error}
               </p>
             )}
-            {!website && gallery.submitted && (
+            {!website && gallery.submitted && !gallery.delivered && (
               <p className="pc-confirmation" role="status">
                 <Icon name="mdiCheckCircleOutline" />
                 Your selections have been sent to your photographer. We’ll be in
@@ -445,61 +523,167 @@ export function PhotographyClient({
             )}
             <section
               id="pc-portfolio"
-              className={`pc-grid pc-grid-${website ? layout : "proof"}`}
+              className={`pc-grid pc-grid-${layout}`}
               aria-label={
                 website ? "Portfolio photographs" : "Gallery photographs"
               }
             >
               {shown.map((photo, index) => (
-                <article
-                  key={photo.id}
-                  className={selection.includes(photo.id) ? "pc-selected" : ""}
-                >
-                  <button
-                    className="pc-photo-button"
-                    aria-label={`View ${photo.name}`}
-                    onClick={() => {
-                      setOpened(photo.id);
-                      setComment("");
-                    }}
-                  >
-                    {renderPhoto(photo)}
-                  </button>
-                  <div className="pc-caption">
-                    <span>
-                      {website
-                        ? [
-                            "Quiet moments",
-                            "Together, outside",
-                            "A place to remember",
-                          ][index % 3]
-                        : String(index + 1).padStart(2, "0")}
-                    </span>
-                    {!website && !gallery.delivered && (
-                      <button
-                        aria-label={`${selection.includes(photo.id) ? "Remove favourite" : "Favourite"} ${photo.name}`}
-                        aria-pressed={selection.includes(photo.id)}
-                        disabled={gallery.submitted}
-                        onClick={() => choose(photo.id)}
-                      >
-                        <Icon
-                          name={
-                            selection.includes(photo.id)
-                              ? "mdiHeart"
-                              : "mdiHeartOutline"
-                          }
-                          size={21}
-                        />
-                      </button>
+                <React.Fragment key={photo.id}>
+                  {!website &&
+                    (gallery.showChapters ?? true) &&
+                    gallery.photoChapters?.[photo.id] &&
+                    (index === 0 ||
+                      gallery.photoChapters[shown[index - 1].id] !==
+                        gallery.photoChapters[photo.id]) && (
+                      <div className="pc-chapter-title">
+                        <small>
+                          {String(
+                            chapters.indexOf(gallery.photoChapters[photo.id]) +
+                              1,
+                          ).padStart(2, "0")}
+                        </small>
+                        <h2>{gallery.photoChapters[photo.id]}</h2>
+                      </div>
                     )}
-                  </div>
-                </article>
+                  <article
+                    key={photo.id}
+                    className={
+                      selection.includes(photo.id) ? "pc-selected" : ""
+                    }
+                  >
+                    <button
+                      className="pc-photo-button"
+                      aria-label={`View ${photo.name}`}
+                      onClick={() => {
+                        setOpened(photo.id);
+                        setComment("");
+                      }}
+                    >
+                      {renderPhoto(photo)}
+                    </button>
+                    <div className="pc-caption">
+                      <span>
+                        {website
+                          ? [
+                              "Quiet moments",
+                              "Together, outside",
+                              "A place to remember",
+                            ][index % 3]
+                          : (gallery.showNumbers ?? true)
+                            ? `No. ${gallery.photoNumbers?.[photo.id] || String(photos.indexOf(photo) + 1).padStart(3, "0")}`
+                            : photo.name}
+                      </span>
+                      {!website && gallery.delivered && (
+                        <small className="pc-photo-rights">
+                          {downloadable.some((item) => item.id === photo.id)
+                            ? "Finished"
+                            : "Proof only"}
+                        </small>
+                      )}
+                      {!website && !gallery.delivered && (
+                        <button
+                          aria-label={`Compare ${photo.name}`}
+                          aria-pressed={compare.includes(photo.id)}
+                          onClick={() =>
+                            setCompare(
+                              compare.includes(photo.id)
+                                ? compare.filter((id) => id !== photo.id)
+                                : [...compare.slice(-1), photo.id],
+                            )
+                          }
+                        >
+                          <Icon name="mdiCompare" size={18} />
+                        </button>
+                      )}
+                      {!website && !gallery.delivered && (
+                        <button
+                          aria-label={`${selection.includes(photo.id) ? "Remove favourite" : "Favourite"} ${photo.name}`}
+                          aria-pressed={selection.includes(photo.id)}
+                          disabled={gallery.submitted}
+                          onClick={() => choose(photo.id)}
+                        >
+                          <Icon
+                            name={
+                              selection.includes(photo.id)
+                                ? "mdiHeart"
+                                : "mdiHeartOutline"
+                            }
+                            size={21}
+                          />
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                </React.Fragment>
               ))}
             </section>
             {!shown.length && (
               <p className="pc-empty">
                 Your favourites will appear here when you choose photographs.
               </p>
+            )}
+            {!website && gallery.workflowEnabled && (
+              <div className="pc-selection-tray">
+                <span>
+                  <Icon
+                    name={
+                      gallery.delivered
+                        ? "mdiImageCheckOutline"
+                        : "mdiHeartOutline"
+                    }
+                  />
+                  <strong>
+                    {gallery.delivered
+                      ? `${downloadable.length} finished photographs ready`
+                      : `${selection.length} photographs chosen`}
+                  </strong>
+                  <small>
+                    {gallery.delivered
+                      ? "Ready to download"
+                      : `${price.included} included · ${price.extra} additional`}
+                  </small>
+                </span>
+                <div>
+                  <strong>
+                    {money(
+                      gallery.order?.totalCents ?? price.totalCents,
+                      gallery.currency,
+                    )}
+                  </strong>
+                  <small>
+                    {gallery.delivered
+                      ? gallery.order?.totalCents > 0
+                        ? "Paid"
+                        : "Included in your package"
+                      : gallery.submitted
+                        ? "Submitted for photographer review"
+                        : "Additional photographs · estimate"}
+                  </small>
+                </div>
+                {gallery.delivered ? (
+                  <Button
+                    disabled={!downloadable.length}
+                    onClick={() => {
+                      setDownloadPhotoId(null);
+                      setDialog("download");
+                    }}
+                    icon="mdiDownload"
+                  >
+                    Download finished collection
+                  </Button>
+                ) : (
+                  <Button
+                    primary
+                    disabled={!selection.length || gallery.submitted}
+                    onClick={() => setDialog("submit")}
+                  >
+                    {gallery.submitted
+                      ? "Selections submitted"
+                      : "Review selections"}
+                  </Button>
+                )}
+              </div>
             )}
             {website && (
               <section className="pc-site-contact">
@@ -525,6 +709,21 @@ export function PhotographyClient({
       {current && access === "open" && (
         <Dialog wide title={current.name} close={() => setOpened(null)}>
           {renderPhoto(current, true)}
+          {!website &&
+            downloadable.some((photo) => photo.id === current.id) && (
+              <div className="pc-dialog-actions">
+                <Button
+                  icon="mdiDownload"
+                  onClick={() => {
+                    setDownloadPhotoId(current.id);
+                    setOpened(null);
+                    setDialog("download");
+                  }}
+                >
+                  Download this photograph
+                </Button>
+              </div>
+            )}
           {!gallery.delivered && !website && (
             <div className="pc-detail">
               <Button
@@ -579,6 +778,30 @@ export function PhotographyClient({
             You’ve chosen {selection.length} photographs from {shoot.name}. Your
             photographer will use these for your finished collection.
           </p>
+          {gallery.workflowEnabled && (
+            <div className="pc-order-review">
+              <p>
+                <span>Included photographs</span>
+                <strong>{price.included}</strong>
+              </p>
+              <p>
+                <span>Additional photographs</span>
+                <strong>
+                  {price.extra} ×{" "}
+                  {money(price.unitPriceCents, gallery.currency)}
+                </strong>
+              </p>
+              <p>
+                <span>Additional total</span>
+                <strong>{money(price.totalCents, gallery.currency)}</strong>
+              </p>
+              <small>
+                Your photographer will confirm the scope and price, edit your
+                choices and arrange payment before final delivery. No payment is
+                taken here.
+              </small>
+            </div>
+          )}
           <div className="pc-dialog-actions">
             <Button onClick={() => setDialog(null)}>Keep choosing</Button>
             <Button
@@ -607,39 +830,83 @@ export function PhotographyClient({
           </div>
         </Dialog>
       )}
-      {dialog === "download" && (
-        <Dialog
-          title={
-            gallery.delivered
-              ? "Your finished photographs"
-              : "Your preview photographs"
-          }
-          close={() => setDialog(null)}
-        >
-          <p>
-            {photos.length}{" "}
-            {gallery.delivered
-              ? `approved photographs · ${gallery.export?.format || "JPEG"} · ${gallery.export?.longEdge === "original" ? "Original size" : `${gallery.export?.longEdge || "3840"} px`} · ${gallery.export?.colorSpace || "sRGB"}`
-              : `web-sized proofs${watermark ? " · Watermarked" : ""}`}
-          </p>
-          <p>Camera originals remain with your photographer.</p>
-          <p className="muted">
-            Design preview: download preparation is simulated.
-          </p>
-          <Button
-            primary
-            icon="mdiDownload"
-            onClick={() => {
-              setDialog(null);
-              notify?.(
-                "Sample photo package prepared. No real media was downloaded.",
+      {dialog === "compare" && access === "open" && (
+        <Dialog wide title="Find your favourite" close={() => setDialog(null)}>
+          <div className="pc-compare">
+            {compare.map((id) => {
+              const p = photos.find((photo) => photo.id === id);
+              return (
+                <div key={id}>
+                  {renderPhoto(p, true)}
+                  <p>{p.name}</p>
+                  <Button
+                    active={selection.includes(id)}
+                    disabled={gallery.submitted}
+                    onClick={() => choose(id)}
+                    icon="mdiHeartOutline"
+                  >
+                    {selection.includes(id)
+                      ? "Selected"
+                      : "Choose this photograph"}
+                  </Button>
+                </div>
               );
-            }}
-          >
-            Prepare download
-          </Button>
+            })}
+          </div>
         </Dialog>
       )}
+      {dialog === "download" &&
+        access === "open" &&
+        downloadable.length > 0 && (
+          <Dialog
+            title={
+              gallery.delivered
+                ? "Your finished photographs"
+                : "Your preview photographs"
+            }
+            close={() => setDialog(null)}
+          >
+            <p>
+              {downloadSelection.length}{" "}
+              {gallery.delivered
+                ? `${downloadSelection.length === 1 ? "photograph" : "photographs"} · ${gallery.export?.format || "JPEG"} · ${gallery.export?.longEdge === "original" ? "Full resolution" : `${gallery.export?.longEdge || "3840"} px`}`
+                : `web-sized proofs${watermark ? " · Watermarked" : ""}`}
+            </p>
+            <div className="pc-download-preview">
+              {renderPhoto(
+                downloadSelection[0],
+                false,
+                !gallery.delivered || gallery.export?.watermark,
+                gallery.delivered,
+              )}
+              <span>
+                <strong>
+                  {!gallery.delivered
+                    ? "Watermarked proof"
+                    : gallery.export?.watermark
+                      ? "Branded finished export"
+                      : "Clean finished export"}
+                </strong>
+                <small>Includes the finished photographs you selected.</small>
+              </span>
+            </div>
+            <p className="muted">
+              Design preview: download preparation is simulated.
+            </p>
+            <Button
+              primary
+              icon="mdiDownload"
+              onClick={() => {
+                setDialog(null);
+                notify?.(
+                  "Sample photo package prepared. No real media was downloaded.",
+                );
+              }}
+            >
+              Prepare download
+            </Button>
+          </Dialog>
+        )}
     </main>
   );
 }
