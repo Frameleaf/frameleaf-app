@@ -6,6 +6,7 @@ import { assertICloudReferences, reconcileICloudReferences } from 'src/fork-sche
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
 import * as identity from 'src/fork-schema/migrations/0000000000213-ICloudSourceIdentity.js';
+import * as audit from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -49,7 +50,11 @@ describe('fork-owned iCloud state', () => {
       migrationTableSchema: 'immich_fork',
       provider: {
         getMigrations: () =>
-          Promise.resolve({ '0000000000090-ICloudSync': migration, '0000000000213-ICloudSourceIdentity': identity }),
+          Promise.resolve({
+            '0000000000090-ICloudSync': migration,
+            '0000000000213-ICloudSourceIdentity': identity,
+            '0000000000216-ICloudIdentityAudit': audit,
+          }),
       },
     });
   });
@@ -101,8 +106,8 @@ describe('fork-owned iCloud state', () => {
     for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
       expect(cloud(actual[kind])).toEqual(cloud(manifest[kind]));
     }
-    // the seven sync tables, and the source identities and claims (FL-296)
-    expect(getCatalogTableLocks(manifest).filter((table) => table.startsWith('immich_fork.icloud_'))).toHaveLength(9);
+    // The seven sync tables, source identities and claims, and fresh audit receipts (FL-296).
+    expect(getCatalogTableLocks(manifest).filter((table) => table.startsWith('immich_fork.icloud_'))).toHaveLength(10);
     const crossSchema = await sql`
       SELECT 1 FROM pg_constraint constraint_record
       JOIN pg_class source ON source.oid = constraint_record.conrelid
@@ -111,7 +116,7 @@ describe('fork-owned iCloud state', () => {
         AND source.relnamespace <> target.relnamespace
     `.execute(db);
     expect(crossSchema.rows).toEqual([]);
-    for (let step = 0; step < 2; step++) {
+    for (let step = 0; step < 3; step++) {
       const result4 = await migrator.migrateDown();
       expect(result4.error).toBeUndefined();
     }
