@@ -103,13 +103,22 @@ describe('ICloudSyncPanel', () => {
   });
 
   it('makes only an explicit current public grant and keeps execution unavailable', async () => {
-    mocks.updateICloudIdentityReuseAuthority.mockResolvedValue({ enabled: true, includeProtected: false,
-      available: true, regrantRequired: false, executionAvailable: false });
+    mocks.updateICloudIdentityReuseAuthority.mockResolvedValue({
+      enabled: true,
+      includeProtected: false,
+      available: true,
+      regrantRequired: false,
+      executionAvailable: false,
+    });
     render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
     await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_icloud_weekly_consent }));
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_weekly_save }));
-    await waitFor(() => expect(mocks.updateICloudIdentityReuseAuthority).toHaveBeenCalledWith({ id,
-      iCloudIdentityReuseAuthorityDto: { enabled: true, includeProtected: false, requestKey: expect.any(String) } }));
+    await waitFor(() =>
+      expect(mocks.updateICloudIdentityReuseAuthority).toHaveBeenCalledWith({
+        id,
+        iCloudIdentityReuseAuthorityDto: { enabled: true, includeProtected: false, requestKey: expect.any(String) },
+      }),
+    );
     expect(mocks.getAuthStatus).not.toHaveBeenCalled();
     expect(mocks.controlICloudConnection).not.toHaveBeenCalled();
   });
@@ -124,7 +133,9 @@ describe('ICloudSyncPanel', () => {
     await waitFor(() => expect(mocks.getAuthStatus).toHaveBeenCalled());
     authManager.setUser(userAdminFactory.build());
     gate.resolve({ isElevated: true });
-    await waitFor(() => expect(screen.getByRole('button', { name: en.frameleaf_icloud_weekly_save })).not.toBeDisabled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: en.frameleaf_icloud_weekly_save })).not.toBeDisabled(),
+    );
     expect(mocks.updateICloudIdentityReuseAuthority).not.toHaveBeenCalled();
     expect(mocks.goto).not.toHaveBeenCalled();
   });
@@ -141,32 +152,63 @@ describe('ICloudSyncPanel', () => {
   });
 
   it('revokes only an explicit current choice without starting ordinary or weekly work', async () => {
-    const current = connection({identityReuseAuthority:{enabled:true,includeProtected:true,available:true,
-      regrantRequired:false,executionAvailable:false}});
-    mocks.updateICloudIdentityReuseAuthority.mockResolvedValue({enabled:false,includeProtected:false,
-      available:false,regrantRequired:true,executionAvailable:false});
-    render(ICloudSyncPanel,{initial:{enabled:true,connections:[current]}});
-    await waitFor(()=>expect(screen.getByRole('checkbox',{name:en.frameleaf_icloud_weekly_consent})).toBeChecked());
-    await fireEvent.click(screen.getByRole('checkbox',{name:en.frameleaf_icloud_weekly_consent}));
-    await fireEvent.click(screen.getByRole('button',{name:en.frameleaf_icloud_weekly_save}));
-    await waitFor(()=>expect(mocks.updateICloudIdentityReuseAuthority).toHaveBeenCalledWith({id,
-      iCloudIdentityReuseAuthorityDto:{enabled:false,includeProtected:false,requestKey:expect.any(String)}}));
+    const current = connection({
+      identityReuseAuthority: {
+        enabled: true,
+        includeProtected: true,
+        available: true,
+        regrantRequired: false,
+        executionAvailable: false,
+      },
+    });
+    mocks.updateICloudIdentityReuseAuthority.mockResolvedValue({
+      enabled: false,
+      includeProtected: false,
+      available: false,
+      regrantRequired: true,
+      executionAvailable: false,
+    });
+    render(ICloudSyncPanel, { initial: { enabled: true, connections: [current] } });
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: en.frameleaf_icloud_weekly_consent })).toBeChecked(),
+    );
+    await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_icloud_weekly_consent }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_weekly_save }));
+    await waitFor(() =>
+      expect(mocks.updateICloudIdentityReuseAuthority).toHaveBeenCalledWith({
+        id,
+        iCloudIdentityReuseAuthorityDto: { enabled: false, includeProtected: false, requestKey: expect.any(String) },
+      }),
+    );
     expect(mocks.getAuthStatus).not.toHaveBeenCalled();
     expect(mocks.controlICloudConnection).not.toHaveBeenCalled();
   });
 
   it('does not publish a delayed grant response into a replacement account presentation', async () => {
-    const gate = Promise.withResolvers<{enabled:boolean;includeProtected:boolean;available:boolean;
-      regrantRequired:boolean;executionAvailable:false}>();
+    const gate = Promise.withResolvers<{
+      enabled: boolean;
+      includeProtected: boolean;
+      available: boolean;
+      regrantRequired: boolean;
+      executionAvailable: false;
+    }>();
     mocks.updateICloudIdentityReuseAuthority.mockReturnValue(gate.promise);
-    render(ICloudSyncPanel,{initial:{enabled:true,connections:[connection()]}});
-    await fireEvent.click(screen.getByRole('checkbox',{name:en.frameleaf_icloud_weekly_consent}));
-    await fireEvent.click(screen.getByRole('button',{name:en.frameleaf_icloud_weekly_save}));
-    await waitFor(()=>expect(mocks.updateICloudIdentityReuseAuthority).toHaveBeenCalled());
+    render(ICloudSyncPanel, { initial: { enabled: true, connections: [connection()] } });
+    await fireEvent.click(screen.getByRole('checkbox', { name: en.frameleaf_icloud_weekly_consent }));
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_icloud_weekly_save }));
+    await waitFor(() => expect(mocks.updateICloudIdentityReuseAuthority).toHaveBeenCalled());
     authManager.setUser(userAdminFactory.build());
-    gate.resolve({enabled:true,includeProtected:false,available:true,regrantRequired:false,executionAvailable:false});
-    await waitFor(()=>expect(screen.getByRole('button',{name:en.frameleaf_icloud_weekly_save})).not.toBeDisabled());
-    expect(screen.getByRole('checkbox',{name:en.frameleaf_icloud_weekly_consent})).not.toBeChecked();
+    gate.resolve({
+      enabled: true,
+      includeProtected: false,
+      available: true,
+      regrantRequired: false,
+      executionAvailable: false,
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: en.frameleaf_icloud_weekly_save })).not.toBeDisabled(),
+    );
+    expect(screen.getByRole('checkbox', { name: en.frameleaf_icloud_weekly_consent })).not.toBeChecked();
   });
 
   it('stays unavailable until the server enables the connector', () => {

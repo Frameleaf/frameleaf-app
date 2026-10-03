@@ -241,10 +241,19 @@
     }
     const user = authManager.user;
     const origin = { ownerId: user.id, connectionId: selectedId, generation: weeklyGeneration };
-    const choice = { enabled: weeklyEnabled, includeProtected: weeklyEnabled && weeklyProtected,
-      requestKey: crypto.randomUUID() };
-    const current = () => weeklyMounted && authManager.user === user && icloudWeeklyConsentIsCurrent(origin,
-      { ownerId: authManager.user.id, connectionId: selectedId, generation: weeklyGeneration });
+    const choice = {
+      enabled: weeklyEnabled,
+      includeProtected: weeklyEnabled && weeklyProtected,
+      requestKey: crypto.randomUUID(),
+    };
+    const current = () =>
+      weeklyMounted &&
+      authManager.user === user &&
+      icloudWeeklyConsentIsCurrent(origin, {
+        ownerId: authManager.user.id,
+        connectionId: selectedId,
+        generation: weeklyGeneration,
+      });
     busy = true;
     error = '';
     try {
@@ -264,19 +273,22 @@
       if (!current()) {
         return;
       }
-      const authority = await updateICloudIdentityReuseAuthority({ id: origin.connectionId,
-        iCloudIdentityReuseAuthorityDto: choice });
+      const authority = await updateICloudIdentityReuseAuthority({
+        id: origin.connectionId,
+        iCloudIdentityReuseAuthorityDto: choice,
+      });
       if (!current()) {
         return;
       }
-      connections = connections.map((item) => item.id === origin.connectionId
-        ? { ...item, identityReuseAuthority: authority } : item);
+      connections = connections.map((item) =>
+        item.id === origin.connectionId ? { ...item, identityReuseAuthority: authority } : item,
+      );
       weeklyEnabled = authority.enabled;
       weeklyProtected = authority.includeProtected;
       notice = $t('frameleaf_icloud_weekly_unavailable');
-    } catch (cause) {
+    } catch (error_) {
       if (current()) {
-        error = failure(cause);
+        error = failure(error_);
       }
     } finally {
       if (weeklyMounted) {
