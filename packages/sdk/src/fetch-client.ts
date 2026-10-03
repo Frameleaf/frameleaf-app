@@ -386,9 +386,17 @@ export type CloudBackupLastVerifyDto = {
     operationId: string;
     status: CloudBackupVerifyStatus;
 };
+export type CloudBackupLocationDto = {
+    city: string;
+    cityId: string;
+    country: string;
+    countryCode: string;
+    locationId: string;
+};
 export type CloudBackupManagedDto = {
     allowanceBytes: number | null;
     extraBlocks: number | null;
+    location?: (CloudBackupLocationDto) | null;
     measuredAt: string | null;
     objects: number | null;
     /** Storage included with the plan; more is added in 1 TB blocks */
@@ -399,6 +407,7 @@ export type CloudBackupManagedDto = {
     readOnlyReason: string | null;
     /** Why Frameleaf Cloud last refused backup storage */
     refusal: string | null;
+    storageId?: string | null;
     usedBytes: number | null;
 };
 export type CloudBackupStatusResponseDto = {
@@ -1896,6 +1905,35 @@ export type BackupRestoreVerificationRecordDto = {
 export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
+};
+export type FileTrashItemResponseDto = {
+    /** Hex-encoded SHA-256 checksum of the file */
+    checksum: string;
+    /** File trash entry id */
+    id: string;
+    /** Asset that held the file last, when known */
+    lastAssetId: string | null;
+    /** Account whose library held the file last, when known */
+    lastOwnerId: string | null;
+    /** Name of that account, while it exists */
+    lastOwnerName: string | null;
+    /** Name of the file when it was last in a library */
+    originalFileName: string;
+    /** Size of the file in bytes */
+    sizeInBytes: number;
+    /** When the file was moved to the file trash */
+    trashedAt: string;
+};
+export type FileTrashResponseDto = {
+    items: FileTrashItemResponseDto[];
+    /** Entries in the file trash */
+    total: number;
+    /** Disk space the file trash holds, in bytes */
+    totalBytes: number;
+};
+export type FileTrashRestoreResponseDto = {
+    /** The new asset the file was restored as, in its last owner’s library */
+    assetId: string;
 };
 export type HardwareWorkloadBenchmarkDto = {
     error: string | null;
@@ -6203,6 +6241,14 @@ export type ICloudConnectionResponseDto = {
         [key: string]: number;
     };
     id: string;
+    identityReuseAuthority?: {
+        available: boolean;
+        enabled: boolean;
+        /** Foundation consent does not enable weekly execution or identity reuse */
+        executionAvailable: false;
+        includeProtected: boolean;
+        regrantRequired: boolean;
+    };
     label: string;
     lastError: string | null;
     nextRunAt: string | null;
@@ -6248,6 +6294,19 @@ export type ICloudAuthDto = {
 };
 export type ICloudControlDto = {
     action: ICloudControlAction;
+};
+export type ICloudIdentityReuseAuthorityDto = {
+    enabled: boolean;
+    includeProtected: boolean;
+    requestKey: string;
+};
+export type ICloudIdentityReuseAuthorityStatusDto = {
+    available: boolean;
+    enabled: boolean;
+    /** Foundation consent does not enable weekly execution or identity reuse */
+    executionAvailable: boolean;
+    includeProtected: boolean;
+    regrantRequired: boolean;
 };
 export type ICloudInventoryResponseDto = {
     albums: {
@@ -12053,6 +12112,42 @@ export type ServerStorageResponseDto = {
     /** Used disk space in bytes */
     diskUseRaw: number;
 };
+export type StorageMigrationStageProgressDto = {
+    /** Items finished in this stage */
+    done: number;
+    /** Items this stage covers */
+    total: number;
+};
+export type StorageMigrationStatusResponseDto = {
+    /** An administrator chose to let it finish in the background */
+    background: boolean;
+    /** Bytes of extra copies moved to the file trash */
+    bytesFreed: number;
+    /** Estimated time left, from the measured rate */
+    estimatedSecondsLeft: number | null;
+    /** When the migration finished */
+    finishedAt: string | null;
+    /** Missing originals relinked automatically */
+    relinked: number;
+    /** False when the library had nothing to combine (a fresh install) */
+    required: boolean;
+    /** Whether the Getting Ready screen waits for it */
+    showInGettingReady: boolean;
+    /** Files that could not be read or verified, skipped */
+    skipped: number;
+    stage: StorageMigrationStage;
+    /** Progress of each stage */
+    stages: {
+        checking: StorageMigrationStageProgressDto;
+        linking: StorageMigrationStageProgressDto;
+        relinking: StorageMigrationStageProgressDto;
+        trashing: StorageMigrationStageProgressDto;
+    };
+    /** When the migration started */
+    startedAt: string | null;
+    /** Missing originals left for review in Library Care */
+    toReview: number;
+};
 export type ServerVersionResponseDto = {
     /** Major version number */
     major: number;
@@ -16117,6 +16212,48 @@ export function downloadDatabaseBackup({ filename }: {
     }));
 }
 /**
+ * List the file trash
+ */
+export function getFileTrash({ page, size }: {
+    page?: number;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileTrashResponseDto;
+    }>(`/admin/file-trash${QS.query(QS.explode({
+        page,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Delete a file permanently
+ */
+export function deleteFileTrashItem({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/file-trash/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Restore a file from the file trash
+ */
+export function restoreFileTrashItem({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileTrashRestoreResponseDto;
+    }>(`/admin/file-trash/${encodeURIComponent(id)}/restore`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get the Hardware & GPU check
  */
 export function getHardwareCheck(opts?: Oazapfts.RequestOpts) {
@@ -19555,6 +19692,19 @@ export function controlICloudConnection({ id, iCloudControlDto }: {
         ...opts,
         method: "POST",
         body: iCloudControlDto
+    })));
+}
+export function updateICloudIdentityReuseAuthority({ id, iCloudIdentityReuseAuthorityDto }: {
+    id: string;
+    iCloudIdentityReuseAuthorityDto: ICloudIdentityReuseAuthorityDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ICloudIdentityReuseAuthorityStatusDto;
+    }>(`/icloud-sync/connections/${encodeURIComponent(id)}/identity-reuse-authority`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: iCloudIdentityReuseAuthorityDto
     })));
 }
 export function getICloudInventory({ id }: {
@@ -23645,6 +23795,29 @@ export function getStorage(opts?: Oazapfts.RequestOpts) {
         data: ServerStorageResponseDto;
     }>("/server/storage", {
         ...opts
+    }));
+}
+/**
+ * Get storage migration status
+ */
+export function getStorageMigrationStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageMigrationStatusResponseDto;
+    }>("/server/storage-migration", {
+        ...opts
+    }));
+}
+/**
+ * Run the storage migration in the background
+ */
+export function runStorageMigrationInBackground(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageMigrationStatusResponseDto;
+    }>("/server/storage-migration/background", {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -29249,6 +29422,7 @@ export enum JobName {
     StorageTemplateMigrationSingle = "StorageTemplateMigrationSingle",
     PhysicalDeduplicationMigrationDryRun = "PhysicalDeduplicationMigrationDryRun",
     PhysicalDeduplicationMigrationApply = "PhysicalDeduplicationMigrationApply",
+    UniversalStorageMigration = "UniversalStorageMigration",
     TagCleanup = "TagCleanup",
     VersionCheck = "VersionCheck",
     FrameleafHeartbeat = "FrameleafHeartbeat",
@@ -29370,6 +29544,14 @@ export enum FrameleafSetupErrorCode {
     SetupLinkTokenInvalid = "setup_link_token_invalid",
     SetupLinkTokenUsed = "setup_link_token_used",
     SetupLinkFailed = "setup_link_failed"
+}
+export enum StorageMigrationStage {
+    Pending = "pending",
+    Checking = "checking",
+    Relinking = "relinking",
+    Linking = "linking",
+    Trashing = "trashing",
+    Done = "done"
 }
 export enum ReleaseType {
     Major = "major",
