@@ -32,7 +32,7 @@ import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { BuddyBackupRestoreService } from 'src/services/buddy-backup-restore.service.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
 import { unwrapBuddyKeyring, wrapBuddyKeyring } from 'src/utils/buddy-backup-crypto.js';
-import { UUIDParamDto } from 'src/validation.js';
+import { UUIDParamDto, UUIDv7ParamDto } from 'src/validation.js';
 
 const history = new HistoryBuilder().added('v3.2.0').alpha('v3.2.0');
 
@@ -251,7 +251,7 @@ export class BuddyBackupAdminController {
   @Header('Cache-Control', 'private, no-store')
   @Authenticated({ permission: Permission.AdminCloudBackupRead, admin: true, refreshElevation: false })
   @Endpoint({ operationId: 'getBuddyRestoreStatus', summary: 'Get restore or staging progress', history })
-  progress(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<BuddyRestoreStatusDto> {
+  progress(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<BuddyRestoreStatusDto> {
     return this.restore.status(auth, id);
   }
 
@@ -307,7 +307,7 @@ export class BuddyBackupOwnerController {
   @Header('Cache-Control', 'private, no-store')
   @Authenticated({ permission: Permission.AssetRead, refreshElevation: false })
   @Endpoint({ operationId: 'getOwnBuddyRestoreStatus', summary: 'Get own Buddy restore progress', history })
-  progress(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<BuddyRestoreStatusDto> {
+  progress(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<BuddyRestoreStatusDto> {
     return this.restore.status(auth, id);
   }
 }

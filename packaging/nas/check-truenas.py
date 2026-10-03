@@ -1,7 +1,9 @@
 """Render both ML settings with the matching TrueNAS catalog library (no containers)."""
 import copy
+import hashlib
 import importlib
 import json
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +13,30 @@ import yaml
 
 app, library = map(Path, sys.argv[1:])
 metadata = yaml.safe_load((app / "app.yaml").read_text())
-assert library.name == "base_v" + metadata["lib_version"].replace(".", "_")
+if library.name != "base_v" + metadata["lib_version"].replace(".", "_"):
+    raise ValueError("TrueNAS library version mismatch")
+if not library.is_dir() or library.is_symlink():
+    raise ValueError("Missing or symlinked TrueNAS library")
+files = []
+for entry in library.rglob("*"):
+    if entry.is_symlink():
+        raise ValueError("Symlink in TrueNAS library")
+    if entry.is_file():
+        files.append(entry)
+if not files:
+    raise ValueError("Empty TrueNAS library")
+expected_hash = metadata["lib_version_hash"]
+if not re.fullmatch(r"[a-f0-9]{64}", expected_hash):
+    raise ValueError("Invalid TrueNAS library hash")
+# TrueNAS apps_validation/catalog_reader/hash_utils.py: hash each regular file,
+# sort sha256sum lines, take their first fields, then hash the newline-separated digests.
+# Equal digests produce identical fields, so their filename tie order cannot affect the result.
+digests = sorted(hashlib.sha256(entry.read_bytes()).hexdigest() for entry in files)
+actual_hash = hashlib.sha256(("\n".join(digests) + "\n").encode()).hexdigest()
+if actual_hash != expected_hash:
+    raise ValueError("TrueNAS library hash mismatch")
+# Verification precedes every library import; avoid mutating its certified content with bytecode.
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(library.parent))
 render = importlib.import_module(f"{library.name}.render")
 values = yaml.safe_load((app / "templates/test_values/basic-values.yaml").read_text())

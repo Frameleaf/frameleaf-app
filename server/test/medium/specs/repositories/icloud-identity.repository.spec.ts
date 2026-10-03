@@ -118,6 +118,63 @@ describe(ICloudIdentityRepository.name, () => {
     await expect(sut.identities(connection.ownerId, [ASSET])).resolves.toHaveLength(1);
   });
 
+  it.each(['match', 'mismatch'] as const)(
+    'invalidates a previous %s audit when the sync digest changes',
+    async (result) => {
+      const assetId = randomUUID();
+      const resourceId = await commit('original', assetId, Buffer.alloc(32, 1));
+      await recordSyncIdentity(db, resourceId);
+      await sql`UPDATE immich_fork.icloud_source_identity
+        SET "lastVerifiedAt" = '2026-06-01T10:00:00Z', "lastAuditResult" = ${result}, "appleFingerprint" = 'old-proof'
+        WHERE "assetId" = ${assetId}::uuid`.execute(db);
+      const replacement = Buffer.alloc(32, 2);
+      await sql`UPDATE immich_fork.icloud_resource SET sha256 = ${replacement} WHERE id = ${resourceId}::uuid`.execute(
+        db,
+      );
+      await recordSyncIdentity(db, resourceId);
+      expect(await sut.identities(connection.ownerId, [ASSET])).toEqual([
+        expect.objectContaining({
+          sha256: replacement,
+          lastVerifiedAt: null,
+          lastAuditResult: null,
+          appleFingerprint: null,
+        }),
+      ]);
+    },
+  );
+
+  it.each(['match', 'mismatch'] as const)(
+    'preserves a previous %s audit when the sync digest is unchanged',
+    async (result) => {
+      const assetId = randomUUID();
+      const resourceId = await commit('original', assetId, Buffer.alloc(32, 1));
+      await recordSyncIdentity(db, resourceId);
+      await sql`UPDATE immich_fork.icloud_source_identity
+        SET "lastVerifiedAt" = '2026-06-01T10:00:00Z', "lastAuditResult" = ${result}, "appleFingerprint" = 'same-proof'
+        WHERE "assetId" = ${assetId}::uuid`.execute(db);
+      const before = await sut.identities(connection.ownerId, [ASSET]);
+      await recordSyncIdentity(db, resourceId);
+      expect(await sut.identities(connection.ownerId, [ASSET])).toEqual(before);
+    },
+  );
+
+  it('ignores a null resource digest and rejects a null identity digest without changing old proof', async () => {
+    const assetId = randomUUID();
+    const resourceId = await commit('original', assetId, Buffer.alloc(32, 1));
+    await recordSyncIdentity(db, resourceId);
+    await sql`UPDATE immich_fork.icloud_source_identity
+      SET "lastVerifiedAt" = '2026-06-01T10:00:00Z', "lastAuditResult" = 'match', "appleFingerprint" = 'same-proof'
+      WHERE "assetId" = ${assetId}::uuid`.execute(db);
+    const before = await sut.identities(connection.ownerId, [ASSET]);
+    await sql`UPDATE immich_fork.icloud_resource SET sha256 = NULL WHERE id = ${resourceId}::uuid`.execute(db);
+    await recordSyncIdentity(db, resourceId);
+    expect(await sut.identities(connection.ownerId, [ASSET])).toEqual(before);
+    await expect(
+      sql`UPDATE immich_fork.icloud_source_identity SET sha256 = NULL WHERE "assetId" = ${assetId}::uuid`.execute(db),
+    ).rejects.toMatchObject({ code: '23502' });
+    expect(await sut.identities(connection.ownerId, [ASSET])).toEqual(before);
+  });
+
   it('knows what the inventory holds, in scope or not, and what is still pending', async () => {
     await sync.savePage(connection.id, 'assets:other', 'other', [{ ...asset('OUTSIDE-1', MASTER) }], null, true);
     const items = await sut.inventory(connection.ownerId, [ASSET, 'OUTSIDE-1', 'UNKNOWN']);
