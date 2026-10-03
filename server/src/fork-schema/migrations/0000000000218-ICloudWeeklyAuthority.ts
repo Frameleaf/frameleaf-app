@@ -92,7 +92,8 @@ export async function up(db: Kysely<any>): Promise<void> {
       IF TG_TABLE_NAME='icloud_connection' THEN
         owner_id := (new_row->>'ownerId')::uuid; connection_id := (new_row->>'id')::uuid;
         changed := old_row->'config' IS DISTINCT FROM new_row->'config'
-          OR old_row->'encryptedSession' IS DISTINCT FROM new_row->'encryptedSession'
+          OR (old_row->'encryptedSession' IS DISTINCT FROM new_row->'encryptedSession'
+            AND new_row->>'encryptedSession' IS NULL)
           OR (new_row->>'lastError'='owner_removed' AND old_row->>'lastError' IS DISTINCT FROM 'owner_removed')
           OR (old_row->>'state' IS DISTINCT FROM new_row->>'state' AND new_row->>'state'<>'connected');
       ELSIF TG_TABLE_NAME='user' THEN
