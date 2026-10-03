@@ -62113,6 +62113,33 @@
         ],
         "type": "object"
       },
+      "CloudBackupLocationDto": {
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "cityId": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city",
+          "cityId",
+          "country",
+          "countryCode",
+          "locationId"
+        ],
+        "type": "object"
+      },
       "CloudBackupManagedDto": {
         "properties": {
           "allowanceBytes": {
@@ -62126,6 +62153,14 @@
             "minimum": -9007199254740991,
             "nullable": true,
             "type": "integer"
+          },
+          "location": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupLocationDto"
+              }
+            ],
+            "nullable": true
           },
           "measuredAt": {
             "nullable": true,
@@ -62155,6 +62190,12 @@
           "refusal": {
             "description": "Why Frameleaf Cloud last refused backup storage",
             "nullable": true,
+            "type": "string"
+          },
+          "storageId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "usedBytes": {

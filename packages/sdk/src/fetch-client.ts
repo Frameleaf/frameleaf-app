@@ -386,9 +386,17 @@ export type CloudBackupLastVerifyDto = {
     operationId: string;
     status: CloudBackupVerifyStatus;
 };
+export type CloudBackupLocationDto = {
+    city: string;
+    cityId: string;
+    country: string;
+    countryCode: string;
+    locationId: string;
+};
 export type CloudBackupManagedDto = {
     allowanceBytes: number | null;
     extraBlocks: number | null;
+    location?: (CloudBackupLocationDto) | null;
     measuredAt: string | null;
     objects: number | null;
     /** Storage included with the plan; more is added in 1 TB blocks */
@@ -399,6 +407,7 @@ export type CloudBackupManagedDto = {
     readOnlyReason: string | null;
     /** Why Frameleaf Cloud last refused backup storage */
     refusal: string | null;
+    storageId?: string | null;
     usedBytes: number | null;
 };
 export type CloudBackupStatusResponseDto = {
