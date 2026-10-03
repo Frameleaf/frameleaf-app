@@ -172,6 +172,7 @@ import { Editor } from "./Editor";
 import { Studio } from "./Studio";
 import { PhotographyClient } from "./PhotographyClient";
 import { RawLibraryCare } from "./RawLibraryCare";
+import { FileTrash } from "./FileTrash";
 import { PhotographyWorkspace } from "./PhotographyWorkspace";
 import { PhotographyEditor } from "./PhotographyEditor";
 import {
@@ -232,6 +233,7 @@ const SCREEN_IDS = [
   "photography-client",
   "photography-site",
   "raw-support",
+  "file-trash",
   "activity",
   "admin",
   "care",
@@ -338,7 +340,12 @@ export function App() {
   });
   useEffect(() => {
     if (
-      !["photography", "photography-editor", "photography-client", "photography-site"].includes(screen)
+      ![
+        "photography",
+        "photography-editor",
+        "photography-client",
+        "photography-site",
+      ].includes(screen)
     )
       setPhotographyContext((current) => ({
         ...current,
@@ -3827,6 +3834,9 @@ export function App() {
             notify={setToast}
           />
         )}
+        {screen === "file-trash" && (
+          <FileTrash onBack={() => setScreen("care")} notify={setToast} />
+        )}
         {screen === "raw-support" && (
           <RawLibraryCare
             onBack={() => setScreen("library")}
@@ -3966,6 +3976,7 @@ export function App() {
               "Duplicate review",
               "Import reconciliation",
               "Preservation verification",
+              "File trash",
             ].map((title) => (
               <button
                 className="care-row"
@@ -3973,9 +3984,11 @@ export function App() {
                 onClick={() =>
                   title === "RAW support & preview repair"
                     ? setScreen("raw-support")
-                    : setToast(
-                        `${title}: no live scan has been run in this prototype.`,
-                      )
+                    : title === "File trash"
+                      ? setScreen("file-trash")
+                      : setToast(
+                          `${title}: no live scan has been run in this prototype.`,
+                        )
                 }
               >
                 <Icon name="mdiShieldCheckOutline" />

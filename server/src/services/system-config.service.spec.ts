@@ -70,10 +70,6 @@ const updatedConfig = Object.freeze<SystemConfig>({
       keepLastAmount: 14,
     },
   },
-  physicalDeduplication: {
-    enabled: false,
-    masterUserId: null,
-  },
   analytics: {
     enabled: true,
     historyDays: 730,
@@ -689,6 +685,28 @@ describe(SystemConfigService.name, () => {
       await expect(sut.getAdminConfig()).resolves.toEqual(mapConfig(updatedConfig));
     });
 
+    it('still loads a config file with the retired master-user deduplication keys (universal storage)', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
+      mocks.systemMetadata.readFile.mockResolvedValue(
+        JSON.stringify({
+          newVersionCheck: { enabled: true },
+          physicalDeduplication: { enabled: true, masterUserId: '9c3c4b8a-6a3e-4d8f-9a39-6f0c3f4b2a11' },
+        }),
+      );
+
+      const config = await sut.getAdminConfig();
+
+      expect(config.newVersionCheck.enabled).toBe(true);
+      expect(config).not.toHaveProperty('physicalDeduplication');
+      expect(mocks.logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('Unknown keys'));
+    });
+
+    it('still loads saved settings with the retired master-user deduplication keys (universal storage)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({ physicalDeduplication: { enabled: true, masterUserId: null } });
+
+      await expect(sut.getAdminConfig()).resolves.not.toHaveProperty('physicalDeduplication');
+    });
+
     it('should load the config from a json file', async () => {
       mocks.config.getEnv.mockReturnValue(mockEnvData({ configFile: 'immich-config.json' }));
       mocks.systemMetadata.readFile.mockResolvedValue(JSON.stringify(partialConfig));
@@ -877,37 +895,6 @@ describe(SystemConfigService.name, () => {
   });
 
   describe('updateConfig', () => {
-    it('should reject physical deduplication without a master user', async () => {
-      await expect(
-        sut.onConfigValidate({
-          newConfig: { ...defaults, physicalDeduplication: { enabled: true, masterUserId: null } },
-          oldConfig: defaults,
-        }),
-      ).rejects.toThrow('Physical deduplication requires a master user.');
-    });
-
-    it('should reject physical deduplication with a missing master user', async () => {
-      mocks.user.get.mockResolvedValue(null as never);
-
-      await expect(
-        sut.onConfigValidate({
-          newConfig: { ...defaults, physicalDeduplication: { enabled: true, masterUserId: 'missing-user-id' } },
-          oldConfig: defaults,
-        }),
-      ).rejects.toThrow('Physical deduplication master user must exist and be active.');
-    });
-
-    it('should allow physical deduplication with an active master user', async () => {
-      mocks.user.get.mockResolvedValue({ id: 'master-user-id', deletedAt: null } as never);
-
-      await expect(
-        sut.onConfigValidate({
-          newConfig: { ...defaults, physicalDeduplication: { enabled: true, masterUserId: 'master-user-id' } },
-          oldConfig: defaults,
-        }),
-      ).resolves.toBeUndefined();
-    });
-
     it('keeps remote access itself out of a whole-settings save (FL-165)', async () => {
       mocks.systemMetadata.get.mockResolvedValue(null as never);
       await sut.updateAdminConfig({

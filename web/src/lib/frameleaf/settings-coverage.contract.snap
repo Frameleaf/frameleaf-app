@@ -1013,14 +1013,6 @@
   "passwordLogin.enabled": {
     "type": "boolean"
   },
-  "physicalDeduplication.enabled": {
-    "type": "boolean"
-  },
-  "physicalDeduplication.masterUserId": {
-    "type": "string",
-    "format": "uuid",
-    "nullable": true
-  },
   "preferences.albums.defaultAssetOrder": {
     "type": "string",
     "enum": [

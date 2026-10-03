@@ -239,7 +239,6 @@ describe('importConfig (FL-66 unsupported imported leaves)', () => {
       oauth: { clientSecret: '' },
       notifications: { smtp: { transport: { password: 'from-file' } } },
       machineLearning: { imageDescription: { pendingRequeueAt: '2026-01-01T00:00:00.000Z' } },
-      physicalDeduplication: { masterUserId: '7c4f2a1e-0000-4000-8000-000000000001' },
     });
 
     expect(result.keptSecrets).toEqual(['oauth.clientSecret']);
@@ -251,7 +250,6 @@ describe('importConfig (FL-66 unsupported imported leaves)', () => {
     );
     expect(result.applied).not.toContain('notifications.smtp.transport.password');
     expect(result.draft.machineLearning.imageDescription!.pendingRequeueAt).toBeNull();
-    expect(result.draft.physicalDeduplication!.masterUserId).toBe('7c4f2a1e-0000-4000-8000-000000000001');
     expect(result.unsupported).toEqual([]);
   });
 

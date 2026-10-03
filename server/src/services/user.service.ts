@@ -451,15 +451,6 @@ export class UserService extends BaseService {
       return;
     }
 
-    // FL-44 (FN-304): the account physical deduplication retains originals in holds files other
-    // accounts point at; it stays until another account is chosen (UserAdminService refuses too).
-    if (config.physicalDeduplication.masterUserId === user.id) {
-      this.logger.error(
-        `Skipped deleting user ${user.id}: it retains the originals shared by physical deduplication; choose another account first`,
-      );
-      return;
-    }
-
     this.logger.log(`Deleting user: ${user.id}`);
 
     this.logger.warn(`Removing user from database: ${user.id}`);

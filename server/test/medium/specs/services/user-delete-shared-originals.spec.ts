@@ -158,22 +158,19 @@ describe('UserService.handleUserDelete with shared originals (FL-44)', () => {
     });
   });
 
-  it('refuses to delete the retained account while it is configured, and removes nothing', async () => {
+  it('deletes an account the retired master-user setting still names, keeping originals others share', async () => {
     const { ctx } = setup(null);
-    const { owner, sharedPath, ownPath } = await seedSharedOriginal(ctx);
+    const { owner, sharedPath } = await seedSharedOriginal(ctx);
     clearConfigCache();
+    // universal storage: the old saved master account no longer protects or blocks anything
     const { sut } = setup(owner.id);
 
     await sut.handleUserDelete({ id: owner.id, force: true });
 
     expect(existsSync(sharedPath)).toBe(true);
-    expect(existsSync(ownPath)).toBe(true);
     await expect(
       database.selectFrom('user').select('id').where('id', '=', owner.id).executeTakeFirst(),
-    ).resolves.toEqual({ id: owner.id });
-    await expect(
-      database.selectFrom('asset').select('id').where('ownerId', '=', owner.id).execute(),
-    ).resolves.toHaveLength(2);
+    ).resolves.toBeUndefined();
   });
 
   it('removes the shared original once the last owner referencing it is deleted too', async () => {

@@ -164,8 +164,8 @@ export class PhysicalDeduplicationService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const { physicalDeduplication } = await this.getConfig({ withCache: true });
-    const masterUserId = job?.masterUserId ?? physicalDeduplication.masterUserId;
+    // universal storage retired the saved master account: a dry run names the account it retains in
+    const masterUserId = job?.masterUserId;
     if (!masterUserId) {
       this.logger.warn('Physical deduplication dry run skipped: no retained account was chosen or saved');
       return JobStatus.Skipped;
@@ -204,13 +204,8 @@ export class PhysicalDeduplicationService extends BaseService {
 
   /** Queue a preview. Validation happens here so the page gets an immediate answer; the job re-checks. */
   async requestPreview(dto: PhysicalDeduplicationPreviewRequestDto): Promise<void> {
-    const { physicalDeduplication } = await this.getConfig({ withCache: false });
-    // The page's configuration error (FL-73, prototype physical-dedup-data.mjs:76-86): file reuse
-    // must be on before a plan is prepared. The queued job itself stays lenient for old queues.
-    if (!physicalDeduplication.enabled) {
-      throw new BadRequestException('Enable file reuse before preparing a plan.');
-    }
-    const masterUserId = dto.masterUserId ?? physicalDeduplication.masterUserId;
+    // universal storage is always on and has no saved master account: the preview names one
+    const masterUserId = dto.masterUserId;
     if (!masterUserId) {
       throw new BadRequestException('Choose an account to retain originals in before preparing a preview');
     }
@@ -239,7 +234,6 @@ export class PhysicalDeduplicationService extends BaseService {
    * response never widens what the administrator may already open.
    */
   async getPreview(auth: AuthDto): Promise<PhysicalDeduplicationPreviewResponseDto> {
-    const { physicalDeduplication } = await this.getConfig({ withCache: false });
     const counts = await this.jobRepository.getJobCounts(QueueName.StorageTemplateMigration);
     const running = counts.active + counts.waiting + counts.delayed + counts.paused > 0;
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.PhysicalDeduplicationMigration);
@@ -247,8 +241,9 @@ export class PhysicalDeduplicationService extends BaseService {
     // `applying` and `applies` come from the durable jobs, which PhysicalDeduplicationPlanService adds.
     const response: PhysicalDeduplicationPreviewResponseDto = {
       plan: null,
-      savedMasterUserId: physicalDeduplication.masterUserId ?? null,
-      enabled: physicalDeduplication.enabled,
+      // universal storage: always on, with no saved master account
+      savedMasterUserId: null,
+      enabled: true,
       running,
       applying: false,
       applies: [],
@@ -418,21 +413,11 @@ export class PhysicalDeduplicationService extends BaseService {
   }
 
   /**
-   * What applying a reviewed plan requires beyond the review itself: the feature enabled, a saved
-   * retained account, and that account being the one the plan retains originals in. A saved account
-   * that changed since the review is a change like any other (409).
+   * What applying a reviewed plan requires beyond the review itself: the account the plan retains
+   * originals in still exists. Universal storage retired the saved master account and its setting;
+   * the reviewed plan's own account is the one its originals stay with.
    */
   async requireApplyAllowed(plan: Pick<PreparedPhysicalDeduplicationPlan, 'masterUserId'>): Promise<void> {
-    const { physicalDeduplication } = await this.getConfig({ withCache: false });
-    if (!physicalDeduplication.enabled) {
-      throw new BadRequestException('Enable file reuse before applying a plan.');
-    }
-    if (!physicalDeduplication.masterUserId) {
-      throw new BadRequestException('Save the retained account in Storage settings before applying a plan.');
-    }
-    if (physicalDeduplication.masterUserId !== plan.masterUserId) {
-      throw new ConflictException('The retained account changed. Prepare a new plan before continuing.');
-    }
     if (!(await this.isActiveUser(plan.masterUserId))) {
       throw new ConflictException('The retained account no longer exists. Prepare a new plan.');
     }

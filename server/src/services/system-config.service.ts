@@ -279,18 +279,6 @@ export class SystemConfigService extends BaseService {
       throw new Error('Logging cannot be changed while the environment variable FRAMELEAF_LOG_LEVEL is set.');
     }
 
-    const { physicalDeduplication } = newConfig;
-    if (physicalDeduplication.enabled) {
-      if (!physicalDeduplication.masterUserId) {
-        throw new Error('Physical deduplication requires a master user.');
-      }
-
-      const masterUser = await this.userRepository.get(physicalDeduplication.masterUserId, {});
-      if (!masterUser || masterUser.deletedAt) {
-        throw new Error('Physical deduplication master user must exist and be active.');
-      }
-    }
-
     // FL-161: what remote access may carry can only be loosened on a linked server, through any
     // settings path (PUT admin/cloud/remote-access checks the same); turning it back off always works
     const allow = newConfig.frameleafCloud.remoteAccess;
