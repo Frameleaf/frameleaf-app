@@ -226,6 +226,42 @@
     },
     {
       "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.assetId"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.bytes"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.asset_develop_artifact.createdAt"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.height"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.id"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.kind"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.path"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "immich_fork.asset_develop_artifact.width"
+    },
+    {
+      "definition": "uuid|not null|||",
       "identity": "immich_fork.asset_develop_revision.assetId"
     },
     {
@@ -877,38 +913,6 @@
       "identity": "immich_fork.face_correction.undoneAt"
     },
     {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "immich_fork.frameleaf_consent.acceptedAt"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.frameleaf_consent.acceptedBy"
-    },
-    {
-      "definition": "text|nullable|||",
-      "identity": "immich_fork.frameleaf_consent.cloudRecordedVersion"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.frameleaf_consent.destinationId"
-    },
-    {
-      "definition": "jsonb|not null|'{}'::jsonb||",
-      "identity": "immich_fork.frameleaf_consent.features"
-    },
-    {
-      "definition": "uuid|not null|gen_random_uuid()||",
-      "identity": "immich_fork.frameleaf_consent.id"
-    },
-    {
-      "definition": "timestamp with time zone|nullable|||",
-      "identity": "immich_fork.frameleaf_consent.revokedAt"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.frameleaf_consent.version"
-    },
-    {
       "definition": "text|nullable|||",
       "identity": "immich_fork.frameleaf_account_link.access"
     },
@@ -945,6 +949,54 @@
       "identity": "immich_fork.frameleaf_account_link.userId"
     },
     {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.frameleaf_consent.acceptedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.frameleaf_consent.acceptedBy"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.frameleaf_consent.cloudRecordedVersion"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.frameleaf_consent.destinationId"
+    },
+    {
+      "definition": "jsonb|not null|'{}'::jsonb||",
+      "identity": "immich_fork.frameleaf_consent.features"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.frameleaf_consent.id"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.frameleaf_consent.revokedAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_consent.version"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "immich_fork.frameleaf_exchange_token.expiresAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_exchange_token.jti"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_exchange_token.sub"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.frameleaf_exchange_token.usedAt"
+    },
+    {
       "definition": "timestamp with time zone|nullable|||",
       "identity": "immich_fork.frameleaf_session.authTime"
     },
@@ -977,6 +1029,22 @@
       "identity": "immich_fork.frameleaf_session.userId"
     },
     {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.expiresAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.kind"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.revokedAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.value"
+    },
+    {
       "definition": "timestamp with time zone|not null|clock_timestamp()||",
       "identity": "immich_fork.frameleaf_user_license.activatedAt"
     },
@@ -1007,38 +1075,6 @@
     {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.frameleaf_user_license.userId"
-    },
-    {
-      "definition": "timestamp with time zone|not null|||",
-      "identity": "immich_fork.frameleaf_exchange_token.expiresAt"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.frameleaf_exchange_token.jti"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.frameleaf_exchange_token.sub"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "immich_fork.frameleaf_exchange_token.usedAt"
-    },
-    {
-      "definition": "timestamp with time zone|not null|||",
-      "identity": "immich_fork.frameleaf_sign_in_revocation.expiresAt"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.frameleaf_sign_in_revocation.kind"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "immich_fork.frameleaf_sign_in_revocation.revokedAt"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.frameleaf_sign_in_revocation.value"
     },
     {
       "definition": "uuid|nullable|||",
@@ -1177,6 +1213,166 @@
       "identity": "immich_fork.icloud_connection.updatedAt"
     },
     {
+      "definition": "integer|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.batchOrdinal"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.cohortId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_audit.connectionId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.icloud_identity_audit.createdAt"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.icloud_identity_audit.expectedSha256"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.grantGeneration"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.grantId"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_identity_audit.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_audit.identityId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.itemClaimId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.lastError"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.memberOrdinal"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.operationId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_audit.originalAssetId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_audit.ownerId"
+    },
+    {
+      "definition": "text|not null|'manual-session'::text||",
+      "identity": "immich_fork.icloud_identity_audit.purpose"
+    },
+    {
+      "definition": "text|not null|'queued'::text||",
+      "identity": "immich_fork.icloud_identity_audit.result"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.resultAssetId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.sessionId"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.icloud_identity_audit.snapshot"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_audit.sourceResourceId"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_identity_audit.verifiedAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.appleFingerprint"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.assetId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.basis"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.connectionId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.cplAssetRecordName"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.cplMasterRecordName"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.icloud_identity_reuse.createdAt"
+    },
+    {
+      "definition": "text|not null|''::text||",
+      "identity": "immich_fork.icloud_identity_reuse.editVersion"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.expectedSha256"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_identity_reuse.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.identityId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.itemClaimId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.libraryKey"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.operationId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.role"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.snapshot"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_identity_reuse.sourceResourceId"
+    },
+    {
       "definition": "boolean|not null|false||",
       "identity": "immich_fork.icloud_membership.addedBySync"
     },
@@ -1255,6 +1451,10 @@
     {
       "definition": "integer|not null|0||",
       "identity": "immich_fork.icloud_resource.attempts"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_resource.auditRequestId"
     },
     {
       "definition": "uuid|not null|||",
@@ -1369,10 +1569,6 @@
       "identity": "immich_fork.icloud_resource.verification"
     },
     {
-      "definition": "uuid|nullable|||",
-      "identity": "immich_fork.icloud_resource.auditRequestId"
-    },
-    {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.icloud_run.connectionId"
     },
@@ -1471,6 +1667,210 @@
     {
       "definition": "bytea|not null|||",
       "identity": "immich_fork.icloud_source_identity.sha256"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "immich_fork.icloud_weekly_cohort.cancelledCount"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_weekly_cohort.configFingerprint"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_weekly_cohort.connectionId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.icloud_weekly_cohort.createdAt"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "immich_fork.icloud_weekly_cohort.grantGeneration"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_weekly_cohort.grantId"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_weekly_cohort.id"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.icloud_weekly_cohort.manifestDigest"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "immich_fork.icloud_weekly_cohort.matchCount"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "immich_fork.icloud_weekly_cohort.mismatchCount"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.icloud_weekly_cohort.nextBatch"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_weekly_cohort.ownerId"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "immich_fork.icloud_weekly_cohort.performedCount"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "immich_fork.icloud_weekly_cohort.populationCount"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_weekly_cohort.privacyFingerprint"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.icloud_weekly_cohort.seed"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "immich_fork.icloud_weekly_cohort.selectedCount"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "immich_fork.icloud_weekly_cohort.staleCount"
+    },
+    {
+      "definition": "text|not null|'frozen'::text||",
+      "identity": "immich_fork.icloud_weekly_cohort.status"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "immich_fork.icloud_weekly_cohort.unavailableCount"
+    },
+    {
+      "definition": "date|not null|||",
+      "identity": "immich_fork.icloud_weekly_cohort.weekStart"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_weekly_grant.configFingerprint"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_weekly_grant.connectionId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.icloud_weekly_grant.createdAt"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.icloud_weekly_grant.enabled"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "immich_fork.icloud_weekly_grant.generation"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.icloud_weekly_grant.id"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "immich_fork.icloud_weekly_grant.includeProtected"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_weekly_grant.inputFingerprint"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_weekly_grant.ownerId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.icloud_weekly_grant.pinBinding"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_weekly_grant.privacyFingerprint"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.icloud_weekly_grant.requestHistory"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_weekly_grant.requestKey"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "immich_fork.icloud_weekly_grant.revokedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_weekly_member.auditRequestId"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "immich_fork.icloud_weekly_member.batchOrdinal"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.bindings"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.cohortId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.connectionId"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.expectedSha256"
+    },
+    {
+      "definition": "integer|nullable|||",
+      "identity": "immich_fork.icloud_weekly_member.grantGeneration"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.icloud_weekly_member.grantId"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.ordinal"
+    },
+    {
+      "definition": "text|not null|'pending'::text||",
+      "identity": "immich_fork.icloud_weekly_member.outcome"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.ownerId"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.rank"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.receiptId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.resourceRoleKey"
+    },
+    {
+      "definition": "boolean|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.selected"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.icloud_weekly_member.technicalEligibility"
     },
     {
       "definition": "uuid[]|nullable|||",
@@ -2383,6 +2783,46 @@
     {
       "definition": "uuid|not null|||",
       "identity": "public.asset_audit.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.asset_backup_deletion.assetId"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "public.asset_backup_deletion.checksum"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_backup_deletion.checksumAlgorithm"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.asset_backup_deletion.deletedAt"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.asset_backup_deletion.evidenceVersion"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_backup_deletion.livePhotoVideoId"
+    },
+    {
+      "definition": "boolean|not null|||",
+      "identity": "public.asset_backup_deletion.modernPrivacyEvidenceUnavailable"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.asset_backup_deletion.ownerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.asset_backup_deletion.visibility"
+    },
+    {
+      "definition": "boolean|not null|||",
+      "identity": "public.asset_backup_deletion.wasLocked"
     },
     {
       "definition": "double precision|nullable|||",
@@ -3325,6 +3765,110 @@
       "identity": "public.asset_restoration.workload"
     },
     {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.asset_upload_part.createdAt"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.asset_upload_part.id"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.asset_upload_part.offset"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.asset_upload_part.path"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.asset_upload_part.resourceId"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.asset_upload_part.size"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.asset_upload_resource.contentType"
+    },
+    {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.asset_upload_resource.createdAt"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "public.asset_upload_resource.expectedChecksum"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.asset_upload_resource.expectedSize"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.asset_upload_resource.expiresAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_upload_resource.finalPath"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.asset_upload_resource.id"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.asset_upload_resource.ingested"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.asset_upload_resource.ingestionLeaseExpiresAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_upload_resource.ingestionToken"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "public.asset_upload_resource.legacyChecksum"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.asset_upload_resource.maxAppendSize"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "public.asset_upload_resource.maxSize"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.asset_upload_resource.metadata"
+    },
+    {
+      "definition": "bigint|not null|0||",
+      "identity": "public.asset_upload_resource.offset"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_upload_resource.ownerId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.asset_upload_resource.resultAssetId"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.asset_upload_resource.resultStatus"
+    },
+    {
+      "definition": "text|not null|'receiving'::text||",
+      "identity": "public.asset_upload_resource.state"
+    },
+    {
+      "definition": "bytea|nullable|||",
+      "identity": "public.asset_upload_resource.verifiedChecksum"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "public.asset_video_duplicate_frame.assetId"
     },
@@ -3541,6 +4085,86 @@
       "identity": "public.asset.width"
     },
     {
+      "definition": "text|not null|||",
+      "identity": "public.backup_device.appVersion"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.backup_device.deletedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.backup_device.deviceKey"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.backup_device.displayName"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.backup_device.id"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.backup_device.lastSuccessfulBackupAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.backup_device.model"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.backup_device.ownerId"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.backup_device.pendingCount"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.backup_device.platform"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.backup_device.reportedAt"
+    },
+    {
+      "definition": "timestamp with time zone|not null|||",
+      "identity": "public.backup_reconciliation.checkedAt"
+    },
+    {
+      "definition": "timestamp with time zone|nullable|||",
+      "identity": "public.backup_reconciliation.completedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.backup_reconciliation.deviceId"
+    },
+    {
+      "definition": "uuid|not null|uuid_generate_v4()||",
+      "identity": "public.backup_reconciliation.id"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.backup_reconciliation.itemsChecked"
+    },
+    {
+      "definition": "integer|not null|||",
+      "identity": "public.backup_reconciliation.itemsMissing"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.backup_reconciliation.ownerId"
+    },
+    {
+      "definition": "jsonb|not null|||",
+      "identity": "public.backup_reconciliation.progress"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.backup_reconciliation.startedAt"
+    },
+    {
       "definition": "boolean|not null|false||",
       "identity": "public.classification_match.archiveContributed"
     },
@@ -3681,6 +4305,18 @@
       "identity": "public.cloud_backup_manifest_entry.size"
     },
     {
+      "definition": "uuid|not null|||",
+      "identity": "public.cloud_backup_manifest_original.assetId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.cloud_backup_manifest_original.manifestId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_manifest_original.sha256"
+    },
+    {
       "definition": "integer|not null|0||",
       "identity": "public.cloud_backup_manifest.assetCount"
     },
@@ -3725,16 +4361,28 @@
       "identity": "public.cloud_backup_manifest.status"
     },
     {
-      "definition": "uuid|not null|||",
-      "identity": "public.cloud_backup_manifest_original.assetId"
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_object_verification.bucket"
     },
     {
-      "definition": "uuid|not null|||",
-      "identity": "public.cloud_backup_manifest_original.manifestId"
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.cloud_backup_object_verification.checkedAt"
     },
     {
       "definition": "text|not null|||",
-      "identity": "public.cloud_backup_manifest_original.sha256"
+      "identity": "public.cloud_backup_object_verification.method"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.cloud_backup_object_verification.operationId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_object_verification.result"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.cloud_backup_object_verification.sha256"
     },
     {
       "definition": "text|not null|||",
@@ -3759,30 +4407,6 @@
     {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.cloud_backup_object.uploadedAt"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.cloud_backup_object_verification.bucket"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "public.cloud_backup_object_verification.checkedAt"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.cloud_backup_object_verification.method"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.cloud_backup_object_verification.operationId"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.cloud_backup_object_verification.result"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.cloud_backup_object_verification.sha256"
     },
     {
       "definition": "uuid|not null|||",
@@ -4997,6 +5621,22 @@
       "identity": "public.person.updateId"
     },
     {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.pet_audit.deletedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.pet_audit.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_audit.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_audit.petId"
+    },
+    {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.pet_candidate.createdAt"
     },
@@ -5070,6 +5710,30 @@
     },
     {
       "definition": "uuid|not null|||",
+      "identity": "public.pet_observation_audit.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.pet_observation_audit.deletedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.pet_observation_audit.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_observation_audit.observationId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_observation_audit.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.pet_observation_audit.petId"
+    },
+    {
+      "definition": "uuid|not null|||",
       "identity": "public.pet_observation.assetId"
     },
     {
@@ -5129,6 +5793,10 @@
       "identity": "public.pet_observation.updatedAt"
     },
     {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.pet_observation.updateId"
+    },
+    {
       "definition": "date|nullable|||",
       "identity": "public.pet.birthDate"
     },
@@ -5167,6 +5835,10 @@
     {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.pet.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.pet.updateId"
     },
     {
       "definition": "uuid|nullable|||",
@@ -5557,10 +6229,6 @@
       "identity": "public.preservation_restore.updateId"
     },
     {
-      "definition": "text|nullable|||",
-      "identity": "public.push_device.apnsEnvironment"
-    },
-    {
       "definition": "text|not null|||",
       "identity": "public.push_device_activity.activityId"
     },
@@ -5583,6 +6251,10 @@
     {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "public.push_device_activity.updatedAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "public.push_device.apnsEnvironment"
     },
     {
       "definition": "uuid|nullable|||",
@@ -5859,6 +6531,58 @@
     {
       "definition": "uuid|not null|immich_uuid_v7()||",
       "identity": "public.session_sync_checkpoint.updateId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.session_tag_sync_state.acknowledged"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "public.session_tag_sync_state.action"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "public.session_tag_sync_state.assetId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.session_tag_sync_state.confirmedVisible"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.session_tag_sync_state.delivered"
+    },
+    {
+      "definition": "bigint|nullable|||",
+      "identity": "public.session_tag_sync_state.deliveryOrder"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.session_tag_sync_state.entityId"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.session_tag_sync_state.eventId"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.session_tag_sync_state.key"
+    },
+    {
+      "definition": "character varying|not null|||",
+      "identity": "public.session_tag_sync_state.kind"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.session_tag_sync_state.potentiallyVisible"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.session_tag_sync_state.sessionId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.session_tag_sync_state.sourceId"
     },
     {
       "definition": "character varying|nullable|||",
@@ -6758,11 +7482,51 @@
     },
     {
       "definition": "uuid|not null|||",
+      "identity": "public.tag_asset_audit.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.tag_asset_audit.deletedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.tag_asset_audit.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.tag_asset_audit.tagId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.tag_asset_audit.userId"
+    },
+    {
+      "definition": "uuid|not null|||",
       "identity": "public.tag_asset.assetId"
     },
     {
       "definition": "uuid|not null|||",
       "identity": "public.tag_asset.tagId"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.tag_asset.updateId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "public.tag_audit.deletedAt"
+    },
+    {
+      "definition": "uuid|not null|immich_uuid_v7()||",
+      "identity": "public.tag_audit.id"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.tag_audit.tagId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.tag_audit.userId"
     },
     {
       "definition": "uuid|not null|||",
@@ -7477,6 +8241,26 @@
       "identity": "public.workflow_log.workflowStepId"
     },
     {
+      "definition": "timestamp with time zone|not null|now()||",
+      "identity": "public.workflow_run_step.createdAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_run_step.executionId"
+    },
+    {
+      "definition": "boolean|not null|false||",
+      "identity": "public.workflow_run_step.halted"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_run_step.stepId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "public.workflow_run_step.workflowId"
+    },
+    {
       "definition": "jsonb|nullable|||",
       "identity": "public.workflow_step.config"
     },
@@ -7539,562 +8323,6 @@
     {
       "definition": "uuid|not null|immich_uuid_v7()||",
       "identity": "public.workflow.updateId"
-    },
-    {
-      "definition": "timestamp with time zone|not null|now()||",
-      "identity": "public.workflow_run_step.createdAt"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.workflow_run_step.executionId"
-    },
-    {
-      "definition": "boolean|not null|false||",
-      "identity": "public.workflow_run_step.halted"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.workflow_run_step.stepId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.workflow_run_step.workflowId"
-    },
-    {
-      "definition": "boolean|not null|false||",
-      "identity": "public.session_tag_sync_state.acknowledged"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.session_tag_sync_state.action"
-    },
-    {
-      "definition": "uuid|nullable|||",
-      "identity": "public.session_tag_sync_state.assetId"
-    },
-    {
-      "definition": "boolean|not null|false||",
-      "identity": "public.session_tag_sync_state.confirmedVisible"
-    },
-    {
-      "definition": "boolean|not null|false||",
-      "identity": "public.session_tag_sync_state.delivered"
-    },
-    {
-      "definition": "uuid|not null|immich_uuid_v7()||",
-      "identity": "public.session_tag_sync_state.eventId"
-    },
-    {
-      "definition": "character varying|not null|||",
-      "identity": "public.session_tag_sync_state.key"
-    },
-    {
-      "definition": "character varying|not null|||",
-      "identity": "public.session_tag_sync_state.kind"
-    },
-    {
-      "definition": "boolean|not null|false||",
-      "identity": "public.session_tag_sync_state.potentiallyVisible"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.session_tag_sync_state.sessionId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.session_tag_sync_state.sourceId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.session_tag_sync_state.entityId"
-    },
-    {
-      "definition": "uuid|not null|immich_uuid_v7()||",
-      "identity": "public.tag_asset.updateId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.tag_asset_audit.assetId"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "public.tag_asset_audit.deletedAt"
-    },
-    {
-      "definition": "uuid|not null|immich_uuid_v7()||",
-      "identity": "public.tag_asset_audit.id"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.tag_asset_audit.tagId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.tag_asset_audit.userId"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "public.tag_audit.deletedAt"
-    },
-    {
-      "definition": "uuid|not null|immich_uuid_v7()||",
-      "identity": "public.tag_audit.id"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.tag_audit.tagId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.tag_audit.userId"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "public.pet_audit.deletedAt"
-    },
-    {
-      "definition": "uuid|not null|immich_uuid_v7()||",
-      "identity": "public.pet_audit.id"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.pet_audit.ownerId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.pet_audit.petId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.pet_observation_audit.assetId"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "public.pet_observation_audit.deletedAt"
-    },
-    {
-      "definition": "uuid|not null|immich_uuid_v7()||",
-      "identity": "public.pet_observation_audit.id"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.pet_observation_audit.observationId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.pet_observation_audit.ownerId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.pet_observation_audit.petId"
-    },
-    {
-      "definition": "uuid|not null|immich_uuid_v7()||",
-      "identity": "public.pet_observation.updateId"
-    },
-    {
-      "definition": "uuid|not null|immich_uuid_v7()||",
-      "identity": "public.pet.updateId"
-    },
-    {
-      "definition": "bigint|nullable|||",
-      "identity": "public.session_tag_sync_state.deliveryOrder"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.backup_device.appVersion"
-    },
-    {
-      "definition": "timestamp with time zone|nullable|||",
-      "identity": "public.backup_device.deletedAt"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.backup_device.deviceKey"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.backup_device.displayName"
-    },
-    {
-      "definition": "uuid|not null|uuid_generate_v4()||",
-      "identity": "public.backup_device.id"
-    },
-    {
-      "definition": "timestamp with time zone|nullable|||",
-      "identity": "public.backup_device.lastSuccessfulBackupAt"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.backup_device.model"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.backup_device.ownerId"
-    },
-    {
-      "definition": "integer|not null|||",
-      "identity": "public.backup_device.pendingCount"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.backup_device.platform"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "public.backup_device.reportedAt"
-    },
-    {
-      "definition": "timestamp with time zone|not null|||",
-      "identity": "public.backup_reconciliation.checkedAt"
-    },
-    {
-      "definition": "timestamp with time zone|nullable|||",
-      "identity": "public.backup_reconciliation.completedAt"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.backup_reconciliation.deviceId"
-    },
-    {
-      "definition": "uuid|not null|uuid_generate_v4()||",
-      "identity": "public.backup_reconciliation.id"
-    },
-    {
-      "definition": "integer|not null|||",
-      "identity": "public.backup_reconciliation.itemsChecked"
-    },
-    {
-      "definition": "integer|not null|||",
-      "identity": "public.backup_reconciliation.itemsMissing"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.backup_reconciliation.ownerId"
-    },
-    {
-      "definition": "jsonb|not null|||",
-      "identity": "public.backup_reconciliation.progress"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "public.backup_reconciliation.startedAt"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.asset_backup_deletion.assetId"
-    },
-    {
-      "definition": "bytea|nullable|||",
-      "identity": "public.asset_backup_deletion.checksum"
-    },
-    {
-      "definition": "text|nullable|||",
-      "identity": "public.asset_backup_deletion.checksumAlgorithm"
-    },
-    {
-      "definition": "timestamp with time zone|not null|||",
-      "identity": "public.asset_backup_deletion.deletedAt"
-    },
-    {
-      "definition": "integer|not null|||",
-      "identity": "public.asset_backup_deletion.evidenceVersion"
-    },
-    {
-      "definition": "uuid|nullable|||",
-      "identity": "public.asset_backup_deletion.livePhotoVideoId"
-    },
-    {
-      "definition": "boolean|not null|||",
-      "identity": "public.asset_backup_deletion.modernPrivacyEvidenceUnavailable"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.asset_backup_deletion.ownerId"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.asset_backup_deletion.visibility"
-    },
-    {
-      "definition": "boolean|not null|||",
-      "identity": "public.asset_backup_deletion.wasLocked"
-    },
-    {
-      "definition": "timestamp with time zone|not null|now()||",
-      "identity": "public.asset_upload_part.createdAt"
-    },
-    {
-      "definition": "uuid|not null|uuid_generate_v4()||",
-      "identity": "public.asset_upload_part.id"
-    },
-    {
-      "definition": "bigint|not null|||",
-      "identity": "public.asset_upload_part.offset"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.asset_upload_part.path"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "public.asset_upload_part.resourceId"
-    },
-    {
-      "definition": "bigint|not null|||",
-      "identity": "public.asset_upload_part.size"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "public.asset_upload_resource.contentType"
-    },
-    {
-      "definition": "timestamp with time zone|not null|now()||",
-      "identity": "public.asset_upload_resource.createdAt"
-    },
-    {
-      "definition": "bytea|not null|||",
-      "identity": "public.asset_upload_resource.expectedChecksum"
-    },
-    {
-      "definition": "bigint|nullable|||",
-      "identity": "public.asset_upload_resource.expectedSize"
-    },
-    {
-      "definition": "timestamp with time zone|not null|||",
-      "identity": "public.asset_upload_resource.expiresAt"
-    },
-    {
-      "definition": "text|nullable|||",
-      "identity": "public.asset_upload_resource.finalPath"
-    },
-    {
-      "definition": "uuid|not null|uuid_generate_v4()||",
-      "identity": "public.asset_upload_resource.id"
-    },
-    {
-      "definition": "boolean|not null|false||",
-      "identity": "public.asset_upload_resource.ingested"
-    },
-    {
-      "definition": "timestamp with time zone|nullable|||",
-      "identity": "public.asset_upload_resource.ingestionLeaseExpiresAt"
-    },
-    {
-      "definition": "uuid|nullable|||",
-      "identity": "public.asset_upload_resource.ingestionToken"
-    },
-    {
-      "definition": "bytea|nullable|||",
-      "identity": "public.asset_upload_resource.legacyChecksum"
-    },
-    {
-      "definition": "bigint|not null|||",
-      "identity": "public.asset_upload_resource.maxAppendSize"
-    },
-    {
-      "definition": "bigint|not null|||",
-      "identity": "public.asset_upload_resource.maxSize"
-    },
-    {
-      "definition": "jsonb|not null|||",
-      "identity": "public.asset_upload_resource.metadata"
-    },
-    {
-      "definition": "bigint|not null|0||",
-      "identity": "public.asset_upload_resource.offset"
-    },
-    {
-      "definition": "uuid|nullable|||",
-      "identity": "public.asset_upload_resource.ownerId"
-    },
-    {
-      "definition": "uuid|nullable|||",
-      "identity": "public.asset_upload_resource.resultAssetId"
-    },
-    {
-      "definition": "text|nullable|||",
-      "identity": "public.asset_upload_resource.resultStatus"
-    },
-    {
-      "definition": "text|not null|'receiving'::text||",
-      "identity": "public.asset_upload_resource.state"
-    },
-    {
-      "definition": "bytea|nullable|||",
-      "identity": "public.asset_upload_resource.verifiedChecksum"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.asset_develop_artifact.assetId"
-    },
-    {
-      "definition": "bigint|not null|||",
-      "identity": "immich_fork.asset_develop_artifact.bytes"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "immich_fork.asset_develop_artifact.createdAt"
-    },
-    {
-      "definition": "integer|not null|||",
-      "identity": "immich_fork.asset_develop_artifact.height"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.asset_develop_artifact.id"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.asset_develop_artifact.kind"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.asset_develop_artifact.ownerId"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.asset_develop_artifact.path"
-    },
-    {
-      "definition": "integer|not null|||",
-      "identity": "immich_fork.asset_develop_artifact.width"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_audit.connectionId"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "immich_fork.icloud_identity_audit.createdAt"
-    },
-    {
-      "definition": "bytea|not null|||",
-      "identity": "immich_fork.icloud_identity_audit.expectedSha256"
-    },
-    {
-      "definition": "uuid|not null|gen_random_uuid()||",
-      "identity": "immich_fork.icloud_identity_audit.id"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_audit.identityId"
-    },
-    {
-      "definition": "uuid|nullable|||",
-      "identity": "immich_fork.icloud_identity_audit.itemClaimId"
-    },
-    {
-      "definition": "text|nullable|||",
-      "identity": "immich_fork.icloud_identity_audit.lastError"
-    },
-    {
-      "definition": "uuid|nullable|||",
-      "identity": "immich_fork.icloud_identity_audit.operationId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_audit.originalAssetId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_audit.ownerId"
-    },
-    {
-      "definition": "text|not null|'queued'::text||",
-      "identity": "immich_fork.icloud_identity_audit.result"
-    },
-    {
-      "definition": "uuid|nullable|||",
-      "identity": "immich_fork.icloud_identity_audit.resultAssetId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_audit.sessionId"
-    },
-    {
-      "definition": "jsonb|not null|||",
-      "identity": "immich_fork.icloud_identity_audit.snapshot"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_audit.sourceResourceId"
-    },
-    {
-      "definition": "timestamp with time zone|nullable|||",
-      "identity": "immich_fork.icloud_identity_audit.verifiedAt"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.appleFingerprint"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.assetId"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.basis"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.connectionId"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.cplAssetRecordName"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.cplMasterRecordName"
-    },
-    {
-      "definition": "timestamp with time zone|not null|clock_timestamp()||",
-      "identity": "immich_fork.icloud_identity_reuse.createdAt"
-    },
-    {
-      "definition": "text|not null|''::text||",
-      "identity": "immich_fork.icloud_identity_reuse.editVersion"
-    },
-    {
-      "definition": "bytea|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.expectedSha256"
-    },
-    {
-      "definition": "uuid|not null|gen_random_uuid()||",
-      "identity": "immich_fork.icloud_identity_reuse.id"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.identityId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.itemClaimId"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.libraryKey"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.operationId"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.ownerId"
-    },
-    {
-      "definition": "text|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.role"
-    },
-    {
-      "definition": "jsonb|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.snapshot"
-    },
-    {
-      "definition": "uuid|not null|||",
-      "identity": "immich_fork.icloud_identity_reuse.sourceResourceId"
     }
   ],
   "constraints": [
@@ -8157,6 +8385,18 @@
     {
       "definition": "PRIMARY KEY (\"assetId\")",
       "identity": "immich_fork.asset_checksum.asset_checksum_pkey"
+    },
+    {
+      "definition": "CHECK (id ~ '^[0-9a-f]{64}$'::text)",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_id_check"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['mask'::text, 'fill'::text]))",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"assetId\", id)",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_pkey"
     },
     {
       "definition": "UNIQUE (\"assetId\", revision)",
@@ -8375,18 +8615,6 @@
       "identity": "immich_fork.face_correction.face_correction_pkey"
     },
     {
-      "definition": "CHECK (jsonb_typeof(features) = 'object'::text)",
-      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_features_check"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_pkey"
-    },
-    {
-      "definition": "CHECK (length(version) >= 1 AND length(version) <= 64)",
-      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_version_check"
-    },
-    {
       "definition": "CHECK (access IS NULL OR (access = ANY (ARRAY['owner'::text, 'admin'::text, 'editor'::text, 'viewer'::text])))",
       "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_access_check"
     },
@@ -8403,12 +8631,36 @@
       "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_sub_unique"
     },
     {
+      "definition": "CHECK (jsonb_typeof(features) = 'object'::text)",
+      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_features_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_pkey"
+    },
+    {
+      "definition": "CHECK (length(version) >= 1 AND length(version) <= 64)",
+      "identity": "immich_fork.frameleaf_consent.frameleaf_consent_version_check"
+    },
+    {
+      "definition": "PRIMARY KEY (jti)",
+      "identity": "immich_fork.frameleaf_exchange_token.frameleaf_exchange_token_pkey"
+    },
+    {
       "definition": "UNIQUE (\"handoffCodeHash\")",
       "identity": "immich_fork.frameleaf_session.frameleaf_session_handoff_unique"
     },
     {
       "definition": "PRIMARY KEY (\"sessionId\")",
       "identity": "immich_fork.frameleaf_session.frameleaf_session_pkey"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['sid'::text, 'sub'::text]))",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.frameleaf_sign_in_revocation_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (kind, value)",
+      "identity": "immich_fork.frameleaf_sign_in_revocation.frameleaf_sign_in_revocation_pkey"
     },
     {
       "definition": "CHECK (length(\"keyHint\") = 4)",
@@ -8425,18 +8677,6 @@
     {
       "definition": "PRIMARY KEY (\"userId\")",
       "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_pkey"
-    },
-    {
-      "definition": "PRIMARY KEY (jti)",
-      "identity": "immich_fork.frameleaf_exchange_token.frameleaf_exchange_token_pkey"
-    },
-    {
-      "definition": "CHECK (kind = ANY (ARRAY['sid'::text, 'sub'::text]))",
-      "identity": "immich_fork.frameleaf_sign_in_revocation.frameleaf_sign_in_revocation_kind_check"
-    },
-    {
-      "definition": "PRIMARY KEY (kind, value)",
-      "identity": "immich_fork.frameleaf_sign_in_revocation.frameleaf_sign_in_revocation_pkey"
     },
     {
       "definition": "FOREIGN KEY (\"connectionId\") REFERENCES immich_fork.icloud_connection(id) ON DELETE CASCADE",
@@ -8491,6 +8731,74 @@
       "identity": "immich_fork.icloud_connection.icloud_connection_pkey"
     },
     {
+      "definition": "CHECK (purpose = 'manual-session'::text AND \"sessionId\" IS NOT NULL AND \"grantId\" IS NULL AND \"grantGeneration\" IS NULL AND \"cohortId\" IS NULL AND \"memberOrdinal\" IS NULL AND \"batchOrdinal\" IS NULL OR purpose = 'scheduled-weekly'::text AND \"sessionId\" IS NULL AND \"grantId\" IS NOT NULL AND \"grantGeneration\" IS NOT NULL AND \"grantGeneration\" > 0 AND \"cohortId\" IS NOT NULL AND \"memberOrdinal\" IS NOT NULL AND \"memberOrdinal\" >= 0 AND \"batchOrdinal\" IS NOT NULL AND \"batchOrdinal\" >= 0)",
+      "identity": "immich_fork.icloud_identity_audit.icloud_audit_purpose"
+    },
+    {
+      "definition": "UNIQUE (id, \"cohortId\", \"memberOrdinal\", \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\", \"batchOrdinal\")",
+      "identity": "immich_fork.icloud_identity_audit.icloud_audit_weekly_binding"
+    },
+    {
+      "definition": "FOREIGN KEY (\"cohortId\", \"memberOrdinal\", \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\", \"batchOrdinal\") REFERENCES immich_fork.icloud_weekly_member(\"cohortId\", ordinal, \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\", \"batchOrdinal\")",
+      "identity": "immich_fork.icloud_identity_audit.icloud_audit_weekly_member"
+    },
+    {
+      "definition": "FOREIGN KEY (\"connectionId\", \"ownerId\") REFERENCES immich_fork.icloud_connection(id, \"ownerId\") ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_connectionId_ownerId_fkey"
+    },
+    {
+      "definition": "CHECK (octet_length(\"expectedSha256\") = 32)",
+      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_expectedSha256_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_pkey"
+    },
+    {
+      "definition": "CHECK (result = ANY (ARRAY['queued'::text, 'running'::text, 'match'::text, 'mismatch'::text, 'stale'::text, 'cancelled'::text, 'failed'::text]))",
+      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_result_check"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(snapshot) = 'object'::text)",
+      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_snapshot_check"
+    },
+    {
+      "definition": "CHECK (\"appleFingerprint\" ~ '^[A-Za-z0-9+/]{28}$'::text AND get_byte(decode(\"appleFingerprint\", 'base64'::text), 0) = 1)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_appleFingerprint_check"
+    },
+    {
+      "definition": "CHECK (basis = 'exact-identity'::text)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_basis_check"
+    },
+    {
+      "definition": "FOREIGN KEY (\"connectionId\", \"ownerId\") REFERENCES immich_fork.icloud_connection(id, \"ownerId\") ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_connectionId_ownerId_fkey"
+    },
+    {
+      "definition": "CHECK (\"editVersion\" = ''::text)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_editVersion_check"
+    },
+    {
+      "definition": "CHECK (octet_length(\"expectedSha256\") = 32)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_expectedSha256_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_pkey"
+    },
+    {
+      "definition": "CHECK (role = ANY (ARRAY['original'::text, 'live-motion'::text, 'raw-alternate'::text]))",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_role_check"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(snapshot) = 'object'::text AND snapshot ?& ARRAY['config'::text, 'resourceKey'::text, 'fingerprint'::text, 'sourceRevision'::text, 'masterRevision'::text, 'originalPath'::text, 'updateId'::text, 'checksum'::text, 'algorithm'::text, 'physicalId'::text, 'forkPhysicalId'::text, 'fileIdentity'::text, 'sourceChecksum'::text] AND jsonb_typeof(snapshot -> 'fileIdentity'::text) = 'object'::text AND (snapshot -> 'fileIdentity'::text) ?& ARRAY['dev'::text, 'ino'::text, 'size'::text, 'mtimeMs'::text, 'ctimeMs'::text] AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'dev'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'ino'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'size'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'mtimeMs'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'ctimeMs'::text) = 'number'::text)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_snapshot_check"
+    },
+    {
+      "definition": "UNIQUE (\"sourceResourceId\")",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_sourceResourceId_key"
+    },
+    {
       "definition": "FOREIGN KEY (\"connectionId\") REFERENCES immich_fork.icloud_connection(id) ON DELETE CASCADE",
       "identity": "immich_fork.icloud_membership.icloud_membership_connectionId_fkey"
     },
@@ -8513,6 +8821,10 @@
     {
       "definition": "CHECK (attempts >= 0)",
       "identity": "immich_fork.icloud_resource.icloud_resource_attempts_check"
+    },
+    {
+      "definition": "FOREIGN KEY (\"auditRequestId\") REFERENCES immich_fork.icloud_identity_audit(id)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_auditRequestId_fkey"
     },
     {
       "definition": "CHECK ((\"leaseToken\" IS NULL) = (\"leaseExpiresAt\" IS NULL))",
@@ -8553,10 +8865,6 @@
     {
       "definition": "CHECK (jsonb_typeof(source) = 'object'::text)",
       "identity": "immich_fork.icloud_resource.icloud_resource_source_check"
-    },
-    {
-      "definition": "FOREIGN KEY (\"auditRequestId\") REFERENCES immich_fork.icloud_identity_audit(id)",
-      "identity": "immich_fork.icloud_resource.icloud_resource_auditRequestId_fkey"
     },
     {
       "definition": "FOREIGN KEY (\"connectionId\", \"ownerId\") REFERENCES immich_fork.icloud_connection(id, \"ownerId\") ON DELETE CASCADE",
@@ -8601,6 +8909,182 @@
     {
       "definition": "CHECK (\"matchStrength\" = ANY (ARRAY['exact'::text, 'corroborated'::text, 'hint'::text]))",
       "identity": "immich_fork.icloud_source_identity.icloud_source_identity_strength_check"
+    },
+    {
+      "definition": "CHECK (\"selectedCount\" >= 0 AND \"selectedCount\" = ((\"populationCount\" + 99) / 100))",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_check"
+    },
+    {
+      "definition": "CHECK ((\"grantId\" IS NULL) = (\"grantGeneration\" IS NULL))",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_check1"
+    },
+    {
+      "definition": "CHECK (\"matchCount\" >= 0 AND \"mismatchCount\" >= 0 AND \"unavailableCount\" >= 0 AND \"cancelledCount\" >= 0 AND \"performedCount\" = (\"matchCount\" + \"mismatchCount\") AND (\"performedCount\" + \"unavailableCount\" + \"cancelledCount\") <= \"selectedCount\")",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_check2"
+    },
+    {
+      "definition": "CHECK (status <> 'settled'::text OR (\"performedCount\" + \"unavailableCount\" + \"cancelledCount\") = \"selectedCount\")",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_check3"
+    },
+    {
+      "definition": "FOREIGN KEY (\"connectionId\", \"ownerId\") REFERENCES immich_fork.icloud_connection(id, \"ownerId\") ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_connectionId_ownerId_fkey"
+    },
+    {
+      "definition": "CHECK (\"grantGeneration\" IS NULL OR \"grantGeneration\" > 0)",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_grantGeneration_check"
+    },
+    {
+      "definition": "FOREIGN KEY (\"grantId\", \"ownerId\", \"connectionId\") REFERENCES immich_fork.icloud_weekly_grant(id, \"ownerId\", \"connectionId\")",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_grantId_ownerId_connectionId_fkey"
+    },
+    {
+      "definition": "UNIQUE (id, \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\")",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_id_ownerId_connectionId_grantId_grantG_key"
+    },
+    {
+      "definition": "UNIQUE (id, \"ownerId\", \"connectionId\")",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_id_ownerId_connectionId_key"
+    },
+    {
+      "definition": "CHECK (octet_length(\"manifestDigest\") = 32)",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_manifestDigest_check"
+    },
+    {
+      "definition": "CHECK (\"nextBatch\" >= 0)",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_nextBatch_check"
+    },
+    {
+      "definition": "UNIQUE (\"ownerId\", \"connectionId\", \"weekStart\")",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_ownerId_connectionId_weekStart_key"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_pkey"
+    },
+    {
+      "definition": "CHECK (\"populationCount\" >= 0)",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_populationCount_check"
+    },
+    {
+      "definition": "CHECK (octet_length(seed) = 32)",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_seed_check"
+    },
+    {
+      "definition": "CHECK (\"staleCount\" >= 0)",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_staleCount_check"
+    },
+    {
+      "definition": "CHECK (status = ANY (ARRAY['frozen'::text, 'running'::text, 'settled'::text]))",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_status_check"
+    },
+    {
+      "definition": "CHECK (EXTRACT(isodow FROM \"weekStart\") = 1::numeric)",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_weekStart_check"
+    },
+    {
+      "definition": "CHECK (NOT \"includeProtected\" OR enabled AND \"pinBinding\" IS NOT NULL)",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_check"
+    },
+    {
+      "definition": "CHECK (enabled OR \"revokedAt\" IS NOT NULL)",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_check1"
+    },
+    {
+      "definition": "FOREIGN KEY (\"connectionId\", \"ownerId\") REFERENCES immich_fork.icloud_connection(id, \"ownerId\") ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_connectionId_ownerId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"connectionId\", \"ownerId\")",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_connectionId_ownerId_key"
+    },
+    {
+      "definition": "CHECK (generation > 0)",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_generation_check"
+    },
+    {
+      "definition": "UNIQUE (id, \"ownerId\", \"connectionId\")",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_id_ownerId_connectionId_key"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_pkey"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(\"requestHistory\") = 'object'::text)",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_requestHistory_check"
+    },
+    {
+      "definition": "FOREIGN KEY (\"auditRequestId\", \"cohortId\", ordinal, \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\", \"batchOrdinal\") REFERENCES immich_fork.icloud_identity_audit(id, \"cohortId\", \"memberOrdinal\", \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\", \"batchOrdinal\") DEFERRABLE INITIALLY DEFERRED",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_audit"
+    },
+    {
+      "definition": "UNIQUE (\"auditRequestId\")",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_auditRequestId_key"
+    },
+    {
+      "definition": "CHECK (jsonb_typeof(bindings) = 'object'::text AND bindings ?& ARRAY['receipt'::text, 'source'::text, 'identity'::text, 'original'::text])",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_bindings_check"
+    },
+    {
+      "definition": "CHECK ((\"grantId\" IS NULL) = (\"grantGeneration\" IS NULL))",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_check"
+    },
+    {
+      "definition": "CHECK (selected AND \"technicalEligibility\" = 'current'::text AND \"batchOrdinal\" IS NOT NULL AND \"batchOrdinal\" >= 0 OR NOT selected AND \"batchOrdinal\" IS NULL AND \"auditRequestId\" IS NULL)",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_check1"
+    },
+    {
+      "definition": "CHECK (\"auditRequestId\" IS NULL OR selected AND \"grantId\" IS NOT NULL)",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_check2"
+    },
+    {
+      "definition": "UNIQUE (\"cohortId\", ordinal, \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\", \"batchOrdinal\")",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_cohortId_ordinal_ownerId_connectionId__key"
+    },
+    {
+      "definition": "FOREIGN KEY (\"cohortId\", \"ownerId\", \"connectionId\") REFERENCES immich_fork.icloud_weekly_cohort(id, \"ownerId\", \"connectionId\") ON DELETE CASCADE",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_cohortId_ownerId_connectionId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"cohortId\", \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\") REFERENCES immich_fork.icloud_weekly_cohort(id, \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\")",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_cohortId_ownerId_connectionId_grantId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"cohortId\", \"receiptId\")",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_cohortId_receiptId_key"
+    },
+    {
+      "definition": "UNIQUE (\"cohortId\", \"resourceRoleKey\")",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_cohortId_resourceRoleKey_key"
+    },
+    {
+      "definition": "CHECK (octet_length(\"expectedSha256\") = 32)",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_expectedSha256_check"
+    },
+    {
+      "definition": "CHECK (\"grantGeneration\" IS NULL OR \"grantGeneration\" > 0)",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_grantGeneration_check"
+    },
+    {
+      "definition": "CHECK (ordinal >= 0)",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_ordinal_check"
+    },
+    {
+      "definition": "CHECK (outcome = ANY (ARRAY['pending'::text, 'match'::text, 'mismatch'::text, 'unavailable'::text, 'cancelled'::text]))",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_outcome_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"cohortId\", ordinal)",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_pkey"
+    },
+    {
+      "definition": "CHECK (octet_length(rank) = 32)",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_rank_check"
+    },
+    {
+      "definition": "CHECK (\"technicalEligibility\" = ANY (ARRAY['current'::text, 'stale'::text]))",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_technicalEligibility_check"
     },
     {
       "definition": "PRIMARY KEY (\"memoryId\")",
@@ -8983,6 +9467,10 @@
       "identity": "public.asset_audit.asset_audit_pkey"
     },
     {
+      "definition": "PRIMARY KEY (\"assetId\")",
+      "identity": "public.asset_backup_deletion.asset_backup_deletion_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.asset_best_photo_score.asset_best_photo_score_assetId_fkey"
     },
@@ -9191,6 +9679,22 @@
       "identity": "public.asset_restoration.asset_restoration_previewOperationId_fkey"
     },
     {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.asset_upload_part.asset_upload_part_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"resourceId\") REFERENCES asset_upload_resource(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.asset_upload_part.asset_upload_part_resourceId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
+      "identity": "public.asset_upload_resource.asset_upload_resource_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.asset_upload_resource.asset_upload_resource_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.asset_video_duplicate_frame.asset_video_duplicate_frame_assetId_fkey"
     },
@@ -9229,6 +9733,30 @@
     {
       "definition": "FOREIGN KEY (\"stackId\") REFERENCES stack(id) ON UPDATE CASCADE ON DELETE SET NULL",
       "identity": "public.asset.asset_stackId_fkey"
+    },
+    {
+      "definition": "UNIQUE (\"ownerId\", \"deviceKey\")",
+      "identity": "public.backup_device.backup_device_ownerId_deviceKey_uq"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.backup_device.backup_device_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.backup_device.backup_device_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"deviceId\") REFERENCES backup_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.backup_reconciliation.backup_reconciliation_deviceId_fkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.backup_reconciliation.backup_reconciliation_ownerId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.backup_reconciliation.backup_reconciliation_pkey"
     },
     {
       "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
@@ -9271,10 +9799,6 @@
       "identity": "public.cloud_backup_manifest_entry.cloud_backup_manifest_entry_pkey"
     },
     {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "public.cloud_backup_manifest.cloud_backup_manifest_pkey"
-    },
-    {
       "definition": "FOREIGN KEY (\"manifestId\") REFERENCES cloud_backup_manifest(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.cloud_backup_manifest_original.cloud_backup_manifest_original_manifestId_fkey"
     },
@@ -9283,8 +9807,8 @@
       "identity": "public.cloud_backup_manifest_original.cloud_backup_manifest_original_pkey"
     },
     {
-      "definition": "PRIMARY KEY (bucket, sha256)",
-      "identity": "public.cloud_backup_object.cloud_backup_object_pkey"
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.cloud_backup_manifest.cloud_backup_manifest_pkey"
     },
     {
       "definition": "FOREIGN KEY (\"operationId\") REFERENCES media_operation(id) ON UPDATE CASCADE ON DELETE CASCADE",
@@ -9293,6 +9817,10 @@
     {
       "definition": "PRIMARY KEY (bucket, sha256, \"operationId\")",
       "identity": "public.cloud_backup_object_verification.cloud_backup_object_verification_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (bucket, sha256)",
+      "identity": "public.cloud_backup_object.cloud_backup_object_pkey"
     },
     {
       "definition": "FOREIGN KEY (\"clusterGroupId\") REFERENCES cluster_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
@@ -9623,6 +10151,10 @@
       "identity": "public.person.person_pkey"
     },
     {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.pet_audit.pet_audit_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"detectionId\") REFERENCES pet_detection(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.pet_candidate.pet_candidate_detectionId_fkey"
     },
@@ -9645,6 +10177,10 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.pet_detection.pet_detection_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.pet_observation_audit.pet_observation_audit_pkey"
     },
     {
       "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
@@ -9829,6 +10365,14 @@
     {
       "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.session_sync_checkpoint.session_sync_checkpoint_sessionId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"sessionId\", kind, key)",
+      "identity": "public.session_tag_sync_state.session_tag_sync_state_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.session_tag_sync_state.session_tag_sync_state_sessionId_fkey"
     },
     {
       "definition": "FOREIGN KEY (\"parentId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
@@ -10219,6 +10763,10 @@
       "identity": "public.system_metadata.system_metadata_pkey"
     },
     {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.tag_asset_audit.tag_asset_audit_pkey"
+    },
+    {
       "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.tag_asset.tag_asset_assetId_fkey"
     },
@@ -10229,6 +10777,10 @@
     {
       "definition": "FOREIGN KEY (\"tagId\") REFERENCES tag(id) ON UPDATE CASCADE ON DELETE CASCADE",
       "identity": "public.tag_asset.tag_asset_tagId_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "public.tag_audit.tag_audit_pkey"
     },
     {
       "definition": "FOREIGN KEY (id_ancestor) REFERENCES tag(id) ON DELETE CASCADE",
@@ -10479,6 +11031,14 @@
       "identity": "public.workflow_log.workflow_log_workflowStepId_fkey"
     },
     {
+      "definition": "PRIMARY KEY (\"executionId\", \"stepId\")",
+      "identity": "public.workflow_run_step.workflow_run_step_pkey"
+    },
+    {
+      "definition": "FOREIGN KEY (\"workflowId\") REFERENCES workflow(id) ON UPDATE CASCADE ON DELETE CASCADE",
+      "identity": "public.workflow_run_step.workflow_run_step_workflowId_fkey"
+    },
+    {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.workflow_step.workflow_step_pkey"
     },
@@ -10497,150 +11057,6 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "public.workflow.workflow_pkey"
-    },
-    {
-      "definition": "PRIMARY KEY (\"executionId\", \"stepId\")",
-      "identity": "public.workflow_run_step.workflow_run_step_pkey"
-    },
-    {
-      "definition": "FOREIGN KEY (\"workflowId\") REFERENCES workflow(id) ON UPDATE CASCADE ON DELETE CASCADE",
-      "identity": "public.workflow_run_step.workflow_run_step_workflowId_fkey"
-    },
-    {
-      "definition": "PRIMARY KEY (\"sessionId\", kind, key)",
-      "identity": "public.session_tag_sync_state.session_tag_sync_state_pkey"
-    },
-    {
-      "definition": "FOREIGN KEY (\"sessionId\") REFERENCES session(id) ON UPDATE CASCADE ON DELETE CASCADE",
-      "identity": "public.session_tag_sync_state.session_tag_sync_state_sessionId_fkey"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "public.tag_asset_audit.tag_asset_audit_pkey"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "public.tag_audit.tag_audit_pkey"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "public.pet_audit.pet_audit_pkey"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "public.pet_observation_audit.pet_observation_audit_pkey"
-    },
-    {
-      "definition": "UNIQUE (\"ownerId\", \"deviceKey\")",
-      "identity": "public.backup_device.backup_device_ownerId_deviceKey_uq"
-    },
-    {
-      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-      "identity": "public.backup_device.backup_device_ownerId_fkey"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "public.backup_device.backup_device_pkey"
-    },
-    {
-      "definition": "FOREIGN KEY (\"deviceId\") REFERENCES backup_device(id) ON UPDATE CASCADE ON DELETE CASCADE",
-      "identity": "public.backup_reconciliation.backup_reconciliation_deviceId_fkey"
-    },
-    {
-      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-      "identity": "public.backup_reconciliation.backup_reconciliation_ownerId_fkey"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "public.backup_reconciliation.backup_reconciliation_pkey"
-    },
-    {
-      "definition": "PRIMARY KEY (\"assetId\")",
-      "identity": "public.asset_backup_deletion.asset_backup_deletion_pkey"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "public.asset_upload_part.asset_upload_part_pkey"
-    },
-    {
-      "definition": "FOREIGN KEY (\"resourceId\") REFERENCES asset_upload_resource(id) ON UPDATE CASCADE ON DELETE CASCADE",
-      "identity": "public.asset_upload_part.asset_upload_part_resourceId_fkey"
-    },
-    {
-      "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE SET NULL",
-      "identity": "public.asset_upload_resource.asset_upload_resource_ownerId_fkey"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "public.asset_upload_resource.asset_upload_resource_pkey"
-    },
-    {
-      "definition": "CHECK (id ~ '^[0-9a-f]{64}$'::text)",
-      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_id_check"
-    },
-    {
-      "definition": "CHECK (kind = ANY (ARRAY['mask'::text, 'fill'::text]))",
-      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_kind_check"
-    },
-    {
-      "definition": "PRIMARY KEY (\"assetId\", id)",
-      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_pkey"
-    },
-    {
-      "definition": "FOREIGN KEY (\"connectionId\", \"ownerId\") REFERENCES immich_fork.icloud_connection(id, \"ownerId\") ON DELETE CASCADE",
-      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_connectionId_ownerId_fkey"
-    },
-    {
-      "definition": "CHECK (octet_length(\"expectedSha256\") = 32)",
-      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_expectedSha256_check"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_pkey"
-    },
-    {
-      "definition": "CHECK (result = ANY (ARRAY['queued'::text, 'running'::text, 'match'::text, 'mismatch'::text, 'stale'::text, 'cancelled'::text, 'failed'::text]))",
-      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_result_check"
-    },
-    {
-      "definition": "CHECK (jsonb_typeof(snapshot) = 'object'::text)",
-      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_snapshot_check"
-    },
-    {
-      "definition": "CHECK (\"appleFingerprint\" ~ '^[A-Za-z0-9+/]{28}$'::text AND get_byte(decode(\"appleFingerprint\", 'base64'::text), 0) = 1)",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_appleFingerprint_check"
-    },
-    {
-      "definition": "CHECK (basis = 'exact-identity'::text)",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_basis_check"
-    },
-    {
-      "definition": "FOREIGN KEY (\"connectionId\", \"ownerId\") REFERENCES immich_fork.icloud_connection(id, \"ownerId\") ON DELETE CASCADE",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_connectionId_ownerId_fkey"
-    },
-    {
-      "definition": "CHECK (\"editVersion\" = ''::text)",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_editVersion_check"
-    },
-    {
-      "definition": "CHECK (octet_length(\"expectedSha256\") = 32)",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_expectedSha256_check"
-    },
-    {
-      "definition": "PRIMARY KEY (id)",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_pkey"
-    },
-    {
-      "definition": "CHECK (role = ANY (ARRAY['original'::text, 'live-motion'::text, 'raw-alternate'::text]))",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_role_check"
-    },
-    {
-      "definition": "CHECK (jsonb_typeof(snapshot) = 'object'::text AND snapshot ?& ARRAY['config'::text, 'resourceKey'::text, 'fingerprint'::text, 'sourceRevision'::text, 'masterRevision'::text, 'originalPath'::text, 'updateId'::text, 'checksum'::text, 'algorithm'::text, 'physicalId'::text, 'forkPhysicalId'::text, 'fileIdentity'::text, 'sourceChecksum'::text] AND jsonb_typeof(snapshot -> 'fileIdentity'::text) = 'object'::text AND (snapshot -> 'fileIdentity'::text) ?& ARRAY['dev'::text, 'ino'::text, 'size'::text, 'mtimeMs'::text, 'ctimeMs'::text] AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'dev'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'ino'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'size'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'mtimeMs'::text) = 'number'::text AND jsonb_typeof((snapshot -> 'fileIdentity'::text) -> 'ctimeMs'::text) = 'number'::text)",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_snapshot_check"
-    },
-    {
-      "definition": "UNIQUE (\"sourceResourceId\")",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_sourceResourceId_key"
     }
   ],
   "enums": [
@@ -10766,9 +11182,14 @@
     "0000000000214-BuddyBackupReferences",
     "0000000000215-PhotographyWorkflow",
     "0000000000216-ICloudIdentityAudit",
-    "0000000000217-ICloudIdentityReuse"
+    "0000000000217-ICloudIdentityReuse",
+    "0000000000218-ICloudWeeklyAuthority"
   ],
   "functions": [
+    {
+      "definition": "CREATE OR REPLACE FUNCTION immich_fork.freeze_icloud_weekly_bindings()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF TG_TABLE_NAME='icloud_weekly_cohort' THEN\n        IF (to_jsonb(NEW)-ARRAY['performedCount','matchCount','mismatchCount','unavailableCount','cancelledCount','nextBatch','status'])\n          IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['performedCount','matchCount','mismatchCount','unavailableCount','cancelledCount','nextBatch','status'])\n          THEN RAISE EXCEPTION 'icloud_weekly_cohort_frozen'; END IF;\n      ELSE\n        IF (to_jsonb(NEW)-ARRAY['outcome','auditRequestId']) IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['outcome','auditRequestId'])\n          THEN RAISE EXCEPTION 'icloud_weekly_member_frozen'; END IF;\n        IF OLD.outcome<>'pending' AND NEW.outcome IS DISTINCT FROM OLD.outcome\n          THEN RAISE EXCEPTION 'icloud_weekly_outcome_frozen'; END IF;\n        IF OLD.\"auditRequestId\" IS NOT NULL AND NEW.\"auditRequestId\" IS DISTINCT FROM OLD.\"auditRequestId\"\n          THEN RAISE EXCEPTION 'icloud_weekly_audit_binding_frozen'; END IF;\n      END IF;\n      RETURN NEW;\n    END $function$",
+      "identity": "immich_fork.freeze_icloud_weekly_bindings()"
+    },
     {
       "definition": "CREATE OR REPLACE FUNCTION immich_fork.icloud_connection_unhealthy_since()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF NEW.state = 'connected' THEN\n        NEW.\"unhealthySince\" := NULL;\n      ELSIF NEW.\"unhealthySince\" IS NULL THEN\n        NEW.\"unhealthySince\" := now();\n      END IF;\n      RETURN NEW;\n    END\n    $function$",
       "identity": "immich_fork.icloud_connection_unhealthy_since()"
@@ -10776,6 +11197,10 @@
     {
       "definition": "CREATE OR REPLACE FUNCTION immich_fork.prevent_cutover_verification_identity_change()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      IF TG_OP = 'TRUNCATE' THEN\n        IF TG_TABLE_NAME = 'cutover_verification_run' AND EXISTS (\n          SELECT 1 FROM immich_fork.cutover_verification_run WHERE status = 'completed'\n        ) THEN\n          RAISE EXCEPTION 'completed cutover verification run evidence is immutable';\n        END IF;\n        IF TG_TABLE_NAME = 'cutover_verification_asset' AND EXISTS (\n          SELECT 1 FROM immich_fork.cutover_verification_asset WHERE status = 'verified'\n        ) THEN\n          RAISE EXCEPTION 'completed cutover verification asset evidence is immutable';\n        END IF;\n        RETURN NULL;\n      END IF;\n      IF TG_OP = 'DELETE' THEN\n        IF TG_TABLE_NAME = 'cutover_verification_run' AND OLD.status = 'completed' THEN\n          RAISE EXCEPTION 'completed cutover verification run evidence is immutable';\n        END IF;\n        IF TG_TABLE_NAME = 'cutover_verification_asset' AND OLD.status = 'verified' THEN\n          RAISE EXCEPTION 'completed cutover verification asset evidence is immutable';\n        END IF;\n        RETURN OLD;\n      END IF;\n      IF TG_OP = 'INSERT' THEN\n        IF TG_TABLE_NAME = 'cutover_verification_asset' AND EXISTS (\n          SELECT 1\n          FROM immich_fork.cutover_verification_run\n          WHERE id = NEW.\"runId\" AND status = 'completed'\n        ) THEN\n          RAISE EXCEPTION 'completed cutover verification asset evidence is immutable';\n        END IF;\n        RETURN NEW;\n      END IF;\n      IF TG_TABLE_NAME = 'cutover_verification_run' AND\n         jsonb_build_array(to_jsonb(NEW)->'id', to_jsonb(NEW)->'databaseBackupId', to_jsonb(NEW)->'snapshotId',\n           to_jsonb(NEW)->'applicableAssetCount', to_jsonb(NEW)->'createdAt')\n         IS DISTINCT FROM\n         jsonb_build_array(to_jsonb(OLD)->'id', to_jsonb(OLD)->'databaseBackupId', to_jsonb(OLD)->'snapshotId',\n           to_jsonb(OLD)->'applicableAssetCount', to_jsonb(OLD)->'createdAt') THEN\n        RAISE EXCEPTION 'cutover verification run identity is immutable';\n      END IF;\n      IF TG_TABLE_NAME = 'cutover_verification_run' AND OLD.status = 'completed' AND\n         to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN\n        RAISE EXCEPTION 'completed cutover verification run evidence is immutable';\n      END IF;\n      IF TG_TABLE_NAME = 'cutover_verification_asset' AND\n         jsonb_build_array(to_jsonb(NEW)->'runId', to_jsonb(NEW)->'assetId', to_jsonb(NEW)->'path',\n           to_jsonb(NEW)->'approvedRoots', to_jsonb(NEW)->'expectedSize', to_jsonb(NEW)->'expectedSha1',\n           to_jsonb(NEW)->'expectedSha256')\n         IS DISTINCT FROM\n         jsonb_build_array(to_jsonb(OLD)->'runId', to_jsonb(OLD)->'assetId', to_jsonb(OLD)->'path',\n           to_jsonb(OLD)->'approvedRoots', to_jsonb(OLD)->'expectedSize', to_jsonb(OLD)->'expectedSha1',\n           to_jsonb(OLD)->'expectedSha256') THEN\n        RAISE EXCEPTION 'cutover verification asset identity is immutable';\n      END IF;\n      IF TG_TABLE_NAME = 'cutover_verification_asset' AND OLD.status = 'verified' AND\n         to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN\n        RAISE EXCEPTION 'completed cutover verification asset evidence is immutable';\n      END IF;\n      RETURN NEW;\n    END\n    $function$",
       "identity": "immich_fork.prevent_cutover_verification_identity_change()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION immich_fork.retire_icloud_weekly_authority()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    DECLARE old_row jsonb; new_row jsonb; owner_id uuid; connection_id uuid; changed boolean;\n    BEGIN\n      old_row := CASE WHEN TG_OP='INSERT' THEN '{}'::jsonb ELSE to_jsonb(OLD) END;\n      new_row := CASE WHEN TG_OP='DELETE' THEN '{}'::jsonb ELSE to_jsonb(NEW) END;\n      IF TG_TABLE_NAME='icloud_connection' THEN\n        owner_id := (new_row->>'ownerId')::uuid; connection_id := (new_row->>'id')::uuid;\n        changed := old_row->'config' IS DISTINCT FROM new_row->'config'\n          OR (old_row->'encryptedSession' IS DISTINCT FROM new_row->'encryptedSession'\n            AND new_row->>'encryptedSession' IS NULL)\n          OR (new_row->>'lastError'='owner_removed' AND old_row->>'lastError' IS DISTINCT FROM 'owner_removed')\n          OR (old_row->>'state' IS DISTINCT FROM new_row->>'state' AND new_row->>'state'<>'connected');\n      ELSIF TG_TABLE_NAME='user' THEN\n        owner_id := coalesce(new_row->>'id',old_row->>'id')::uuid;\n        changed := TG_OP='DELETE' OR old_row->'pinCode' IS DISTINCT FROM new_row->'pinCode'\n          OR old_row->'deletedAt' IS DISTINCT FROM new_row->'deletedAt';\n      ELSE\n        owner_id := coalesce(new_row->>'userId',old_row->>'userId')::uuid;\n        changed := coalesce(new_row->>'key',old_row->>'key')='preferences'\n          AND old_row->'value'->'privacy' IS DISTINCT FROM new_row->'value'->'privacy';\n      END IF;\n      IF changed THEN\n        UPDATE immich_fork.icloud_weekly_grant SET enabled=false,\"includeProtected\"=false,\n          \"pinBinding\"=NULL,generation=generation+1,\"revokedAt\"=clock_timestamp()\n          WHERE \"ownerId\"=owner_id AND (connection_id IS NULL OR \"connectionId\"=connection_id) AND enabled;\n      END IF;\n      RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;\n    END $function$",
+      "identity": "immich_fork.retire_icloud_weekly_authority()"
     },
     {
       "definition": "CREATE OR REPLACE FUNCTION public._vchord_halfvec_operator_maxsim(lhs halfvec[], rhs halfvec[])\n RETURNS real\n LANGUAGE c\n IMMUTABLE PARALLEL SAFE STRICT\nAS '$libdir/vchord', $function$_vchord_halfvec_operator_maxsim_wrapper$function$",
@@ -10956,6 +11381,10 @@
     {
       "definition": "CREATE OR REPLACE FUNCTION public.array_to_vector(real[], integer, boolean)\n RETURNS vector\n LANGUAGE c\n IMMUTABLE PARALLEL SAFE STRICT\nAS '$libdir/vector', $function$array_to_vector$function$",
       "identity": "public.array_to_vector(real[], integer, boolean)"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.asset_backup_deletion_capture()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  INSERT INTO asset_backup_deletion (\"assetId\", \"ownerId\", \"deletedAt\", visibility, \"wasLocked\", checksum, \"checksumAlgorithm\", \"livePhotoVideoId\", \"evidenceVersion\", \"modernPrivacyEvidenceUnavailable\")\n  VALUES (OLD.id, OLD.\"ownerId\", clock_timestamp(), OLD.visibility::text,\n    EXISTS (SELECT 1 FROM asset_lock WHERE \"assetId\" = OLD.id)\n    OR (OLD.visibility::text = 'hidden' AND (\n      EXISTS (SELECT 1 FROM asset AS parent JOIN asset_lock ON asset_lock.\"assetId\" = parent.id\n        WHERE parent.\"livePhotoVideoId\" = OLD.id AND parent.\"ownerId\" = OLD.\"ownerId\")\n      OR EXISTS (SELECT 1 FROM asset_backup_deletion AS parent\n        WHERE parent.\"livePhotoVideoId\" = OLD.id AND parent.\"ownerId\" = OLD.\"ownerId\" AND parent.\"wasLocked\")\n    )),\n    OLD.checksum, OLD.\"checksumAlgorithm\"::text, OLD.\"livePhotoVideoId\", 1, true)\n  ON CONFLICT (\"assetId\") DO UPDATE SET\n    \"ownerId\" = EXCLUDED.\"ownerId\", \"deletedAt\" = EXCLUDED.\"deletedAt\", visibility = EXCLUDED.visibility,\n    \"wasLocked\" = EXCLUDED.\"wasLocked\", checksum = EXCLUDED.checksum, \"checksumAlgorithm\" = EXCLUDED.\"checksumAlgorithm\",\n    \"livePhotoVideoId\" = EXCLUDED.\"livePhotoVideoId\", \"evidenceVersion\" = EXCLUDED.\"evidenceVersion\",\n    \"modernPrivacyEvidenceUnavailable\" = EXCLUDED.\"modernPrivacyEvidenceUnavailable\";\n  RETURN OLD;\nEND$function$",
+      "identity": "public.asset_backup_deletion_capture()"
     },
     {
       "definition": "CREATE OR REPLACE FUNCTION public.asset_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n      INSERT INTO asset_audit (\"assetId\", \"ownerId\")\n      SELECT \"id\", \"ownerId\"\n      FROM OLD;\n      RETURN NULL;\n    END\n  $function$",
@@ -11494,6 +11923,22 @@
       "identity": "public.person_group_delete_audit()"
     },
     {
+      "definition": "CREATE OR REPLACE FUNCTION public.pet_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN INSERT INTO pet_audit (\"petId\", \"ownerId\") SELECT id, \"ownerId\" FROM OLD; RETURN NULL; END$function$",
+      "identity": "public.pet_delete_audit()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.pet_observation_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n INSERT INTO pet_observation_audit (\"observationId\", \"petId\", \"assetId\", \"ownerId\")\n SELECT deleted.id, deleted.\"petId\", deleted.\"assetId\", coalesce(pet.\"ownerId\", asset.\"ownerId\")\n FROM OLD AS deleted LEFT JOIN pet ON pet.id = deleted.\"petId\" LEFT JOIN asset ON asset.id = deleted.\"assetId\"\n WHERE coalesce(pet.\"ownerId\", asset.\"ownerId\") IS NOT NULL\n AND (pet.\"ownerId\" IS NULL OR asset.\"ownerId\" IS NULL OR pet.\"ownerId\" = asset.\"ownerId\");\n RETURN NULL; END\n  $function$",
+      "identity": "public.pet_observation_delete_audit()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.pet_observation_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$",
+      "identity": "public.pet_observation_update_id()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.pet_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$",
+      "identity": "public.pet_update_id()"
+    },
+    {
       "definition": "CREATE OR REPLACE FUNCTION public.quantize_to_scalar8(halfvec)\n RETURNS scalar8\n LANGUAGE c\n IMMUTABLE PARALLEL SAFE STRICT\nAS '$libdir/vchord', $function$_vchord_halfvec_quantize_to_scalar8_wrapper$function$",
       "identity": "public.quantize_to_scalar8(halfvec)"
     },
@@ -11640,6 +12085,18 @@
     {
       "definition": "CREATE OR REPLACE FUNCTION public.subvector(vector, integer, integer)\n RETURNS vector\n LANGUAGE c\n IMMUTABLE PARALLEL SAFE STRICT\nAS '$libdir/vector', $function$subvector$function$",
       "identity": "public.subvector(vector, integer, integer)"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.tag_asset_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n    INSERT INTO tag_asset_audit (\"tagId\", \"assetId\", \"userId\")\n    SELECT deleted.\"tagId\", deleted.\"assetId\", coalesce(tag.\"userId\", asset.\"ownerId\")\n    FROM OLD AS deleted LEFT JOIN tag ON tag.id = deleted.\"tagId\" LEFT JOIN asset ON asset.id = deleted.\"assetId\"\n    WHERE coalesce(tag.\"userId\", asset.\"ownerId\") IS NOT NULL\n      AND (tag.\"userId\" IS NULL OR asset.\"ownerId\" IS NULL OR tag.\"userId\" = asset.\"ownerId\");\n    RETURN NULL; END\n  $function$",
+      "identity": "public.tag_asset_delete_audit()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.tag_asset_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$",
+      "identity": "public.tag_asset_update_id()"
+    },
+    {
+      "definition": "CREATE OR REPLACE FUNCTION public.tag_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN INSERT INTO tag_audit (\"tagId\", \"userId\") SELECT id, \"userId\" FROM OLD; RETURN NULL; END$function$",
+      "identity": "public.tag_delete_audit()"
     },
     {
       "definition": "CREATE OR REPLACE FUNCTION public.unaccent_init(internal)\n RETURNS internal\n LANGUAGE c\n PARALLEL SAFE\nAS '$libdir/unaccent', $function$unaccent_init$function$",
@@ -11852,38 +12309,6 @@
     {
       "definition": "CREATE OR REPLACE FUNCTION public.word_similarity(text, text)\n RETURNS real\n LANGUAGE c\n IMMUTABLE PARALLEL SAFE STRICT\nAS '$libdir/pg_trgm', $function$word_similarity$function$",
       "identity": "public.word_similarity(text, text)"
-    },
-    {
-      "definition": "CREATE OR REPLACE FUNCTION public.tag_asset_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n    INSERT INTO tag_asset_audit (\"tagId\", \"assetId\", \"userId\")\n    SELECT deleted.\"tagId\", deleted.\"assetId\", coalesce(tag.\"userId\", asset.\"ownerId\")\n    FROM OLD AS deleted LEFT JOIN tag ON tag.id = deleted.\"tagId\" LEFT JOIN asset ON asset.id = deleted.\"assetId\"\n    WHERE coalesce(tag.\"userId\", asset.\"ownerId\") IS NOT NULL\n      AND (tag.\"userId\" IS NULL OR asset.\"ownerId\" IS NULL OR tag.\"userId\" = asset.\"ownerId\");\n    RETURN NULL; END\n  $function$",
-      "identity": "public.tag_asset_delete_audit()"
-    },
-    {
-      "definition": "CREATE OR REPLACE FUNCTION public.tag_asset_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$",
-      "identity": "public.tag_asset_update_id()"
-    },
-    {
-      "definition": "CREATE OR REPLACE FUNCTION public.tag_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN INSERT INTO tag_audit (\"tagId\", \"userId\") SELECT id, \"userId\" FROM OLD; RETURN NULL; END$function$",
-      "identity": "public.tag_delete_audit()"
-    },
-    {
-      "definition": "CREATE OR REPLACE FUNCTION public.pet_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN INSERT INTO pet_audit (\"petId\", \"ownerId\") SELECT id, \"ownerId\" FROM OLD; RETURN NULL; END$function$",
-      "identity": "public.pet_delete_audit()"
-    },
-    {
-      "definition": "CREATE OR REPLACE FUNCTION public.pet_observation_delete_audit()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\n    BEGIN\n INSERT INTO pet_observation_audit (\"observationId\", \"petId\", \"assetId\", \"ownerId\")\n SELECT deleted.id, deleted.\"petId\", deleted.\"assetId\", coalesce(pet.\"ownerId\", asset.\"ownerId\")\n FROM OLD AS deleted LEFT JOIN pet ON pet.id = deleted.\"petId\" LEFT JOIN asset ON asset.id = deleted.\"assetId\"\n WHERE coalesce(pet.\"ownerId\", asset.\"ownerId\") IS NOT NULL\n AND (pet.\"ownerId\" IS NULL OR asset.\"ownerId\" IS NULL OR pet.\"ownerId\" = asset.\"ownerId\");\n RETURN NULL; END\n  $function$",
-      "identity": "public.pet_observation_delete_audit()"
-    },
-    {
-      "definition": "CREATE OR REPLACE FUNCTION public.pet_observation_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$",
-      "identity": "public.pet_observation_update_id()"
-    },
-    {
-      "definition": "CREATE OR REPLACE FUNCTION public.pet_update_id()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$BEGIN NEW.\"updateId\" := immich_uuid_v7(); RETURN NEW; END$function$",
-      "identity": "public.pet_update_id()"
-    },
-    {
-      "definition": "CREATE OR REPLACE FUNCTION public.asset_backup_deletion_capture()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  INSERT INTO asset_backup_deletion (\"assetId\", \"ownerId\", \"deletedAt\", visibility, \"wasLocked\", checksum, \"checksumAlgorithm\", \"livePhotoVideoId\", \"evidenceVersion\", \"modernPrivacyEvidenceUnavailable\")\n  VALUES (OLD.id, OLD.\"ownerId\", clock_timestamp(), OLD.visibility::text,\n    EXISTS (SELECT 1 FROM asset_lock WHERE \"assetId\" = OLD.id)\n    OR (OLD.visibility::text = 'hidden' AND (\n      EXISTS (SELECT 1 FROM asset AS parent JOIN asset_lock ON asset_lock.\"assetId\" = parent.id\n        WHERE parent.\"livePhotoVideoId\" = OLD.id AND parent.\"ownerId\" = OLD.\"ownerId\")\n      OR EXISTS (SELECT 1 FROM asset_backup_deletion AS parent\n        WHERE parent.\"livePhotoVideoId\" = OLD.id AND parent.\"ownerId\" = OLD.\"ownerId\" AND parent.\"wasLocked\")\n    )),\n    OLD.checksum, OLD.\"checksumAlgorithm\"::text, OLD.\"livePhotoVideoId\", 1, true)\n  ON CONFLICT (\"assetId\") DO UPDATE SET\n    \"ownerId\" = EXCLUDED.\"ownerId\", \"deletedAt\" = EXCLUDED.\"deletedAt\", visibility = EXCLUDED.visibility,\n    \"wasLocked\" = EXCLUDED.\"wasLocked\", checksum = EXCLUDED.checksum, \"checksumAlgorithm\" = EXCLUDED.\"checksumAlgorithm\",\n    \"livePhotoVideoId\" = EXCLUDED.\"livePhotoVideoId\", \"evidenceVersion\" = EXCLUDED.\"evidenceVersion\",\n    \"modernPrivacyEvidenceUnavailable\" = EXCLUDED.\"modernPrivacyEvidenceUnavailable\";\n  RETURN OLD;\nEND$function$",
-      "identity": "public.asset_backup_deletion_capture()"
     }
   ],
   "indexes": [
@@ -11946,6 +12371,18 @@
     {
       "definition": "CREATE INDEX asset_checksum_sha256_idx ON immich_fork.asset_checksum USING btree (sha256)",
       "identity": "immich_fork.asset_checksum.asset_checksum_sha256_idx"
+    },
+    {
+      "definition": "CREATE INDEX asset_develop_artifact_owner_idx ON immich_fork.asset_develop_artifact USING btree (\"ownerId\")",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_owner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_develop_artifact_path_key ON immich_fork.asset_develop_artifact USING btree (path)",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_path_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_develop_artifact_pkey ON immich_fork.asset_develop_artifact USING btree (\"assetId\", id)",
+      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_pkey"
     },
     {
       "definition": "CREATE INDEX asset_develop_revision_asset_idx ON immich_fork.asset_develop_revision USING btree (\"assetId\", revision DESC)",
@@ -12128,6 +12565,14 @@
       "identity": "immich_fork.face_correction.face_correction_pkey"
     },
     {
+      "definition": "CREATE UNIQUE INDEX frameleaf_account_link_pkey ON immich_fork.frameleaf_account_link USING btree (\"userId\")",
+      "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_account_link_sub_unique ON immich_fork.frameleaf_account_link USING btree (sub)",
+      "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_sub_unique"
+    },
+    {
       "definition": "CREATE INDEX frameleaf_consent_destination_accepted_idx ON immich_fork.frameleaf_consent USING btree (\"destinationId\", \"acceptedAt\" DESC)",
       "identity": "immich_fork.frameleaf_consent.frameleaf_consent_destination_accepted_idx"
     },
@@ -12136,12 +12581,12 @@
       "identity": "immich_fork.frameleaf_consent.frameleaf_consent_pkey"
     },
     {
-      "definition": "CREATE UNIQUE INDEX frameleaf_account_link_pkey ON immich_fork.frameleaf_account_link USING btree (\"userId\")",
-      "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_pkey"
+      "definition": "CREATE INDEX frameleaf_exchange_token_expires_idx ON immich_fork.frameleaf_exchange_token USING btree (\"expiresAt\")",
+      "identity": "immich_fork.frameleaf_exchange_token.frameleaf_exchange_token_expires_idx"
     },
     {
-      "definition": "CREATE UNIQUE INDEX frameleaf_account_link_sub_unique ON immich_fork.frameleaf_account_link USING btree (sub)",
-      "identity": "immich_fork.frameleaf_account_link.frameleaf_account_link_sub_unique"
+      "definition": "CREATE UNIQUE INDEX frameleaf_exchange_token_pkey ON immich_fork.frameleaf_exchange_token USING btree (jti)",
+      "identity": "immich_fork.frameleaf_exchange_token.frameleaf_exchange_token_pkey"
     },
     {
       "definition": "CREATE UNIQUE INDEX frameleaf_session_handoff_unique ON immich_fork.frameleaf_session USING btree (\"handoffCodeHash\")",
@@ -12160,28 +12605,20 @@
       "identity": "immich_fork.frameleaf_session.frameleaf_session_sub_idx"
     },
     {
-      "definition": "CREATE UNIQUE INDEX frameleaf_user_license_key_unique ON immich_fork.frameleaf_user_license USING btree (\"keySha256\")",
-      "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_key_unique"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX frameleaf_user_license_pkey ON immich_fork.frameleaf_user_license USING btree (\"userId\")",
-      "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_pkey"
-    },
-    {
-      "definition": "CREATE INDEX frameleaf_exchange_token_expires_idx ON immich_fork.frameleaf_exchange_token USING btree (\"expiresAt\")",
-      "identity": "immich_fork.frameleaf_exchange_token.frameleaf_exchange_token_expires_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX frameleaf_exchange_token_pkey ON immich_fork.frameleaf_exchange_token USING btree (jti)",
-      "identity": "immich_fork.frameleaf_exchange_token.frameleaf_exchange_token_pkey"
-    },
-    {
       "definition": "CREATE INDEX frameleaf_sign_in_revocation_expires_idx ON immich_fork.frameleaf_sign_in_revocation USING btree (\"expiresAt\")",
       "identity": "immich_fork.frameleaf_sign_in_revocation.frameleaf_sign_in_revocation_expires_idx"
     },
     {
       "definition": "CREATE UNIQUE INDEX frameleaf_sign_in_revocation_pkey ON immich_fork.frameleaf_sign_in_revocation USING btree (kind, value)",
       "identity": "immich_fork.frameleaf_sign_in_revocation.frameleaf_sign_in_revocation_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_user_license_key_unique ON immich_fork.frameleaf_user_license USING btree (\"keySha256\")",
+      "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_key_unique"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX frameleaf_user_license_pkey ON immich_fork.frameleaf_user_license USING btree (\"userId\")",
+      "identity": "immich_fork.frameleaf_user_license.frameleaf_user_license_pkey"
     },
     {
       "definition": "CREATE INDEX icloud_album_mapping_idx ON immich_fork.icloud_album USING btree (\"albumId\") WHERE (\"albumId\" IS NOT NULL)",
@@ -12224,6 +12661,30 @@
       "identity": "immich_fork.icloud_connection.icloud_connection_pkey"
     },
     {
+      "definition": "CREATE UNIQUE INDEX icloud_audit_weekly_binding ON immich_fork.icloud_identity_audit USING btree (id, \"cohortId\", \"memberOrdinal\", \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\", \"batchOrdinal\")",
+      "identity": "immich_fork.icloud_identity_audit.icloud_audit_weekly_binding"
+    },
+    {
+      "definition": "CREATE INDEX icloud_identity_audit_operation_idx ON immich_fork.icloud_identity_audit USING btree (\"operationId\")",
+      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_operation_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_identity_audit_pkey ON immich_fork.icloud_identity_audit USING btree (id)",
+      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_identity_reuse_owner_connection_idx ON immich_fork.icloud_identity_reuse USING btree (\"ownerId\", \"connectionId\")",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_owner_connection_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_identity_reuse_pkey ON immich_fork.icloud_identity_reuse USING btree (id)",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_identity_reuse_sourceResourceId_key\" ON immich_fork.icloud_identity_reuse USING btree (\"sourceResourceId\")",
+      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_sourceResourceId_key"
+    },
+    {
       "definition": "CREATE INDEX icloud_membership_asset_idx ON immich_fork.icloud_membership USING btree (\"connectionId\", \"libraryKey\", \"sourceAssetId\")",
       "identity": "immich_fork.icloud_membership.icloud_membership_asset_idx"
     },
@@ -12256,12 +12717,20 @@
       "identity": "immich_fork.icloud_resource.icloud_resource_asset_idx"
     },
     {
+      "definition": "CREATE UNIQUE INDEX icloud_resource_audit_request_key ON immich_fork.icloud_resource USING btree (\"auditRequestId\") WHERE (\"auditRequestId\" IS NOT NULL)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_audit_request_key"
+    },
+    {
       "definition": "CREATE INDEX icloud_resource_jobs_idx ON immich_fork.icloud_resource USING btree (\"connectionId\", id) WHERE (\"pendingJobs\" <> '[]'::jsonb)",
       "identity": "immich_fork.icloud_resource.icloud_resource_jobs_idx"
     },
     {
       "definition": "CREATE INDEX icloud_resource_lease_idx ON immich_fork.icloud_resource USING btree (\"leaseExpiresAt\") WHERE (\"leaseToken\" IS NOT NULL)",
       "identity": "immich_fork.icloud_resource.icloud_resource_lease_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_resource_ordinary_identity_key ON immich_fork.icloud_resource USING btree (\"connectionId\", \"libraryKey\", \"sourceAssetId\", \"resourceKey\", fingerprint) WHERE (\"auditRequestId\" IS NULL)",
+      "identity": "immich_fork.icloud_resource.icloud_resource_ordinary_identity_key"
     },
     {
       "definition": "CREATE INDEX icloud_resource_owner_idx ON immich_fork.icloud_resource USING btree (\"ownerId\", status)",
@@ -12274,14 +12743,6 @@
     {
       "definition": "CREATE UNIQUE INDEX icloud_resource_pkey ON immich_fork.icloud_resource USING btree (id)",
       "identity": "immich_fork.icloud_resource.icloud_resource_pkey"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX icloud_resource_audit_request_key ON immich_fork.icloud_resource USING btree (\"auditRequestId\") WHERE (\"auditRequestId\" IS NOT NULL)",
-      "identity": "immich_fork.icloud_resource.icloud_resource_audit_request_key"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX icloud_resource_ordinary_identity_key ON immich_fork.icloud_resource USING btree (\"connectionId\", \"libraryKey\", \"sourceAssetId\", \"resourceKey\", fingerprint) WHERE (\"auditRequestId\" IS NULL)",
-      "identity": "immich_fork.icloud_resource.icloud_resource_ordinary_identity_key"
     },
     {
       "definition": "CREATE INDEX icloud_run_connection_started_idx ON immich_fork.icloud_run USING btree (\"connectionId\", \"startedAt\" DESC)",
@@ -12306,6 +12767,54 @@
     {
       "definition": "CREATE INDEX icloud_source_identity_sha256_idx ON immich_fork.icloud_source_identity USING btree (\"ownerId\", sha256)",
       "identity": "immich_fork.icloud_source_identity.icloud_source_identity_sha256_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_weekly_cohort_id_ownerId_connectionId_grantId_grantG_key\" ON immich_fork.icloud_weekly_cohort USING btree (id, \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\")",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_id_ownerId_connectionId_grantId_grantG_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_weekly_cohort_id_ownerId_connectionId_key\" ON immich_fork.icloud_weekly_cohort USING btree (id, \"ownerId\", \"connectionId\")",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_id_ownerId_connectionId_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_weekly_cohort_ownerId_connectionId_weekStart_key\" ON immich_fork.icloud_weekly_cohort USING btree (\"ownerId\", \"connectionId\", \"weekStart\")",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_ownerId_connectionId_weekStart_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_weekly_cohort_pkey ON immich_fork.icloud_weekly_cohort USING btree (id)",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_weekly_grant_connectionId_ownerId_key\" ON immich_fork.icloud_weekly_grant USING btree (\"connectionId\", \"ownerId\")",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_connectionId_ownerId_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_weekly_grant_id_ownerId_connectionId_key\" ON immich_fork.icloud_weekly_grant USING btree (id, \"ownerId\", \"connectionId\")",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_id_ownerId_connectionId_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_weekly_grant_pkey ON immich_fork.icloud_weekly_grant USING btree (id)",
+      "identity": "immich_fork.icloud_weekly_grant.icloud_weekly_grant_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_weekly_member_auditRequestId_key\" ON immich_fork.icloud_weekly_member USING btree (\"auditRequestId\")",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_auditRequestId_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_weekly_member_cohortId_ordinal_ownerId_connectionId__key\" ON immich_fork.icloud_weekly_member USING btree (\"cohortId\", ordinal, \"ownerId\", \"connectionId\", \"grantId\", \"grantGeneration\", \"batchOrdinal\")",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_cohortId_ordinal_ownerId_connectionId__key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_weekly_member_cohortId_receiptId_key\" ON immich_fork.icloud_weekly_member USING btree (\"cohortId\", \"receiptId\")",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_cohortId_receiptId_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"icloud_weekly_member_cohortId_resourceRoleKey_key\" ON immich_fork.icloud_weekly_member USING btree (\"cohortId\", \"resourceRoleKey\")",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_cohortId_resourceRoleKey_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX icloud_weekly_member_pkey ON immich_fork.icloud_weekly_member USING btree (\"cohortId\", ordinal)",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_pkey"
     },
     {
       "definition": "CREATE INDEX memory_curation_owner_idx ON immich_fork.memory_curation USING btree (\"ownerId\")",
@@ -12672,6 +13181,18 @@
       "identity": "public.asset_audit.asset_audit_pkey"
     },
     {
+      "definition": "CREATE INDEX \"asset_backup_deletion_livePhotoVideoId_idx\" ON public.asset_backup_deletion USING btree (\"livePhotoVideoId\")",
+      "identity": "public.asset_backup_deletion.asset_backup_deletion_livePhotoVideoId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_backup_deletion_ownerId_idx\" ON public.asset_backup_deletion USING btree (\"ownerId\")",
+      "identity": "public.asset_backup_deletion.asset_backup_deletion_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_backup_deletion_pkey ON public.asset_backup_deletion USING btree (\"assetId\")",
+      "identity": "public.asset_backup_deletion.asset_backup_deletion_pkey"
+    },
+    {
       "definition": "CREATE INDEX \"asset_best_photo_score_computedAt_idx\" ON public.asset_best_photo_score USING btree (\"computedAt\")",
       "identity": "public.asset_best_photo_score.asset_best_photo_score_computedAt_idx"
     },
@@ -12802,6 +13323,10 @@
     {
       "definition": "CREATE UNIQUE INDEX \"asset_file_assetId_type_isEdited_uq\" ON public.asset_file USING btree (\"assetId\", type, \"isEdited\")",
       "identity": "public.asset_file.asset_file_assetId_type_isEdited_uq"
+    },
+    {
+      "definition": "CREATE INDEX asset_file_path_frameleaf_idx ON public.asset_file USING btree (path)",
+      "identity": "public.asset_file.asset_file_path_frameleaf_idx"
     },
     {
       "definition": "CREATE INDEX \"asset_file_physicalFileId_idx\" ON public.asset_file USING btree (\"physicalFileId\")",
@@ -12980,6 +13505,30 @@
       "identity": "public.asset_restoration.asset_restoration_status_previewExpiresAt_idx"
     },
     {
+      "definition": "CREATE UNIQUE INDEX asset_upload_part_pkey ON public.asset_upload_part USING btree (id)",
+      "identity": "public.asset_upload_part.asset_upload_part_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_upload_part_resourceId_idx\" ON public.asset_upload_part USING btree (\"resourceId\")",
+      "identity": "public.asset_upload_part.asset_upload_part_resourceId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX \"asset_upload_part_resourceId_offset_idx\" ON public.asset_upload_part USING btree (\"resourceId\", \"offset\")",
+      "identity": "public.asset_upload_part.asset_upload_part_resourceId_offset_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_upload_resource_expiresAt_idx\" ON public.asset_upload_resource USING btree (\"expiresAt\")",
+      "identity": "public.asset_upload_resource.asset_upload_resource_expiresAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"asset_upload_resource_ownerId_idx\" ON public.asset_upload_resource USING btree (\"ownerId\")",
+      "identity": "public.asset_upload_resource.asset_upload_resource_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_upload_resource_pkey ON public.asset_upload_resource USING btree (id)",
+      "identity": "public.asset_upload_resource.asset_upload_resource_pkey"
+    },
+    {
       "definition": "CREATE INDEX \"asset_video_duplicate_frame_assetId_idx\" ON public.asset_video_duplicate_frame USING btree (\"assetId\")",
       "identity": "public.asset_video_duplicate_frame.asset_video_duplicate_frame_assetId_idx"
     },
@@ -13076,8 +13625,28 @@
       "identity": "public.asset.UQ_assets_owner_checksum"
     },
     {
-      "definition": "CREATE INDEX asset_file_path_frameleaf_idx ON public.asset_file USING btree (path)",
-      "identity": "public.asset_file.asset_file_path_frameleaf_idx"
+      "definition": "CREATE UNIQUE INDEX \"backup_device_ownerId_deviceKey_uq\" ON public.backup_device USING btree (\"ownerId\", \"deviceKey\")",
+      "identity": "public.backup_device.backup_device_ownerId_deviceKey_uq"
+    },
+    {
+      "definition": "CREATE INDEX \"backup_device_ownerId_idx\" ON public.backup_device USING btree (\"ownerId\")",
+      "identity": "public.backup_device.backup_device_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX backup_device_pkey ON public.backup_device USING btree (id)",
+      "identity": "public.backup_device.backup_device_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"backup_reconciliation_deviceId_idx\" ON public.backup_reconciliation USING btree (\"deviceId\")",
+      "identity": "public.backup_reconciliation.backup_reconciliation_deviceId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"backup_reconciliation_ownerId_idx\" ON public.backup_reconciliation USING btree (\"ownerId\")",
+      "identity": "public.backup_reconciliation.backup_reconciliation_ownerId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX backup_reconciliation_pkey ON public.backup_reconciliation USING btree (id)",
+      "identity": "public.backup_reconciliation.backup_reconciliation_pkey"
     },
     {
       "definition": "CREATE INDEX \"classification_match_assetId_idx\" ON public.classification_match USING btree (\"assetId\")",
@@ -13120,10 +13689,6 @@
       "identity": "public.cloud_backup_manifest_entry.cloud_backup_manifest_entry_pkey"
     },
     {
-      "definition": "CREATE UNIQUE INDEX cloud_backup_manifest_pkey ON public.cloud_backup_manifest USING btree (id)",
-      "identity": "public.cloud_backup_manifest.cloud_backup_manifest_pkey"
-    },
-    {
       "definition": "CREATE INDEX \"cloud_backup_manifest_original_manifestId_idx\" ON public.cloud_backup_manifest_original USING btree (\"manifestId\")",
       "identity": "public.cloud_backup_manifest_original.cloud_backup_manifest_original_manifestId_idx"
     },
@@ -13132,8 +13697,8 @@
       "identity": "public.cloud_backup_manifest_original.cloud_backup_manifest_original_pkey"
     },
     {
-      "definition": "CREATE UNIQUE INDEX cloud_backup_object_pkey ON public.cloud_backup_object USING btree (bucket, sha256)",
-      "identity": "public.cloud_backup_object.cloud_backup_object_pkey"
+      "definition": "CREATE UNIQUE INDEX cloud_backup_manifest_pkey ON public.cloud_backup_manifest USING btree (id)",
+      "identity": "public.cloud_backup_manifest.cloud_backup_manifest_pkey"
     },
     {
       "definition": "CREATE INDEX \"cloud_backup_object_verification_operationId_idx\" ON public.cloud_backup_object_verification USING btree (\"operationId\")",
@@ -13142,6 +13707,10 @@
     {
       "definition": "CREATE UNIQUE INDEX cloud_backup_object_verification_pkey ON public.cloud_backup_object_verification USING btree (bucket, sha256, \"operationId\")",
       "identity": "public.cloud_backup_object_verification.cloud_backup_object_verification_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX cloud_backup_object_pkey ON public.cloud_backup_object USING btree (bucket, sha256)",
+      "identity": "public.cloud_backup_object.cloud_backup_object_pkey"
     },
     {
       "definition": "CREATE INDEX \"cluster_group_request_clusterGroupId_idx\" ON public.cluster_group_request USING btree (\"clusterGroupId\")",
@@ -13448,12 +14017,12 @@
       "identity": "public.ml_destination.ml_destination_pkey"
     },
     {
-      "definition": "CREATE INDEX \"ml_workload_accounting_destinationId_idx\" ON public.ml_workload_accounting USING btree (\"destinationId\")",
-      "identity": "public.ml_workload_accounting.ml_workload_accounting_destinationId_idx"
-    },
-    {
       "definition": "CREATE INDEX \"ml_workload_accounting_cloudJobId_idx\" ON public.ml_workload_accounting USING btree (\"cloudJobId\") WHERE (\"cloudJobId\" IS NOT NULL)",
       "identity": "public.ml_workload_accounting.ml_workload_accounting_cloudJobId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"ml_workload_accounting_destinationId_idx\" ON public.ml_workload_accounting USING btree (\"destinationId\")",
+      "identity": "public.ml_workload_accounting.ml_workload_accounting_destinationId_idx"
     },
     {
       "definition": "CREATE INDEX \"ml_workload_accounting_destinationId_startedAt_idx\" ON public.ml_workload_accounting USING btree (\"destinationId\", \"startedAt\")",
@@ -13628,6 +14197,22 @@
       "identity": "public.person.person_updateId_idx"
     },
     {
+      "definition": "CREATE INDEX \"pet_audit_deletedAt_idx\" ON public.pet_audit USING btree (\"deletedAt\")",
+      "identity": "public.pet_audit.pet_audit_deletedAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_audit_ownerId_idx\" ON public.pet_audit USING btree (\"ownerId\")",
+      "identity": "public.pet_audit.pet_audit_ownerId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_audit_petId_idx\" ON public.pet_audit USING btree (\"petId\")",
+      "identity": "public.pet_audit.pet_audit_petId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX pet_audit_pkey ON public.pet_audit USING btree (id)",
+      "identity": "public.pet_audit.pet_audit_pkey"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX \"pet_candidate_detectionId_petId_uq\" ON public.pet_candidate USING btree (\"detectionId\", \"petId\")",
       "identity": "public.pet_candidate.pet_candidate_detectionId_petId_uq"
     },
@@ -13652,6 +14237,30 @@
       "identity": "public.pet_detection.pet_detection_pkey"
     },
     {
+      "definition": "CREATE INDEX \"pet_observation_audit_assetId_idx\" ON public.pet_observation_audit USING btree (\"assetId\")",
+      "identity": "public.pet_observation_audit.pet_observation_audit_assetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_audit_deletedAt_idx\" ON public.pet_observation_audit USING btree (\"deletedAt\")",
+      "identity": "public.pet_observation_audit.pet_observation_audit_deletedAt_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_audit_observationId_idx\" ON public.pet_observation_audit USING btree (\"observationId\")",
+      "identity": "public.pet_observation_audit.pet_observation_audit_observationId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_audit_ownerId_idx\" ON public.pet_observation_audit USING btree (\"ownerId\")",
+      "identity": "public.pet_observation_audit.pet_observation_audit_ownerId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_audit_petId_idx\" ON public.pet_observation_audit USING btree (\"petId\")",
+      "identity": "public.pet_observation_audit.pet_observation_audit_petId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX pet_observation_audit_pkey ON public.pet_observation_audit USING btree (id)",
+      "identity": "public.pet_observation_audit.pet_observation_audit_pkey"
+    },
+    {
       "definition": "CREATE INDEX \"pet_observation_assetId_idx\" ON public.pet_observation USING btree (\"assetId\")",
       "identity": "public.pet_observation.pet_observation_assetId_idx"
     },
@@ -13662,6 +14271,10 @@
     {
       "definition": "CREATE UNIQUE INDEX pet_observation_pkey ON public.pet_observation USING btree (id)",
       "identity": "public.pet_observation.pet_observation_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_observation_updateId_idx\" ON public.pet_observation USING btree (\"updateId\")",
+      "identity": "public.pet_observation.pet_observation_updateId_idx"
     },
     {
       "definition": "CREATE INDEX \"pet_featuredAssetId_idx\" ON public.pet USING btree (\"featuredAssetId\")",
@@ -13678,6 +14291,10 @@
     {
       "definition": "CREATE UNIQUE INDEX pet_pkey ON public.pet USING btree (id)",
       "identity": "public.pet.pet_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"pet_updateId_idx\" ON public.pet USING btree (\"updateId\")",
+      "identity": "public.pet.pet_updateId_idx"
     },
     {
       "definition": "CREATE INDEX \"physical_file_canonicalAssetId_idx\" ON public.physical_file USING btree (\"canonicalAssetId\")",
@@ -13886,6 +14503,14 @@
     {
       "definition": "CREATE INDEX \"session_sync_checkpoint_updateId_idx\" ON public.session_sync_checkpoint USING btree (\"updateId\")",
       "identity": "public.session_sync_checkpoint.session_sync_checkpoint_updateId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"session_tag_sync_state_eventId_idx\" ON public.session_tag_sync_state USING btree (\"eventId\")",
+      "identity": "public.session_tag_sync_state.session_tag_sync_state_eventId_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX session_tag_sync_state_pkey ON public.session_tag_sync_state USING btree (\"sessionId\", kind, key)",
+      "identity": "public.session_tag_sync_state.session_tag_sync_state_pkey"
     },
     {
       "definition": "CREATE INDEX \"session_oauthSid_idx\" ON public.session USING btree (\"oauthSid\")",
@@ -14336,6 +14961,26 @@
       "identity": "public.system_metadata.system_metadata_pkey"
     },
     {
+      "definition": "CREATE INDEX \"tag_asset_audit_assetId_idx\" ON public.tag_asset_audit USING btree (\"assetId\")",
+      "identity": "public.tag_asset_audit.tag_asset_audit_assetId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_asset_audit_deletedAt_idx\" ON public.tag_asset_audit USING btree (\"deletedAt\")",
+      "identity": "public.tag_asset_audit.tag_asset_audit_deletedAt_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX tag_asset_audit_pkey ON public.tag_asset_audit USING btree (id)",
+      "identity": "public.tag_asset_audit.tag_asset_audit_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_asset_audit_tagId_idx\" ON public.tag_asset_audit USING btree (\"tagId\")",
+      "identity": "public.tag_asset_audit.tag_asset_audit_tagId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_asset_audit_userId_idx\" ON public.tag_asset_audit USING btree (\"userId\")",
+      "identity": "public.tag_asset_audit.tag_asset_audit_userId_idx"
+    },
+    {
       "definition": "CREATE INDEX \"tag_asset_assetId_idx\" ON public.tag_asset USING btree (\"assetId\")",
       "identity": "public.tag_asset.tag_asset_assetId_idx"
     },
@@ -14350,6 +14995,26 @@
     {
       "definition": "CREATE INDEX \"tag_asset_tagId_idx\" ON public.tag_asset USING btree (\"tagId\")",
       "identity": "public.tag_asset.tag_asset_tagId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_asset_updateId_idx\" ON public.tag_asset USING btree (\"updateId\")",
+      "identity": "public.tag_asset.tag_asset_updateId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_audit_deletedAt_idx\" ON public.tag_audit USING btree (\"deletedAt\")",
+      "identity": "public.tag_audit.tag_audit_deletedAt_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX tag_audit_pkey ON public.tag_audit USING btree (id)",
+      "identity": "public.tag_audit.tag_audit_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_audit_tagId_idx\" ON public.tag_audit USING btree (\"tagId\")",
+      "identity": "public.tag_audit.tag_audit_tagId_idx"
+    },
+    {
+      "definition": "CREATE INDEX \"tag_audit_userId_idx\" ON public.tag_audit USING btree (\"userId\")",
+      "identity": "public.tag_audit.tag_audit_userId_idx"
     },
     {
       "definition": "CREATE INDEX tag_closure_id_ancestor_idx ON public.tag_closure USING btree (id_ancestor)",
@@ -14636,6 +15301,18 @@
       "identity": "public.workflow_log.workflow_log_workflowStepId_idx"
     },
     {
+      "definition": "CREATE INDEX \"workflow_run_step_createdAt_idx\" ON public.workflow_run_step USING btree (\"createdAt\")",
+      "identity": "public.workflow_run_step.workflow_run_step_createdAt_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX workflow_run_step_pkey ON public.workflow_run_step USING btree (\"executionId\", \"stepId\")",
+      "identity": "public.workflow_run_step.workflow_run_step_pkey"
+    },
+    {
+      "definition": "CREATE INDEX \"workflow_run_step_workflowId_idx\" ON public.workflow_run_step USING btree (\"workflowId\")",
+      "identity": "public.workflow_run_step.workflow_run_step_workflowId_idx"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX workflow_step_pkey ON public.workflow_step USING btree (id)",
       "identity": "public.workflow_step.workflow_step_pkey"
     },
@@ -14654,206 +15331,6 @@
     {
       "definition": "CREATE UNIQUE INDEX workflow_pkey ON public.workflow USING btree (id)",
       "identity": "public.workflow.workflow_pkey"
-    },
-    {
-      "definition": "CREATE INDEX \"workflow_run_step_createdAt_idx\" ON public.workflow_run_step USING btree (\"createdAt\")",
-      "identity": "public.workflow_run_step.workflow_run_step_createdAt_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX workflow_run_step_pkey ON public.workflow_run_step USING btree (\"executionId\", \"stepId\")",
-      "identity": "public.workflow_run_step.workflow_run_step_pkey"
-    },
-    {
-      "definition": "CREATE INDEX \"workflow_run_step_workflowId_idx\" ON public.workflow_run_step USING btree (\"workflowId\")",
-      "identity": "public.workflow_run_step.workflow_run_step_workflowId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"session_tag_sync_state_eventId_idx\" ON public.session_tag_sync_state USING btree (\"eventId\")",
-      "identity": "public.session_tag_sync_state.session_tag_sync_state_eventId_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX session_tag_sync_state_pkey ON public.session_tag_sync_state USING btree (\"sessionId\", kind, key)",
-      "identity": "public.session_tag_sync_state.session_tag_sync_state_pkey"
-    },
-    {
-      "definition": "CREATE INDEX \"tag_asset_updateId_idx\" ON public.tag_asset USING btree (\"updateId\")",
-      "identity": "public.tag_asset.tag_asset_updateId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"tag_asset_audit_assetId_idx\" ON public.tag_asset_audit USING btree (\"assetId\")",
-      "identity": "public.tag_asset_audit.tag_asset_audit_assetId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"tag_asset_audit_deletedAt_idx\" ON public.tag_asset_audit USING btree (\"deletedAt\")",
-      "identity": "public.tag_asset_audit.tag_asset_audit_deletedAt_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX tag_asset_audit_pkey ON public.tag_asset_audit USING btree (id)",
-      "identity": "public.tag_asset_audit.tag_asset_audit_pkey"
-    },
-    {
-      "definition": "CREATE INDEX \"tag_asset_audit_tagId_idx\" ON public.tag_asset_audit USING btree (\"tagId\")",
-      "identity": "public.tag_asset_audit.tag_asset_audit_tagId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"tag_asset_audit_userId_idx\" ON public.tag_asset_audit USING btree (\"userId\")",
-      "identity": "public.tag_asset_audit.tag_asset_audit_userId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"tag_audit_deletedAt_idx\" ON public.tag_audit USING btree (\"deletedAt\")",
-      "identity": "public.tag_audit.tag_audit_deletedAt_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX tag_audit_pkey ON public.tag_audit USING btree (id)",
-      "identity": "public.tag_audit.tag_audit_pkey"
-    },
-    {
-      "definition": "CREATE INDEX \"tag_audit_tagId_idx\" ON public.tag_audit USING btree (\"tagId\")",
-      "identity": "public.tag_audit.tag_audit_tagId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"tag_audit_userId_idx\" ON public.tag_audit USING btree (\"userId\")",
-      "identity": "public.tag_audit.tag_audit_userId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"pet_audit_deletedAt_idx\" ON public.pet_audit USING btree (\"deletedAt\")",
-      "identity": "public.pet_audit.pet_audit_deletedAt_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"pet_audit_ownerId_idx\" ON public.pet_audit USING btree (\"ownerId\")",
-      "identity": "public.pet_audit.pet_audit_ownerId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"pet_audit_petId_idx\" ON public.pet_audit USING btree (\"petId\")",
-      "identity": "public.pet_audit.pet_audit_petId_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX pet_audit_pkey ON public.pet_audit USING btree (id)",
-      "identity": "public.pet_audit.pet_audit_pkey"
-    },
-    {
-      "definition": "CREATE INDEX \"pet_observation_audit_assetId_idx\" ON public.pet_observation_audit USING btree (\"assetId\")",
-      "identity": "public.pet_observation_audit.pet_observation_audit_assetId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"pet_observation_audit_deletedAt_idx\" ON public.pet_observation_audit USING btree (\"deletedAt\")",
-      "identity": "public.pet_observation_audit.pet_observation_audit_deletedAt_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"pet_observation_audit_observationId_idx\" ON public.pet_observation_audit USING btree (\"observationId\")",
-      "identity": "public.pet_observation_audit.pet_observation_audit_observationId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"pet_observation_audit_ownerId_idx\" ON public.pet_observation_audit USING btree (\"ownerId\")",
-      "identity": "public.pet_observation_audit.pet_observation_audit_ownerId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"pet_observation_audit_petId_idx\" ON public.pet_observation_audit USING btree (\"petId\")",
-      "identity": "public.pet_observation_audit.pet_observation_audit_petId_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX pet_observation_audit_pkey ON public.pet_observation_audit USING btree (id)",
-      "identity": "public.pet_observation_audit.pet_observation_audit_pkey"
-    },
-    {
-      "definition": "CREATE INDEX \"pet_observation_updateId_idx\" ON public.pet_observation USING btree (\"updateId\")",
-      "identity": "public.pet_observation.pet_observation_updateId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"pet_updateId_idx\" ON public.pet USING btree (\"updateId\")",
-      "identity": "public.pet.pet_updateId_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX \"backup_device_ownerId_deviceKey_uq\" ON public.backup_device USING btree (\"ownerId\", \"deviceKey\")",
-      "identity": "public.backup_device.backup_device_ownerId_deviceKey_uq"
-    },
-    {
-      "definition": "CREATE INDEX \"backup_device_ownerId_idx\" ON public.backup_device USING btree (\"ownerId\")",
-      "identity": "public.backup_device.backup_device_ownerId_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX backup_device_pkey ON public.backup_device USING btree (id)",
-      "identity": "public.backup_device.backup_device_pkey"
-    },
-    {
-      "definition": "CREATE INDEX \"backup_reconciliation_deviceId_idx\" ON public.backup_reconciliation USING btree (\"deviceId\")",
-      "identity": "public.backup_reconciliation.backup_reconciliation_deviceId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"backup_reconciliation_ownerId_idx\" ON public.backup_reconciliation USING btree (\"ownerId\")",
-      "identity": "public.backup_reconciliation.backup_reconciliation_ownerId_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX backup_reconciliation_pkey ON public.backup_reconciliation USING btree (id)",
-      "identity": "public.backup_reconciliation.backup_reconciliation_pkey"
-    },
-    {
-      "definition": "CREATE INDEX \"asset_backup_deletion_livePhotoVideoId_idx\" ON public.asset_backup_deletion USING btree (\"livePhotoVideoId\")",
-      "identity": "public.asset_backup_deletion.asset_backup_deletion_livePhotoVideoId_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"asset_backup_deletion_ownerId_idx\" ON public.asset_backup_deletion USING btree (\"ownerId\")",
-      "identity": "public.asset_backup_deletion.asset_backup_deletion_ownerId_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX asset_backup_deletion_pkey ON public.asset_backup_deletion USING btree (\"assetId\")",
-      "identity": "public.asset_backup_deletion.asset_backup_deletion_pkey"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX asset_upload_part_pkey ON public.asset_upload_part USING btree (id)",
-      "identity": "public.asset_upload_part.asset_upload_part_pkey"
-    },
-    {
-      "definition": "CREATE INDEX \"asset_upload_part_resourceId_idx\" ON public.asset_upload_part USING btree (\"resourceId\")",
-      "identity": "public.asset_upload_part.asset_upload_part_resourceId_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX \"asset_upload_part_resourceId_offset_idx\" ON public.asset_upload_part USING btree (\"resourceId\", \"offset\")",
-      "identity": "public.asset_upload_part.asset_upload_part_resourceId_offset_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"asset_upload_resource_expiresAt_idx\" ON public.asset_upload_resource USING btree (\"expiresAt\")",
-      "identity": "public.asset_upload_resource.asset_upload_resource_expiresAt_idx"
-    },
-    {
-      "definition": "CREATE INDEX \"asset_upload_resource_ownerId_idx\" ON public.asset_upload_resource USING btree (\"ownerId\")",
-      "identity": "public.asset_upload_resource.asset_upload_resource_ownerId_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX asset_upload_resource_pkey ON public.asset_upload_resource USING btree (id)",
-      "identity": "public.asset_upload_resource.asset_upload_resource_pkey"
-    },
-    {
-      "definition": "CREATE INDEX asset_develop_artifact_owner_idx ON immich_fork.asset_develop_artifact USING btree (\"ownerId\")",
-      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_owner_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX asset_develop_artifact_path_key ON immich_fork.asset_develop_artifact USING btree (path)",
-      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_path_key"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX asset_develop_artifact_pkey ON immich_fork.asset_develop_artifact USING btree (\"assetId\", id)",
-      "identity": "immich_fork.asset_develop_artifact.asset_develop_artifact_pkey"
-    },
-    {
-      "definition": "CREATE INDEX icloud_identity_audit_operation_idx ON immich_fork.icloud_identity_audit USING btree (\"operationId\")",
-      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_operation_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX icloud_identity_audit_pkey ON immich_fork.icloud_identity_audit USING btree (id)",
-      "identity": "immich_fork.icloud_identity_audit.icloud_identity_audit_pkey"
-    },
-    {
-      "definition": "CREATE INDEX icloud_identity_reuse_owner_connection_idx ON immich_fork.icloud_identity_reuse USING btree (\"ownerId\", \"connectionId\")",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_owner_connection_idx"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX icloud_identity_reuse_pkey ON immich_fork.icloud_identity_reuse USING btree (id)",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_pkey"
-    },
-    {
-      "definition": "CREATE UNIQUE INDEX \"icloud_identity_reuse_sourceResourceId_key\" ON immich_fork.icloud_identity_reuse USING btree (\"sourceResourceId\")",
-      "identity": "immich_fork.icloud_identity_reuse.icloud_identity_reuse_sourceResourceId_key"
     }
   ],
   "migrationOverrides": [
@@ -15036,6 +15513,10 @@
     },
     {
       "definition": "table",
+      "identity": "immich_fork.asset_develop_artifact"
+    },
+    {
+      "definition": "table",
       "identity": "immich_fork.asset_develop_revision"
     },
     {
@@ -15100,19 +15581,11 @@
     },
     {
       "definition": "table",
-      "identity": "immich_fork.frameleaf_consent"
-    },
-    {
-      "definition": "table",
       "identity": "immich_fork.frameleaf_account_link"
     },
     {
       "definition": "table",
-      "identity": "immich_fork.frameleaf_session"
-    },
-    {
-      "definition": "table",
-      "identity": "immich_fork.frameleaf_user_license"
+      "identity": "immich_fork.frameleaf_consent"
     },
     {
       "definition": "table",
@@ -15120,7 +15593,15 @@
     },
     {
       "definition": "table",
+      "identity": "immich_fork.frameleaf_session"
+    },
+    {
+      "definition": "table",
       "identity": "immich_fork.frameleaf_sign_in_revocation"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.frameleaf_user_license"
     },
     {
       "definition": "table",
@@ -15137,6 +15618,14 @@
     {
       "definition": "table",
       "identity": "immich_fork.icloud_connection"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_identity_audit"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_identity_reuse"
     },
     {
       "definition": "table",
@@ -15157,6 +15646,18 @@
     {
       "definition": "table",
       "identity": "immich_fork.icloud_source_identity"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_weekly_cohort"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_weekly_grant"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.icloud_weekly_member"
     },
     {
       "definition": "table",
@@ -15312,6 +15813,10 @@
     },
     {
       "definition": "table",
+      "identity": "public.asset_backup_deletion"
+    },
+    {
+      "definition": "table",
       "identity": "public.asset_best_photo_score"
     },
     {
@@ -15392,11 +15897,27 @@
     },
     {
       "definition": "table",
+      "identity": "public.asset_upload_part"
+    },
+    {
+      "definition": "table",
+      "identity": "public.asset_upload_resource"
+    },
+    {
+      "definition": "table",
       "identity": "public.asset_video"
     },
     {
       "definition": "table",
       "identity": "public.asset_video_duplicate_frame"
+    },
+    {
+      "definition": "table",
+      "identity": "public.backup_device"
+    },
+    {
+      "definition": "table",
+      "identity": "public.backup_reconciliation"
     },
     {
       "definition": "table",
@@ -15568,6 +16089,10 @@
     },
     {
       "definition": "table",
+      "identity": "public.pet_audit"
+    },
+    {
+      "definition": "table",
       "identity": "public.pet_candidate"
     },
     {
@@ -15577,6 +16102,10 @@
     {
       "definition": "table",
       "identity": "public.pet_observation"
+    },
+    {
+      "definition": "table",
+      "identity": "public.pet_observation_audit"
     },
     {
       "definition": "table",
@@ -15637,6 +16166,10 @@
     {
       "definition": "table",
       "identity": "public.session_sync_checkpoint"
+    },
+    {
+      "definition": "table",
+      "identity": "public.session_tag_sync_state"
     },
     {
       "definition": "table",
@@ -15748,6 +16281,14 @@
     },
     {
       "definition": "table",
+      "identity": "public.tag_asset_audit"
+    },
+    {
+      "definition": "table",
+      "identity": "public.tag_audit"
+    },
+    {
+      "definition": "table",
       "identity": "public.tag_closure"
     },
     {
@@ -15845,58 +16386,6 @@
     {
       "definition": "table",
       "identity": "public.workflow_step"
-    },
-    {
-      "definition": "table",
-      "identity": "public.session_tag_sync_state"
-    },
-    {
-      "definition": "table",
-      "identity": "public.tag_asset_audit"
-    },
-    {
-      "definition": "table",
-      "identity": "public.tag_audit"
-    },
-    {
-      "definition": "table",
-      "identity": "public.pet_audit"
-    },
-    {
-      "definition": "table",
-      "identity": "public.pet_observation_audit"
-    },
-    {
-      "definition": "table",
-      "identity": "public.backup_device"
-    },
-    {
-      "definition": "table",
-      "identity": "public.backup_reconciliation"
-    },
-    {
-      "definition": "table",
-      "identity": "public.asset_backup_deletion"
-    },
-    {
-      "definition": "table",
-      "identity": "public.asset_upload_part"
-    },
-    {
-      "definition": "table",
-      "identity": "public.asset_upload_resource"
-    },
-    {
-      "definition": "table",
-      "identity": "immich_fork.asset_develop_artifact"
-    },
-    {
-      "definition": "table",
-      "identity": "immich_fork.icloud_identity_audit"
-    },
-    {
-      "definition": "table",
-      "identity": "immich_fork.icloud_identity_reuse"
     }
   ],
   "triggers": [
@@ -15919,6 +16408,18 @@
     {
       "definition": "CREATE TRIGGER icloud_connection_unhealthy_since BEFORE INSERT OR UPDATE OF state ON immich_fork.icloud_connection FOR EACH ROW EXECUTE FUNCTION immich_fork.icloud_connection_unhealthy_since()",
       "identity": "immich_fork.icloud_connection.icloud_connection_unhealthy_since"
+    },
+    {
+      "definition": "CREATE TRIGGER icloud_weekly_connection_retirement AFTER UPDATE ON immich_fork.icloud_connection FOR EACH ROW EXECUTE FUNCTION immich_fork.retire_icloud_weekly_authority()",
+      "identity": "immich_fork.icloud_connection.icloud_weekly_connection_retirement"
+    },
+    {
+      "definition": "CREATE TRIGGER icloud_weekly_cohort_frozen BEFORE UPDATE ON immich_fork.icloud_weekly_cohort FOR EACH ROW EXECUTE FUNCTION immich_fork.freeze_icloud_weekly_bindings()",
+      "identity": "immich_fork.icloud_weekly_cohort.icloud_weekly_cohort_frozen"
+    },
+    {
+      "definition": "CREATE TRIGGER icloud_weekly_member_frozen BEFORE UPDATE ON immich_fork.icloud_weekly_member FOR EACH ROW EXECUTE FUNCTION immich_fork.freeze_icloud_weekly_bindings()",
+      "identity": "immich_fork.icloud_weekly_member.icloud_weekly_member_frozen"
     },
     {
       "definition": "CREATE TRIGGER \"activity_updatedAt\" BEFORE UPDATE ON activity FOR EACH ROW EXECUTE FUNCTION updated_at()",
@@ -16025,6 +16526,10 @@
       "identity": "public.asset_video_duplicate_frame.asset_video_duplicate_frame_updatedAt"
     },
     {
+      "definition": "CREATE TRIGGER asset_backup_deletion_capture_trigger BEFORE DELETE ON asset FOR EACH ROW EXECUTE FUNCTION asset_backup_deletion_capture()",
+      "identity": "public.asset.asset_backup_deletion_capture_trigger"
+    },
+    {
       "definition": "CREATE TRIGGER asset_delete_audit AFTER DELETE ON asset REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN (pg_trigger_depth() = 0) EXECUTE FUNCTION asset_delete_audit()",
       "identity": "public.asset.asset_delete_audit"
     },
@@ -16093,6 +16598,22 @@
       "identity": "public.person.person_updatedAt"
     },
     {
+      "definition": "CREATE TRIGGER pet_observation_delete_audit AFTER DELETE ON pet_observation REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION pet_observation_delete_audit()",
+      "identity": "public.pet_observation.pet_observation_delete_audit"
+    },
+    {
+      "definition": "CREATE TRIGGER pet_observation_update_id BEFORE UPDATE ON pet_observation FOR EACH ROW EXECUTE FUNCTION pet_observation_update_id()",
+      "identity": "public.pet_observation.pet_observation_update_id"
+    },
+    {
+      "definition": "CREATE TRIGGER pet_delete_audit AFTER DELETE ON pet REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION pet_delete_audit()",
+      "identity": "public.pet.pet_delete_audit"
+    },
+    {
+      "definition": "CREATE TRIGGER pet_update_id BEFORE UPDATE ON pet FOR EACH ROW EXECUTE FUNCTION pet_update_id()",
+      "identity": "public.pet.pet_update_id"
+    },
+    {
       "definition": "CREATE TRIGGER \"physical_file_updatedAt\" BEFORE UPDATE ON physical_file FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.physical_file.physical_file_updatedAt"
     },
@@ -16149,8 +16670,24 @@
       "identity": "public.studio_project.studio_project_updatedAt"
     },
     {
+      "definition": "CREATE TRIGGER tag_asset_delete_audit AFTER DELETE ON tag_asset REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION tag_asset_delete_audit()",
+      "identity": "public.tag_asset.tag_asset_delete_audit"
+    },
+    {
+      "definition": "CREATE TRIGGER tag_asset_update_id BEFORE UPDATE ON tag_asset FOR EACH ROW EXECUTE FUNCTION tag_asset_update_id()",
+      "identity": "public.tag_asset.tag_asset_update_id"
+    },
+    {
+      "definition": "CREATE TRIGGER tag_delete_audit AFTER DELETE ON tag REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION tag_delete_audit()",
+      "identity": "public.tag.tag_delete_audit"
+    },
+    {
       "definition": "CREATE TRIGGER \"tag_updatedAt\" BEFORE UPDATE ON tag FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.tag.tag_updatedAt"
+    },
+    {
+      "definition": "CREATE TRIGGER icloud_weekly_privacy_retirement AFTER INSERT OR DELETE OR UPDATE ON user_metadata FOR EACH ROW EXECUTE FUNCTION immich_fork.retire_icloud_weekly_authority()",
+      "identity": "public.user_metadata.icloud_weekly_privacy_retirement"
     },
     {
       "definition": "CREATE TRIGGER user_metadata_audit AFTER DELETE ON user_metadata REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN (pg_trigger_depth() = 0) EXECUTE FUNCTION user_metadata_audit()",
@@ -16159,6 +16696,10 @@
     {
       "definition": "CREATE TRIGGER user_metadata_updated_at BEFORE UPDATE ON user_metadata FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.user_metadata.user_metadata_updated_at"
+    },
+    {
+      "definition": "CREATE TRIGGER icloud_weekly_pin_retirement AFTER DELETE OR UPDATE ON \"user\" FOR EACH ROW EXECUTE FUNCTION immich_fork.retire_icloud_weekly_authority()",
+      "identity": "public.user.icloud_weekly_pin_retirement"
     },
     {
       "definition": "CREATE TRIGGER user_delete_audit AFTER DELETE ON \"user\" REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN (pg_trigger_depth() = 0) EXECUTE FUNCTION user_delete_audit()",
@@ -16183,38 +16724,6 @@
     {
       "definition": "CREATE TRIGGER \"workflow_updatedAt\" BEFORE UPDATE ON workflow FOR EACH ROW EXECUTE FUNCTION updated_at()",
       "identity": "public.workflow.workflow_updatedAt"
-    },
-    {
-      "definition": "CREATE TRIGGER tag_delete_audit AFTER DELETE ON tag REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION tag_delete_audit()",
-      "identity": "public.tag.tag_delete_audit"
-    },
-    {
-      "definition": "CREATE TRIGGER tag_asset_delete_audit AFTER DELETE ON tag_asset REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION tag_asset_delete_audit()",
-      "identity": "public.tag_asset.tag_asset_delete_audit"
-    },
-    {
-      "definition": "CREATE TRIGGER tag_asset_update_id BEFORE UPDATE ON tag_asset FOR EACH ROW EXECUTE FUNCTION tag_asset_update_id()",
-      "identity": "public.tag_asset.tag_asset_update_id"
-    },
-    {
-      "definition": "CREATE TRIGGER pet_observation_delete_audit AFTER DELETE ON pet_observation REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION pet_observation_delete_audit()",
-      "identity": "public.pet_observation.pet_observation_delete_audit"
-    },
-    {
-      "definition": "CREATE TRIGGER pet_observation_update_id BEFORE UPDATE ON pet_observation FOR EACH ROW EXECUTE FUNCTION pet_observation_update_id()",
-      "identity": "public.pet_observation.pet_observation_update_id"
-    },
-    {
-      "definition": "CREATE TRIGGER pet_delete_audit AFTER DELETE ON pet REFERENCING OLD TABLE AS old FOR EACH STATEMENT EXECUTE FUNCTION pet_delete_audit()",
-      "identity": "public.pet.pet_delete_audit"
-    },
-    {
-      "definition": "CREATE TRIGGER pet_update_id BEFORE UPDATE ON pet FOR EACH ROW EXECUTE FUNCTION pet_update_id()",
-      "identity": "public.pet.pet_update_id"
-    },
-    {
-      "definition": "CREATE TRIGGER asset_backup_deletion_capture_trigger BEFORE DELETE ON asset FOR EACH ROW EXECUTE FUNCTION asset_backup_deletion_capture()",
-      "identity": "public.asset.asset_backup_deletion_capture_trigger"
     }
   ]
 }
