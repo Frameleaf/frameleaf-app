@@ -24,7 +24,8 @@ import {
 } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
-import { AuditAuthority, guardAudit, publishAudit } from 'src/repositories/icloud-audit.repository.js';
+import { guardAudit, guardAuditAuthority, publishAudit } from 'src/repositories/icloud-audit.repository.js';
+import type { AuditExecutionAuthority } from 'src/repositories/icloud-scheduled-authority.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
 
@@ -98,7 +99,7 @@ export type RecoveryAuthority = {
   leaseToken: string;
   ownerId: string;
   includeHidden: boolean;
-  audit?: AuditAuthority;
+  audit?: AuditExecutionAuthority;
 };
 export type RecoveryReservation = { target: RecoveryTarget; promotedPath: string };
 
@@ -111,6 +112,18 @@ export class MediaRecoveryRepository {
   ) {}
 
   async getResource(input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
+    if (input.audit?.purpose === 'scheduled-weekly') {
+      return this.db.transaction().execute(async (db) => {
+        if (!(await guardAuditAuthority(db, input.audit!, input.ownerId, true, { id: input.resourceId, leaseToken: input.leaseToken }))) {
+          return;
+        }
+        // Read admission only; every recovery mutator still refuses scheduled execution.
+        return (await sql<RecoveryResource>`SELECT *,"expectedSize"::float8 AS "expectedSize"
+          FROM immich_fork.icloud_resource WHERE id=${input.resourceId}::uuid AND "ownerId"=${input.ownerId}::uuid
+            AND "auditRequestId"=${input.audit!.auditRequestId}::uuid AND "leaseToken"=${input.leaseToken}::uuid
+            AND "leaseExpiresAt">clock_timestamp() AND status NOT IN ('removed','finalized')`.execute(db)).rows[0];
+      });
+    }
     if (input.audit && !(await guardAudit(this.db, input.audit, input.ownerId))) {
       return;
     }
@@ -641,6 +654,9 @@ export class MediaRecoveryRepository {
   }
 
   private async lockResource(trx: Kysely<DB>, input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
+    if (input.audit?.purpose === 'scheduled-weekly') {
+      return; // No reviewed fresh-stream scheduled worker exists yet.
+    }
     if (input.audit && !(await guardAudit(trx, input.audit, input.ownerId, true))) {
       return;
     }
@@ -660,6 +676,9 @@ export class MediaRecoveryRepository {
     target: RecoveryTarget,
     verified: VerifiedMedia,
   ): Promise<RecoveryCandidate | undefined> {
+    if (input.audit?.purpose === 'scheduled-weekly') {
+      return;
+    }
     await this.lockPath(trx, target.originalPath!);
     const row = await trx
       .withSchema('public')

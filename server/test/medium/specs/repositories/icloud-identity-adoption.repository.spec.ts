@@ -30,6 +30,10 @@ import {
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
+import { ICloudAuditRepository, guardAuditAuthority, publishAudit } from 'src/repositories/icloud-audit.repository.js';
+import { ScheduledAuditAuthority, guardScheduledAudit, scheduledAuditFinalFence } from 'src/repositories/icloud-scheduled-authority.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { MediaRecoveryRepository } from 'src/repositories/media-recovery.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -1420,6 +1424,199 @@ describe('iCloud exact identity adoption', () => {
       expect(Number(current.performedCount)).toBe(0);
       expect(Number(current.unavailableCount)).toBe(1);
       expect(current.status).toBe('settled');
+    });
+
+    describe('scheduled repository admission prerequisites without a byte worker', () => {
+      async function scheduledAuthorityFixture(protectedOriginal = false) {
+        const f = await population(1);
+        const { auth, input } = await grant(f);
+        if (protectedOriginal) {
+          await db.updateTable('user').set({ pinCode: 'scheduled-fixture-pin' }).where('id', '=', f.user.id).execute();
+          await sql`INSERT INTO public.asset_lock ("assetId",reason)
+            VALUES (${f.asset.id}::uuid,${AssetLockReason.Marked})`.execute(db);
+          await db.updateTable('session').set({ pinExpiresAt: sql<Date>`clock_timestamp()+interval '10 minutes'` }).where('id', '=', auth.session!.id).execute();
+          auth.session!.hasElevatedPermission = true;
+          await weekly().setAuthority(auth, f.connection.id, { ...input, requestKey: randomUUID(), includeProtected: true });
+        }
+        const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
+        const operation = (await weekly().createNextBatch(cohort.id, operations()))!;
+        expect(operation).toBeDefined();
+        const member = (await members(cohort.id)).find((row) => row.auditRequestId)!;
+        const authority: ScheduledAuditAuthority = { purpose: 'scheduled-weekly', auditRequestId: member.auditRequestId!,
+          operationId: operation.id, operationClaimToken: randomUUID() };
+        // Durable worker/resource lease fixtures; these do not execute a dispatcher or mint proof.
+        await sql`UPDATE public.media_operation SET status='preparing',"claimToken"=${authority.operationClaimToken}::uuid,
+          "claimExpiresAt"=clock_timestamp()+interval '10 minutes' WHERE id=${operation.id}::uuid`.execute(db);
+        await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
+          WHERE "ownerId"=${f.user.id}::uuid`.execute(db);
+        const [claim] = await identities.claim(f.user.id, [f.resource.sourceAssetId.toUpperCase()], `icloud-sync:audit:${operation.id}`, 600);
+        expect(claim).toBeDefined();
+        await new ICloudAuditRepository(db).setItemClaim(authority.auditRequestId, f.user.id, claim.id);
+        const resource = { id: randomUUID(), leaseToken: randomUUID() };
+        await sql`INSERT INTO immich_fork.icloud_resource (id,"ownerId","connectionId","libraryKey",library,"sourceAssetId",
+          "recordId","resourceKey",role,fingerprint,source,"expectedSize",status,"auditRequestId","leaseToken","leaseExpiresAt")
+          SELECT ${resource.id}::uuid,"ownerId","connectionId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,
+            fingerprint,source,"expectedSize",'claimed',${authority.auditRequestId}::uuid,${resource.leaseToken}::uuid,
+            clock_timestamp()+interval '10 minutes' FROM immich_fork.icloud_resource WHERE id=${f.resource.id}::uuid`.execute(db);
+        return { f, auth, input, authority, resource, cohort, claim };
+      }
+
+      it.each([false, true])('admits actual durable authority after session deletion; protected=%s; publication stays unavailable', async (protectedOriginal) => {
+        const fixture = await scheduledAuthorityFixture(protectedOriginal);
+        const { f, auth, authority, resource } = fixture;
+        await db.deleteFrom('session').where('id', '=', auth.session!.id).execute();
+        await db.transaction().execute(async (tx) => {
+          const guarded = await guardScheduledAudit(tx, authority, f.user.id, { resource });
+          expect(guarded).toBeDefined();
+          expect(guarded?.private).toBe(protectedOriginal);
+          expect(await guardAuditAuthority(tx, authority, f.user.id, true, resource)).toBeDefined();
+          const { rows } = await sql<{ allowed: boolean }>`SELECT ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx);
+          expect(rows[0].allowed).toBe(true);
+          await expect(publishAudit(tx, authority, f.user.id, 'match', resource)).rejects.toThrow('scheduled_audit_execution_unavailable');
+        });
+        const recovery = new MediaRecoveryRepository(db, {} as never, {} as never);
+        const input = { ownerId: f.user.id, resourceId: resource.id, leaseToken: resource.leaseToken, includeHidden: true, audit: authority };
+        expect(await recovery.getResource(input)).toMatchObject({ id: resource.id, auditRequestId: authority.auditRequestId });
+        const verifyFinal = vi.fn();
+        expect(await recovery.commitVerifiedReuse({ ...input, candidate: {} as never,
+          verified: { sha256: f.sha256 } as never, verifyFinal })).toEqual({ outcome: 'retry', reason: 'mapping_changed' });
+        expect(verifyFinal).not.toHaveBeenCalled();
+        const { rows } = await sql<{ result: string }>`SELECT result FROM immich_fork.icloud_identity_audit WHERE id=${authority.auditRequestId}::uuid`.execute(db);
+        expect(rows[0].result).toBe('queued');
+        expect(await db.selectFrom('asset_integrity_verification').select('assetId').where('assetId', '=', f.asset.id).execute()).toEqual([]);
+      });
+
+      it('uses persisted purpose and refuses a session-style caller or nontransactional scheduled admission', async () => {
+        const { f, authority, resource } = await scheduledAuthorityFixture();
+        expect(await guardAuditAuthority(db, authority, f.user.id, true, resource)).toBeUndefined();
+        await db.transaction().execute(async (tx) => {
+          const { purpose: _purpose, ...manual } = authority;
+          expect(await guardAuditAuthority(tx, manual, f.user.id, true, resource)).toBeUndefined();
+          expect(await guardAuditAuthority(tx, { ...authority, operationId: randomUUID() }, f.user.id, true, resource)).toBeUndefined();
+          expect(await guardAuditAuthority(tx, authority, randomUUID(), true, resource)).toBeUndefined();
+        });
+      });
+
+      it.each(['operation', 'item', 'resource', 'pause', 'cancel'] as const)('refuses database-expired or stopped %s authority and final fence', async (kind) => {
+        const { f, authority, resource, claim } = await scheduledAuthorityFixture();
+        const guarded = await db.transaction().execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+        expect(guarded).toBeDefined();
+        if (kind === 'operation') {
+          await sql`UPDATE public.media_operation SET "claimExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${authority.operationId}::uuid`.execute(db);
+        } else if (kind === 'item') {
+          await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second' WHERE id=${claim.id}::uuid`.execute(db);
+        } else if (kind === 'resource') {
+          await sql`UPDATE immich_fork.icloud_resource SET "leaseExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${resource.id}::uuid`.execute(db);
+        } else if (kind === 'pause') {
+          await sql`UPDATE public.media_operation SET "pauseRequestedAt"=clock_timestamp() WHERE id=${authority.operationId}::uuid`.execute(db);
+        } else {
+          await sql`UPDATE public.media_operation SET "cancelRequestedAt"=clock_timestamp() WHERE id=${authority.operationId}::uuid`.execute(db);
+        }
+        await db.transaction().execute(async (tx) => {
+          expect(await guardScheduledAudit(tx, authority, f.user.id, { resource })).toBeUndefined();
+          expect((await sql<{ allowed: boolean }>`SELECT ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx)).rows[0].allowed).toBe(false);
+        });
+      });
+
+      it.each(['duplicate', 'foreign', 'missing', 'purpose'] as const)('refuses a %s operation audit vector despite a live claim', async (kind) => {
+        const { f, authority, resource } = await scheduledAuthorityFixture();
+        const guarded = await db.transaction().execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+        expect(guarded).toBeDefined();
+        const ids = kind === 'duplicate' ? [authority.auditRequestId, authority.auditRequestId]
+          : kind === 'foreign' ? [randomUUID()] : [];
+        if (kind === 'purpose') {
+          await sql`UPDATE public.media_operation SET snapshot=jsonb_set(snapshot,'{purpose}','"manual-session"'::jsonb)
+            WHERE id=${authority.operationId}::uuid`.execute(db);
+        } else {
+          await sql`UPDATE public.media_operation SET snapshot=jsonb_set(snapshot,'{auditIds}',${JSON.stringify(ids)}::jsonb)
+            WHERE id=${authority.operationId}::uuid`.execute(db);
+        }
+        await db.transaction().execute(async (tx) => {
+          expect(await guardScheduledAudit(tx, authority, f.user.id, { resource })).toBeUndefined();
+          expect((await sql<{ allowed: boolean }>`SELECT ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx)).rows[0].allowed).toBe(false);
+        });
+      });
+
+      it('a revoked/regranted generation cannot revive an old admitted final fence', async () => {
+        const { f, auth, input, authority, resource } = await scheduledAuthorityFixture();
+        const guarded = await db.transaction().execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+        expect(guarded).toBeDefined();
+        await weekly().setAuthority(auth, f.connection.id, { ...input, requestKey: randomUUID(), enabled: false });
+        await weekly().setAuthority(auth, f.connection.id, { ...input, requestKey: randomUUID() });
+        await db.transaction().execute(async (tx) => {
+          expect(await guardScheduledAudit(tx, authority, f.user.id, { resource })).toBeUndefined();
+          expect((await sql<{ allowed: boolean }>`SELECT ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx)).rows[0].allowed).toBe(false);
+        });
+      });
+
+      it.each(['original', 'physical', 'pin', 'source', 'identity'] as const)('refuses changed %s binding after awaited admission', async (kind) => {
+        const { f, authority, resource } = await scheduledAuthorityFixture(kind === 'pin');
+        const guarded = await db.transaction().execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+        expect(guarded).toBeDefined();
+        if (kind === 'original') {
+          await db.updateTable('asset').set({ originalPath: `${f.asset.originalPath}.replaced` }).where('id', '=', f.asset.id).execute();
+        } else if (kind === 'pin') {
+          await db.updateTable('user').set({ pinCode: 'changed-pin' }).where('id', '=', f.user.id).execute();
+        } else if (kind === 'source') {
+          await sql`UPDATE immich_fork.icloud_record SET revision='changed-after-admission'
+            WHERE "connectionId"=${f.connection.id}::uuid AND "recordId"=${f.resource.sourceAssetId}`.execute(db);
+        } else if (kind === 'identity') {
+          await sql`UPDATE immich_fork.icloud_source_identity SET sha256=${Buffer.alloc(32)}
+            WHERE id=${f.identityId}::uuid`.execute(db);
+        } else {
+          // A real owned asset mapping change, never authority inherited from a physical file owner.
+          await sql`INSERT INTO immich_fork.physical_file (id,type,checksum,"canonicalPath","sizeInBytes","createdAt","updatedAt")
+            VALUES (${randomUUID()}::uuid,'original',${f.sha256},${`${f.asset.originalPath}.other-physical`},1,clock_timestamp(),clock_timestamp())`.execute(db);
+          await sql`INSERT INTO immich_fork.asset_physical_file ("assetId","physicalFileId","upstreamPath")
+            SELECT ${f.asset.id}::uuid,id,${f.asset.originalPath} FROM immich_fork.physical_file
+            WHERE "canonicalPath"=${`${f.asset.originalPath}.other-physical`}
+            ON CONFLICT ("assetId") DO UPDATE SET "physicalFileId"=excluded."physicalFileId"`.execute(db);
+        }
+        await db.transaction().execute(async (tx) => {
+          expect(await guardScheduledAudit(tx, authority, f.user.id, { resource })).toBeUndefined();
+          expect((await sql<{ allowed: boolean }>`SELECT ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx)).rows[0].allowed).toBe(false);
+        });
+      });
+
+      it('waits for actual metadata authority before acquiring an original asset row lock', async () => {
+        const { f, authority, resource } = await scheduledAuthorityFixture();
+        const database = new DatabaseRepository(db, getMocks().logger as never, new ConfigRepository());
+        const entered = Promise.withResolvers<number>();
+        const resume = Promise.withResolvers<void>();
+        const classifying = database.withAssetMetadataLock(f.asset.id, async (tx) => {
+          entered.resolve((await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx)).rows[0].pid);
+          await resume.promise;
+        });
+        const holderPid = await entered.promise;
+        const admission = db.transaction().execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+        void admission.catch(() => {});
+        void classifying.catch(() => {});
+        try {
+          await expect.poll(async () => (await sql`SELECT 1 FROM pg_stat_activity
+            WHERE wait_event_type='Lock' AND ${holderPid}::int=ANY(pg_blocking_pids(pid))`.execute(db)).rows.length,
+          { timeout: 1000 }).toBe(1);
+          const { rows } = await sql`SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
+            WHERE ${holderPid}::int=ANY(pg_blocking_pids(a.pid)) AND l.relation='public.asset'::regclass
+              AND l.mode='RowShareLock' AND l.granted`.execute(db);
+          expect(rows).toEqual([]);
+        } finally {
+          resume.resolve();
+          await Promise.allSettled([classifying, admission]);
+        }
+        await classifying;
+        expect(await admission).toBeDefined();
+      });
+
+      it('keeps manual integrity privacy filters while scheduled structural lookup requires separate authority', async () => {
+        const { f, auth } = await scheduledAuthorityFixture();
+        const integrity = new IntegrityRepository(db);
+        const hash = [f.sha256.toString('hex')];
+        expect(await integrity.getSafetyQuery(auth, hash).where('asset.id', '=', f.asset.id).execute()).toHaveLength(1);
+        await sql`INSERT INTO public.asset_lock ("assetId",reason) VALUES (${f.asset.id}::uuid,${AssetLockReason.Marked})`.execute(db);
+        expect(await integrity.getSafetyQuery(auth, hash).where('asset.id', '=', f.asset.id).execute()).toEqual([]);
+        expect(await integrity.getOwnedOriginalSafetyQuery(f.user.id, hash).where('asset.id', '=', f.asset.id).execute()).toHaveLength(1);
+        expect(await integrity.getOwnedOriginalSafetyQuery(randomUUID(), hash).execute()).toEqual([]);
+      });
     });
   });
 
