@@ -12,7 +12,7 @@ import { type BuddyKeyring } from 'src/utils/buddy-backup-crypto.js';
 import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
 import { type BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
 import { BUDDY_SIDES, type BuddySide, startBuddyCloud } from 'test/fixtures/buddy-cloud.js';
-import { startBuddyTransport } from 'test/fixtures/buddy-transport.js';
+import { buddyForwardingDiagnostic, startBuddyTransport } from 'test/fixtures/buddy-transport.js';
 
 // Fails if app capture/pg_dump/crypto/commit/restore stops working, crosses an owner, or indexes hosted media.
 // This is direct HTTPS with a fixture coordinator/enrollment; it does not qualify real Cloud/relay/NAT.
@@ -129,6 +129,43 @@ const absent = async (path: string) => {
     throw error;
   }
 };
+
+it('retains causal forwarding state without leaking request identities or error text', () => {
+  const secret = 'private-fixture-sentinel';
+  const state = { reusedSocket: true, requestAborted: false, responseDestroyed: false, responseFinished: false };
+  for (const [path, category] of [
+    ['handshake', 'handshake'],
+    ['reservations', 'reservations'],
+    [`objects/${'a'.repeat(64)}`, 'object'],
+    ['snapshots', 'snapshots'],
+    [`snapshots/${secret}`, 'snapshot'],
+    [`unknown/${secret}`, 'other'],
+  ]) {
+    const diagnostic = buddyForwardingDiagnostic(
+      'GET',
+      `/api/buddy/v1/vaults/${secret}/${path}?token=${secret}`,
+      'ECONNRESET',
+      'delete-restart-and-restore',
+      'backup',
+      state,
+    );
+    expect(diagnostic).toMatchObject({
+      method: 'GET',
+      category,
+      code: 'ECONNRESET',
+      phase: 'delete-restart-and-restore',
+      admittedPhase: 'backup',
+      ...state,
+    });
+    expect(diagnostic.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(JSON.stringify(diagnostic)).not.toContain(secret);
+  }
+  const unknown = buddyForwardingDiagnostic(secret, `/api/${secret}`, new Error(secret), secret, secret, state);
+  expect(unknown).toMatchObject({
+    method: 'OTHER', category: 'other', code: 'UNKNOWN', phase: 'unknown', admittedPhase: 'unknown',
+  });
+  expect(JSON.stringify(unknown)).not.toContain(secret);
+});
 
 it('backs up and restores two real apps bidirectionally without exposing hosted Buddy photos', async () => {
   const started = Date.now();
@@ -308,7 +345,7 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       kits.push(kit);
       sentinels.push(...Object.values(kit.keys));
       await json(app, `${adminRoute}/key/verify`, 'POST', app.admin.token, kit, 201);
-      transports.push(await startBuddyTransport(root, app.side, saved.instanceId));
+      transports.push(await startBuddyTransport(root, app.side, saved.instanceId, () => report.phase));
     }
     expect(kits[0].keys['1'] === kits[1].keys['1']).toBe(false);
     for (const app of apps) {
@@ -638,12 +675,15 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
     }
     report.passed = true;
     report.phase = 'complete';
+    report.privacy = 'both-hosted-snapshots-and-normal-photo-routes-refused; own-content-positive';
+  } finally {
+    // Persist the observations that failed acceptance too; success-only evidence hid the causal error.
     report.transport = transports.map((transport, index) => ({
       destination: BUDDY_SIDES[index],
       ...transport.metrics,
+      failures: [...transport.failures],
+      diagnostics: [...transport.diagnostics],
     }));
-    report.privacy = 'both-hosted-snapshots-and-normal-photo-routes-refused; own-content-positive';
-  } finally {
     report.durationMs = Date.now() - started;
     try {
       await writeFile(join(root, 'evidence', 'buddy.json'), JSON.stringify(report, null, 2));
