@@ -119,9 +119,16 @@ export class BuddyBackupClient {
           return envelope.data;
         }
       } catch (error) {
+        // Undici can accept response headers before a restarting peer resets its body.
+        // Keep transport interruption with the durable worker's existing retry policy;
+        // malformed JSON and rejected cryptographic proofs remain protocol failures.
+        const cause = error instanceof Error ? error.cause : undefined;
+        const code = cause && typeof cause === 'object' && 'code' in cause ? cause.code : undefined;
         failure =
           error instanceof Error &&
-          (error.message === 'fetch failed' || ['AbortError', 'TimeoutError'].includes(error.name))
+          (error.message === 'fetch failed' ||
+            ['AbortError', 'TimeoutError'].includes(error.name) ||
+            (error instanceof TypeError && ['ECONNRESET', 'UND_ERR_SOCKET'].includes(String(code))))
             ? new BuddyPeerUnavailable(503, 'Buddy connection is unavailable; the verified checkpoint is preserved')
             : error;
         if (error instanceof BuddyPeerUnavailable && [403, 429, 507].includes(error.status)) throw error;
