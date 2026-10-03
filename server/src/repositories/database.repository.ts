@@ -1,7 +1,7 @@
 import { schemaDiff, schemaFromCode, schemaFromDatabase } from '@immich/sql-tools';
 import { Injectable } from '@nestjs/common';
 import AsyncLock from 'async-lock';
-import { Kysely, sql } from 'kysely';
+import { Kysely, type Transaction, sql } from 'kysely';
 import { type Migration, type MigrationProvider, Migrator } from 'kysely/migration';
 import { InjectKysely } from 'nestjs-kysely';
 import { join } from 'node:path';
@@ -71,6 +71,7 @@ import {
 } from 'src/repositories/fork-cutover-verification.repository.js';
 import { ForkHandoffRepository } from 'src/repositories/fork-handoff.repository.js';
 import { BACKFILL_KINDS } from 'src/repositories/fork-schema.repository.js';
+import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import 'src/schema/index.js'; // make sure all schema definitions are imported for schemaFromCode
 import { immich_uuid_v7 } from 'src/schema/functions.js';
@@ -1655,8 +1656,9 @@ export class DatabaseRepository extends ForkHandoffRepository {
    * `withAssetMetadataLock`, in its own lock class (-2); callers read and write through the
    * transaction passed to the callback.
    */
-  async withUserPreferencesLock<R>(userId: string, callback: (kysely: Kysely<DB>) => Promise<R>): Promise<R> {
+  async withUserPreferencesLock<R>(userId: string, callback: (kysely: Transaction<DB>) => Promise<R>): Promise<R> {
     return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx);
       await sql`SELECT pg_advisory_xact_lock(-2, hashtext(${userId})::int)`.execute(trx);
       return callback(trx);
     });

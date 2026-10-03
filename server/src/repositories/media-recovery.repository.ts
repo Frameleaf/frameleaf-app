@@ -24,6 +24,7 @@ import {
 } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { AuditAuthority, guardAudit, publishAudit } from 'src/repositories/icloud-audit.repository.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
 
@@ -97,6 +98,7 @@ export type RecoveryAuthority = {
   leaseToken: string;
   ownerId: string;
   includeHidden: boolean;
+  audit?: AuditAuthority;
 };
 export type RecoveryReservation = { target: RecoveryTarget; promotedPath: string };
 
@@ -109,12 +111,16 @@ export class MediaRecoveryRepository {
   ) {}
 
   async getResource(input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
+    if (input.audit && !(await guardAudit(this.db, input.audit, input.ownerId))) {
+      return;
+    }
     const result = await sql<RecoveryResource>`
       SELECT r.*, r."expectedSize"::float8 AS "expectedSize" FROM immich_fork.icloud_resource r
       JOIN immich_fork.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
       WHERE r.id = ${input.resourceId}::uuid AND r."ownerId" = ${input.ownerId}::uuid
         AND r."leaseToken" = ${input.leaseToken}::uuid AND r."leaseExpiresAt" > now()
         AND r.status <> 'removed' AND c.state = 'connected'
+        AND r."auditRequestId" IS NOT DISTINCT FROM ${input.audit?.auditRequestId ?? null}::uuid
     `.execute(this.db);
     return result.rows[0];
   }
@@ -232,6 +238,12 @@ export class MediaRecoveryRepository {
       const resource = await this.lockResource(trx, input);
       if (!resource || ['committed', 'finalized'].includes(resource.status)) {
         return;
+      }
+      if (input.audit) {
+        const audit = await guardAudit(trx, input.audit, input.ownerId, true);
+        if (!audit || audit.request.expectedSha256.equals(input.verified.sha256)) {
+          return;
+        }
       }
       const matchedExternalAssetId = input.candidate ? undefined : input.matchedExternalAssetId;
       const target: RecoveryTarget = resource.expectedTarget ?? {
@@ -382,6 +394,15 @@ export class MediaRecoveryRepository {
         }
         if (!candidate) {
           const createdAt = input.sourceCreatedAt ?? new Date();
+          const inherited = target.matchedExternalAssetId
+            ? await this.inheritedProtection(trx, input.ownerId, target.matchedExternalAssetId)
+            : undefined;
+          // The worker's preliminary sourceHidden is not publication authority. Tags,
+          // suppression and elevation may have changed before this transaction began.
+          const audit = input.audit ? await guardAudit(trx, input.audit, input.ownerId, true) : undefined;
+          if (input.audit && !audit) {
+            throw new Error('audit_authority_changed');
+          }
           await trx
             .insertInto('asset')
             .values({
@@ -400,10 +421,7 @@ export class MediaRecoveryRepository {
               status: AssetStatus.Active,
             })
             .execute();
-          const inherited = target.matchedExternalAssetId
-            ? await this.inheritedProtection(trx, input.ownerId, target.matchedExternalAssetId)
-            : undefined;
-          if (input.sourceHidden || inherited) {
+          if ((audit ? audit.private : input.sourceHidden) || inherited) {
             await trx
               .insertInto('asset_lock')
               .values({ assetId, reason: inherited ?? AssetLockReason.Marked, lockedBy: null })
@@ -511,10 +529,30 @@ export class MediaRecoveryRepository {
           outcome: target.outcome,
           identity: final.identity,
           sizeInBytes: final.sizeInBytes,
+          ...(input.audit && {
+            auditStaging: {
+              resourceId: input.resourceId,
+              requestId: input.audit.auditRequestId,
+              ownerId: input.ownerId,
+              stagingPath: resource.stagingPath,
+              sha256: final.sha256.toString('hex'),
+              sizeInBytes: final.sizeInBytes,
+            },
+          }),
           ...(target.matchedExternalAssetId && { matchedExternalAssetId: target.matchedExternalAssetId }),
         }}::jsonb,
         "pendingJobs" = ${pendingJobs}::jsonb, "lastError" = NULL, "updatedAt" = now()
         WHERE id = ${input.resourceId}::uuid`.execute(trx);
+      if (input.audit) {
+        await publishAudit(
+          trx,
+          input.audit,
+          input.ownerId,
+          'mismatch',
+          { id: input.resourceId, leaseToken: input.leaseToken },
+          assetId,
+        );
+      }
       return { outcome: target.outcome, assetId };
     });
   }
@@ -603,11 +641,16 @@ export class MediaRecoveryRepository {
   }
 
   private async lockResource(trx: Kysely<DB>, input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
+    if (input.audit && !(await guardAudit(trx, input.audit, input.ownerId, true))) {
+      return;
+    }
     const result = await sql<RecoveryResource>`SELECT r.*, r."expectedSize"::float8 AS "expectedSize"
       FROM immich_fork.icloud_resource r JOIN immich_fork.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
       WHERE r.id = ${input.resourceId}::uuid AND r."ownerId" = ${input.ownerId}::uuid
         AND r."leaseToken" = ${input.leaseToken}::uuid AND r."leaseExpiresAt" > clock_timestamp()
-        AND r.status <> 'removed' AND c.state = 'connected' FOR UPDATE OF r FOR SHARE OF c`.execute(trx);
+        AND r.status <> 'removed' AND c.state = 'connected'
+        AND r."auditRequestId" IS NOT DISTINCT FROM ${input.audit?.auditRequestId ?? null}::uuid
+        FOR UPDATE OF r FOR SHARE OF c`.execute(trx);
     return result.rows[0];
   }
 
@@ -662,6 +705,12 @@ export class MediaRecoveryRepository {
     const candidate = candidates.find(({ id }) => id === row.id);
     if (!candidate?.matchesContent || candidate.identityConflict || (candidate.hidden && !input.includeHidden)) {
       return;
+    }
+    if (input.audit) {
+      const audit = await guardAudit(trx, input.audit, input.ownerId, true);
+      if (!audit || (audit.private && !candidate.hidden)) {
+        return;
+      }
     }
     return candidate;
   }

@@ -68,6 +68,7 @@ describe(ICloudIdentityRepository.name, () => {
     await sql`CREATE TABLE asset (id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
     await sql`CREATE TABLE backup_device ("ownerId" uuid,"deviceKey" uuid,"deletedAt" timestamptz)`.execute(db);
     await icloud.up(db);
+    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
     await identity.up(db);
     sync = new ICloudSyncRepository(db);
     sut = new ICloudIdentityRepository(db);

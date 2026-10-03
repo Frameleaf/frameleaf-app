@@ -233,21 +233,30 @@ describe('resolveEditedMasterColorPolicy', () => {
 });
 
 describe('getEditedMasterTimingArgs', () => {
-  it('pins the frame timing to passthrough so a variable-rate source is never resampled', () => {
-    expect(getEditedMasterTimingArgs(sdrStream)).toEqual(expect.arrayContaining(['-fps_mode', 'passthrough']));
+  it('passes variable-rate timestamps to the encoder on the filtergraph grid', () => {
+    expect(getEditedMasterTimingArgs(sdrStream)).toEqual(
+      expect.arrayContaining(['-fps_mode', 'passthrough', '-enc_time_base:v', 'filter']),
+    );
   });
 
   it('pins the output timescale to the source time base', () => {
     expect(getEditedMasterTimingArgs({ timeBase: 600 })).toEqual([
       '-fps_mode',
       'passthrough',
+      '-enc_time_base:v',
+      'filter',
       '-video_track_timescale',
       '600',
     ]);
   });
 
   it('omits the timescale when the source time base is unknown', () => {
-    expect(getEditedMasterTimingArgs({ timeBase: null })).toEqual(['-fps_mode', 'passthrough']);
+    expect(getEditedMasterTimingArgs({ timeBase: null })).toEqual([
+      '-fps_mode',
+      'passthrough',
+      '-enc_time_base:v',
+      'filter',
+    ]);
   });
 
   it('never emits a constant-frame-rate mode on its own', () => {
@@ -259,6 +268,8 @@ describe('getEditedMasterTimingArgs', () => {
     expect(getEditedMasterTimingArgs({ timeBase: 30_000, timeBaseRational: { num: 1, den: 30_000 } })).toEqual([
       '-fps_mode',
       'passthrough',
+      '-enc_time_base:v',
+      'filter',
       '-video_track_timescale',
       '30000',
     ]);
@@ -266,6 +277,8 @@ describe('getEditedMasterTimingArgs', () => {
     expect(getEditedMasterTimingArgs({ timeBase: 30_000, timeBaseRational: { num: 1001, den: 30_000 } })).toEqual([
       '-fps_mode',
       'passthrough',
+      '-enc_time_base:v',
+      'filter',
       '-video_track_timescale',
       '30000',
     ]);
@@ -281,6 +294,8 @@ describe('getEditedMasterTimingArgs', () => {
     expect(getEditedMasterTimingArgs({ timeBase: 600 }, decision)).toEqual([
       '-fps_mode',
       'passthrough',
+      '-enc_time_base:v',
+      'filter',
       '-video_track_timescale',
       '600',
     ]);

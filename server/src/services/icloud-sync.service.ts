@@ -10,6 +10,8 @@ import {
   ICloudConnectionUpdateDto,
   ICloudConnectionsResponseDto,
   ICloudControlDto,
+  ICloudIdentityReuseAuthorityDto,
+  ICloudIdentityReuseAuthorityStatusDto,
   ICloudInventoryResponseDto,
 } from 'src/dtos/icloud-sync.dto.js';
 import {
@@ -38,6 +40,7 @@ import {
   ICloudTransportError,
   ICloudTransportRepository,
 } from 'src/repositories/icloud-transport.repository.js';
+import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
@@ -46,6 +49,8 @@ import {
   type MediaOperationWriteState,
 } from 'src/repositories/media-operation.repository.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
+import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
+import { ICloudIdentityAdoptionService } from 'src/services/icloud-identity-adoption.service.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
@@ -53,7 +58,9 @@ import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { checkAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { maskAppleAccount } from 'src/utils/icloud-identity.js';
+import { hasWeeklyAuthorityInput, isPrivateICloudOperation } from 'src/utils/icloud-weekly.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
 
 /** How often an idle worker looks for queued runs. A control also nudges it through the job queue. */
 const ICLOUD_TICK_MS = 15_000;
@@ -138,6 +145,7 @@ export const connectionStateCode = (connection: Pick<ICloudConnection, 'state' |
 
 /** A run as the connection page shows it. The same row is what Activity shows. */
 export const mapICloudRun = (operation: MediaOperation) => {
+  const privateWeekly = isPrivateICloudOperation(operation);
   const status = operation.status as MediaOperationStatus;
   // One rule with Activity: a delayed queued run that has spent its automatic retry is retrying;
   // one that has not failed is waiting out the provider or its items' back-off.
@@ -146,14 +154,16 @@ export const mapICloudRun = (operation: MediaOperation) => {
   return {
     id: operation.id,
     status,
-    progress: Number(operation.progress ?? 0),
-    processedUnits: Number(operation.processedUnits ?? 0),
+    progress: privateWeekly ? 0 : Number(operation.progress ?? 0),
+    processedUnits: privateWeekly ? 0 : Number(operation.processedUnits ?? 0),
     totalUnits:
-      operation.totalUnits === null || operation.totalUnits === undefined ? null : Number(operation.totalUnits),
+      privateWeekly || operation.totalUnits === null || operation.totalUnits === undefined
+        ? null
+        : Number(operation.totalUnits),
     retrying: queuedWithDelay && retried,
     waiting: queuedWithDelay && !retried,
     pauseRequested: !!operation.pauseRequestedAt && status !== MediaOperationStatus.Paused,
-    errorCode: operation.errorCode,
+    errorCode: privateWeekly ? null : operation.errorCode,
     startedAt: asIso(operation.startedAt),
     finishedAt: asIso(operation.finishedAt),
     createdAt: asIso(operation.createdAt) ?? new Date(0).toISOString(),
@@ -195,6 +205,9 @@ export class ICloudSyncService {
     private operations: MediaOperationRepository,
     private logger: LoggingRepository,
     private identities: ICloudIdentityRepository,
+    private audits: ICloudAuditService,
+    private adoption: ICloudIdentityAdoptionService,
+    private weekly: ICloudWeeklyRepository,
   ) {
     this.logger.setContext(ICloudSyncService.name);
   }
@@ -225,6 +238,7 @@ export class ICloudSyncService {
         awaiting_auth: AWAITING_AUTH_STATES.has(connection.state) ? 1 : 0,
       },
       run: run ? mapICloudRun(run) : null,
+      identityReuseAuthority: await this.weekly.status(connection.id, connection.ownerId),
     };
   }
 
@@ -251,6 +265,15 @@ export class ICloudSyncService {
       enabled: this.transport.enabled(),
       connections: await Promise.all(connections.map((row) => this.response(row))),
     };
+  }
+
+  async setIdentityReuseAuthority(
+    auth: AuthDto,
+    id: string,
+    dto: ICloudIdentityReuseAuthorityDto,
+  ): Promise<ICloudIdentityReuseAuthorityStatusDto> {
+    await this.owned(auth, id);
+    return this.weekly.setAuthority(auth, id, dto);
   }
 
   async create(auth: AuthDto, dto: ICloudConnectionCreateDto): Promise<ICloudConnectionResponseDto> {
@@ -577,6 +600,7 @@ export class ICloudSyncService {
    * operation sweep returns them to the queue, or gives them their automatic retry, for every kind.
    */
   async drain(): Promise<void> {
+    await this.audits.housekeeping();
     while (!this.stopping) {
       const claim = await this.operations.claimNext({
         kinds: [MediaOperationKind.ICloudSync],
@@ -607,6 +631,27 @@ export class ICloudSyncService {
    * device approval, a password) fails the run with that reason; the connection has told its owner.
    */
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
+    if (
+      operation.snapshot.task === 'identity-audit' &&
+      !hasWeeklyAuthorityInput(operation.snapshot) &&
+      (operation.snapshot.purpose === undefined || operation.snapshot.purpose === 'manual-session')
+    ) {
+      await this.audits.run(operation, claimToken);
+      return;
+    }
+    if (
+      Object.hasOwn(operation.snapshot, 'task') ||
+      Object.hasOwn(operation.snapshot, 'purpose') ||
+      hasWeeklyAuthorityInput(operation.snapshot)
+    ) {
+      await this.operations.fail(
+        operation.id,
+        claimToken,
+        { error: 'Invalid iCloud task', errorCode: 'icloud_snapshot_invalid' },
+        { retry: false },
+      );
+      return;
+    }
     const claim: Claim = { operation, claimToken };
     const { id, ownerId } = operation;
     const snapshot = asObject(operation.snapshot);
@@ -680,7 +725,7 @@ export class ICloudSyncService {
 
         let outcome: StepOutcome;
         try {
-          outcome = await this.step(current);
+          outcome = await this.step(current, claim);
         } catch (error) {
           const code = failureCode(error);
           await this.failure(connectionId, ownerId, error);
@@ -731,7 +776,7 @@ export class ICloudSyncService {
   }
 
   /** One unit of work. Every part of it is safe to repeat: leases, checkpoints and receipts decide. */
-  private async step(connection: ICloudConnection): Promise<StepOutcome> {
+  private async step(connection: ICloudConnection, claim: Claim): Promise<StepOutcome> {
     const { id } = connection;
     const inventoryComplete = await this.enumerate(connection);
     const resources: ICloudResource[] = [];
@@ -743,7 +788,7 @@ export class ICloudSyncService {
       resources.push(resource);
     }
     // Every transfer settles before the step ends, so none is left running behind a stopped run.
-    const settled = await Promise.allSettled(resources.map((resource) => this.transfer(connection, resource)));
+    const settled = await Promise.allSettled(resources.map((resource) => this.transfer(connection, resource, claim)));
     const rejected = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
     if (rejected) {
       throw rejected.reason;
@@ -972,7 +1017,7 @@ export class ICloudSyncService {
     });
   }
 
-  private async transfer(connection: ICloudConnection, resource: ICloudResource): Promise<void> {
+  private async transfer(connection: ICloudConnection, resource: ICloudResource, claim: Claim): Promise<void> {
     try {
       if (resource.status !== 'committed') {
         const authority = {
@@ -997,25 +1042,40 @@ export class ICloudSyncService {
             await this.repository.waitForClaim(resource, heldUntil);
             return;
           }
-          const path = await this.staging.download(connection, resource);
-          const type = resource.source.type;
-          if (type !== AssetType.Image && type !== AssetType.Video) {
-            await this.repository.finish(resource, 'unsupported', 'media_type_unsupported');
+          const adopted = await this.adoption.adopt({
+            ownerId: connection.ownerId,
+            connectionId: connection.id,
+            config: canonicalJson(connection.config),
+            operationId: claim.operation.id,
+            operationClaimToken: claim.claimToken,
+            resourceId: resource.id,
+            resourceLeaseToken: resource.leaseToken!,
+          });
+          if (adopted === 'retry') {
+            await this.repository.finish(resource, 'retry', 'identity_adoption_unavailable');
             return;
           }
-          const result = await this.recovery.reconcile({
-            ...authority,
-            stagedPath: path,
-            originalFileName:
-              typeof resource.source.originalFileName === 'string' ? resource.source.originalFileName : resource.id,
-            type,
-            sourceHidden: resource.source.isHidden === true,
-            sourceCreatedAt:
-              typeof resource.source.fileCreatedAt === 'string' ? new Date(resource.source.fileCreatedAt) : undefined,
-          });
-          if (!['imported', 'reused', 'repaired-missing', 'repaired-corrupt'].includes(result.outcome)) {
-            await this.repository.finish(resource, result.outcome, result.reason ?? null);
-            return;
+          if (adopted === 'miss') {
+            const path = await this.staging.download(connection, resource);
+            const type = resource.source.type;
+            if (type !== AssetType.Image && type !== AssetType.Video) {
+              await this.repository.finish(resource, 'unsupported', 'media_type_unsupported');
+              return;
+            }
+            const result = await this.recovery.reconcile({
+              ...authority,
+              stagedPath: path,
+              originalFileName:
+                typeof resource.source.originalFileName === 'string' ? resource.source.originalFileName : resource.id,
+              type,
+              sourceHidden: resource.source.isHidden === true,
+              sourceCreatedAt:
+                typeof resource.source.fileCreatedAt === 'string' ? new Date(resource.source.fileCreatedAt) : undefined,
+            });
+            if (!['imported', 'reused', 'repaired-missing', 'repaired-corrupt'].includes(result.outcome)) {
+              await this.repository.finish(resource, result.outcome, result.reason ?? null);
+              return;
+            }
           }
         }
       }

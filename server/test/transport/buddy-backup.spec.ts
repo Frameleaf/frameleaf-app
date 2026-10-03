@@ -12,10 +12,11 @@ import { type BuddyKeyring } from 'src/utils/buddy-backup-crypto.js';
 import { BuddyBackupReader } from 'src/utils/buddy-backup-reader.js';
 import { type BuddySignedSnapshot } from 'src/utils/buddy-backup-vault.js';
 import { BUDDY_SIDES, type BuddySide, startBuddyCloud } from 'test/fixtures/buddy-cloud.js';
-import { startBuddyTransport } from 'test/fixtures/buddy-transport.js';
+import { buddyForwardingDiagnostic, startBuddyTransport } from 'test/fixtures/buddy-transport.js';
 
 // Fails if app capture/pg_dump/crypto/commit/restore stops working, crosses an owner, or indexes hosted media.
 // This is direct HTTPS with a fixture coordinator/enrollment; it does not qualify real Cloud/relay/NAT.
+// Restart is controlled with normal sending pause; simultaneous unpaused restart recovery remains unqualified.
 const compose = fileURLToPath(new URL('../../../e2e/docker-compose.buddy.yml', import.meta.url));
 const docker = promisify(execFile);
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -130,6 +131,64 @@ const absent = async (path: string) => {
   }
 };
 
+it('retains causal forwarding state without leaking request identities or error text', () => {
+  const secret = 'private-fixture-sentinel';
+  const state = { reusedSocket: true, requestAborted: false, responseDestroyed: false, responseFinished: false };
+  for (const [path, category] of [
+    ['handshake', 'handshake'],
+    ['reservations', 'reservations'],
+    [`objects/${'a'.repeat(64)}`, 'object'],
+    ['snapshots', 'snapshots'],
+    [`snapshots/${secret}`, 'snapshot'],
+    [`unknown/${secret}`, 'other'],
+  ]) {
+    const diagnostic = buddyForwardingDiagnostic(
+      'GET',
+      `/api/buddy/v1/vaults/${secret}/${path}?token=${secret}`,
+      'ECONNRESET',
+      'delete-restart-and-restore',
+      'backup',
+      state,
+    );
+    expect(diagnostic).toMatchObject({
+      method: 'GET',
+      category,
+      code: 'ECONNRESET',
+      phase: 'delete-restart-and-restore',
+      admittedPhase: 'backup',
+      ...state,
+    });
+    expect(diagnostic.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(JSON.stringify(diagnostic)).not.toContain(secret);
+  }
+  for (const phase of [
+    'delete-before-restart',
+    'owned-compose-restart',
+    'awaiting-both-peer-apis',
+    'restore-after-peer-readiness',
+  ]) {
+    const diagnostic = buddyForwardingDiagnostic(
+      'GET',
+      `/api/buddy/v1/vaults/${secret}/handshake?token=${secret}`,
+      'ECONNRESET',
+      phase,
+      phase,
+      state,
+    );
+    expect(diagnostic).toMatchObject({ phase, admittedPhase: phase });
+    expect(JSON.stringify(diagnostic)).not.toContain(secret);
+  }
+  const unknown = buddyForwardingDiagnostic(secret, `/api/${secret}`, new Error(secret), secret, secret, state);
+  expect(unknown).toMatchObject({
+    method: 'OTHER',
+    category: 'other',
+    code: 'UNKNOWN',
+    phase: 'unknown',
+    admittedPhase: 'unknown',
+  });
+  expect(JSON.stringify(unknown)).not.toContain(secret);
+});
+
 it('backs up and restores two real apps bidirectionally without exposing hosted Buddy photos', async () => {
   const started = Date.now();
   const root = await realpath(process.env.BUDDY_ROOT ?? '');
@@ -140,9 +199,20 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
   const report: Record<string, unknown> = {
     source: process.env.GITHUB_SHA,
     scope: 'two-real-apps/direct-fixture-coordinator-and-enrollment',
+    restartMode: 'controlled-paused-restart',
     phase: 'setup',
     passed: false,
   };
+  const lifecycle: Array<{
+    timestamp: string;
+    event: string;
+    side?: BuddySide;
+    backupComplete?: boolean;
+    verificationComplete?: boolean;
+    runState?: string | null;
+    sendingPaused?: boolean;
+  }> = [];
+  report.lifecycle = lifecycle;
   const apps: App[] = [];
   const transports: Array<Awaited<ReturnType<typeof startBuddyTransport>>> = [];
   let coordinator: Awaited<ReturnType<typeof startBuddyCloud>> | undefined;
@@ -308,7 +378,7 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       kits.push(kit);
       sentinels.push(...Object.values(kit.keys));
       await json(app, `${adminRoute}/key/verify`, 'POST', app.admin.token, kit, 201);
-      transports.push(await startBuddyTransport(root, app.side, saved.instanceId));
+      transports.push(await startBuddyTransport(root, app.side, saved.instanceId, () => report.phase));
     }
     expect(kits[0].keys['1'] === kits[1].keys['1']).toBe(false);
     for (const app of apps) {
@@ -437,7 +507,73 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       await json(app, `${adminRoute}/probe`, 'POST', app.admin.token, undefined, 201);
     }
 
-    report.phase = 'delete-restart-and-restore';
+    const verificationStartedAt = Date.now();
+    lifecycle.push({ timestamp: new Date().toISOString(), event: 'verification-before-pause-started' });
+    const verificationRuns: string[] = [];
+    for (const app of apps) {
+      await unlock(app);
+      const verification = await json<BuddyStatusDto>(
+        app,
+        `${adminRoute}/control`,
+        'POST',
+        app.admin.token,
+        { action: 'verify' },
+        201,
+      );
+      expect(verification.run?.id).toBeTruthy();
+      verificationRuns.push(verification.run!.id);
+    }
+    for (const [index, app] of apps.entries()) {
+      await until(
+        'Real Buddy verification settled',
+        async () => {
+          const state = await status(app);
+          const [operation] = await app.db<{ status: string; task: string; claimToken: string | null }[]>`
+            select status, snapshot->>'task' as task, "claimToken" from public.media_operation
+            where id=${verificationRuns[index]}
+          `;
+          expect(operation.task).toBe('verify');
+          if (['failed', 'cancelled'].includes(operation.status)) {
+            throw new Error(`Server ${app.side}: real verification failed; inspect hosted diagnostics`);
+          }
+          return (
+            operation.status === 'completed' &&
+            operation.claimToken === null &&
+            state.lastVerifiedAt !== null &&
+            Date.parse(state.lastVerifiedAt) >= verificationStartedAt &&
+            (await absent(join(root, app.side, 'identity', 'buddy', 'verification', verificationRuns[index])))
+          );
+        },
+        Boolean,
+      );
+      lifecycle.push({ timestamp: new Date().toISOString(), event: 'verification-settled', side: app.side });
+    }
+    // A pause acknowledgement does not settle in-flight work. Verification completed above;
+    // the durable sending pause now prevents bootstrap from starting another peer request.
+    for (const app of apps) {
+      const paused = await json<BuddyStatusDto>(
+        app,
+        `${adminRoute}/control`,
+        'POST',
+        app.admin.token,
+        { action: 'pause-sending' },
+        201,
+      );
+      expect(paused.settings?.pausedSending).toBe(true);
+      const [claims] = await app.db<{ count: number }[]>`
+        select count(*)::int as count from public.media_operation
+        where kind='buddy_backup' and "claimToken" is not null
+      `;
+      expect(claims.count).toBe(0);
+      lifecycle.push({
+        timestamp: new Date().toISOString(),
+        event: 'sending-paused-and-settled',
+        side: app.side,
+      });
+    }
+
+    report.phase = 'delete-before-restart';
+    lifecycle.push({ timestamp: new Date().toISOString(), event: 'delete-started' });
     for (const [index, app] of apps.entries()) {
       await unlock(app);
       const [currentPath] = await app.db<{ originalPath: string }[]>`
@@ -458,8 +594,30 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
         isFavorite: false,
       });
     }
+    // Verify the controlled restart preconditions remain true after local deletion/editing.
+    const beforeRestartStates = new Map<BuddySide, BuddyStatusDto>();
+    for (const app of apps) {
+      const beforeRestart = await status(app);
+      beforeRestartStates.set(app.side, beforeRestart);
+      expect(beforeRestart.lastCompleteAt).not.toBeNull();
+      expect(beforeRestart.lastVerifiedAt).not.toBeNull();
+      expect(beforeRestart.settings?.pausedSending).toBe(true);
+      lifecycle.push({
+        timestamp: new Date().toISOString(),
+        event: 'before-restart-state',
+        side: app.side,
+        backupComplete: beforeRestart.lastCompleteAt !== null,
+        verificationComplete: beforeRestart.lastVerifiedAt !== null,
+        runState: beforeRestart.run?.state ?? null,
+        sendingPaused: beforeRestart.settings?.pausedSending,
+      });
+    }
+    report.phase = 'owned-compose-restart';
+    lifecycle.push({ timestamp: new Date().toISOString(), event: 'compose-restart-started' });
     // Restart only the services in the owned compose file; no external stack/container names are accepted.
     await docker('docker', ['compose', '-f', compose, 'restart', 'buddy-a', 'buddy-b'], { timeout: 60_000 });
+    lifecycle.push({ timestamp: new Date().toISOString(), event: 'compose-restart-returned' });
+    report.phase = 'awaiting-both-peer-apis';
     for (const app of apps) {
       await until(
         'Restarted API',
@@ -475,8 +633,39 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
         Boolean,
       );
       await unlock(app);
-      expect((await status(app)).pairing).toEqual(pair);
+      const restarted = await status(app);
+      expect(restarted.pairing).toEqual(pair);
+      expect(restarted.lastCompleteAt).toBe(beforeRestartStates.get(app.side)!.lastCompleteAt);
+      expect(restarted.lastVerifiedAt).toBe(beforeRestartStates.get(app.side)!.lastVerifiedAt);
+      expect(restarted.settings?.pausedSending).toBe(true);
+      lifecycle.push({
+        timestamp: new Date().toISOString(),
+        event: 'peer-api-ready',
+        side: app.side,
+        backupComplete: restarted.lastCompleteAt !== null,
+        verificationComplete: restarted.lastVerifiedAt !== null,
+        runState: restarted.run?.state ?? null,
+        sendingPaused: restarted.settings?.pausedSending,
+      });
     }
+    lifecycle.push({ timestamp: new Date().toISOString(), event: 'both-peer-apis-ready' });
+    for (const app of apps) {
+      const resumed = await json<BuddyStatusDto>(
+        app,
+        `${adminRoute}/control`,
+        'POST',
+        app.admin.token,
+        { action: 'resume-sending' },
+        201,
+      );
+      expect(resumed.settings?.pausedSending).toBe(false);
+      lifecycle.push({
+        timestamp: new Date().toISOString(),
+        event: 'sending-resumed-after-peer-readiness',
+        side: app.side,
+      });
+    }
+    report.phase = 'restore-after-peer-readiness';
     const restore = async (app: App, snapshotId: string, ids: string[], mode: 'keep' | 'replace') => {
       await unlock(app);
       const input = { snapshotId, scope: 'asset', assetIds: ids, mode };
@@ -602,9 +791,11 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       await json(app, `/assets/${items[index].current.id}`, 'PUT', app.admin.token, { visibility: 'locked' });
       await json(app, '/auth/session/lock', 'POST', app.admin.token, undefined, 204);
       const lockedOriginal = await response(app, `/assets/${items[index].current.id}/original`, 'GET', app.admin.token);
-      // The normal media API deliberately uses its existing non-enumerating missing/access refusal.
-      expect(lockedOriginal.status).toBe(400);
-      await lockedOriginal.body?.cancel();
+      // sendFile maps denied originals to the same generic 404 as a missing file, without media metadata.
+      expect(lockedOriginal.status).toBe(404);
+      expect(lockedOriginal.headers.get('content-type')).toMatch(/^application\/json\b/);
+      expect(lockedOriginal.headers.get('content-disposition')).toBeNull();
+      expect(await lockedOriginal.json()).toEqual({ message: 'Not Found' });
       for (const path of [`${ownerRoute}/snapshots/${snapshotIds[index]}`, `${adminRoute}/preflight`]) {
         const locked = await response(
           app,
@@ -636,12 +827,15 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
     }
     report.passed = true;
     report.phase = 'complete';
+    report.privacy = 'both-hosted-snapshots-and-normal-photo-routes-refused; own-content-positive';
+  } finally {
+    // Persist the observations that failed acceptance too; success-only evidence hid the causal error.
     report.transport = transports.map((transport, index) => ({
       destination: BUDDY_SIDES[index],
       ...transport.metrics,
+      failures: [...transport.failures],
+      diagnostics: [...transport.diagnostics],
     }));
-    report.privacy = 'both-hosted-snapshots-and-normal-photo-routes-refused; own-content-positive';
-  } finally {
     report.durationMs = Date.now() - started;
     try {
       await writeFile(join(root, 'evidence', 'buddy.json'), JSON.stringify(report, null, 2));

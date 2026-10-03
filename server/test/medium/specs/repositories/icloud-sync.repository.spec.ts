@@ -59,6 +59,7 @@ describe(ICloudSyncRepository.name, () => {
     // the library side `counts` reads to tell a disappeared source from a deleted asset
     await sql`CREATE TABLE asset (id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
     await migration.up(db);
+    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
     // FL-296: finalize records the source identity
     await identity.up(db);
     repository = new ICloudSyncRepository(db);

@@ -12,18 +12,79 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type BuddySide, buddyHost, buddyPort } from 'test/fixtures/buddy-cloud.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 
+// Only fixed categories and booleans enter the artifact. Never retain URLs, IDs, headers or errors.
+export const buddyForwardingDiagnostic = (
+  method: string | undefined,
+  url: string | undefined,
+  code: unknown,
+  phase: unknown,
+  admittedPhase: unknown,
+  state: { reusedSocket: boolean; requestAborted: boolean; responseDestroyed: boolean; responseFinished: boolean },
+) => {
+  const path = (url ?? '').split('?', 1)[0];
+  const prefix = /^\/api\/buddy\/v1\/vaults\/[^/]+\//;
+  const route = prefix.test(path) ? path.replace(prefix, '') : '';
+  const category =
+    route === 'handshake'
+      ? 'handshake'
+      : route === 'reservations'
+        ? 'reservations'
+        : /^objects\/[a-f\d]{64}$/.test(route)
+          ? 'object'
+          : route === 'snapshots'
+            ? 'snapshots'
+            : /^snapshots\/[^/]+$/.test(route)
+              ? 'snapshot'
+              : 'other';
+  const phases = new Set([
+    'setup',
+    'backup',
+    'committed-ciphertext-and-real-dump',
+    'delete-restart-and-restore',
+    'delete-before-restart',
+    'owned-compose-restart',
+    'awaiting-both-peer-apis',
+    'restore-after-peer-readiness',
+    'no-hosted-buddy-photo-access',
+    'complete',
+  ]);
+  const codes = new Set([
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'EPIPE',
+    'ETIMEDOUT',
+    'ERR_STREAM_PREMATURE_CLOSE',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+  ]);
+  return {
+    timestamp: new Date().toISOString(),
+    method: method && ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'].includes(method) ? method : 'OTHER',
+    category,
+    code: typeof code === 'string' && codes.has(code) ? code : 'UNKNOWN',
+    phase: typeof phase === 'string' && phases.has(phase) ? phase : 'unknown',
+    admittedPhase: typeof admittedPhase === 'string' && phases.has(admittedPhase) ? admittedPhase : 'unknown',
+    reusedSocket: state.reusedSocket,
+    requestAborted: state.requestAborted,
+    responseDestroyed: state.responseDestroyed,
+    responseFinished: state.responseFinished,
+  };
+};
+
 /** Real TLS/direct/proxy code. Enrollment/EdgeState is substituted, never app auth or peer services. */
-export const startBuddyTransport = async (root: string, side: BuddySide, instanceId: string) => {
+export const startBuddyTransport = async (root: string, side: BuddySide, instanceId: string, phase: () => unknown) => {
   const apiPort = side === 'a' ? 3285 : 3286;
   const metrics = { objectReads: 0, objectWrites: 0, commits: 0, changedProofUrlStatus: null as number | null };
   let checkedProof = false;
   const failures: string[] = [];
+  const diagnostics: Array<ReturnType<typeof buddyForwardingDiagnostic>> = [];
   const [ca, certificate, key] = await Promise.all([
     readFile(join(root, 'tls', 'ca.crt'), 'utf8'),
     readFile(join(root, 'tls', `${side}.crt`), 'utf8'),
     readFile(join(root, 'tls', `${side}.key`), 'utf8'),
   ]);
   const meter = http.createServer((request, response) => {
+    const admittedPhase = phase();
     const forward = () => {
       const upstream = http.request(
         {
@@ -54,8 +115,23 @@ export const startBuddyTransport = async (root: string, side: BuddySide, instanc
           });
         },
       );
-      upstream.once('error', () => {
+      upstream.once('error', (error) => {
         failures.push('API forwarding failed');
+        diagnostics.push(
+          buddyForwardingDiagnostic(
+            request.method,
+            request.url,
+            (error as NodeJS.ErrnoException).code,
+            phase(),
+            admittedPhase,
+            {
+              reusedSocket: upstream.reusedSocket,
+              requestAborted: request.aborted,
+              responseDestroyed: response.destroyed,
+              responseFinished: response.writableFinished,
+            },
+          ),
+        );
         response.destroy();
       });
       request.pipe(upstream);
@@ -100,8 +176,23 @@ export const startBuddyTransport = async (root: string, side: BuddySide, instanc
         },
       );
       altered.once('timeout', () => altered.destroy(new Error('Proof-bound request timed out')));
-      altered.once('error', () => {
+      altered.once('error', (error) => {
         failures.push('Proof URL check failed');
+        diagnostics.push(
+          buddyForwardingDiagnostic(
+            'GET',
+            request.url?.replace(/objects\/[a-f\d]{64}$/, 'snapshots'),
+            (error as NodeJS.ErrnoException).code,
+            phase(),
+            admittedPhase,
+            {
+              reusedSocket: altered.reusedSocket,
+              requestAborted: request.aborted,
+              responseDestroyed: response.destroyed,
+              responseFinished: response.writableFinished,
+            },
+          ),
+        );
         response.destroy();
       });
       altered.end();
@@ -181,5 +272,5 @@ export const startBuddyTransport = async (root: string, side: BuddySide, instanc
       request.once('error', reject);
       request.end();
     });
-  return { metrics, failures, refresh, request, close };
+  return { metrics, failures, diagnostics, refresh, request, close };
 };

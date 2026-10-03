@@ -67,6 +67,8 @@ The first start after upgrading to iCloud source identities builds an index over
 
 `FRAMELEAF_ICLOUD_IDENTITY_MATCHING=false` switches off iCloud source identity matching between the sync and the Frameleaf app. Then only photos with the same SHA-256 are treated as the same. See [iCloud Photos Sync and the Frameleaf app](icloud-photos-sync.md#with-the-app).
 
+Identity adoption before a cloud download is separately disabled by default. Keep `FRAMELEAF_ICLOUD_IDENTITY_ADOPTION` off: enabling requires both the live Apple-account identity/fingerprint spike and the mandatory weekly audit authority/scheduler to be qualified. This source prerequisite does not implement that weekly authority, enable adoption, or establish either qualification. Matching must also remain enabled. The bounded adoption path accepts only unprotected original, Live Photo motion and RAW-alternative resources with current exact source evidence and freshly verified managed bytes. It records the actual decision but does not mark those skipped cloud bytes audit-verified. Edited resources and unsupported evidence retain the ordinary download/hash path; retired authority or unsettled validation retries without publishing a decision. Weekly audits and autonomous protected-media authority remain separate work; a future grant must govern adoption eligibility before enablement.
+
 ### Check readiness and the pinned version
 
 From the server container, verify the bridge's HTTPS certificate and health response using Node's built-in client. Prefix `exec` with the same Compose files and environment used above:

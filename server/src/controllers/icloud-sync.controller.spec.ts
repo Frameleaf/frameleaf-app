@@ -22,6 +22,16 @@ describe('iCloud API authorization and input boundaries', () => {
   const logger = { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const transport = { enabled: () => true, authenticate: vi.fn() };
   const staging = { root: vi.fn() };
+  const weekly = {
+    status: vi.fn().mockResolvedValue({
+      enabled: false,
+      includeProtected: false,
+      available: false,
+      regrantRequired: false,
+      executionAvailable: false,
+    }),
+    setAuthority: vi.fn(),
+  };
   beforeAll(async () => {
     const service = new ICloudSyncService(
       repository as never,
@@ -37,6 +47,9 @@ describe('iCloud API authorization and input boundaries', () => {
       {} as never,
       logger as never,
       {} as never,
+      {} as never,
+      {} as never,
+      weekly as never,
     );
     context = await controllerSetup(ICloudSyncController, [{ provide: ICloudSyncService, useValue: service }]);
   });
@@ -53,6 +66,33 @@ describe('iCloud API authorization and input boundaries', () => {
       Promise.resolve(owner === ownerId ? { id, ownerId, config: ICloudConfigSchema.parse({}) } : undefined),
     );
   });
+  it('validates explicit weekly consent without accepting private bindings or API-key authority', async () => {
+    const input = { enabled: true, includeProtected: false, requestKey: randomUUID() };
+    await request(context.getHttpServer())
+      .patch('/icloud-sync/connections/not-a-uuid/identity-reuse-authority')
+      .send(input)
+      .expect(400);
+    await request(context.getHttpServer())
+      .patch(`/icloud-sync/connections/${id}/identity-reuse-authority`)
+      .send({ ...input, grantGeneration: 1 })
+      .expect(400);
+    await request(context.getHttpServer())
+      .patch(`/icloud-sync/connections/${id}/identity-reuse-authority`)
+      .send({ ...input, enabled: false, includeProtected: true })
+      .expect(400);
+    await request(context.getHttpServer())
+      .patch(`/icloud-sync/connections/${id}/identity-reuse-authority`)
+      .send({ ...input, requestKey: 'invalid' })
+      .expect(400);
+    context.authenticate.mockResolvedValue({ user: { id: ownerId }, session: {}, apiKey: {} });
+    await request(context.getHttpServer())
+      .patch(`/icloud-sync/connections/${id}/identity-reuse-authority`)
+      .send(input)
+      .expect(403);
+    expect(weekly.setAuthority).not.toHaveBeenCalled();
+    expect(transport.authenticate).not.toHaveBeenCalled();
+  });
+
   it('requires authentication and rejects malformed IDs and unknown configuration keys', async () => {
     context.authenticate.mockRejectedValueOnce(new UnauthorizedException());
     await request(context.getHttpServer()).get('/icloud-sync/connections').expect(401);

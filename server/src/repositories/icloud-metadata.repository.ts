@@ -36,12 +36,12 @@ export class ICloudMetadataRepository {
       FROM immich_fork.icloud_resource r JOIN asset a ON a.id=r."assetId"
       JOIN asset_job_status jobs ON jobs."assetId"=a.id AND jobs."metadataExtractedAt" IS NOT NULL
       CROSS JOIN LATERAL (SELECT md5(coalesce(string_agg(jsonb_build_object('id',s.id,'favorite',s.source->'isFavorite','hidden',s.source->'isHidden','date',s.source->'fileCreatedAt')::text,',' ORDER BY s.id),'') || jobs."metadataExtractedAt"::text) signature
-        FROM immich_fork.icloud_resource s WHERE s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId"
+        FROM immich_fork.icloud_resource s WHERE s."auditRequestId" IS NULL AND s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId"
         AND coalesce((s.source->>'current')::boolean,true) AND s.role<>'motion' AND s.status IN ('committed','finalized','reused')) version
       LEFT JOIN LATERAL (SELECT s.source#>'{_sync,metadata}' previous FROM immich_fork.icloud_resource s
-        WHERE s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId" AND s.source#>'{_sync,metadata}' IS NOT NULL
+        WHERE s."auditRequestId" IS NULL AND s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId" AND s.source#>'{_sync,metadata}' IS NOT NULL
         ORDER BY s.source#>>'{_sync,metadata,updatedAt}' DESC,s.id LIMIT 1) baseline ON true
-      WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND a."ownerId"=${ownerId}::uuid
+      WHERE r."auditRequestId" IS NULL AND r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND a."ownerId"=${ownerId}::uuid
         AND a."deletedAt" IS NULL AND r.role<>'motion' AND coalesce((r.source->>'current')::boolean,true)
         AND r.status IN ('committed','finalized','reused') AND baseline.previous->>'signature' IS DISTINCT FROM version.signature
         ${assetId ? sql`AND a.id=${assetId}::uuid` : sql``}
@@ -96,7 +96,7 @@ export class ICloudMetadataRepository {
       const { rows: resources } = await sql<{
         source: Values;
       }>`SELECT source FROM immich_fork.icloud_resource WHERE "ownerId"=${ownerId}::uuid AND "assetId"=${candidate.assetId}::uuid
-        AND coalesce((source->>'current')::boolean,true) AND role<>'motion' AND status IN ('committed','finalized','reused') ORDER BY id LIMIT 101`.execute(
+        AND "auditRequestId" IS NULL AND coalesce((source->>'current')::boolean,true) AND role<>'motion' AND status IN ('committed','finalized','reused') ORDER BY id LIMIT 101`.execute(
         db,
       );
       const state: Baseline = {
@@ -198,7 +198,7 @@ export class ICloudMetadataRepository {
     const { rows } = await sql<{
       connectionId: string;
     }>`SELECT DISTINCT r."connectionId" FROM immich_fork.icloud_resource r
-      JOIN immich_fork.icloud_connection c ON c.id=r."connectionId" WHERE r."assetId"=${assetId}::uuid AND r."ownerId"=${ownerId}::uuid
+      JOIN immich_fork.icloud_connection c ON c.id=r."connectionId" WHERE r."auditRequestId" IS NULL AND r."assetId"=${assetId}::uuid AND r."ownerId"=${ownerId}::uuid
       AND c."ownerId"=${ownerId}::uuid AND c.state='connected' AND r.role<>'motion' LIMIT 100`.execute(this.db);
     for (const { connectionId } of rows) {
       await this.reconcile(connectionId, ownerId, assetId, locked);

@@ -132,6 +132,9 @@ export class MediaRecoveryService {
         return { outcome: 'needs-review', reason: 'multiple_content_matches' };
       }
       const candidate = mapped ?? exact[0];
+      if (input.audit && input.sourceHidden && candidate && !candidate.hidden) {
+        return { outcome: 'needs-review', reason: 'audit_private_copy_requires_review' };
+      }
       if (candidate && (candidate.deletedAt || candidate.status !== AssetStatus.Active)) {
         return { outcome: 'preserve-trashed', assetId: candidate.id, reason: 'destination_not_active' };
       }
@@ -162,6 +165,10 @@ export class MediaRecoveryService {
               : 'repaired-missing';
       }
       const extension = extname(input.originalFileName).toLowerCase();
+      if (input.audit && outcome !== 'imported' && outcome !== 'reused') {
+        // An audit may add or reuse the differing source bytes, never repair another original.
+        return { outcome: 'needs-review', reason: 'audit_existing_copy_unhealthy' };
+      }
       const name = `${randomUUID()}${/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : ''}`;
       // Hidden promotion paths cannot be discovered by the managed untracked-file crawler before commit.
       const proposedPath =

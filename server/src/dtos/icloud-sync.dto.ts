@@ -54,6 +54,25 @@ export class ICloudConnectionUpdateDto extends createZodDto(
     .meta({ id: 'ICloudConnectionUpdateDto' }),
 ) {}
 
+export class ICloudIdentityReuseAuthorityDto extends createZodDto(
+  z
+    .object({ enabled: z.boolean(), includeProtected: z.boolean(), requestKey: z.uuid() })
+    .strict()
+    .refine((value) => value.enabled || !value.includeProtected, { message: 'Disabled consent has no protected scope' })
+    .meta({ id: 'ICloudIdentityReuseAuthorityDto' }),
+) {}
+
+const IdentityReuseAuthorityStatusSchema = z.object({
+  enabled: z.boolean(),
+  includeProtected: z.boolean(),
+  available: z.boolean(),
+  regrantRequired: z.boolean(),
+  executionAvailable: z
+    .literal(false)
+    .describe('Foundation consent does not enable weekly execution or identity reuse'),
+});
+export class ICloudIdentityReuseAuthorityStatusDto extends createZodDto(IdentityReuseAuthorityStatusSchema) {}
+
 export class ICloudAuthDto extends createZodDto(
   z
     .object({
@@ -128,6 +147,7 @@ const ConnectionSchema = z
     nextRunAt: z.string().nullable(),
     counts: z.record(z.string(), z.number().int()),
     run: RunSchema.nullable().describe('The current or most recent sync run'),
+    identityReuseAuthority: IdentityReuseAuthorityStatusSchema.optional(),
   })
   .meta({ id: 'ICloudConnectionResponseDto' });
 export class ICloudConnectionResponseDto extends createZodDto(ConnectionSchema) {}

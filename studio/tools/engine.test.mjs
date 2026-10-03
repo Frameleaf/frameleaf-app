@@ -4,7 +4,7 @@ import { cp, mkdtemp, mkdir, writeFile, rm, symlink, readFile } from 'node:fs/pr
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { inventory, licenses, verifySnapshot } from './engine.mjs';
+import { admitAdaptedSource, inventory, licenses, sourceRecoveryContext, verifySnapshot } from './engine.mjs';
 import { assertPinnedSource } from '../../scripts/frameleaf-studio-contracts.mjs';
 import { writeResourcePolicy } from './resource-policy.mjs';
 
@@ -310,4 +310,53 @@ test('supplemental notices require exact package bindings and retained evidence;
     await symlink(path.join(studio, 'license.txt'), path.join(studio, 'evidence.json'));
     await assert.rejects(packageAttribution(studio, dist, engine), /Linked attribution/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+// Synthetic helper evidence; the real adapted inventory is produced only by hosted prepare.
+test('a mismatched adapted digest preserves genuine observation but refuses publication', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-source-recovery-'));
+  const file = path.join(directory, 'receipt.json');
+  const source = [{ path: 'src/entry.ts', sha256: '1'.repeat(64) }];
+  let published = false;
+  try {
+    await assert.rejects(async () => {
+      await admitAdaptedSource(source, '0'.repeat(64), async (receipt) => {
+        await writeFile(file, JSON.stringify(receipt));
+      });
+      published = true;
+    }, /Adapted source digest mismatch/);
+    assert.equal(published, false);
+    const receipt = JSON.parse(await readFile(file, 'utf8'));
+    assert.deepEqual(receipt.files, source);
+    assert.equal(receipt.sourceSha256, createHash('sha256').update(JSON.stringify(source)).digest('hex'));
+    assert.equal(receipt.digestMatched, false);
+    const expected = receipt.sourceSha256;
+    let matching;
+    assert.equal(await admitAdaptedSource(source, expected, async (value) => { matching = value; }), expected);
+    assert.equal(matching.digestMatched, true);
+    assert.equal(await admitAdaptedSource(source, expected), expected);
+    await assert.rejects(admitAdaptedSource(source, '0'.repeat(64)), /Adapted source digest mismatch/);
+    await assert.rejects(admitAdaptedSource(source, expected, async () => { throw new Error('receipt failed'); }), /receipt failed/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('source recovery is explicit hosted-only fixed-path metadata with no environment disclosure', () => {
+  const checkout = { head: '1'.repeat(40), tree: '2'.repeat(40), parents: ['3'.repeat(40), '4'.repeat(40)] };
+  const environment = {
+    STUDIO_SOURCE_RECOVERY: '1', GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'Frameleaf/frameleaf-app',
+    RUNNER_TEMP: '/tmp/hosted-runner', GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '2', GITHUB_JOB: 'engine',
+    REVIEWED_HEAD: '5'.repeat(40), PRIVATE_SENTINEL: 'NEVER-EXPORT',
+  };
+  assert.equal(sourceRecoveryContext({}, undefined), null);
+  const receipt = sourceRecoveryContext(environment, checkout);
+  assert.equal(receipt.file, '/tmp/hosted-runner/frameleaf-studio-source-recovery.json');
+  assert.deepEqual(receipt.producer.checkoutParents, checkout.parents);
+  assert.equal(receipt.producer.checkoutTree, checkout.tree);
+  assert.equal(JSON.stringify(receipt).includes('NEVER-EXPORT'), false);
+  for (const update of [
+    { STUDIO_SOURCE_RECOVERY: 'yes' }, { GITHUB_ACTIONS: 'false' }, { GITHUB_REPOSITORY: 'other/repo' },
+    { RUNNER_TEMP: 'relative' }, { GITHUB_RUN_ID: 'secret' }, { GITHUB_RUN_ATTEMPT: '0' },
+    { GITHUB_JOB: 'secret' }, { REVIEWED_HEAD: 'wrong' },
+  ]) assert.throws(() => sourceRecoveryContext({ ...environment, ...update }, checkout));
+  assert.throws(() => sourceRecoveryContext(environment, { ...checkout, parents: ['not-a-sha'] }));
 });

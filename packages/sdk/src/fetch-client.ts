@@ -6403,6 +6403,25 @@ export type ICloudLookupResponseDto = {
     identityMatching: boolean;
     items: ICloudLookupAnswerDto[];
 };
+export type ICloudVerifyDto = {
+    connectionId: string;
+    items: {
+        assetId: string;
+        /** PHCloudIdentifier.stringValue, as the device reports it */
+        cloudIdentifier: string;
+        editVersion?: string;
+        id: string;
+        role: ICloudIdentityRole;
+    }[];
+    requestKey: string;
+};
+export type ICloudVerifyResponseDto = {
+    items: {
+        id: string;
+        state: State3;
+    }[];
+    operationId: string;
+};
 export type ItemShareChangeDto = {
     /** The items (your own) to share or stop sharing */
     assetIds: string[];
@@ -8917,7 +8936,7 @@ export type PhotographyWorkflowDto = {
         processing: Processing;
         proofRevisionId: string | null;
         rating: number | null;
-        state: State3;
+        state: State4;
         withheld: boolean;
     }[];
     chapters: {
@@ -9693,7 +9712,7 @@ export type PhotographyInvitationDto = {
             processing: Processing;
             proofRevisionId: string | null;
             rating: number | null;
-            state: State3;
+            state: State4;
             withheld: boolean;
         }[];
         chapters: {
@@ -19602,6 +19621,21 @@ export function lookupICloudIdentities({ iCloudLookupDto }: {
     })));
 }
 /**
+ * Download and verify named iCloud originals
+ */
+export function verifyICloudIdentities({ iCloudVerifyDto }: {
+    iCloudVerifyDto: ICloudVerifyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 202;
+        data: ICloudVerifyResponseDto;
+    }>("/icloud-sync/identities/verify", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: iCloudVerifyDto
+    })));
+}
+/**
  * Stop sharing items with people
  */
 export function unshareItems({ itemShareChangeDto }: {
@@ -28199,6 +28233,10 @@ export enum ICloudItemState {
     Unknown = "unknown",
     Review = "review"
 }
+export enum State3 {
+    Queued = "queued",
+    Unavailable = "unavailable"
+}
 export enum ManualJobName {
     PersonCleanup = "person-cleanup",
     TagCleanup = "tag-cleanup",
@@ -28758,7 +28796,7 @@ export enum Layout {
     Grid = "grid",
     Slideshow = "slideshow"
 }
-export enum State3 {
+export enum State4 {
     Imported = "imported",
     Selected = "selected",
     ApprovalRequested = "approval-requested",

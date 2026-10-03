@@ -120,6 +120,39 @@ export const ICloudLookupSchema = z
   .meta({ id: 'ICloudLookupDto' });
 export class ICloudLookupDto extends createZodDto(ICloudLookupSchema) {}
 
+export const ICloudVerifySchema = z
+  .object({
+    connectionId: z.uuid(),
+    requestKey: z.uuid(),
+    items: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1).max(256),
+            assetId: z.uuid(),
+            cloudIdentifier: ItemFields.cloudIdentifier,
+            role: ICloudIdentityRoleSchema,
+            editVersion: z.string().max(256).default(''),
+          })
+          .refine(
+            (item) => (item.role === 'edit-render') === (item.editVersion !== ''),
+            'Edit version requires edit-render',
+          ),
+      )
+      .min(1)
+      .max(100),
+  })
+  .refine((dto) => new Set(dto.items.map(({ id }) => id)).size === dto.items.length, 'Duplicate item IDs')
+  .meta({ id: 'ICloudVerifyDto' });
+export class ICloudVerifyDto extends createZodDto(ICloudVerifySchema) {}
+export const ICloudVerifyResponseSchema = z
+  .object({
+    operationId: z.uuid(),
+    items: z.array(z.object({ id: z.string(), state: z.enum(['queued', 'unavailable']) })),
+  })
+  .meta({ id: 'ICloudVerifyResponseDto' });
+export class ICloudVerifyResponseDto extends createZodDto(ICloudVerifyResponseSchema) {}
+
 export const ICloudItemStateSchema = z
   .enum(['on-server', 'sync-pending', 'claimed', 'out-of-scope', 'unknown', 'review'])
   .describe(

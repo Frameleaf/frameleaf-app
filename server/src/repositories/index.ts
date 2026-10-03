@@ -49,11 +49,14 @@ import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.r
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
 import { ICloudAlbumRepository } from 'src/repositories/icloud-album.repository.js';
+import { ICloudAuditRepository } from 'src/repositories/icloud-audit.repository.js';
+import { ICloudIdentityAdoptionRepository } from 'src/repositories/icloud-identity-adoption.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
+import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
@@ -116,6 +119,8 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
+  ICloudAuditRepository,
+  ICloudIdentityAdoptionRepository,
   AssetUploadResourceRepository,
   BackupDeviceRepository,
   PushDeviceRepository,
@@ -126,6 +131,7 @@ export const repositories = [
   MediaRecoveryRepository,
   ICloudTransportRepository,
   ICloudSyncRepository,
+  ICloudWeeklyRepository,
   ICloudIdentityRepository,
   PhotographyWorkspaceRepository,
   PhotographyWorkflowRepository,

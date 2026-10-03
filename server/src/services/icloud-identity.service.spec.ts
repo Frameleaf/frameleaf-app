@@ -143,6 +143,24 @@ describe(ICloudIdentityService.name, () => {
   });
 
   describe('lookup', () => {
+    it('returns review after a source mismatch even when the device sends the old original digest', async () => {
+      const known = identity(1, { lastAuditResult: 'mismatch', lastVerifiedAt: null });
+      const { sut } = setup({ identities: [known], hashes: { [sha(1).toString('hex')]: known.assetId } });
+      const { items } = await sut.lookup(auth, {
+        items: [lookupItem(1, { sha256ByRole: { original: sha(1).toString('hex') } })],
+      });
+      expect(items[0].roles[0]).toMatchObject({ state: 'review', assetId: null, auditVerifiedAt: null });
+    });
+
+    it('reports a durable successful audit separately from original delivery', async () => {
+      const known = identity(1, { lastAuditResult: 'match', lastVerifiedAt: new Date(DATE) });
+      const { sut } = setup({ identities: [known] });
+      const { items } = await sut.lookup(auth, {
+        items: [lookupItem(1, { sha256ByRole: { original: sha(1).toString('hex') } })],
+      });
+      expect(items[0].roles[0]).toMatchObject({ state: 'on-server', auditVerifiedAt: DATE, lastVerifiedAt: DATE });
+    });
+
     it('answers on-server, exactly, when the device holds the same bytes', async () => {
       const known = identity(1);
       const { sut } = setup({ identities: [known] });

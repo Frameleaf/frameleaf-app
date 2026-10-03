@@ -19762,6 +19762,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/icloud-sync/identities/verify": {
+      "post": {
+        "description": "Owner sessions only. Queues fresh source-byte SHA-256 verification of current in-scope identities. Queued is not verified; results appear in identity lookup. Mismatches preserve the original and import a separate managed copy for review. Request keys replay the original complete batch outcomes.",
+        "operationId": "verifyICloudIdentities",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudVerifyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudVerifyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Download and verify named iCloud originals",
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/item-shares": {
       "delete": {
         "description": "Stop sharing your own items with these people. They lose access at once.",
@@ -70706,6 +70762,102 @@
           "status",
           "totalUnits",
           "waiting"
+        ],
+        "type": "object"
+      },
+      "ICloudVerifyDto": {
+        "properties": {
+          "connectionId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "assetId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "cloudIdentifier": {
+                  "description": "PHCloudIdentifier.stringValue, as the device reports it",
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "editVersion": {
+                  "default": "",
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                "id": {
+                  "maxLength": 256,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "role": {
+                  "$ref": "#/components/schemas/ICloudIdentityRole"
+                }
+              },
+              "required": [
+                "id",
+                "assetId",
+                "cloudIdentifier",
+                "role"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          },
+          "requestKey": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connectionId",
+          "items",
+          "requestKey"
+        ],
+        "type": "object"
+      },
+      "ICloudVerifyResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "state": {
+                  "enum": [
+                    "queued",
+                    "unavailable"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "state"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "operationId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "operationId"
         ],
         "type": "object"
       },
