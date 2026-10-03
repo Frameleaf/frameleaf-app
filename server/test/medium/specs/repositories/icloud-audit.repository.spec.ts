@@ -42,6 +42,7 @@ describe(ICloudAuditRepository.name, () => {
   let sync: ICloudSyncRepository;
   let identities: ICloudIdentityRepository;
   let operations: MediaOperationRepository;
+  const fixtureConnections = new Set<string>();
 
   beforeAll(async () => {
     db = await getActiveForkKyselyDB();
@@ -59,6 +60,13 @@ describe(ICloudAuditRepository.name, () => {
   afterAll(async () => {
     await db.destroy();
   });
+  afterEach(async () => {
+    // Real audit leases count against the global cap; retire only this test's owned connections.
+    if (fixtureConnections.size > 0) {
+      await sql`DELETE FROM immich_fork.icloud_connection WHERE id=ANY(${[...fixtureConnections]}::uuid[])`.execute(db);
+      fixtureConnections.clear();
+    }
+  });
 
   async function arrange() {
     const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
@@ -72,6 +80,7 @@ describe(ICloudAuditRepository.name, () => {
     });
     const auth = { user, session: { ...session, hasElevatedPermission: false } } as AuthDto;
     const connection = (await sync.create(user.id, 'Photos', ICloudConfigSchema.parse({})))!;
+    fixtureConnections.add(connection.id);
     await sync.update(connection.id, user.id, { state: 'connected', encryptedSession: 'fixture-session' });
     const field = (value: unknown) => ({ value });
     await sync.savePage(
