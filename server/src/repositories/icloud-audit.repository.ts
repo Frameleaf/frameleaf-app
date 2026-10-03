@@ -60,7 +60,13 @@ async function currentAuth(db: Kysely<DB>, ownerId: string, sessionId: string, l
   if (lock) { preferences = preferences.forShare(); }
   const metadata = await preferences.execute();
   const suppression = getPreferences(metadata).privacy.suppression;
-  const elevated = !!session.pinExpiresAt && new Date(session.pinExpiresAt) > new Date();
+  // Preferences/asset locks can wait after the first session read. Database time, not a
+  // serialized session or worker clock, decides whether elevation still exists.
+  const live = await sql<{ elevated: boolean }>`SELECT ("pinExpiresAt">clock_timestamp()) IS TRUE AS elevated
+    FROM public.session WHERE id=${sessionId}::uuid AND "userId"=${ownerId}::uuid
+      AND ("expiresAt" IS NULL OR "expiresAt">clock_timestamp())`.execute(db);
+  if (!live.rows.length) { return; }
+  const elevated = live.rows[0].elevated;
   return {
     user: user as AuthDto['user'],
     session: { ...session, hasElevatedPermission: elevated } as NonNullable<AuthDto['session']>,
@@ -68,7 +74,7 @@ async function currentAuth(db: Kysely<DB>, ownerId: string, sessionId: string, l
   };
 }
 
-export type GuardedAudit = { request: ICloudAuditRow; source: ICloudResource; connection: ICloudConnection; private: boolean };
+export type GuardedAudit = { request: ICloudAuditRow; source: ICloudResource; connection: ICloudConnection; private: boolean; requiresElevation: boolean };
 
 /** Called inside the recovery transaction AFTER its fork/digest/user prefix, before the audit resource. */
 export async function guardAudit(db: Kysely<DB>, authority: AuditAuthority, ownerId: string, lock = false,
@@ -124,7 +130,7 @@ export async function guardAudit(db: Kysely<DB>, authority: AuditAuthority, owne
     AND "cplAssetRecordName"=upper(${source.sourceAssetId}) AND role=${identityRoleOf[source.role] ?? ''}
     AND "editVersion"=CASE WHEN ${source.role.startsWith('edited-')}
       THEN coalesce(${source.source}::jsonb->'assetFields'->'adjustmentTimestamp'->>'value','')||':'||${source.fingerprint} ELSE '' END
-    ${lock ? sql`FOR SHARE` : sql``}`.execute(db);
+    ${lock ? sql`FOR UPDATE` : sql``}`.execute(db);
   if (!identity.rows.length) { return; }
   if (requireClaim && !request.itemClaimId) { return; }
   if (requireClaim && request.itemClaimId) {
@@ -147,7 +153,7 @@ export async function guardAudit(db: Kysely<DB>, authority: AuditAuthority, owne
   const ordinaryAuth = { ...auth, session: { ...auth.session!, hasElevatedPermission: false },
     hiddenContent: { userId: ownerId, includeNsfw: false, ...getPreferences(await db.selectFrom('user_metadata').selectAll().where('userId','=',ownerId).execute()).privacy.suppression } };
   const visible = await new IntegrityRepository(db).getSafetyQuery(ordinaryAuth).where('asset.id','=',request.originalAssetId).executeTakeFirst();
-  return { request: current.rows[0], source, connection, private: !visible || source.source.isHidden === true };
+  return { request: current.rows[0], source, connection, private: !visible || source.source.isHidden === true, requiresElevation: !visible };
 }
 
 @Injectable()
@@ -315,7 +321,7 @@ export class ICloudAuditRepository {
         AND "leaseToken"=${resource.leaseToken}::uuid AND "leaseExpiresAt">clock_timestamp()
         AND "auditRequestId"=${authority.auditRequestId}::uuid AND "stagingPath"=${resource.stagingPath}`.execute(db);
       if (!stillHeld.rows.length) { return false; }
-      await publishAudit(db,authority,resource.ownerId,'match');
+      await publishAudit(db,authority,resource.ownerId,'match',{id:resource.id,leaseToken:resource.leaseToken!});
       await sql`UPDATE immich_fork.icloud_resource SET status='committed',sha256=${verified.sha256},sha1=${verified.sha1},
         verification=${{kind:'audit-match-staging',resourceId:resource.id,requestId:authority.auditRequestId,ownerId:resource.ownerId,
           stagingPath:resource.stagingPath,sha256:verified.sha256.toString('hex'),sizeInBytes:verified.sizeInBytes}}::jsonb,
@@ -371,7 +377,7 @@ export class ICloudAuditRepository {
 }
 
 /** Called only inside guarded publication, never by housekeeping. */
-export async function publishAudit(db: Kysely<DB>, authority: AuditAuthority, ownerId: string, result: 'match'|'mismatch', assetId?: string) {
+export async function publishAudit(db: Kysely<DB>, authority: AuditAuthority, ownerId: string, result: 'match'|'mismatch', resource: {id:string;leaseToken:string}, assetId?: string) {
   const guarded=await guardAudit(db,authority,ownerId,true);
   if (!guarded) { throw new Error('audit_authority_changed'); }
   if (result === 'mismatch') {
@@ -379,10 +385,32 @@ export async function publishAudit(db: Kysely<DB>, authority: AuditAuthority, ow
       AND "ownerId"=${ownerId}::uuid AND status='committed' AND "assetId"=${assetId ?? null}::uuid
       AND "assetId"<>${guarded.request.originalAssetId}::uuid AND sha256 IS NOT NULL AND sha256<>${guarded.request.expectedSha256}`.execute(db);
     if (!copy.rows.length) { throw new Error('audit_mismatch_receipt_invalid'); }
+    // Reuse must never make private source bytes available through an ordinary copy.
+    // A new audit copy receives this durable lock from the final transactional guard.
+    if (guarded.private) {
+      const protectedCopy = await sql`SELECT 1 FROM public.asset_lock WHERE "assetId"=${assetId ?? null}::uuid`.execute(db);
+      if (!protectedCopy.rows.length) { throw new Error('audit_private_destination_unprotected'); }
+    }
   }
-  await sql`UPDATE immich_fork.icloud_source_identity SET "lastAuditResult"=${result},
+  // All row locks, privacy reads, file validation and mismatch destination writes precede
+  // this statement. Locks serialize mutations but cannot stop time-based expiry.
+  const published = await sql`UPDATE immich_fork.icloud_source_identity SET "lastAuditResult"=${result},
     "lastVerifiedAt"=CASE WHEN ${result}='match' THEN clock_timestamp() ELSE NULL END
-    WHERE id=${guarded.request.identityId}::uuid AND sha256=${guarded.request.expectedSha256}`.execute(db);
+    WHERE id=${guarded.request.identityId}::uuid AND sha256=${guarded.request.expectedSha256}
+      AND EXISTS (SELECT 1 FROM public.session WHERE id=${guarded.request.sessionId}::uuid AND "userId"=${ownerId}::uuid
+        AND ("expiresAt" IS NULL OR "expiresAt">clock_timestamp())
+        AND (${!guarded.requiresElevation} OR "pinExpiresAt">clock_timestamp()))
+      AND EXISTS (SELECT 1 FROM public.media_operation WHERE id=${authority.operationId}::uuid AND "ownerId"=${ownerId}::uuid
+        AND "claimToken"=${authority.operationClaimToken}::uuid AND "claimExpiresAt">clock_timestamp()
+        AND status IN ('preparing','rendering','validating') AND "cancelRequestedAt" IS NULL AND "pauseRequestedAt" IS NULL)
+      AND EXISTS (SELECT 1 FROM immich_fork.icloud_claim WHERE id=${guarded.request.itemClaimId}::uuid
+        AND "ownerId"=${ownerId}::uuid AND holder=${`icloud-sync:audit:${authority.operationId}`}
+        AND "expiresAt">clock_timestamp())
+      AND EXISTS (SELECT 1 FROM immich_fork.icloud_resource WHERE id=${resource.id}::uuid
+        AND "ownerId"=${ownerId}::uuid AND "auditRequestId"=${authority.auditRequestId}::uuid
+        AND "leaseToken"=${resource.leaseToken}::uuid AND "leaseExpiresAt">clock_timestamp()
+        AND status NOT IN ('removed','finalized')) RETURNING id`.execute(db);
+  if (!published.rows.length) { throw new Error('audit_authority_expired'); }
   await sql`UPDATE immich_fork.icloud_identity_audit SET result=${result},"verifiedAt"=clock_timestamp(),"resultAssetId"=${assetId??null}::uuid
     WHERE id=${authority.auditRequestId}::uuid`.execute(db);
 }

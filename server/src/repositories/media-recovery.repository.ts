@@ -390,6 +390,13 @@ export class MediaRecoveryRepository {
         }
         if (!candidate) {
           const createdAt = input.sourceCreatedAt ?? new Date();
+          const inherited = target.matchedExternalAssetId
+            ? await this.inheritedProtection(trx, input.ownerId, target.matchedExternalAssetId)
+            : undefined;
+          // The worker's preliminary sourceHidden is not publication authority. Tags,
+          // suppression and elevation may have changed before this transaction began.
+          const audit = input.audit ? await guardAudit(trx,input.audit,input.ownerId,true) : undefined;
+          if (input.audit && !audit) { throw new Error('audit_authority_changed'); }
           await trx
             .insertInto('asset')
             .values({
@@ -408,10 +415,7 @@ export class MediaRecoveryRepository {
               status: AssetStatus.Active,
             })
             .execute();
-          const inherited = target.matchedExternalAssetId
-            ? await this.inheritedProtection(trx, input.ownerId, target.matchedExternalAssetId)
-            : undefined;
-          if (input.sourceHidden || inherited) {
+          if ((audit ? audit.private : input.sourceHidden) || inherited) {
             await trx
               .insertInto('asset_lock')
               .values({ assetId, reason: inherited ?? AssetLockReason.Marked, lockedBy: null })
@@ -525,7 +529,8 @@ export class MediaRecoveryRepository {
         }}::jsonb,
         "pendingJobs" = ${pendingJobs}::jsonb, "lastError" = NULL, "updatedAt" = now()
         WHERE id = ${input.resourceId}::uuid`.execute(trx);
-      if (input.audit) { await publishAudit(trx, input.audit, input.ownerId, 'mismatch', assetId); }
+      if (input.audit) { await publishAudit(trx, input.audit, input.ownerId, 'mismatch',
+        {id:input.resourceId,leaseToken:input.leaseToken}, assetId); }
       return { outcome: target.outcome, assetId };
     });
   }
@@ -676,6 +681,10 @@ export class MediaRecoveryRepository {
     const candidate = candidates.find(({ id }) => id === row.id);
     if (!candidate?.matchesContent || candidate.identityConflict || (candidate.hidden && !input.includeHidden)) {
       return;
+    }
+    if (input.audit) {
+      const audit = await guardAudit(trx,input.audit,input.ownerId,true);
+      if (!audit || (audit.private && !candidate.hidden)) { return; }
     }
     return candidate;
   }
