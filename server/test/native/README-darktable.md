@@ -53,3 +53,58 @@ were run in the source-only packet because darktable-cli is absent.
 
 The normal unit tests deliberately use SQLite database doubles and mocked child processes. Those
 prove protocol/layout/transaction/cancellation boundaries only; they cannot establish native quality.
+
+## Production image packaging
+
+The server's existing source-build stages now build the exact engine automatically. Both Dockerfiles
+use `base-server-darktable`, `server/base-image/sources/darktable.json` and `darktable.sh`. The input
+archive and required RawSpeed/whereami/OpenCL-header submodules are independently SHA256-pinned
+at the exact gitlinks from the darktable commit. Both patch files are SHA256-pinned, applied before
+CMake, and refuse upstream source drift. This replaces manual patch application for production.
+The stage reuses the existing pinned LibRaw/jpegli/media builds, forbids an internal LibRaw fallback,
+uses portable CPU code, and disables darktable's own AI/download feature. Semantic masks use local ML.
+
+Lensfun 0.3.4 and its shipped version-1 database are pinned to source commit
+`101c745e847a5de4a1e569a94368ce2027198598`; no runtime database updater is installed. This is a fixed
+release database, not an assertion of coverage for every recent camera/lens. Missing calibration
+continues to fail visibly. Engine camera matrices/builtin colour profiles, RawSpeed camera XML,
+noise profiles, native modules and Lensfun data are installed and content-hashed. Licence notices
+ship in `/usr/local/share/frameleaf/licenses`.
+
+The native build discovers actual transitive ELF runtime dependencies with `ldd` and derives their
+exact Debian package/version selections from `dpkg-query`. Development and production bases install
+that list; they do not guess library ABI package names. `/build/darktable-runtime.json` records their
+actual library SHA256s and package versions. `/usr/local/share/frameleaf/native-darktable.json`
+records source/archive/patch and installed resource hashes. Image gates verify both compiled patch
+markers, CLI version, critical data, every native resource hash and every ELF's resolved linkage.
+Missing packages, resource drift, unpatched modules and a wrong engine version fail the image build.
+
+Build commands for a dedicated image/qualification host, from the repository root (not run locally):
+
+```sh
+docker buildx build --platform linux/amd64 --load --target prod -f server/Dockerfile -t frameleaf-server:raw-development .
+docker buildx build --platform linux/arm64 --load --target prod -f server/Dockerfile -t frameleaf-server:raw-development-arm64 .
+docker run --rm --network none --entrypoint node frameleaf-server:raw-development /build/verify-darktable.mjs verify /usr/local
+```
+
+Repeat the image gate on each architecture's native host. Export both JSON manifests and the image
+digest as qualification evidence. The image's compiled adapter can run a genuine RAW oracle without
+installing development dependencies. Mount only a consented fixture directory read-only and supply
+its independently qualified oriented dimensions:
+
+```sh
+docker run --rm --network none --entrypoint node \
+  -v "$RAW_FIXTURES:/fixtures:ro" frameleaf-server:raw-development \
+  /build/verify-darktable-develop.mjs /fixtures/sample.CR2 5568 3708
+```
+
+The dimensions above are an invocation example, not a camera acceptance claim. Use the fixture's
+actual active-sensor/native-orientation dimensions. This gate checks package integrity, native repeat,
+isolated WB/tone/curve/noise/sharp effects, mask+geometry, 16-bit/ICC output, preview/final encoder ICC
+and original checksum. To require positive or refused lens calibration, append the renderer module
+path `/usr/src/app/server/dist/utils/darktable-renderer.js` and `calibrated` or `missing` for a fixture
+with that independently established expectation. Missing metadata or a wrong oracle fails; nothing skips.
+
+The older workflow's unmodified AppImage qualification is insufficient for the full patched engine.
+No workflow, image build or deployment was executed in this packet. The same genuine fixture matrix,
+thin-edge geometry, worker lifetime/restart/batch and photographer acceptance gates above still apply.

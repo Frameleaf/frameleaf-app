@@ -365,11 +365,11 @@ const NativeCurveSchema = z
     { error: 'Curves need x coordinates at least 0.0025 apart with endpoints at 0 and 1' },
   );
 const NativeToneFields = {
-  exposureEV: z.number().min(-18).max(18).default(0),
-  shadows: z.number().min(-100).max(100).optional(),
-  highlights: z.number().min(-100).max(100).optional(),
-  saturation: z.number().min(0).max(2).optional(),
-  contrast: z.number().min(0.01).max(1.99).optional(),
+  exposureEV: z.number().meta({ format: 'double' }).min(-18).max(18).default(0),
+  shadows: z.number().meta({ format: 'double' }).min(-100).max(100).optional(),
+  highlights: z.number().meta({ format: 'double' }).min(-100).max(100).optional(),
+  saturation: z.number().meta({ format: 'double' }).min(0).max(2).optional(),
+  contrast: z.number().meta({ format: 'double' }).min(0.01).max(1.99).optional(),
   curve: NativeCurveSchema.optional(),
 };
 const NativeMaskSchema = AssetDevelopMaskFields.omit({ adjustments: true, detector: true })
@@ -399,23 +399,29 @@ const NativeMaskSchema = AssetDevelopMaskFields.omit({ adjustments: true, detect
 
 export const DarktableDevelopRecipeSchema = z
   .strictObject({
-    version: z.literal(2),
+    version: z.literal(2).meta({ type: 'integer', format: 'int32' }),
     renderer: z.literal('darktable/5.6.1'),
     ...NativeToneFields,
     whiteBalance: z
       .strictObject({
-        red: z.number().min(0.1).max(8),
-        green: z.number().min(0.1).max(8),
-        blue: z.number().min(0.1).max(8),
+        red: z.number().meta({ format: 'double' }).min(0.1).max(8),
+        green: z.number().meta({ format: 'double' }).min(0.1).max(8),
+        blue: z.number().meta({ format: 'double' }).min(0.1).max(8),
       })
       .optional()
       .describe('Multipliers of native camera white-balance coefficients, not Kelvin estimates'),
-    noiseThreshold: z.number().min(0).max(1).optional().describe('Native pre-demosaic wavelet noise threshold'),
+    noiseThreshold: z
+      .number()
+      .meta({ format: 'double' })
+      .min(0)
+      .max(1)
+      .optional()
+      .describe('Native pre-demosaic wavelet noise threshold'),
     sharpen: z
       .strictObject({
-        radius: z.number().min(0).max(99),
-        amount: z.number().min(0).max(2),
-        threshold: z.number().min(0).max(100),
+        radius: z.number().meta({ format: 'double' }).min(0).max(99),
+        amount: z.number().meta({ format: 'double' }).min(0).max(2),
+        threshold: z.number().meta({ format: 'double' }).min(0).max(100),
       })
       .optional(),
     lensCorrection: z
@@ -423,9 +429,14 @@ export const DarktableDevelopRecipeSchema = z
       .optional()
       .describe('Use native embedded metadata or Lensfun; refuse absent calibration'),
     crop: AssetDevelopCropSchema.strict().optional(),
-    straighten: z.number().min(-45).max(45).optional(),
+    straighten: z.number().meta({ format: 'double' }).min(-45).max(45).optional(),
     rotation: z
-      .union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)])
+      .union([
+        z.literal(0).meta({ type: 'integer', format: 'int32' }),
+        z.literal(90).meta({ type: 'integer', format: 'int32' }),
+        z.literal(180).meta({ type: 'integer', format: 'int32' }),
+        z.literal(270).meta({ type: 'integer', format: 'int32' }),
+      ])
       .optional()
       .describe('Additional clockwise rotation after camera orientation'),
     flipHorizontal: z.boolean().optional(),
