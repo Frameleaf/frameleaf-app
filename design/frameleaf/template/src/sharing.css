@@ -1250,6 +1250,27 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+/* ---------- Partner Locked items notice (FL-326) ---------- */
+.pl-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: var(--fl-radius-card);
+  background: var(--fl-raised);
+  color: var(--fl-text);
+}
+.pl-notice p {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: 13px;
+}
+.pl-notice p span {
+  color: var(--fl-muted);
+}
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {
   .slf-grid {

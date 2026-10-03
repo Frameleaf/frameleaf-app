@@ -135,6 +135,7 @@ import { SharedLinks, ShareSheet, useSharedLinks } from "./SharedLinks";
 import { SharedLinkForm } from "./SharedLinkForm";
 import { PublicViewer } from "./PublicViewer";
 import { PartnerHeader } from "./PartnerLibrary";
+import { PartnerLockedNotice } from "./PartnerLockedNotice";
 import {
   resolveLink,
   recordView,
@@ -3159,6 +3160,13 @@ export function App() {
                     </div>
                     {layoutSwitch}
                   </div>
+                )}
+                {collection === "Library" && (
+                  <PartnerLockedNotice
+                    partnerName={PARTNER.name}
+                    hasPin={false}
+                    onSetPin={() => openSettings("preferences", "account-security")}
+                  />
                 )}
                 {(activeChips.length > 0 || query.text) && (
                   <div className="active-filter-bar">

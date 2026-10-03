@@ -32,6 +32,7 @@ for (const [name, value] of Object.entries(globals))
 let vite;
 let SharingAccess;
 let AlbumCard;
+let PartnerLockedNotice;
 let mounted;
 
 before(async () => {
@@ -43,6 +44,7 @@ before(async () => {
   });
   ({ SharingAccess } = await vite.ssrLoadModule("/src/SharingAccess.jsx"));
   ({ AlbumCard } = await vite.ssrLoadModule("/src/AlbumCard.jsx"));
+  ({ PartnerLockedNotice } = await vite.ssrLoadModule("/src/PartnerLockedNotice.jsx"));
 });
 
 beforeEach(() => window.localStorage.clear());
@@ -147,4 +149,26 @@ test("album card marks albums copied from a partner", async () => {
     }),
   );
   assert.equal(document.querySelector(".al-origin-mark"), null);
+});
+
+test("locked partner items notice offers a PIN once and never with a PIN", async () => {
+  let opened = 0;
+  const props = { partnerName: "Jamie", hasPin: false, onSetPin: () => (opened += 1) };
+  await render(React.createElement(PartnerLockedNotice, props));
+  assert.match(text(), /Jamie shared Locked items with you/);
+  assert.match(text(), /hidden until you set a PIN/);
+  await click("Set a PIN");
+  assert.equal(opened, 1);
+  await click("Not now");
+  assert.equal(document.querySelector(".pl-notice"), null);
+
+  // dismissed for good
+  await act(async () => mounted.unmount());
+  await render(React.createElement(PartnerLockedNotice, props));
+  assert.equal(document.querySelector(".pl-notice"), null);
+
+  window.localStorage.clear();
+  await act(async () => mounted.unmount());
+  await render(React.createElement(PartnerLockedNotice, { ...props, hasPin: true }));
+  assert.equal(document.querySelector(".pl-notice"), null);
 });
