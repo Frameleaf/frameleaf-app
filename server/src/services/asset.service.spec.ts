@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
@@ -15,6 +16,7 @@ import {
   JobName,
   JobStatus,
   Permission,
+  StorageFolder,
 } from 'src/enum.js';
 import { AssetStats, RemovedAsset } from 'src/repositories/asset.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -1407,6 +1409,78 @@ describe(AssetService.name, () => {
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(void 0);
       await expect(sut.handleAssetDeletion({ id: AssetFactory.create().id, deleteOnDisk: true })).resolves.toBe(
         JobStatus.Failed,
+      );
+    });
+  });
+
+  describe('copy sidecar (universal storage)', () => {
+    const sidecar = (assetId: string, path: string) =>
+      ({ id: `${assetId}-sidecar`, assetId, path, type: AssetFileType.Sidecar, isEdited: false }) as AssetFile;
+    const forCopy = (id: string, dto: object) => ({
+      id,
+      ownerId: 'target-owner',
+      stackId: null,
+      isFavorite: false,
+      originalPath: '/data/library/primary-owner/shared.jpg',
+      physicalOriginalFileId: null,
+      files: [] as AssetFile[],
+      ...dto,
+    });
+
+    beforeEach(() => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['source', 'target']));
+    });
+
+    it("writes a non-primary target's sidecar to its own upload path, not the primary owner's", async () => {
+      const source = forCopy('source', { files: [sidecar('source', '/data/upload/source.xmp')] });
+      const target = forCopy('target', {
+        physicalOriginalFileId: 'physical-file-id',
+        files: [sidecar('target', '/data/library/primary-owner/shared.jpg.xmp')],
+      });
+      mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+      mocks.physicalFile.isOriginalCanonical.mockResolvedValue(false);
+      const ownPath = StorageCore.getNestedPath(StorageFolder.Upload, 'target-owner', 'target.xmp');
+
+      await sut.copy(authStub.user1, {
+        sourceId: 'source',
+        targetId: 'target',
+        albums: false,
+        sharedLinks: false,
+        stack: false,
+        favorite: false,
+      });
+
+      expect(mocks.storage.copyFile).toHaveBeenCalledWith('/data/upload/source.xmp', ownPath);
+      expect(mocks.asset.upsertFile).toHaveBeenCalledWith({
+        assetId: 'target',
+        path: ownPath,
+        type: AssetFileType.Sidecar,
+      });
+      // the sidecar beside the shared original is the primary owner's: never unlinked directly
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/data/library/primary-owner/shared.jpg.xmp'] },
+      });
+    });
+
+    it('keeps writing a primary target beside its own original', async () => {
+      const source = forCopy('source', { files: [sidecar('source', '/data/upload/source.xmp')] });
+      const target = forCopy('target', { originalPath: '/data/library/target-owner/own.jpg' });
+      mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+
+      await sut.copy(authStub.user1, {
+        sourceId: 'source',
+        targetId: 'target',
+        albums: false,
+        sharedLinks: false,
+        stack: false,
+        favorite: false,
+      });
+
+      expect(mocks.storage.copyFile).toHaveBeenCalledWith(
+        '/data/upload/source.xmp',
+        '/data/library/target-owner/own.jpg.xmp',
       );
     });
   });
