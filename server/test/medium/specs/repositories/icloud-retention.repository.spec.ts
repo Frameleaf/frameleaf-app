@@ -22,6 +22,7 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
     await sql`CREATE TABLE immich_fork.migration_audit(name text,status text)`.execute(db);
     await sql`CREATE TABLE asset(id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
     await migration.up(db);
+    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
     repository = new ICloudSyncRepository(db);
   });
   afterAll(async () => {

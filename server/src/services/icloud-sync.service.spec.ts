@@ -165,6 +165,7 @@ describe(ICloudSyncService.name, () => {
       operations as never,
       logger as never,
       identities as never,
+      { housekeeping: vi.fn(), run: vi.fn() } as never,
     );
   });
 

@@ -53,6 +53,7 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
       await sql.raw(statement).execute(db);
     }
     await migration.up(db);
+    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
     repository = new ICloudMetadataRepository(db);
     service = new ICloudMetadataService(repository, events as never);
   });

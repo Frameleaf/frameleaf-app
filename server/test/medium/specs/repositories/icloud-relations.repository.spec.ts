@@ -31,6 +31,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
       await sql.raw(statement).execute(db);
     }
     await migration.up(db);
+    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
     service = new ICloudRelationsService(new ICloudRelationsRepository(db), { emit } as unknown as EventRepository);
   });
   afterAll(async () => {
