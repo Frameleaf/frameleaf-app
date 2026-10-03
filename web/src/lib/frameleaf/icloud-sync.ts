@@ -22,8 +22,10 @@ export const ICLOUD_MAX_CONNECTIONS = 20;
 export const icloudWeeklyConsentIsCurrent = (
   captured: { ownerId: string; connectionId: string; generation: number },
   current: { ownerId: string; connectionId: string; generation: number },
-): boolean => captured.ownerId === current.ownerId && captured.connectionId === current.connectionId
-  && captured.generation === current.generation;
+): boolean =>
+  captured.ownerId === current.ownerId &&
+  captured.connectionId === current.connectionId &&
+  captured.generation === current.generation;
 
 export const GIB = 1024 ** 3;
 const MIN_STAGING_BYTES = 1024 ** 2;
