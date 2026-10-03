@@ -38,6 +38,10 @@ export const PreviewTimeSchema = z
 const StudioPreviewRequestSchema = z
   .object({
     projectId: z.uuidv7().describe('Studio project the frame belongs to'),
+    consumerRequestId: z
+      .uuid()
+      .optional()
+      .describe('Opt in to a session-isolated admission; use a fresh UUID for each logical request'),
     revision: z
       .int()
       .min(1)
@@ -73,6 +77,17 @@ const StudioPreviewRequestSchema = z
 const StudioPreviewSchema = z
   .object({
     id: z.uuidv7().describe('Preview frame ID'),
+    consumerRequestId: z.uuid().optional().describe('Captured opt-in consumer admission identity'),
+    admissionReleased: z
+      .boolean()
+      .optional()
+      .describe('Delivery was durably fenced; does not establish renderer termination'),
+    cancellationState: z.enum(['not-needed', 'requested', 'acknowledged', 'unavailable']).optional(),
+    rendererReleased: z
+      .boolean()
+      .nullable()
+      .optional()
+      .describe('True only after the captured operation acknowledged cancellation with resources released'),
     projectId: z.string(),
     revision: z.int().min(0).describe('The stored project revision this frame was rendered for'),
     revisionDigest: z
@@ -122,3 +137,24 @@ export class StudioPreviewRequestDto extends createZodDto(StudioPreviewRequestSc
 export class StudioPreviewDto extends createZodDto(StudioPreviewSchema) {}
 export class StudioPreviewResponseDto extends createZodDto(StudioPreviewResponseSchema) {}
 export class StudioPreviewTimeDto extends createZodDto(PreviewTimeSchema) {}
+
+const StudioPreviewScopeQuerySchema = z.object({ consumerRequestId: z.uuid().optional() });
+const StudioPreviewCancelQuerySchema = StudioPreviewScopeQuerySchema.extend({
+  expectedOperationId: z
+    .union([z.uuidv7(), z.literal('null')])
+    .optional()
+    .describe(
+      'Captured operation ID; literal string null explicitly names a never-enqueued admission. Omission and empty strings are not null.',
+    ),
+}).superRefine((value, ctx) => {
+  if (value.consumerRequestId !== undefined && value.expectedOperationId === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['expectedOperationId'],
+      message: 'A scoped cancellation requires an explicit captured operation ID or literal null',
+    });
+  }
+});
+
+export class StudioPreviewScopeQueryDto extends createZodDto(StudioPreviewScopeQuerySchema) {}
+export class StudioPreviewCancelQueryDto extends createZodDto(StudioPreviewCancelQuerySchema) {}
