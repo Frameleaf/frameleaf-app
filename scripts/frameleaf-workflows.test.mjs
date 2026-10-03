@@ -192,6 +192,20 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
     (step) => step.name === "Run e2e tests (api & cli)",
   );
   const capture = steps[api + 1];
+  const prepare = steps[api - 1];
+  assert.equal(prepare.name, "Prepare bounded fatal-signal evidence");
+  assert.match(prepare.run, /\/sys\/kernel\/tracing\/instances\/frameleaf-/u);
+  assert.match(prepare.run, /sig == 7 \|\| sig == 11 \|\| sig == 6/u);
+  assert.ok(prepare.run.indexOf('/filter"') < prepare.run.indexOf('/enable"'));
+  assert.match(prepare.run, /echo 64 > "\$instance\/buffer_size_kb"/u);
+  assert.match(prepare.run, /docker compose ps --quiet immich-server/u);
+  assert.match(prepare.run, /docker top "\$container_id" -eo pid,comm/u);
+  assert.match(prepare.run, /Server process names unavailable/u);
+  assert.match(prepare.run, /Signal observation unavailable/u);
+  assert.doesNotMatch(
+    prepare.run,
+    /strace|core_pattern|trace_pipe|\/proc\/.*environ|pid,args|trace_options/u,
+  );
   assert.equal(capture.name, "Capture server diagnostics after API tests");
   assert.equal(capture.if, "always()");
   assert.equal(capture["working-directory"], "./e2e");
@@ -204,6 +218,8 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
   );
   assert.match(capture.run, /docker compose logs --no-color --timestamps/u);
   assert.match(capture.run, /> docker-diagnostics-after-api-tests\.txt 2>&1/u);
+  assert.match(capture.run, /sudo cat "\$trace_instance\/trace"/u);
+  assert.match(capture.run, /sudo rmdir "\$trace_instance"/u);
   assert.doesNotMatch(
     capture.run,
     /docker stats|dmesg|free -h|df -h|\.Config|\.Env/u,
