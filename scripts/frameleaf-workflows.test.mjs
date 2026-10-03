@@ -192,6 +192,20 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
     (step) => step.name === "Run e2e tests (api & cli)",
   );
   const capture = steps[api + 1];
+  const prepare = steps[api - 1];
+  assert.equal(prepare.name, "Prepare bounded fatal-signal evidence");
+  assert.match(prepare.run, /\/sys\/kernel\/tracing\/instances\/frameleaf-/u);
+  assert.match(prepare.run, /sig == 7 \|\| sig == 11 \|\| sig == 6/u);
+  assert.ok(prepare.run.indexOf('/filter"') < prepare.run.indexOf('/enable"'));
+  assert.match(prepare.run, /echo 64 > "\$instance\/buffer_size_kb"/u);
+  assert.match(prepare.run, /docker compose ps --quiet immich-server/u);
+  assert.match(prepare.run, /docker top "\$container_id" -eo pid,comm/u);
+  assert.match(prepare.run, /Server process names unavailable/u);
+  assert.match(prepare.run, /Signal observation unavailable/u);
+  assert.doesNotMatch(
+    prepare.run,
+    /strace|core_pattern|trace_pipe|\/proc\/.*environ|pid,args|trace_options/u,
+  );
   assert.equal(capture.name, "Capture server diagnostics after API tests");
   assert.equal(capture.if, "always()");
   assert.equal(capture["working-directory"], "./e2e");
@@ -204,6 +218,8 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
   );
   assert.match(capture.run, /docker compose logs --no-color --timestamps/u);
   assert.match(capture.run, /> docker-diagnostics-after-api-tests\.txt 2>&1/u);
+  assert.match(capture.run, /sudo cat "\$trace_instance\/trace"/u);
+  assert.match(capture.run, /sudo rmdir "\$trace_instance"/u);
   assert.doesNotMatch(
     capture.run,
     /docker stats|dmesg|free -h|df -h|\.Config|\.Env/u,
@@ -220,7 +236,134 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
     "e2e/docker-diagnostics-after-api-tests.txt",
     "e2e/docker-diagnostics-after-maintenance-tests.txt",
     "e2e/docker-upload-transport-logs.txt",
+    "e2e/docker-buddy-diagnostics.txt",
+    "e2e/buddy-evidence.json",
     "e2e/docker-cloud-accounting-logs.txt",
+  ]);
+});
+
+test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer dependencies", () => {
+  const steps = workflow("fork-integration.yml").jobs.integration.steps;
+  const python = steps.find((step) => step.name === "Set up the pinned NAS renderer Python");
+  const prepare = steps.find((step) => step.name === "Prepare the pinned TrueNAS rendering library");
+  const fixtures = steps.find((step) => step.name === "Validate NAS package fixtures");
+  assert.ok(python && prepare && fixtures);
+  assert.equal(python.with["python-version"], "3.11.15");
+  assert.match(python.uses, /^actions\/setup-python@[a-f0-9]{40}$/);
+  assert.ok(steps.indexOf(python) < steps.indexOf(prepare));
+  assert.ok(steps.indexOf(prepare) < steps.indexOf(fixtures));
+  for (const step of [python, prepare, fixtures]) {
+    assert.equal(step["continue-on-error"], undefined);
+    assert.equal(step.if, undefined);
+  }
+  assert.match(prepare.run, /https:\/\/github\.com\/truenas\/apps\.git/);
+  assert.match(prepare.run, /fetch --depth=1 origin db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/);
+  assert.match(prepare.run, /test "\$\(git -C "\$catalog" rev-parse HEAD\)" = db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/);
+  assert.match(prepare.run, /python3 -m venv "\$RUNNER_TEMP\/nas-render-venv"/);
+  assert.match(prepare.run, /python3 -m pip install --index-url https:\/\/pypi\.org\/simple --require-hashes --only-binary=:all: -r packaging\/nas\/requirements-render\.lock/);
+  assert.match(prepare.run, /python3 -m pip check/);
+  assert.doesNotMatch(prepare.run, /\|\| true|--no-deps|--trusted-host/);
+  assert.equal(fixtures.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER, "true");
+  assert.equal(fixtures.env.PYTHONDONTWRITEBYTECODE, "1");
+  assert.equal(fixtures.env.TRUENAS_LIBRARY,
+    "${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4");
+  assert.equal(fixtures.run, "node --test --test-concurrency=1 packaging/nas/build.test.cjs");
+  const requirements = readFileSync(path.join(root, "packaging/nas/requirements-render.lock"), "utf8")
+    .split("\n").filter((line) => line && !line.startsWith("#"));
+  assert.equal(requirements.length, 10);
+  for (const requirement of requirements) {
+    assert.match(requirement, /^[A-Za-z0-9_-]+==[0-9.]+(?: --hash=sha256:[a-f0-9]{64})+$/);
+  }
+});
+
+test("Buddy acceptance runs only on x64 and refuses unsuccessful fixture prerequisites", () => {
+  const job = workflow("test.yml").jobs["e2e-tests-server-cli"];
+  const prepare = job.steps.find((step) => step.id === "buddy-prepare");
+  const start = job.steps.find((step) => step.id === "buddy-fixture");
+  const acceptance = job.steps.find((step) => step.id === "buddy-test");
+  for (const step of [prepare, start, acceptance]) {
+    assert.ok(step);
+    assert.equal(step["continue-on-error"], undefined);
+    // A failed earlier step must still enter the fail-closed prerequisite check.
+    for (const runner of ["ubuntu-24.04", "ubuntu-24.04-arm"]) {
+      for (const cancelled of [false, true]) {
+        const admitted = runInNewContext(
+          step.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""),
+          { matrix: { runner }, cancelled: () => cancelled },
+        );
+        assert.equal(admitted, runner === "ubuntu-24.04" && !cancelled);
+      }
+    }
+  }
+  assert.equal(prepare.run, "bash buddy-fixture-tls.sh");
+  assert.equal(start.env.BUDDY_PREPARE_OUTCOME, "${{ steps.buddy-prepare.outcome }}");
+  assert.equal(acceptance.env.BUDDY_FIXTURE_OUTCOME, "${{ steps.buddy-fixture.outcome }}");
+  assert.equal(acceptance.env.FRAMELEAF_BUDDY_BACKUP, "true");
+  assert.equal(acceptance["working-directory"], "./server");
+  assert.match(acceptance.run, /pnpm exec vitest run --config test\/vitest\.config\.buddy\.mjs/);
+  assert.equal(job["continue-on-error"], undefined);
+  for (const [step, key] of [
+    [start, "BUDDY_PREPARE_OUTCOME"],
+    [acceptance, "BUDDY_FIXTURE_OUTCOME"],
+  ]) {
+    for (const outcome of ["failure", "skipped", "cancelled", ""]) {
+      const result = spawnSync("bash", ["-e", "-c", step.run], {
+        encoding: "utf8",
+        env: { ...process.env, [key]: outcome },
+      });
+      assert.equal(result.status, 1, `${step.id}:${outcome}`);
+      assert.match(result.stdout, /::error::Two-server Buddy/);
+      assert.equal(result.stderr, "", "must refuse before Docker or test execution");
+    }
+  }
+});
+
+test("Buddy cleanup is always admitted on x64 and refuses an unowned directory", () => {
+  const steps = workflow("test.yml").jobs["e2e-tests-server-cli"].steps;
+  const capture = steps.find((step) => step.name === "Capture redacted Buddy diagnostics");
+  const cleanup = steps.find((step) => step.name === "Remove the owned Buddy fixture");
+  for (const step of [capture, cleanup]) {
+    assert.ok(step);
+    assert.equal(step["continue-on-error"], undefined);
+    for (const runner of ["ubuntu-24.04", "ubuntu-24.04-arm"]) {
+      assert.equal(
+        runInNewContext(step.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""), {
+          matrix: { runner }, always: () => true,
+        }),
+        runner === "ubuntu-24.04",
+      );
+    }
+  }
+  assert.match(cleanup.run, /test -f "\$BUDDY_ROOT\/\.fl310-buddy-fixture"/);
+  assert.match(cleanup.run, /docker compose -f docker-compose\.buddy\.yml down --volumes --remove-orphans/);
+  const dir = mkdtempSync(path.join(tmpdir(), "frameleaf-unowned-buddy-"));
+  try {
+    // Even a marker cannot authorize deleting a path outside the owned prefix.
+    writeFileSync(path.join(dir, ".fl310-buddy-fixture"), "");
+    const result = spawnSync("bash", ["-e", "-c", cleanup.run], {
+      encoding: "utf8",
+      env: { ...process.env, RUNNER_TEMP: tmpdir(), BUDDY_ROOT: dir },
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, "", "must refuse before Docker or deletion");
+    assert.equal(existsSync(dir), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Buddy artifacts retain sanitized state and evidence rather than raw logs or credentials", () => {
+  const steps = workflow("test.yml").jobs["e2e-tests-server-cli"].steps;
+  const capture = steps.find((step) => step.name === "Capture redacted Buddy diagnostics");
+  assert.match(capture.run, /status=\{\{\.State\.Status\}\} exit=\{\{\.State\.ExitCode\}\} restarts=\{\{\.RestartCount\}\} image=\{\{\.Image\}\}/);
+  assert.match(capture.run, /\{\{index \.Config\.Labels "com\.docker\.compose\.service"\}\}/);
+  assert.doesNotMatch(capture.run, /docker (?:compose[^\n]* logs|logs|inspect(?! --format))|\.Config\.(?:Env|Cmd)|printenv|\benv\b|cat |tar /);
+  assert.match(capture.run, /> docker-buddy-diagnostics\.txt 2>&1/);
+  assert.match(capture.run, /cp "\$BUDDY_ROOT\/evidence\/buddy\.json" buddy-evidence\.json/);
+  const paths = steps.find((step) => step.name === "Archive Docker logs").with.path.trim().split("\n");
+  assert.deepEqual(paths.filter((entry) => entry.includes("buddy")), [
+    "e2e/docker-buddy-diagnostics.txt",
+    "e2e/buddy-evidence.json",
   ]);
 });
 
