@@ -24,7 +24,6 @@ const MapMarkerSchema = z
     isFavorite: stringToBool.optional().describe('Filter by favorite status'),
     fileCreatedAfter: isoDatetimeToDate.optional().describe('Filter assets created after this date'),
     fileCreatedBefore: isoDatetimeToDate.optional().describe('Filter assets created before this date'),
-    withPartners: stringToBool.optional().describe('Include partner assets'),
     withSharedAlbums: stringToBool.optional().describe('Include shared album assets'),
   })
   .meta({ id: 'MapMarkerDto' });
@@ -87,7 +86,10 @@ const MapMarkerResponseSchema = z
 const MapStatisticsResponseSchema = z
   .object({
     archived: z.int().min(0).describe("The viewer's own located archived items"),
-    partner: z.int().min(0).describe('Located timeline items of partners who share their locations with the viewer'),
+    partner: z
+      .int()
+      .min(0)
+      .describe("Always 0: partners' items arrive as the viewer's own copies (kept for older clients)"),
     unlocated: z.int().min(0).describe("The viewer's own timeline items without a location"),
   })
   .meta({ id: 'MapStatisticsResponseDto' });

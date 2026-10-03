@@ -85,6 +85,7 @@ const ADMIN_ROUTES = new Set([
   'POST preservation/server-packages',
   // FL-71: the Job manager's Retry failed.
   'POST queues/:name/jobs/retry-failed',
+  'POST server/storage-migration/background',
   'POST system-metadata/admin-onboarding',
   'POST system-metadata/frameleaf-setup/finish',
   'PUT jobs/:name',

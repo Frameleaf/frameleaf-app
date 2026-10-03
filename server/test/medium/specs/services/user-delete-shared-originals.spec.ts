@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
-import { AssetFileType, StorageFolder, UserStatus } from 'src/enum.js';
+import { AssetFileType, JobName, StorageFolder, UserStatus } from 'src/enum.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -89,6 +89,7 @@ const setup = (masterUserId: string | null) => {
   ctx.getMock(AlbumUserRepository).forgetRecipient.mockResolvedValue();
   ctx.getMock(EventRepository).emit.mockResolvedValue();
   ctx.getMock(JobRepository).queue.mockResolvedValue();
+  ctx.getMock(JobRepository).queueAll.mockResolvedValue();
   return { sut, ctx };
 };
 
@@ -157,22 +158,36 @@ describe('UserService.handleUserDelete with shared originals (FL-44)', () => {
     });
   });
 
-  it('refuses to delete the retained account while it is configured, and removes nothing', async () => {
+  it("hands a shared original to the other owner's asset and queues its move out of the deleted folder", async () => {
+    const { sut, ctx } = setup(null);
+    const { owner, copy, physical } = await seedSharedOriginal(ctx);
+    await expect(ctx.get(PhysicalFileRepository).getPhysicalFile(physical.id)).resolves.not.toMatchObject({
+      canonicalAssetId: copy.id,
+    });
+
+    await sut.handleUserDelete({ id: owner.id, force: true });
+
+    await expect(ctx.get(PhysicalFileRepository).getPhysicalFile(physical.id)).resolves.toMatchObject({
+      canonicalAssetId: copy.id,
+    });
+    const jobs = ctx.getMock(JobRepository);
+    const queued = [...jobs.queue.mock.calls.map(([job]) => job), ...jobs.queueAll.mock.calls.flatMap(([all]) => all)];
+    expect(queued).toContainEqual({ name: JobName.StorageTemplateMigrationSingle, data: { id: copy.id } });
+  });
+
+  it('deletes an account the retired master-user setting still names, keeping originals others share', async () => {
     const { ctx } = setup(null);
-    const { owner, sharedPath, ownPath } = await seedSharedOriginal(ctx);
+    const { owner, sharedPath } = await seedSharedOriginal(ctx);
     clearConfigCache();
+    // universal storage: the old saved master account no longer protects or blocks anything
     const { sut } = setup(owner.id);
 
     await sut.handleUserDelete({ id: owner.id, force: true });
 
     expect(existsSync(sharedPath)).toBe(true);
-    expect(existsSync(ownPath)).toBe(true);
     await expect(
       database.selectFrom('user').select('id').where('id', '=', owner.id).executeTakeFirst(),
-    ).resolves.toEqual({ id: owner.id });
-    await expect(
-      database.selectFrom('asset').select('id').where('ownerId', '=', owner.id).execute(),
-    ).resolves.toHaveLength(2);
+    ).resolves.toBeUndefined();
   });
 
   it('removes the shared original once the last owner referencing it is deleted too', async () => {
@@ -189,9 +204,11 @@ describe('UserService.handleUserDelete with shared originals (FL-44)', () => {
       .execute();
     await sut.handleUserDelete({ id: other.id, force: true });
     // the other owner's copy lived in the first owner's library, so the queued FileDelete removes it
-    const queued = ctx
-      .getMock(JobRepository)
-      .queue.mock.calls.flatMap(([job]) => ((job as { data?: { files?: string[] } }).data?.files ?? []) as string[]);
+    const jobs = ctx.getMock(JobRepository);
+    const queued = [
+      ...jobs.queue.mock.calls.map(([job]) => job),
+      ...jobs.queueAll.mock.calls.flatMap(([all]) => all),
+    ].flatMap((job) => ((job as { data?: { files?: string[] } }).data?.files ?? []) as string[]);
     expect(queued).toContain(sharedPath);
     await expect(
       ctx

@@ -259,40 +259,6 @@ class AssetAccess {
     );
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
-  @ChunkedSet({ paramIndex: 1 })
-  async checkPartnerAccess(userId: string, assetIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
-    if (assetIds.size === 0) {
-      return new Set<string>();
-    }
-
-    return (
-      this.db
-        .selectFrom('partner')
-        .innerJoin('user as sharedBy', (join) =>
-          join.onRef('sharedBy.id', '=', 'partner.sharedById').on('sharedBy.deletedAt', 'is', null),
-        )
-        .innerJoin('asset', (join) => join.onRef('asset.ownerId', '=', 'sharedBy.id').on('asset.deletedAt', 'is', null))
-        .select('asset.id')
-        .where('partner.sharedWithId', '=', userId)
-        .where((eb) =>
-          eb.or([
-            eb('asset.visibility', '=', sql.lit(AssetVisibility.Timeline)),
-            eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
-          ]),
-        )
-        // a partner never reaches locked media (FL-34)
-        .where(isNotLocked('asset'))
-
-        .where('asset.id', 'in', [...assetIds])
-        // a partner never reaches the motion part of a Locked live photo (FL-34)
-        .where((eb) => eb.not(isMotionOfLockedStill(eb)))
-        .$call((qb) => withHiddenContentFilter(qb, privacyOptions(hideNsfwAssets)))
-        .execute()
-        .then((assets) => new Set(assets.map((asset) => asset.id)))
-    );
-  }
-
   /**
    * FL-83 (AL-30b): items the owner shared with this person (`immich_fork.asset_user_share`). A
    * shared item is never reachable while it is Hidden or locked, whoever locked it and whenever, and
@@ -598,26 +564,6 @@ class StackAccess {
       )
       .execute()
       .then((stacks) => new Set(stacks.map((stack) => stack.id)));
-  }
-}
-
-class TimelineAccess {
-  constructor(private db: Kysely<DB>) {}
-
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
-  @ChunkedSet({ paramIndex: 1 })
-  async checkPartnerAccess(userId: string, partnerIds: Set<string>) {
-    if (partnerIds.size === 0) {
-      return new Set<string>();
-    }
-
-    return this.db
-      .selectFrom('partner')
-      .select('partner.sharedById')
-      .where('partner.sharedById', 'in', [...partnerIds])
-      .where('partner.sharedWithId', '=', userId)
-      .execute()
-      .then((partners) => new Set(partners.map((partner) => partner.sharedById)));
   }
 }
 
@@ -943,7 +889,6 @@ export class AccessRepository {
   session: SessionAccess;
   stack: StackAccess;
   tag: TagAccess;
-  timeline: TimelineAccess;
   workflow: WorkflowAccess;
 
   constructor(@InjectKysely() db: Kysely<DB>) {
@@ -962,7 +907,6 @@ export class AccessRepository {
     this.session = new SessionAccess(db);
     this.stack = new StackAccess(db);
     this.tag = new TagAccess(db);
-    this.timeline = new TimelineAccess(db);
     this.workflow = new WorkflowAccess(db);
   }
 }

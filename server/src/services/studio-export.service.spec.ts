@@ -312,7 +312,6 @@ describe(StudioExportService.name, () => {
       asset: {
         checkOwnerAccess: vi.fn().mockImplementation((_user, ids: Set<string>) => Promise.resolve(new Set(ids))),
         checkAlbumAccess: vi.fn().mockResolvedValue(new Set()),
-        checkPartnerAccess: vi.fn().mockResolvedValue(new Set()),
       },
     };
     const files = new Map<string, number>([[staged, 1024]]);
@@ -1349,7 +1348,7 @@ describe(StudioExportService.name, () => {
     });
 
     it('answers a Locked result only in an unlocked session, and a library result never', async () => {
-      access.asset.checkPartnerAccess.mockResolvedValue(new Set([SHARED_CLIP]));
+      access.asset.checkAlbumAccess.mockResolvedValue(new Set([SHARED_CLIP]));
       repository.getForOwner.mockResolvedValue(projectResult({ privacy: { lockReason: AssetLockReason.Marked } }));
       await expect(sut.download(auth(), VERSION)).rejects.toBeInstanceOf(NotFoundException);
       await expect(sut.download(elevated(), VERSION)).resolves.toBeDefined();

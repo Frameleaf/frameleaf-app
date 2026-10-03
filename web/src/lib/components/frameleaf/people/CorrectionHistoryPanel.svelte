@@ -187,6 +187,9 @@
       case PersonCorrectionAction.BoxMove: {
         return $t('frameleaf_people_correction_action_box_move');
       }
+      case PersonCorrectionAction.PartnerMerge: {
+        return $t('frameleaf_people_correction_action_partner_merge', { values });
+      }
     }
   };
 

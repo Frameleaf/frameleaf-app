@@ -1,4 +1,4 @@
-import { LoginResponseDto, createPartner, deleteAssets, setUserOnboarding, updatePartner } from '@immich/sdk';
+import { LoginResponseDto, createPartner, deleteAssets, setUserOnboarding } from '@immich/sdk';
 import { expect, test, type Page } from '@playwright/test';
 import { asBearerAuth, utils } from 'src/utils.js';
 
@@ -40,10 +40,6 @@ const setUpPartner = async () => {
   await createPartner(
     { partnerCreateDto: { sharedWithId: admin.userId } },
     { headers: asBearerAuth(partner.accessToken) },
-  );
-  await updatePartner(
-    { id: partner.userId, partnerUpdateDto: { inTimeline: true } },
-    { headers: asBearerAuth(admin.accessToken) },
   );
   return { admin, partner };
 };

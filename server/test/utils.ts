@@ -65,8 +65,10 @@ import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
@@ -293,8 +295,10 @@ export type ServiceOverrides = {
   ocr: OcrRepository;
   oauth: OAuthRepository;
   partner: PartnerRepository;
+  partnerOrigin: PartnerOriginRepository;
   person: PersonRepository;
   physicalFile: PhysicalFileRepository;
+  physicalFileTrash: PhysicalFileTrashRepository;
   plugin: PluginRepository;
   process: ProcessRepository;
   renderWorker: RenderWorkerRepository;
@@ -402,8 +406,10 @@ export const getMocks = () => {
     ocr: automock(OcrRepository, { strict: false }),
     oauth: automock(OAuthRepository, { args: [loggerMock] }),
     partner: automock(PartnerRepository, { strict: false }),
+    partnerOrigin: automock(PartnerOriginRepository, { strict: false }),
     person: automock(PersonRepository, { strict: false }),
     physicalFile: automock(PhysicalFileRepository, { strict: false }),
+    physicalFileTrash: automock(PhysicalFileTrashRepository, { strict: false }),
     plugin: automock(PluginRepository, { strict: true, args: [databaseMock, loggerMock] }),
     process: automock(ProcessRepository),
     renderWorker: automock(RenderWorkerRepository, { strict: false }),
@@ -448,6 +454,10 @@ export const getMocks = () => {
   mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
   mocks.classification.getRules.mockResolvedValue([]);
   mocks.classification.getEnabledRules.mockResolvedValue([]);
+  // FL-326: no partner copies follow anything, and nobody shares a library, unless a test says so
+  mocks.partner.getAll.mockResolvedValue([]);
+  mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
+  mocks.partnerOrigin.getFollowers.mockResolvedValue([]);
   mocks.classification.getRuleByAlbumId.mockResolvedValue(undefined);
   mocks.classification.recordAlbumRemovals.mockResolvedValue({
     added: 0,
@@ -475,9 +485,6 @@ export const getMocks = () => {
   mocks.mlDestination.recordProbe.mockResolvedValue();
   mocks.mlDestination.recordAccounting.mockResolvedValue();
   mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
-  // no owner hides their locations from an album's owner unless a test says otherwise (FL-54)
-  mocks.partner.getLocationHiddenOwnerIdsForAlbums.mockResolvedValue([]);
-  mocks.partner.getLocationHiddenThroughAlbums.mockResolvedValue(new Set());
 
   return mocks;
 };
@@ -529,8 +536,10 @@ export const newTestService = <T extends BaseService>(
     overrides.oauth || (mocks.oauth as As<OAuthRepository>),
     overrides.ocr || (mocks.ocr as As<OcrRepository>),
     overrides.partner || (mocks.partner as As<PartnerRepository>),
+    overrides.partnerOrigin || (mocks.partnerOrigin as As<PartnerOriginRepository>),
     overrides.person || (mocks.person as As<PersonRepository>),
     overrides.physicalFile || (mocks.physicalFile as As<PhysicalFileRepository>),
+    overrides.physicalFileTrash || (mocks.physicalFileTrash as As<PhysicalFileTrashRepository>),
     overrides.plugin || (mocks.plugin as As<PluginRepository>),
     overrides.process || (mocks.process as As<ProcessRepository>),
     overrides.renderWorker || (mocks.renderWorker as As<RenderWorkerRepository>),

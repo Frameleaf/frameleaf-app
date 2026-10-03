@@ -206,10 +206,27 @@ describe(IntegrityService.name, () => {
   });
 
   describe('deleteIntegrityReport', () => {
-    it('should not unlink a path that is now tracked', async () => {
-      const path = '/data/upload/admin/ab/asset.mov';
+    it('unlinks an untracked path only through the reference-counted guard', async () => {
+      const path = '/data/upload/orphan.mov';
       mocks.integrityReport.getById.mockResolvedValue({ path } as never);
-      mocks.integrityReport.getTrackedPaths.mockResolvedValue([{ path }] as never);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
+      mocks.physicalFile.deleteUnreferencedPath.mockImplementation(async (_path, unlink) => {
+        await unlink();
+        return { deleted: true, references: 0 };
+      });
+
+      await sut.deleteIntegrityReport('user-id', 'report-id');
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(path, expect.any(Function));
+      expect(mocks.storage.unlink).toHaveBeenCalledExactlyOnceWith(path);
+      expect(mocks.integrityReport.deleteById).toHaveBeenCalledWith('report-id');
+    });
+
+    it('never unlinks a path something references, such as a shared original', async () => {
+      const path = '/data/library/primary/shared.jpg';
+      mocks.integrityReport.getById.mockResolvedValue({ path } as never);
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
+      mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: false, references: 2 });
 
       await sut.deleteIntegrityReport('user-id', 'report-id');
 
@@ -219,19 +236,27 @@ describe(IntegrityService.name, () => {
   });
 
   describe('handleDeleteIntegrityReports', () => {
-    it('should unlink only paths that are still untracked', async () => {
-      const tracked = '/data/upload/admin/ab/asset.mov';
+    it('unlinks report paths only through the reference-counted guard', async () => {
+      const referenced = '/data/upload/admin/ab/asset.mov';
       const untracked = '/data/upload/orphan.mov';
-      mocks.integrityReport.getTrackedPaths.mockResolvedValue([{ path: tracked }] as never);
       mocks.storage.unlink.mockResolvedValue();
+      mocks.integrityReport.getTrackedPaths.mockResolvedValue([]);
+      mocks.physicalFile.deleteUnreferencedPath.mockImplementation(async (path, unlink) => {
+        if (path === referenced) {
+          return { deleted: false, references: 1 };
+        }
+        await unlink();
+        return { deleted: true, references: 0 };
+      });
 
       await sut.handleDeleteIntegrityReports({
         reports: [
-          { id: 'tracked-report', path: tracked },
+          { id: 'tracked-report', path: referenced },
           { id: 'untracked-report', path: untracked },
         ] as never,
       });
 
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledTimes(2);
       expect(mocks.storage.unlink).toHaveBeenCalledExactlyOnceWith(untracked);
       expect(mocks.integrityReport.deleteByIds).toHaveBeenCalledWith(['tracked-report', 'untracked-report']);
     });

@@ -110,7 +110,7 @@ const OWNER_RULE_REACHES: Record<Actor, boolean> = {
   ownerUnlocked: true,
   editor: true,
   viewer: true,
-  partner: true,
+  partner: false,
   recipient: false,
   link: true,
   linkNoDownload: true,
@@ -139,8 +139,8 @@ const expected = (actor: Actor, item: Item): AssetPermission[] => {
       return VISIBLE_TO_OTHERS.has(item) || item === 'archived' ? [R, V] : NONE;
     }
     case 'partner': {
-      // Partner sharing shows the timeline (and a Live Photo's hidden motion part), never the archive.
-      return VISIBLE_TO_OTHERS.has(item) ? [R, V, D, S] : NONE;
+      // FL-326 (spec §4.8): a partner holds their own copies and never reaches the sharer's rows.
+      return NONE;
     }
     case 'admin':
     case 'stranger': {
@@ -323,17 +323,18 @@ describe('cross-surface access matrix (FL-137 QA-101)', () => {
     );
   });
 
-  it("keeps explicit album, partner and link shares under the owner's Locked rule, and withdraws per-item shares (owner decision, 2026-09-29)", async () => {
+  it("keeps explicit album and link shares under the owner's Locked rule, and withdraws per-item shares (owner decision, 2026-09-29)", async () => {
     const { ctx, access } = setup();
     const lib = await library(ctx);
     const ids = new Set([lib.items.lockedRule]);
     const reaches = async (actor: Actor) =>
       (await checkAccess(access, { auth: lib.auths[actor], permission: Permission.AssetRead, ids })).size > 0;
 
-    for (const actor of ['editor', 'viewer', 'partner', 'link', 'linkNoDownload', 'ownerUnlocked'] as const) {
+    for (const actor of ['editor', 'viewer', 'link', 'linkNoDownload', 'ownerUnlocked'] as const) {
       await expect(reaches(actor)).resolves.toBe(true);
     }
-    for (const actor of ['recipient', 'owner'] as const) {
+    // FL-326: a partner reaches none of the owner's rows, whatever the rule
+    for (const actor of ['recipient', 'owner', 'partner'] as const) {
       await expect(reaches(actor)).resolves.toBe(false);
     }
 

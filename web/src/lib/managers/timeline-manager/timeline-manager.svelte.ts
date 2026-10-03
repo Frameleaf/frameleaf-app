@@ -194,23 +194,8 @@ export class TimelineManager extends VirtualScrollManager {
           this.albumAssets.clear();
         },
         SessionAccessChanged: () => void trackSessionLockRefresh(this.refresh()),
-        PartnerRevoke: (revoke) => this.#handlePartnerRevoke(revoke),
       }),
     );
-  }
-
-  /**
-   * FL-54: a partner who stops sharing takes their photos out of every open timeline at once. A
-   * timeline that could hold them (the main one with partners, or that partner's own library) drops
-   * the months it loaded and reads them again, so nothing of theirs stays on screen or cached here.
-   */
-  #handlePartnerRevoke({ sharedById, sharedWithId }: { sharedById: string; sharedWithId: string }) {
-    if (!authManager.authenticated || sharedWithId !== authManager.user.id) {
-      return;
-    }
-    if (this.#options.withPartners || this.#options.userId === sharedById) {
-      void this.refresh();
-    }
   }
 
   /**
@@ -967,7 +952,7 @@ export class TimelineManager extends VirtualScrollManager {
     if (this.#options.albumId || this.#options.personId || this.#options.timelineAlbumId) {
       return false;
     }
-    if (this.#options.userId && !this.#options.withPartners && asset.ownerId !== this.#options.userId) {
+    if (this.#options.userId && asset.ownerId !== this.#options.userId) {
       return false;
     }
     return true;

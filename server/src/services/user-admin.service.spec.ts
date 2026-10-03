@@ -358,18 +358,15 @@ describe(UserAdminService.name, () => {
       expect(mocks.user.delete).not.toHaveBeenCalled();
     });
 
-    it('refuses to delete the account physical deduplication retains originals in (FL-44)', async () => {
+    it('deletes an account that had been the master-user deduplication account (universal storage)', async () => {
       mocks.user.get.mockResolvedValue(userStub.user1);
+      mocks.user.update.mockResolvedValue(userStub.user1);
       mocks.systemMetadata.get.mockResolvedValue({
         physicalDeduplication: { enabled: true, masterUserId: userStub.user1.id },
       });
 
-      await expect(sut.delete(authStub.admin, userStub.user1.id, { force: true })).rejects.toThrow(
-        /keeps the original files shared by physical deduplication/,
-      );
-      expect(mocks.user.update).not.toHaveBeenCalled();
-      expect(mocks.album.softDeleteAll).not.toHaveBeenCalled();
-      expect(mocks.job.queue).not.toHaveBeenCalled();
+      await expect(sut.delete(authStub.admin, userStub.user1.id, { force: true })).resolves.toBeDefined();
+      expect(mocks.user.update).toHaveBeenCalled();
     });
 
     it('should delete user', async () => {

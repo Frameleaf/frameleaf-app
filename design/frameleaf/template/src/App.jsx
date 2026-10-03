@@ -75,8 +75,10 @@ import {
   ChangePassword,
   PinPrompt,
   MaintenanceSplash,
+  CombiningDuplicates,
   Buy,
 } from "./AuthScreens";
+import { StorageMigrationCard } from "./StorageMigrationCard";
 import { AccountSetupTool, FirstRunSetup } from "./FirstRunSetup";
 import { loadAccountTool, setupStageTheme } from "./first-run-setup.mjs";
 import {
@@ -135,6 +137,7 @@ import { SharedLinks, ShareSheet, useSharedLinks } from "./SharedLinks";
 import { SharedLinkForm } from "./SharedLinkForm";
 import { PublicViewer } from "./PublicViewer";
 import { PartnerHeader } from "./PartnerLibrary";
+import { PartnerLockedNotice } from "./PartnerLockedNotice";
 import {
   resolveLink,
   recordView,
@@ -170,6 +173,7 @@ import { Editor } from "./Editor";
 import { Studio } from "./Studio";
 import { PhotographyClient } from "./PhotographyClient";
 import { RawLibraryCare } from "./RawLibraryCare";
+import { FileTrash } from "./FileTrash";
 import { PhotographyWorkspace } from "./PhotographyWorkspace";
 import { PhotographyEditor } from "./PhotographyEditor";
 import {
@@ -220,6 +224,7 @@ const AUTH_SCREENS = [
   "change-password",
   "pin",
   "maintenance",
+  "getting-ready",
   "buy",
 ];
 const SCREEN_IDS = [
@@ -229,6 +234,7 @@ const SCREEN_IDS = [
   "photography-client",
   "photography-site",
   "raw-support",
+  "file-trash",
   "activity",
   "admin",
   "care",
@@ -335,7 +341,12 @@ export function App() {
   });
   useEffect(() => {
     if (
-      !["photography", "photography-editor", "photography-client", "photography-site"].includes(screen)
+      ![
+        "photography",
+        "photography-editor",
+        "photography-client",
+        "photography-site",
+      ].includes(screen)
     )
       setPhotographyContext((current) => ({
         ...current,
@@ -462,10 +473,6 @@ export function App() {
   const [publicLink, setPublicLink] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState(null);
-  const [partnerSettings, setPartnerSettings] = useState({
-    inTimeline: true,
-    shareLocation: false,
-  });
   const [page, setPage] = useState(1);
   const [uploadTargetId, setUploadTargetId] = useState(null);
   const uploadInput = useRef(null);
@@ -2476,6 +2483,17 @@ export function App() {
         setTheme={setTheme}
       />
     ),
+    // FL-326: Getting Ready's "Combining duplicate files" step. Preview with
+    // ?screen=getting-ready (ends with files to review) or &review=0 (ends "Done").
+    "getting-ready": (
+      <CombiningDuplicates
+        toReview={new URL(location.href).searchParams.get("review") === "0" ? 0 : 2}
+        onContinue={() => setScreen("library")}
+        onOpenCare={() => setScreen("care")}
+        theme={theme}
+        setTheme={setTheme}
+      />
+    ),
     buy: (
       <Buy
         user={currentUser}
@@ -3033,16 +3051,11 @@ export function App() {
                     <PartnerHeader
                       partner={PARTNER}
                       count={visible.length}
-                      settings={partnerSettings}
                       onChange={(patch) => {
                         if (patch?.sharing === false) {
                           setToast(`Stopped sharing with ${PARTNER.name}.`);
                           navigate("Library");
-                        } else
-                          setPartnerSettings((current) => ({
-                            ...current,
-                            ...patch,
-                          }));
+                        }
                       }}
                       onOpenSettings={() => openSettings("sharing", "partner")}
                     />
@@ -3168,6 +3181,13 @@ export function App() {
                     </div>
                     {layoutSwitch}
                   </div>
+                )}
+                {collection === "Library" && (
+                  <PartnerLockedNotice
+                    partnerName={PARTNER.name}
+                    hasPin={false}
+                    onSetPin={() => openSettings("preferences", "account-security")}
+                  />
                 )}
                 {(activeChips.length > 0 || query.text) && (
                   <div className="active-filter-bar">
@@ -3813,6 +3833,9 @@ export function App() {
             notify={setToast}
           />
         )}
+        {screen === "file-trash" && (
+          <FileTrash onBack={() => setScreen("care")} notify={setToast} />
+        )}
         {screen === "raw-support" && (
           <RawLibraryCare
             onBack={() => setScreen("library")}
@@ -3940,6 +3963,11 @@ export function App() {
               Sample repair queues. Production findings remain in your existing
               library.
             </p>
+            <StorageMigrationCard
+              onReview={() =>
+                setToast("Media health: 2 missing originals to review.")
+              }
+            />
             {[
               "RAW support & preview repair",
               "Media health",
@@ -3947,6 +3975,7 @@ export function App() {
               "Duplicate review",
               "Import reconciliation",
               "Preservation verification",
+              "File trash",
             ].map((title) => (
               <button
                 className="care-row"
@@ -3954,9 +3983,11 @@ export function App() {
                 onClick={() =>
                   title === "RAW support & preview repair"
                     ? setScreen("raw-support")
-                    : setToast(
-                        `${title}: no live scan has been run in this prototype.`,
-                      )
+                    : title === "File trash"
+                      ? setScreen("file-trash")
+                      : setToast(
+                          `${title}: no live scan has been run in this prototype.`,
+                        )
                 }
               >
                 <Icon name="mdiShieldCheckOutline" />

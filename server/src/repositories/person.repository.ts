@@ -100,7 +100,15 @@ export type PersonMergeVerdict = 'different' | 'later' | 'ignore';
  * FL-57: the kinds of manual face decisions kept in `immich_fork.face_correction`. `box-move` is
  * written by the FL-38 face editor when it moves a face box.
  */
-export type FaceCorrectionAction = 'reassign' | 'new-person' | 'unassign' | 'remove' | 'merge' | 'box-move';
+export type FaceCorrectionAction =
+  | 'reassign'
+  | 'new-person'
+  | 'unassign'
+  | 'remove'
+  | 'merge'
+  | 'box-move'
+  /** FL-326: a partner's person auto-merged into one of the owner's people by face similarity. */
+  | 'partner-merge';
 
 /**
  * One manual face decision to record (FL-57). For a face decision (`faceId` set), the asset, the
@@ -187,6 +195,21 @@ export type FaceCorrectionChange = {
 
 /** a person is identified by its owner and the group it belongs to */
 export type PersonId = { ownerId: string; personGroupId: string };
+
+/** FL-326: a recipient's mapping of a partner's person onto one of their own (`partner_person_link`). */
+export type PartnerPersonLink = {
+  ownerId: string;
+  sourcePersonGroupId: string;
+  personGroupId: string;
+  /** `merged`: an existing person matched by face similarity; `created`: a new person made for it. */
+  kind: 'created' | 'merged';
+  partnerSharedById: string;
+  /** The auto-merge's correction history entry, for `merged`. */
+  correctionId: string | null;
+};
+
+/** FL-326: a face a partner copy carries over. */
+export type PartnerCopyFace = { id: string; personGroupId: string | null; hasEmbedding: boolean };
 
 export type ReassignCluster = { userId: string; newClusterId: string };
 
@@ -1053,6 +1076,11 @@ export class PersonRepository {
     await this.db.insertInto('asset_face').values(face).execute();
   }
 
+  /** FL-326: a followed partner copy's faces, replaced by its source's when they change. */
+  async deleteFacesOfAsset(assetId: string): Promise<void> {
+    await this.db.deleteFrom('asset_face').where('asset_face.assetId', '=', assetId).execute();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   async deleteAssetFace(id: string): Promise<void> {
     await this.db.deleteFrom('asset_face').where('asset_face.id', '=', id).execute();
@@ -1649,6 +1677,213 @@ export class PersonRepository {
       .limit(1)
       .executeTakeFirst();
     return !!row;
+  }
+
+  /**
+   * FL-326: how a recipient maps a partner's person (`sourcePersonGroupId`) onto one of their own, while
+   * that person still exists (`immich_fork.partner_person_link`, fork migration 0000000000221).
+   */
+  async getPartnerPersonLink(ownerId: string, sourcePersonGroupId: string): Promise<PartnerPersonLink | undefined> {
+    const { rows } = await sql<PartnerPersonLink>`
+      SELECT link."ownerId", link."sourcePersonGroupId", link."personGroupId", link.kind, link."partnerSharedById",
+        link."correctionId"
+      FROM immich_fork.partner_person_link link
+      JOIN public.person person ON person."ownerId" = link."ownerId" AND person."personGroupId" = link."personGroupId"
+      WHERE link."ownerId" = ${ownerId}::uuid AND link."sourcePersonGroupId" = ${sourcePersonGroupId}::uuid
+    `.execute(this.db);
+    return rows[0];
+  }
+
+  /** FL-326: records (or replaces) a recipient's mapping of a partner's person. */
+  async savePartnerPersonLink(link: PartnerPersonLink): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx, 'Partner people');
+      await sql`
+        INSERT INTO immich_fork.partner_person_link
+          ("ownerId", "sourcePersonGroupId", "personGroupId", kind, "partnerSharedById", "correctionId")
+        VALUES (${link.ownerId}::uuid, ${link.sourcePersonGroupId}::uuid, ${link.personGroupId}::uuid, ${link.kind},
+          ${link.partnerSharedById}::uuid, ${link.correctionId}::uuid)
+        ON CONFLICT ("ownerId", "sourcePersonGroupId") DO UPDATE
+        SET "personGroupId" = excluded."personGroupId", kind = excluded.kind,
+          "partnerSharedById" = excluded."partnerSharedById", "correctionId" = excluded."correctionId"
+      `.execute(tx);
+    });
+  }
+
+  /** FL-326: a person group's recognition (cluster) group. */
+  async getGroupClusterId(personGroupId: string): Promise<string | undefined> {
+    const row = await this.db
+      .selectFrom('person_group')
+      .select('person_group.clusterGroupId')
+      .where('person_group.id', '=', personGroupId)
+      .executeTakeFirst();
+    return row?.clusterGroupId;
+  }
+
+  /** FL-326: the original uploader behind a person that is itself a partner copy, if it is one. */
+  async getPersonOriginRoot(ownerId: string, personGroupId: string): Promise<string | undefined> {
+    const { rows } = await sql<{ rootOwnerId: string }>`
+      SELECT "rootOwnerId" FROM immich_fork.person_origin
+      WHERE "ownerId" = ${ownerId}::uuid AND "personGroupId" = ${personGroupId}::uuid
+    `.execute(this.db);
+    return rows[0]?.rootOwnerId;
+  }
+
+  /**
+   * FL-326: after the owner merged `fromPersonGroupId` into `toPersonGroupId`, partner people mapped to the
+   * merged-away person map to the survivor, which is the owner's own (it never follows a partner).
+   */
+  async repointPartnerPersonLinks(ownerId: string, fromPersonGroupId: string, toPersonGroupId: string): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx, 'Partner people');
+      await sql`
+        UPDATE immich_fork.partner_person_link
+        SET "personGroupId" = ${toPersonGroupId}::uuid, kind = 'merged', "correctionId" = NULL
+        WHERE "ownerId" = ${ownerId}::uuid AND "personGroupId" = ${fromPersonGroupId}::uuid
+      `.execute(tx);
+    });
+  }
+
+  /** FL-326: the mapping an auto-merge correction made, for its undo. */
+  async getPartnerPersonLinkByCorrection(
+    ownerId: string,
+    correctionId: string,
+  ): Promise<PartnerPersonLink | undefined> {
+    const { rows } = await sql<PartnerPersonLink>`
+      SELECT "ownerId", "sourcePersonGroupId", "personGroupId", kind, "partnerSharedById", "correctionId"
+      FROM immich_fork.partner_person_link
+      WHERE "ownerId" = ${ownerId}::uuid AND "correctionId" = ${correctionId}::uuid
+    `.execute(this.db);
+    return rows[0];
+  }
+
+  /**
+   * FL-326: the faces of a source asset a partner copy carries over: the ones not hidden, with their
+   * person and whether recognition has an embedding for them.
+   */
+  async getFacesForPartnerCopy(assetId: string): Promise<PartnerCopyFace[]> {
+    const { rows } = await sql<PartnerCopyFace>`
+      SELECT face.id, face."personGroupId",
+        EXISTS (SELECT 1 FROM face_search WHERE face_search."faceId" = face.id) AS "hasEmbedding"
+      FROM asset_face face
+      WHERE face."assetId" = ${assetId}::uuid AND face."deletedAt" IS NULL
+      ORDER BY face.id
+    `.execute(this.db);
+    return rows;
+  }
+
+  /** FL-326: the stored embedding of one face, as recognition's searches take it. */
+  async getFaceEmbedding(faceId: string): Promise<string | undefined> {
+    const row = await this.db
+      .selectFrom('face_search')
+      .select('face_search.embedding')
+      .where('face_search.faceId', '=', faceId)
+      .executeTakeFirst();
+    return row?.embedding;
+  }
+
+  /**
+   * FL-326: copies faces onto a partner copy with no ML re-run: the exact boxes, detection source and
+   * visibility, the recognition embedding, and the person each maps to in the recipient's library. A box
+   * the target already has is left alone, so copying twice is harmless.
+   */
+  async copyFacesToAsset(
+    targetAssetId: string,
+    faces: Array<{ sourceFaceId: string; faceId: string; personGroupId: string | null }>,
+  ): Promise<number> {
+    if (faces.length === 0) {
+      return 0;
+    }
+    const values = sql.join(
+      faces.map(
+        ({ sourceFaceId, faceId, personGroupId }) =>
+          sql`(${sourceFaceId}::uuid, ${faceId}::uuid, ${personGroupId}::uuid)`,
+      ),
+    );
+    return this.db.transaction().execute(async (tx) => {
+      const { rows } = await sql<{ id: string }>`
+        WITH map ("sourceFaceId", "faceId", "personGroupId") AS (VALUES ${values})
+        INSERT INTO asset_face (id, "assetId", "personGroupId", "imageWidth", "imageHeight", "boundingBoxX1",
+          "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType", "isVisible")
+        SELECT map."faceId", ${targetAssetId}::uuid, map."personGroupId", face."imageWidth", face."imageHeight",
+          face."boundingBoxX1", face."boundingBoxY1", face."boundingBoxX2", face."boundingBoxY2", face."sourceType",
+          face."isVisible"
+        FROM map JOIN asset_face face ON face.id = map."sourceFaceId"
+        WHERE NOT EXISTS (
+          SELECT 1 FROM asset_face existing
+          WHERE existing."assetId" = ${targetAssetId}::uuid
+            AND existing."boundingBoxX1" = face."boundingBoxX1" AND existing."boundingBoxY1" = face."boundingBoxY1"
+            AND existing."boundingBoxX2" = face."boundingBoxX2" AND existing."boundingBoxY2" = face."boundingBoxY2"
+        )
+        RETURNING id
+      `.execute(tx);
+      if (rows.length > 0) {
+        await sql`
+          WITH map ("sourceFaceId", "faceId", "personGroupId") AS (VALUES ${values})
+          INSERT INTO face_search ("faceId", embedding)
+          SELECT map."faceId", source.embedding
+          FROM map JOIN face_search source ON source."faceId" = map."sourceFaceId"
+          WHERE map."faceId" = ANY(${rows.map(({ id }) => id)}::uuid[])
+        `.execute(tx);
+      }
+      return rows.length;
+    });
+  }
+
+  /**
+   * FL-326: the recipient's faces an auto-merge put on `personGroupId`: faces of their partner copies whose
+   * source face (same box, on the asset the copy came from) belongs to `sourcePersonGroupId`, and that
+   * still sit on that person.
+   */
+  async getPartnerMergedFaceIds(
+    ownerId: string,
+    sourcePersonGroupId: string,
+    personGroupId: string,
+  ): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      SELECT face.id
+      FROM asset_face face
+      JOIN asset ON asset.id = face."assetId"
+      JOIN immich_fork.asset_origin origin ON origin."assetId" = asset.id
+      WHERE asset."ownerId" = ${ownerId}::uuid
+        AND face."personGroupId" = ${personGroupId}::uuid
+        AND face."deletedAt" IS NULL
+        AND EXISTS (
+          SELECT 1 FROM asset_face source
+          WHERE source."assetId" = origin."sourceAssetId"
+            AND source."personGroupId" = ${sourcePersonGroupId}::uuid
+            AND source."boundingBoxX1" = face."boundingBoxX1" AND source."boundingBoxY1" = face."boundingBoxY1"
+            AND source."boundingBoxX2" = face."boundingBoxX2" AND source."boundingBoxY2" = face."boundingBoxY2"
+        )
+      ORDER BY face.id
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
+
+  /**
+   * FL-326: undoes a partner auto-merge in one transaction: the history entry is marked undone and the
+   * merged faces move to `personGroupId` (the recipient's new person for the partner's person). Returns
+   * false, changing nothing, when the entry was already undone.
+   */
+  async undoPartnerMerge(correctionId: string, faceIds: string[], personGroupId: string): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      await this.lockForkWrites(tx, 'Face corrections');
+      const { numAffectedRows } = await sql`
+        UPDATE immich_fork.face_correction SET "undoneAt" = clock_timestamp()
+        WHERE id = ${correctionId}::uuid AND "undoneAt" IS NULL
+      `.execute(tx);
+      if ((numAffectedRows ?? 0n) === 0n) {
+        return false;
+      }
+      if (faceIds.length > 0) {
+        await tx
+          .updateTable('asset_face')
+          .set({ personGroupId, correctedAt: sql`clock_timestamp()` })
+          .where('asset_face.id', 'in', faceIds)
+          .execute();
+      }
+      return true;
+    });
   }
 
   /** Sets a face's person as an explicit decision (FL-57), or clears it (`null`). */

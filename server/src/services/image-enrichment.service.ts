@@ -39,12 +39,14 @@ import {
 } from 'src/enum.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository, PrivacySidecar } from 'src/repositories/fork-privacy.repository.js';
+import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
 import { DB } from 'src/schema/index.js';
 import { TagAssetTable } from 'src/schema/tables/tag-asset.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { IdentityPostValidator } from 'src/services/identity-post-validator.service.js';
+import { recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { ImageDescriptionPromptAssembler, KnownPerson, VideoContext } from 'src/services/prompt-assembler.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
@@ -500,7 +502,21 @@ export class ImageEnrichmentService extends BaseService {
       });
       await this.clearSafeReviewTags(reviewed);
       await this.notifyAssetsUpdated(unlocked, auth.user.id);
+      await this.recordPartnerUnlock(auth, unlocked);
     }
+  }
+
+  /**
+   * FL-326: unlocking a partner copy makes its visibility the owner's; copies of these items follow the
+   * unlock (spec §4.9).
+   */
+  private async recordPartnerUnlock(auth: AuthDto, assetIds: string[]) {
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      assetIds,
+      [AssetOriginField.Visibility],
+    );
   }
 
   /**
@@ -567,6 +583,7 @@ export class ImageEnrichmentService extends BaseService {
     });
     await this.clearSafeReviewTags(reviewed);
     await this.notifyAssetsUpdated(unlocked, auth.user.id);
+    await this.recordPartnerUnlock(auth, unlocked);
   }
 
   /**

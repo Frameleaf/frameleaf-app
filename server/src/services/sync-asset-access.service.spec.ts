@@ -64,7 +64,7 @@ describe('additive scoped asset access sync dispatch and acknowledgement boundar
     });
     expect(mocks.syncCheckpoint.upsertAll).not.toHaveBeenCalled();
   });
-  it('dispatches the approved partner Locked marker using the same mapper as legacy streams', async () => {
+  it('maps a partner Locked marker as legacy streams did, and sends no partner asset rows (FL-326)', async () => {
     const { sut, response, chunks, tag } = setup();
     const asset = mapPartnerAsset({
       id: 'asset-1',
@@ -89,8 +89,9 @@ describe('additive scoped asset access sync dispatch and acknowledgement boundar
       data: { sharedById: 'owner-1', asset },
     } as never);
     await sut.stream(authStub.user1, response, { types: [SyncRequestType.PartnerAssetAccessV1] });
-    expect(tag.reconcile).toHaveBeenCalledWith(authStub.user1, 'partnerAsset');
-    expect(JSON.parse(chunks[0]).data).toEqual({ sharedById: 'owner-1', asset });
+    // FL-326 (spec §4.8): the partner asset stream stays for older clients and sends nothing
+    expect(tag.reconcile).not.toHaveBeenCalled();
+    expect(chunks.map((chunk) => JSON.parse(chunk).type)).toEqual([SyncEntityType.SyncCompleteV1]);
   });
   it('keeps existing-type acknowledgement behavior unchanged', async () => {
     const { sut, mocks, tag } = setup();

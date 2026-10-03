@@ -455,3 +455,18 @@ test("formatting helpers produce calm, readable copy", () => {
   assert.equal(plural(1, "item"), "1 item");
   assert.equal(plural(3, "item"), "3 items");
 });
+
+test("partner-copied albums keep their origin through save and load", () => {
+  const seed = createCollectionsState();
+  const winter = seed.collections.find((c) => c.id === "winter-2026");
+  assert.deepEqual(winter.origin, { rootOwnerId: "jamie" });
+  const parsed = parseCollections(JSON.stringify(seed));
+  assert.deepEqual(
+    parsed.collections.find((c) => c.id === "winter-2026").origin,
+    { rootOwnerId: "jamie" },
+  );
+  assert.equal(parsed.collections.find((c) => c.id === "family").origin, null);
+  const tampered = JSON.parse(JSON.stringify(seed));
+  tampered.collections[0].origin = { rootOwnerId: 42 };
+  assert.equal(parseCollections(tampered).collections[0].origin, null);
+});

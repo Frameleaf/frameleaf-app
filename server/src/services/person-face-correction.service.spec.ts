@@ -93,7 +93,7 @@ describe(`${PersonService.name} face corrections (FL-38)`, () => {
       });
 
       // a partner can read the asset but does not own it
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([hidden.assetId]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([hidden.assetId]));
       await expect(sut.getFacesById(auth, { id: hidden.assetId, withHidden: true })).rejects.toBeInstanceOf(
         BadRequestException,
       );

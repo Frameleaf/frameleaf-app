@@ -20,7 +20,6 @@ import { BaseService } from 'src/services/base.service.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 import { type HiddenContentQueryOptions, getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { OpenGraphTags, findOrFail, getExternalDomain } from 'src/utils/misc.js';
-import { applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
 
 /** A bcrypt hash as stored for a shared-link password (FL-161); anything else is a legacy plaintext value. */
 const BCRYPT_HASH = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
@@ -361,17 +360,7 @@ export class SharedLinkService extends BaseService {
       ...options,
       externalDomain: await this.externalDomain(),
     });
-    if (options.stripAssetMetadata || response.assets.length === 0) {
-      return response;
-    }
-
-    // FL-54: a link shows at most what its creator may see, so an owner who hides their locations from
-    // the creator never has them handed out through the link's own assets
-    const assets = await applyPartnerLocationPolicy(response.assets, {
-      userId: sharedLink.userId,
-      repository: this.partnerRepository,
-    });
-    return { ...response, assets };
+    return response;
   }
 
   /** FL-305: the configured public address links are built on. */

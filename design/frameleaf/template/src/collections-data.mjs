@@ -1,3 +1,4 @@
+import { parseOrigin } from "./partner-sharing.mjs";
 import * as materialIcons from "@mdi/js";
 
 /**
@@ -420,6 +421,7 @@ export function createCollectionsState() {
     smart: null,
     kind: "album",
     links: [],
+    origin: null,
   };
   return {
     version: 1,
@@ -473,6 +475,8 @@ export function createCollectionsState() {
         members: [owner("taylor")],
         createdAt: "2026-09-01T08:00:00.000Z",
         updatedAt: "2026-09-01T08:00:00.000Z",
+        // Copied from Jamie's library by partner sharing; follows Jamie's edits.
+        origin: { rootOwnerId: "jamie" },
       },
       {
         ...base,
@@ -624,6 +628,7 @@ function parseCollection(value) {
     smart: record(smart) ? { rule: normalizeRule(field(smart, "rule")) } : null,
     kind: collectionKinds.includes(kind) ? kind : "album",
     links,
+    origin: parseOrigin(field(value, "origin")),
   };
 }
 function parseActivity(value) {

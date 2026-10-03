@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetFile } from 'src/database.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
@@ -15,6 +16,7 @@ import {
   JobName,
   JobStatus,
   Permission,
+  StorageFolder,
 } from 'src/enum.js';
 import { AssetStats, RemovedAsset } from 'src/repositories/asset.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -54,6 +56,7 @@ describe(AssetService.name, () => {
     ({ sut, mocks } = newTestService(AssetService));
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
+    mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
     removedExtras = {};
     // the file cleanup is queued inside the removal's transaction, from the files the repository reads
     // there, as the repository does
@@ -120,6 +123,30 @@ describe(AssetService.name, () => {
   });
 
   describe('get', () => {
+    it("names the partner library the viewer's own copy came from (FL-326)", async () => {
+      const asset = AssetFactory.create();
+      const auth = AuthFactory.create({ id: asset.ownerId });
+      const rootOwnerId = newUuid();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.partnerOrigin.getOriginLabels.mockResolvedValue(
+        new Map([[asset.id, { rootOwnerId, rootOwnerName: 'Jamie' }]]),
+      );
+
+      await expect(sut.get(auth, asset.id)).resolves.toMatchObject({ origin: { rootOwnerId, rootOwnerName: 'Jamie' } });
+      expect(mocks.partnerOrigin.getOriginLabels).toHaveBeenCalledWith('asset', [asset.id], asset.ownerId);
+    });
+
+    it("never names an origin on an asset that is not the viewer's own (FL-326)", async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      const result = await sut.get(authStub.admin, asset.id);
+      expect(result).not.toHaveProperty('origin');
+      expect(mocks.partnerOrigin.getOriginLabels).not.toHaveBeenCalled();
+    });
+
     it('should allow owner access', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -154,35 +181,6 @@ describe(AssetService.name, () => {
       );
     });
 
-    it("should hide location on a partner's asset when the partner turned location sharing off", async () => {
-      const auth = AuthFactory.create();
-      const sharer = UserFactory.create();
-      const partner = PartnerFactory.from({ shareLocation: false })
-        .sharedBy(sharer)
-        .sharedWith({ id: auth.user.id })
-        .build();
-      const asset = AssetFactory.from({ ownerId: sharer.id })
-        .exif({ latitude: 42, longitude: 69, city: 'Calgary', state: 'Alberta', country: 'Canada', make: 'Canon' })
-        .build();
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
-      mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
-
-      const response = (await sut.get(auth, asset.id)) as AssetResponseDto;
-
-      expect(mocks.partner.getAll).toHaveBeenCalledWith(auth.user.id);
-      expect(response.exifInfo).toEqual(
-        expect.objectContaining({
-          latitude: null,
-          longitude: null,
-          city: null,
-          state: null,
-          country: null,
-          make: 'Canon',
-        }),
-      );
-    });
-
     it("should keep location on a partner's asset while location sharing is on", async () => {
       const auth = AuthFactory.create();
       const sharer = UserFactory.create();
@@ -193,7 +191,7 @@ describe(AssetService.name, () => {
       const asset = AssetFactory.from({ ownerId: sharer.id })
         .exif({ latitude: 42, longitude: 69, city: 'Calgary' })
         .build();
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
 
@@ -263,12 +261,10 @@ describe(AssetService.name, () => {
 
     it('should allow partner sharing access', async () => {
       const asset = AssetFactory.create();
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
 
       await sut.get(authStub.admin, asset.id);
-
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([asset.id]));
     });
 
     it('should allow shared album access', async () => {
@@ -1082,6 +1078,15 @@ describe(AssetService.name, () => {
             data: {
               files: [...asset.files.map(({ path }) => path), '/data/thumbs/video-frame.jpeg', asset.originalPath],
               removedAssetId: asset.id,
+              // universal storage: the original goes to the file trash with who held it
+              original: {
+                path: asset.originalPath,
+                ownerId: asset.ownerId,
+                assetId: asset.id,
+                originalFileName: asset.originalFileName,
+                checksum: asset.checksum.toString('hex'),
+                sizeInBytes: asset.exifInfo?.fileSizeInByte ?? 0,
+              },
             },
           },
         ],
@@ -1090,6 +1095,41 @@ describe(AssetService.name, () => {
         files: expect.any(Function),
         queue: expect.any(Function),
       });
+    });
+
+    it('hands a shared file over to the next primary and queues its storage move', async () => {
+      const asset = AssetFactory.from({ physicalOriginalFileId: 'physical-file-id' }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      mocks.physicalFile.electNextCanonical.mockResolvedValue({ assetId: 'next-primary' });
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.physicalFile.electNextCanonical).toHaveBeenCalledWith('physical-file-id');
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.StorageTemplateMigrationSingle,
+        data: { id: 'next-primary' },
+      });
+    });
+
+    it('leaves the primary alone when a non-primary copy is deleted', async () => {
+      const asset = AssetFactory.from({ physicalOriginalFileId: 'physical-file-id' }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+      mocks.physicalFile.electNextCanonical.mockResolvedValue(undefined);
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(
+        expect.objectContaining({ name: JobName.StorageTemplateMigrationSingle }),
+      );
+    });
+
+    it('never elects a primary for an asset without a shared file', async () => {
+      const asset = AssetFactory.from().build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
+
+      await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
+
+      expect(mocks.physicalFile.electNextCanonical).not.toHaveBeenCalled();
     });
 
     it('never deletes the original or sidecar of an external library item (FL-78)', async () => {
@@ -1159,6 +1199,7 @@ describe(AssetService.name, () => {
             '/data/thumbs/moved.webp.m2.moving',
           ],
           removedAssetId: asset.id,
+          original: expect.objectContaining({ assetId: asset.id }),
         },
       });
     });
@@ -1222,7 +1263,16 @@ describe(AssetService.name, () => {
 
       // the file cleanup is queued with the removal (FL-169), the motion part after it
       expect(mocks.job.queue.mock.calls).toEqual([
-        [{ name: JobName.FileDelete, data: { files: [asset.originalPath], removedAssetId: asset.id } }],
+        [
+          {
+            name: JobName.FileDelete,
+            data: {
+              files: [asset.originalPath],
+              removedAssetId: asset.id,
+              original: expect.objectContaining({ assetId: asset.id }),
+            },
+          },
+        ],
         [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
       ]);
     });
@@ -1238,7 +1288,11 @@ describe(AssetService.name, () => {
         [
           {
             name: JobName.FileDelete,
-            data: { files: [`/data/library/IMG_${asset.id}.jpg`], removedAssetId: asset.id },
+            data: {
+              files: [`/data/library/IMG_${asset.id}.jpg`],
+              removedAssetId: asset.id,
+              original: expect.objectContaining({ assetId: asset.id }),
+            },
           },
         ],
       ]);
@@ -1300,7 +1354,11 @@ describe(AssetService.name, () => {
 
         expect(mocks.job.queue).toHaveBeenCalledWith({
           name: JobName.FileDelete,
-          data: { files: [...asset.files.map(({ path }) => path), asset.originalPath], removedAssetId: asset.id },
+          data: {
+            files: [...asset.files.map(({ path }) => path), asset.originalPath],
+            removedAssetId: asset.id,
+            original: expect.objectContaining({ assetId: asset.id }),
+          },
         });
         expect(mocks.user.updateUsage).not.toHaveBeenCalled();
         expect(mocks.event.emit).not.toHaveBeenCalledWith('AssetDelete', expect.anything());
@@ -1316,7 +1374,16 @@ describe(AssetService.name, () => {
         await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
 
         expect(mocks.job.queue.mock.calls).toEqual([
-          [{ name: JobName.FileDelete, data: { files: [asset.originalPath], removedAssetId: asset.id } }],
+          [
+            {
+              name: JobName.FileDelete,
+              data: {
+                files: [asset.originalPath],
+                removedAssetId: asset.id,
+                original: expect.objectContaining({ assetId: asset.id }),
+              },
+            },
+          ],
           [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
         ]);
         expect(mocks.user.updateUsage).toHaveBeenCalledWith(asset.ownerId, -5000);
@@ -1335,6 +1402,7 @@ describe(AssetService.name, () => {
           data: {
             files: [thumbnailPath, '/data/restorations/result.jpg', '/data/develop/master.tif', asset.originalPath],
             removedAssetId: asset.id,
+            original: expect.objectContaining({ assetId: asset.id }),
           },
         });
       });
@@ -1363,7 +1431,16 @@ describe(AssetService.name, () => {
         await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
 
         expect(mocks.job.queue.mock.calls).toEqual([
-          [{ name: JobName.FileDelete, data: { files: [asset.originalPath], removedAssetId: asset.id } }],
+          [
+            {
+              name: JobName.FileDelete,
+              data: {
+                files: [asset.originalPath],
+                removedAssetId: asset.id,
+                original: expect.objectContaining({ assetId: asset.id }),
+              },
+            },
+          ],
         ]);
       });
     });
@@ -1372,6 +1449,78 @@ describe(AssetService.name, () => {
       mocks.assetJob.getForAssetDeletion.mockResolvedValue(void 0);
       await expect(sut.handleAssetDeletion({ id: AssetFactory.create().id, deleteOnDisk: true })).resolves.toBe(
         JobStatus.Failed,
+      );
+    });
+  });
+
+  describe('copy sidecar (universal storage)', () => {
+    const sidecar = (assetId: string, path: string) =>
+      ({ id: `${assetId}-sidecar`, assetId, path, type: AssetFileType.Sidecar, isEdited: false }) as AssetFile;
+    const forCopy = (id: string, dto: object) => ({
+      id,
+      ownerId: 'target-owner',
+      stackId: null,
+      isFavorite: false,
+      originalPath: '/data/library/primary-owner/shared.jpg',
+      physicalOriginalFileId: null,
+      files: [] as AssetFile[],
+      ...dto,
+    });
+
+    beforeEach(() => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['source', 'target']));
+    });
+
+    it("writes a non-primary target's sidecar to its own upload path, not the primary owner's", async () => {
+      const source = forCopy('source', { files: [sidecar('source', '/data/upload/source.xmp')] });
+      const target = forCopy('target', {
+        physicalOriginalFileId: 'physical-file-id',
+        files: [sidecar('target', '/data/library/primary-owner/shared.jpg.xmp')],
+      });
+      mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+      mocks.physicalFile.isOriginalCanonical.mockResolvedValue(false);
+      const ownPath = StorageCore.getNestedPath(StorageFolder.Upload, 'target-owner', 'target.xmp');
+
+      await sut.copy(authStub.user1, {
+        sourceId: 'source',
+        targetId: 'target',
+        albums: false,
+        sharedLinks: false,
+        stack: false,
+        favorite: false,
+      });
+
+      expect(mocks.storage.copyFile).toHaveBeenCalledWith('/data/upload/source.xmp', ownPath);
+      expect(mocks.asset.upsertFile).toHaveBeenCalledWith({
+        assetId: 'target',
+        path: ownPath,
+        type: AssetFileType.Sidecar,
+      });
+      // the sidecar beside the shared original is the primary owner's: never unlinked directly
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: ['/data/library/primary-owner/shared.jpg.xmp'] },
+      });
+    });
+
+    it('keeps writing a primary target beside its own original', async () => {
+      const source = forCopy('source', { files: [sidecar('source', '/data/upload/source.xmp')] });
+      const target = forCopy('target', { originalPath: '/data/library/target-owner/own.jpg' });
+      mocks.asset.getForCopy.mockResolvedValueOnce(source as never).mockResolvedValueOnce(target as never);
+
+      await sut.copy(authStub.user1, {
+        sourceId: 'source',
+        targetId: 'target',
+        albums: false,
+        sharedLinks: false,
+        stack: false,
+        favorite: false,
+      });
+
+      expect(mocks.storage.copyFile).toHaveBeenCalledWith(
+        '/data/upload/source.xmp',
+        '/data/library/target-owner/own.jpg.xmp',
       );
     });
   });

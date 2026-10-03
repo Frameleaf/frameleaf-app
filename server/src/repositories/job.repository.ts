@@ -708,6 +708,13 @@ export class JobRepository {
           delay: item.data?.delay,
         };
       }
+      case JobName.UniversalStorageMigration: {
+        // FL-326: one batch waiting at a time; the running batch queues the next itself
+        return {
+          deduplication: { id: JobName.UniversalStorageMigration, keepLastIfActive: true },
+          ...(item.data?.delay && { delay: item.data.delay }),
+        };
+      }
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
       }
@@ -781,6 +788,16 @@ export class JobRepository {
           return null;
         }
         return { ...(dedupeKey && { jobId: `push/${dedupeKey}` }), ...(delayMs && { delay: delayMs }) };
+      }
+      // FL-326: one backfill per partnership and one copy per source and library at a time
+      case JobName.PartnerBackfill: {
+        return { deduplication: { id: `partner-backfill/${item.data.sharedById}/${item.data.sharedWithId}` } };
+      }
+      case JobName.PartnerCopyAsset: {
+        return { deduplication: { id: `partner-copy/${item.data.sourceAssetId}/${item.data.targetOwnerId}` } };
+      }
+      case JobName.PartnerCopyAlbum: {
+        return { deduplication: { id: `partner-album/${item.data.sourceAlbumId}/${item.data.targetOwnerId}` } };
       }
       case JobName.PushBackupStaleCheck: {
         return { deduplication: { id: JobName.PushBackupStaleCheck } };

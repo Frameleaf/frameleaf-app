@@ -85,15 +85,17 @@
     year: $t('frameleaf_map_preset_year'),
     custom: $t('frameleaf_map_preset_custom'),
   });
+  const scoped = $derived(albumId !== undefined);
+
+  // FL-326: partners' items are the viewer's own copies, so "Partner items" only narrows an album
+  // map, where it covers every item someone else owns
   const switches = $derived<{ key: SettingsSwitch; label: string }[]>([
     { key: 'includeArchived', label: $t('frameleaf_map_include_archived') },
     { key: 'withSharedAlbums', label: $t('frameleaf_map_include_shared') },
-    { key: 'withPartners', label: $t('frameleaf_map_include_partner') },
+    ...(scoped ? [{ key: 'withPartners' as const, label: $t('frameleaf_map_include_partner') }] : []),
     { key: 'onlyFavorites', label: $t('frameleaf_map_only_favorites') },
     { key: 'showAssetPanel', label: $t('frameleaf_map_asset_panel') },
   ]);
-
-  const scoped = $derived(albumId !== undefined);
 
   let map = $state<Map>();
   let loadedMarkers = $state<MapMarkerResponseDto[]>([]);
@@ -176,7 +178,6 @@
         : {
             isArchived: $mapSettings.includeArchived || undefined,
             isFavorite: $mapSettings.onlyFavorites || undefined,
-            withPartners: $mapSettings.withPartners || undefined,
             withSharedAlbums: $mapSettings.withSharedAlbums || undefined,
             ...mapDateWindow($mapSettings),
           },
@@ -656,12 +657,7 @@
         <fieldset>
           <legend>{$t('frameleaf_map_include')}</legend>
           {#each switches as option (option.key)}
-            {@const count =
-              option.key === 'includeArchived'
-                ? statistics?.archived
-                : option.key === 'withPartners'
-                  ? statistics?.partner
-                  : undefined}
+            {@const count = option.key === 'includeArchived' ? statistics?.archived : undefined}
             <button
               type="button"
               role="switch"

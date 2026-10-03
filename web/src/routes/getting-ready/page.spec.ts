@@ -126,6 +126,62 @@ describe('Getting Ready… (FL-295)', () => {
     expect(screen.getByText(/Check the server logs for details, then restart Frameleaf/)).toBeInTheDocument();
   });
 
+  it('waits for the storage migration after the upgrade, then moves on (FL-326)', async () => {
+    state.page.url = new URL('/getting-ready?continue=%2Fauth%2Flogin', origin);
+    const migration = (stage: string) => ({
+      stage,
+      required: true,
+      background: false,
+      showInGettingReady: stage !== 'done',
+      stages: {
+        checking: { done: 10, total: 10 },
+        relinking: { done: 0, total: 0 },
+        linking: { done: 2, total: 8 },
+        trashing: { done: 0, total: 0 },
+      },
+      relinked: 0,
+      toReview: 0,
+      skipped: 0,
+      bytesFreed: 0,
+      estimatedSecondsLeft: null,
+      startedAt: null,
+      finishedAt: null,
+    });
+    fetchMock.mockImplementation((input) => {
+      if (String(input) === '/api/server/getting-ready') {
+        return json(404, {});
+      }
+      return json(200, migration(fetchMock.mock.calls.length > 3 ? 'done' : 'linking'));
+    });
+
+    render(Page);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    expect(screen.getByRole('heading', { name: 'Combining duplicate files' })).toBeInTheDocument();
+    expect(screen.getByText('2 of 8')).toBeInTheDocument();
+    expect(assign).not.toHaveBeenCalled();
+
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(screen.getByRole('heading', { name: 'Done' })).toBeInTheDocument();
+    screen.getByRole('button', { name: 'Continue' }).click();
+    expect(assign).toHaveBeenCalledWith(new URL('/auth/login', origin).href);
+  });
+
+  it('moves straight on when the storage migration does not need the visitor (FL-326)', async () => {
+    state.page.url = new URL('/getting-ready?continue=%2Fauth%2Flogin', origin);
+    fetchMock.mockImplementation((input) =>
+      String(input) === '/api/server/getting-ready'
+        ? json(404, {})
+        : json(200, { stage: 'done', showInGettingReady: false }),
+    );
+
+    render(Page);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    expect(assign).toHaveBeenCalledWith(new URL('/auth/login', origin).href);
+  });
+
   it('never sends the visitor back to this page', async () => {
     state.page.url = new URL('/getting-ready?continue=%2Fgetting-ready', origin);
     fetchMock.mockImplementation(() => json(404, {}));

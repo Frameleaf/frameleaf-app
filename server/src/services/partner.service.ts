@@ -6,6 +6,7 @@ import { mapUser } from 'src/dtos/user.dto.js';
 import { Permission, PushEventType } from 'src/enum.js';
 import { PartnerDirection, PartnerIds } from 'src/repositories/partner.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { startPartnerBackfill, stopPartnerSharing } from 'src/services/partner-copy.service.js';
 
 @Injectable()
 export class PartnerService extends BaseService {
@@ -23,6 +24,12 @@ export class PartnerService extends BaseService {
     }
 
     const partner = await this.partnerRepository.create(partnerId);
+    // FL-326: the partner receives their own copies of this library
+    await startPartnerBackfill(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      sharedWithId,
+    );
     // FL-228: the new partner gained access to this library
     await this.eventRepository.emit('PushNotify', {
       type: PushEventType.AccessChanged,
@@ -42,6 +49,8 @@ export class PartnerService extends BaseService {
     }
 
     await this.partnerRepository.remove(partnerId);
+    // FL-326: the former partner keeps every copy received; following and new copies stop
+    await stopPartnerSharing({ partnerOrigin: this.partnerOriginRepository }, auth.user.id, sharedWithId);
 
     // FL-54: revocation takes effect on open pages too. Access is always checked live on the server,
     // so this only tells the clients to drop what they already loaded (timeline months, the partner
@@ -62,45 +71,34 @@ export class PartnerService extends BaseService {
   async search(auth: AuthDto, { direction }: PartnerSearchDto): Promise<PartnerResponseDto[]> {
     const partners = await this.partnerRepository.getAll(auth.user.id);
     const key = direction === PartnerDirection.SharedBy ? 'sharedById' : 'sharedWithId';
-    return partners
+    const mine = partners
       .filter((partner): partner is Partner => !!(partner.sharedBy && partner.sharedWith)) // Filter out soft deleted users
-      .filter((partner) => partner[key] === auth.user.id)
-      .map((partner) => this.mapPartner(partner, direction));
+      .filter((partner) => partner[key] === auth.user.id);
+    // FL-326: how far the first copy of the library shared this way has come (the partner card)
+    return Promise.all(
+      mine.map(async (partner) => {
+        const backfill = await this.partnerOriginRepository.getBackfill(partner.sharedById, partner.sharedWithId);
+        return {
+          ...this.mapPartner(partner, direction),
+          backfill: backfill ? { state: backfill.state, total: backfill.total, done: backfill.done } : null,
+        };
+      }),
+    );
   }
 
-  async update(auth: AuthDto, partnerUserId: string, dto: PartnerUpdateDto): Promise<PartnerResponseDto> {
-    const hasInTimeline = dto.inTimeline !== undefined;
-    const hasShareLocation = dto.shareLocation !== undefined;
-    if (hasInTimeline === hasShareLocation) {
-      throw new BadRequestException('Specify exactly one of inTimeline or shareLocation');
-    }
-
-    if (hasInTimeline) {
-      // recipient preference: the partner identified by `:id` shares with me
-      await this.requireAccess({ auth, permission: Permission.PartnerUpdate, ids: [partnerUserId] });
-      const partnerId: PartnerIds = { sharedById: partnerUserId, sharedWithId: auth.user.id };
-
-      const entity = await this.partnerRepository.update(partnerId, { inTimeline: dto.inTimeline });
-      return this.mapPartner(entity, PartnerDirection.SharedWith);
-    }
-
-    // sharer setting: I share with the partner identified by `:id`; only the row owned by the caller
-    // as `sharedById` can be changed, so the recipient can never grant themselves location access
-    const partnerId: PartnerIds = { sharedById: auth.user.id, sharedWithId: partnerUserId };
-    const partner = await this.partnerRepository.get(partnerId);
-    if (!partner) {
+  /** FL-326: a partnership has no settings left; this answers the partner who shares with the caller. */
+  async update(auth: AuthDto, partnerUserId: string, _dto: PartnerUpdateDto): Promise<PartnerResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.PartnerUpdate, ids: [partnerUserId] });
+    const partner = await this.partnerRepository.get({ sharedById: partnerUserId, sharedWithId: auth.user.id });
+    if (!partner?.sharedBy || !partner.sharedWith) {
       throw new BadRequestException('Partner not found');
     }
-
-    const entity = await this.partnerRepository.update(partnerId, { shareLocation: dto.shareLocation });
-    return this.mapPartner(entity, PartnerDirection.SharedBy);
+    return this.mapPartner(partner as Partner, PartnerDirection.SharedWith);
   }
 
   private mapPartner(partner: Partner, direction: PartnerDirection): PartnerResponseDto {
     // this is opposite to return the non-me user of the "partner"
     const sharedUser = direction === PartnerDirection.SharedBy ? partner.sharedWith : partner.sharedBy;
-    const user = mapUser(sharedUser);
-
-    return { ...user, inTimeline: partner.inTimeline, shareLocation: partner.shareLocation };
+    return mapUser(sharedUser);
   }
 }
