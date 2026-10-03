@@ -438,6 +438,28 @@ describe(PhysicalFileRepository.name, () => {
       await expect(originalOf(missing.id)).resolves.toMatchObject({ physicalOriginalFileId: null });
     });
 
+    it('re-checks the file under its path lock: one a concurrent FileDelete moved away is never linked', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const existing = await newUpload(ctx, checksum);
+      const upload = await newUpload(ctx, checksum);
+      // on disk when first looked at, gone (moved to the file trash) once the path lock is held
+      let checks = 0;
+      const movedAway = (path: string) => Promise.resolve(path !== existing.originalPath || checks++ === 0);
+
+      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, { exists: movedAway });
+
+      expect(checks).toBe(2);
+      expect(result).toMatchObject({
+        linked: false,
+        physicalFile: { canonicalAssetId: upload.id, path: upload.originalPath },
+      });
+      await expect(originalOf(upload.id)).resolves.toEqual({
+        originalPath: upload.originalPath,
+        physicalOriginalFileId: result!.physicalFile.id,
+      });
+    });
+
     it('stores identical new content uploaded by two users at once as one file (Review Focus 1)', async () => {
       const { ctx, sut } = setup();
       const checksum = randomBytes(32);
@@ -463,6 +485,27 @@ describe(PhysicalFileRepository.name, () => {
         { originalPath: files[0].path, physicalOriginalFileId: files[0].id },
         { originalPath: files[0].path, physicalOriginalFileId: files[0].id },
       ]);
+    });
+  });
+
+  describe('getGeneratedPathPrimaryAssetId', () => {
+    it('names the oldest live asset whose generated file is at the path (a copy never owns its source file)', async () => {
+      const { ctx, sut } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const path = `/data/thumbs/${randomUUID()}-preview.jpeg`;
+      const source = await newAssetWithSize(ctx, alice.id);
+      await ctx.newAssetFile({ assetId: source.id, type: AssetFileType.Preview, path });
+      const copy = await newAssetWithSize(ctx, bob.id);
+      await ctx.newAssetFile({ assetId: copy.id, type: AssetFileType.Preview, path });
+      await defaultDatabase
+        .updateTable('asset')
+        .set({ createdAt: new Date('2020-01-01') })
+        .where('id', '=', source.id)
+        .execute();
+
+      await expect(sut.getGeneratedPathPrimaryAssetId(path)).resolves.toBe(source.id);
+      await expect(sut.getGeneratedPathPrimaryAssetId('/data/thumbs/nothing.jpeg')).resolves.toBeUndefined();
     });
   });
 
