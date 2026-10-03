@@ -31,7 +31,7 @@ export type StorageMigrationRelinkPhase = 'in-group' | 'search' | 'apply';
 
 /** A managed-storage walk that did not finish in one step (media-health `ManagedSearchProgress`). */
 export type StorageMigrationManagedSearch = {
-  cursor: Array<{ path: string; entries?: string[] }>;
+  cursor: Array<{ path: string; after?: string }>;
   matches: Record<string, Record<string, Array<'sha1' | 'sha256'>>>;
 };
 
@@ -103,13 +103,13 @@ const COUNTERS: readonly Counter[] = [
   'bytesFreed',
 ];
 
-/** Done/total pairs, so a total is never shown below what is done. */
-const PAIRS: ReadonlyArray<[Counter, Counter]> = [
-  ['checked', 'total'],
-  ['relinkDone', 'relinkTotal'],
-  ['groupsLinked', 'groupsTotal'],
-  ['trashed', 'trashTotal'],
-];
+/** Each stage's done/total pair: a total is never shown below what is done. */
+const PAIRS: Record<Exclude<StorageMigrationStage, 'done'>, [Counter, Counter]> = {
+  checking: ['checked', 'total'],
+  relinking: ['relinkDone', 'relinkTotal'],
+  linking: ['groupsLinked', 'groupsTotal'],
+  trashing: ['trashed', 'trashTotal'],
+};
 
 export const createStorageMigrationState = ({ total, now }: { total: number; now: Date }): StorageMigrationState => {
   const required = total > 0;
@@ -179,12 +179,17 @@ export const recordStorageMigrationBatch = (
   for (const counter of COUNTERS) {
     next[counter] = Math.max(state[counter], patch[counter] ?? state[counter]);
   }
-  for (const [done, total] of PAIRS) {
+  for (const [done, total] of Object.values(PAIRS)) {
     next[total] = Math.max(next[total], next[done]);
+  }
+  if (next.stage !== state.stage && state.stage !== 'done') {
+    // A finished stage is complete: what was done is its total (items may have gone meanwhile).
+    const [done, total] = PAIRS[state.stage];
+    next[total] = next[done];
   }
 
   const known = new Set(state.skippedAssetIds);
-  const added = [...new Set(skipped)].filter((id) => !known.has(id));
+  const added = [...new Set(skipped).difference(known)];
   next.skipped = state.skipped + added.length;
   next.skippedAssetIds = [...state.skippedAssetIds, ...added].slice(0, STORAGE_MIGRATION_SKIPPED_SHOWN);
 

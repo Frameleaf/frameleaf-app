@@ -17,6 +17,7 @@ import {
 } from 'src/dtos/physical-deduplication.dto.js';
 import {
   AssetFileType,
+  AssetStatus,
   AssetType,
   DatabaseLock,
   JobName,
@@ -78,6 +79,12 @@ type DiskEvidence = 'match' | 'missing' | 'mismatch';
 
 /** Retained originals one apply run has already hashed, so a group's copies do not hash it again. */
 export type PhysicalDeduplicationVerified = Map<string, DiskEvidence>;
+
+/** What linking one copy to its group's primary asset came to (FL-326). */
+export type UniversalLinkResult =
+  | { state: 'linked'; copyMissing: boolean }
+  | { state: 'already-linked' }
+  | { state: 'skipped'; reason: 'changed' | 'primary-missing' | 'primary-mismatch' | 'copy-mismatch' };
 
 /**
  * A reviewed plan checked against the library again (FL-73): what review hands back and what apply
@@ -591,6 +598,93 @@ export class PhysicalDeduplicationService extends BaseService {
     const reclaimed = await this.removeReviewedCopy(item, physicalFile.path, true);
     const generated = await this.shareGeneratedFiles(item.assetId, item.retainedAssetId);
     return { state: 'applied', reasonKey: null, message: null, reclaimedBytes: reclaimed + generated };
+  }
+
+  /**
+   * Universal storage (FL-326, spec §3.6): point one copy at its group's primary asset's file. There
+   * is no master account and no reviewed plan; the migration picks the oldest asset that verifies as
+   * the primary. Under the same lock as an applied plan:
+   *
+   * - both assets must still be active library-storage assets with the same checksum and size;
+   * - the primary's file must hash to that checksum on disk (`verified` remembers it per run);
+   * - a copy whose own file no longer holds those bytes is left alone (`copy-mismatch`);
+   * - a copy whose own file is missing is simply linked: under universal storage that is its relink.
+   *
+   * Nothing is unlinked here. The copy's own file is registered as a physical file first, so once
+   * nothing references it the migration's trashing stage moves it to the file trash. Safe to repeat:
+   * a copy already on the primary's file reads `already-linked`.
+   */
+  linkToPrimary(
+    copyAssetId: string,
+    primaryAssetId: string,
+    verified: PhysicalDeduplicationVerified = new Map(),
+  ): Promise<UniversalLinkResult> {
+    return this.databaseRepository.withLock(DatabaseLock.StorageTemplateMigration, () =>
+      this.linkToPrimaryLocked(copyAssetId, primaryAssetId, verified),
+    );
+  }
+
+  private async linkToPrimaryLocked(
+    copyAssetId: string,
+    primaryAssetId: string,
+    verified: PhysicalDeduplicationVerified,
+  ): Promise<UniversalLinkResult> {
+    const rows = await this.physicalFileRepository.getPlanEvidence([copyAssetId, primaryAssetId]);
+    const copy = rows.find((row) => row.id === copyAssetId);
+    const primary = rows.find((row) => row.id === primaryAssetId);
+    const isManaged = (row: PhysicalDeduplicationEvidenceRow | undefined): row is PhysicalDeduplicationEvidenceRow =>
+      !!row &&
+      !row.deletedAt &&
+      row.status === AssetStatus.Active &&
+      !row.isExternal &&
+      !row.libraryId &&
+      !row.isOffline &&
+      !!row.sizeInBytes;
+    if (
+      !isManaged(copy) ||
+      !isManaged(primary) ||
+      !copy.checksum.equals(primary.checksum) ||
+      Number(copy.sizeInBytes) !== Number(primary.sizeInBytes)
+    ) {
+      return { state: 'skipped', reason: 'changed' };
+    }
+    const checksum = primary.checksum.toString('hex');
+    const sizeInBytes = Number(primary.sizeInBytes);
+
+    const physicalFile = await this.physicalFileRepository.ensureOriginalPhysicalFile(primaryAssetId);
+    if (!physicalFile) {
+      return { state: 'skipped', reason: 'changed' };
+    }
+    const cacheKey = `${physicalFile.path}:${checksum}`;
+    let primaryOnDisk = verified.get(cacheKey);
+    if (!primaryOnDisk) {
+      primaryOnDisk = await this.checkOnDisk(physicalFile.path, checksum, sizeInBytes);
+      verified.set(cacheKey, primaryOnDisk);
+    }
+    if (primaryOnDisk !== 'match') {
+      return { state: 'skipped', reason: primaryOnDisk === 'missing' ? 'primary-missing' : 'primary-mismatch' };
+    }
+
+    if (copy.physicalOriginalFileId === physicalFile.id && copy.originalPath === physicalFile.path) {
+      await this.shareGeneratedFiles(copyAssetId, primaryAssetId);
+      return { state: 'already-linked' };
+    }
+
+    const copyOnDisk =
+      copy.originalPath === physicalFile.path
+        ? 'match'
+        : await this.checkOnDisk(copy.originalPath, checksum, sizeInBytes);
+    if (copyOnDisk === 'mismatch') {
+      return { state: 'skipped', reason: 'copy-mismatch' };
+    }
+    if (copyOnDisk === 'match') {
+      // Register the copy's own file, so the trashing stage can find it once nothing references it.
+      await this.physicalFileRepository.ensureOriginalPhysicalFile(copyAssetId);
+      await this.migrateSidecarFile(copyAssetId, copy.ownerId, copy.originalPath);
+    }
+    await this.physicalFileRepository.linkAssetToOriginalPhysicalFile(copyAssetId, physicalFile);
+    await this.shareGeneratedFiles(copyAssetId, primaryAssetId);
+    return { state: 'linked', copyMissing: copyOnDisk === 'missing' };
   }
 
   /* ------------------------------------------------------------------ */
