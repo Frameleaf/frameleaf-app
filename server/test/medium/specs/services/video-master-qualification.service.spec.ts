@@ -98,7 +98,7 @@ const fixture = (folder: string, width: number, height: number, frameCount = 6, 
     args.push('-map', `${track + 1}:a:0`);
   }
   if (vfr) {
-    args.push('-vf', 'select=eq(n\\,0)+eq(n\\,1)+eq(n\\,3)+eq(n\\,4)+eq(n\\,8)+eq(n\\,10)');
+    args.push('-vf', String.raw`select=eq(n\,0)+eq(n\,1)+eq(n\,3)+eq(n\,4)+eq(n\,8)+eq(n\,10)`);
   }
   ffmpeg(
     ...args,
@@ -166,7 +166,7 @@ const decoded = (file: string) => {
 };
 const expectColor = (actual: number[], expected: number[]) => {
   // CRF18 is lossy: interior colour samples allow 20/255, not byte-equality.
-  actual.forEach((value, channel) => expect(Math.abs(value - expected[channel])).toBeLessThanOrEqual(20));
+  for (const [channel, value] of actual.entries()) expect(Math.abs(value - expected[channel])).toBeLessThanOrEqual(20);
 };
 const frameIds = (file: string, x = 0.5, y = 0.5) => {
   const frames = decoded(file);
@@ -257,21 +257,21 @@ const presentation = (file: string) => {
     return start >= end ? [] : [{ start: start * audioTick, end: end * audioTick }];
   });
   expect(retained.length).toBeGreaterThan(0);
-  retained.forEach((window, index) => {
+  for (const [index, window] of retained.entries()) {
     if (index > 0) {
       expect(Math.abs(window.start - retained[index - 1].end)).toBeLessThanOrEqual(audioTick);
     }
-  });
-  audioFrames.forEach((frame) => {
+  }
+  for (const frame of audioFrames) {
     expect(Number.isSafeInteger(frame.best_effort_timestamp)).toBe(true);
     expect(Number.isSafeInteger(frame.nb_samples)).toBe(true);
     expect(frame.nb_samples).toBeGreaterThan(0);
-  });
-  video.frames.forEach((frame) => {
+  }
+  for (const frame of video.frames) {
     expect(Number.isSafeInteger(frame.best_effort_timestamp)).toBe(true);
     expect(Number.isSafeInteger(frame.duration)).toBe(true);
     expect(frame.duration).toBeGreaterThan(0);
-  });
+  }
   const firstAudio = audioFrames[0];
   const lastAudio = audioFrames.at(-1)!;
   const firstVideo = video.frames[0];
@@ -316,14 +316,14 @@ const channelAmplitudes = (file: string) => {
   );
 };
 const assertChannelIdentity = (amplitudes: number[][]) => {
-  amplitudes.forEach((lane, channel) => {
+  for (const [channel, lane] of amplitudes.entries()) {
     expect(lane[channel]).toBeGreaterThan(0.03);
-    lane.forEach((amplitude, tone) => {
+    for (const [tone, amplitude] of lane.entries()) {
       if (tone !== channel) {
         expect(amplitude).toBeLessThan(lane[channel] / 3);
       }
-    });
-  });
+    }
+  }
 };
 
 describe.sequential('VID-100 production master qualification (FL-16)', () => {
@@ -495,12 +495,13 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     const output = await master(source, [fullCrop(3840, 2160)], '4k');
     const frames = decoded(output);
     expect([frames.width, frames.height, frames.count]).toEqual([3840, 2160, 3]);
-    [
+    for (const [quadrant, [x, y]] of [
       [0.25, 0.25],
       [0.75, 0.25],
       [0.25, 0.75],
       [0.75, 0.75],
-    ].forEach(([x, y], quadrant) => expectColor(frames.sample(0, x, y), colors[quadrant]));
+    ].entries())
+      expectColor(frames.sample(0, x, y), colors[quadrant]);
     expect(frameIds(output)).toEqual([0, 1, 2]);
     expect(digest(source)).toBe(before);
   }, 120_000);
@@ -518,9 +519,8 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     const frames = decoded(output);
     expect([frames.width, frames.height, frames.count]).toEqual([600, 400, 6]);
     // Clockwise: bottom-left→top-left; top-left→top-right; bottom-right→bottom-left.
-    [2, 0, 3, 1].forEach((quadrant, index) =>
-      expectColor(frames.sample(0, index % 2 ? 0.75 : 0.25, index >= 2 ? 0.75 : 0.25), colors[quadrant]),
-    );
+    for (const [index, quadrant] of [2, 0, 3, 1].entries())
+      expectColor(frames.sample(0, index % 2 ? 0.75 : 0.25, index >= 2 ? 0.75 : 0.25), colors[quadrant]);
     expect(frameIds(output, 1 / 3, 0.6)).toEqual([0, 1, 2, 3, 4, 5]);
   }, 120_000);
 
@@ -530,7 +530,8 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     const sourceTimes = frameTimes(source);
     expect(frameIds(source)).toEqual(authored);
     expect(sourceTimes).toHaveLength(authored.length);
-    sourceTimes.forEach((time, index) => expect(Math.abs(time - authored[index] / 30)).toBeLessThan(0.000_02));
+    for (const [index, time] of sourceTimes.entries())
+      expect(Math.abs(time - authored[index] / 30)).toBeLessThan(0.00002);
     for (const rate of [1, 2]) {
       const edits: AssetEditActionItem[] = [fullCrop(320, 240)];
       if (rate === 2) {
@@ -540,7 +541,8 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
       expect(frameIds(output)).toEqual(authored);
       const times = frameTimes(output);
       expect(times).toHaveLength(authored.length);
-      times.forEach((time, index) => expect(Math.abs(time - authored[index] / (30 * rate))).toBeLessThan(0.000_02));
+      for (const [index, time] of times.entries())
+        expect(Math.abs(time - authored[index] / (30 * rate))).toBeLessThan(0.00002);
     }
   }, 120_000);
 
@@ -564,11 +566,11 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     const actual = channelAmplitudes(filtered);
     assertChannelIdentity(actual);
     assertAVPresentation(presentation(filtered), sourcePresentation);
-    actual.forEach((lane, channel) => {
+    for (const [channel, lane] of actual.entries()) {
       const ratio = lane[channel] / baseline[channel][channel];
       expect(ratio).toBeGreaterThan(0.35);
       expect(ratio).toBeLessThan(0.65);
-    });
+    }
     // Genuine native negative controls prove this oracle detects swaps, duplication and a missing lane.
     for (const [name, filter] of [
       ['swap', 'pan=5.1|FL=FR|FR=FL|FC=FC|LFE=LFE|BL=BL|BR=BR'],
@@ -641,10 +643,9 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     expect([frames.width, frames.height, frames.count]).toEqual([320, 240, 36]);
     const times = frameTimes(latest.masterPath!);
     expect(times).toHaveLength(36);
-    times.forEach((time, index) => expect(Math.abs(time - index / 30)).toBeLessThan(0.000_02));
-    [3, 2, 1, 0].forEach((quadrant, index) =>
-      expectColor(frames.sample(0, index % 2 ? 0.75 : 0.25, index >= 2 ? 0.75 : 0.25), colors[quadrant]),
-    );
+    for (const [index, time] of times.entries()) expect(Math.abs(time - index / 30)).toBeLessThan(0.00002);
+    for (const [index, quadrant] of [3, 2, 1, 0].entries())
+      expectColor(frames.sample(0, index % 2 ? 0.75 : 0.25, index >= 2 ? 0.75 : 0.25), colors[quadrant]);
     assertChannelIdentity(channelAmplitudes(latest.masterPath!));
     expect(digest(retained.masterPath!)).toBe(firstHash);
     expect(digest(source)).toBe(before);
@@ -697,7 +698,7 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
       expect((await selection(asset.id)).requestedVersionId).toBe(newer.id);
       expect(digest(current.masterPath!)).toBe(currentHash);
       expect(candidates.length).toBeGreaterThan(1);
-      candidates.forEach((candidate) => expect(existsSync(candidate)).toBe(false));
+      for (const candidate of candidates) expect(existsSync(candidate)).toBe(false);
       expect(digest(source)).toBe(originalHash);
       expect(await render(asset.id, newer.id)).toBe(JobStatus.Success);
       expect((await selection(asset.id)).currentVersionId).toBe(newer.id);
