@@ -125,7 +125,7 @@ const setup = async () => {
       ctx.get(UserRepository),
     );
   const sut = makeService();
-  const request = async (consumerRequestId = randomUUID(), seekGeneration = 0) =>
+  const request = async (consumerRequestId: string = randomUUID(), seekGeneration = 0) =>
     (
       await sut.requestForManifest(auth, manifest, {
         time: { numerator: '0', denominator: '1' },
