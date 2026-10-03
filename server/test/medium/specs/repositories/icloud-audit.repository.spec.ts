@@ -5,7 +5,7 @@ import { ICloudVerifyDto } from 'src/dtos/icloud-identity.dto.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import { AssetType, ChecksumAlgorithm, UserMetadataKey } from 'src/enum.js';
 import * as auditMigration from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
-import { AuditAuthority, ICloudAuditRepository } from 'src/repositories/icloud-audit.repository.js';
+import { AuditAuthority, ICloudAuditRepository, lockAuditOwner, publishAudit } from 'src/repositories/icloud-audit.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { ICloudIdentityRepository, recordSyncIdentity } from 'src/repositories/icloud-identity.repository.js';
@@ -234,6 +234,128 @@ describe(ICloudAuditRepository.name, () => {
       leaseToken:fixture.resource.leaseToken!,includeHidden:false,audit:fixture.authority,
       verified,outcome:'imported',proposedPath:'/managed/.icloud-recovery/should-not-publish.jpg'})).toBeUndefined();
     expect(await sync.resource(fixture.resource.id)).toMatchObject({assetId:null,promotedPath:null});
+  });
+
+  it('protects a mismatch copy using suppression saved after the worker precheck and reservation', async () => {
+    const fixture = await claimed();
+    await sql`UPDATE session SET "pinExpiresAt"=clock_timestamp()+interval '1 hour' WHERE id=${fixture.auth.session!.id}::uuid`.execute(db);
+    expect((await sut.check(fixture.authority,fixture.auth.user.id))?.private).toBe(false);
+    const differing = { ...verified, sha256:createHash('sha256').update(Buffer.alloc(bytes.length,8)).digest(),
+      sha1:createHash('sha1').update(Buffer.alloc(bytes.length,8)).digest() };
+    const recovery = new MediaRecoveryRepository(db,new ForkPrivacyRepository(db),new ForkEnrichmentRepository(db));
+    const input = {resourceId:fixture.resource.id,ownerId:fixture.auth.user.id,leaseToken:fixture.resource.leaseToken!,
+      includeHidden:false,sourceHidden:false,audit:fixture.authority};
+    const reservation = (await recovery.reserve({...input,verified:differing,outcome:'imported',
+      proposedPath:`/managed/.icloud-recovery/${fixture.resource.id}.jpg`}))!;
+    const tagId = randomUUID();
+    await sql`INSERT INTO tag (id,"userId",value) VALUES (${tagId}::uuid,${fixture.auth.user.id}::uuid,'late-private')`.execute(db);
+    await sql`INSERT INTO tag_closure (id_ancestor,id_descendant) VALUES (${tagId}::uuid,${tagId}::uuid)`.execute(db);
+    await sql`INSERT INTO tag_asset ("assetId","tagId") VALUES (${fixture.asset.id}::uuid,${tagId}::uuid)`.execute(db);
+    const value = {privacy:{suppression:{tagIds:[tagId],personIds:[],petIds:[],scope:'owned' as const}}};
+    await db.insertInto('user_metadata').values({userId:fixture.auth.user.id,key:UserMetadataKey.Preferences,value})
+      .onConflict((conflict)=>conflict.columns(['userId','key']).doUpdateSet({value})).execute();
+    const committed = await recovery.commit({...input,reservation,verified:differing,originalFileName:'private-copy.jpg',
+      type:AssetType.Image,verifyFinal:async()=>differing});
+    expect(committed.outcome).toBe('imported');
+    expect(committed.assetId).not.toBe(fixture.asset.id);
+    expect(await db.selectFrom('asset_lock').select('assetId').where('assetId','=',committed.assetId!).executeTakeFirst())
+      .toEqual({assetId:committed.assetId});
+    expect(await db.selectFrom('asset_lock').select('assetId').where('assetId','=',fixture.asset.id).executeTakeFirst()).toBeUndefined();
+    expect((await identities.identities(fixture.auth.user.id,[ASSET]))[0]).toMatchObject({sha256:verified.sha256,lastAuditResult:'mismatch',lastVerifiedAt:null});
+  });
+
+  it.each((['match','mismatch'] as const).flatMap(result =>
+    (['pin','session','operation','item','resource'] as const).map(expiry => ({result,expiry}))))
+  ('refuses $result proof after $expiry expires while the final guard waits on the original asset', async({result,expiry})=>{
+    const fixture = await claimed(true);
+    const {ctx} = newMediumService(BaseService,{database:db,real:[],mock:[]});
+    const differing = createHash('sha256').update('different').digest();
+    const {asset:copy} = await ctx.newAsset({ownerId:fixture.auth.user.id,checksum:differing,checksumAlgorithm:ChecksumAlgorithm.sha256File});
+    await sql`INSERT INTO asset_lock ("assetId",reason) VALUES (${copy.id}::uuid,'marked')`.execute(db);
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    const blocker = db.connection().execute(connection=>connection.transaction().execute(async trx=>{
+      await trx.selectFrom('asset').select('id').where('id','=',fixture.asset.id).forUpdate().execute();
+      entered.resolve(); await release.promise;
+    }));
+    await entered.promise;
+    let deadline: Date;
+    switch (expiry) {
+      case 'pin':
+      case 'session': {
+        const column = expiry==='pin'?'pinExpiresAt':'expiresAt';
+        deadline = (await sql<{deadline:Date}>`UPDATE session SET ${sql.id(column)}=clock_timestamp()+interval '2 seconds'
+          WHERE id=${fixture.auth.session!.id}::uuid RETURNING ${sql.id(column)} AS deadline`.execute(db)).rows[0].deadline;
+        break;
+      }
+      case 'operation':
+        deadline = (await sql<{deadline:Date}>`UPDATE media_operation SET "claimExpiresAt"=clock_timestamp()+interval '2 seconds'
+          WHERE id=${fixture.authority.operationId}::uuid RETURNING "claimExpiresAt" AS deadline`.execute(db)).rows[0].deadline;
+        break;
+      case 'item':
+        deadline = (await sql<{deadline:Date}>`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()+interval '2 seconds'
+          WHERE id=${fixture.claim.id}::uuid RETURNING "expiresAt" AS deadline`.execute(db)).rows[0].deadline;
+        break;
+      case 'resource':
+        deadline = (await sql<{deadline:Date}>`UPDATE immich_fork.icloud_resource SET "leaseExpiresAt"=clock_timestamp()+interval '2 seconds'
+          WHERE id=${fixture.resource.id}::uuid RETURNING "leaseExpiresAt" AS deadline`.execute(db)).rows[0].deadline;
+    }
+    let pid = 0;
+    const publishing = db.connection().execute(async connection=>{
+      pid = (await sql<{pid:number}>`SELECT pg_backend_pid()::int AS pid`.execute(connection)).rows[0].pid;
+      return connection.transaction().execute(async trx=>{
+        await lockAuditOwner(trx,fixture.auth.user.id,verified.sha256);
+        if (result==='mismatch') {
+          await sql`UPDATE immich_fork.icloud_resource SET status='committed',"assetId"=${copy.id}::uuid,sha256=${differing}
+            WHERE id=${fixture.resource.id}::uuid`.execute(trx);
+        }
+        await publishAudit(trx,fixture.authority,fixture.auth.user.id,result,
+          {id:fixture.resource.id,leaseToken:fixture.resource.leaseToken!},result==='mismatch'?copy.id:undefined);
+      });
+    });
+    // Observe the actual blocked original-asset lock: the final guard has already
+    // reconstructed live elevation, but cannot prevent its deadline passing.
+    const rejected = expect(publishing).rejects.toThrow('audit_authority_expired');
+    try {
+      let blocked = false;
+      for (let attempt=0;attempt<100&&!blocked;attempt++) {
+        if (pid) { blocked=(await sql<{blocked:boolean}>`SELECT cardinality(pg_blocking_pids(${pid}))>0 AS blocked`.execute(db)).rows[0].blocked; }
+        if (!blocked) { await new Promise(resolve=>setTimeout(resolve,10)); }
+      }
+      expect(blocked).toBe(true);
+      await sql`SELECT pg_sleep(GREATEST(0,extract(epoch FROM (${deadline}::timestamptz-clock_timestamp())))+0.05)`.execute(db);
+    } finally { release.resolve(); }
+    await blocker; await rejected;
+    expect((await sut.get(fixture.authority.auditRequestId,fixture.auth.user.id))?.result).toBe('running');
+    expect((await identities.identities(fixture.auth.user.id,[ASSET]))[0]).toMatchObject({lastAuditResult:null,lastVerifiedAt:null});
+    expect(await sync.resource(fixture.resource.id)).toMatchObject({assetId:null,status:'pending'});
+  });
+
+  it('refuses a reserved ordinary reuse destination when the source becomes suppressed after precheck',async()=>{
+    const fixture = await claimed();
+    await sql`UPDATE session SET "pinExpiresAt"=clock_timestamp()+interval '1 hour' WHERE id=${fixture.auth.session!.id}::uuid`.execute(db);
+    const differing = {...verified,sha256:createHash('sha256').update(Buffer.alloc(bytes.length,9)).digest(),
+      sha1:createHash('sha1').update(Buffer.alloc(bytes.length,9)).digest()};
+    const {ctx} = newMediumService(BaseService,{database:db,real:[],mock:[]});
+    const {asset:copy} = await ctx.newAsset({ownerId:fixture.auth.user.id,checksum:differing.sha256,checksumAlgorithm:ChecksumAlgorithm.sha256File});
+    const recovery = new MediaRecoveryRepository(db,new ForkPrivacyRepository(db),new ForkEnrichmentRepository(db));
+    const input = {resourceId:fixture.resource.id,ownerId:fixture.auth.user.id,leaseToken:fixture.resource.leaseToken!,
+      includeHidden:false,sourceHidden:false,audit:fixture.authority};
+    const candidate = (await recovery.findCandidates(fixture.auth.user.id,differing)).find(({id})=>id===copy.id)!;
+    expect(candidate.hidden).toBe(false);
+    const reservation = (await recovery.reserve({...input,verified:differing,candidate,outcome:'reused',proposedPath:copy.originalPath}))!;
+    expect(reservation).toBeDefined();
+    const tagId = randomUUID();
+    await sql`INSERT INTO tag (id,"userId",value) VALUES (${tagId}::uuid,${fixture.auth.user.id}::uuid,'late-reuse-private')`.execute(db);
+    await sql`INSERT INTO tag_closure (id_ancestor,id_descendant) VALUES (${tagId}::uuid,${tagId}::uuid)`.execute(db);
+    await sql`INSERT INTO tag_asset ("assetId","tagId") VALUES (${fixture.asset.id}::uuid,${tagId}::uuid)`.execute(db);
+    const value = {privacy:{suppression:{tagIds:[tagId],personIds:[],petIds:[],scope:'owned' as const}}};
+    await db.insertInto('user_metadata').values({userId:fixture.auth.user.id,key:UserMetadataKey.Preferences,value})
+      .onConflict((conflict)=>conflict.columns(['userId','key']).doUpdateSet({value})).execute();
+    expect(await recovery.commit({...input,reservation,verified:differing,originalFileName:'ordinary.jpg',
+      type:AssetType.Image,verifyFinal:async()=>differing})).toMatchObject({outcome:'retry',reason:'target_changed'});
+    expect((await sut.get(fixture.authority.auditRequestId,fixture.auth.user.id))?.result).toBe('running');
+    expect(await sync.resource(fixture.resource.id)).toMatchObject({assetId:null});
+    expect(await db.selectFrom('asset_lock').select('assetId').where('assetId','=',copy.id).executeTakeFirst()).toBeUndefined();
   });
 
   it('commits differing bytes as a separate resource, preserves the original identity, and finishes its outbox after authority loss', async () => {
