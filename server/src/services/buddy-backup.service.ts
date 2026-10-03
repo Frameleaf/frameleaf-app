@@ -26,7 +26,7 @@ import {
   NotificationLevel,
   NotificationType,
 } from 'src/enum.js';
-import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
+import { BuddyBackupRepository, type BuddyState } from 'src/repositories/buddy-backup.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -810,17 +810,7 @@ export class BuddyBackupService {
         const message = waiting
           ? error.message
           : 'Backup is incomplete. Check required mounts, source integrity, recovery keys, and local staging space.';
-        // Only the claim owner may settle this outage. A late response from a lost
-        // claim must not overwrite the replacement worker's durable status.
-        if (
-          waiting &&
-          !(await this.operations.requeue(id, token, {
-            delayMs: 60_000 + Math.floor(Math.random() * 60_000),
-            returnAttempt: true,
-          }))
-        )
-          return;
-        await this.repository.update((current) => ({
+        const update = (current: BuddyState): BuddyState => ({
           ...current,
           run:
             current.run?.id === id
@@ -836,8 +826,23 @@ export class BuddyBackupService {
                   error: message,
                 }
               : current.run,
-        }));
-        if (!waiting) {
+        });
+        if (waiting) {
+          // The successful requeue retains its row lock through the state write.
+          // A replacement cannot claim this same operation until publication finishes.
+          if (
+            !(await this.operations.requeue(
+              id,
+              token,
+              { delayMs: 60_000 + Math.floor(Math.random() * 60_000), returnAttempt: true },
+              async (trx) => {
+                await this.repository.update(update, trx);
+              },
+            ))
+          )
+            return;
+        } else {
+          await this.repository.update(update);
           await this.operations.fail(id, token, { error: message, errorCode: 'buddy_incomplete' }, { retry: false });
           await this.capture.reconcile();
         }
