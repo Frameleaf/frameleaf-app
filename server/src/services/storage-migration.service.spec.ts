@@ -92,6 +92,7 @@ const setup = () => {
     },
     deduplication: { linkToPrimary: vi.fn().mockResolvedValue({ state: 'linked', copyMissing: false }) },
     fileTrash: { trashOriginal: vi.fn() },
+    eventRepository: { emit: vi.fn() },
   };
   const service = new StorageMigrationService(
     mocks.logger as never,
@@ -106,6 +107,7 @@ const setup = () => {
     mocks.mediaHealthService as never,
     mocks.deduplication as never,
     mocks.fileTrash as never,
+    mocks.eventRepository as never,
   );
   return {
     service,
@@ -166,6 +168,14 @@ describe(StorageMigrationService.name, () => {
         expect.any(Function),
       );
       expect(sut.mocks.jobRepository.queue).toHaveBeenCalledWith({ name: JobName.UniversalStorageMigration, data: {} });
+      expect(sut.mocks.eventRepository.emit).not.toHaveBeenCalled();
+    });
+
+    it('announces the finished migration so existing partnerships are copied', async () => {
+      sut.setState({ stage: 'done' });
+      await expect(sut.service.handleBatch()).resolves.toBe(JobStatus.Success);
+      expect(sut.mocks.eventRepository.emit).toHaveBeenCalledWith('StorageMigrationDone');
+      expect(sut.mocks.jobRepository.queue).not.toHaveBeenCalled();
     });
 
     it('keeps the checkpoint when a batch fails, records the error and retries later', async () => {
