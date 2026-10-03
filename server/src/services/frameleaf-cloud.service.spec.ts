@@ -1048,6 +1048,29 @@ describe(FrameleafCloudService.name, () => {
       expect(nextAt - Date.now()).toBeLessThan(151_000);
     });
 
+    it('publishes the home-network fallback when remote access is off, unless LAN discovery is off (FL-218)', async () => {
+      const env = mocks.config.getEnv();
+      mocks.config.getEnv.mockReturnValue({
+        ...env,
+        port: 2283,
+        frameleafCloud: { ...env.frameleafCloud, localUrl: 'http://192.168.1.20:2290' },
+      });
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: {} }));
+      const lastBeat = () => cloud.requests.findLast(({ path }) => path === '/api/v1/instance/heartbeat')!.json();
+
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(lastBeat().endpoints).toEqual([{ kind: 'local', url: 'http://192.168.1.20:2290' }]);
+      expect(lastBeat().remoteAccess).toMatchObject({ enabled: false, relayConnected: false });
+
+      const config = metadata.get(SystemMetadataKey.SystemConfig) as Record<string, unknown> | undefined;
+      metadata.set(SystemMetadataKey.SystemConfig, { ...config, server: { lanDiscovery: false } });
+      clearConfigCache();
+      makeDue();
+      await sut.handleHeartbeat();
+      expect(lastBeat().endpoints).toEqual([]);
+    });
+
     it('checks in again after discovery’s heartbeatSec when the answer names none, clamped to 60–900 s (FC-62)', async () => {
       const discovery = cloud.discovery;
       let heartbeatSec: unknown = 600;
