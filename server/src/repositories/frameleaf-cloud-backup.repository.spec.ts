@@ -1,7 +1,7 @@
-import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
-import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
-import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
 import { MlAdmissionRefusal } from 'src/enum.js';
+import { FrameleafCloudBackupRepository } from 'src/repositories/frameleaf-cloud-backup.repository.js';
+import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
+import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 
 describe(FrameleafCloudBackupRepository.name, () => {
   const token = { accessToken: 'token', signer: {} } as never;
@@ -39,8 +39,14 @@ describe(FrameleafCloudBackupRepository.name, () => {
       ['https://api.frameleaf.test/v2/backup/locations', token],
       ['https://api.frameleaf.test/v2/backup/grant', token],
     ]);
-    requestJson.mockRejectedValue(new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 404, 'missing',
-      errorEnvelopeSchema.parse({ code: 'not-found', message: 'missing', retryable: false })));
+    requestJson.mockRejectedValue(
+      new FrameleafCloudError(
+        MlAdmissionRefusal.CloudUnavailable,
+        404,
+        'missing',
+        errorEnvelopeSchema.parse({ code: 'not-found', message: 'missing', retryable: false }),
+      ),
+    );
     await expect(sut.metadata(target)).resolves.toBeNull();
     requestJson.mockRejectedValue(new Error('connection failed'));
     await expect(sut.metadata(target)).rejects.toThrow('connection failed');

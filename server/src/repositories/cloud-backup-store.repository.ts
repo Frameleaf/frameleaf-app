@@ -159,7 +159,8 @@ export const sanitizeProviderResponse = (response: Response, action: string): Re
   }
   const reader = response.body.getReader();
   let cancelled = false;
-  const readFailure = () => new CloudBackupStoreError(`The storage response could not be read (${action}).`, null, null);
+  const readFailure = () =>
+    new CloudBackupStoreError(`The storage response could not be read (${action}).`, null, null);
   const body = new ReadableStream<Uint8Array>(
     {
       async pull(controller) {
@@ -1029,11 +1030,7 @@ export class CloudBackupStoreRepository {
         signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
       });
     } catch {
-      throw new CloudBackupStoreError(
-        `The storage provider could not be reached (${action}).`,
-        null,
-        null,
-      );
+      throw new CloudBackupStoreError(`The storage provider could not be reached (${action}).`, null, null);
     }
 
     if (!response.ok) {
