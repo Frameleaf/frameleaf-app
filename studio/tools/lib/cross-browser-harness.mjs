@@ -40,6 +40,10 @@ export function createHarness({ upstream, overrides = [] } = {}) {
   }
   const upstreamUrl = new URL(upstream);
   const observations = [];
+  // HTTP server.close() does not dispose upgraded/CONNECT sockets. Own both ends so a
+  // matrix session cannot leave an admitted tunnel alive after its harness is closed.
+  const tunnelSockets = new Set();
+  let closing = false;
 
   const server = http.createServer((req, res) => {
     handleRequest(req, res).catch((error) => {
@@ -54,6 +58,11 @@ export function createHarness({ upstream, overrides = [] } = {}) {
   // the Studio origin itself is opened; overrides never apply inside it. Any other CONNECT (HTTPS to
   // anywhere else) is refused - see module doc.
   server.on('connect', (req, socket, head) => {
+    if (closing) {
+      observations.push({ method: 'CONNECT', url: req.url, kind: 'blocked' });
+      socket.destroy();
+      return;
+    }
     if (req.url !== upstreamUrl.host) {
       observations.push({ method: 'CONNECT', url: req.url, kind: 'blocked' });
       socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
@@ -66,9 +75,13 @@ export function createHarness({ upstream, overrides = [] } = {}) {
       upstreamSocket.pipe(socket);
       socket.pipe(upstreamSocket);
     });
+    tunnelSockets.add(socket);
+    tunnelSockets.add(upstreamSocket);
     const drop = () => { socket.destroy(); upstreamSocket.destroy(); };
     upstreamSocket.on('error', drop);
     socket.on('error', drop);
+    socket.on('close', () => { tunnelSockets.delete(socket); drop(); });
+    upstreamSocket.on('close', () => { tunnelSockets.delete(upstreamSocket); drop(); });
   });
 
   async function handleRequest(req, res) {
@@ -123,7 +136,12 @@ export function createHarness({ upstream, overrides = [] } = {}) {
       return `http://127.0.0.1:${server.address().port}`;
     },
     async close() {
-      await new Promise((resolve) => server.close(resolve));
+      // Fence admission before server.close() or the tunnel sweep: an accepted HTTP
+      // connection can finish parsing CONNECT headers after shutdown has started.
+      closing = true;
+      const closed = new Promise((resolve) => server.close(resolve));
+      for (const socket of tunnelSockets) socket.destroy();
+      await closed;
     },
   };
 }
