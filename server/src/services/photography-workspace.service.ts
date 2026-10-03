@@ -188,8 +188,11 @@ export class PhotographyWorkspaceService {
         old && (old.name !== preset.name || JSON.stringify(old.watermark) !== JSON.stringify(preset.watermark));
       return { ...preset, version: changed ? old.version + 1 : preset.version };
     });
-    for (const { watermark } of brand.watermarkPresets) {
-      if (watermark.logoAssetId) await this.logo(safeAuth, watermark.logoAssetId);
+    // Omitted presets retain unavailable references privately, just like the legacy flat logo.
+    if (supplied.watermarkPresets !== undefined) {
+      for (const { watermark } of brand.watermarkPresets) {
+        if (watermark.logoAssetId) await this.logo(safeAuth, watermark.logoAssetId);
+      }
     }
     if (brand.logoAssetId) {
       try {
