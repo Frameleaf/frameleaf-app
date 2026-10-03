@@ -17,8 +17,9 @@ Decisions are one of:
 
 ## Gaps
 
-| Reported by | Journey | Decision | operationIds | Change |
-| ----------- | ------- | -------- | ------------ | ------ |
+| Reported by       | Journey                                                                                                                                                     | Decision                           | operationIds                                                   | Change                                                                                                                                                                                                                                              |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ios-live (FL-218) | Settings > Preferences: changing any preference (for example Memories) forced every session of the account to drop its mirror and re-sync the whole library | Existing endpoint, behaviour fixed | `updateMyPreferences` (and `updateMyPreferencesV3`), unchanged | The server now requests a sync reset only when the Locked rules (`privacy.suppression`: people, pets, tags, scope) actually change. Other preferences reach devices as an ordinary `UserMetadataV1` upsert. Reordering the same ids is not a change |
 
 ## Server issues found by the live tests
 
