@@ -41,7 +41,6 @@
   const options = $derived({
     visibility: AssetVisibility.Timeline,
     withStacked: true,
-    withPartners: true,
     ...(area && { bbox: formatMapArea(area) }),
   });
 </script>

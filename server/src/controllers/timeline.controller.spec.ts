@@ -97,14 +97,12 @@ describe(TimelineController.name, () => {
 
   describe('GET /timeline/highlights (FL-33)', () => {
     it('defaults to months and coerces the highlight count', async () => {
-      const { status } = await request(ctx.getHttpServer())
-        .get('/timeline/highlights')
-        .query({ highlightCount: '3', withPartners: 'true' });
+      const { status } = await request(ctx.getHttpServer()).get('/timeline/highlights').query({ highlightCount: '3' });
 
       expect(status).toBe(200);
       expect(service.getTimelineHighlights).toHaveBeenCalledWith(
         undefined,
-        expect.objectContaining({ grouping: 'month', highlightCount: 3, withPartners: true }),
+        expect.objectContaining({ grouping: 'month', highlightCount: 3 }),
       );
     });
 

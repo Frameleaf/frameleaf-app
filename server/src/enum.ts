@@ -2326,6 +2326,8 @@ export enum JobName {
   PartnerBackfill = 'PartnerBackfill',
   /** FL-326: copy one asset into a partner's library. */
   PartnerCopyAsset = 'PartnerCopyAsset',
+  /** FL-326: copy one album into a partner's library. */
+  PartnerCopyAlbum = 'PartnerCopyAlbum',
   /** FL-326: push a source's edits into every copy that still follows it. */
   PartnerPropagate = 'PartnerPropagate',
 

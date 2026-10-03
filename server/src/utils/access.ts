@@ -63,11 +63,6 @@ const checkAssetAlbumAccess = (access: AccessRepository, auth: AuthDto, ids: Set
     ? access.asset.checkAlbumAccess(auth.user.id, ids, accessPrivacy(auth))
     : access.asset.checkAlbumAccess(auth.user.id, ids);
 
-const checkAssetPartnerAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
-  accessPrivacy(auth)
-    ? access.asset.checkPartnerAccess(auth.user.id, ids, accessPrivacy(auth))
-    : access.asset.checkPartnerAccess(auth.user.id, ids);
-
 // FL-83 (AL-30b): items shared with this person one by one
 const checkAssetItemShareAccess = (access: AccessRepository, auth: AuthDto, ids: Set<string>) =>
   accessPrivacy(auth)
@@ -221,12 +216,12 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       return setUnion(isOwner, isAlbumOwner);
     }
 
+    // FL-326 (spec §4.8): partners receive their own copies, so no partner ever reads the sharer's rows
     case Permission.AssetRead: {
       const isOwner = await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
       const isAlbum = await checkAssetAlbumAccess(access, auth, setDifference(ids, isOwner));
-      const isPartner = await checkAssetPartnerAccess(access, auth, setDifference(ids, isOwner, isAlbum));
-      const isShared = await checkAssetItemShareAccess(access, auth, setDifference(ids, isOwner, isAlbum, isPartner));
-      return setUnion(isOwner, isAlbum, isPartner, isShared);
+      const isShared = await checkAssetItemShareAccess(access, auth, setDifference(ids, isOwner, isAlbum));
+      return setUnion(isOwner, isAlbum, isShared);
     }
 
     case Permission.AssetShare: {
@@ -234,9 +229,7 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       // albums by any path; the album then hides it from every session that is not the owner's elevated
       // one. An ordinary session is still refused. Shared links never carry Locked media, so the
       // shared-link service refuses it on top of this check (see SharedLinkService).
-      const isOwner = await checkAssetOwnerAccess(access, auth, ids, !!auth.session?.hasElevatedPermission);
-      const isPartner = await checkAssetPartnerAccess(access, auth, setDifference(ids, isOwner));
-      return setUnion(isOwner, isPartner);
+      return checkAssetOwnerAccess(access, auth, ids, !!auth.session?.hasElevatedPermission);
     }
 
     case Permission.AssetFileDownload: {
@@ -246,17 +239,15 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
     case Permission.AssetView: {
       const isOwner = await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
       const isAlbum = await checkAssetAlbumAccess(access, auth, setDifference(ids, isOwner));
-      const isPartner = await checkAssetPartnerAccess(access, auth, setDifference(ids, isOwner, isAlbum));
-      const isShared = await checkAssetItemShareAccess(access, auth, setDifference(ids, isOwner, isAlbum, isPartner));
-      return setUnion(isOwner, isAlbum, isPartner, isShared);
+      const isShared = await checkAssetItemShareAccess(access, auth, setDifference(ids, isOwner, isAlbum));
+      return setUnion(isOwner, isAlbum, isShared);
     }
 
     case Permission.AssetDownload: {
       const isOwner = await checkAssetOwnerAccess(access, auth, ids, auth.session?.hasElevatedPermission);
       const isAlbum = await checkAssetAlbumAccess(access, auth, setDifference(ids, isOwner));
-      const isPartner = await checkAssetPartnerAccess(access, auth, setDifference(ids, isOwner, isAlbum));
-      const isShared = await checkAssetItemShareAccess(access, auth, setDifference(ids, isOwner, isAlbum, isPartner));
-      return setUnion(isOwner, isAlbum, isPartner, isShared);
+      const isShared = await checkAssetItemShareAccess(access, auth, setDifference(ids, isOwner, isAlbum));
+      return setUnion(isOwner, isAlbum, isShared);
     }
 
     case Permission.AssetUpdate: {
@@ -395,10 +386,9 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       return await access.tag.checkOwnerAccess(auth.user.id, ids, accessPrivacy(auth), !getLockedOwnerId(auth));
     }
 
+    // FL-326 (spec §4.8): a partner's timeline is never read; what they share arrives as the viewer's copies
     case Permission.TimelineRead: {
-      const isOwner = ids.has(auth.user.id) ? new Set([auth.user.id]) : new Set<string>();
-      const isPartner = await access.timeline.checkPartnerAccess(auth.user.id, setDifference(ids, isOwner));
-      return setUnion(isOwner, isPartner);
+      return ids.has(auth.user.id) ? new Set([auth.user.id]) : new Set<string>();
     }
 
     case Permission.TimelineDownload: {

@@ -693,7 +693,6 @@ describe(AssetMediaService.name, () => {
         undefined,
       );
       expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['asset-1']));
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['asset-1']));
     });
 
     it('should download a file', async () => {
@@ -798,7 +797,7 @@ describe(AssetMediaService.name, () => {
       const me = UserFactory.create();
       const owner = UserFactory.create();
       const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
       mocks.partner.getAll.mockResolvedValue([
         getForPartner(PartnerFactory.from({ shareLocation }).sharedBy(owner).sharedWith(me).build()),
@@ -821,7 +820,7 @@ describe(AssetMediaService.name, () => {
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
     });
 
-    it('serves a partner who may see locations the original bytes', async () => {
+    it('serves anyone who can reach an original its bytes untouched (FL-326: locations are always shared)', async () => {
       const { auth, asset } = setup({ shareLocation: true });
 
       const response = await sut.downloadOriginal(auth, asset.id, {});
@@ -830,42 +829,9 @@ describe(AssetMediaService.name, () => {
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
     });
 
-    it('serves a location-free copy to a partner the owner hides locations from', async () => {
-      const { auth, asset } = setup({ shareLocation: false });
-
-      const response = await sut.downloadOriginal(auth, asset.id, {});
-
-      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/original/photo.jpg');
-      expect(response).toEqual(
-        new ImmichFileResponse({
-          path: lease.path,
-          fileName: asset.originalFileName,
-          contentType: 'image/jpeg',
-          cacheControl: CacheControl.PrivateWithCache,
-          release: lease.release,
-        }),
-      );
-    });
-
-    it('cleans an existing fullsize preview lazily for a viewer who may not see its location', async () => {
-      const { auth, asset } = setup({ shareLocation: false });
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForThumbnail.mockResolvedValue({
-        ownerId: asset.ownerId,
-        originalPath: '/original/photo.cr2',
-        originalFileName: 'photo.cr2',
-        path: '/thumbs/photo-fullsize.jpeg',
-      });
-
-      const response = await sut.viewThumbnail(auth, asset.id, { size: AssetMediaSize.FULLSIZE });
-
-      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/thumbs/photo-fullsize.jpeg');
-      expect(response).toMatchObject({ path: lease.path, release: lease.release });
-    });
-
     it('never checks thumbnails or previews, which are re-encoded without metadata', async () => {
       const { auth, asset } = setup({ shareLocation: false });
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForThumbnail.mockResolvedValue({
         ownerId: asset.ownerId,
         originalPath: '/original/photo.cr2',
@@ -878,28 +844,6 @@ describe(AssetMediaService.name, () => {
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
     });
 
-    it('strips the location of an original reached through a hidden album owner (owner default)', async () => {
-      const me = UserFactory.create();
-      const owner = UserFactory.create();
-      const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
-      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
-      mocks.partner.getLocationHiddenThroughAlbums.mockResolvedValue(new Set([asset.id]));
-      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue(lease);
-
-      await expect(sut.downloadOriginal(AuthFactory.create(me), asset.id, {})).resolves.toMatchObject({
-        path: lease.path,
-      });
-      expect(mocks.partner.getLocationHiddenThroughAlbums).toHaveBeenCalledWith(me.id, [asset.id]);
-    });
-
-    it('refuses rather than leak when the location cannot be removed', async () => {
-      const { auth, asset } = setup({ shareLocation: false });
-      mocks.metadata.acquireLocationFreeOriginal.mockRejectedValue(new Error('exiftool failed'));
-
-      await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toBeInstanceOf(ForbiddenException);
-    });
-
     it('refuses a shared link that hides metadata even when its download flag is on', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
@@ -908,23 +852,6 @@ describe(AssetMediaService.name, () => {
 
       await expect(sut.downloadOriginal(auth, asset.id, {})).rejects.toBeInstanceOf(ForbiddenException);
       expect(mocks.metadata.acquireLocationFreeOriginal).not.toHaveBeenCalled();
-    });
-
-    it('serves a location-free copy through a link the hidden partner created (review B1)', async () => {
-      const me = UserFactory.create();
-      const owner = UserFactory.create();
-      const asset = AssetFactory.create({ ownerId: owner.id, originalPath: '/original/photo.jpg' });
-      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForOriginal.mockResolvedValue({ ...asset, editedPath: null });
-      mocks.partner.getAll.mockResolvedValue([
-        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(owner).sharedWith(me).build()),
-      ]);
-      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue(lease);
-      const auth = AuthFactory.from(me).sharedLink({ userId: me.id, showExif: true, allowDownload: true }).build();
-
-      await expect(sut.downloadOriginal(auth, asset.id, {})).resolves.toMatchObject({ path: lease.path });
-      expect(mocks.partner.getAll).toHaveBeenCalledWith(me.id);
-      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/original/photo.jpg');
     });
 
     it('serves a shared link that shows metadata the file untouched', async () => {
@@ -971,7 +898,6 @@ describe(AssetMediaService.name, () => {
 
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']), undefined);
       expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
     });
 
     it('allows full-size files except through the relay while originals are not allowed there (FL-161)', async () => {
@@ -1197,40 +1123,11 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('playbackVideo', () => {
-    it('plays a location-free copy of the original for a partner the owner hides locations from', async () => {
-      const me = UserFactory.create();
-      const owner = UserFactory.create();
-      const asset = AssetFactory.create({ type: AssetType.Video, ownerId: owner.id, originalPath: '/original/v.mp4' });
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getForVideo.mockResolvedValue({
-        originalPath: asset.originalPath,
-        encodedVideoPath: null,
-        editedVideoPath: null,
-        ownerId: owner.id,
-      });
-      mocks.partner.getAll.mockResolvedValue([
-        getForPartner(PartnerFactory.from({ shareLocation: false }).sharedBy(owner).sharedWith(me).build()),
-      ]);
-      const release = vitest.fn();
-      mocks.metadata.acquireLocationFreeOriginal.mockResolvedValue({ path: '/tmp/copy.mp4', release });
-
-      await expect(sut.playbackVideo(AuthFactory.create(me), asset.id)).resolves.toEqual(
-        new ImmichFileResponse({
-          path: '/tmp/copy.mp4',
-          contentType: 'video/mp4',
-          cacheControl: CacheControl.PrivateWithCache,
-          release,
-        }),
-      );
-      expect(mocks.metadata.acquireLocationFreeOriginal).toHaveBeenCalledWith('/original/v.mp4');
-    });
-
     it('should require asset.view permissions', async () => {
       await expect(sut.playbackVideo(authStub.admin, 'id')).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']), undefined);
       expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(userStub.admin.id, new Set(['id']));
     });
 
     it('should throw an error if the video asset could not be found', async () => {

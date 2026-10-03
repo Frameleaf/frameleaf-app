@@ -303,7 +303,9 @@ describe(SearchService.name, () => {
       const response = await sut.searchMetadata(elevated, {});
       const ids = response.assets.items.map(({ id }) => id);
 
-      expect(ids).toEqual(expect.arrayContaining([ownLocked.id, partnerTimeline.id]));
+      // FL-326: a partner's own rows are never searched, Locked or not; their items arrive as copies
+      expect(ids).toEqual([ownLocked.id]);
+      expect(ids).not.toContain(partnerTimeline.id);
       expect(ids).not.toContain(partnerLocked.id);
     });
 
@@ -311,7 +313,7 @@ describe(SearchService.name, () => {
       const { sut, ctx } = setup();
       const { elevated, partnerLocked } = await partnerLibrary(ctx);
 
-      await expect(sut.searchStatistics(elevated, {})).resolves.toEqual({ total: 2 });
+      await expect(sut.searchStatistics(elevated, {})).resolves.toEqual({ total: 1 });
 
       const random = await sut.searchRandom(elevated, { size: 50 });
       expect(random.map(({ id }) => id)).not.toContain(partnerLocked.id);

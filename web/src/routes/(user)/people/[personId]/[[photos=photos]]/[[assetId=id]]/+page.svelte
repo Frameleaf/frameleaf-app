@@ -37,7 +37,7 @@
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
   let viewerInvisible = $state(false);
-  const options = $derived({ visibility: AssetVisibility.Timeline, personId: data.person.id, withPartners: true });
+  const options = $derived({ visibility: AssetVisibility.Timeline, personId: data.person.id });
 
   let previousRoute = $state<string>(Route.explore());
   let refresh = $state(0);

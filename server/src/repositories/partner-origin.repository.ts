@@ -2,7 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
-import { AssetFileType } from 'src/enum.js';
+import { AlbumKind, AssetFileType, AssetOrder } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -86,6 +86,17 @@ const COPY_REFUSAL = 'Partner sharing is unavailable during database handoff';
 const lockLibraryContent = async (trx: Transaction<DB>, ownerId: string, checksum: Buffer) => {
   const key = createHash('sha1').update(ownerId).update(checksum).digest().readBigInt64BE(0);
   await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
+};
+
+export type AlbumForCopy = {
+  id: string;
+  ownerId: string;
+  albumName: string;
+  description: string | null;
+  order: AssetOrder;
+  kind: AlbumKind;
+  albumThumbnailAssetId: string | null;
+  deletedAt: Date | null;
 };
 
 export enum PartnerBackfillState {
@@ -536,6 +547,78 @@ export class PartnerOriginRepository {
       SELECT count(*)::int AS count FROM asset WHERE "ownerId" = ${ownerId}::uuid AND "deletedAt" IS NULL
     `.execute(this.db);
     return rows[0]?.count ?? 0;
+  }
+
+  /** An album as the copy engine needs it, with its owner (spec §4.4). */
+  async getAlbumForCopy(albumId: string): Promise<AlbumForCopy | undefined> {
+    const { rows } = await sql<AlbumForCopy>`
+      SELECT album.id, owner."userId" AS "ownerId", album."albumName", album.description, album."order",
+        album.kind, album."albumThumbnailAssetId", album."deletedAt"
+      FROM album
+      JOIN album_user owner ON owner."albumId" = album.id AND owner.role = 'owner'
+      WHERE album.id = ${albumId}::uuid
+    `.execute(this.db);
+    return rows[0];
+  }
+
+  /** The plain albums `ownerId` owns, for the backfill. Collections and shared spaces are not copied. */
+  async getOwnedAlbumIds(ownerId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      SELECT album.id
+      FROM album
+      JOIN album_user owner ON owner."albumId" = album.id AND owner.role = 'owner'
+      WHERE owner."userId" = ${ownerId}::uuid AND album."deletedAt" IS NULL AND album.kind = 'album'
+      ORDER BY album.id
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
+
+  /** Whether `userId` already sees this album (any membership, owners included). */
+  async isAlbumMember(albumId: string, userId: string): Promise<boolean> {
+    const { rows } = await sql<{ present: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM album_user WHERE "albumId" = ${albumId}::uuid AND "userId" = ${userId}::uuid
+      ) AS present
+    `.execute(this.db);
+    return rows[0]?.present ?? false;
+  }
+
+  /** `ownerId`'s copies of the items in `sourceAlbumId`, in the source album's order of addition. */
+  async getAlbumAssetCopyIds(sourceAlbumId: string, ownerId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      SELECT DISTINCT origin."assetId" AS id
+      FROM album_asset
+      JOIN immich_fork.asset_origin origin ON origin."sourceAssetId" = album_asset."assetId"
+        AND origin."ownerId" = ${ownerId}::uuid
+      JOIN asset copy ON copy.id = origin."assetId" AND copy."deletedAt" IS NULL
+      WHERE album_asset."albumId" = ${sourceAlbumId}::uuid
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
+
+  /** The items in an album. */
+  async getAlbumAssetIds(albumId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      SELECT "assetId" AS id FROM album_asset WHERE "albumId" = ${albumId}::uuid
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
+
+  /**
+   * `ownerId`'s album copies whose membership still follows a source album holding `sourceAssetId`: a
+   * new copy of that item belongs in them (spec §4.4).
+   */
+  async getFollowingAlbumCopiesHolding(sourceAssetId: string, ownerId: string): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      SELECT origin."albumId" AS id
+      FROM immich_fork.album_origin origin
+      JOIN album copy ON copy.id = origin."albumId" AND copy."deletedAt" IS NULL
+      JOIN album_asset ON album_asset."albumId" = origin."sourceAlbumId"
+        AND album_asset."assetId" = ${sourceAssetId}::uuid
+      WHERE origin."ownerId" = ${ownerId}::uuid AND origin.following
+        AND NOT (${AlbumOriginField.Membership} = ANY(origin."overriddenFields"))
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
   }
 
   async getBackfill(sharedById: string, sharedWithId: string): Promise<PartnerBackfillRow | undefined> {

@@ -227,7 +227,7 @@ describe(EnrichmentPlanService.name, () => {
     it("never previews media that is not the caller's own, such as a partner's", async () => {
       const assetIds = [newUuid()];
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set(assetIds));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set(assetIds));
 
       await expect(sut.preview(authStub.admin, { assetIds })).rejects.toThrow(BadRequestException);
       expect(enrichment.previewDescription).not.toHaveBeenCalled();

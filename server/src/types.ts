@@ -337,6 +337,13 @@ export interface IPartnerCopyAssetJob {
   partnerSharedById: string;
 }
 
+/** FL-326: copy `sourceAlbumId` into `targetOwnerId`'s library because `partnerSharedById` shares with them. */
+export interface IPartnerCopyAlbumJob {
+  sourceAlbumId: string;
+  targetOwnerId: string;
+  partnerSharedById: string;
+}
+
 /** FL-326: push `fields` of a changed source into its following copies (and theirs, onward). */
 export interface IPartnerPropagateJob {
   kind: 'asset' | 'album';
@@ -631,6 +638,7 @@ export type JobItem =
   // FL-326: partner sharing v2 copies
   | { name: JobName.PartnerBackfill; data: IPartnerBackfillJob }
   | { name: JobName.PartnerCopyAsset; data: IPartnerCopyAssetJob }
+  | { name: JobName.PartnerCopyAlbum; data: IPartnerCopyAlbumJob }
   | { name: JobName.PartnerPropagate; data: IPartnerPropagateJob }
 
   // OCR

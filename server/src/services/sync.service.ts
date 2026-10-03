@@ -13,10 +13,10 @@ import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.ta
 import { BaseService } from 'src/services/base.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { getLocationHiddenPartnerIds, hideLocation } from 'src/utils/partner-location.js';
+
 import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
-import { SerializeOptions, fromAck, mapPartnerAsset, mapSyncAssetV2, serialize, toAck } from 'src/utils/sync.js';
+import { SerializeOptions, fromAck, mapSyncAssetV2, serialize, toAck } from 'src/utils/sync.js';
 
 const parseAssetBootstrapAck = (ack: string, type = SyncEntityType.AssetBootstrapV1) => {
   const parts = ack.split('|');
@@ -60,10 +60,6 @@ type CheckpointMap = Partial<Record<SyncEntityType, SyncAck>>;
 const COMPLETE_ID = 'complete';
 const MAX_DAYS = 30;
 const MAX_DURATION = Duration.fromObject({ days: MAX_DAYS });
-
-/** Exif for a partner's Locked asset (FL-34): only the asset id, every other field blanked. */
-const withoutLockedExif = <T extends { assetId: string }>(exif: T): T =>
-  Object.fromEntries(Object.keys(exif).map((key) => [key, key === 'assetId' ? exif.assetId : null])) as T;
 
 const isEntityBackfillComplete = (createId: string, checkpoint: SyncAck | undefined): boolean =>
   createId === checkpoint?.updateId && checkpoint.extraId === COMPLETE_ID;
@@ -282,7 +278,9 @@ export class SyncService extends BaseService {
 
     const handlers: Record<SyncRequestType, () => Promise<void>> = {
       [SyncRequestType.AlbumAssetAccessV1]: () => this.syncTags(auth, response, 'albumAsset'),
-      [SyncRequestType.PartnerAssetAccessV1]: () => this.syncTags(auth, response, 'partnerAsset'),
+      // FL-326 (spec §4.8): partners receive their own copies through their own asset streams; the
+      // partner asset streams stay for older clients and send nothing
+      [SyncRequestType.PartnerAssetAccessV1]: () => Promise.resolve(),
       [SyncRequestType.PinnedCollectionEventsV1]: () => this.syncTags(auth, response, 'pin'),
       [SyncRequestType.AssetTrashStatesV1]: () => this.syncTags(auth, response, 'trash'),
       [SyncRequestType.DuplicateGroupsV1]: () => this.syncTags(auth, response, 'duplicate'),
@@ -308,10 +306,9 @@ export class SyncService extends BaseService {
       [SyncRequestType.AssetsV3]: () => this.syncAssetsV3(options, response, checkpointMap),
       [SyncRequestType.AssetExifsV1]: () => this.syncAssetExifsV1(options, response, checkpointMap),
       [SyncRequestType.AssetEditsV1]: () => this.syncAssetEditsV1(options, response, checkpointMap),
-      [SyncRequestType.PartnerAssetsV2]: () => this.syncPartnerAssetsV2(options, response, checkpointMap, session.id),
+      [SyncRequestType.PartnerAssetsV2]: () => Promise.resolve(),
       [SyncRequestType.AssetMetadataV1]: () => this.syncAssetMetadataV1(options, response, checkpointMap, auth),
-      [SyncRequestType.PartnerAssetExifsV1]: () =>
-        this.syncPartnerAssetExifsV1(options, response, checkpointMap, session.id),
+      [SyncRequestType.PartnerAssetExifsV1]: () => Promise.resolve(),
       [SyncRequestType.AlbumsV1]: () => this.syncAlbumsV1(options, response, checkpointMap),
       [SyncRequestType.AlbumsV2]: () => this.syncAlbumsV2(options, response, checkpointMap),
       [SyncRequestType.AlbumsV3]: () => this.syncAlbumsV3(options, response, checkpointMap),
@@ -323,7 +320,7 @@ export class SyncService extends BaseService {
       [SyncRequestType.MemoriesV1]: () => this.syncMemoriesV1(options, response, checkpointMap),
       [SyncRequestType.MemoryToAssetsV1]: () => this.syncMemoryAssetsV1(options, response, checkpointMap),
       [SyncRequestType.StacksV1]: () => this.syncStackV1(options, response, checkpointMap),
-      [SyncRequestType.PartnerStacksV1]: () => this.syncPartnerStackV1(options, response, checkpointMap, session.id),
+      [SyncRequestType.PartnerStacksV1]: () => Promise.resolve(),
       [SyncRequestType.PeopleV1]: () => this.syncPeopleV1(options, response, checkpointMap),
       [SyncRequestType.AssetFacesV2]: () => this.syncAssetFacesV2(options, response, checkpointMap),
       [SyncRequestType.AssetFacesV3]: () => this.syncAssetFacesV3(options, response, checkpointMap),
@@ -506,65 +503,6 @@ export class SyncService extends BaseService {
     );
   }
 
-  private async syncPartnerAssetsV2(
-    options: SyncQueryOptions,
-    response: Writable,
-    checkpointMap: CheckpointMap,
-    sessionId: string,
-  ) {
-    const deleteType = SyncEntityType.PartnerAssetDeleteV1;
-    const deletes = this.syncRepository.partnerAsset.getDeletes({ ...options, ack: checkpointMap[deleteType] });
-    for await (const { id, ...data } of deletes) {
-      await send(response, { type: deleteType, ids: [id], data });
-    }
-
-    const backfillType = SyncEntityType.PartnerAssetBackfillV2;
-    const backfillCheckpoint = checkpointMap[backfillType];
-    const partners = await this.syncRepository.partner.getCreatedAfter({
-      ...options,
-      afterCreateId: backfillCheckpoint?.updateId,
-    });
-    const upsertType = SyncEntityType.PartnerAssetV2;
-    const upsertCheckpoint = checkpointMap[upsertType];
-    if (upsertCheckpoint) {
-      const endId = upsertCheckpoint.updateId;
-
-      for (const partner of partners) {
-        const createId = partner.createId;
-        if (isEntityBackfillComplete(createId, backfillCheckpoint)) {
-          continue;
-        }
-
-        const startId = getStartId(createId, backfillCheckpoint);
-        const backfill = this.syncRepository.partnerAsset.getBackfill(
-          { ...options, afterUpdateId: startId, beforeUpdateId: endId },
-          partner.sharedById,
-        );
-
-        for await (const { updateId, ...data } of backfill) {
-          await send(response, {
-            type: backfillType,
-            ids: [createId, updateId],
-            data: mapPartnerAsset(data),
-          });
-        }
-
-        await sendEntityBackfillCompleteAck(response, backfillType, createId);
-      }
-    } else if (partners.length > 0) {
-      await this.upsertBackfillCheckpoint({
-        type: backfillType,
-        sessionId,
-        createId: partners.at(-1)!.createId,
-      });
-    }
-
-    const upserts = this.syncRepository.partnerAsset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
-    for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data: mapPartnerAsset(data) });
-    }
-  }
-
   private async syncAssetExifsV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
     const upsertType = SyncEntityType.AssetExifV1;
     const upserts = this.syncRepository.assetExif.getUpserts({ ...options, ack: checkpointMap[upsertType] });
@@ -585,71 +523,6 @@ export class SyncService extends BaseService {
 
     for await (const { updateId, ...data } of upserts) {
       await send(response, { type: upsertType, ids: [updateId], data });
-    }
-  }
-
-  private async syncPartnerAssetExifsV1(
-    options: SyncQueryOptions,
-    response: Writable,
-    checkpointMap: CheckpointMap,
-    sessionId: string,
-  ) {
-    const backfillType = SyncEntityType.PartnerAssetExifBackfillV1;
-    const backfillCheckpoint = checkpointMap[backfillType];
-    const partners = await this.syncRepository.partner.getCreatedAfter({
-      ...options,
-      afterCreateId: backfillCheckpoint?.updateId,
-    });
-
-    const upsertType = SyncEntityType.PartnerAssetExifV1;
-    const upsertCheckpoint = checkpointMap[upsertType];
-    if (upsertCheckpoint) {
-      const endId = upsertCheckpoint.updateId;
-
-      for (const partner of partners) {
-        const createId = partner.createId;
-        if (isEntityBackfillComplete(createId, backfillCheckpoint)) {
-          continue;
-        }
-
-        const startId = getStartId(createId, backfillCheckpoint);
-        const backfill = this.syncRepository.partnerAssetExif.getBackfill(
-          { ...options, afterUpdateId: startId, beforeUpdateId: endId },
-          partner.sharedById,
-        );
-
-        // FL-54: a sharer who hides locations from this user never streams coordinates or place names
-        for await (const { updateId, isLocked, ...data } of backfill) {
-          const exif = isLocked ? withoutLockedExif(data) : data;
-          await send(response, {
-            type: backfillType,
-            ids: [partner.createId, updateId],
-            data: partner.shareLocation ? exif : hideLocation(exif),
-          });
-        }
-
-        await sendEntityBackfillCompleteAck(response, backfillType, partner.createId);
-      }
-    } else if (partners.length > 0) {
-      await this.upsertBackfillCheckpoint({
-        type: backfillType,
-        sessionId,
-        createId: partners.at(-1)!.createId,
-      });
-    }
-
-    const locationHiddenOwnerIds = await getLocationHiddenPartnerIds({
-      userId: options.userId,
-      repository: this.partnerRepository,
-    });
-    const upserts = this.syncRepository.partnerAssetExif.getUpserts({ ...options, ack: checkpointMap[upsertType] });
-    for await (const { updateId, ownerId, isLocked, ...data } of upserts) {
-      const exif = isLocked ? withoutLockedExif(data) : data;
-      await send(response, {
-        type: upsertType,
-        ids: [updateId],
-        data: locationHiddenOwnerIds.has(ownerId) ? hideLocation(exif) : exif,
-      });
     }
   }
 
@@ -899,12 +772,8 @@ export class SyncService extends BaseService {
           options.userId,
         );
 
-        for await (const { updateId, locationHidden, ...data } of backfill) {
-          await send(response, {
-            type: backfillType,
-            ids: [createId, updateId],
-            data: locationHidden ? hideLocation(data) : data,
-          });
+        for await (const { updateId, ...data } of backfill) {
+          await send(response, { type: backfillType, ids: [createId, updateId], data });
         }
 
         await sendEntityBackfillCompleteAck(response, backfillType, createId);
@@ -922,14 +791,14 @@ export class SyncService extends BaseService {
         { ...options, ack: upsertCheckpoint },
         createCheckpoint,
       );
-      for await (const { updateId, locationHidden, ...data } of updates) {
-        await send(response, { type: updateType, ids: [updateId], data: locationHidden ? hideLocation(data) : data });
+      for await (const { updateId, ...data } of updates) {
+        await send(response, { type: updateType, ids: [updateId], data });
       }
     }
 
     const creates = this.syncRepository.albumAssetExif.getCreates({ ...options, ack: createCheckpoint });
     let isFirst = true;
-    for await (const { updateId, locationHidden, ...data } of creates) {
+    for await (const { updateId, ...data } of creates) {
       if (isFirst) {
         await send(response, {
           type: SyncEntityType.SyncAckV1,
@@ -939,9 +808,7 @@ export class SyncService extends BaseService {
         });
         isFirst = false;
       }
-      // FL-54: an owner who hides locations from this user, directly or from the album's owner, never
-      // streams coordinates or place names; the row itself still arrives, as in the partner stream
-      await send(response, { type: createType, ids: [updateId], data: locationHidden ? hideLocation(data) : data });
+      await send(response, { type: createType, ids: [updateId], data });
     }
   }
 
@@ -1038,65 +905,6 @@ export class SyncService extends BaseService {
 
     const upsertType = SyncEntityType.StackV1;
     const upserts = this.syncRepository.stack.getUpserts({ ...options, ack: checkpointMap[upsertType] });
-    for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data });
-    }
-  }
-
-  private async syncPartnerStackV1(
-    options: SyncQueryOptions,
-    response: Writable,
-    checkpointMap: CheckpointMap,
-    sessionId: string,
-  ) {
-    const deleteType = SyncEntityType.PartnerStackDeleteV1;
-    const deletes = this.syncRepository.partnerStack.getDeletes({ ...options, ack: checkpointMap[deleteType] });
-    for await (const { id, ...data } of deletes) {
-      await send(response, { type: deleteType, ids: [id], data });
-    }
-
-    const backfillType = SyncEntityType.PartnerStackBackfillV1;
-    const backfillCheckpoint = checkpointMap[backfillType];
-    const partners = await this.syncRepository.partner.getCreatedAfter({
-      ...options,
-      afterCreateId: backfillCheckpoint?.updateId,
-    });
-    const upsertType = SyncEntityType.PartnerStackV1;
-    const upsertCheckpoint = checkpointMap[upsertType];
-    if (upsertCheckpoint) {
-      const endId = upsertCheckpoint.updateId;
-
-      for (const partner of partners) {
-        const createId = partner.createId;
-        if (isEntityBackfillComplete(createId, backfillCheckpoint)) {
-          continue;
-        }
-
-        const startId = getStartId(createId, backfillCheckpoint);
-        const backfill = this.syncRepository.partnerStack.getBackfill(
-          { ...options, afterUpdateId: startId, beforeUpdateId: endId },
-          partner.sharedById,
-        );
-
-        for await (const { updateId, ...data } of backfill) {
-          await send(response, {
-            type: backfillType,
-            ids: [createId, updateId],
-            data,
-          });
-        }
-
-        await sendEntityBackfillCompleteAck(response, backfillType, createId);
-      }
-    } else if (partners.length > 0) {
-      await this.upsertBackfillCheckpoint({
-        type: backfillType,
-        sessionId,
-        createId: partners.at(-1)!.createId,
-      });
-    }
-
-    const upserts = this.syncRepository.partnerStack.getUpserts({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
       await send(response, { type: upsertType, ids: [updateId], data });
     }

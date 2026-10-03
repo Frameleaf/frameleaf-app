@@ -206,16 +206,11 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
     expect(locked).toEqual({ total: 1, facets: [{ fieldName: 'city', counts: [{ value: 'LockedCity', count: 1 }] }] });
   });
 
-  it("counts partners' shared media without naming their people or tags, their Locked media or hidden places", async () => {
+  it("never counts a partner's own media, their people, tags, Locked media or places (FL-326)", async () => {
     const { sut, ctx } = setup();
     const { user } = await ctx.newUser();
     const { user: partner } = await ctx.newUser();
-    await ctx.get(PartnerRepository).create({
-      sharedById: partner.id,
-      sharedWithId: user.id,
-      inTimeline: true,
-      shareLocation: false,
-    });
+    await ctx.get(PartnerRepository).create({ sharedById: partner.id, sharedWithId: user.id });
 
     await newItem(ctx, user.id, { city: 'Lisbon' });
     const shared = await newItem(ctx, partner.id, { city: 'PartnerHome', country: 'PartnerLand' });
@@ -226,10 +221,11 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
     const [partnerTag] = await upsertTags(ctx.get(TagRepository), { userId: partner.id, tags: ['Partner Secret'] });
     await ctx.newTagAsset({ tagIds: [partnerTag.id], assetIds: [shared.id] });
 
+    // FL-326: a partner's own rows are never counted; their items arrive as the viewer's copies
     const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
     const facets = await sut.searchFacets(elevated, {});
-    expect(facets.total).toBe(2);
-    expect(sum(facets, SearchFacetField.Type)).toBe(2);
+    expect(facets.total).toBe(1);
+    expect(sum(facets, SearchFacetField.Type)).toBe(1);
     expect(counts(facets, SearchFacetField.City)).toEqual([{ value: 'Lisbon', count: 1 }]);
     expect(counts(facets, SearchFacetField.Country)).toEqual([]);
     expect(counts(facets, SearchFacetField.People)).toEqual([]);
@@ -240,13 +236,9 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
   it('names no person or tag the owner keeps Locked while the session is locked', async () => {
     const { sut, ctx } = setup();
     const { user } = await ctx.newUser();
-    const { user: partner } = await ctx.newUser();
-    await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id });
-
-    // the Locked rules are scoped to owned media, so a partner's photo of the same person stays visible
     const { person } = await ctx.newPerson({ ownerId: user.id, name: 'Kept Private' });
-    const partnerAsset = await newItem(ctx, partner.id);
-    await ctx.newAssetFace({ assetId: partnerAsset.id, personGroupId: person.personGroupId });
+    const portrait = await newItem(ctx, user.id);
+    await ctx.newAssetFace({ assetId: portrait.id, personGroupId: person.personGroupId });
     const [tag] = await upsertTags(ctx.get(TagRepository), { userId: user.id, tags: ['Private'] });
     const ownAsset = await newItem(ctx, user.id);
     await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [ownAsset.id] });
@@ -353,12 +345,12 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
     expect(counts(plain, SearchFacetField.City)).toEqual([{ value: 'Lisbon', count: 2 }]);
   });
 
-  it('drops trashed items and a revoked partner from both the Explore counts and the searches they open (FL-50)', async () => {
+  it("drops trashed items from the Explore counts and the searches they open, and never a partner's rows (FL-50, FL-326)", async () => {
     const { sut, ctx } = setup();
     const { user } = await ctx.newUser();
     const { user: partner } = await ctx.newUser();
     const partnership = { sharedById: partner.id, sharedWithId: user.id };
-    await ctx.get(PartnerRepository).create({ ...partnership, inTimeline: true, shareLocation: true });
+    await ctx.get(PartnerRepository).create(partnership);
 
     const own = await newItem(ctx, user.id, { city: 'Lisbon' });
     const trashed = await newItem(ctx, user.id, { city: 'Lisbon' });
@@ -385,20 +377,17 @@ describe('SearchService facets, histogram and smart counts (FL-49)', () => {
       };
     };
 
+    // FL-326: a partner's own rows never count; their items arrive as the viewer's copies
     const before = await explore();
-    expect(before.card).toEqual([{ value: 'Lisbon', count: 2, coverAssetId: expect.any(String) }]);
-    expect(before.placeResults).toEqual([own.id, shared.id].toSorted());
-    expect(before.placeCount).toBe(2);
-    expect(before.photoCount).toBe(2);
-    expect(before.photoResults).toBe(2);
+    expect(before.card).toEqual([{ value: 'Lisbon', count: 1, coverAssetId: own.id }]);
+    expect(before.placeResults).toEqual([own.id]);
+    expect(before.placeCount).toBe(1);
+    expect(before.photoCount).toBe(1);
+    expect(before.photoResults).toBe(1);
+    expect(before.placeResults).not.toContain(shared.id);
 
-    // the partner stops sharing: their items leave the card and every search it opens at once
+    // ending the partnership changes nothing here
     await ctx.get(PartnerRepository).remove(partnership);
-    const after = await explore();
-    expect(after.card).toEqual([{ value: 'Lisbon', count: 1, coverAssetId: own.id }]);
-    expect(after.placeResults).toEqual([own.id]);
-    expect(after.placeCount).toBe(1);
-    expect(after.photoCount).toBe(1);
-    expect(after.photoResults).toBe(1);
+    await expect(explore()).resolves.toEqual(before);
   });
 });

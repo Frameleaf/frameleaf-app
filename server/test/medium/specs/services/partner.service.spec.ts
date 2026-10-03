@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { JobName } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -44,15 +45,21 @@ describe(PartnerService.name, () => {
       );
     });
 
-    it('shares a new partnership without locations until the sharer turns them on (FL-146 AL-40)', async () => {
+    it('starts copying the library to the new partner, with no settings to choose (FL-326)', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const { user: partner } = await ctx.newUser();
       const auth = factory.auth({ user });
 
-      await expect(sut.create(auth, { sharedWithId: partner.id })).resolves.toMatchObject({ shareLocation: false });
-      await expect(sut.update(auth, partner.id, { shareLocation: true })).resolves.toMatchObject({
-        shareLocation: true,
+      const response = await sut.create(auth, { sharedWithId: partner.id });
+      expect(response).not.toHaveProperty('shareLocation');
+      expect(response).not.toHaveProperty('inTimeline');
+      await expect(ctx.get(PartnerOriginRepository).getBackfill(user.id, partner.id)).resolves.toMatchObject({
+        state: 'pending',
+      });
+      expect(ctx.getMock(JobRepository).queue).toHaveBeenCalledWith({
+        name: JobName.PartnerBackfill,
+        data: { sharedById: user.id, sharedWithId: partner.id },
       });
     });
 
@@ -106,8 +113,8 @@ describe(PartnerService.name, () => {
       const { user: partner } = await ctx.newUser();
       await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id });
 
-      await expect(sut.update(factory.auth({ user }), partner.id, { inTimeline: false })).resolves.toEqual(
-        expect.objectContaining({ id: partner.id, inTimeline: false }),
+      await expect(sut.update(factory.auth({ user }), partner.id, {})).resolves.toEqual(
+        expect.objectContaining({ id: partner.id }),
       );
     });
 
@@ -118,7 +125,7 @@ describe(PartnerService.name, () => {
       const { user: other } = await ctx.newUser();
       await ctx.newPartner({ sharedById: partner.id, sharedWithId: other.id });
 
-      await expect(sut.update(factory.auth({ user }), partner.id, { inTimeline: false })).rejects.toThrow(
+      await expect(sut.update(factory.auth({ user }), partner.id, {})).rejects.toThrow(
         'Not found or no partner.update access',
       );
     });
