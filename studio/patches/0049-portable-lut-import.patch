@@ -1,0 +1,159 @@
+--- a/src/features/effects/components/panels/gpu-lut-panel.tsx
++++ b/src/features/effects/components/panels/gpu-lut-panel.tsx
+@@ -65,31 +65,57 @@
+   const resetFileLabel = `${t('effects.panel.resetToDefaults')}: ${fileLabel}`
+ 
+   const handleImport = useCallback(async () => {
+-    if (typeof window.showOpenFilePicker !== 'function') {
+-      setImportError(t('effects.lut.unsupportedBrowser'))
+-      return
++    let file: File | undefined
++    if (typeof window.showOpenFilePicker === 'function') {
++      let handles: FileSystemFileHandle[]
++      try {
++        handles = await window.showOpenFilePicker({
++          multiple: false,
++          types: [
++            {
++              description: '3D LUT',
++              accept: { 'application/octet-stream': ['.cube'] },
++            },
++          ],
++        })
++      } catch {
++        return // user cancelled the picker
++      }
++
++      const handle = handles[0]
++      if (!handle) return
++      try {
++        file = await handle.getFile()
++      } catch (error) {
++        logger.warn('Failed to import .cube LUT:', error)
++        setImportError(t('effects.lut.importFailed'))
++        return
++      }
++    } else {
++      const input = document.createElement('input')
++      input.type = 'file'
++      input.accept = '.cube'
++      file = await new Promise<File | undefined>((resolve) => {
++        const finish = (selected?: File) => {
++          input.onchange = null
++          input.oncancel = null
++          input.remove()
++          resolve(selected)
++        }
++        input.onchange = () => finish(input.files?.[0])
++        input.oncancel = () => finish()
++        try {
++          input.click()
++        } catch (error) {
++          finish()
++          logger.warn('Failed to open .cube LUT picker:', error)
++          setImportError(t('effects.lut.importFailed'))
++        }
++      })
+     }
+-
+-    let handles: FileSystemFileHandle[]
++    if (!file) return
++
+     try {
+-      handles = await window.showOpenFilePicker({
+-        multiple: false,
+-        types: [
+-          {
+-            description: '3D LUT',
+-            accept: { 'application/octet-stream': ['.cube'] },
+-          },
+-        ],
+-      })
+-    } catch {
+-      return // user cancelled the picker
+-    }
+-
+-    const handle = handles[0]
+-    if (!handle) return
+-
+-    try {
+-      const file = await handle.getFile()
+       const parsed = resampleCubeLut(parseCubeLut(await file.text()), MAX_EMBEDDED_LUT_SIZE)
+       onParamsBatchChange(effect.id, {
+         lutName: parsed.title ?? file.name.replace(/\.cube$/i, ''),
+--- a/src/features/effects/components/panels/gpu-lut-panel.test.tsx
++++ b/src/features/effects/components/panels/gpu-lut-panel.test.tsx
+@@ -1,7 +1,8 @@
+-import { fireEvent, render, screen } from '@testing-library/react'
+-import { describe, expect, it, vi } from 'vite-plus/test'
++import { fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { getGpuEffect, getGpuEffectDefaultParams } from '@/infrastructure/gpu-effects'
+ import type { GpuEffect, ItemEffect } from '@/types/effects'
++import { createIdentityLutData, decodeLutData } from '@/infrastructure/gpu-effects/lut/cube-lut'
+ import { GpuLutPanel } from './gpu-lut-panel'
+ 
+ const definition = getGpuEffect('gpu-lut')!
+@@ -54,3 +55,62 @@
+     })
+   })
+ })
++
++describe('GpuLutPanel portable file import', () => {
++  afterEach(() => {
++    vi.restoreAllMocks()
++    vi.unstubAllGlobals()
++  })
++
++  function selectCube(text: string) {
++    vi.stubGlobal('showOpenFilePicker', undefined)
++    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (
++      this: HTMLInputElement,
++    ) {
++      expect(this.type).toBe('file')
++      expect(this.accept).toBe('.cube')
++      const file = new File([text], 'portable.cube')
++      Object.defineProperty(file, 'text', { value: async () => text })
++      fireEvent.change(this, { target: { files: [file] } })
++    })
++  }
++
++  it('embeds a valid cube when the native picker is unavailable', async () => {
++    selectCube(
++      [
++        'TITLE "Portable LUT"',
++        'LUT_3D_SIZE 2',
++        '0 0 0',
++        '1 0 0',
++        '0 1 0',
++        '1 1 0',
++        '0 0 1',
++        '1 0 1',
++        '0 1 1',
++        '1 1 1',
++      ].join('\n'),
++    )
++    const props = makeProps()
++    render(<GpuLutPanel {...props} />)
++    fireEvent.click(screen.getByTitle('Load a .cube 3D LUT file'))
++    await waitFor(() => expect(props.onParamsBatchChange).toHaveBeenCalledOnce())
++    const [effectId, params] = props.onParamsBatchChange.mock.calls[0]!
++    expect(effectId).toBe('lut-1')
++    expect(params).toEqual({
++      lutName: 'Portable LUT',
++      lutSize: '2',
++      lutData: expect.any(String),
++    })
++    expect(decodeLutData(params.lutData)).toEqual(createIdentityLutData(2))
++  })
++
++  it('rejects invalid cube data without changing the existing LUT', async () => {
++    selectCube('LUT_3D_SIZE 2\n0 0 0')
++    const props = makeProps()
++    render(<GpuLutPanel {...props} />)
++    fireEvent.click(screen.getByTitle('Load a .cube 3D LUT file'))
++    expect(await screen.findByText('Could not read this .cube file')).toBeInTheDocument()
++    expect(props.onParamsBatchChange).not.toHaveBeenCalled()
++    expect(props.gpuEffect.params.lutData).toBe('encoded-data')
++  })
++})
