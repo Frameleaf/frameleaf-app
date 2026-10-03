@@ -19493,6 +19493,70 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/icloud-sync/connections/{id}/identity-reuse-authority": {
+      "patch": {
+        "operationId": "updateICloudIdentityReuseAuthority",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudIdentityReuseAuthorityDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudIdentityReuseAuthorityStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/icloud-sync/connections/{id}/inventory": {
       "get": {
         "operationId": "getICloudInventory",
@@ -25906,6 +25970,86 @@
         ],
         "x-immich-permission": "partner.create",
         "x-immich-state": "Stable"
+      }
+    },
+    "/partners/locked-notice": {
+      "get": {
+        "description": "Whether to show the one-time notice that Locked items arrived from a partner and stay hidden until you set a PIN.",
+        "operationId": "getPartnerLockedNotice",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerLockedNoticeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the Locked partner items notice",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.read"
+      },
+      "put": {
+        "description": "Dismisses the one-time notice about Locked partner items for good. The items stay locked.",
+        "operationId": "dismissPartnerLockedNotice",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerLockedNoticeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Dismiss the Locked partner items notice",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.update"
       }
     },
     "/partners/{id}": {
@@ -52222,6 +52366,10 @@
           "order": {
             "$ref": "#/components/schemas/AssetOrder"
           },
+          "origin": {
+            "$ref": "#/components/schemas/PartnerOriginDto",
+            "description": "FL-326: present on your own album when partner sharing copied it from another library"
+          },
           "parentId": {
             "description": "Collection this album belongs to (null = top-level)",
             "nullable": true,
@@ -57790,6 +57938,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "origin": {
+            "$ref": "#/components/schemas/PartnerOriginDto",
+            "description": "FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
+          },
           "originalFileName": {
             "description": "Original file name",
             "type": "string"
@@ -59140,6 +59292,10 @@
             "description": "The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by \"local\" days and months.",
             "format": "date-time",
             "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/PartnerOriginDto",
+            "description": "FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
           },
           "originalFileName": {
             "description": "Original file name",
@@ -62113,6 +62269,33 @@
         ],
         "type": "object"
       },
+      "CloudBackupLocationDto": {
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "cityId": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city",
+          "cityId",
+          "country",
+          "countryCode",
+          "locationId"
+        ],
+        "type": "object"
+      },
       "CloudBackupManagedDto": {
         "properties": {
           "allowanceBytes": {
@@ -62126,6 +62309,14 @@
             "minimum": -9007199254740991,
             "nullable": true,
             "type": "integer"
+          },
+          "location": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupLocationDto"
+              }
+            ],
+            "nullable": true
           },
           "measuredAt": {
             "nullable": true,
@@ -62155,6 +62346,12 @@
           "refusal": {
             "description": "Why Frameleaf Cloud last refused backup storage",
             "nullable": true,
+            "type": "string"
+          },
+          "storageId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "usedBytes": {
@@ -69937,6 +70134,37 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "identityReuseAuthority": {
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "executionAvailable": {
+                "description": "Foundation consent does not enable weekly execution or identity reuse",
+                "enum": [
+                  false
+                ],
+                "type": "boolean"
+              },
+              "includeProtected": {
+                "type": "boolean"
+              },
+              "regrantRequired": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled",
+              "includeProtected",
+              "available",
+              "regrantRequired",
+              "executionAvailable"
+            ],
+            "type": "object"
+          },
           "label": {
             "type": "string"
           },
@@ -70265,6 +70493,57 @@
           "device"
         ],
         "type": "string"
+      },
+      "ICloudIdentityReuseAuthorityDto": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "includeProtected": {
+            "type": "boolean"
+          },
+          "requestKey": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "includeProtected",
+          "requestKey"
+        ],
+        "type": "object"
+      },
+      "ICloudIdentityReuseAuthorityStatusDto": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "executionAvailable": {
+            "const": false,
+            "description": "Foundation consent does not enable weekly execution or identity reuse",
+            "type": "boolean"
+          },
+          "includeProtected": {
+            "type": "boolean"
+          },
+          "regrantRequired": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available",
+          "enabled",
+          "executionAvailable",
+          "includeProtected",
+          "regrantRequired"
+        ],
+        "type": "object"
       },
       "ICloudIdentityRole": {
         "description": "original: the photo or video as taken; live-motion: a Live Photo video; raw-alternate: the RAW of a RAW + JPEG pair; edit-render: an edited version",
@@ -78420,6 +78699,44 @@
         ],
         "type": "string"
       },
+      "PartnerLockedNoticeResponseDto": {
+        "properties": {
+          "flaggedAt": {
+            "description": "When the first Locked item arrived for an account without a PIN",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "show": {
+            "description": "Whether to show the notice: Locked items arrived from a partner, no PIN is set, and it was not dismissed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "flaggedAt",
+          "show"
+        ],
+        "type": "object"
+      },
+      "PartnerOriginDto": {
+        "properties": {
+          "rootOwnerId": {
+            "description": "The account that originally uploaded or created it",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "rootOwnerName": {
+            "description": "That account's name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rootOwnerId",
+          "rootOwnerName"
+        ],
+        "type": "object"
+      },
       "PartnerResponseDto": {
         "description": "Partner response",
         "properties": {
@@ -78938,7 +79255,8 @@
           "unassign",
           "remove",
           "merge",
-          "box-move"
+          "box-move",
+          "partner-merge"
         ],
         "type": "string"
       },
@@ -114726,7 +115044,8 @@
           "photography-workspace",
           "license",
           "onboarding",
-          "frameleaf-cloud-tour"
+          "frameleaf-cloud-tour",
+          "partner-locked-notice"
         ],
         "type": "string"
       },
