@@ -17,11 +17,66 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
+import { pathToFileURL } from 'node:url';
+import { createHarness } from './lib/cross-browser-harness.mjs';
+import { createChromiumDriver, createWebDriverClassicDriver } from './lib/browser-driver.mjs';
 
-const require = createRequire(new URL('../engine/package.json', import.meta.url));
-const { chromium } = require('playwright');
+async function chromiumOptions() {
+  const require = createRequire(new URL('../engine/package.json', import.meta.url));
+  const { chromeLaunchArgs } = await import('../engine/headless/lib/cli.mjs');
+  return { chromium: require('playwright').chromium, args: chromeLaunchArgs() };
+}
+
+/** One effects matrix session; the callback retains the same GPU measurement on every browser. */
+export async function withEffectsMatrixPage({ origin, browser = 'chromium', endpoint }, measure, dependencies = {}) {
+  assert(['chromium', 'firefox', 'safari'].includes(browser), `unsupported effects-matrix browser: ${browser}`);
+  if (browser !== 'chromium') assert(endpoint, `${browser} requires WEBDRIVER_ENDPOINT`);
+  const runtime = { createHarness, createChromiumDriver, createWebDriverClassicDriver, chromiumOptions, ...dependencies };
+  const harness = runtime.createHarness({
+    upstream: origin,
+    overrides: [{
+      test: (url) => url.pathname === '/effects-matrix',
+      respond: () => ({ contentType: 'text/html', body: '<title>Effects matrix</title>' }),
+    }],
+  });
+  let driver;
+  try {
+    const harnessOrigin = await harness.listen();
+    driver = browser === 'chromium'
+      ? await runtime.createChromiumDriver({ harnessOrigin, ...await runtime.chromiumOptions() })
+      : await runtime.createWebDriverClassicDriver({
+          endpoint, harnessOrigin,
+          capabilities: {
+            browserName: browser,
+            // The full parameter matrix is one asynchronous GPU evaluation, not a
+            // short DOM script. Keep its timeout explicit and bounded in classic drivers.
+            timeouts: { script: 300_000 },
+            ...(browser === 'firefox' ? {
+              'moz:firefoxOptions': { prefs: {
+                'dom.webgpu.enabled': true,
+                'network.proxy.allow_hijacking_localhost': true,
+              } },
+            } : {}),
+          },
+        });
+    const page = await driver.newPage();
+    await page.goto(`${origin}/effects-matrix`);
+    const userAgent = await page.evaluate(() => navigator.userAgent);
+    const matches = browser === 'firefox' ? /Firefox\//.test(userAgent)
+      : browser === 'safari' ? /Safari\//.test(userAgent) && !/(Chrome|Chromium|Firefox)\//.test(userAgent)
+      : /(Chrome|Chromium)\//.test(userAgent);
+    assert(matches, `${browser} did not report the requested browser: ${userAgent}`);
+    const report = await measure(page);
+    return { ...report, browser: { name: browser, driver: browser === 'chromium' ? 'playwright' : 'webdriver-classic', userAgent } };
+  } finally {
+    try { await driver?.close(); }
+    finally { await harness.close(); }
+  }
+}
+
+export async function runEffectsMatrix() {
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
+const browser = process.env.BROWSER || 'chromium';
 const semanticsPath = new URL('../effect-hdr-semantics.json', import.meta.url);
 const semantics = process.env.EFFECTS_MATRIX_EXPLORE
   ? { effects: {} }
@@ -45,15 +100,8 @@ const alphaRow = [[1, 0, 0, q(0.5)], [0, 1, 0, q(0.25)], [0, 0, 1, q(0.75)], [1,
 const floatInput = [...sdrRows, hdrRow, alphaRow].flat(2);
 const sdrInput = [...sdrRows, sdrRows[0], alphaRow].flat(2);
 
-const browser = await chromium.launch({ headless: true, args: chromeLaunchArgs() });
-let report;
-try {
-  const page = await browser.newPage();
-  await page.route(origin + '/effects-matrix', (route) =>
-    route.fulfill({ contentType: 'text/html', body: '<title>Effects matrix</title>' }),
-  );
-  await page.goto(origin + '/effects-matrix');
-  report = await page.evaluate(async ({ W, H, floatInput, sdrInput }) => {
+const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.env.WEBDRIVER_ENDPOINT }, async (page) =>
+  page.evaluate(async ({ W, H, floatInput, sdrInput }) => {
     const { EffectsPipeline, GPU_EFFECT_REGISTRY, EFFECT_CLOCK_PARAM, getGpuEffectDefaultParams } =
       await import('/src/infrastructure/gpu-effects/index.ts');
     const { resolveAnimatedGpuEffects } =
@@ -244,15 +292,13 @@ try {
     for (const texture of [...Object.values(inputs), sdrFloatInput]) texture.destroy();
     device.destroy();
     return { adapter: { vendor: adapter.vendor, architecture: adapter.architecture }, effects, unknownEffect };
-  }, { W, H, floatInput, sdrInput });
-} finally {
-  await browser.close();
-}
+  }, { W, H, floatInput, sdrInput }),
+);
 
 if (process.env.EFFECTS_MATRIX_REPORT) {
   await writeFile(process.env.EFFECTS_MATRIX_REPORT, JSON.stringify(report));
 }
-if (process.env.EFFECTS_MATRIX_EXPLORE) process.exit(0);
+if (process.env.EFFECTS_MATRIX_EXPLORE) return;
 
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); };
@@ -352,5 +398,8 @@ if (failures.length) {
   assert.fail(`${failures.length} effects-matrix failures on ${report.adapter.vendor}/${report.adapter.architecture}`);
 }
 console.log(JSON.stringify({ check: 'every GPU effect: parameter extremes, determinism, SDR parity, HDR class, animation, stack order, invalid parameters',
-  adapter: report.adapter, effects: report.effects.length, cases: caseCount,
+  browser: report.browser, adapter: report.adapter, effects: report.effects.length, cases: caseCount,
   invalid: report.effects.reduce((sum, effect) => sum + effect.invalid.length, 0) }));
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await runEffectsMatrix();
