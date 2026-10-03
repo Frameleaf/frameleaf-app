@@ -9,7 +9,44 @@ const { NAS_ATTESTATION_TYPE } = require('../../.github/verify-release-bundle.cj
 const { createBundle, hash, INSTALL_FILES, VARIANTS, REPOSITORY, SOURCE, ATTESTATION_TYPE } = require('../../.github/frameleaf-release.cjs');
 
 const digest = (n) => `sha256:${String(n).repeat(64)}`;
+test('TrueNAS rendering rejects missing, empty, changed and symlinked libraries before import', {
+  skip: process.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER !== 'true',
+}, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameleaf-truenas-trust-'));
+  const app = path.join(root, 'app');
+  const library = path.join(root, 'base_v2_3_4');
+  const sentinel = path.join(root, 'imported');
+  const reject = (message) => {
+    for (const flags of [[], ['-O']]) {
+      assert.throws(() => execFileSync('python3', [
+        ...flags, path.join(__dirname, 'check-truenas.py'), app, library,
+      ], { stdio: 'pipe' }), message);
+    }
+  };
+  try {
+    fs.mkdirSync(app);
+    fs.copyFileSync(path.join(__dirname, 'truenas/app.yaml'), path.join(app, 'app.yaml'));
+    reject(/Missing or symlinked TrueNAS library/);
+    fs.mkdirSync(library);
+    reject(/Empty TrueNAS library/);
+    fs.writeFileSync(path.join(library, 'render.py'), `from pathlib import Path\nPath(${JSON.stringify(sentinel)}).touch()\n`);
+    reject(/TrueNAS library hash mismatch/);
+    assert(!fs.existsSync(sentinel), 'Unverified code must not be imported');
+    fs.symlinkSync(path.join(library, 'render.py'), path.join(library, 'linked.py'));
+    reject(/Symlink in TrueNAS library/);
+    fs.unlinkSync(path.join(library, 'linked.py'));
+    fs.renameSync(library, path.join(root, 'actual-library'));
+    fs.symlinkSync(path.join(root, 'actual-library'), library);
+    reject(/Missing or symlinked TrueNAS library/);
+    assert(!fs.existsSync(sentinel));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 test('authenticated release packaging, negative trust cases, and Synology worker timing', async () => {
+  if (process.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER === 'true') {
+    assert(process.env.TRUENAS_LIBRARY, 'Mandatory hosted TrueNAS rendering requires TRUENAS_LIBRARY');
+  }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameleaf-nas-'));
   const tag = 'frameleaf-v3.1.0-1';
   const sha = 'a'.repeat(40);
@@ -154,7 +191,9 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     assert(values.includes(`14-vectorchord0.4.3-pgvectors0.2.0@${digest(8)}`));
     assert(!values.includes('immich-app'));
     if (process.env.TRUENAS_LIBRARY) {
-      execFileSync('python3', [path.join(__dirname, 'check-truenas.py'), path.join(output, 'truenas/ix-dev/community/frameleaf'), process.env.TRUENAS_LIBRARY]);
+      const rendered = execFileSync('python3', [path.join(__dirname, 'check-truenas.py'), path.join(output, 'truenas/ix-dev/community/frameleaf'), process.env.TRUENAS_LIBRARY]).toString();
+      assert.match(rendered, /TrueNAS library render passed with ML disabled and enabled/);
+      assert(!fs.existsSync(path.join(process.env.TRUENAS_LIBRARY, '__pycache__')), 'Rendering must not mutate the verified library');
     }
     const unpack = path.join(root, 'unpack');
     fs.mkdirSync(unpack);
