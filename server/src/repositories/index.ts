@@ -77,6 +77,7 @@ import { MoveRepository } from 'src/repositories/move.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
+import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
@@ -201,6 +202,7 @@ export const repositories = [
   ClassificationRepository,
   ClusterGroupRepository,
   PartnerRepository,
+  PartnerOriginRepository,
   PersonRepository,
   PetRepository,
   PhotoToolsRepository,
