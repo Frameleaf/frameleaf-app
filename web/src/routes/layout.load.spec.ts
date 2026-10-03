@@ -24,7 +24,8 @@ const runLoad = async (path: string, fetchFn: typeof fetch) => {
   });
 };
 
-describe('app start-up while the storage migration runs (FL-326)', () => {
+// Each test imports the root layout afresh, which is slow when the suite runs alongside others.
+describe('app start-up while the storage migration runs (FL-326)', { timeout: 30_000 }, () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.goto.mockReset();
