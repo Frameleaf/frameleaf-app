@@ -1,9 +1,28 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Post, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Next,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { NextFunction, Request, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { StudioPreviewDto, StudioPreviewRequestDto, StudioPreviewResponseDto } from 'src/dtos/studio-preview.dto.js';
+import {
+  StudioPreviewCancelQueryDto,
+  StudioPreviewDto,
+  StudioPreviewRequestDto,
+  StudioPreviewResponseDto,
+  StudioPreviewScopeQueryDto,
+} from 'src/dtos/studio-preview.dto.js';
 import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -53,8 +72,12 @@ export class StudioPreviewController {
     description: 'The state of one requested frame, including its revision-bound entity tag.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  getStudioPreview(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<StudioPreviewDto> {
-    return this.service.get(auth, id);
+  getStudioPreview(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Query() dto: StudioPreviewScopeQueryDto,
+  ): Promise<StudioPreviewDto> {
+    return this.service.get(auth, id, dto);
   }
 
   @Get(':id/frame')
@@ -69,12 +92,14 @@ export class StudioPreviewController {
   async viewStudioPreviewFrame(
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDv7ParamDto,
+    @Query() dto: StudioPreviewScopeQueryDto,
     @Req() req: Request,
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
     const ifNoneMatch = req.headers['if-none-match'];
     const result = await this.service.getFrame(auth, id, {
+      ...dto,
       ifNoneMatch: Array.isArray(ifNoneMatch) ? ifNoneMatch.join(', ') : ifNoneMatch,
     });
 
@@ -96,10 +121,14 @@ export class StudioPreviewController {
   @Endpoint({
     summary: 'Cancel a Studio preview',
     description:
-      'Stops a preview the client no longer needs and releases its stored frame. The record survives so a client still holding the id is told the frame is gone rather than that it never existed.',
+      'Retires delivery of a preview. Scoped admissions require their captured consumer and operation identities; cancellation receipt facts distinguish durable request from renderer release. An active renderer directory is retained until genuine release.',
     history: new HistoryBuilder().added('v3.0.0').alpha('v3.0.0'),
   })
-  cancelStudioPreview(@Auth() auth: AuthDto, @Param() { id }: UUIDv7ParamDto): Promise<StudioPreviewDto> {
-    return this.service.cancel(auth, id);
+  cancelStudioPreview(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDv7ParamDto,
+    @Query() dto: StudioPreviewCancelQueryDto,
+  ): Promise<StudioPreviewDto> {
+    return this.service.cancel(auth, id, dto);
   }
 }

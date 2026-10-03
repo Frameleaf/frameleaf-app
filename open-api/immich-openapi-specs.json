@@ -39707,9 +39707,40 @@
     },
     "/studio/previews/{id}": {
       "delete": {
-        "description": "Stops a preview the client no longer needs and releases its stored frame. The record survives so a client still holding the id is told the frame is gone rather than that it never existed.",
+        "description": "Retires delivery of a preview. Scoped admissions require their captured consumer and operation identities; cancellation receipt facts distinguish durable request from renderer release. An active renderer directory is retained until genuine release.",
         "operationId": "cancelStudioPreview",
         "parameters": [
+          {
+            "name": "consumerRequestId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "expectedOperationId",
+            "required": false,
+            "in": "query",
+            "description": "Captured operation ID; literal string null explicitly names a never-enqueued admission. Omission and empty strings are not null.",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "null"
+                  ]
+                }
+              ]
+            }
+          },
           {
             "name": "id",
             "required": true,
@@ -39764,6 +39795,16 @@
         "description": "The state of one requested frame, including its revision-bound entity tag.",
         "operationId": "getStudioPreview",
         "parameters": [
+          {
+            "name": "consumerRequestId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
           {
             "name": "id",
             "required": true,
@@ -39820,6 +39861,16 @@
         "description": "Returns the rendered frame. The entity tag contains the project revision, so a frame whose revision has been superseded is refused with 409 rather than served or revalidated.",
         "operationId": "viewStudioPreviewFrame",
         "parameters": [
+          {
+            "name": "consumerRequestId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
           {
             "name": "id",
             "required": true,
@@ -106732,6 +106783,25 @@
       },
       "StudioPreviewDto": {
         "properties": {
+          "admissionReleased": {
+            "description": "Delivery was durably fenced; does not establish renderer termination",
+            "type": "boolean"
+          },
+          "cancellationState": {
+            "enum": [
+              "not-needed",
+              "requested",
+              "acknowledged",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "consumerRequestId": {
+            "description": "Captured opt-in consumer admission identity",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "contentType": {
             "nullable": true,
             "type": "string"
@@ -106781,6 +106851,11 @@
             "format": "date-time",
             "nullable": true,
             "type": "string"
+          },
+          "rendererReleased": {
+            "description": "True only after the captured operation acknowledged cancellation with resources released",
+            "nullable": true,
+            "type": "boolean"
           },
           "requestedAt": {
             "format": "date-time",
@@ -106861,6 +106936,12 @@
       },
       "StudioPreviewRequestDto": {
         "properties": {
+          "consumerRequestId": {
+            "description": "Opt in to a session-isolated admission; use a fresh UUID for each logical request",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
           "projectId": {
             "description": "Studio project the frame belongs to",
             "format": "uuid",
