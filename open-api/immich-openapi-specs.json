@@ -4911,6 +4911,187 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/file-trash": {
+      "get": {
+        "description": "Originals no library references any more, newest first, with the total disk space the file trash holds. Nothing here is deleted automatically.",
+        "operationId": "getFileTrash",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number, from 1",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "description": "Entries per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileTrashResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the file trash",
+        "tags": [
+          "File trash (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/file-trash/{id}": {
+      "delete": {
+        "description": "Delete the file from disk for good. This cannot be undone.",
+        "operationId": "deleteFileTrashItem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Delete a file permanently",
+        "tags": [
+          "File trash (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/file-trash/{id}/restore": {
+      "post": {
+        "description": "Re-import the file as a new asset in the library it was last in, reading its metadata again. Answers 400 when that account is unknown or gone and 409 when its library already holds the file.",
+        "operationId": "restoreFileTrashItem",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileTrashRestoreResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore a file from the file trash",
+        "tags": [
+          "File trash (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "maintenance",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/hardware": {
       "get": {
         "description": "The last check of the GPU the server container and the ML container can each use, with any set-up problems found and the last benchmark. Runs a first check when there is none.",
@@ -19460,6 +19641,70 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ICloudConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/connections/{id}/identity-reuse-authority": {
+      "patch": {
+        "operationId": "updateICloudIdentityReuseAuthority",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudIdentityReuseAuthorityDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudIdentityReuseAuthorityStatusDto"
                 }
               }
             },
@@ -36091,6 +36336,87 @@
         "x-immich-state": "Stable"
       }
     },
+    "/server/storage-migration": {
+      "get": {
+        "description": "The progress of the one-time universal storage migration that combines duplicate files, as counts only. Public, like the Getting Ready screen that shows it before anyone signs in.",
+        "operationId": "getStorageMigrationStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Get storage migration status",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/server/storage-migration/background": {
+      "post": {
+        "description": "Stop the Getting Ready screen waiting for the storage migration. It carries on in the background and its progress shows in Library Care; extra copies are not freed until it finishes.",
+        "operationId": "runStorageMigrationInBackground",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMigrationStatusResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Run the storage migration in the background",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemMetadata.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/server/version": {
       "get": {
         "description": "Retrieve the current server version in semantic versioning (semver) format.",
@@ -49012,6 +49338,10 @@
     {
       "name": "Frameleaf Cloud jobs",
       "description": "Restoration, upscaling and Smooth motion on Frameleaf Cloud for your own media: an estimate from metered GPU time, a confirmation with consent, then a durable job in Activity. Nothing is sent without that confirmation."
+    },
+    {
+      "name": "File trash (admin)",
+      "description": "The Library Care file trash holds originals no library references any more, until an administrator restores them or deletes them permanently."
     },
     {
       "name": "Integrity (admin)",
@@ -62113,6 +62443,33 @@
         ],
         "type": "object"
       },
+      "CloudBackupLocationDto": {
+        "properties": {
+          "city": {
+            "type": "string"
+          },
+          "cityId": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city",
+          "cityId",
+          "country",
+          "countryCode",
+          "locationId"
+        ],
+        "type": "object"
+      },
       "CloudBackupManagedDto": {
         "properties": {
           "allowanceBytes": {
@@ -62126,6 +62483,14 @@
             "minimum": -9007199254740991,
             "nullable": true,
             "type": "integer"
+          },
+          "location": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CloudBackupLocationDto"
+              }
+            ],
+            "nullable": true
           },
           "measuredAt": {
             "nullable": true,
@@ -62155,6 +62520,12 @@
           "refusal": {
             "description": "Why Frameleaf Cloud last refused backup storage",
             "nullable": true,
+            "type": "string"
+          },
+          "storageId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "usedBytes": {
@@ -68199,6 +68570,99 @@
         ],
         "type": "object"
       },
+      "FileTrashItemResponseDto": {
+        "properties": {
+          "checksum": {
+            "description": "Hex-encoded SHA-256 checksum of the file",
+            "type": "string"
+          },
+          "id": {
+            "description": "File trash entry id",
+            "type": "string"
+          },
+          "lastAssetId": {
+            "description": "Asset that held the file last, when known",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastOwnerId": {
+            "description": "Account whose library held the file last, when known",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastOwnerName": {
+            "description": "Name of that account, while it exists",
+            "nullable": true,
+            "type": "string"
+          },
+          "originalFileName": {
+            "description": "Name of the file when it was last in a library",
+            "type": "string"
+          },
+          "sizeInBytes": {
+            "description": "Size of the file in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trashedAt": {
+            "description": "When the file was moved to the file trash",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checksum",
+          "id",
+          "lastAssetId",
+          "lastOwnerId",
+          "lastOwnerName",
+          "originalFileName",
+          "sizeInBytes",
+          "trashedAt"
+        ],
+        "type": "object"
+      },
+      "FileTrashResponseDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FileTrashItemResponseDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Entries in the file trash",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "totalBytes": {
+            "description": "Disk space the file trash holds, in bytes",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "totalBytes"
+        ],
+        "type": "object"
+      },
+      "FileTrashRestoreResponseDto": {
+        "properties": {
+          "assetId": {
+            "description": "The new asset the file was restored as, in its last owner’s library",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "type": "object"
+      },
       "FolderSummaryResponseDto": {
         "properties": {
           "count": {
@@ -69937,6 +70401,37 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "identityReuseAuthority": {
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "executionAvailable": {
+                "description": "Foundation consent does not enable weekly execution or identity reuse",
+                "enum": [
+                  false
+                ],
+                "type": "boolean"
+              },
+              "includeProtected": {
+                "type": "boolean"
+              },
+              "regrantRequired": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled",
+              "includeProtected",
+              "available",
+              "regrantRequired",
+              "executionAvailable"
+            ],
+            "type": "object"
+          },
           "label": {
             "type": "string"
           },
@@ -70265,6 +70760,57 @@
           "device"
         ],
         "type": "string"
+      },
+      "ICloudIdentityReuseAuthorityDto": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "includeProtected": {
+            "type": "boolean"
+          },
+          "requestKey": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "includeProtected",
+          "requestKey"
+        ],
+        "type": "object"
+      },
+      "ICloudIdentityReuseAuthorityStatusDto": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "executionAvailable": {
+            "const": false,
+            "description": "Foundation consent does not enable weekly execution or identity reuse",
+            "type": "boolean"
+          },
+          "includeProtected": {
+            "type": "boolean"
+          },
+          "regrantRequired": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available",
+          "enabled",
+          "executionAvailable",
+          "includeProtected",
+          "regrantRequired"
+        ],
+        "type": "object"
       },
       "ICloudIdentityRole": {
         "description": "original: the photo or video as taken; live-motion: a Live Photo video; raw-alternate: the RAW of a RAW + JPEG pair; edit-render: an edited version",
@@ -71512,6 +72058,7 @@
           "StorageTemplateMigrationSingle",
           "PhysicalDeduplicationMigrationDryRun",
           "PhysicalDeduplicationMigrationApply",
+          "UniversalStorageMigration",
           "TagCleanup",
           "VersionCheck",
           "FrameleafHeartbeat",
@@ -105666,6 +106213,138 @@
           "exports"
         ],
         "type": "string"
+      },
+      "StorageMigrationStage": {
+        "description": "Current stage; pending until the server has started the migration",
+        "enum": [
+          "pending",
+          "checking",
+          "relinking",
+          "linking",
+          "trashing",
+          "done"
+        ],
+        "type": "string"
+      },
+      "StorageMigrationStageProgressDto": {
+        "properties": {
+          "done": {
+            "description": "Items finished in this stage",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Items this stage covers",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "total"
+        ],
+        "type": "object"
+      },
+      "StorageMigrationStatusResponseDto": {
+        "properties": {
+          "background": {
+            "description": "An administrator chose to let it finish in the background",
+            "type": "boolean"
+          },
+          "bytesFreed": {
+            "description": "Bytes of extra copies moved to the file trash",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "estimatedSecondsLeft": {
+            "description": "Estimated time left, from the measured rate",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "finishedAt": {
+            "description": "When the migration finished",
+            "nullable": true,
+            "type": "string"
+          },
+          "relinked": {
+            "description": "Missing originals relinked automatically",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "required": {
+            "description": "False when the library had nothing to combine (a fresh install)",
+            "type": "boolean"
+          },
+          "showInGettingReady": {
+            "description": "Whether the Getting Ready screen waits for it",
+            "type": "boolean"
+          },
+          "skipped": {
+            "description": "Files that could not be read or verified, skipped",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/StorageMigrationStage"
+          },
+          "stages": {
+            "description": "Progress of each stage",
+            "properties": {
+              "checking": {
+                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
+              },
+              "linking": {
+                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
+              },
+              "relinking": {
+                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
+              },
+              "trashing": {
+                "$ref": "#/components/schemas/StorageMigrationStageProgressDto"
+              }
+            },
+            "required": [
+              "checking",
+              "relinking",
+              "linking",
+              "trashing"
+            ],
+            "type": "object"
+          },
+          "startedAt": {
+            "description": "When the migration started",
+            "nullable": true,
+            "type": "string"
+          },
+          "toReview": {
+            "description": "Missing originals left for review in Library Care",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "background",
+          "bytesFreed",
+          "estimatedSecondsLeft",
+          "finishedAt",
+          "relinked",
+          "required",
+          "showInGettingReady",
+          "skipped",
+          "stage",
+          "stages",
+          "startedAt",
+          "toReview"
+        ],
+        "type": "object"
       },
       "StraightenParameters": {
         "properties": {
