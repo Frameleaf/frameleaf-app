@@ -1257,18 +1257,6 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'passwordLogin.enabled',
   },
   {
-    pattern: 'physicalDeduplication.enabled',
-    kind: 'control',
-    file: 'src/lib/components/admin-settings/StorageTemplateSettings.svelte',
-    evidence: 'physicalDeduplication.enabled',
-  },
-  {
-    pattern: 'physicalDeduplication.masterUserId',
-    kind: 'control',
-    file: 'src/lib/components/admin-settings/StorageTemplateSettings.svelte',
-    evidence: 'physicalDeduplication.masterUserId',
-  },
-  {
     pattern: 'reverseGeocoding.enabled',
     kind: 'control',
     file: 'src/routes/admin/system-settings/MapSettings.svelte',

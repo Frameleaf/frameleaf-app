@@ -1039,13 +1039,6 @@ const AdminConfigSchemaWithVisibility = z
     passwordLogin: z
       .object({ enabled: configBool.describe('Enabled').meta({ visibility: Public }) })
       .meta({ id: 'AdminConfigPasswordLoginDto' }),
-    physicalDeduplication: z
-      .object({
-        enabled: configBool.describe('Enabled'),
-        masterUserId: z.uuidv4().nullable().describe('Master user ID'),
-      })
-      .meta({ id: 'AdminConfigPhysicalDeduplicationDto' })
-      .default({ enabled: false, masterUserId: null }),
     // FL-71: the template's "Logs & diagnostics" local analytics rows. The nightly collector only
     // reads counts and sizes into this server's database; external telemetry stays off regardless.
     analytics: z
@@ -1577,10 +1570,6 @@ export const defaults = Object.freeze<SystemConfig>({
   },
   passwordLogin: {
     enabled: true,
-  },
-  physicalDeduplication: {
-    enabled: false,
-    masterUserId: null,
   },
   analytics: {
     enabled: true,

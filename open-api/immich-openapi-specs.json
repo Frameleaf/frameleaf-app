@@ -50005,9 +50005,6 @@
           "passwordLogin": {
             "$ref": "#/components/schemas/AdminConfigPasswordLoginDto"
           },
-          "physicalDeduplication": {
-            "$ref": "#/components/schemas/AdminConfigPhysicalDeduplicationDto"
-          },
           "reverseGeocoding": {
             "$ref": "#/components/schemas/AdminConfigReverseGeocodingDto"
           },
@@ -51888,26 +51885,6 @@
         },
         "required": [
           "enabled"
-        ],
-        "type": "object"
-      },
-      "AdminConfigPhysicalDeduplicationDto": {
-        "properties": {
-          "enabled": {
-            "description": "Enabled",
-            "type": "boolean"
-          },
-          "masterUserId": {
-            "description": "Master user ID",
-            "format": "uuid",
-            "nullable": true,
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
-            "type": "string"
-          }
-        },
-        "required": [
-          "enabled",
-          "masterUserId"
         ],
         "type": "object"
       },
