@@ -50,6 +50,7 @@ import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-
 import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
 import { ICloudAlbumRepository } from 'src/repositories/icloud-album.repository.js';
 import { ICloudAuditRepository } from 'src/repositories/icloud-audit.repository.js';
+import { ICloudIdentityAdoptionRepository } from 'src/repositories/icloud-identity-adoption.repository.js';
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
@@ -117,6 +118,7 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
   ICloudAuditRepository,
+  ICloudIdentityAdoptionRepository,
   AssetUploadResourceRepository,
   BackupDeviceRepository,
   PushDeviceRepository,

@@ -57,6 +57,29 @@ describe(MediaIntegrityService.name, () => {
       identity: { size: bytes.length, ino: expect.any(Number), dev: expect.any(Number) },
     });
   });
+  it('refuses immediately on cancellation but settles only after noncooperative decode and retains its slot', async () => {
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    mocks.media.decodeImage.mockImplementation(async () => {
+      entered.resolve();
+      await resume.promise;
+      return { data: bytes, info: {} } as never;
+    });
+    const first = sut.validateWithSettlement({ ...input, deep: true });
+    await entered.promise;
+    first.cancel();
+    expect(await first.result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
+    let settled = false;
+    void first.settled.then(() => { settled = true; });
+    const second = sut.validateWithSettlement({ ...input, deep: true });
+    expect(await sut.validate(input)).toEqual({ status: 'transient', reason: 'validation_busy' });
+    expect(settled).toBe(false);
+    resume.resolve();
+    await Promise.all([first.settled, second.settled]);
+    expect(settled).toBe(true);
+    expect((await sut.validate(input)).status).toBe('healthy');
+    expect(await first.result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
+  });
   it('reports missing', async () => {
     await rm(input.path);
     expect(await sut.validate(input)).toEqual({ status: 'missing', reason: 'file_missing' });

@@ -88,6 +88,7 @@ describe(ICloudSyncService.name, () => {
   const staging = { download: vi.fn(), cleanup: vi.fn(), root: vi.fn() };
   const identities = { claimForSync: vi.fn() };
   const recovery = { verifyMapped: vi.fn(), reconcile: vi.fn() };
+  const adoption = { adopt: vi.fn() };
   const jobs = { queue: vi.fn() };
   const albums = { reconcile: vi.fn() };
   const operations = {
@@ -135,6 +136,7 @@ describe(ICloudSyncService.name, () => {
     staging.download.mockResolvedValue('/private/complete');
     identities.claimForSync.mockResolvedValue(null);
     recovery.verifyMapped.mockResolvedValue(undefined);
+    adoption.adopt.mockResolvedValue('miss');
     recovery.reconcile.mockResolvedValue({ outcome: 'repaired-missing', assetId: 'same-asset' });
     jobs.queue.mockResolvedValue(undefined);
     albums.reconcile.mockResolvedValue(true);
@@ -166,6 +168,7 @@ describe(ICloudSyncService.name, () => {
       logger as never,
       identities as never,
       { housekeeping: vi.fn(), run: vi.fn() } as never,
+      adoption as never,
     );
   });
 
@@ -229,6 +232,27 @@ describe(ICloudSyncService.name, () => {
   });
 
   describe('a durable run', () => {
+    it('adopts only after the item claim and forwards the actual operation/resource authority without downloading', async () => {
+      adoption.adopt.mockResolvedValue('adopted');
+      await sut.run(operation(), 'token');
+      expect(adoption.adopt).toHaveBeenCalledWith(expect.objectContaining({
+        operationId: 'run', operationClaimToken: 'token', resourceId: 'resource', resourceLeaseToken: 'lease',
+        ownerId: 'owner', connectionId: 'connection',
+      }));
+      expect(adoption.adopt.mock.invocationCallOrder[0]).toBeGreaterThan(identities.claimForSync.mock.invocationCallOrder[0]);
+      expect(staging.download).not.toHaveBeenCalled();
+      expect(recovery.reconcile).not.toHaveBeenCalled();
+      expect(repository.finalize).toHaveBeenCalled();
+    });
+
+    it('retires an unavailable adoption without admitting a fallback download', async () => {
+      adoption.adopt.mockResolvedValue('retry');
+      await sut.run(operation(), 'token');
+      expect(staging.download).not.toHaveBeenCalled();
+      expect(repository.finish).toHaveBeenCalledWith(resource, 'retry', 'identity_adoption_unavailable');
+      expect(repository.finalize).not.toHaveBeenCalled();
+    });
+
     it('recovers a damaged unchanged mapping, forwards hidden visibility and only cleans after durable outbox dispatch', async () => {
       await sut.run(operation(), 'token');
       expect(recovery.verifyMapped).toHaveBeenCalledOnce();
@@ -257,6 +281,7 @@ describe(ICloudSyncService.name, () => {
       expect(identities.claimForSync).toHaveBeenCalledWith(connection.ownerId, resource.sourceAssetId, connection.id);
       expect(staging.download).not.toHaveBeenCalled();
       expect(repository.waitForClaim).toHaveBeenCalledWith(resource, until);
+      expect(adoption.adopt).not.toHaveBeenCalled();
       expect(repository.finish).not.toHaveBeenCalledWith(resource, 'retry', expect.anything());
     });
 
