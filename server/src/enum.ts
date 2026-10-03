@@ -2324,6 +2324,14 @@ export enum JobName {
   PushDeliver = 'PushDeliver',
   /** FL-228: the nightly wake-up of devices whose phone backup went stale. */
   PushBackupStaleCheck = 'PushBackupStaleCheck',
+  /** FL-326: copy one partnership's library to the partner, in resumable batches. */
+  PartnerBackfill = 'PartnerBackfill',
+  /** FL-326: copy one asset into a partner's library. */
+  PartnerCopyAsset = 'PartnerCopyAsset',
+  /** FL-326: copy one album into a partner's library. */
+  PartnerCopyAlbum = 'PartnerCopyAlbum',
+  /** FL-326: push a source's edits into every copy that still follows it. */
+  PartnerPropagate = 'PartnerPropagate',
 
   // OCR
   OcrQueueAll = 'OcrQueueAll',

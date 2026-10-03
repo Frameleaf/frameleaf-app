@@ -451,6 +451,10 @@ export const getMocks = () => {
   mocks.classification.getRuleAlbumIds.mockResolvedValue(new Set());
   mocks.classification.getRules.mockResolvedValue([]);
   mocks.classification.getEnabledRules.mockResolvedValue([]);
+  // FL-326: no partner copies follow anything, and nobody shares a library, unless a test says so
+  mocks.partner.getAll.mockResolvedValue([]);
+  mocks.partnerOrigin.getIdsWithFollowers.mockResolvedValue([]);
+  mocks.partnerOrigin.getFollowers.mockResolvedValue([]);
   mocks.classification.getRuleByAlbumId.mockResolvedValue(undefined);
   mocks.classification.recordAlbumRemovals.mockResolvedValue({
     added: 0,
@@ -478,9 +482,6 @@ export const getMocks = () => {
   mocks.mlDestination.recordProbe.mockResolvedValue();
   mocks.mlDestination.recordAccounting.mockResolvedValue();
   mocks.machineLearning.probe.mockResolvedValue(mlProbeStub.healthy);
-  // no owner hides their locations from an album's owner unless a test says otherwise (FL-54)
-  mocks.partner.getLocationHiddenOwnerIdsForAlbums.mockResolvedValue([]);
-  mocks.partner.getLocationHiddenThroughAlbums.mockResolvedValue(new Set());
 
   return mocks;
 };

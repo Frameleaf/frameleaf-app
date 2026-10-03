@@ -517,13 +517,12 @@ export class StudioExportService {
     const shared = new Set(
       sources.filter((source) => source.ownerId !== auth.user.id).map((source) => source.assetId!),
     );
-    const [ownedOk, album, partner] = await Promise.all([
+    // FL-326: partners hold their own copies, so another owner's source is reached only through an album
+    const [ownedOk, album] = await Promise.all([
       this.access.asset.checkOwnerAccess(auth.user.id, owned, !!getLockedOwnerId(auth)),
       this.access.asset.checkAlbumAccess(auth.user.id, shared),
-      this.access.asset.checkPartnerAccess(auth.user.id, shared),
     ]);
-    const reachable = (assetId: string) =>
-      owned.has(assetId) ? ownedOk.has(assetId) : album.has(assetId) || partner.has(assetId);
+    const reachable = (assetId: string) => (owned.has(assetId) ? ownedOk.has(assetId) : album.has(assetId));
     if (sources.some((source) => !reachable(source.assetId!))) {
       throw new NotFoundException('Studio export not found');
     }

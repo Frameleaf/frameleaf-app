@@ -210,7 +210,6 @@ describe(ImageEnrichmentService.name, () => {
       authStub.user1.session?.hasElevatedPermission,
     );
     expect(mocks.access.asset.checkAlbumAccess).not.toHaveBeenCalled();
-    expect(mocks.access.asset.checkPartnerAccess).not.toHaveBeenCalled();
   });
 
   it('should skip NSFW backfill when NSFW detection is disabled', async () => {

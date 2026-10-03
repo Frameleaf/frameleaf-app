@@ -41,24 +41,12 @@ import {
 import { AssetOrder, AssetType, AssetVisibility, MlWorkload, Permission } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isGranted, requireElevatedPermission } from 'src/utils/access.js';
-import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
-import {
-  applyAlbumLocationPolicy,
-  applyPartnerLocationPolicy,
-  getLocationHiddenOwnerIdsForView,
-} from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
-import {
-  applyLockedVisibilityPolicy,
-  collectFilterIds,
-  filterUsesLocation,
-  requirePetFilterAllowed,
-  usesLocationFilter,
-} from 'src/utils/search-filter.js';
+import { applyLockedVisibilityPolicy, collectFilterIds, requirePetFilterAllowed } from 'src/utils/search-filter.js';
 
 @Injectable()
 export class SearchService extends BaseService {
@@ -169,19 +157,13 @@ export class SearchService extends BaseService {
     }
 
     let userIds: string[] | undefined;
-    let locationHiddenOwnerIds: string[] | undefined;
 
     if (dto.albumIds && dto.albumIds.length > 0) {
       await this.requireAccess({ auth, ids: dto.albumIds, permission: Permission.AlbumRead });
-      // FL-54: matching album items by place reveals it, so owners who hide their locations from the
-      // viewer (for a link, its creator) or from an album's owner never match
-      if (usesLocationFilter(dto)) {
-        locationHiddenOwnerIds = await this.getAlbumLocationHiddenOwnerIds(auth, dto.albumIds);
-      }
     } else if (auth.sharedLink) {
       throw new BadRequestException('Shared link access is only allowed in combination with an albumIds filter');
     } else {
-      userIds = await this.getUserIdsToSearch(auth, dto.visibility, usesLocationFilter(dto));
+      userIds = this.getUserIdsToSearch(auth);
     }
 
     const page = dto.page ?? 1;
@@ -195,13 +177,12 @@ export class SearchService extends BaseService {
       lockedOwnerId: getLockedOwnerId(auth),
       hideLockedMotion: true,
       userIds,
-      locationHiddenOwnerIds,
       viewingUserId: auth.user.id,
       sharedLink: !!auth.sharedLink,
       orderDirection: dto.order ?? AssetOrder.Desc,
     };
     const { hasNextPage, items } = await this.searchRepository.searchMetadata({ page, size }, options);
-    const response = await this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
+    const response = this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
     // FL-232: an internal count projection reuses the cover's exact authorized legacy predicate.
     // Public callers retain the existing page-sized total unless they explicitly opt in.
     if (withTotal) {
@@ -215,35 +196,23 @@ export class SearchService extends BaseService {
       return this.searchStatisticsV3(auth, dto);
     }
 
-    return await this.searchRepository.searchStatistics(await this.getLegacyStatisticsOptions(auth, dto));
+    return await this.searchRepository.searchStatistics(this.getLegacyStatisticsOptions(auth, dto));
   }
 
   /**
    * FL-49: facet counts for a search body. The body resolves exactly as POST /search/statistics does,
    * so the matched assets (and `total`) are the same; facets then only name the viewer's own people
-   * and tags, never a suppressed one while the session is locked, and never a place of an owner who
-   * hides their locations from the viewer.
+   * and tags, and never a suppressed one while the session is locked. FL-326: locations are always
+   * shared, so no owner's places are left out.
    */
   async searchFacets(auth: AuthDto, dto: SearchFacetsDto): Promise<SearchFacetsResponseDto> {
     const { facets: requested, facetLimit, facetCovers, ...body } = dto;
-    // FL-54 owner default: places of items reached through an album never count for owners who hide
-    // their locations from that album's owner, just as they never count for owners who hide them from
-    // the viewer (for a link, its creator)
-    const albumIds = isNewShapeRequest(body)
-      ? collectFilterIds(body.filter ?? {}, 'albumIds')
-      : ((body as { albumIds?: string[] }).albumIds ?? []);
     const facetOptions: SearchFacetOptions = {
       viewerId: auth.user.id,
       // each facet once, in the order asked
       facets: [...new Set(requested ?? Object.values(SearchFacetField))],
       limit: facetLimit ?? SEARCH_FACET_DEFAULT_LIMIT,
-      locationHiddenOwnerIds: [
-        ...(await getLocationHiddenOwnerIdsForView({
-          viewerId: auth.sharedLink?.userId ?? auth.user.id,
-          albumIds,
-          repository: this.partnerRepository,
-        })),
-      ],
+      locationHiddenOwnerIds: [],
       suppressedPersonIds: auth.hiddenContent?.personIds ?? [],
       suppressedTagIds: auth.hiddenContent?.tagIds ?? [],
       covers: facetCovers ?? false,
@@ -259,10 +228,7 @@ export class SearchService extends BaseService {
         facetOptions,
       );
     } else {
-      result = await this.searchRepository.searchFacets(
-        await this.getLegacyStatisticsOptions(auth, body),
-        facetOptions,
-      );
+      result = await this.searchRepository.searchFacets(this.getLegacyStatisticsOptions(auth, body), facetOptions);
     }
     const { total, rows } = result;
 
@@ -295,10 +261,7 @@ export class SearchService extends BaseService {
         granularity,
       );
     } else {
-      buckets = await this.searchRepository.searchHistogram(
-        await this.getLegacyStatisticsOptions(auth, body),
-        granularity,
-      );
+      buckets = await this.searchRepository.searchHistogram(this.getLegacyStatisticsOptions(auth, body), granularity);
     }
 
     return { granularity, total: buckets.reduce((sum, { count }) => sum + count, 0), buckets };
@@ -330,16 +293,13 @@ export class SearchService extends BaseService {
     }
 
     const { query: _query, queryAssetId: _queryAssetId, language: _language, page: _page, size: _size, ...rest } = dto;
-    return this.searchRepository.searchSmartCount(await this.getLegacyStatisticsOptions(auth, rest));
+    return this.searchRepository.searchSmartCount(this.getLegacyStatisticsOptions(auth, rest));
   }
 
   /** The options a legacy (flat) statistics body resolves to; shared with facets, histogram and smart counts. */
-  private async getLegacyStatisticsOptions(
-    auth: AuthDto,
-    dto: Omit<StatisticsSearchDto, 'filter'>,
-  ): Promise<AssetSearchOptions> {
+  private getLegacyStatisticsOptions(auth: AuthDto, dto: Omit<StatisticsSearchDto, 'filter'>): AssetSearchOptions {
     const { suppressedOnly, ...searchDto } = dto;
-    const userIds = await this.getUserIdsToSearch(auth, dto.visibility, usesLocationFilter(dto));
+    const userIds = this.getUserIdsToSearch(auth);
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }
@@ -366,7 +326,7 @@ export class SearchService extends BaseService {
       requireElevatedPermission(auth);
     }
 
-    const userIds = await this.getUserIdsToSearch(auth, dto.visibility, usesLocationFilter(dto));
+    const userIds = this.getUserIdsToSearch(auth);
     const items = await this.searchRepository.searchRandom(dto.size || 250, {
       ...searchDto,
       ...getPrivacyQueryOptions(auth, suppressedOnly),
@@ -376,10 +336,7 @@ export class SearchService extends BaseService {
       userIds,
       viewingUserId: auth.user.id,
     });
-    return this.withLocationPolicy(
-      auth,
-      items.map((item) => mapAsset(item, { auth })),
-    );
+    return items.map((item) => mapAsset(item, { auth }));
   }
 
   async searchLargeAssets(auth: AuthDto, dto: LargeAssetSearchDto): Promise<AssetResponseDto[]> {
@@ -389,7 +346,7 @@ export class SearchService extends BaseService {
       requireElevatedPermission(auth);
     }
 
-    const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
+    const userIds = this.getUserIdsToSearch(auth);
     const items = await this.searchRepository.searchLargeAssets(dto.size || 250, {
       ...searchDto,
       ...getPrivacyQueryOptions(auth, suppressedOnly),
@@ -399,10 +356,7 @@ export class SearchService extends BaseService {
       userIds,
       viewingUserId: auth.user.id,
     });
-    return this.withLocationPolicy(
-      auth,
-      items.map((item) => mapAsset(item, { auth })),
-    );
+    return items.map((item) => mapAsset(item, { auth }));
   }
 
   async searchSmart(auth: AuthDto, dto: SmartSearchDto): Promise<SearchResponseDto> {
@@ -421,7 +375,7 @@ export class SearchService extends BaseService {
       throw new BadRequestException('Smart search is not enabled');
     }
 
-    const userIds = this.getUserIdsToSearch(auth, dto.visibility, usesLocationFilter(dto));
+    const userIds = this.getUserIdsToSearch(auth);
     const embedding = await this.resolveEmbedding(auth, dto, machineLearning);
     const page = dto.page ?? 1;
     const size = dto.size || 100;
@@ -430,7 +384,7 @@ export class SearchService extends BaseService {
       {
         ...searchDto,
         ...getPrivacyQueryOptions(auth, suppressedOnly),
-        userIds: await userIds,
+        userIds,
         viewingUserId: auth.user.id,
         embedding,
         query: dto.query,
@@ -445,25 +399,20 @@ export class SearchService extends BaseService {
 
   async getAssetsByCity(auth: AuthDto): Promise<AssetResponseDto[]> {
     // grouped by place, so partners who hide their locations contribute nothing here
-    const userIds = await this.getUserIdsToSearch(auth, undefined, true);
+    const userIds = this.getUserIdsToSearch(auth);
     const assets = await this.searchRepository.getAssetsByCity(userIds, getHiddenContentQueryOptions(auth));
     return assets.map((asset) => mapAsset(asset));
   }
 
   async getCityAssetCounts(auth: AuthDto): Promise<SearchCityCountResponseDto[]> {
     // same owners as getAssetsByCity: partners who hide their locations contribute nothing
-    const userIds = await this.getUserIdsToSearch(auth, undefined, true);
+    const userIds = this.getUserIdsToSearch(auth);
     const rows = await this.searchRepository.getCityAssetCounts(userIds, getHiddenContentQueryOptions(auth));
     return rows.map(({ city, count }) => ({ city, count: Number(count) }));
   }
 
   async getSearchSuggestions(auth: AuthDto, dto: SearchSuggestionRequestDto) {
-    const isLocationSuggestion = [
-      SearchSuggestionType.COUNTRY,
-      SearchSuggestionType.STATE,
-      SearchSuggestionType.CITY,
-    ].includes(dto.type);
-    const userIds = await this.getUserIdsToSearch(auth, undefined, isLocationSuggestion);
+    const userIds = this.getUserIdsToSearch(auth);
     const suggestions = await this.getSuggestions(userIds, dto, auth);
     if (dto.includeNull) {
       suggestions.push(null);
@@ -530,7 +479,7 @@ export class SearchService extends BaseService {
       options,
       scope,
     );
-    const response = await this.mapResponse(
+    const response = this.mapResponse(
       items,
       { auth },
       { nextCursor: hasNextPage ? encodeSearchCursor(offset + size) : null },
@@ -563,10 +512,7 @@ export class SearchService extends BaseService {
       },
       scope,
     );
-    return this.withLocationPolicy(
-      auth,
-      items.map((item) => mapAsset(item, { auth })),
-    );
+    return items.map((item) => mapAsset(item, { auth }));
   }
 
   private async searchSmartV3(auth: AuthDto, dto: SmartSearchDto): Promise<SearchResponseDto> {
@@ -613,12 +559,10 @@ export class SearchService extends BaseService {
     requirePetFilterAllowed(auth, collectFilterIds(filter, 'petIds'));
 
     const albumIds = collectFilterIds(filter, 'albumIds');
-    const usesLocation = filterUsesLocation(filter);
-    const [userIds] = await Promise.all([
-      // a fully confined filter searches albums only, so the unused universe can skip the partner lookup
-      fullyConfined ? [auth.user.id] : this.getUserIdsToSearch(auth, undefined, usesLocation),
-      albumIds.length > 0 ? this.requireAccess({ auth, ids: albumIds, permission: Permission.AlbumRead }) : undefined,
-    ]);
+    if (albumIds.length > 0) {
+      await this.requireAccess({ auth, ids: albumIds, permission: Permission.AlbumRead });
+    }
+    const userIds = this.getUserIdsToSearch(auth);
 
     return {
       filter: effectiveFilter,
@@ -629,24 +573,8 @@ export class SearchService extends BaseService {
         ...(auth.sharedLink && { sharedLink: true }),
         // live-photo motion parts of Locked stills: only the still's owner, when elevated (FL-34)
         lockedMotion: getLockedVisibilityOptions(auth),
-        // FL-54: album branches search other people's items; a place filter must not match owners who
-        // hide their locations from the viewer (for a link, its creator) or from an album's owner
-        ...(usesLocation &&
-          albumIds.length > 0 && {
-            locationHiddenOwnerIds: await this.getAlbumLocationHiddenOwnerIds(auth, albumIds),
-          }),
       },
     };
-  }
-
-  private async getAlbumLocationHiddenOwnerIds(auth: AuthDto, albumIds: string[]): Promise<string[]> {
-    return [
-      ...(await getLocationHiddenOwnerIdsForView({
-        viewerId: auth.sharedLink?.userId ?? auth.user.id,
-        albumIds,
-        repository: this.partnerRepository,
-      })),
-    ];
   }
 
   private async resolveEmbedding(
@@ -682,50 +610,19 @@ export class SearchService extends BaseService {
   }
 
   /**
-   * The owners whose assets a search may return. `locationSharedOnly` leaves out partners who hide their
-   * locations from this user whenever the request itself is about places (FL-54): matching, counting or
-   * suggesting by place would reveal what the sharer chose to hide.
+   * The owners whose assets a search may return: only the viewer (FL-326, spec §4.8). What partners
+   * share arrives as the viewer's own copies, so no partner's rows are searched.
    */
-  private async getUserIdsToSearch(
-    auth: AuthDto,
-    visibility?: AssetVisibility,
-    locationSharedOnly = false,
-  ): Promise<string[]> {
-    // Locked assets are personal. Never include partner IDs, regardless of A's elevated session.
-    if (visibility === AssetVisibility.Locked) {
-      return [auth.user.id];
-    }
-    const partnerIds = await getMyPartnerIds({
-      userId: auth.user.id,
-      repository: this.partnerRepository,
-      timelineEnabled: true,
-      locationSharedOnly,
-    });
-    return [auth.user.id, ...partnerIds];
+  private getUserIdsToSearch(auth: AuthDto): string[] {
+    return [auth.user.id];
   }
 
-  /**
-   * Strips location EXIF from assets whose owner hides it from the viewer (FL-54), directly or from the
-   * owner of an album the viewer reaches the asset through (owner default, privacy first).
-   */
-  private async withLocationPolicy(auth: AuthDto | undefined, assets: AssetResponseDto[]): Promise<AssetResponseDto[]> {
-    if (!auth) {
-      return assets;
-    }
-
-    const options = { userId: auth.user.id, repository: this.partnerRepository };
-    return applyAlbumLocationPolicy(await applyPartnerLocationPolicy(assets, options), options);
-  }
-
-  private async mapResponse(
+  private mapResponse(
     assets: MapAsset[],
     options: AssetMapOptions,
     page: { nextPage?: string | null; nextCursor?: string | null } = {},
-  ): Promise<SearchResponseDto> {
-    const items = await this.withLocationPolicy(
-      options.auth,
-      assets.map((asset) => mapAsset(asset, options)),
-    );
+  ): SearchResponseDto {
+    const items = assets.map((asset) => mapAsset(asset, options));
     return {
       albums: { total: 0, count: 0, items: [], facets: [] },
       assets: {

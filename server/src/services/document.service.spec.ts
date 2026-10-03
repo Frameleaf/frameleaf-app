@@ -190,7 +190,7 @@ describe(DocumentService.name, () => {
 
     it('shows another viewer the corrected text only, without dismissed text or the owner’s tools', async () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([assetId]));
       documentRepository.getAsset.mockResolvedValue(documentAsset({ ownerId: 'someone-else' }));
       mocks.ocr.getByAssetId.mockResolvedValue([
         ocrLine(lineId, 'LAKE AGNES', 0.1),

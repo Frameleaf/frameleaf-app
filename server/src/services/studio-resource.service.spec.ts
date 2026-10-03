@@ -207,12 +207,11 @@ describe(StudioResourceService.name, () => {
       expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([asset.id]), undefined);
     });
 
-    it('labels shared album and partner sources so the output inherits their privacy', async () => {
+    it('labels shared album sources so the output inherits their privacy (FL-326: no partner access)', async () => {
       const shared = AssetFactory.create({ ownerId: newUuid(), type: AssetType.Image });
       const partner = AssetFactory.create({ ownerId: newUuid(), type: AssetType.Image });
       mocks.asset.getByIds.mockResolvedValue([shared, partner]);
-      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([shared.id]));
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([partner.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([shared.id, partner.id]));
 
       const { manifest, refused } = await sut.resolveProjectResources(
         auth,
@@ -1736,7 +1735,6 @@ describe(StudioResourceService.name, () => {
         // member left the space: the account no longer reaches it, and the cached frame stops.
         mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
         mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set());
-        mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set());
         await expect(sut.verifyReadGrant('token', { workerId: 'worker-1', auth })).resolves.toEqual(
           expect.objectContaining({ valid: false }),
         );
