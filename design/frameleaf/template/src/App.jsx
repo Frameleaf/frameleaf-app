@@ -75,8 +75,10 @@ import {
   ChangePassword,
   PinPrompt,
   MaintenanceSplash,
+  CombiningDuplicates,
   Buy,
 } from "./AuthScreens";
+import { StorageMigrationCard } from "./StorageMigrationCard";
 import { AccountSetupTool, FirstRunSetup } from "./FirstRunSetup";
 import { loadAccountTool, setupStageTheme } from "./first-run-setup.mjs";
 import {
@@ -220,6 +222,7 @@ const AUTH_SCREENS = [
   "change-password",
   "pin",
   "maintenance",
+  "getting-ready",
   "buy",
 ];
 const SCREEN_IDS = [
@@ -2476,6 +2479,17 @@ export function App() {
         setTheme={setTheme}
       />
     ),
+    // FL-326: Getting Ready's "Combining duplicate files" step. Preview with
+    // ?screen=getting-ready (ends with files to review) or &review=0 (ends "Done").
+    "getting-ready": (
+      <CombiningDuplicates
+        toReview={new URL(location.href).searchParams.get("review") === "0" ? 0 : 2}
+        onContinue={() => setScreen("library")}
+        onOpenCare={() => setScreen("care")}
+        theme={theme}
+        setTheme={setTheme}
+      />
+    ),
     buy: (
       <Buy
         user={currentUser}
@@ -3940,6 +3954,11 @@ export function App() {
               Sample repair queues. Production findings remain in your existing
               library.
             </p>
+            <StorageMigrationCard
+              onReview={() =>
+                setToast("Media health: 2 missing originals to review.")
+              }
+            />
             {[
               "RAW support & preview repair",
               "Media health",
