@@ -438,6 +438,28 @@ describe(PhysicalFileRepository.name, () => {
       await expect(originalOf(missing.id)).resolves.toMatchObject({ physicalOriginalFileId: null });
     });
 
+    it('re-checks the file under its path lock: one a concurrent FileDelete moved away is never linked', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const existing = await newUpload(ctx, checksum);
+      const upload = await newUpload(ctx, checksum);
+      // on disk when first looked at, gone (moved to the file trash) once the path lock is held
+      let checks = 0;
+      const movedAway = (path: string) => Promise.resolve(path !== existing.originalPath || checks++ === 0);
+
+      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, { exists: movedAway });
+
+      expect(checks).toBe(2);
+      expect(result).toMatchObject({
+        linked: false,
+        physicalFile: { canonicalAssetId: upload.id, path: upload.originalPath },
+      });
+      await expect(originalOf(upload.id)).resolves.toEqual({
+        originalPath: upload.originalPath,
+        physicalOriginalFileId: result!.physicalFile.id,
+      });
+    });
+
     it('stores identical new content uploaded by two users at once as one file (Review Focus 1)', async () => {
       const { ctx, sut } = setup();
       const checksum = randomBytes(32);
