@@ -230,6 +230,24 @@ export class IntegrityRepository {
       SELECT path FROM immich_fork.studio_hdr_intermediate WHERE path IN (${sql.join(paths)})
       UNION
       SELECT path FROM immich_fork.asset_develop_artifact WHERE path IN (${sql.join(paths)})
+      UNION
+      SELECT photo->>'previewPath' AS path FROM immich_fork.photography_workflow workflow,
+        jsonb_array_elements(COALESCE(workflow.value->'published'->'photos','[]'::jsonb) || COALESCE(workflow.value->'publication'->'photos','[]'::jsonb)) photo
+      WHERE photo->>'previewPath' IN (${sql.join(paths)})
+      UNION
+      SELECT photo->>'thumbnailPath' AS path FROM immich_fork.photography_workflow workflow,
+        jsonb_array_elements(COALESCE(workflow.value->'published'->'photos','[]'::jsonb) || COALESCE(workflow.value->'publication'->'photos','[]'::jsonb)) photo
+      WHERE photo->>'thumbnailPath' IN (${sql.join(paths)})
+      UNION
+      SELECT item->>'finalPath' AS path FROM immich_fork.photography_workflow workflow,
+        jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item
+      WHERE item->>'finalPath' IN (${sql.join(paths)})
+      UNION
+      SELECT workflow.value->'published'->>'logoPath' AS path FROM immich_fork.photography_workflow workflow
+      WHERE workflow.value->'published'->>'logoPath' IN (${sql.join(paths)})
+      UNION
+      SELECT workflow.value->'publication'->>'logoPath' AS path FROM immich_fork.photography_workflow workflow
+      WHERE workflow.value->'publication'->>'logoPath' IN (${sql.join(paths)})
     `.execute(this.db);
     return rows;
   }
