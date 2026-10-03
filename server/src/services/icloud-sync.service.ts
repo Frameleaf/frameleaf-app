@@ -40,8 +40,8 @@ import {
   ICloudTransportError,
   ICloudTransportRepository,
 } from 'src/repositories/icloud-transport.repository.js';
-import { JobRepository } from 'src/repositories/job.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -157,7 +157,9 @@ export const mapICloudRun = (operation: MediaOperation) => {
     progress: privateWeekly ? 0 : Number(operation.progress ?? 0),
     processedUnits: privateWeekly ? 0 : Number(operation.processedUnits ?? 0),
     totalUnits:
-      privateWeekly || operation.totalUnits === null || operation.totalUnits === undefined ? null : Number(operation.totalUnits),
+      privateWeekly || operation.totalUnits === null || operation.totalUnits === undefined
+        ? null
+        : Number(operation.totalUnits),
     retrying: queuedWithDelay && retried,
     waiting: queuedWithDelay && !retried,
     pauseRequested: !!operation.pauseRequestedAt && status !== MediaOperationStatus.Paused,
@@ -265,7 +267,11 @@ export class ICloudSyncService {
     };
   }
 
-  async setIdentityReuseAuthority(auth: AuthDto, id: string, dto: ICloudIdentityReuseAuthorityDto): Promise<ICloudIdentityReuseAuthorityStatusDto> {
+  async setIdentityReuseAuthority(
+    auth: AuthDto,
+    id: string,
+    dto: ICloudIdentityReuseAuthorityDto,
+  ): Promise<ICloudIdentityReuseAuthorityStatusDto> {
     await this.owned(auth, id);
     return this.weekly.setAuthority(auth, id, dto);
   }
@@ -625,13 +631,19 @@ export class ICloudSyncService {
    * device approval, a password) fails the run with that reason; the connection has told its owner.
    */
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
-    if (operation.snapshot.task === 'identity-audit' && !hasWeeklyAuthorityInput(operation.snapshot)
-      && (operation.snapshot.purpose===undefined || operation.snapshot.purpose==='manual-session')) {
+    if (
+      operation.snapshot.task === 'identity-audit' &&
+      !hasWeeklyAuthorityInput(operation.snapshot) &&
+      (operation.snapshot.purpose === undefined || operation.snapshot.purpose === 'manual-session')
+    ) {
       await this.audits.run(operation, claimToken);
       return;
     }
-    if (Object.hasOwn(operation.snapshot,'task') || Object.hasOwn(operation.snapshot,'purpose')
-      || hasWeeklyAuthorityInput(operation.snapshot)) {
+    if (
+      Object.hasOwn(operation.snapshot, 'task') ||
+      Object.hasOwn(operation.snapshot, 'purpose') ||
+      hasWeeklyAuthorityInput(operation.snapshot)
+    ) {
       await this.operations.fail(
         operation.id,
         claimToken,
