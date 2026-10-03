@@ -52,7 +52,16 @@ export async function configureExpress(
   // FL-161: record how the request arrived (vouched for by the edge worker's per-boot secret) and
   // drop every client-supplied `X-Frameleaf-*` claim before anything else reads the request.
   app.use(frameleafViaMiddleware(frameleafCloud.edge.secret));
-  app.use(json({ limit: '10mb' }));
+  app.use(
+    json({
+      limit: '10mb',
+      verify: (req, _res, buffer) => {
+        if (req.url?.split('?', 1)[0] === '/api/photography/payments/stripe') {
+          (req as typeof req & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+        }
+      },
+    }),
+  );
   app.use(urlencoded({ limit: '10mb' }));
 
   if (configRepository.isDev()) {

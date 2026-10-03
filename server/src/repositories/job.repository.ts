@@ -716,6 +716,12 @@ export class JobRepository {
         // FL-179: one job per execution, so a replayed run that queues its automatic retry again adds none
         return item.data.executionId ? { jobId: `workflow-${item.data.executionId}` } : null;
       }
+      case JobName.PhotographyWorkflowRender: {
+        return {
+          delay: item.data.delay ?? 0,
+          deduplication: { id: `${JobName.PhotographyWorkflowRender}:${item.data.id}`, keepLastIfActive: true },
+        };
+      }
       case JobName.AssetDevelopRender: {
         // The automatic retry of a failed render waits before it is claimed (FL-64).
         return item.data.delay ? { delay: item.data.delay } : null;
