@@ -194,6 +194,7 @@ describe(PartnerCopyService.name, () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();
       const { user: bob } = await ctx.newUser({ quotaSizeInBytes: 1, quotaUsageInBytes: 10 });
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
       const source = await newSourceAsset(ctx, alice.id);
       await ctx.newAssetFile({ assetId: source.id, type: AssetFileType.Thumbnail, path: '/thumbs/a.webp' });
       await ctx.newAssetFile({ assetId: source.id, type: AssetFileType.Preview, path: '/thumbs/a.jpeg' });
@@ -275,6 +276,7 @@ describe(PartnerCopyService.name, () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();
       const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
       const source = await newSourceAsset(ctx, alice.id);
 
       const results = await Promise.all([
@@ -291,6 +293,9 @@ describe(PartnerCopyService.name, () => {
       const { user: alice } = await ctx.newUser();
       const { user: bob } = await ctx.newUser();
       const { user: carol } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      await ctx.newPartner({ sharedById: bob.id, sharedWithId: carol.id });
+      await ctx.newPartner({ sharedById: carol.id, sharedWithId: alice.id });
       const source = await newSourceAsset(ctx, alice.id);
       const bobCopy = await sut.copyAsset(source.id, bob.id, alice.id);
       const carolCopy = await sut.copyAsset(bobCopy!, carol.id, bob.id);
@@ -310,6 +315,7 @@ describe(PartnerCopyService.name, () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();
       const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
       const marked = await newSourceAsset(ctx, alice.id);
       await db
         .insertInto('asset_lock')
@@ -350,6 +356,7 @@ describe(PartnerCopyService.name, () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();
       const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
       const source = await newSourceAsset(ctx, alice.id);
       const { tag } = await ctx.newTag({ userId: alice.id, value: 'Private' });
       await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [source.id] });
@@ -396,6 +403,7 @@ describe(PartnerCopyService.name, () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();
       const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
       const source = await newSourceAsset(ctx, alice.id);
       const { person: emma } = await ctx.newPerson({ ownerId: alice.id, name: 'Emma' });
       await ctx.newAssetFace({ assetId: source.id, personGroupId: emma.personGroupId });
@@ -425,6 +433,7 @@ describe(PartnerCopyService.name, () => {
       const { sut, ctx } = setup();
       const { user: alice } = await ctx.newUser();
       const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
       const { asset: motion } = await ctx.newAsset({ ownerId: alice.id, visibility: AssetVisibility.Hidden });
       await ctx.newExif({ assetId: motion.id, fileSizeInByte: 999 });
       const still = await newSourceAsset(ctx, alice.id);
@@ -524,6 +533,33 @@ describe(PartnerCopyService.name, () => {
       await expect(
         sut.handleCopyAsset({ sourceAssetId: source.id, targetOwnerId: bob.id, partnerSharedById: alice.id }),
       ).resolves.toBe('skipped');
+    });
+
+    it('copies nothing more once the partnership ends, even from a batch already running', async () => {
+      const { sut, ctx } = setup();
+      const { sut: partners, ctx: partnerCtx } = newMediumService(PartnerService, {
+        database: db,
+        real,
+        mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
+      });
+      partnerCtx.getMock(EventRepository).emit.mockResolvedValue();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const source = await newSourceAsset(ctx, alice.id);
+      const { album } = await ctx.newAlbum({ ownerId: alice.id, albumName: 'Lake' }, [source.id]);
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+
+      // the batch read the partnership before it ended, then copies after `remove` ran
+      await partners.remove(factory.auth({ user: alice }), bob.id);
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+      // and an album copy whose partnership ends between the first check and recording its origin
+      vi.spyOn(ctx.get(PartnerRepository), 'get').mockResolvedValueOnce({} as never);
+      await expect(sut.copyAlbum(album.id, bob.id, alice.id)).resolves.toBeUndefined();
+
+      await expect(db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).resolves.toEqual([]);
+      await expect(
+        db.selectFrom('album_user').select('albumId').where('userId', '=', bob.id).execute(),
+      ).resolves.toEqual([]);
     });
   });
 
