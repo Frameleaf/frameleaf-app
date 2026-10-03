@@ -67,6 +67,7 @@ import { OAuthRepository } from 'src/repositories/oauth.repository.js';
 import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
@@ -295,6 +296,7 @@ export type ServiceOverrides = {
   partner: PartnerRepository;
   person: PersonRepository;
   physicalFile: PhysicalFileRepository;
+  physicalFileTrash: PhysicalFileTrashRepository;
   plugin: PluginRepository;
   process: ProcessRepository;
   renderWorker: RenderWorkerRepository;
@@ -404,6 +406,7 @@ export const getMocks = () => {
     partner: automock(PartnerRepository, { strict: false }),
     person: automock(PersonRepository, { strict: false }),
     physicalFile: automock(PhysicalFileRepository, { strict: false }),
+    physicalFileTrash: automock(PhysicalFileTrashRepository, { strict: false }),
     plugin: automock(PluginRepository, { strict: true, args: [databaseMock, loggerMock] }),
     process: automock(ProcessRepository),
     renderWorker: automock(RenderWorkerRepository, { strict: false }),
@@ -531,6 +534,7 @@ export const newTestService = <T extends BaseService>(
     overrides.partner || (mocks.partner as As<PartnerRepository>),
     overrides.person || (mocks.person as As<PersonRepository>),
     overrides.physicalFile || (mocks.physicalFile as As<PhysicalFileRepository>),
+    overrides.physicalFileTrash || (mocks.physicalFileTrash as As<PhysicalFileTrashRepository>),
     overrides.plugin || (mocks.plugin as As<PluginRepository>),
     overrides.process || (mocks.process as As<ProcessRepository>),
     overrides.renderWorker || (mocks.renderWorker as As<RenderWorkerRepository>),

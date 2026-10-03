@@ -83,6 +83,7 @@ import { PetRepository } from 'src/repositories/pet.repository.js';
 import { PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
+import { PhysicalFileTrashRepository } from 'src/repositories/physical-file-trash.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
@@ -205,6 +206,7 @@ export const repositories = [
   PetRepository,
   PhotoToolsRepository,
   PhysicalFileRepository,
+  PhysicalFileTrashRepository,
   RateLimitRepository,
   PluginRepository,
   PreservationFileRepository,

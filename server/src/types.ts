@@ -358,6 +358,18 @@ export interface IDeleteFilesJob extends IBaseJob {
    * file is kept, including ones no remaining row is counted as referencing.
    */
   removedAssetId?: string;
+  /**
+   * Universal storage: the removed asset's original, so it goes to the file trash with its history
+   * even when it was never registered as a physical file. The checksum is hex encoded.
+   */
+  original?: {
+    path: string;
+    ownerId: string;
+    assetId: string;
+    originalFileName: string;
+    checksum: string;
+    sizeInBytes: number;
+  };
 }
 
 export interface IDeferrableJob extends IEntityJob {
