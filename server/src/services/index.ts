@@ -55,6 +55,7 @@ import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
+import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
@@ -172,6 +173,7 @@ export const services = [
   MediaIntegrityService,
   ICloudStagingService,
   ICloudSyncService,
+  ICloudWeeklyService,
   ICloudIdentityService,
   ApiKeyService,
   ArchiveOperationService,
