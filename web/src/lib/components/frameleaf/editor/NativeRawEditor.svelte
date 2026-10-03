@@ -794,7 +794,7 @@
     flex-wrap: wrap;
   }
   header strong {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
   main {
     display: grid;

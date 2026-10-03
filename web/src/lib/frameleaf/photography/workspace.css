@@ -221,7 +221,7 @@
 }
 .phd-templates button {
   padding: 24px 18px;
-  text-align: left;
+  text-align: start;
   min-height: 150px;
   background: var(--fl-canvas);
   border: 1px solid var(--fl-border);
