@@ -2,6 +2,12 @@ import { createZodDto } from 'nestjs-zod';
 import { PhotographyWatermarkSchema } from 'src/dtos/photography-rendition.dto.js';
 import z from 'zod';
 
+const blockedReasons = ['permission', 'order', 'payment', 'approval', 'render'] as const;
+// Keep runtime null validation while avoiding a null member in generated TypeScript string enums.
+const BlockedReason = z
+  .enum(blockedReasons)
+  .nullable()
+  .meta({ type: 'string', enum: [...blockedReasons], nullable: true, anyOf: undefined });
 const Id = z.uuidv4();
 const Revision = z.uuid().nullable();
 const Instant = z.iso.datetime({ offset: true }).nullable();
@@ -272,7 +278,7 @@ const OutputViewSchema = z.object({
   exportSpec: ExportSpecSchema,
   url: z.string(),
   canDownload: z.boolean().optional(),
-  blockedReason: z.enum(['permission', 'order', 'payment', 'approval', 'render']).nullable().optional(),
+  blockedReason: BlockedReason.optional(),
 });
 const OrderSchema = z.object({
   id: Id,
@@ -422,7 +428,7 @@ export class PhotographyGalleryDto extends createZodDto(
         previewUrl: z.string(),
         thumbnailUrl: z.string(),
         canDownload: z.boolean(),
-        blockedReason: z.enum(['permission', 'order', 'payment', 'approval', 'render']).nullable(),
+        blockedReason: BlockedReason,
         approvalRevisionId: Id.nullable(),
         outputs: z.array(OutputViewSchema),
       }),
