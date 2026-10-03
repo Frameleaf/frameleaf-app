@@ -8,6 +8,7 @@ import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
 import type { Rational } from 'src/utils/rational-time.js';
+import type { StorageMigrationState } from 'src/utils/storage-migration.js';
 import { VECTOR_EXTENSIONS } from 'src/constants.js';
 import { AssetFile } from 'src/database.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
@@ -15,7 +16,6 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { SetMaintenanceModeDto } from 'src/dtos/maintenance.dto.js';
-import type { StorageMigrationState } from 'src/utils/storage-migration.js';
 import {
   PhysicalDeduplicationCopyState,
   PhysicalDeduplicationRetainedState,
