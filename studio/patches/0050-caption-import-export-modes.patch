@@ -2,12 +2,12 @@
 +++ b/src/features/export/utils/embedded-subtitle-export.test.ts
 @@ -1,10 +1,12 @@
  // @vitest-environment node
- 
+
  import { describe, expect, it } from 'vite-plus/test'
 +import { serializeSrt } from '@/shared/utils/subtitles'
  import type { CompositionInputProps } from '@/types/export'
  import type { SubtitleSegmentItem, TimelineTrack } from '@/types/timeline'
- 
+
  import {
 +  buildTranscriptSubtitleCues,
    buildTranscriptSubtitleWebVtt,
@@ -69,12 +69,12 @@
 -import type { SubtitleSegmentItem, TimelineItem, TimelineTrack } from '@/types/timeline'
 +import type { SubtitleSegmentItem, TextItem, TimelineItem, TimelineTrack } from '@/types/timeline'
  import { serializeVtt, type SubtitleCue } from '@/shared/utils/subtitles'
- 
+
  export interface SubtitleExportPlan {
 @@ -42,14 +42,21 @@
    return { embedTranscriptSubtitles, burnInSubtitles, fallbackToBurnIn }
  }
- 
+
 -function isTranscriptSubtitleItem(item: TimelineItem): item is SubtitleSegmentItem {
 -  return item.type === 'subtitle' && item.source.type === 'transcript'
 +// Keep the existing helper contract, including transcript behavior, while admitting imported cues.
@@ -87,7 +87,7 @@
 +      item.captionSource?.type === 'subtitle-import')
 +  )
  }
- 
+
  /**
 - * Collect transcript subtitle cues from the (export-trimmed) composition,
 + * Collect transcript and imported subtitle cues from the (export-trimmed) composition,
@@ -100,7 +100,7 @@
 @@ -67,7 +74,10 @@
        const itemStartSeconds = item.from / fps
        const itemEndSeconds = (item.from + item.durationInFrames) / fps
- 
+
 -      for (const cue of item.cues) {
 +      const itemCues = item.type === 'text'
 +        ? [{ id: item.id, startSeconds: 0, endSeconds: item.durationInFrames / fps, text: item.text }]
@@ -122,7 +122,7 @@
 @@ -395,6 +396,25 @@
      deleteMediaBatch,
    })
- 
+
 +  const subtitleImport = useRef<AbortController | null>(null)
 +  useEffect(() => () => subtitleImport.current?.abort(), [])
 +  const handleSubtitleImport = async () => {
@@ -168,7 +168,7 @@
    getMediaDeletionImpact,
 @@ -48,6 +49,7 @@
  }
- 
+
  export {
 +  addItemsOnNewTracks,
    deleteCompoundClips,
