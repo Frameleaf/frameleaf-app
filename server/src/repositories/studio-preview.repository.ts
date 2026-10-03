@@ -1,12 +1,22 @@
-import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, sql } from 'kysely';
+import { ConflictException, Injectable } from '@nestjs/common';
+import { Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AlbumUserRole, StudioPreviewStatus } from 'src/enum.js';
+import { AlbumUserRole, MediaOperationKind, MediaOperationStatus, StudioPreviewStatus } from 'src/enum.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
+import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
+import { isConsumerPreview, PREVIEW_CANCEL_CLEANED, PREVIEW_CANCEL_NO_OPERATION, PREVIEW_CANCEL_PENDING, PREVIEW_CANCEL_UNAVAILABLE, PREVIEW_CANCEL_UNCLAIMED, PREVIEW_CONSUMER_PREFIX } from 'src/utils/studio-preview.js';
 
 export type StudioPreviewFrame = Selectable<StudioPreviewFrameTable>;
+export type StudioPreviewRetirement = {
+  frame: StudioPreviewFrame;
+  changedOperation?: MediaOperation;
+  cancellationState: 'not-needed' | 'requested' | 'acknowledged' | 'unavailable';
+  rendererReleased: true | null;
+  cleanupAllowed: boolean;
+};
 
 export type StudioPreviewFrameCreate = Omit<
   Insertable<StudioPreviewFrameTable>,
@@ -50,6 +60,22 @@ export class StudioPreviewRepository {
    * another.
    */
   async upsert(frame: StudioPreviewFrameCreate): Promise<{ frame: StudioPreviewFrame; created: boolean }> {
+    if (isConsumerPreview(frame.cacheKey)) {
+      return withPublicForkWrites(this.db, async (tx) => {
+        const inserted = await tx.insertInto('studio_preview_frame').values(frame)
+          .onConflict((builder) => builder.column('cacheKey').doNothing()).returningAll().executeTakeFirst();
+        if (inserted) {
+          return { frame: inserted as unknown as StudioPreviewFrame, created: true };
+        }
+        // A retry cannot renew the original grant, switch operation or revive a terminal admission.
+        const existing = await tx.selectFrom('studio_preview_frame').selectAll()
+          .where('cacheKey', '=', frame.cacheKey).where('ownerId', '=', frame.ownerId).executeTakeFirst();
+        if (!existing) {
+          throw new ConflictException('Preview admission changed; retry the request');
+        }
+        return { frame: existing as unknown as StudioPreviewFrame, created: false };
+      });
+    }
     const inserted = await this.db
       .insertInto('studio_preview_frame')
       .values(frame)
@@ -123,6 +149,114 @@ export class StudioPreviewRepository {
       .executeTakeFirst()) as unknown as StudioPreviewFrame | undefined;
   }
 
+  /** The scoped enqueue holds this lock through allocation and attachment in createWithin. */
+  async lockPendingAdmission(tx: Transaction<DB>, frame: StudioPreviewFrame): Promise<void> {
+    const current = await tx.selectFrom('studio_preview_frame').select('id')
+      .where('id', '=', frame.id).where('ownerId', '=', frame.ownerId).where('cacheKey', '=', frame.cacheKey)
+      .where('operationId', 'is', null).where('status', '=', StudioPreviewStatus.Pending).forUpdate().executeTakeFirst();
+    if (!current) {
+      throw new ConflictException('Preview admission was retired before allocation');
+    }
+  }
+
+  async attachAdmissionOperation(tx: Transaction<DB>, frame: StudioPreviewFrame, operationId: string): Promise<void> {
+    const attached = await tx.updateTable('studio_preview_frame')
+      .set({ operationId, status: StudioPreviewStatus.Rendering })
+      .where('id', '=', frame.id).where('cacheKey', '=', frame.cacheKey).where('ownerId', '=', frame.ownerId)
+      .where('status', '=', StudioPreviewStatus.Pending).where('operationId', 'is', null).executeTakeFirst();
+    if (Number(attached.numUpdatedRows) !== 1) {
+      throw new ConflictException('Preview admission was retired before attachment');
+    }
+  }
+
+  /** Fence and actual cancellation share a commit; a failed cancellation keeps a durable fence. */
+  async retireConsumer(
+    observed: StudioPreviewFrame,
+    cancel: (tx: Transaction<DB>, operationId: string, ownerId: string) => Promise<MediaOperation | undefined>,
+    expectedOperationId?: string | null,
+    snapshot = true,
+  ): Promise<StudioPreviewRetirement | undefined> {
+    return this.db.transaction().execute(async (tx) => {
+      await lockPublicForkWrites(tx);
+      const current = await tx.selectFrom('studio_preview_frame').selectAll()
+        .where('id', '=', observed.id).where('ownerId', '=', observed.ownerId).where('cacheKey', '=', observed.cacheKey)
+        .$if(snapshot, (qb) => qb.where('updateId', '=', observed.updateId))
+        .forUpdate().executeTakeFirst();
+      if (!current) {
+        return;
+      }
+      if (expectedOperationId !== undefined && current.operationId !== expectedOperationId) {
+        throw new ConflictException('The captured preview operation changed');
+      }
+      const before = current as unknown as StudioPreviewFrame;
+      let operation: MediaOperation | undefined;
+      if (current.operationId) {
+        operation = (await tx.selectFrom('media_operation').selectAll()
+          .where('id', '=', current.operationId).where('ownerId', '=', current.ownerId)
+          .where('kind', '=', MediaOperationKind.StudioPreview).where('projectId', '=', current.projectId)
+          .where('revisionId', '=', current.revisionDigest)
+          .where(sql<string>`"snapshot"->>'previewFrameId'`, '=', current.id).forUpdate().executeTakeFirst()) as unknown as MediaOperation | undefined;
+        if (!operation) {
+          throw new ConflictException('The captured preview operation is unavailable');
+        }
+      }
+      let marker = before.errorCode === PREVIEW_CANCEL_CLEANED ? PREVIEW_CANCEL_CLEANED : PREVIEW_CANCEL_PENDING;
+      if (!current.operationId && (before.errorCode === PREVIEW_CANCEL_NO_OPERATION ||
+        (before.status === StudioPreviewStatus.Pending && before.errorCode === null))) {
+        marker = PREVIEW_CANCEL_NO_OPERATION;
+      } else if (before.errorCode === PREVIEW_CANCEL_UNCLAIMED) {
+        marker = PREVIEW_CANCEL_UNCLAIMED;
+      }
+      await tx.updateTable('studio_preview_frame')
+        .set({ status: StudioPreviewStatus.Evicted, framePath: null, frameChecksum: null, sizeInBytes: null, errorCode: marker })
+        .where('id', '=', current.id).execute();
+
+      let changedOperation: MediaOperation | undefined;
+      let unavailable = false;
+      if (operation && ![MediaOperationStatus.Completed, MediaOperationStatus.Cancelled, MediaOperationStatus.Failed].includes(operation.status as MediaOperationStatus)) {
+        await sql`SAVEPOINT preview_consumer_cancel`.execute(tx);
+        try {
+          changedOperation = await cancel(tx, operation.id, operation.ownerId);
+          if (changedOperation) {
+            if ([MediaOperationStatus.Queued, MediaOperationStatus.Paused].includes(operation.status as MediaOperationStatus) &&
+              operation.claimToken === null && operation.startedAt === null && operation.attempt === 0) {
+              marker = PREVIEW_CANCEL_UNCLAIMED;
+            }
+            operation = changedOperation;
+          } else {
+            unavailable = true;
+          }
+        } catch {
+          await sql`ROLLBACK TO SAVEPOINT preview_consumer_cancel`.execute(tx);
+          unavailable = true;
+        }
+        await sql`RELEASE SAVEPOINT preview_consumer_cancel`.execute(tx);
+      }
+      if (unavailable) {
+        marker = PREVIEW_CANCEL_UNAVAILABLE;
+      }
+      const frame = (await tx.updateTable('studio_preview_frame').set({ errorCode: marker })
+        .where('id', '=', current.id).returningAll().executeTakeFirstOrThrow()) as unknown as StudioPreviewFrame;
+      // Completed/failed/recovered cancelled status is NOT filesystem or renderer release authority.
+      const released = operation?.status === MediaOperationStatus.Cancelled && !!operation.cancelAcknowledgedAt && !!operation.remoteReleasedAt;
+      const unclaimed = [PREVIEW_CANCEL_NO_OPERATION, PREVIEW_CANCEL_UNCLAIMED, PREVIEW_CANCEL_CLEANED].includes(marker);
+      const acknowledged = operation?.status === MediaOperationStatus.Cancelled && !!operation.cancelAcknowledgedAt;
+      return {
+        frame, changedOperation,
+        cancellationState: unavailable ? 'unavailable' : released ? 'acknowledged' : unclaimed ? 'not-needed' : acknowledged ? 'acknowledged' : operation?.cancelRequestedAt ? 'requested' : 'unavailable',
+        rendererReleased: released ? true : null,
+        cleanupAllowed: released || unclaimed,
+      };
+    });
+  }
+
+  async markConsumerCleaned(frame: StudioPreviewFrame): Promise<void> {
+    await this.db.updateTable('studio_preview_frame').set({ errorCode: PREVIEW_CANCEL_CLEANED })
+      .where('id', '=', frame.id).where('ownerId', '=', frame.ownerId).where('cacheKey', '=', frame.cacheKey)
+      .where('status', '=', StudioPreviewStatus.Evicted)
+      .where(sql<boolean>`"operationId" IS NOT DISTINCT FROM ${frame.operationId}::uuid`).execute();
+  }
+
   async getByCacheKey(cacheKey: string, ownerId: string): Promise<StudioPreviewFrame | undefined> {
     return (await this.db
       .selectFrom('studio_preview_frame')
@@ -167,6 +301,25 @@ export class StudioPreviewRepository {
   /** Touch the recency clock. Least-recently-used eviction is only as good as this write. */
   async markAccessed(id: string, at: Date): Promise<void> {
     await this.db.updateTable('studio_preview_frame').set({ lastAccessedAt: at }).where('id', '=', id).execute();
+  }
+
+  /** Scoped delivery and recency share one admission write after all preceding read awaits. */
+  async markConsumerAccessed(frame: StudioPreviewFrame, at: Date): Promise<boolean> {
+    if (!frame.operationId || !frame.framePath || !isConsumerPreview(frame.cacheKey)) {
+      return false;
+    }
+    const admitted = await this.db
+      .updateTable('studio_preview_frame')
+      .set({ lastAccessedAt: at })
+      .where('id', '=', frame.id)
+      .where('ownerId', '=', frame.ownerId)
+      .where('cacheKey', '=', frame.cacheKey)
+      .where('operationId', '=', frame.operationId)
+      .where('framePath', '=', frame.framePath)
+      .where('status', '=', StudioPreviewStatus.Ready)
+      .returning('id')
+      .executeTakeFirst();
+    return !!admitted;
   }
 
   async markRendering(id: string, operationId: string): Promise<boolean> {
@@ -452,6 +605,11 @@ export class StudioPreviewRepository {
             eb('status', 'in', [StudioPreviewStatus.Superseded, StudioPreviewStatus.Failed]),
             eb('updatedAt', '<', retiredBefore),
           ]),
+          eb.and([
+            eb('cacheKey', 'like', `${PREVIEW_CONSUMER_PREFIX}%`),
+            eb('status', '=', StudioPreviewStatus.Evicted),
+            eb.or([eb('errorCode', 'is', null), eb('errorCode', '!=', PREVIEW_CANCEL_CLEANED)]),
+          ]),
         ]),
       )
       .orderBy('updatedAt', 'asc')
@@ -478,6 +636,10 @@ export class StudioPreviewRepository {
       .selectFrom('studio_preview_frame')
       .select('id')
       .where('status', '=', StudioPreviewStatus.Evicted)
+      .where((eb) => eb.or([
+        eb('cacheKey', 'not like', `${PREVIEW_CONSUMER_PREFIX}%`),
+        eb('errorCode', '=', PREVIEW_CANCEL_CLEANED),
+      ]))
       .where('updatedAt', '<', before)
       .limit(limit)
       .execute();
