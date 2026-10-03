@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test'
 import type { Project, ProjectTimeline } from '@/types/project'
 import type { MediaMetadata } from '@/types/storage'
-import type { TimelineItem } from '@/types/timeline'
+import type { TimelineItem, TextItem } from '@/types/timeline'
+import { useEditorStore } from '@/shared/state/editor'
 import { applyCanonicalCommands, canonicalJson, type CanonicalEnvelope } from '../src/canonical-commands'
 import {
   createStudioEngineCommandHandlers,
@@ -154,7 +155,92 @@ const touchingPair = async () => {
   }
 }
 
+/** A leading picture gap with deliberately offset linked sound and an attached caption. */
+const linkedGap = async () => {
+  const graph = await applied(project(), [
+    envelope('clip.add', { trackId: 'v1', assetId: ASSET, at: seconds(2) }),
+  ])
+  const picture = onTrack(graph, 'v1')[0]!
+  const sound = onTrack(graph, 'a1')[0]!
+  sound.from = 90
+  graph.timeline!.tracks.push(track('captions', 'video', 2))
+  const caption: TextItem = {
+    id: 'attached-caption', trackId: 'captions', from: 70, durationInFrames: 20,
+    label: 'Caption', type: 'text', text: 'Keep this caption', color: '#ffffff',
+    textRole: 'caption', captionSource: { type: 'transcript', clipId: picture.id, mediaId: ASSET },
+  }
+  // These unrelated items touch the shifted companions exactly, but do not move with them.
+  graph.timeline!.items.push(
+    { ...sound, id: 'unrelated-sound', linkedGroupId: undefined, originId: undefined,
+      from: 0, durationInFrames: 30, sourceStart: 0, sourceEnd: 30 },
+    caption,
+    { ...caption, id: 'unrelated-caption', from: 0, durationInFrames: 10,
+      captionSource: undefined, textRole: undefined, text: 'Keep this title' },
+  )
+  return { graph: await applied(graph, []), moving: [picture.id, sound.id, caption.id] }
+}
+
 describe('FL-94 linked timeline tools on the Freecut engine', () => {
+  it.each([true, false])('closes all picture gaps with linked sound/captions, preserving the full graph (selection %s)', async (linked) => {
+    const { graph, moving } = await linkedGap()
+    const expected = structuredClone(graph)
+    for (const item of itemsOf(expected)) if (moving.includes(item.id)) item.from -= 60
+    const before = canonicalJson(graph)
+    const previous = useEditorStore.getState().linkedSelectionEnabled
+    useEditorStore.setState({ linkedSelectionEnabled: linked })
+    try {
+      const closed = await applied(graph, [envelope('track.closeGap', { trackId: 'v1' })])
+      expect(canonicalJson(closed)).toBe(canonicalJson(expected))
+      expect(canonicalJson(graph)).toBe(before)
+      expect(useEditorStore.getState().linkedSelectionEnabled).toBe(linked)
+      // Rehydrating the accepted graph keeps source windows, links, track flags and unknown fields.
+      expect(canonicalJson(await applied(structuredClone(closed), []))).toBe(canonicalJson(closed))
+    } finally {
+      useEditorStore.setState({ linkedSelectionEnabled: previous })
+    }
+  })
+
+  it.each(['unrelated-sound', 'unrelated-caption'])('atomically refuses a one-frame companion collision with %s', async (id) => {
+    const { graph } = await linkedGap()
+    const obstacle = itemsOf(graph).find((item) => item.id === id)!
+    obstacle.durationInFrames += 1
+    const previous = useEditorStore.getState().linkedSelectionEnabled
+    useEditorStore.setState({ linkedSelectionEnabled: false })
+    try {
+      const before = canonicalJson(graph)
+      const outcome = await applyCanonicalCommands(graph, [
+        envelope('marker.add', { at: seconds(1) }),
+        envelope('track.closeGap', { trackId: 'v1' }),
+      ], media)
+      expect(outcome).toMatchObject({ status: 'rejected', index: 1, reason: 'failed' })
+      expect(outcome).not.toHaveProperty('project')
+      expect(canonicalJson(graph)).toBe(before)
+      expect(useEditorStore.getState().linkedSelectionEnabled).toBe(false)
+    } finally {
+      useEditorStore.setState({ linkedSelectionEnabled: previous })
+    }
+  })
+
+  it.each(['audio', 'text'])('refuses an offset linked %s moving before frame zero', async (type) => {
+    const { graph, moving } = await linkedGap()
+    const companion = itemsOf(graph).find((item) => moving.includes(item.id) && item.type === type)!
+    companion.from = 30
+    // No obstacle: clamping to frame zero would otherwise look collision-free but lose the offset.
+    graph.timeline!.items = graph.timeline!.items.filter((item) =>
+      item.id !== (type === 'audio' ? 'unrelated-sound' : 'unrelated-caption'))
+    const before = canonicalJson(graph)
+    const outcome = await applyCanonicalCommands(graph, [envelope('track.closeGap', { trackId: 'v1' })], media)
+    expect(outcome).toMatchObject({ status: 'rejected', reason: 'failed', detail: expect.stringContaining('before the timeline') })
+    expect(outcome).not.toHaveProperty('project')
+    expect(canonicalJson(graph)).toBe(before)
+  })
+
+  it.each(['a1', 'captions'])('refuses closing gaps with a locked companion track %s', async (id) => {
+    const { graph } = await linkedGap()
+    graph.timeline!.tracks.find((candidate) => candidate.id === id)!.locked = true
+    await refused(graph, [envelope('track.closeGap', { trackId: 'v1' })], 'failed')
+  })
+
   it('rolls the cut between linked clips without changing the sequence length', async () => {
     const { graph, a, b } = await touchingPair()
     expect(spans(graph, 'v1')).toEqual([
@@ -489,6 +575,7 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
     const gapped = await applied(start, [
       envelope('clip.push', { clipId: onTrack(start, 'v1')[1]!.id, delta: seconds(1) }),
     ])
+    const companions = await linkedGap()
     let graph: unknown = start
     const history = createStudioGraphHistory()
     const handlers = createStudioEngineCommandHandlers({
@@ -527,6 +614,7 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
       [parts, 'clip.join', { clipIds: onTrack(parts, 'v1').map((part) => part.id) }],
       [start, 'clip.push', { clipId: onTrack(start, 'v1')[1]!.id, delta: seconds(1) }],
       [gapped, 'track.closeGap', { trackId: 'v1' }],
+      [companions.graph, 'track.closeGap', { trackId: 'v1' }],
       [start, 'sequence.setSettings', { sequenceId: 'main', fps: { num: 60, den: 1 }, timing: 'keep-time' }],
       [start, 'project.applyTemplate', { templateId: 'vertical-9-16' }],
     ]
@@ -542,6 +630,21 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
       await run('history.redo', {})
       expect(canonicalJson(graph), `${id} redo`).toBe(after)
     }
+    // A rejected edit neither publishes a partial graph nor disturbs an existing undo/redo branch.
+    const blocked = structuredClone(companions.graph)
+    itemsOf(blocked).find((item) => item.id === 'unrelated-sound')!.durationInFrames += 1
+    graph = blocked
+    history.clear()
+    await run('marker.add', { at: seconds(1) })
+    const marked = canonicalJson(graph)
+    await run('history.undo', {})
+    const before = canonicalJson(graph)
+    const depth = history.depth
+    await expect(run('track.closeGap', { trackId: 'v1' })).rejects.toThrow('clips would overlap')
+    expect(canonicalJson(graph)).toBe(before)
+    expect(history.depth).toEqual(depth)
+    await run('history.redo', {})
+    expect(canonicalJson(graph)).toBe(marked)
   })
 })
 
@@ -743,4 +846,3 @@ describe('FL-94 sequence settings: nothing on an existing timeline retimes silen
     expect(itemsOf(next)[0]).toMatchObject({ from: 0, durationInFrames: 60, sourceStart: 60, sourceEnd: 180 })
   })
 })
-
