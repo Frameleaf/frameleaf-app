@@ -230,7 +230,10 @@ const createRunFixture = async (directory: string) => {
   operations.setBulkResult.mockResolvedValue(operation);
   operations.beginValidation.mockResolvedValue(true);
   operations.complete.mockResolvedValue(true);
-  operations.requeue.mockResolvedValue(true);
+  operations.requeue.mockImplementation(async (_id, _token, _options, settled) => {
+    await settled?.(undefined as never);
+    return true;
+  });
   operations.requestPause.mockResolvedValue(operation);
   operations.resume.mockResolvedValue(operation);
   operations.requestCancel.mockResolvedValue(operation);
@@ -471,6 +474,7 @@ describe('Buddy production run controls and checkpoints', () => {
       operation.id,
       'first-claim',
       expect.objectContaining({ returnAttempt: true }),
+      expect.any(Function),
     );
     expect(await repository.state()).toMatchObject({
       lastCompleteAt: state.lastCompleteAt,
@@ -560,10 +564,12 @@ describe('Buddy production run controls and checkpoints', () => {
     const { worker, operation, fetch, operations, repository, capturePath, captureBytes, release, state } = fixture;
     fetch.mockRejectedValueOnce(new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }));
     await worker.run(operation, 'first-claim');
-    expect(operations.requeue).toHaveBeenCalledExactlyOnceWith(operation.id, 'first-claim', {
-      delayMs: expect.any(Number),
-      returnAttempt: true,
-    });
+    expect(operations.requeue).toHaveBeenCalledExactlyOnceWith(
+      operation.id,
+      'first-claim',
+      { delayMs: expect.any(Number), returnAttempt: true },
+      expect.any(Function),
+    );
     const delayMs = operations.requeue.mock.calls[0][2].delayMs;
     expect(delayMs).toBeGreaterThanOrEqual(60_000);
     expect(delayMs).toBeLessThan(120_000);
@@ -596,5 +602,40 @@ describe('Buddy production run controls and checkpoints', () => {
     expect(await readFile(capturePath)).toEqual(captureBytes);
     expect(release).not.toHaveBeenCalled();
     expect(operations.fail).not.toHaveBeenCalled();
+  });
+
+  it('keeps same-operation replacement completion when the old worker resumes after successful settlement', async () => {
+    const { worker, operation, fetch, operations, repository } = fixture;
+    let releaseOld!: () => void;
+    let settledOld!: () => void;
+    const oldBarrier = new Promise<void>((resolve) => {
+      releaseOld = resolve;
+    });
+    const settled = new Promise<void>((resolve) => {
+      settledOld = resolve;
+    });
+    operations.requeue.mockImplementationOnce(async (_id, _token, _options, publish) => {
+      // The real repository calls publication before committing its locked requeue.
+      await publish?.(undefined as never);
+      settledOld();
+      // Model a stalled old worker after committed requeue, before its await returns.
+      await oldBarrier;
+      return true;
+    });
+    fetch.mockRejectedValueOnce(new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }));
+    const oldWorker = worker.run(operation, 'first-claim');
+    try {
+      await settled;
+      operation.claimToken = 'replacement-claim';
+      await worker.run(operation, 'replacement-claim');
+      const replacement = await repository.state();
+      expect(replacement.run).toMatchObject({ id: operation.id, state: 'complete', error: null });
+      releaseOld();
+      await oldWorker;
+      expect(await repository.state()).toEqual(replacement);
+    } finally {
+      releaseOld();
+      await oldWorker;
+    }
   });
 });
