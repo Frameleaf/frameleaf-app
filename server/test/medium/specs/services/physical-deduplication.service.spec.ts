@@ -1,6 +1,7 @@
 import { sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Stats } from 'node:fs';
+import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import { AssetFileType, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
@@ -120,11 +121,21 @@ const bootstrap = async () => {
     existing.delete(path);
     return Promise.resolve();
   });
+  // the file trash: a rename within the media location
+  storage.mkdirSync.mockReturnValue(void 0);
+  storage.rename.mockImplementation((from, to) => {
+    if (!existing.delete(from)) {
+      return Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+    }
+    existing.add(to);
+    return Promise.resolve();
+  });
   const unlinked = () => storage.unlink.mock.calls.map(([path]) => path);
+  const trashed = () => storage.rename.mock.calls.map(([from]) => from);
 
   /** Preview and freeze the reviewed plan as apply does (FL-73), without changing anything yet. */
   const reviewPlan = async () => {
-    await expect(sut.handleDryRun({})).resolves.toBe(JobStatus.Success);
+    await expect(sut.handleDryRun({ masterUserId: masterUser.id })).resolves.toBe(JobStatus.Success);
     const { items, retained } = physicalDeduplicationPlanItems(savedPlan, []);
     const snapshot: PhysicalDeduplicationApplySnapshot = {
       version: 1,
@@ -202,6 +213,7 @@ const bootstrap = async () => {
     dupUser,
     queuedDeletes,
     unlinked,
+    trashed,
     newPair,
     newCopyOf,
     getAssetLink,
@@ -212,6 +224,22 @@ const bootstrap = async () => {
     auth: factory.auth({ user: { id: masterUser.id, isAdmin: true } }),
   };
 };
+
+// the file trash lives under the media location (storage itself is mocked)
+let previousMediaLocation: string | undefined;
+beforeAll(() => {
+  try {
+    previousMediaLocation = StorageCore.getMediaLocation();
+  } catch {
+    // no media location configured for this run
+  }
+  StorageCore.setMediaLocation('/data');
+});
+afterAll(() => {
+  if (previousMediaLocation !== undefined) {
+    StorageCore.setMediaLocation(previousMediaLocation);
+  }
+});
 
 beforeEach(() => {
   clearConfigCache();
@@ -238,7 +266,7 @@ describe(PhysicalDeduplicationService.name, () => {
   });
 
   it('keeps a generated file of the copy when the retained generated file is missing', async () => {
-    const { ctx, database, existing, newPair, unlinked, getAssetLink, applyReviewedPlan } = await bootstrap();
+    const { ctx, database, existing, newPair, unlinked, trashed, getAssetLink, applyReviewedPlan } = await bootstrap();
     const { master, duplicate, masterPath, dupPath } = await newPair();
 
     const masterPreview = `/data/thumbs/${master.id}-preview.jpg`;
@@ -250,10 +278,11 @@ describe(PhysicalDeduplicationService.name, () => {
 
     const { results } = await applyReviewedPlan();
 
-    // the original was linked and the copy's own original removed...
+    // the original was linked and the copy's own original moved to the file trash...
     expect(results).toEqual([expect.objectContaining({ state: 'applied' })]);
     await expect(getAssetLink(duplicate.id)).resolves.toMatchObject({ originalPath: masterPath });
-    expect(unlinked()).toEqual([dupPath]);
+    expect(unlinked()).toEqual([]);
+    expect(trashed()).toEqual([dupPath]);
     // ...but the copy's preview is untouched: its row still points at its own file
     const previewRow = await database
       .selectFrom('asset_file')
@@ -265,7 +294,7 @@ describe(PhysicalDeduplicationService.name, () => {
   });
 
   it('is idempotent: applying a copy again links nothing new and removes nothing more', async () => {
-    const { sut, ctx, existing, newPair, unlinked, getAssetLink, applyReviewedPlan } = await bootstrap();
+    const { sut, ctx, existing, newPair, unlinked, trashed, getAssetLink, applyReviewedPlan } = await bootstrap();
     const { master, duplicate, masterPath, dupPath } = await newPair();
 
     const masterPreview = `/data/thumbs/${master.id}-preview.jpg`;
@@ -276,26 +305,50 @@ describe(PhysicalDeduplicationService.name, () => {
 
     const { snapshot, results } = await applyReviewedPlan();
     expect(results).toEqual([expect.objectContaining({ state: 'applied' })]);
-    expect(unlinked().toSorted()).toEqual([dupPath, dupPreview].toSorted());
+    // the generated file is deleted; the original goes to the file trash
+    expect(unlinked()).toEqual([dupPreview]);
+    expect(trashed()).toEqual([dupPath]);
     const afterFirstRun = await getAssetLink(duplicate.id);
     expect(afterFirstRun.originalPath).toBe(masterPath);
     expect(afterFirstRun.physicalOriginalFileId).not.toBeNull();
 
     ctx.getMock(StorageRepository).unlink.mockClear();
+    ctx.getMock(StorageRepository).rename.mockClear();
     await expect(sut.applyPlanItem(snapshot, snapshot.items[0]!)).resolves.toEqual(
       expect.objectContaining({ state: 'already-applied', reclaimedBytes: 0 }),
     );
 
     expect(unlinked()).toEqual([]);
+    expect(trashed()).toEqual([]);
     await expect(getAssetLink(duplicate.id)).resolves.toEqual(afterFirstRun);
   });
 
+  it("moves a linked copy's own original to the file trash, never unlinking it (universal storage)", async () => {
+    const { ctx, database, existing, newPair, unlinked, trashed, dupUser, applyReviewedPlan } = await bootstrap();
+    const { duplicate, masterPath, dupPath, checksum } = await newPair();
+    existing.add(masterPath).add(dupPath);
+
+    const { results } = await applyReviewedPlan();
+
+    expect(results).toEqual([expect.objectContaining({ state: 'applied' })]);
+    expect(unlinked()).toEqual([]);
+    expect(trashed()).toEqual([dupPath]);
+    expect(ctx.getMock(StorageRepository).rename).toHaveBeenCalledWith(dupPath, expect.stringContaining('file-trash'));
+    await expect(
+      database
+        .selectFrom('immich_fork.physical_file_trash' as never)
+        .selectAll()
+        .where('lastAssetId' as never, '=', duplicate.id as never)
+        .executeTakeFirst(),
+    ).resolves.toMatchObject({ checksum, lastOwnerId: dupUser.id });
+  });
+
   it('dry-run emits no FileDelete and mutates nothing', async () => {
-    const { sut, ctx, existing, newPair, getAssetLink } = await bootstrap();
+    const { sut, ctx, existing, newPair, getAssetLink, masterUser } = await bootstrap();
     const { duplicate, masterPath, dupPath } = await newPair();
     existing.add(masterPath);
 
-    await expect(sut.handleDryRun({})).resolves.toBe(JobStatus.Success);
+    await expect(sut.handleDryRun({ masterUserId: masterUser.id })).resolves.toBe(JobStatus.Success);
 
     expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalled();
     expect(ctx.getMock(StorageRepository).copyFile).not.toHaveBeenCalled();
@@ -369,11 +422,11 @@ describe(PhysicalDeduplicationService.name, () => {
     });
 
     it('skips every copy when the retained original is unavailable on disk at preview time', async () => {
-      const { sut, existing, newPair, savedPlan } = await bootstrap();
+      const { sut, existing, newPair, savedPlan, masterUser } = await bootstrap();
       const { dupPath } = await newPair();
       existing.add(dupPath);
 
-      await expect(sut.handleDryRun({})).resolves.toBe(JobStatus.Success);
+      await expect(sut.handleDryRun({ masterUserId: masterUser.id })).resolves.toBe(JobStatus.Success);
 
       expect(savedPlan().retained).toEqual([expect.objectContaining({ fileAvailable: false })]);
       expect(savedPlan().copies).toEqual([

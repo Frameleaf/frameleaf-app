@@ -137,12 +137,7 @@ export class DownloadService extends BaseService {
     const assets = await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
     // FL-54: the archive holds each file's bytes, embedded location included, so apply the same policy
     // as a single original download before anything is streamed
-    const policyFor = await getOriginalLocationPolicies({
-      auth,
-      assets,
-      purpose: 'download',
-      repository: this.partnerRepository,
-    });
+    const policyFor = getOriginalLocationPolicies({ auth, assets, purpose: 'download' });
     if (assets.some((asset) => policyFor(asset) === OriginalLocationPolicy.Refuse)) {
       throw new ForbiddenException('Downloads are turned off while metadata is hidden');
     }

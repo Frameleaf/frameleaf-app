@@ -91,9 +91,7 @@ export const timelineQueryOptions = (
       }
       case 'isFavorite': {
         const eq = filter.isFavorite?.eq;
-        // The buckets refuse a favourite filter with partners' items, so where the view includes
-        // them the condition is left to the search results rather than dropping partners (review).
-        if (typeof eq === 'boolean' && options.isFavorite === undefined && !options.withPartners) {
+        if (typeof eq === 'boolean' && options.isFavorite === undefined) {
           options.isFavorite = eq;
           continue;
         }
@@ -109,7 +107,6 @@ export const timelineQueryOptions = (
 export const PHOTOS_TIMELINE_OPTIONS: TimelineManagerOptions = {
   visibility: AssetVisibility.Timeline,
   withStacked: true,
-  withPartners: true,
 };
 
 /**

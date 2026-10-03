@@ -42,6 +42,38 @@
     },
     {
       "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_origin.albumId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.album_origin.createdAt"
+    },
+    {
+      "definition": "boolean|not null|true||",
+      "identity": "immich_fork.album_origin.following"
+    },
+    {
+      "definition": "text[]|not null|'{}'::text[]||",
+      "identity": "immich_fork.album_origin.overriddenFields"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_origin.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_origin.partnerSharedById"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_origin.rootOwnerId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.album_origin.sourceAlbumId"
+    },
+    {
+      "definition": "uuid|not null|||",
       "identity": "immich_fork.album_position.albumId"
     },
     {
@@ -535,6 +567,38 @@
     {
       "definition": "timestamp with time zone|not null|now()||",
       "identity": "immich_fork.asset_health.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_origin.assetId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.asset_origin.createdAt"
+    },
+    {
+      "definition": "boolean|not null|true||",
+      "identity": "immich_fork.asset_origin.following"
+    },
+    {
+      "definition": "text[]|not null|'{}'::text[]||",
+      "identity": "immich_fork.asset_origin.overriddenFields"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_origin.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_origin.partnerSharedById"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.asset_origin.rootOwnerId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.asset_origin.sourceAssetId"
     },
     {
       "definition": "uuid|not null|||",
@@ -1973,6 +2037,62 @@
       "identity": "immich_fork.orphaned_records.sourceTable"
     },
     {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.partner_backfill.cursor"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.partner_backfill.done"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.partner_backfill.sharedById"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.partner_backfill.sharedWithId"
+    },
+    {
+      "definition": "text|not null|'pending'::text||",
+      "identity": "immich_fork.partner_backfill.state"
+    },
+    {
+      "definition": "integer|not null|0||",
+      "identity": "immich_fork.partner_backfill.total"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.partner_backfill.updatedAt"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.partner_person_link.correctionId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.partner_person_link.createdAt"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.partner_person_link.kind"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.partner_person_link.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.partner_person_link.partnerSharedById"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.partner_person_link.personGroupId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.partner_person_link.sourcePersonGroupId"
+    },
+    {
       "definition": "timestamp with time zone|not null|clock_timestamp()||",
       "identity": "immich_fork.person_merge_verdict.createdAt"
     },
@@ -1999,6 +2119,42 @@
     {
       "definition": "text|not null|||",
       "identity": "immich_fork.person_merge_verdict.verdict"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.person_origin.createdAt"
+    },
+    {
+      "definition": "boolean|not null|true||",
+      "identity": "immich_fork.person_origin.following"
+    },
+    {
+      "definition": "text[]|not null|'{}'::text[]||",
+      "identity": "immich_fork.person_origin.overriddenFields"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.person_origin.ownerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.person_origin.partnerSharedById"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.person_origin.personGroupId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.person_origin.rootOwnerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.person_origin.sourceOwnerId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.person_origin.sourcePersonGroupId"
     },
     {
       "definition": "integer|not null|0||",
@@ -2083,6 +2239,42 @@
     {
       "definition": "jsonb|not null|||",
       "identity": "immich_fork.photography_workflow.value"
+    },
+    {
+      "definition": "bytea|not null|||",
+      "identity": "immich_fork.physical_file_trash.checksum"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.physical_file_trash.id"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.physical_file_trash.lastAssetId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.physical_file_trash.lastOwnerId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.physical_file_trash.originalFileName"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.physical_file_trash.path"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.physical_file_trash.physicalFileId"
+    },
+    {
+      "definition": "bigint|not null|||",
+      "identity": "immich_fork.physical_file_trash.sizeInBytes"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.physical_file_trash.trashedAt"
     },
     {
       "definition": "uuid|nullable|||",
@@ -8343,6 +8535,10 @@
       "identity": "immich_fork.album_metadata.album_metadata_pkey"
     },
     {
+      "definition": "PRIMARY KEY (\"albumId\")",
+      "identity": "immich_fork.album_origin.album_origin_pkey"
+    },
+    {
       "definition": "PRIMARY KEY (\"userId\", \"albumId\")",
       "identity": "immich_fork.album_position.album_position_pkey"
     },
@@ -8465,6 +8661,10 @@
     {
       "definition": "PRIMARY KEY (id)",
       "identity": "immich_fork.asset_health.asset_health_pkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"assetId\")",
+      "identity": "immich_fork.asset_origin.asset_origin_pkey"
     },
     {
       "definition": "PRIMARY KEY (\"assetId\")",
@@ -8599,11 +8799,11 @@
       "identity": "immich_fork.cutover_verification_run.cutover_verification_run_verifiedCount_check"
     },
     {
-      "definition": "CHECK (action = ANY (ARRAY['reassign'::text, 'new-person'::text, 'unassign'::text, 'remove'::text, 'merge'::text, 'box-move'::text]))",
+      "definition": "CHECK (action = ANY (ARRAY['reassign'::text, 'new-person'::text, 'unassign'::text, 'remove'::text, 'merge'::text, 'box-move'::text, 'partner-merge'::text]))",
       "identity": "immich_fork.face_correction.face_correction_action_check"
     },
     {
-      "definition": "CHECK (action = 'merge'::text OR \"assetId\" IS NOT NULL)",
+      "definition": "CHECK ((action = ANY (ARRAY['merge'::text, 'partner-merge'::text])) OR \"assetId\" IS NOT NULL)",
       "identity": "immich_fork.face_correction.face_correction_anchor_check"
     },
     {
@@ -9123,6 +9323,18 @@
       "identity": "immich_fork.orphaned_records.orphaned_records_pkey"
     },
     {
+      "definition": "PRIMARY KEY (\"sharedById\", \"sharedWithId\")",
+      "identity": "immich_fork.partner_backfill.partner_backfill_pkey"
+    },
+    {
+      "definition": "CHECK (kind = ANY (ARRAY['created'::text, 'merged'::text]))",
+      "identity": "immich_fork.partner_person_link.partner_person_link_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"ownerId\", \"sourcePersonGroupId\")",
+      "identity": "immich_fork.partner_person_link.partner_person_link_pkey"
+    },
+    {
       "definition": "CHECK (\"personId\" < \"suggestionId\" AND verdict <> 'ignore'::text OR \"personId\" = \"suggestionId\" AND verdict = 'ignore'::text)",
       "identity": "immich_fork.person_merge_verdict.person_merge_verdict_check"
     },
@@ -9133,6 +9345,14 @@
     {
       "definition": "CHECK (verdict = ANY (ARRAY['different'::text, 'later'::text, 'ignore'::text]))",
       "identity": "immich_fork.person_merge_verdict.person_merge_verdict_verdict_check"
+    },
+    {
+      "definition": "PRIMARY KEY (\"ownerId\", \"personGroupId\")",
+      "identity": "immich_fork.person_origin.person_origin_pkey"
+    },
+    {
+      "definition": "UNIQUE (\"ownerId\", \"sourcePersonGroupId\")",
+      "identity": "immich_fork.person_origin.person_origin_source_key"
     },
     {
       "definition": "PRIMARY KEY (\"ownerId\")",
@@ -9157,6 +9377,14 @@
     {
       "definition": "CHECK (jsonb_typeof(value) = 'object'::text AND octet_length(value::text) <= 20000000)",
       "identity": "immich_fork.photography_workflow.photography_workflow_value_check"
+    },
+    {
+      "definition": "UNIQUE (path)",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_path_key"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_pkey"
     },
     {
       "definition": "PRIMARY KEY (id)",
@@ -11183,7 +11411,10 @@
     "0000000000215-PhotographyWorkflow",
     "0000000000216-ICloudIdentityAudit",
     "0000000000217-ICloudIdentityReuse",
-    "0000000000218-ICloudWeeklyAuthority"
+    "0000000000218-ICloudWeeklyAuthority",
+    "0000000000219-PhysicalFileTrash",
+    "0000000000220-PartnerOrigins",
+    "0000000000221-PartnerPeopleLinks"
   ],
   "functions": [
     {
@@ -12333,6 +12564,18 @@
       "identity": "immich_fork.album_metadata.album_metadata_pkey"
     },
     {
+      "definition": "CREATE INDEX album_origin_partner_idx ON immich_fork.album_origin USING btree (\"partnerSharedById\", \"ownerId\")",
+      "identity": "immich_fork.album_origin.album_origin_partner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX album_origin_pkey ON immich_fork.album_origin USING btree (\"albumId\")",
+      "identity": "immich_fork.album_origin.album_origin_pkey"
+    },
+    {
+      "definition": "CREATE INDEX album_origin_source_idx ON immich_fork.album_origin USING btree (\"sourceAlbumId\") WHERE following",
+      "identity": "immich_fork.album_origin.album_origin_source_idx"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX album_position_pkey ON immich_fork.album_position USING btree (\"userId\", \"albumId\")",
       "identity": "immich_fork.album_position.album_position_pkey"
     },
@@ -12451,6 +12694,18 @@
     {
       "definition": "CREATE INDEX asset_health_run_idx ON immich_fork.asset_health USING btree (\"runId\")",
       "identity": "immich_fork.asset_health.asset_health_run_idx"
+    },
+    {
+      "definition": "CREATE INDEX asset_origin_partner_idx ON immich_fork.asset_origin USING btree (\"partnerSharedById\", \"ownerId\")",
+      "identity": "immich_fork.asset_origin.asset_origin_partner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX asset_origin_pkey ON immich_fork.asset_origin USING btree (\"assetId\")",
+      "identity": "immich_fork.asset_origin.asset_origin_pkey"
+    },
+    {
+      "definition": "CREATE INDEX asset_origin_source_idx ON immich_fork.asset_origin USING btree (\"sourceAssetId\") WHERE following",
+      "identity": "immich_fork.asset_origin.asset_origin_source_idx"
     },
     {
       "definition": "CREATE INDEX asset_physical_file_physical_idx ON immich_fork.asset_physical_file USING btree (\"physicalFileId\")",
@@ -12845,8 +13100,36 @@
       "identity": "immich_fork.orphaned_records.orphaned_records_pkey"
     },
     {
+      "definition": "CREATE UNIQUE INDEX partner_backfill_pkey ON immich_fork.partner_backfill USING btree (\"sharedById\", \"sharedWithId\")",
+      "identity": "immich_fork.partner_backfill.partner_backfill_pkey"
+    },
+    {
+      "definition": "CREATE INDEX partner_person_link_person_idx ON immich_fork.partner_person_link USING btree (\"ownerId\", \"personGroupId\")",
+      "identity": "immich_fork.partner_person_link.partner_person_link_person_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX partner_person_link_pkey ON immich_fork.partner_person_link USING btree (\"ownerId\", \"sourcePersonGroupId\")",
+      "identity": "immich_fork.partner_person_link.partner_person_link_pkey"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX person_merge_verdict_pkey ON immich_fork.person_merge_verdict USING btree (\"ownerId\", \"personId\", \"suggestionId\")",
       "identity": "immich_fork.person_merge_verdict.person_merge_verdict_pkey"
+    },
+    {
+      "definition": "CREATE INDEX person_origin_partner_idx ON immich_fork.person_origin USING btree (\"partnerSharedById\", \"ownerId\")",
+      "identity": "immich_fork.person_origin.person_origin_partner_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX person_origin_pkey ON immich_fork.person_origin USING btree (\"ownerId\", \"personGroupId\")",
+      "identity": "immich_fork.person_origin.person_origin_pkey"
+    },
+    {
+      "definition": "CREATE INDEX person_origin_source_idx ON immich_fork.person_origin USING btree (\"sourceOwnerId\", \"sourcePersonGroupId\") WHERE following",
+      "identity": "immich_fork.person_origin.person_origin_source_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX person_origin_source_key ON immich_fork.person_origin USING btree (\"ownerId\", \"sourcePersonGroupId\")",
+      "identity": "immich_fork.person_origin.person_origin_source_key"
     },
     {
       "definition": "CREATE UNIQUE INDEX pet_recognition_run_pkey ON immich_fork.pet_recognition_run USING btree (\"ownerId\")",
@@ -12863,6 +13146,22 @@
     {
       "definition": "CREATE UNIQUE INDEX photography_workflow_pkey ON immich_fork.photography_workflow USING btree (id)",
       "identity": "immich_fork.photography_workflow.photography_workflow_pkey"
+    },
+    {
+      "definition": "CREATE INDEX physical_file_trash_checksum_idx ON immich_fork.physical_file_trash USING btree (checksum, \"sizeInBytes\")",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_checksum_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX physical_file_trash_path_key ON immich_fork.physical_file_trash USING btree (path)",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_path_key"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX physical_file_trash_pkey ON immich_fork.physical_file_trash USING btree (id)",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_pkey"
+    },
+    {
+      "definition": "CREATE INDEX physical_file_trash_trashed_at_idx ON immich_fork.physical_file_trash USING btree (\"trashedAt\")",
+      "identity": "immich_fork.physical_file_trash.physical_file_trash_trashed_at_idx"
     },
     {
       "definition": "CREATE UNIQUE INDEX physical_file_canonical_path_uq ON immich_fork.physical_file USING btree (\"canonicalPath\")",
@@ -15493,6 +15792,10 @@
     },
     {
       "definition": "table",
+      "identity": "immich_fork.album_origin"
+    },
+    {
+      "definition": "table",
       "identity": "immich_fork.album_position"
     },
     {
@@ -15534,6 +15837,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.asset_health_run"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.asset_origin"
     },
     {
       "definition": "table",
@@ -15685,7 +15992,19 @@
     },
     {
       "definition": "table",
+      "identity": "immich_fork.partner_backfill"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.partner_person_link"
+    },
+    {
+      "definition": "table",
       "identity": "immich_fork.person_merge_verdict"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.person_origin"
     },
     {
       "definition": "table",
@@ -15702,6 +16021,10 @@
     {
       "definition": "table",
       "identity": "immich_fork.physical_file"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.physical_file_trash"
     },
     {
       "definition": "table",

@@ -1696,12 +1696,6 @@ export type AdminConfigPasswordLoginDto = {
     /** Enabled */
     enabled: boolean;
 };
-export type AdminConfigPhysicalDeduplicationDto = {
-    /** Enabled */
-    enabled: boolean;
-    /** Master user ID */
-    masterUserId: string | null;
-};
 export type AdminConfigReverseGeocodingDto = {
     /** Enabled */
     enabled: boolean;
@@ -1803,7 +1797,6 @@ export type AdminConfigDto = {
     notifications: AdminConfigNotificationsDto;
     oauth: AdminConfigOAuthDto;
     passwordLogin: AdminConfigPasswordLoginDto;
-    physicalDeduplication?: AdminConfigPhysicalDeduplicationDto;
     reverseGeocoding: AdminConfigReverseGeocodingDto;
     server: AdminConfigServerDto;
     smartAlbums?: AdminConfigSmartAlbumsDto;
@@ -1905,6 +1898,35 @@ export type BackupRestoreVerificationRecordDto = {
 export type DatabaseBackupUploadDto = {
     /** Database backup file */
     file?: Blob;
+};
+export type FileTrashItemResponseDto = {
+    /** Hex-encoded SHA-256 checksum of the file */
+    checksum: string;
+    /** File trash entry id */
+    id: string;
+    /** Asset that held the file last, when known */
+    lastAssetId: string | null;
+    /** Account whose library held the file last, when known */
+    lastOwnerId: string | null;
+    /** Name of that account, while it exists */
+    lastOwnerName: string | null;
+    /** Name of the file when it was last in a library */
+    originalFileName: string;
+    /** Size of the file in bytes */
+    sizeInBytes: number;
+    /** When the file was moved to the file trash */
+    trashedAt: string;
+};
+export type FileTrashResponseDto = {
+    items: FileTrashItemResponseDto[];
+    /** Entries in the file trash */
+    total: number;
+    /** Disk space the file trash holds, in bytes */
+    totalBytes: number;
+};
+export type FileTrashRestoreResponseDto = {
+    /** The new asset the file was restored as, in its last owner’s library */
+    assetId: string;
 };
 export type HardwareWorkloadBenchmarkDto = {
     error: string | null;
@@ -3087,6 +3109,12 @@ export type ContributorCountResponseDto = {
     /** User ID */
     userId: string;
 };
+export type PartnerOriginDto = {
+    /** The account that originally uploaded or created it */
+    rootOwnerId: string;
+    /** That account's name */
+    rootOwnerName: string;
+};
 export type AlbumResponseDto = {
     /** Album name */
     albumName: string;
@@ -3119,6 +3147,8 @@ export type AlbumResponseDto = {
     /** Last modified asset timestamp */
     lastModifiedAssetTimestamp?: string;
     order?: AssetOrder;
+    /** FL-326: present on your own album when partner sharing copied it from another library */
+    origin?: PartnerOriginDto;
     /** Collection this album belongs to (null = top-level) */
     parentId: string | null;
     /** Is shared album */
@@ -4063,6 +4093,8 @@ export type AssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    /** FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
+    origin?: PartnerOriginDto;
     /** Original file name */
     originalFileName: string;
     /** Original MIME type */
@@ -4834,6 +4866,8 @@ export type BestPhotoAssetResponseDto = {
     livePhotoVideoId?: string | null;
     /** The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months. */
     localDateTime: string;
+    /** FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
+    origin?: PartnerOriginDto;
     /** Original file name */
     originalFileName: string;
     /** Original MIME type */
@@ -6868,7 +6902,7 @@ export type MapReverseGeocodeResponseDto = {
 export type MapStatisticsResponseDto = {
     /** The viewer's own located archived items */
     archived: number;
-    /** Located timeline items of partners who share their locations with the viewer */
+    /** Always 0: partners' items arrive as the viewer's own copies (kept for older clients) */
     partner: number;
     /** The viewer's own timeline items without a location */
     unlocated: number;
@@ -7742,33 +7776,40 @@ export type FrameleafAccountLinkResponseDto = {
     linked: boolean;
     linkedAt: string | null;
 };
+export type PartnerBackfillDto = {
+    /** Items copied so far */
+    done: number;
+    /** Where the first copy stands */
+    state: State4;
+    /** Items to copy */
+    total: number;
+};
 export type PartnerResponseDto = {
     avatarColor: UserAvatarColor;
+    /** FL-326: copy progress of the library shared this way; null when it was never copied */
+    backfill?: (PartnerBackfillDto) | null;
     /** User email */
     email: string;
     /** User ID */
     id: string;
-    /** Show in timeline */
-    inTimeline?: boolean;
     /** User name */
     name: string;
     /** Profile change date */
     profileChangedAt: string;
     /** Profile image path */
     profileImagePath: string;
-    /** Sharer allows this partner to see asset locations */
-    shareLocation?: boolean;
 };
 export type PartnerCreateDto = {
     /** User ID to share with */
     sharedWithId: string;
 };
-export type PartnerUpdateDto = {
-    /** Show partner assets in timeline */
-    inTimeline?: boolean;
-    /** Share asset locations with this partner; only the sharing user can change it */
-    shareLocation?: boolean;
+export type PartnerLockedNoticeResponseDto = {
+    /** When the first Locked item arrived for an account without a PIN */
+    flaggedAt: string | null;
+    /** Whether to show the notice: Locked items arrived from a partner, no PIN is set, and it was not dismissed */
+    show: boolean;
 };
+export type PartnerUpdateDto = {};
 export type PeopleListItemDto = {
     /** Number of timeline assets showing this person */
     assetCount: number;
@@ -8966,7 +9007,7 @@ export type PhotographyWorkflowDto = {
         processing: Processing;
         proofRevisionId: string | null;
         rating: number | null;
-        state: State4;
+        state: State5;
         withheld: boolean;
     }[];
     chapters: {
@@ -9742,7 +9783,7 @@ export type PhotographyInvitationDto = {
             processing: Processing;
             proofRevisionId: string | null;
             rating: number | null;
-            state: State4;
+            state: State5;
             withheld: boolean;
         }[];
         chapters: {
@@ -12082,6 +12123,42 @@ export type ServerStorageResponseDto = {
     diskUse: string;
     /** Used disk space in bytes */
     diskUseRaw: number;
+};
+export type StorageMigrationStageProgressDto = {
+    /** Items finished in this stage */
+    done: number;
+    /** Items this stage covers */
+    total: number;
+};
+export type StorageMigrationStatusResponseDto = {
+    /** An administrator chose to let it finish in the background */
+    background: boolean;
+    /** Bytes of extra copies moved to the file trash */
+    bytesFreed: number;
+    /** Estimated time left, from the measured rate */
+    estimatedSecondsLeft: number | null;
+    /** When the migration finished */
+    finishedAt: string | null;
+    /** Missing originals relinked automatically */
+    relinked: number;
+    /** False when the library had nothing to combine (a fresh install) */
+    required: boolean;
+    /** Whether the Getting Ready screen waits for it */
+    showInGettingReady: boolean;
+    /** Files that could not be read or verified, skipped */
+    skipped: number;
+    stage: StorageMigrationStage;
+    /** Progress of each stage */
+    stages: {
+        checking: StorageMigrationStageProgressDto;
+        linking: StorageMigrationStageProgressDto;
+        relinking: StorageMigrationStageProgressDto;
+        trashing: StorageMigrationStageProgressDto;
+    };
+    /** When the migration started */
+    startedAt: string | null;
+    /** Missing originals left for review in Library Care */
+    toReview: number;
 };
 export type ServerVersionResponseDto = {
     /** Major version number */
@@ -16147,6 +16224,48 @@ export function downloadDatabaseBackup({ filename }: {
     }));
 }
 /**
+ * List the file trash
+ */
+export function getFileTrash({ page, size }: {
+    page?: number;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileTrashResponseDto;
+    }>(`/admin/file-trash${QS.query(QS.explode({
+        page,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Delete a file permanently
+ */
+export function deleteFileTrashItem({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/file-trash/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Restore a file from the file trash
+ */
+export function restoreFileTrashItem({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FileTrashRestoreResponseDto;
+    }>(`/admin/file-trash/${encodeURIComponent(id)}/restore`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get the Hardware & GPU check
  */
 export function getHardwareCheck(opts?: Oazapfts.RequestOpts) {
@@ -19997,12 +20116,11 @@ export function relinkLivePhotos({ livePhotoRelinkDto }: {
 /**
  * Retrieve map markers
  */
-export function getMapMarkers({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withPartners, withSharedAlbums }: {
+export function getMapMarkers({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withSharedAlbums }: {
     fileCreatedAfter?: string;
     fileCreatedBefore?: string;
     isArchived?: boolean;
     isFavorite?: boolean;
-    withPartners?: boolean;
     withSharedAlbums?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -20013,7 +20131,6 @@ export function getMapMarkers({ fileCreatedAfter, fileCreatedBefore, isArchived,
         fileCreatedBefore,
         isArchived,
         isFavorite,
-        withPartners,
         withSharedAlbums
     }))}`, {
         ...opts
@@ -20039,12 +20156,11 @@ export function reverseGeocode({ lat, lon }: {
 /**
  * Retrieve map statistics
  */
-export function getMapStatistics({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withPartners, withSharedAlbums }: {
+export function getMapStatistics({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withSharedAlbums }: {
     fileCreatedAfter?: string;
     fileCreatedBefore?: string;
     isArchived?: boolean;
     isFavorite?: boolean;
-    withPartners?: boolean;
     withSharedAlbums?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -20055,7 +20171,6 @@ export function getMapStatistics({ fileCreatedAfter, fileCreatedBefore, isArchiv
         fileCreatedBefore,
         isArchived,
         isFavorite,
-        withPartners,
         withSharedAlbums
     }))}`, {
         ...opts
@@ -21182,6 +21297,29 @@ export function createPartner({ partnerCreateDto }: {
         method: "POST",
         body: partnerCreateDto
     })));
+}
+/**
+ * Get the Locked partner items notice
+ */
+export function getPartnerLockedNotice(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerLockedNoticeResponseDto;
+    }>("/partners/locked-notice", {
+        ...opts
+    }));
+}
+/**
+ * Dismiss the Locked partner items notice
+ */
+export function dismissPartnerLockedNotice(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerLockedNoticeResponseDto;
+    }>("/partners/locked-notice", {
+        ...opts,
+        method: "PUT"
+    }));
 }
 /**
  * Remove a partner
@@ -23691,6 +23829,29 @@ export function getStorage(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Get storage migration status
+ */
+export function getStorageMigrationStatus(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageMigrationStatusResponseDto;
+    }>("/server/storage-migration", {
+        ...opts
+    }));
+}
+/**
+ * Run the storage migration in the background
+ */
+export function runStorageMigrationInBackground(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageMigrationStatusResponseDto;
+    }>("/server/storage-migration/background", {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Get server version
  */
 export function getServerVersion(opts?: Oazapfts.RequestOpts) {
@@ -25722,7 +25883,7 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -25742,7 +25903,6 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
-    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -25768,7 +25928,6 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
         userId,
         visibility,
         withCoordinates,
-        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -25777,7 +25936,7 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -25796,7 +25955,6 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
-    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -25821,7 +25979,6 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
         userId,
         visibility,
         withCoordinates,
-        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -25830,7 +25987,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
 /**
  * Get timeline highlights
  */
-export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -25851,7 +26008,6 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
-    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -25878,7 +26034,6 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
         userId,
         visibility,
         withCoordinates,
-        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -25887,7 +26042,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -25909,7 +26064,6 @@ export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavor
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
-    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -25937,7 +26091,6 @@ export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavor
         userId,
         visibility,
         withCoordinates,
-        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -28528,13 +28681,20 @@ export enum PartnerDirection {
     SharedBy = "shared-by",
     SharedWith = "shared-with"
 }
+export enum State4 {
+    Pending = "pending",
+    Running = "running",
+    Done = "done",
+    Stopped = "stopped"
+}
 export enum PersonCorrectionAction {
     Reassign = "reassign",
     NewPerson = "new-person",
     Unassign = "unassign",
     Remove = "remove",
     Merge = "merge",
-    BoxMove = "box-move"
+    BoxMove = "box-move",
+    PartnerMerge = "partner-merge"
 }
 export enum PersonMergeVerdict {
     Same = "same",
@@ -28839,7 +28999,7 @@ export enum Layout {
     Grid = "grid",
     Slideshow = "slideshow"
 }
-export enum State4 {
+export enum State5 {
     Imported = "imported",
     Selected = "selected",
     ApprovalRequested = "approval-requested",
@@ -29292,6 +29452,7 @@ export enum JobName {
     StorageTemplateMigrationSingle = "StorageTemplateMigrationSingle",
     PhysicalDeduplicationMigrationDryRun = "PhysicalDeduplicationMigrationDryRun",
     PhysicalDeduplicationMigrationApply = "PhysicalDeduplicationMigrationApply",
+    UniversalStorageMigration = "UniversalStorageMigration",
     TagCleanup = "TagCleanup",
     VersionCheck = "VersionCheck",
     FrameleafHeartbeat = "FrameleafHeartbeat",
@@ -29301,6 +29462,10 @@ export enum JobName {
     CloudBackupVerify = "CloudBackupVerify",
     PushDeliver = "PushDeliver",
     PushBackupStaleCheck = "PushBackupStaleCheck",
+    PartnerBackfill = "PartnerBackfill",
+    PartnerCopyAsset = "PartnerCopyAsset",
+    PartnerCopyAlbum = "PartnerCopyAlbum",
+    PartnerPropagate = "PartnerPropagate",
     OcrQueueAll = "OcrQueueAll",
     Ocr = "Ocr",
     ImageDescriptionQueueAll = "ImageDescriptionQueueAll",
@@ -29413,6 +29578,14 @@ export enum FrameleafSetupErrorCode {
     SetupLinkTokenInvalid = "setup_link_token_invalid",
     SetupLinkTokenUsed = "setup_link_token_used",
     SetupLinkFailed = "setup_link_failed"
+}
+export enum StorageMigrationStage {
+    Pending = "pending",
+    Checking = "checking",
+    Relinking = "relinking",
+    Linking = "linking",
+    Trashing = "trashing",
+    Done = "done"
 }
 export enum ReleaseType {
     Major = "major",
@@ -29892,5 +30065,6 @@ export enum UserMetadataKey {
     PhotographyWorkspace = "photography-workspace",
     License = "license",
     Onboarding = "onboarding",
-    FrameleafCloudTour = "frameleaf-cloud-tour"
+    FrameleafCloudTour = "frameleaf-cloud-tour",
+    PartnerLockedNotice = "partner-locked-notice"
 }

@@ -367,6 +367,199 @@ describe(PhysicalFileRepository.name, () => {
     });
   });
 
+  describe('linkUploadedOriginal (universal storage)', () => {
+    const exists = () => Promise.resolve(true);
+    const newUpload = async (ctx: MediumTestContext, checksum: Buffer, dto: object = {}) => {
+      const { user } = await ctx.newUser();
+      return newAssetWithSize(ctx, user.id, { checksum, ...dto });
+    };
+    const originalOf = (id: string) =>
+      defaultDatabase
+        .selectFrom('asset')
+        .select(['originalPath', 'physicalOriginalFileId'])
+        .where('id', '=', id)
+        .executeTakeFirstOrThrow();
+
+    it('links an upload to the file another library already holds, whoever owns it', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const existing = await newUpload(ctx, checksum);
+      const upload = await newUpload(ctx, checksum);
+
+      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, { exists });
+
+      expect(result).toMatchObject({
+        linked: true,
+        physicalFile: { canonicalAssetId: existing.id, path: existing.originalPath },
+      });
+      await expect(originalOf(upload.id)).resolves.toEqual({
+        originalPath: existing.originalPath,
+        physicalOriginalFileId: result!.physicalFile.id,
+      });
+      await expect(originalOf(existing.id)).resolves.toEqual({
+        originalPath: existing.originalPath,
+        physicalOriginalFileId: result!.physicalFile.id,
+      });
+    });
+
+    it('registers new content as its own primary file', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const upload = await newUpload(ctx, checksum);
+
+      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, { exists });
+
+      expect(result).toMatchObject({
+        linked: false,
+        physicalFile: { canonicalAssetId: upload.id, path: upload.originalPath, type: PhysicalFileType.Original },
+      });
+    });
+
+    it('never links to an external-library file, a size mismatch or a file missing on disk', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const { user } = await ctx.newUser();
+      const library = await defaultDatabase
+        .insertInto('library')
+        .values({ name: 'External', ownerId: user.id, importPaths: [], exclusionPatterns: [] })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await newAssetWithSize(ctx, user.id, { checksum, isExternal: true, libraryId: library.id });
+      const missing = await newUpload(ctx, checksum);
+      const upload = await newUpload(ctx, checksum);
+
+      const result = await sut.linkUploadedOriginal(
+        upload.id,
+        { checksum, sizeInBytes: 1000 },
+        { exists: (path) => Promise.resolve(path !== missing.originalPath) },
+      );
+
+      expect(result).toMatchObject({ linked: false, physicalFile: { canonicalAssetId: upload.id } });
+      await expect(originalOf(missing.id)).resolves.toMatchObject({ physicalOriginalFileId: null });
+    });
+
+    it('re-checks the file under its path lock: one a concurrent FileDelete moved away is never linked', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const existing = await newUpload(ctx, checksum);
+      const upload = await newUpload(ctx, checksum);
+      // on disk when first looked at, gone (moved to the file trash) once the path lock is held
+      let checks = 0;
+      const movedAway = (path: string) => Promise.resolve(path !== existing.originalPath || checks++ === 0);
+
+      const result = await sut.linkUploadedOriginal(upload.id, { checksum, sizeInBytes: 1000 }, { exists: movedAway });
+
+      expect(checks).toBe(2);
+      expect(result).toMatchObject({
+        linked: false,
+        physicalFile: { canonicalAssetId: upload.id, path: upload.originalPath },
+      });
+      await expect(originalOf(upload.id)).resolves.toEqual({
+        originalPath: upload.originalPath,
+        physicalOriginalFileId: result!.physicalFile.id,
+      });
+    });
+
+    it('stores identical new content uploaded by two users at once as one file (Review Focus 1)', async () => {
+      const { ctx, sut } = setup();
+      const checksum = randomBytes(32);
+      const first = await newUpload(ctx, checksum);
+      const second = await newUpload(ctx, checksum);
+
+      const results = await Promise.all([
+        sut.linkUploadedOriginal(first.id, { checksum, sizeInBytes: 1000 }, { exists }),
+        sut.linkUploadedOriginal(second.id, { checksum, sizeInBytes: 1000 }, { exists }),
+      ]);
+
+      const files = await defaultDatabase
+        .selectFrom('physical_file')
+        .selectAll()
+        .where('checksum', '=', checksum)
+        .execute();
+      expect(files).toHaveLength(1);
+      expect(results.map((result) => result!.physicalFile.id)).toEqual([files[0].id, files[0].id]);
+      // exactly one upload keeps its file; the other's temporary upload is released
+      expect(results.filter((result) => result!.linked)).toHaveLength(1);
+      const rows = await Promise.all([originalOf(first.id), originalOf(second.id)]);
+      expect(rows).toEqual([
+        { originalPath: files[0].path, physicalOriginalFileId: files[0].id },
+        { originalPath: files[0].path, physicalOriginalFileId: files[0].id },
+      ]);
+    });
+  });
+
+  describe('getGeneratedPathPrimaryAssetId', () => {
+    it('names the oldest live asset whose generated file is at the path (a copy never owns its source file)', async () => {
+      const { ctx, sut } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const path = `/data/thumbs/${randomUUID()}-preview.jpeg`;
+      const source = await newAssetWithSize(ctx, alice.id);
+      await ctx.newAssetFile({ assetId: source.id, type: AssetFileType.Preview, path });
+      const copy = await newAssetWithSize(ctx, bob.id);
+      await ctx.newAssetFile({ assetId: copy.id, type: AssetFileType.Preview, path });
+      await defaultDatabase
+        .updateTable('asset')
+        .set({ createdAt: new Date('2020-01-01') })
+        .where('id', '=', source.id)
+        .execute();
+
+      await expect(sut.getGeneratedPathPrimaryAssetId(path)).resolves.toBe(source.id);
+      await expect(sut.getGeneratedPathPrimaryAssetId('/data/thumbs/nothing.jpeg')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('electNextCanonical (primary handover)', () => {
+    const newSharedByThree = async (ctx: MediumTestContext, sut: PhysicalFileRepository) => {
+      const checksum = randomBytes(32);
+      const assets = [];
+      for (let i = 0; i < 3; i++) {
+        const { user } = await ctx.newUser();
+        assets.push(await newAssetWithSize(ctx, user.id, { checksum, createdAt: new Date(Date.UTC(2020, 0, i + 1)) }));
+      }
+      const physical = (await sut.ensureOriginalPhysicalFile(assets[0].id))!;
+      await sut.linkAssetToOriginalPhysicalFile(assets[1].id, physical);
+      await sut.linkAssetToOriginalPhysicalFile(assets[2].id, physical);
+      return { assets, physical };
+    };
+
+    it('makes the oldest remaining asset primary once the primary is deleted', async () => {
+      const { ctx, sut } = setup();
+      const { assets, physical } = await newSharedByThree(ctx, sut);
+      const preview = await sut.upsertPhysicalFile({
+        canonicalAssetId: assets[0].id,
+        checksum: randomBytes(20),
+        path: `/data/thumbs/${randomUUID()}-preview.jpg`,
+        sizeInBytes: 100,
+        type: PhysicalFileType.Preview,
+      });
+      await ctx.newAssetFile({
+        assetId: assets[1].id,
+        type: AssetFileType.Preview,
+        path: preview.path,
+        physicalFileId: preview.id,
+      });
+
+      await defaultDatabase.deleteFrom('asset').where('id', '=', assets[0].id).execute();
+
+      await expect(sut.electNextCanonical(physical.id)).resolves.toEqual({ assetId: assets[1].id });
+      await expect(sut.isOriginalCanonical(assets[1].id, physical.id)).resolves.toBe(true);
+      await expect(sut.getPhysicalFile(preview.id)).resolves.toMatchObject({ canonicalAssetId: assets[1].id });
+      // a second call changes nothing: the file has its primary
+      await expect(sut.electNextCanonical(physical.id)).resolves.toBeUndefined();
+    });
+
+    it('changes nothing when a non-primary copy is deleted', async () => {
+      const { ctx, sut } = setup();
+      const { assets, physical } = await newSharedByThree(ctx, sut);
+
+      await defaultDatabase.deleteFrom('asset').where('id', '=', assets[2].id).execute();
+
+      await expect(sut.electNextCanonical(physical.id)).resolves.toBeUndefined();
+      await expect(sut.isOriginalCanonical(assets[0].id, physical.id)).resolves.toBe(true);
+    });
+  });
+
   describe('getCanonicalGeneratedFile', () => {
     it('resolves the master-owned generated file only for linked duplicates', async () => {
       const { ctx, sut } = setup();

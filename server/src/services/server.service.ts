@@ -161,7 +161,6 @@ export class ServerService extends BaseService {
       oauth,
       passwordLogin,
       notifications,
-      physicalDeduplication,
       ffmpeg,
       localFeatures,
     } = await this.getConfig({ withCache: false });
@@ -190,7 +189,8 @@ export class ServerService extends BaseService {
       imageDescription: isImageDescriptionEnabled(machineLearning),
       nsfwDetection: isNsfwDetectionEnabled(machineLearning),
       nsfwHiding: isNsfwHidingEnabled(machineLearning),
-      physicalDeduplication: physicalDeduplication.enabled,
+      // universal storage: one file per content is always on
+      physicalDeduplication: true,
       realtimeTranscoding: ffmpeg.realtime.enabled,
     };
   }

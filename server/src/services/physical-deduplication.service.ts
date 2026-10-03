@@ -17,6 +17,7 @@ import {
 } from 'src/dtos/physical-deduplication.dto.js';
 import {
   AssetFileType,
+  AssetStatus,
   AssetType,
   DatabaseLock,
   JobName,
@@ -31,6 +32,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { moveFileWithin } from 'src/utils/file-trash.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import {
   PhysicalDeduplicationApplySnapshot,
@@ -78,6 +80,12 @@ type DiskEvidence = 'match' | 'missing' | 'mismatch';
 
 /** Retained originals one apply run has already hashed, so a group's copies do not hash it again. */
 export type PhysicalDeduplicationVerified = Map<string, DiskEvidence>;
+
+/** What linking one copy to its group's primary asset came to (FL-326). */
+export type UniversalLinkResult =
+  | { state: 'linked'; copyMissing: boolean }
+  | { state: 'already-linked' }
+  | { state: 'skipped'; reason: 'changed' | 'primary-missing' | 'primary-mismatch' | 'copy-mismatch' };
 
 /**
  * A reviewed plan checked against the library again (FL-73): what review hands back and what apply
@@ -157,8 +165,8 @@ export class PhysicalDeduplicationService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const { physicalDeduplication } = await this.getConfig({ withCache: true });
-    const masterUserId = job?.masterUserId ?? physicalDeduplication.masterUserId;
+    // universal storage retired the saved master account: a dry run names the account it retains in
+    const masterUserId = job?.masterUserId;
     if (!masterUserId) {
       this.logger.warn('Physical deduplication dry run skipped: no retained account was chosen or saved');
       return JobStatus.Skipped;
@@ -197,13 +205,8 @@ export class PhysicalDeduplicationService extends BaseService {
 
   /** Queue a preview. Validation happens here so the page gets an immediate answer; the job re-checks. */
   async requestPreview(dto: PhysicalDeduplicationPreviewRequestDto): Promise<void> {
-    const { physicalDeduplication } = await this.getConfig({ withCache: false });
-    // The page's configuration error (FL-73, prototype physical-dedup-data.mjs:76-86): file reuse
-    // must be on before a plan is prepared. The queued job itself stays lenient for old queues.
-    if (!physicalDeduplication.enabled) {
-      throw new BadRequestException('Enable file reuse before preparing a plan.');
-    }
-    const masterUserId = dto.masterUserId ?? physicalDeduplication.masterUserId;
+    // universal storage is always on and has no saved master account: the preview names one
+    const masterUserId = dto.masterUserId;
     if (!masterUserId) {
       throw new BadRequestException('Choose an account to retain originals in before preparing a preview');
     }
@@ -232,7 +235,6 @@ export class PhysicalDeduplicationService extends BaseService {
    * response never widens what the administrator may already open.
    */
   async getPreview(auth: AuthDto): Promise<PhysicalDeduplicationPreviewResponseDto> {
-    const { physicalDeduplication } = await this.getConfig({ withCache: false });
     const counts = await this.jobRepository.getJobCounts(QueueName.StorageTemplateMigration);
     const running = counts.active + counts.waiting + counts.delayed + counts.paused > 0;
     const state = await this.systemMetadataRepository.get(SystemMetadataKey.PhysicalDeduplicationMigration);
@@ -240,8 +242,9 @@ export class PhysicalDeduplicationService extends BaseService {
     // `applying` and `applies` come from the durable jobs, which PhysicalDeduplicationPlanService adds.
     const response: PhysicalDeduplicationPreviewResponseDto = {
       plan: null,
-      savedMasterUserId: physicalDeduplication.masterUserId ?? null,
-      enabled: physicalDeduplication.enabled,
+      // universal storage: always on, with no saved master account
+      savedMasterUserId: null,
+      enabled: true,
       running,
       applying: false,
       applies: [],
@@ -411,21 +414,11 @@ export class PhysicalDeduplicationService extends BaseService {
   }
 
   /**
-   * What applying a reviewed plan requires beyond the review itself: the feature enabled, a saved
-   * retained account, and that account being the one the plan retains originals in. A saved account
-   * that changed since the review is a change like any other (409).
+   * What applying a reviewed plan requires beyond the review itself: the account the plan retains
+   * originals in still exists. Universal storage retired the saved master account and its setting;
+   * the reviewed plan's own account is the one its originals stay with.
    */
   async requireApplyAllowed(plan: Pick<PreparedPhysicalDeduplicationPlan, 'masterUserId'>): Promise<void> {
-    const { physicalDeduplication } = await this.getConfig({ withCache: false });
-    if (!physicalDeduplication.enabled) {
-      throw new BadRequestException('Enable file reuse before applying a plan.');
-    }
-    if (!physicalDeduplication.masterUserId) {
-      throw new BadRequestException('Save the retained account in Storage settings before applying a plan.');
-    }
-    if (physicalDeduplication.masterUserId !== plan.masterUserId) {
-      throw new ConflictException('The retained account changed. Prepare a new plan before continuing.');
-    }
     if (!(await this.isActiveUser(plan.masterUserId))) {
       throw new ConflictException('The retained account no longer exists. Prepare a new plan.');
     }
@@ -591,6 +584,93 @@ export class PhysicalDeduplicationService extends BaseService {
     const reclaimed = await this.removeReviewedCopy(item, physicalFile.path, true);
     const generated = await this.shareGeneratedFiles(item.assetId, item.retainedAssetId);
     return { state: 'applied', reasonKey: null, message: null, reclaimedBytes: reclaimed + generated };
+  }
+
+  /**
+   * Universal storage (FL-326, spec §3.6): point one copy at its group's primary asset's file. There
+   * is no master account and no reviewed plan; the migration picks the oldest asset that verifies as
+   * the primary. Under the same lock as an applied plan:
+   *
+   * - both assets must still be active library-storage assets with the same checksum and size;
+   * - the primary's file must hash to that checksum on disk (`verified` remembers it per run);
+   * - a copy whose own file no longer holds those bytes is left alone (`copy-mismatch`);
+   * - a copy whose own file is missing is simply linked: under universal storage that is its relink.
+   *
+   * Nothing is unlinked here. The copy's own file is registered as a physical file first, so once
+   * nothing references it the migration's trashing stage moves it to the file trash. Safe to repeat:
+   * a copy already on the primary's file reads `already-linked`.
+   */
+  linkToPrimary(
+    copyAssetId: string,
+    primaryAssetId: string,
+    verified: PhysicalDeduplicationVerified = new Map(),
+  ): Promise<UniversalLinkResult> {
+    return this.databaseRepository.withLock(DatabaseLock.StorageTemplateMigration, () =>
+      this.linkToPrimaryLocked(copyAssetId, primaryAssetId, verified),
+    );
+  }
+
+  private async linkToPrimaryLocked(
+    copyAssetId: string,
+    primaryAssetId: string,
+    verified: PhysicalDeduplicationVerified,
+  ): Promise<UniversalLinkResult> {
+    const rows = await this.physicalFileRepository.getPlanEvidence([copyAssetId, primaryAssetId]);
+    const copy = rows.find((row) => row.id === copyAssetId);
+    const primary = rows.find((row) => row.id === primaryAssetId);
+    const isManaged = (row: PhysicalDeduplicationEvidenceRow | undefined): row is PhysicalDeduplicationEvidenceRow =>
+      !!row &&
+      !row.deletedAt &&
+      row.status === AssetStatus.Active &&
+      !row.isExternal &&
+      !row.libraryId &&
+      !row.isOffline &&
+      !!row.sizeInBytes;
+    if (
+      !isManaged(copy) ||
+      !isManaged(primary) ||
+      !copy.checksum.equals(primary.checksum) ||
+      Number(copy.sizeInBytes) !== Number(primary.sizeInBytes)
+    ) {
+      return { state: 'skipped', reason: 'changed' };
+    }
+    const checksum = primary.checksum.toString('hex');
+    const sizeInBytes = Number(primary.sizeInBytes);
+
+    const physicalFile = await this.physicalFileRepository.ensureOriginalPhysicalFile(primaryAssetId);
+    if (!physicalFile) {
+      return { state: 'skipped', reason: 'changed' };
+    }
+    const cacheKey = `${physicalFile.path}:${checksum}`;
+    let primaryOnDisk = verified.get(cacheKey);
+    if (!primaryOnDisk) {
+      primaryOnDisk = await this.checkOnDisk(physicalFile.path, checksum, sizeInBytes);
+      verified.set(cacheKey, primaryOnDisk);
+    }
+    if (primaryOnDisk !== 'match') {
+      return { state: 'skipped', reason: primaryOnDisk === 'missing' ? 'primary-missing' : 'primary-mismatch' };
+    }
+
+    if (copy.physicalOriginalFileId === physicalFile.id && copy.originalPath === physicalFile.path) {
+      await this.shareGeneratedFiles(copyAssetId, primaryAssetId);
+      return { state: 'already-linked' };
+    }
+
+    const copyOnDisk =
+      copy.originalPath === physicalFile.path
+        ? 'match'
+        : await this.checkOnDisk(copy.originalPath, checksum, sizeInBytes);
+    if (copyOnDisk === 'mismatch') {
+      return { state: 'skipped', reason: 'copy-mismatch' };
+    }
+    if (copyOnDisk === 'match') {
+      // Register the copy's own file, so the trashing stage can find it once nothing references it.
+      await this.physicalFileRepository.ensureOriginalPhysicalFile(copyAssetId);
+      await this.migrateSidecarFile(copyAssetId, copy.ownerId, copy.originalPath);
+    }
+    await this.physicalFileRepository.linkAssetToOriginalPhysicalFile(copyAssetId, physicalFile);
+    await this.shareGeneratedFiles(copyAssetId, primaryAssetId);
+    return { state: 'linked', copyMissing: copyOnDisk === 'missing' };
   }
 
   /* ------------------------------------------------------------------ */
@@ -784,9 +864,9 @@ export class PhysicalDeduplicationService extends BaseService {
   }
 
   /**
-   * Remove the reviewed copy's old file: never the retained original's path, never a file that no
-   * longer holds the reviewed bytes, and never while any asset or generated file still names it.
-   * Returns the bytes actually removed.
+   * Remove the reviewed copy's old file to the file trash: never the retained original's path, never a
+   * file that no longer holds the reviewed bytes, and never while any asset or generated file still
+   * names it. Returns the bytes taken out of the library.
    */
   private async removeReviewedCopy(
     item: PhysicalDeduplicationPlanItem,
@@ -802,8 +882,23 @@ export class PhysicalDeduplicationService extends BaseService {
       return 0;
     }
 
-    const { deleted, references } = await this.physicalFileRepository.deleteUnreferencedPath(item.originalPath, () =>
-      this.storageRepository.unlink(item.originalPath),
+    // universal storage: an original is never unlinked by a job; the copy's last reference gone, its own
+    // file goes to the file trash like any FileDelete of an original (spec §3.5, §3.6)
+    const { deleted, references } = await this.physicalFileRepository.deleteUnreferencedPath(
+      item.originalPath,
+      () => this.storageRepository.unlink(item.originalPath),
+      {
+        trash: {
+          move: (from, to) => moveFileWithin(this.storageRepository, from, to),
+          original: {
+            checksum: Buffer.from(item.checksum, 'hex'),
+            sizeInBytes: item.sizeInBytes,
+            ownerId: item.ownerId,
+            assetId: item.assetId,
+            originalFileName: parse(item.originalPath).base,
+          },
+        },
+      },
     );
     if (!deleted) {
       this.logger.log(`Physical deduplication: kept ${item.originalPath}; ${references} reference(s) still name it`);

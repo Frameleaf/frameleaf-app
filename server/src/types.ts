@@ -8,6 +8,7 @@ import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
 import type { Rational } from 'src/utils/rational-time.js';
+import type { StorageMigrationState } from 'src/utils/storage-migration.js';
 import { VECTOR_EXTENSIONS } from 'src/constants.js';
 import { AssetFile } from 'src/database.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
@@ -324,6 +325,33 @@ export interface IPersonIdentityRefreshJob {
   assetIds?: string[];
 }
 
+/** FL-326: one partnership's backfill. */
+export interface IPartnerBackfillJob {
+  sharedById: string;
+  sharedWithId: string;
+}
+
+/** FL-326: copy `sourceAssetId` into `targetOwnerId`'s library because `partnerSharedById` shares with them. */
+export interface IPartnerCopyAssetJob {
+  sourceAssetId: string;
+  targetOwnerId: string;
+  partnerSharedById: string;
+}
+
+/** FL-326: copy `sourceAlbumId` into `targetOwnerId`'s library because `partnerSharedById` shares with them. */
+export interface IPartnerCopyAlbumJob {
+  sourceAlbumId: string;
+  targetOwnerId: string;
+  partnerSharedById: string;
+}
+
+/** FL-326: push `fields` of a changed source into its following copies (and theirs, onward). */
+export interface IPartnerPropagateJob {
+  kind: 'asset' | 'album';
+  sourceId: string;
+  fields: string[];
+}
+
 export interface IEntityJob extends IBaseJob {
   id: string;
   source?: JobSource;
@@ -358,6 +386,18 @@ export interface IDeleteFilesJob extends IBaseJob {
    * file is kept, including ones no remaining row is counted as referencing.
    */
   removedAssetId?: string;
+  /**
+   * Universal storage: the removed asset's original, so it goes to the file trash with its history
+   * even when it was never registered as a physical file. The checksum is hex encoded.
+   */
+  original?: {
+    path: string;
+    ownerId: string;
+    assetId: string;
+    originalFileName: string;
+    checksum: string;
+    sizeInBytes: number;
+  };
 }
 
 export interface IDeferrableJob extends IEntityJob {
@@ -520,6 +560,7 @@ export type JobItem =
   | { name: JobName.StorageTemplateMigrationSingle; data: IEntityJob }
   | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IPhysicalDeduplicationDryRunJob }
   | { name: JobName.PhysicalDeduplicationMigrationApply; data?: IBaseJob }
+  | { name: JobName.UniversalStorageMigration; data?: IDelayedJob }
 
   // Migration
   | { name: JobName.FileMigrationQueueAll; data?: IBaseJob }
@@ -608,6 +649,11 @@ export type JobItem =
   // FL-228: push delivery through the Frameleaf push gateway, and the nightly stale-backup wake-up
   | { name: JobName.PushDeliver; data: IPushDeliverJob }
   | { name: JobName.PushBackupStaleCheck; data?: IBaseJob }
+  // FL-326: partner sharing v2 copies
+  | { name: JobName.PartnerBackfill; data: IPartnerBackfillJob }
+  | { name: JobName.PartnerCopyAsset; data: IPartnerCopyAssetJob }
+  | { name: JobName.PartnerCopyAlbum; data: IPartnerCopyAlbumJob }
+  | { name: JobName.PartnerPropagate; data: IPartnerPropagateJob }
 
   // OCR
   | { name: JobName.OcrQueueAll; data: IBaseJob }
@@ -912,6 +958,15 @@ export type FrameleafCloudLink = {
      * up to 90 days is shown once, however soon a dismissed notification is cleaned up.
      */
     shownNotices?: Record<string, string>;
+    /**
+     * FC-27: the custom hostname failure episode already announced to administrators. A verified
+     * hostname clears this, so a later failure is announced once for the new episode.
+     */
+    customHostnameFailure?: {
+      host: string;
+      state: 'failing' | 'failed' | 'caa_blocked' | 'missing';
+      noticedAt: string;
+    };
   };
   /** FL-155: sha256 of headless link tokens already used, so a token never links twice. */
   usedLinkTokens?: string[];
@@ -1342,6 +1397,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
   [SystemMetadataKey.PhysicalDeduplicationMigration]: PhysicalDeduplicationMigrationState;
+  [SystemMetadataKey.UniversalStorageMigration]: StorageMigrationState;
   [SystemMetadataKey.ReverseGeocodingState]: { lastUpdate?: string; lastImportFileName?: string };
   [SystemMetadataKey.SystemConfig]: DeepPartial<SystemConfig>;
   [SystemMetadataKey.SystemFlags]: DeepPartial<SystemFlags>;
@@ -1479,6 +1535,8 @@ export interface UserMetadata extends Record<UserMetadataKey, Record<string, any
     seenAt: string;
     ending: 'finished' | 'skipped' | 'opened-settings' | 'setup';
   };
+  /** FL-326: when Locked partner copies first reached this account without a PIN, and when it was dismissed. */
+  [UserMetadataKey.PartnerLockedNotice]: { flaggedAt: string; dismissedAt: string | null };
 }
 
 export type MaybeDehydrated<T> = T | ShallowDehydrateObject<T>;

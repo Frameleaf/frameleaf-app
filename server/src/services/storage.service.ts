@@ -14,6 +14,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { moveFileWithin } from 'src/utils/file-trash.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 
 const docsMessage = `Please see https://help.frameleaf.app/administration/system-integrity#folder-checks for more information.`;
@@ -138,7 +139,8 @@ export class StorageService extends BaseService {
 
   @OnJob({ name: JobName.FileDelete, queue: QueueName.BackgroundTask })
   async handleDeleteFiles(job: JobOf<JobName.FileDelete>): Promise<JobStatus> {
-    const { files, removedAssetId } = job;
+    const { files, removedAssetId, original } = job;
+    const move = (from: string, to: string) => moveFileWithin(this.storageRepository, from, to);
 
     // TODO: one job per file
     for (const file of files) {
@@ -153,10 +155,25 @@ export class StorageService extends BaseService {
         // paths without checking whether those paths were already shared
         // master files, and unlinked the only copy. Refuse to delete anything
         // a live row still names, whatever the caller intended.
+        // universal storage: an unreferenced original goes to the file trash, never unlinked
         const { deleted, references } = await this.physicalFileRepository.deleteUnreferencedPath(
           file,
           () => this.storageRepository.unlink(file),
-          { removedAssetId },
+          {
+            removedAssetId,
+            trash: {
+              move,
+              ...(original?.path === file && {
+                original: {
+                  checksum: Buffer.from(original.checksum, 'hex'),
+                  sizeInBytes: original.sizeInBytes,
+                  ownerId: original.ownerId,
+                  assetId: original.assetId,
+                  originalFileName: original.originalFileName,
+                },
+              }),
+            },
+          },
         );
 
         if (!deleted) {
