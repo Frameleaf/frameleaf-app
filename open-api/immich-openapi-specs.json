@@ -78627,6 +78627,38 @@
         ],
         "type": "object"
       },
+      "PartnerBackfillDto": {
+        "properties": {
+          "done": {
+            "description": "Items copied so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "Where the first copy stands",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "stopped"
+            ],
+            "type": "string"
+          },
+          "total": {
+            "description": "Items to copy",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "state",
+          "total"
+        ],
+        "type": "object"
+      },
       "PartnerCreateDto": {
         "properties": {
           "sharedWithId": {
@@ -78688,11 +78720,19 @@
         "type": "object"
       },
       "PartnerResponseDto": {
-        "$ref": "#/components/schemas/UserResponseDto",
         "description": "Partner response",
         "properties": {
           "avatarColor": {
             "$ref": "#/components/schemas/UserAvatarColor"
+          },
+          "backfill": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PartnerBackfillDto"
+              }
+            ],
+            "description": "FL-326: copy progress of the library shared this way; null when it was never copied",
+            "nullable": true
           },
           "email": {
             "description": "User email",
