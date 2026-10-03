@@ -71071,7 +71071,6 @@
           "AssetGenerateVideoDuplicateFrames",
           "AssetEditThumbnailGeneration",
           "AssetDevelopRender",
-          "PhotographyWorkflowRender",
           "AssetVideoEditGeneration",
           "AssetEncodeVideoQueueAll",
           "AssetEncodeVideo",
