@@ -180,7 +180,102 @@ const linkedGap = async () => {
   return { graph: await applied(graph, []), moving: [picture.id, sound.id, caption.id] }
 }
 
+/** An interior one-second gap; unrelated sync-locked music occupies the removed interval. */
+const singleLinkedGap = async (syncLock: boolean) => {
+  const { graph: start, b } = await touchingPair()
+  const graph = await applied(start, [envelope('clip.push', { clipId: b, delta: seconds(1) })])
+  const picture = onTrack(graph, 'v1')[1]!
+  const sound = onTrack(graph, 'a1')[1]!
+  graph.timeline!.tracks.find((candidate) => candidate.id === 'a1')!.syncLock = syncLock
+  graph.timeline!.tracks.push(track('captions', 'video', 2, { syncLock }), track('music', 'audio', 3))
+  const caption: TextItem = {
+    id: 'single-gap-caption', trackId: 'captions', from: 160, durationInFrames: 10,
+    label: 'Caption', type: 'text', text: 'Keep the words', color: '#ffffff',
+    textRole: 'caption', captionSource: { type: 'transcript', clipId: picture.id, mediaId: ASSET },
+  }
+  graph.timeline!.items.push(caption, {
+    ...sound, id: 'interval-music', trackId: 'music', linkedGroupId: undefined, originId: undefined,
+    from: 135, durationInFrames: 5, sourceStart: 0, sourceEnd: 5,
+  })
+  return { graph: await applied(graph, []), moving: [picture.id, sound.id, caption.id] }
+}
+
 describe('FL-94 linked timeline tools on the Freecut engine', () => {
+  it.each([true, false])('closes one gap with linked sound/captions exactly once (sync lock %s)', async (syncLock) => {
+    const { graph, moving } = await singleLinkedGap(syncLock)
+    const expected = structuredClone(graph)
+    expected.timeline!.items = expected.timeline!.items.filter((item) => item.id !== 'interval-music')
+    for (const item of itemsOf(expected)) if (moving.includes(item.id)) item.from -= 30
+    const before = canonicalJson(graph)
+    const previous = useEditorStore.getState().linkedSelectionEnabled
+    useEditorStore.setState({ linkedSelectionEnabled: false })
+    try {
+      const closed = await applied(graph, [envelope('track.closeGap', { trackId: 'v1', at: seconds(9, 2) })])
+      // Includes exact linked positions/source windows and the engine's unrelated sync-lock removal.
+      expect(canonicalJson(closed)).toBe(canonicalJson(expected))
+      expect(canonicalJson(graph)).toBe(before)
+      expect(useEditorStore.getState().linkedSelectionEnabled).toBe(false)
+      expect(canonicalJson(await applied(structuredClone(closed), []))).toBe(canonicalJson(closed))
+    } finally {
+      useEditorStore.setState({ linkedSelectionEnabled: previous })
+    }
+  })
+
+  it.each(['a1', 'captions'])('refuses a single-gap edit with locked linked track %s', async (id) => {
+    const { graph } = await singleLinkedGap(false)
+    graph.timeline!.tracks.find((candidate) => candidate.id === id)!.locked = true
+    await refused(graph, [envelope('track.closeGap', { trackId: 'v1', at: seconds(9, 2) })], 'failed')
+  })
+
+  it.each(['audio', 'text'])('refuses negative single-gap positions for linked %s before clamping', async (type) => {
+    const { graph, moving } = await singleLinkedGap(false)
+    itemsOf(graph).find((item) => moving.includes(item.id) && item.type === type)!.from = 20
+    const before = canonicalJson(graph)
+    const outcome = await applyCanonicalCommands(graph, [
+      envelope('track.closeGap', { trackId: 'v1', at: seconds(9, 2) }),
+    ], media)
+    expect(outcome).toMatchObject({ status: 'rejected', reason: 'failed', detail: expect.stringContaining('before the timeline') })
+    expect(outcome).not.toHaveProperty('project')
+    expect(canonicalJson(graph)).toBe(before)
+  })
+
+  it.each(['audio', 'text'])('refuses a one-frame single-gap collision on linked %s tracks', async (type) => {
+    const { graph, moving } = await singleLinkedGap(false)
+    const companion = itemsOf(graph).find((item) => moving.includes(item.id) && item.type === type)!
+    // An unrelated item ends one frame after the companion's intended start.
+    const duration = companion.from - 30 - 120 + 1
+    graph.timeline!.items.push({
+      ...companion, id: 'single-gap-obstacle', from: 120, durationInFrames: duration,
+      linkedGroupId: undefined, originId: undefined,
+      ...(companion.type === 'text'
+        ? { captionSource: undefined, textRole: undefined }
+        : { sourceEnd: (companion.sourceStart ?? 0) + duration }),
+    })
+    await refused(graph, [envelope('track.closeGap', { trackId: 'v1', at: seconds(9, 2) })], 'failed')
+  })
+
+  it.each(['audio', 'text'])('atomically refuses sync-lock splitting/removal of linked %s source data', async (type) => {
+    const { graph, moving } = await singleLinkedGap(true)
+    const companion = itemsOf(graph).find((item) => moving.includes(item.id) && item.type === type)!
+    companion.from = 135 // The linked audio is split; the short caption is wholly removed.
+    const before = canonicalJson(graph)
+    const previous = useEditorStore.getState().linkedSelectionEnabled
+    useEditorStore.setState({ linkedSelectionEnabled: false })
+    try {
+      const outcome = await applyCanonicalCommands(graph, [
+        envelope('marker.add', { at: seconds(1) }),
+        envelope('track.closeGap', { trackId: 'v1', at: seconds(9, 2) }),
+      ], media)
+      expect(outcome).toMatchObject({ status: 'rejected', index: 1, reason: 'failed',
+        detail: expect.stringContaining('linked source window') })
+      expect(outcome).not.toHaveProperty('project')
+      expect(canonicalJson(graph)).toBe(before)
+      expect(useEditorStore.getState().linkedSelectionEnabled).toBe(false)
+    } finally {
+      useEditorStore.setState({ linkedSelectionEnabled: previous })
+    }
+  })
+
   it.each([true, false])('closes all picture gaps with linked sound/captions, preserving the full graph (selection %s)', async (linked) => {
     const { graph, moving } = await linkedGap()
     const expected = structuredClone(graph)
@@ -576,6 +671,8 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
       envelope('clip.push', { clipId: onTrack(start, 'v1')[1]!.id, delta: seconds(1) }),
     ])
     const companions = await linkedGap()
+    const singleWithSync = await singleLinkedGap(true)
+    const singleWithoutSync = await singleLinkedGap(false)
     let graph: unknown = start
     const history = createStudioGraphHistory()
     const handlers = createStudioEngineCommandHandlers({
@@ -615,6 +712,8 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
       [start, 'clip.push', { clipId: onTrack(start, 'v1')[1]!.id, delta: seconds(1) }],
       [gapped, 'track.closeGap', { trackId: 'v1' }],
       [companions.graph, 'track.closeGap', { trackId: 'v1' }],
+      [singleWithSync.graph, 'track.closeGap', { trackId: 'v1', at: seconds(9, 2) }],
+      [singleWithoutSync.graph, 'track.closeGap', { trackId: 'v1', at: seconds(9, 2) }],
       [start, 'sequence.setSettings', { sequenceId: 'main', fps: { num: 60, den: 1 }, timing: 'keep-time' }],
       [start, 'project.applyTemplate', { templateId: 'vertical-9-16' }],
     ]
@@ -633,18 +732,26 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
     // A rejected edit neither publishes a partial graph nor disturbs an existing undo/redo branch.
     const blocked = structuredClone(companions.graph)
     itemsOf(blocked).find((item) => item.id === 'unrelated-sound')!.durationInFrames += 1
-    graph = blocked
-    history.clear()
-    await run('marker.add', { at: seconds(1) })
-    const marked = canonicalJson(graph)
-    await run('history.undo', {})
-    const before = canonicalJson(graph)
-    const depth = history.depth
-    await expect(run('track.closeGap', { trackId: 'v1' })).rejects.toThrow('clips would overlap')
-    expect(canonicalJson(graph)).toBe(before)
-    expect(history.depth).toEqual(depth)
-    await run('history.redo', {})
-    expect(canonicalJson(graph)).toBe(marked)
+    const destructive = structuredClone(singleWithSync.graph)
+    itemsOf(destructive).find((item) => item.id === 'single-gap-caption')!.from = 135
+    const rejected: Array<[Project, Record<string, unknown>, string]> = [
+      [blocked, { trackId: 'v1' }, 'clips would overlap'],
+      [destructive, { trackId: 'v1', at: seconds(9, 2) }, 'linked source window'],
+    ]
+    for (const [initial, payload, detail] of rejected) {
+      graph = initial
+      history.clear()
+      await run('marker.add', { at: seconds(1) })
+      const marked = canonicalJson(graph)
+      await run('history.undo', {})
+      const before = canonicalJson(graph)
+      const depth = history.depth
+      await expect(run('track.closeGap', payload)).rejects.toThrow(detail)
+      expect(canonicalJson(graph)).toBe(before)
+      expect(history.depth).toEqual(depth)
+      await run('history.redo', {})
+      expect(canonicalJson(graph)).toBe(marked)
+    }
   })
 })
 
