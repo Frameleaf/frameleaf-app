@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { locale } from '$lib/stores/preferences.store';
   import {
     galleryRequest,
     galleryMedia,
@@ -73,7 +74,7 @@
     gallery?.photos.find((photo) => photo.id === gallery?.presentation.coverCaptureId) ?? gallery?.photos[0],
   );
   const money = (total: number, currency: string) =>
-    new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(total / 100);
+    new Intl.NumberFormat($locale, { style: 'currency', currency }).format(total / 100);
   const selectedPrice = $derived(
     gallery ? Math.max(0, choices.length - gallery.pricing.includedCount) * gallery.pricing.additionalPrice : 0,
   );
@@ -819,7 +820,7 @@
           <p>
             {gallery.photos.length} photographs · {choices.length}
             {choices.length === 1 ? 'favourite' : 'favourites'}{gallery.pricing.selectionDeadline
-              ? ` · Choose by ${new Date(gallery.pricing.selectionDeadline).toLocaleDateString()}`
+              ? ` · Choose by ${new Date(gallery.pricing.selectionDeadline).toLocaleDateString($locale)}`
               : ''}
           </p>
         </div>
@@ -979,7 +980,7 @@
         </div>
         <div>
           {#each gallery.rounds as round (round.id)}<p>
-              {round.captureIds.length} selections sent · {new Date(round.createdAt).toLocaleDateString()}
+              {round.captureIds.length} selections sent · {new Date(round.createdAt).toLocaleDateString($locale)}
             </p>{/each}{#each gallery.orders as order (order.id)}<article class="pc-order">
               <strong>{order.captureIds.length} photographs · {money(order.total, order.currency)}</strong>
               <p>

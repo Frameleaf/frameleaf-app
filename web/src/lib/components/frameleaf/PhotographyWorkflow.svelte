@@ -17,6 +17,7 @@
   import { getAssetMediaUrl } from '$lib/utils';
   import { Route } from '$lib/route';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
+  import { locale } from '$lib/stores/preferences.store';
 
   let {
     shoot,
@@ -77,7 +78,7 @@
   );
   const money = (amount: number, currency = draft?.config.currency ?? 'CAD') => {
     try {
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount / 100);
+      return new Intl.NumberFormat($locale, { style: 'currency', currency }).format(amount / 100);
     } catch {
       return `${amount / 100} ${currency}`;
     }
@@ -1087,7 +1088,7 @@
                     >{#each draft.approvedVersions?.filter((version) => version.captureId === capture.id) ?? [] as version (version.revisionId)}<option
                         value={version.revisionId}
                         >{versionChoices[capture.id]?.find((choice) => choice.id === version.revisionId)?.label ??
-                          `Approved ${new Date(version.approvedAt).toLocaleString()}`}</option
+                          `Approved ${new Date(version.approvedAt).toLocaleString($locale)}`}</option
                       >{/each}</select
                   ></label
                 ><Button disabled={busy} onclick={() => revisions(capture)}>Load version names</Button>{:else}<p>
@@ -1135,7 +1136,7 @@
         </div>
         {#each draft.rounds as round (round.id)}<article class="phd-order">
             <div class="phd-row">
-              <strong>{recipient(round.recipientId)} · {new Date(round.createdAt).toLocaleString()}</strong><span
+              <strong>{recipient(round.recipientId)} · {new Date(round.createdAt).toLocaleString($locale)}</strong><span
                 >{round.captureIds.length} photographs</span
               >
             </div>
@@ -1226,7 +1227,7 @@
                 >{/if}
             </div>
           </article>{:else}<p>No confirmed orders yet.</p>{/each}{#each draft.receipts as receipt (receipt.id)}<small
-            >{new Date(receipt.createdAt).toLocaleString()} · {receipt.action} · {receipt.reference}</small
+            >{new Date(receipt.createdAt).toLocaleString($locale)} · {receipt.action} · {receipt.reference}</small
           >{/each}
       </section>
       <section class="phd-card">
@@ -1341,7 +1342,7 @@
               {row.canProof ? 'Proofing enabled' : 'Proofing disabled'} · {row.canDownload
                 ? 'Approved downloads enabled'
                 : 'Downloads disabled'}{row.expiresAt
-                ? ` · Expires ${new Date(row.expiresAt).toLocaleDateString()}`
+                ? ` · Expires ${new Date(row.expiresAt).toLocaleDateString($locale)}`
                 : ''}
             </p>
             <div class="phd-actions">
