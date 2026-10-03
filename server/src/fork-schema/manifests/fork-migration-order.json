@@ -43,6 +43,7 @@
     "0000000000212-AssetDevelopArtifacts",
     "0000000000213-ICloudSourceIdentity",
     "0000000000214-BuddyBackupReferences",
-    "0000000000216-ICloudIdentityAudit"
+    "0000000000216-ICloudIdentityAudit",
+    "0000000000217-ICloudIdentityReuse"
   ]
 }

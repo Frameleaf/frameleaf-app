@@ -355,18 +355,29 @@ describe('iCloud exact identity adoption', () => {
     'denies an expired %s claim and creates no proof',
     async (kind) => {
       const fixture = await arrange();
-      if (kind === 'operation') {
-        await sql`UPDATE public.media_operation SET "claimExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${fixture.authority.operationId}::uuid`.execute(
-          db,
-        );
-      } else if (kind === 'resource') {
-        await sql`UPDATE immich_fork.icloud_resource SET "leaseExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${fixture.resource.id}::uuid`.execute(
-          db,
-        );
-      } else if (kind === 'item') {
-        await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second' WHERE "ownerId"=${fixture.user.id}::uuid`.execute(
-          db,
-        );
+      switch (kind) {
+        case 'operation': {
+          await sql`UPDATE public.media_operation SET "claimExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${fixture.authority.operationId}::uuid`.execute(
+            db,
+          );
+
+          break;
+        }
+        case 'resource': {
+          await sql`UPDATE immich_fork.icloud_resource SET "leaseExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${fixture.resource.id}::uuid`.execute(
+            db,
+          );
+
+          break;
+        }
+        case 'item': {
+          await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second' WHERE "ownerId"=${fixture.user.id}::uuid`.execute(
+            db,
+          );
+
+          break;
+        }
+        // No default
       }
       expect(await service.adopt(fixture.authority)).toBe('retry');
       await unpublished(fixture);
@@ -447,27 +458,44 @@ describe('iCloud exact identity adoption', () => {
     'refuses current %s disagreement',
     async (kind) => {
       const fixture = await arrange();
-      if (kind === 'config') {
-        fixture.authority.config = canonicalJson({ ...fixture.connection.config, libraries: ['other'] });
-      } else if (kind === 'source') {
-        await sql`UPDATE immich_fork.icloud_record SET deleted=true WHERE "connectionId"=${fixture.connection.id}::uuid AND "recordId"=${fixture.master}`.execute(
-          db,
-        );
-      } else if (kind === 'pause') {
-        await sql`UPDATE public.media_operation SET "pauseRequestedAt"=clock_timestamp() WHERE id=${fixture.authority.operationId}::uuid`.execute(
-          db,
-        );
-      } else if (kind === 'fingerprint') {
-        await writeFile(
-          fixture.originalPath,
-          await sharp({ create: { width: 8, height: 8, channels: 3, background: 'red' } })
-            .jpeg()
-            .toBuffer(),
-        );
-      } else if (kind === 'digest') {
-        await sql`UPDATE immich_fork.icloud_source_identity SET sha256=${Buffer.alloc(32)} WHERE id=${fixture.identityId}::uuid`.execute(
-          db,
-        );
+      switch (kind) {
+        case 'config': {
+          fixture.authority.config = canonicalJson({ ...fixture.connection.config, libraries: ['other'] });
+
+          break;
+        }
+        case 'source': {
+          await sql`UPDATE immich_fork.icloud_record SET deleted=true WHERE "connectionId"=${fixture.connection.id}::uuid AND "recordId"=${fixture.master}`.execute(
+            db,
+          );
+
+          break;
+        }
+        case 'pause': {
+          await sql`UPDATE public.media_operation SET "pauseRequestedAt"=clock_timestamp() WHERE id=${fixture.authority.operationId}::uuid`.execute(
+            db,
+          );
+
+          break;
+        }
+        case 'fingerprint': {
+          await writeFile(
+            fixture.originalPath,
+            await sharp({ create: { width: 8, height: 8, channels: 3, background: 'red' } })
+              .jpeg()
+              .toBuffer(),
+          );
+
+          break;
+        }
+        case 'digest': {
+          await sql`UPDATE immich_fork.icloud_source_identity SET sha256=${Buffer.alloc(32)} WHERE id=${fixture.identityId}::uuid`.execute(
+            db,
+          );
+
+          break;
+        }
+        // No default
       }
       expect(await service.adopt(fixture.authority)).not.toBe('adopted');
       await unpublished(fixture);
@@ -518,45 +546,78 @@ describe('iCloud exact identity adoption', () => {
     'library',
   ] as const)('refuses %s evidence without publishing a mapping or receipt', async (kind) => {
     const fixture = await arrange();
-    if (kind === 'missing') {
-      await sql`DELETE FROM immich_fork.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(db);
-    } else if (kind === 'ambiguous') {
-      const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
-      const { asset } = await ctx.newAsset({ ownerId: fixture.user.id, checksum: fixture.sha256 });
-      await sql`INSERT INTO immich_fork.icloud_source_identity
+    switch (kind) {
+      case 'missing': {
+        await sql`DELETE FROM immich_fork.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(db);
+
+        break;
+      }
+      case 'ambiguous': {
+        const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+        const { asset } = await ctx.newAsset({ ownerId: fixture.user.id, checksum: fixture.sha256 });
+        await sql`INSERT INTO immich_fork.icloud_source_identity
           ("ownerId","assetId","libraryKey","cplAssetRecordName","cplMasterRecordName",role,sha256,"deliveredBy","cloudIdentifier")
           SELECT "ownerId",${asset.id}::uuid,"libraryKey","cplAssetRecordName","cplMasterRecordName",role,sha256,"deliveredBy","cloudIdentifier"
           FROM immich_fork.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(db);
-    } else if (kind === 'master') {
-      await sql`UPDATE immich_fork.icloud_source_identity SET "cplMasterRecordName"='different' WHERE id=${fixture.identityId}::uuid`.execute(
-        db,
-      );
-    } else if (kind === 'role') {
-      await sql`UPDATE immich_fork.icloud_source_identity SET role='raw-alternate' WHERE id=${fixture.identityId}::uuid`.execute(
-        db,
-      );
-    } else if (kind === 'review') {
-      await sql`UPDATE immich_fork.icloud_source_identity SET "lastAuditResult"='mismatch' WHERE id=${fixture.identityId}::uuid`.execute(
-        db,
-      );
-    } else if (kind === 'offline') {
-      await db.updateTable('asset').set({ isOffline: true }).where('id', '=', fixture.asset.id).execute();
-    } else if (kind === 'external') {
-      await db.updateTable('asset').set({ isExternal: true }).where('id', '=', fixture.asset.id).execute();
-    } else if (kind === 'trashed') {
-      await db.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', fixture.asset.id).execute();
-    } else if (kind === 'reservation') {
-      await sql`INSERT INTO immich_fork.asset_storage_reservation
+
+        break;
+      }
+      case 'master': {
+        await sql`UPDATE immich_fork.icloud_source_identity SET "cplMasterRecordName"='different' WHERE id=${fixture.identityId}::uuid`.execute(
+          db,
+        );
+
+        break;
+      }
+      case 'role': {
+        await sql`UPDATE immich_fork.icloud_source_identity SET role='raw-alternate' WHERE id=${fixture.identityId}::uuid`.execute(
+          db,
+        );
+
+        break;
+      }
+      case 'review': {
+        await sql`UPDATE immich_fork.icloud_source_identity SET "lastAuditResult"='mismatch' WHERE id=${fixture.identityId}::uuid`.execute(
+          db,
+        );
+
+        break;
+      }
+      case 'offline': {
+        await db.updateTable('asset').set({ isOffline: true }).where('id', '=', fixture.asset.id).execute();
+
+        break;
+      }
+      case 'external': {
+        await db.updateTable('asset').set({ isExternal: true }).where('id', '=', fixture.asset.id).execute();
+
+        break;
+      }
+      case 'trashed': {
+        await db.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', fixture.asset.id).execute();
+
+        break;
+      }
+      case 'reservation': {
+        await sql`INSERT INTO immich_fork.asset_storage_reservation
           ("assetId",token,"sourcePath","upstreamPath","temporaryPath",status)
           VALUES (${fixture.asset.id}::uuid,${randomUUID()}::uuid,${fixture.originalPath},${`${fixture.originalPath}.upstream`},
             ${`${fixture.originalPath}.temporary`},'reserved')`.execute(db);
-    } else if (kind === 'album' || kind === 'library') {
-      const config = {
-        ...fixture.connection.config,
-        ...(kind === 'album' ? { albums: ['library:missing'] } : { libraries: ['missing'] }),
-      };
-      await sync.update(fixture.connection.id, fixture.user.id, { config });
-      fixture.authority.config = canonicalJson(config);
+
+        break;
+      }
+      case 'album':
+      case 'library': {
+        const config = {
+          ...fixture.connection.config,
+          ...(kind === 'album' ? { albums: ['library:missing'] } : { libraries: ['missing'] }),
+        };
+        await sync.update(fixture.connection.id, fixture.user.id, { config });
+        fixture.authority.config = canonicalJson(config);
+
+        break;
+      }
+      // No default
     }
     expect(await service.adopt(fixture.authority)).not.toBe('adopted');
     await unpublished(fixture);
@@ -750,18 +811,29 @@ describe('iCloud exact identity adoption', () => {
     'rejects %s expiry while native decode is suspended, even though its row remains locked',
     async (kind) => {
       const fixture = await arrange();
-      if (kind === 'operation') {
-        await sql`UPDATE public.media_operation SET "claimExpiresAt"=clock_timestamp()+interval '1 second' WHERE id=${fixture.authority.operationId}::uuid`.execute(
-          db,
-        );
-      } else if (kind === 'resource') {
-        await sql`UPDATE immich_fork.icloud_resource SET "leaseExpiresAt"=clock_timestamp()+interval '1 second' WHERE id=${fixture.resource.id}::uuid`.execute(
-          db,
-        );
-      } else if (kind === 'item') {
-        await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()+interval '1 second' WHERE "ownerId"=${fixture.user.id}::uuid`.execute(
-          db,
-        );
+      switch (kind) {
+        case 'operation': {
+          await sql`UPDATE public.media_operation SET "claimExpiresAt"=clock_timestamp()+interval '1 second' WHERE id=${fixture.authority.operationId}::uuid`.execute(
+            db,
+          );
+
+          break;
+        }
+        case 'resource': {
+          await sql`UPDATE immich_fork.icloud_resource SET "leaseExpiresAt"=clock_timestamp()+interval '1 second' WHERE id=${fixture.resource.id}::uuid`.execute(
+            db,
+          );
+
+          break;
+        }
+        case 'item': {
+          await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()+interval '1 second' WHERE "ownerId"=${fixture.user.id}::uuid`.execute(
+            db,
+          );
+
+          break;
+        }
+        // No default
       }
       const entered = Promise.withResolvers<void>();
       const resume = Promise.withResolvers<void>();
