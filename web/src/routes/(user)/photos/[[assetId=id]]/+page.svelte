@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import PartnerLockedNotice from '$lib/components/frameleaf/PartnerLockedNotice.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import { AssetAction } from '$lib/constants';
@@ -56,6 +57,8 @@
     enableRouting
     onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
   >
+    <!-- FL-326: Locked items from a partner stay hidden without a PIN; offer one, once. -->
+    <PartnerLockedNotice />
     {#if area}
       <div class="flex items-center gap-2 px-2 pt-4 text-(--fl-text)">
         <h1 class="text-xl font-semibold">{$t('frameleaf_map_area')}</h1>

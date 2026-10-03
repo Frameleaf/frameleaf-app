@@ -25,9 +25,11 @@ describe('partner sharing (prototype SharingAccess.jsx partner card)', () => {
       total: 10,
       done: 10,
     });
-    expect(backfillProgress({ state: 'running', total: 5, done: 9 }).percent).toBe(100);
-    expect(backfillProgress({ state: 'running', total: 0, done: 0 }).percent).toBe(0);
-    expect(backfillProgress({ state: 'weird', total: 4, done: 1 }).state).toBe('queued');
+    expect(backfillProgress({ state: 'running', total: 5, done: 9 })?.percent).toBe(100);
+    expect(backfillProgress({ state: 'running', total: 0, done: 0 })?.percent).toBe(0);
+    expect(backfillProgress({ state: 'weird', total: 4, done: 1 })?.state).toBe('queued');
+    // the server's first state is `pending`
+    expect(backfillProgress({ state: 'pending', total: 0, done: 0 })?.state).toBe('queued');
     expect(backfillProgress(undefined)).toBeUndefined();
     expect(backfillProgress(null)).toBeUndefined();
   });

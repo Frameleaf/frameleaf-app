@@ -102,7 +102,7 @@ describe(PartnerPeopleService.name, () => {
           actorId: B,
           action: 'partner-merge',
           faceId: null,
-          fromPersonId: null,
+          fromPersonId: PG_A,
           toPersonId: PG_B,
           fromPersonName: 'Emma',
           toPersonName: 'Emma R.',
