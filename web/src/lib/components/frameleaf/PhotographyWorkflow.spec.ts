@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { loadBrand } from '$lib/frameleaf/photography/api';
 import {
@@ -18,6 +19,7 @@ vi.mock('$lib/frameleaf/photography/workflow-api', async (original) => ({
   ...(await original<typeof import('$lib/frameleaf/photography/workflow-api')>()),
   workflowRequest: vi.fn(),
   studioPresetsRequest: vi.fn(),
+  watermarkPreview: vi.fn().mockResolvedValue(new Blob(['protected'], { type: 'image/jpeg' })),
 }));
 vi.mock('$lib/utils/file-uploader', () => ({ openFileUploadDialog: vi.fn() }));
 const shoot = {
@@ -145,6 +147,54 @@ it('assigns a chapter without overwriting existing photographer or camera-clock 
         captures: [
           expect.objectContaining({ id: 'capture', chapterId: 'chapter', photographer: 'Avery', offsetSeconds: 42 }),
         ],
+      }),
+    ),
+  );
+});
+it('saves reordered explicit story photos and requires an explicit reset to the assembled sequence', async () => {
+  const configured: Workflow = structuredClone(workflow);
+  configured.captures.push({
+    ...configured.captures[0],
+    id: 'second',
+    number: 2,
+    assetId: 'asset-2',
+    assetIds: ['asset-2'],
+  });
+  configured.config.presentation.blocks = [
+    { id: 'pair', type: 'pair', chapterId: null, selection: 'explicit', captureIds: ['capture', 'second'], text: '' },
+  ];
+  vi.mocked(workflowRequest).mockResolvedValue(configured);
+  render(PhotographyWorkflow, { shoot, panel: 'presentation' });
+  await fireEvent.click(await screen.findByText('Photographs (2)'));
+  await fireEvent.click(screen.getByRole('button', { name: 'Move selected photo 2 earlier' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Save presentation' }));
+  await waitFor(() =>
+    expect(workflowRequest).toHaveBeenCalledWith(
+      'shoot',
+      '/config',
+      'PUT',
+      expect.objectContaining({
+        config: expect.objectContaining({
+          presentation: expect.objectContaining({
+            blocks: [expect.objectContaining({ selection: 'explicit', captureIds: ['second', 'capture'] })],
+          }),
+        }),
+      }),
+    ),
+  );
+  await fireEvent.click(screen.getByRole('button', { name: 'Use assembled sequence' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Save presentation' }));
+  await waitFor(() =>
+    expect(workflowRequest).toHaveBeenLastCalledWith(
+      'shoot',
+      '/config',
+      'PUT',
+      expect.objectContaining({
+        config: expect.objectContaining({
+          presentation: expect.objectContaining({
+            blocks: [expect.objectContaining({ selection: 'automatic', captureIds: [] })],
+          }),
+        }),
       }),
     ),
   );

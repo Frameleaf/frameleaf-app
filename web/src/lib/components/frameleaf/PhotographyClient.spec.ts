@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import {
   galleryRequest,
   galleryMedia,
@@ -63,6 +64,9 @@ const view: GuestGallery = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(galleryRequest).mockReset();
+  vi.mocked(galleryFile).mockReset();
+  vi.mocked(galleryMedia).mockReset();
   sessionStorage.clear();
   history.replaceState(null, '', '/photography/gallery/shoot');
   sessionStorage.setItem(
@@ -198,4 +202,156 @@ it('requests only the exact entitled selected outputs in a ZIP', async () => {
   );
   expect(galleryFile).toHaveBeenCalledWith('shoot', 'scoped', '/zip/zip-id', true);
   expect(screen.queryByText('blocked-id')).toBeNull();
+});
+
+it('replaces cached proofs only when the live published generation changes', async () => {
+  const old = { ...structuredClone(view), publishedGenerationId: 'live-old' };
+  const pending = { ...old, publication: { ...old.publication!, id: 'pending-new', status: 'pending' as const } };
+  const ready = {
+    ...pending,
+    publishedGenerationId: 'live-new',
+    publication: { ...pending.publication, status: 'ready' as const },
+  };
+  vi.mocked(galleryRequest).mockResolvedValueOnce(old).mockResolvedValueOnce(pending).mockResolvedValueOnce(ready);
+  render(PhotographyClient, { galleryId: 'shoot' });
+  await screen.findByRole('img', { name: 'Photo 7' });
+  await waitFor(() => expect(galleryMedia).toHaveBeenCalledTimes(2));
+  await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  await waitFor(() => expect(galleryRequest).toHaveBeenCalledTimes(2));
+  await tick();
+  expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  expect(galleryMedia).toHaveBeenCalledTimes(2);
+  await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  await waitFor(() => expect(galleryMedia).toHaveBeenCalledTimes(4));
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:protected-pixels');
+});
+
+it('keeps an exact historical preview when an earlier ordinary preview finishes late', async () => {
+  let finishOrdinary!: (blob: Blob) => void;
+  const ordinary = new Promise<Blob>((resolve) => {
+    finishOrdinary = resolve;
+  });
+  const configured = structuredClone(view);
+  configured.presentation = { ...configured.presentation, coverTreatment: 'quiet' };
+  configured.photos[0].outputs = [
+    {
+      id: 'old-edit',
+      label: 'Earlier edit',
+      kind: 'print',
+      revisionId: 'old-revision',
+      approved: false,
+      clientApprovalRequired: true,
+      ready: false,
+      renderStatus: 'awaiting-approval',
+      branded: false,
+      exportSpec: { format: 'jpeg', quality: 90, maxEdge: 65_535 },
+      url: '/not-used',
+      approvalPreviewUrl: '/protected-exact-preview',
+      canDownload: false,
+      blockedReason: 'approval',
+    },
+  ];
+  vi.mocked(galleryRequest).mockResolvedValue(configured);
+  vi.mocked(galleryMedia).mockImplementation(async (_gallery, _capture, kind) =>
+    kind === 'preview' ? ordinary : new Blob(['thumb']),
+  );
+  const historical = new Blob(['old-edit'], { type: 'image/jpeg' });
+  vi.mocked(galleryFile).mockResolvedValue(historical);
+  vi.mocked(URL.createObjectURL).mockImplementation((blob) =>
+    blob === historical ? 'blob:historical' : 'blob:ordinary',
+  );
+  render(PhotographyClient, { galleryId: 'shoot' });
+  await fireEvent.click(await screen.findByRole('button', { name: 'View photo 7' }));
+  await fireEvent.click(await screen.findByRole('button', { name: 'Review Earlier edit' }));
+  const dialog = screen.getByRole('dialog');
+  await waitFor(() =>
+    expect(within(dialog).getByRole('img', { name: 'Photo 7' }).getAttribute('src')).toBe('blob:historical'),
+  );
+  finishOrdinary(new Blob(['ordinary'], { type: 'image/jpeg' }));
+  await tick();
+  expect(within(dialog).getByRole('img', { name: 'Photo 7' }).getAttribute('src')).toBe('blob:historical');
+});
+
+it('uses the saved explicit block order across pagination and keeps filtered-empty blocks empty', async () => {
+  const configured = structuredClone(view);
+  configured.photos = Array.from({ length: 100 }, (_, index) => ({
+    ...view.photos[0],
+    id: `capture-${index + 1}`,
+    number: index + 1,
+  }));
+  configured.presentation = {
+    ...configured.presentation,
+    coverTreatment: 'quiet',
+    blocks: [
+      {
+        id: 'pair',
+        type: 'pair',
+        chapterId: null,
+        selection: 'explicit',
+        captureIds: ['capture-100', 'capture-3'],
+        text: '',
+      },
+      { id: 'empty', type: 'grid', chapterId: null, selection: 'explicit', captureIds: [], text: '' },
+    ],
+  };
+  vi.mocked(galleryRequest).mockResolvedValue(configured);
+  render(PhotographyClient, { galleryId: 'shoot' });
+  await screen.findByRole('button', { name: 'View photo 100' });
+  expect(
+    screen.getAllByRole('button', { name: /^View photo/ }).map((button) => button.getAttribute('aria-label')),
+  ).toEqual(['View photo 100', 'View photo 3']);
+  await waitFor(() => expect(galleryMedia).toHaveBeenCalledWith('shoot', 'capture-100', 'thumbnail', 'scoped'));
+});
+
+it.each([false, true])('offers explicit bounded ZIP parts for 1500 photographs (outputs: %s)', async (outputs) => {
+  const configured = structuredClone(view);
+  configured.photos = Array.from({ length: 1500 }, (_, index) => ({
+    ...view.photos[0],
+    id: `capture-${index}`,
+    number: index + 1,
+    canDownload: true,
+    ...(outputs && {
+      outputs: [
+        {
+          id: `output-${index}`,
+          label: 'Print',
+          kind: 'print' as const,
+          revisionId: 'approved',
+          approved: true,
+          clientApprovalRequired: false,
+          ready: true,
+          renderStatus: 'ready' as const,
+          branded: false,
+          exportSpec: { format: 'jpeg' as const, quality: 90 as const, maxEdge: 65_535 },
+          url: '/not-used',
+          approvalPreviewUrl: null,
+          canDownload: true,
+          blockedReason: null,
+        },
+      ],
+    }),
+  }));
+  vi.mocked(galleryRequest)
+    .mockResolvedValueOnce(configured)
+    .mockResolvedValueOnce({ id: 'part-two' } as never);
+  vi.mocked(galleryFile).mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  render(PhotographyClient, { galleryId: 'shoot' });
+  await fireEvent.click(await screen.findByRole('button', { name: 'Download part 2 (500 files)' }));
+  await waitFor(() =>
+    expect(galleryRequest).toHaveBeenCalledWith(
+      'shoot',
+      'scoped',
+      '/zip',
+      'POST',
+      outputs
+        ? {
+            outputs: configured.photos
+              .slice(1000)
+              .map((photo) => ({ captureId: photo.id, outputId: photo.outputs![0].id })),
+          }
+        : { captureIds: configured.photos.slice(1000).map((photo) => photo.id) },
+    ),
+  );
+  expect(galleryFile).toHaveBeenCalledWith('shoot', 'scoped', '/zip/part-two', true);
 });

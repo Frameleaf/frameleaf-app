@@ -1,4 +1,5 @@
 import { getAssetDevelop } from '@immich/sdk';
+import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { syncNativeRecipes, cancelNativeSync } from '$lib/frameleaf/native-sync';
 import PhotographyNativeSync from './PhotographyNativeSync.svelte';
