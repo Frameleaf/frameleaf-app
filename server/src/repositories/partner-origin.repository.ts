@@ -382,6 +382,22 @@ export class PartnerOriginRepository {
     return rows[0]?.present ?? false;
   }
 
+  /**
+   * Whether `ownerId`'s library ever received a copy of `sourceAssetId`, even one its owner has since
+   * permanently deleted: the origin row outlives the copy (fork tables never foreign-key into the
+   * official schema), and a copy a library once had is never made again (a re-read of the source's
+   * metadata, a retried job or a re-run backfill must not undo the recipient's delete).
+   */
+  async hasEverCopied(sourceAssetId: string, ownerId: string, kysely: Kysely<DB> = this.db): Promise<boolean> {
+    const { rows } = await sql<{ present: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM immich_fork.asset_origin
+        WHERE "sourceAssetId" = ${sourceAssetId}::uuid AND "ownerId" = ${ownerId}::uuid
+      ) AS present
+    `.execute(kysely);
+    return rows[0]?.present ?? false;
+  }
+
   /** Locked or sensitive evidence on a source, from either store (positive evidence anywhere counts). */
   async getCopyBlockers(assetId: string): Promise<AssetCopyBlockers> {
     const { rows } = await sql<AssetCopyBlockers>`
@@ -406,8 +422,8 @@ export class PartnerOriginRepository {
    * Favorites, trash, stacks, duplicates, edits and the Live Photo pairing are never copied: the copy
    * starts as the owner's own unedited, unfavorited item. The library is charged the full file size.
    *
-   * Returns the copy's id, or undefined when the library already holds the content or the partnership
-   * it is made for has ended.
+   * Returns the copy's id, or undefined when the library already holds the content (or once received a
+   * copy of this source), or the partnership it is made for has ended.
    */
   async insertAssetCopy(input: AssetCopyInput): Promise<string | undefined> {
     return this.db.transaction().execute(async (trx) => {
@@ -448,7 +464,7 @@ export class PartnerOriginRepository {
         .where('ownerId', '=', input.ownerId)
         .where('checksum', '=', source.checksum)
         .executeTakeFirst();
-      if (existing) {
+      if (existing || (await this.hasEverCopied(source.id, input.ownerId, trx))) {
         return;
       }
 

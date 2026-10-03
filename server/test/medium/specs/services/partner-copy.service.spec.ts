@@ -745,6 +745,26 @@ describe(PartnerCopyService.name, () => {
       }
     });
 
+    it('never re-creates a copy the recipient purged when the source is read again', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const source = await newSourceAsset(ctx, alice.id);
+      await sut.onAssetMetadataExtracted({ assetId: source.id, userId: alice.id });
+      await drain(sut, [ctx]);
+      const [copy] = await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute();
+      expect(copy).toBeDefined();
+
+      // Bob trashes and permanently deletes his copy; Alice's item is re-extracted (refresh metadata)
+      await db.deleteFrom('asset').where('id', '=', copy.id).execute();
+      await sut.onAssetMetadataExtracted({ assetId: source.id, userId: alice.id });
+      await drain(sut, [ctx]);
+
+      await expect(db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).resolves.toEqual([]);
+      await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+    });
+
     it('keeps one copy per library across a sharing loop and settles (A↔B, B→C, C→A)', async () => {
       const { sut, ctx } = setup();
       const { assets, assetCtx } = assetService();
