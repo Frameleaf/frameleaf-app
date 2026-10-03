@@ -99,7 +99,10 @@ describe('catalog manifests', () => {
     // exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230), develop artifacts
     // (FL-233), iCloud source identities, claims, audit and reuse receipts (FL-296),
     // and photography workflows and studio sites (FL-283), in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(224);
+    expect(getCatalogTableLocks(fork)).toHaveLength(227);
+    expect(getCatalogTableLocks(fork)).toEqual(expect.arrayContaining([
+      'immich_fork.icloud_weekly_grant', 'immich_fork.icloud_weekly_cohort', 'immich_fork.icloud_weekly_member',
+    ]));
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
         'public.pet_audit',
@@ -154,7 +157,7 @@ describe('catalog manifests', () => {
       ]),
     );
     // 66 v3.1.0 public + every fork table
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(133);
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(136);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {

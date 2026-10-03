@@ -35,6 +35,7 @@
     icloudStatusKey,
     icloudStatusTone,
     icloudSummary,
+    icloudWeeklyConsentIsCurrent,
     isActiveRun,
     isLibrarySelected,
     toggleAlbum,
@@ -59,6 +60,7 @@
     listICloudConnections,
     removeICloudConnection,
     updateICloudConnection,
+    updateICloudIdentityReuseAuthority,
     type ICloudAuthDto,
     type ICloudConnectionResponseDto,
     type ICloudConnectionsResponseDto,
@@ -66,7 +68,7 @@
   } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiCheckCircleOutline, mdiClose, mdiCloudOutline } from '@mdi/js';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
   let { initial }: { initial: ICloudConnectionsResponseDto } = $props();
@@ -84,6 +86,10 @@
   let busy = $state(false);
   let notice = $state('');
   let error = $state('');
+  let weeklyEnabled = $state(false);
+  let weeklyProtected = $state(false);
+  let weeklyGeneration = 0;
+  let weeklyMounted = true;
 
   // Secrets: this component's memory only, for the one request that sends them.
   let appleId = $state('');
@@ -105,6 +111,21 @@
   const PENDING_SAVE_KEY = 'frameleaf.icloud.pending-save';
 
   const selected = $derived(connections.find(({ id }) => id === selectedId));
+  $effect(() => {
+    // Replacing the same account's user/session presentation also retires a pending choice.
+    const owner = authManager.user;
+    const id = selectedId;
+    weeklyGeneration++;
+    untrack(() => {
+      const current = owner && connections.find((item) => item.id === id)?.identityReuseAuthority;
+      weeklyEnabled = current?.enabled ?? false;
+      weeklyProtected = current?.includeProtected ?? false;
+    });
+  });
+  onDestroy(() => {
+    weeklyMounted = false;
+    weeklyGeneration++;
+  });
   const status = $derived(selected ? icloudStatus(selected) : undefined);
   const controls = $derived(selected ? icloudRunControls(selected) : undefined);
   const step = $derived(selected ? (signInAgain ? 'sign-in' : icloudAuthStep(selected)) : 'sign-in');
@@ -212,6 +233,56 @@
     authError = '';
     clearSecrets();
     void loadInventory();
+  };
+
+  const saveWeeklyAuthority = async () => {
+    if (!selected || busy) {
+      return;
+    }
+    const user = authManager.user;
+    const origin = { ownerId: user.id, connectionId: selectedId, generation: weeklyGeneration };
+    const choice = { enabled: weeklyEnabled, includeProtected: weeklyEnabled && weeklyProtected,
+      requestKey: crypto.randomUUID() };
+    const current = () => weeklyMounted && authManager.user === user && icloudWeeklyConsentIsCurrent(origin,
+      { ownerId: authManager.user.id, connectionId: selectedId, generation: weeklyGeneration });
+    busy = true;
+    error = '';
+    try {
+      if (choice.includeProtected) {
+        const status = await getAuthStatus();
+        if (!current()) {
+          return;
+        }
+        if (!status.isElevated) {
+          weeklyEnabled = false;
+          weeklyProtected = false;
+          // Consent is not stored for the PIN detour. Returning requires another explicit choice.
+          await goto(Route.pinPrompt({ continue: page.url.pathname + page.url.search }));
+          return;
+        }
+      }
+      if (!current()) {
+        return;
+      }
+      const authority = await updateICloudIdentityReuseAuthority({ id: origin.connectionId,
+        iCloudIdentityReuseAuthorityDto: choice });
+      if (!current()) {
+        return;
+      }
+      connections = connections.map((item) => item.id === origin.connectionId
+        ? { ...item, identityReuseAuthority: authority } : item);
+      weeklyEnabled = authority.enabled;
+      weeklyProtected = authority.includeProtected;
+      notice = $t('frameleaf_icloud_weekly_unavailable');
+    } catch (cause) {
+      if (current()) {
+        error = failure(cause);
+      }
+    } finally {
+      if (weeklyMounted) {
+        busy = false;
+      }
+    }
   };
 
   const refresh = () =>
@@ -595,6 +666,21 @@
           {$t('frameleaf_icloud_include_hidden')}
         </label>
         <p class="ic-hint">{$t('frameleaf_icloud_external_managed')}</p>
+      </section>
+
+      <section>
+        <h3>{$t('frameleaf_icloud_weekly_title')}</h3>
+        <label class="ic-check">
+          <input type="checkbox" bind:checked={weeklyEnabled} disabled={busy} />
+          {$t('frameleaf_icloud_weekly_consent')}
+        </label>
+        <label class="ic-check">
+          <input type="checkbox" bind:checked={weeklyProtected} disabled={busy || !weeklyEnabled} />
+          {$t('frameleaf_icloud_weekly_protected')}
+        </label>
+        <p class="ic-hint">{$t('frameleaf_icloud_weekly_scope')}</p>
+        <p class="ic-hint">{$t('frameleaf_icloud_weekly_unavailable')}</p>
+        <Button disabled={busy} onclick={saveWeeklyAuthority}>{$t('frameleaf_icloud_weekly_save')}</Button>
       </section>
 
       <section>

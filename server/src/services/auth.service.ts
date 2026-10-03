@@ -389,15 +389,18 @@ export class AuthService extends BaseService {
     }
 
     const hashed = await this.cryptoRepository.hashBcrypt(pinCode, SALT_ROUNDS);
-    await this.userRepository.update(auth.user.id, { pinCode: hashed });
+    if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, hashed))) {
+      throw new UnauthorizedException('Your PIN or password changed; try again');
+    }
   }
 
   async resetPinCode(auth: AuthDto, dto: PinCodeResetDto) {
     const user = await this.userRepository.getForPinCode(auth.user.id);
     this.validatePinCode(user, dto);
 
-    await this.userRepository.update(auth.user.id, { pinCode: null });
-    await this.sessionRepository.lockAll(auth.user.id);
+    if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, null))) {
+      throw new UnauthorizedException('Your PIN or password changed; try again');
+    }
     // FL-34: every open tab of every session of this account drops what it unlocked
     this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
@@ -407,9 +410,10 @@ export class AuthService extends BaseService {
     this.validatePinCode(user, dto);
 
     const hashed = await this.cryptoRepository.hashBcrypt(dto.newPinCode, SALT_ROUNDS);
-    await this.userRepository.update(auth.user.id, { pinCode: hashed });
+    if (!(await this.userRepository.setPinCodeAndLockSessions(auth.user.id, user, hashed))) {
+      throw new UnauthorizedException('Your PIN or password changed; try again');
+    }
     // FL-34: an elevation granted by the old PIN ends with it, in every session of the account
-    await this.sessionRepository.lockAll(auth.user.id);
     this.websocketRepository.clientSend('on_session_lock', auth.user.id);
   }
 

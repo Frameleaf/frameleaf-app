@@ -449,6 +449,34 @@ export class UserRepository {
       .executeTakeFirstOrThrow();
   }
 
+  async setPinCodeAndLockSessions(
+    id: string,
+    verified: { pinCode: string | null; password: string | null },
+    pinCode: string | null,
+  ): Promise<boolean> {
+    return this.db.transaction().execute(async (db) => {
+      const user = await db
+        .selectFrom('user')
+        .select('user.id')
+        .where('user.id', '=', asUuid(id))
+        .where('user.deletedAt', 'is', null)
+        .where(sql<boolean>`"user"."pinCode" is not distinct from ${verified.pinCode}`)
+        .where(sql<boolean>`"user"."password" is not distinct from ${verified.password}`)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!user) {
+        return false;
+      }
+
+      // Match elevation/grant admission's owner-before-session order. New sessions' owner FK
+      // also waits for this owner lock; no old elevation can survive the committed mutation.
+      await db.selectFrom('session').select('id').where('userId', '=', asUuid(id)).orderBy('id').forUpdate().execute();
+      await db.updateTable('user').set({ pinCode }).where('id', '=', asUuid(id)).execute();
+      await db.updateTable('session').set({ pinExpiresAt: null }).where('userId', '=', asUuid(id)).execute();
+      return true;
+    });
+  }
+
   update(id: string, dto: Updateable<UserTable>) {
     return this.db
       .updateTable('user')

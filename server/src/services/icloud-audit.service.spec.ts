@@ -208,6 +208,19 @@ describe(ICloudAuditService.name, () => {
     await rm(directory, { recursive: true, force: true });
   });
 
+  it.each([
+    { purpose: 'scheduled-weekly' }, { grantId: null }, { cohortId: 'reserved' }, { purpose: null },
+  ])('refuses scheduled bindings in the direct manual worker before byte work: %j', async (input) => {
+    operation.snapshot = { ...operation.snapshot, ...input };
+    await service.run(operation, token);
+    expect(operations.fail).toHaveBeenCalledWith(operation.id, token,
+      { error: 'Invalid audit request', errorCode: 'icloud_audit_snapshot_invalid' }, { retry: false });
+    expect(repository.get).not.toHaveBeenCalled();
+    expect(repository.allocate).not.toHaveBeenCalled();
+    expect(transport.download).not.toHaveBeenCalled();
+    expect(recovery.reconcile).not.toHaveBeenCalled();
+  });
+
   it('certifies freshly fetched bytes rather than hashing a mapped local original', async () => {
     const original = join(directory, 'already-mapped.jpg');
     await writeFile(original, 'unrelated mapped bytes');

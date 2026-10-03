@@ -67,6 +67,7 @@ import {
   parseEnrichmentPlanSnapshot,
 } from 'src/utils/enrichment-plan.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
+import { isPrivateICloudOperation } from 'src/utils/icloud-weekly.js';
 import {
   ACTIVE_MEDIA_OPERATION_STATUSES,
   PAUSABLE_MEDIA_OPERATION_KINDS,
@@ -146,6 +147,9 @@ const mapBulkSummary = (operation: MediaOperation): MediaOperationDto['bulk'] =>
  * count is what a person auditing the job needs, and the ids themselves stay on the row.
  */
 const mapSnapshot = (operation: MediaOperation): Record<string, unknown> => {
+  if (isPrivateICloudOperation(operation)) {
+    return { task: 'identity-audit-weekly', executionAvailable: false };
+  }
   const snapshot = asObject(operation.snapshot);
   if (operation.kind === MediaOperationKind.CloudRestore && snapshot.owner) {
     // Owner execution authority is private: current paths, session and selected ids stay on the row.
@@ -241,41 +245,45 @@ const isWithheld = (operation: Pick<MediaOperation, 'assetId' | 'resultAssetId'>
 export const mapOperation = (
   operation: MediaOperation,
   hidden: ReadonlySet<string> = new Set(),
-): MediaOperationDto => ({
-  id: operation.id,
-  kind: operation.kind as MediaOperationKind,
-  status: operation.status as MediaOperationStatus,
-  destination: operation.destination as MediaOperationDestination,
-  destinationDetail: operation.destinationDetail,
-  label: isWithheld(operation, hidden) ? '' : operation.label,
-  withheld: isWithheld(operation, hidden),
-  assetId: unlessHidden(operation.assetId, hidden),
-  resultAssetId: unlessHidden(operation.resultAssetId, hidden),
-  retryOfId: operation.retryOfId,
-  projectId: operation.projectId,
-  revisionId: operation.revisionId,
-  settings: asObject(operation.settings),
-  estimate: mapEstimate(operation.estimate),
-  bulk: mapBulkSummary(operation),
-  cloudJob: cloudMlJobActivity(operation),
-  progress: operation.progress,
-  processedUnits: String(operation.processedUnits ?? 0),
-  totalUnits: operation.totalUnits === null || operation.totalUnits === undefined ? null : String(operation.totalUnits),
-  attempt: operation.attempt,
-  maxAttempts: operation.maxAttempts,
-  autoRetries: operation.autoRetries ?? 0,
-  retryAt: asIso(operation.retryAt),
-  error: operation.error,
-  errorCode: operation.errorCode,
-  cancelRequestedAt: asIso(operation.cancelRequestedAt),
-  cancelAcknowledgedAt: asIso(operation.cancelAcknowledgedAt),
-  pausable: isPausableMediaOperationKind(operation.kind as MediaOperationKind) && cloudMlJobCanPause(operation),
-  pauseRequestedAt: asIso(operation.pauseRequestedAt),
-  startedAt: asIso(operation.startedAt),
-  finishedAt: asIso(operation.finishedAt),
-  createdAt: asRequiredIso(operation.createdAt),
-  updatedAt: asRequiredIso(operation.updatedAt),
-});
+): MediaOperationDto => {
+  const privateWeekly = isPrivateICloudOperation(operation);
+  return {
+    id: operation.id,
+    kind: operation.kind as MediaOperationKind,
+    status: operation.status as MediaOperationStatus,
+    destination: operation.destination as MediaOperationDestination,
+    destinationDetail: privateWeekly ? null : operation.destinationDetail,
+    label: privateWeekly ? 'iCloud integrity verification' : isWithheld(operation, hidden) ? '' : operation.label,
+    withheld: privateWeekly || isWithheld(operation, hidden),
+    assetId: privateWeekly ? null : unlessHidden(operation.assetId, hidden),
+    resultAssetId: privateWeekly ? null : unlessHidden(operation.resultAssetId, hidden),
+    retryOfId: privateWeekly ? null : operation.retryOfId,
+    projectId: privateWeekly ? null : operation.projectId,
+    revisionId: privateWeekly ? null : operation.revisionId,
+    settings: privateWeekly ? {} : asObject(operation.settings),
+    estimate: privateWeekly ? null : mapEstimate(operation.estimate),
+    bulk: privateWeekly ? null : mapBulkSummary(operation),
+    cloudJob: privateWeekly ? null : cloudMlJobActivity(operation),
+    progress: privateWeekly ? 0 : operation.progress,
+    processedUnits: privateWeekly ? '0' : String(operation.processedUnits ?? 0),
+    totalUnits: privateWeekly || operation.totalUnits === null || operation.totalUnits === undefined
+      ? null : String(operation.totalUnits),
+    attempt: operation.attempt,
+    maxAttempts: operation.maxAttempts,
+    autoRetries: operation.autoRetries ?? 0,
+    retryAt: asIso(operation.retryAt),
+    error: privateWeekly ? null : operation.error,
+    errorCode: privateWeekly ? null : operation.errorCode,
+    cancelRequestedAt: asIso(operation.cancelRequestedAt),
+    cancelAcknowledgedAt: asIso(operation.cancelAcknowledgedAt),
+    pausable: isPausableMediaOperationKind(operation.kind as MediaOperationKind) && cloudMlJobCanPause(operation),
+    pauseRequestedAt: asIso(operation.pauseRequestedAt),
+    startedAt: asIso(operation.startedAt),
+    finishedAt: asIso(operation.finishedAt),
+    createdAt: asRequiredIso(operation.createdAt),
+    updatedAt: asRequiredIso(operation.updatedAt),
+  };
+};
 
 const mapCheckpoint = (checkpoint: MediaOperationCheckpoint) => ({
   id: checkpoint.id,
@@ -352,16 +360,17 @@ export class MediaOperationService {
 
   async get(auth: AuthDto, id: string): Promise<MediaOperationDetailDto> {
     const operation = await this.findOwned(auth, id);
-    const checkpoints = await this.repository.getCheckpoints(operation.id);
+    const privateWeekly = isPrivateICloudOperation(operation);
+    const checkpoints = privateWeekly ? [] : await this.repository.getCheckpoints(operation.id);
     const hidden = await this.hiddenLockedIds(auth, [operation]);
 
     return {
       ...mapOperation(operation, hidden),
       // A job about a Locked item names it throughout its snapshot; a locked session sees none of it.
-      snapshot: isWithheld(operation, hidden) ? {} : mapSnapshot(operation),
+      snapshot: privateWeekly ? mapSnapshot(operation) : isWithheld(operation, hidden) ? {} : mapSnapshot(operation),
       checkpoints: checkpoints.map((checkpoint) => mapCheckpoint(checkpoint)),
-      bulkItems: mapBulkItems(operation, hidden),
-      bulkRetryPending: mapBulkRetryPending(operation, hidden),
+      bulkItems: privateWeekly ? [] : mapBulkItems(operation, hidden),
+      bulkRetryPending: privateWeekly ? [] : mapBulkRetryPending(operation, hidden),
     };
   }
 
@@ -505,6 +514,7 @@ export class MediaOperationService {
     const connectionId = asObject(cancelled.snapshot).connectionId;
     if (
       cancelled.kind === MediaOperationKind.ICloudSync &&
+      !isPrivateICloudOperation(cancelled) &&
       cancelled.status === MediaOperationStatus.Cancelled &&
       typeof connectionId === 'string'
     ) {
@@ -901,6 +911,9 @@ export class MediaOperationService {
    * items' back-off is cleared first. When a run is already unfinished, that run is the answer.
    */
   private async retryICloudSync(auth: AuthDto, operation: MediaOperation): Promise<MediaOperationDto> {
+    if (isPrivateICloudOperation(operation)) {
+      throw new BadRequestException('Weekly integrity work cannot be retried through ordinary sync');
+    }
     if (!canRetryMediaOperation(operation.status as MediaOperationStatus)) {
       throw new BadRequestException('Only a failed or cancelled job can be retried');
     }
@@ -1031,6 +1044,9 @@ export class MediaOperationService {
 
     const ids = new Set<string>();
     for (const operation of operations) {
+      if (isPrivateICloudOperation(operation)) {
+        continue;
+      }
       const candidates = [operation.assetId, operation.resultAssetId, ...bulkItems(operation).map(({ id }) => id)];
       for (const id of candidates) {
         // stored results are data, not a contract: only well-formed ids reach the uuid lookup

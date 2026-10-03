@@ -169,7 +169,32 @@ describe(ICloudSyncService.name, () => {
       identities as never,
       { housekeeping: vi.fn(), run: vi.fn() } as never,
       adoption as never,
+      { status: vi.fn().mockResolvedValue({ enabled: false, includeProtected: false, available: false,
+        regrantRequired: false, executionAvailable: false }), setAuthority: vi.fn() } as never,
     );
+  });
+
+  it.each([
+    { task: 'identity-audit-weekly' }, { task: 'unknown' }, { task: null }, { purpose: null },
+    { purpose: 'scheduled-weekly' }, { grantId: null },
+    { task: 'identity-audit', grantGeneration: 1, auditIds: [] },
+    { task: 'identity-audit', purpose: 'scheduled-weekly', auditIds: [] },
+  ])('refuses reserved or malformed scheduled work before ordinary allocation: %j', async (snapshot) => {
+    await sut.run(operation({ snapshot: { connectionId: 'connection', ...snapshot } }), 'token');
+    expect(operations.fail).toHaveBeenCalledWith('run', 'token',
+      { error: 'Invalid iCloud task', errorCode: 'icloud_snapshot_invalid' }, { retry: false });
+    expect(repository.get).not.toHaveBeenCalled();
+    expect(repository.claim).not.toHaveBeenCalled();
+    expect(staging.download).not.toHaveBeenCalled();
+    expect(recovery.reconcile).not.toHaveBeenCalled();
+    expect(adoption.adopt).not.toHaveBeenCalled();
+  });
+
+  it('does not expose private weekly findings through the connection run summary', () => {
+    const result = mapICloudRun(operation({ snapshot: { task: 'identity-audit-weekly' },
+      errorCode: 'PRIVATE-SENTINEL', totalUnits: 123, processedUnits: 77, progress: 88 }));
+    expect(result).toMatchObject({ progress: 0, processedUnits: 0, totalUnits: null, errorCode: null });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE-SENTINEL');
   });
 
   it('patches only supplied config fields and validates the merged settings', async () => {

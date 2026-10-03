@@ -2041,13 +2041,15 @@ describe(AuthService.name, () => {
       const dto = { pinCode: '123456' };
 
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: null, password: '' });
-      mocks.user.update.mockResolvedValue(user);
+      mocks.user.setPinCodeAndLockSessions.mockResolvedValue(true);
 
       await sut.setupPinCode(auth, dto);
 
       expect(mocks.user.getForPinCode).toHaveBeenCalledWith(user.id);
       expect(mocks.crypto.hashBcrypt).toHaveBeenCalledWith('123456', SALT_ROUNDS);
-      expect(mocks.user.update).toHaveBeenCalledWith(user.id, { pinCode: expect.any(String) });
+      expect(mocks.user.setPinCodeAndLockSessions).toHaveBeenCalledWith(
+        user.id, { pinCode: null, password: '' }, expect.any(String),
+      );
     });
 
     it('should fail if the user already has a PIN code', async () => {
@@ -2152,16 +2154,18 @@ describe(AuthService.name, () => {
       const dto = { pinCode: '123456', newPinCode: '012345' };
 
       mocks.user.getForPinCode.mockResolvedValue({ pinCode: '123456 (hashed)', password: '' });
-      mocks.user.update.mockResolvedValue(user);
+      mocks.user.setPinCodeAndLockSessions.mockResolvedValue(true);
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
       mocks.session.lockAll.mockResolvedValue();
 
       await sut.changePinCode(auth, dto);
 
       expect(mocks.crypto.compareBcrypt).toHaveBeenCalledWith('123456', '123456 (hashed)');
-      expect(mocks.user.update).toHaveBeenCalledWith(user.id, { pinCode: '012345 (hashed)' });
+      expect(mocks.user.setPinCodeAndLockSessions).toHaveBeenCalledWith(
+        user.id, { pinCode: '123456 (hashed)', password: '' }, '012345 (hashed)',
+      );
       // an elevation granted by the old PIN ends with it, in every session (FL-34)
-      expect(mocks.session.lockAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.session.lockAll).not.toHaveBeenCalled();
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', user.id);
     });
 
@@ -2184,11 +2188,14 @@ describe(AuthService.name, () => {
       mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
       mocks.session.lockAll.mockResolvedValue(void 0);
       mocks.session.update.mockResolvedValue(currentSession);
+      mocks.user.setPinCodeAndLockSessions.mockResolvedValue(true);
 
       await sut.resetPinCode(AuthFactory.create(user), { pinCode: '123456' });
 
-      expect(mocks.user.update).toHaveBeenCalledWith(user.id, { pinCode: null });
-      expect(mocks.session.lockAll).toHaveBeenCalledWith(user.id);
+      expect(mocks.user.setPinCodeAndLockSessions).toHaveBeenCalledWith(
+        user.id, { pinCode: '123456 (hashed)', password: '' }, null,
+      );
+      expect(mocks.session.lockAll).not.toHaveBeenCalled();
       expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_lock', user.id);
     });
 
@@ -2199,6 +2206,34 @@ describe(AuthService.name, () => {
 
       await expect(sut.resetPinCode(AuthFactory.create(user), { pinCode: '000000' })).rejects.toThrow('Wrong PIN code');
     });
+  });
+
+  it.each(['setup', 'reset', 'change'] as const)('refuses stale %s credentials without a lock event', async (kind) => {
+    const user = UserFactory.create();
+    const auth = AuthFactory.create(user);
+    mocks.user.getForPinCode.mockResolvedValue({ pinCode: kind === 'setup' ? null : '123456 (hashed)', password: '' });
+    mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
+    mocks.user.setPinCodeAndLockSessions.mockResolvedValue(false);
+    const mutation = kind === 'setup' ? sut.setupPinCode(auth, { pinCode: '123456' }) :
+      kind === 'reset' ? sut.resetPinCode(auth, { pinCode: '123456' }) :
+        sut.changePinCode(auth, { pinCode: '123456', newPinCode: '012345' });
+    await expect(mutation).rejects.toThrow('Your PIN or password changed; try again');
+    expect(mocks.user.update).not.toHaveBeenCalled();
+    expect(mocks.session.lockAll).not.toHaveBeenCalled();
+    expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+  });
+
+  it.each(['setup', 'reset', 'change'] as const)('does not emit a lock event after %s rollback', async (kind) => {
+    const user = UserFactory.create();
+    const auth = AuthFactory.create(user);
+    mocks.user.getForPinCode.mockResolvedValue({ pinCode: kind === 'setup' ? null : '123456 (hashed)', password: '' });
+    mocks.crypto.compareBcrypt.mockImplementation((a, b) => `${a} (hashed)` === b);
+    mocks.user.setPinCodeAndLockSessions.mockRejectedValue(new Error('transaction rolled back'));
+    const mutation = kind === 'setup' ? sut.setupPinCode(auth, { pinCode: '123456' }) :
+      kind === 'reset' ? sut.resetPinCode(auth, { pinCode: '123456' }) :
+        sut.changePinCode(auth, { pinCode: '123456', newPinCode: '012345' });
+    await expect(mutation).rejects.toThrow('transaction rolled back');
+    expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
   });
 
   describe('remote access (FL-161)', () => {

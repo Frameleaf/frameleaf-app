@@ -18,6 +18,13 @@ import type { Translations } from 'svelte-i18n';
 /** Connections one account may keep; the server refuses the twenty-first. */
 export const ICLOUD_MAX_CONNECTIONS = 20;
 
+/** A pending explicit choice belongs to this account, connection and presentation only. */
+export const icloudWeeklyConsentIsCurrent = (
+  captured: { ownerId: string; connectionId: string; generation: number },
+  current: { ownerId: string; connectionId: string; generation: number },
+): boolean => captured.ownerId === current.ownerId && captured.connectionId === current.connectionId
+  && captured.generation === current.generation;
+
 export const GIB = 1024 ** 3;
 const MIN_STAGING_BYTES = 1024 ** 2;
 const MAX_STAGING_BYTES = Number.MAX_SAFE_INTEGER;

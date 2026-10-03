@@ -10,6 +10,8 @@ import {
   ICloudConnectionUpdateDto,
   ICloudConnectionsResponseDto,
   ICloudControlDto,
+  ICloudIdentityReuseAuthorityDto,
+  ICloudIdentityReuseAuthorityStatusDto,
   ICloudInventoryResponseDto,
 } from 'src/dtos/icloud-sync.dto.js';
 import {
@@ -39,6 +41,7 @@ import {
   ICloudTransportRepository,
 } from 'src/repositories/icloud-transport.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   MediaOperation,
@@ -55,6 +58,7 @@ import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { checkAccess, requireElevatedPermission } from 'src/utils/access.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { maskAppleAccount } from 'src/utils/icloud-identity.js';
+import { hasWeeklyAuthorityInput, isPrivateICloudOperation } from 'src/utils/icloud-weekly.js';
 import { isActiveMediaOperation } from 'src/utils/media-operation.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
@@ -141,6 +145,7 @@ export const connectionStateCode = (connection: Pick<ICloudConnection, 'state' |
 
 /** A run as the connection page shows it. The same row is what Activity shows. */
 export const mapICloudRun = (operation: MediaOperation) => {
+  const privateWeekly = isPrivateICloudOperation(operation);
   const status = operation.status as MediaOperationStatus;
   // One rule with Activity: a delayed queued run that has spent its automatic retry is retrying;
   // one that has not failed is waiting out the provider or its items' back-off.
@@ -149,14 +154,14 @@ export const mapICloudRun = (operation: MediaOperation) => {
   return {
     id: operation.id,
     status,
-    progress: Number(operation.progress ?? 0),
-    processedUnits: Number(operation.processedUnits ?? 0),
+    progress: privateWeekly ? 0 : Number(operation.progress ?? 0),
+    processedUnits: privateWeekly ? 0 : Number(operation.processedUnits ?? 0),
     totalUnits:
-      operation.totalUnits === null || operation.totalUnits === undefined ? null : Number(operation.totalUnits),
+      privateWeekly || operation.totalUnits === null || operation.totalUnits === undefined ? null : Number(operation.totalUnits),
     retrying: queuedWithDelay && retried,
     waiting: queuedWithDelay && !retried,
     pauseRequested: !!operation.pauseRequestedAt && status !== MediaOperationStatus.Paused,
-    errorCode: operation.errorCode,
+    errorCode: privateWeekly ? null : operation.errorCode,
     startedAt: asIso(operation.startedAt),
     finishedAt: asIso(operation.finishedAt),
     createdAt: asIso(operation.createdAt) ?? new Date(0).toISOString(),
@@ -200,6 +205,7 @@ export class ICloudSyncService {
     private identities: ICloudIdentityRepository,
     private audits: ICloudAuditService,
     private adoption: ICloudIdentityAdoptionService,
+    private weekly: ICloudWeeklyRepository,
   ) {
     this.logger.setContext(ICloudSyncService.name);
   }
@@ -230,6 +236,7 @@ export class ICloudSyncService {
         awaiting_auth: AWAITING_AUTH_STATES.has(connection.state) ? 1 : 0,
       },
       run: run ? mapICloudRun(run) : null,
+      identityReuseAuthority: await this.weekly.status(connection.id, connection.ownerId),
     };
   }
 
@@ -256,6 +263,11 @@ export class ICloudSyncService {
       enabled: this.transport.enabled(),
       connections: await Promise.all(connections.map((row) => this.response(row))),
     };
+  }
+
+  async setIdentityReuseAuthority(auth: AuthDto, id: string, dto: ICloudIdentityReuseAuthorityDto): Promise<ICloudIdentityReuseAuthorityStatusDto> {
+    await this.owned(auth, id);
+    return this.weekly.setAuthority(auth, id, dto);
   }
 
   async create(auth: AuthDto, dto: ICloudConnectionCreateDto): Promise<ICloudConnectionResponseDto> {
@@ -613,11 +625,13 @@ export class ICloudSyncService {
    * device approval, a password) fails the run with that reason; the connection has told its owner.
    */
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
-    if (operation.snapshot.task === 'identity-audit') {
+    if (operation.snapshot.task === 'identity-audit' && !hasWeeklyAuthorityInput(operation.snapshot)
+      && (operation.snapshot.purpose===undefined || operation.snapshot.purpose==='manual-session')) {
       await this.audits.run(operation, claimToken);
       return;
     }
-    if (operation.snapshot.task !== undefined) {
+    if (Object.hasOwn(operation.snapshot,'task') || Object.hasOwn(operation.snapshot,'purpose')
+      || hasWeeklyAuthorityInput(operation.snapshot)) {
       await this.operations.fail(
         operation.id,
         claimToken,
