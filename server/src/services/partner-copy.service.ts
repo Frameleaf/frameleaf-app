@@ -61,6 +61,14 @@ export const stopPartnerSharing = async (
 
 const TRACKED_ASSET_FIELDS = new Set<string>(Object.values(AssetOriginField));
 
+/** Edits that can lock or unlock an item: its lock itself, and the tags and faces Locked rules match. */
+const LOCK_RELEVANT_FIELDS: string[] = [
+  AssetOriginField.Visibility,
+  AssetOriginField.Sensitive,
+  AssetOriginField.Tags,
+  AssetOriginField.Faces,
+];
+
 /** The followed fields an asset edit touches (spec §4.2). Favorites and trash are never among them. */
 export const getAssetEditFields = (dto: {
   description?: unknown;
@@ -519,8 +527,12 @@ export class PartnerCopyService extends BaseService {
           partnerSharedById: follower.partnerSharedById,
         });
       }
-      // spec §4.9: a lock or unlock carries over while the copy's visibility is followed
-      if (apply.includes(AssetOriginField.Visibility)) {
+      // spec §4.9: a lock or unlock carries over while the copy's visibility is followed, including one a
+      // tag or face edit causes by bringing the source under (or out of) the sharer's Locked rules
+      if (
+        !follower.overriddenFields.includes(AssetOriginField.Visibility) &&
+        LOCK_RELEVANT_FIELDS.some((field) => apply.includes(field))
+      ) {
         await BaseService.create(PartnerLockService, this).mirrorLockedState({
           sourceAssetId: sourceId,
           sourceOwnerId: follower.partnerSharedById,
