@@ -305,6 +305,17 @@ describe(PersonService.name, () => {
       );
       expect(mocks.person.softDeleteAssetFaces).toHaveBeenCalledWith(face.id);
     });
+
+    it("makes a partner copy's faces its owner's own (FL-326)", async () => {
+      const face = AssetFaceFactory.create();
+      const auth = AuthFactory.create();
+      mocks.access.person.checkFaceOwnerAccess.mockResolvedValue(new Set([face.id]));
+      mocks.person.getFaceById.mockResolvedValue({ ...face, person: null });
+
+      await sut.deleteFace(auth, face.id, { force: false });
+
+      expect(mocks.partnerOrigin.markOverridden).toHaveBeenCalledWith('asset', [face.assetId], ['faces'], auth.user.id);
+    });
   });
 
   describe('getById', () => {
