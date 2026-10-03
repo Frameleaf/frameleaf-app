@@ -35,6 +35,7 @@
 Existing entry points: ICloudIdentityController at server/src/controllers/icloud-identity.controller.ts, ICloudIdentityService at server/src/services/icloud-identity.service.ts, ICloudIdentityRepository at server/src/repositories/icloud-identity.repository.ts. Existing download authority: ICloudStagingService.download(connection, resource), ICloudSyncRepository.withSession(id, ownerId, callback), ICloudTransportRepository.download(input, signal). Existing publication authority: MediaRecoveryRepository.getResource/lockResource/reserve/commit and MediaRecoveryService.reconcile(input). Existing durable dispatch: MediaOperationRepository.createWithin(bind, after), ICloudSyncService.drain/run and MediaOperationKind.ICloudSync.
 
 Create:
+
 - server/src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.ts: request/authority binding and independent reservation uniqueness.
 - server/src/repositories/icloud-audit.repository.ts: request resolution, idempotency, request-bound lease, current authority, proof/result CAS and recovery guard.
 - server/src/services/icloud-audit.service.ts: the fresh-source worker; no new scheduler or transport framework.
@@ -42,6 +43,7 @@ Create:
 - server/test/medium/specs/repositories/icloud-audit.repository.spec.ts: real PostgreSQL schema, race, privacy and publication tests.
 
 Modify:
+
 - server/src/dtos/icloud-identity.dto.ts and server/src/controllers/icloud-identity.controller.ts: validated endpoint and result DTO.
 - server/src/services/icloud-identity.service.ts: authenticated submission delegation; preserve all existing lookup/attach/claim behavior.
 - server/src/repositories/icloud-identity.repository.ts: exclude audit resources from backfill/pending roles; expose mismatch as review in lookup through the current identity result.
@@ -91,8 +93,11 @@ WHERE "auditRequestId" IS NOT NULL;
 
 ```ts
 type ICloudAuditSnapshot = {
-  task: 'identity-audit'; connectionId: string; requestKey: string;
-  input: ICloudAuditInputItem[]; auditIds: string[];
+  task: 'identity-audit';
+  connectionId: string;
+  requestKey: string;
+  input: ICloudAuditInputItem[];
+  auditIds: string[];
 };
 ```
 
@@ -101,16 +106,21 @@ type ICloudAuditSnapshot = {
 
 ```ts
 type ICloudAuditInputItem = {
-  id: string; assetId: string; cloudIdentifier: string;
-  role: ICloudIdentityRole; editVersion: string;
+  id: string;
+  assetId: string;
+  cloudIdentifier: string;
+  role: ICloudIdentityRole;
+  editVersion: string;
 };
 type ICloudAuditSnapshot = {
-  task: 'identity-audit'; connectionId: string; requestKey: string;
-  input: ICloudAuditInputItem[]; auditIds: string[];
+  task: 'identity-audit';
+  connectionId: string;
+  requestKey: string;
+  input: ICloudAuditInputItem[];
+  auditIds: string[];
 };
 type ICloudAuditInitialOutcome =
-  | { id: string; state: 'unavailable' }
-  | { id: string; state: 'queued'; auditRequestId: string };
+  { id: string; state: 'unavailable' } | { id: string; state: 'queued'; auditRequestId: string };
 // operation.result.items contains ALL initial outcomes; unavailable rows have no fake
 // expected digest/descriptor and do not enter icloud_identity_audit or icloud_resource.
 ```
@@ -153,28 +163,28 @@ type ICloudAuditInitialOutcome =
 
 Write meaningful fixtures in the existing worker/staging/recovery suites and new real-PG audit suite; execute only through parent-owned hosted CI after independent review.
 
-| Fixture | Required observation |
-|---|---|
-| Old ordinary complete file plus source bytes B | Transport is called; digest comes from B, never old complete bytes A |
-| Source bytes A equal current identity/asset A | Durable request match; fresh timestamp; lookup auditVerifiedAt |
-| Source B differs from original A | A's asset/file/identity SHA unchanged; separate managed B receipt; durable mismatch/review; no auditVerifiedAt |
-| Two retry workers / crash after promotion | One reserved target and one committed source copy; stale lease cannot publish |
-| Cancel while transport or final validation suspended | No match/import after cancellation wins database lock |
-| Source revision changes while download suspended | No stale proof or mismatch import against the old generation |
-| Identity digest changes during final validation | c62 invalidation stays cleared; late worker cannot restore proof |
-| Disconnect/remove/config change while suspended | Guard refuses; no source credentials logged; retained reservations remain accounted |
-| Other owner/partner/shared link/Locked/suppressed | Unavailable or session-required; no provider read or leaked descriptor |
-| Current session expires/relocks while preparing | Final proof/import denied despite original elevated request |
-| Repeated requestKey, same/different input | Same operation for same request; explicit conflict for altered input |
-| Repeated key with changed unavailable member / all unavailable | Full stored canonical input detects alteration; identical repeats return original complete outcomes without allocating fake resolved rows |
-| Audit and ordinary row same provider descriptor | Independent reservation; ordinary uniqueness/query behavior unchanged |
-| Import committed, outbox/cleanup fails once | Receipt survives; restart completes once without deleting/replacing originals |
-| Crash after mismatch commit, session revoked/PIN relocked, connection disconnected | Fresh worker drains exact receipt/outbox and staging without source reads, new publication or original deletion; removal then becomes eligible |
+| Fixture                                                                                | Required observation                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Old ordinary complete file plus source bytes B                                         | Transport is called; digest comes from B, never old complete bytes A                                                                                                                                                    |
+| Source bytes A equal current identity/asset A                                          | Durable request match; fresh timestamp; lookup auditVerifiedAt                                                                                                                                                          |
+| Source B differs from original A                                                       | A's asset/file/identity SHA unchanged; separate managed B receipt; durable mismatch/review; no auditVerifiedAt                                                                                                          |
+| Two retry workers / crash after promotion                                              | One reserved target and one committed source copy; stale lease cannot publish                                                                                                                                           |
+| Cancel while transport or final validation suspended                                   | No match/import after cancellation wins database lock                                                                                                                                                                   |
+| Source revision changes while download suspended                                       | No stale proof or mismatch import against the old generation                                                                                                                                                            |
+| Identity digest changes during final validation                                        | c62 invalidation stays cleared; late worker cannot restore proof                                                                                                                                                        |
+| Disconnect/remove/config change while suspended                                        | Guard refuses; no source credentials logged; retained reservations remain accounted                                                                                                                                     |
+| Other owner/partner/shared link/Locked/suppressed                                      | Unavailable or session-required; no provider read or leaked descriptor                                                                                                                                                  |
+| Current session expires/relocks while preparing                                        | Final proof/import denied despite original elevated request                                                                                                                                                             |
+| Repeated requestKey, same/different input                                              | Same operation for same request; explicit conflict for altered input                                                                                                                                                    |
+| Repeated key with changed unavailable member / all unavailable                         | Full stored canonical input detects alteration; identical repeats return original complete outcomes without allocating fake resolved rows                                                                               |
+| Audit and ordinary row same provider descriptor                                        | Independent reservation; ordinary uniqueness/query behavior unchanged                                                                                                                                                   |
+| Import committed, outbox/cleanup fails once                                            | Receipt survives; restart completes once without deleting/replacing originals                                                                                                                                           |
+| Crash after mismatch commit, session revoked/PIN relocked, connection disconnected     | Fresh worker drains exact receipt/outbox and staging without source reads, new publication or original deletion; removal then becomes eligible                                                                          |
 | Match publishes, cleanup fails/crashes, then session revoked/source changes/disconnect | Terminal match staging receipt remains selectable; fresh worker retires only its private staging/reservation, does not read changed source/original or update any proof timestamp/result; removal then becomes eligible |
-| Terminal match receipt lacks resultAssetId/outbox / repeated cleanup workers | Cleanup succeeds from exact request/resource/path/downloaded digest binding alone; lease/CAS allows one finalization and does not recertify proof |
-| Committed result asset gone / receipt ID or digest altered | No job targets replacement asset; exact stale jobs retired or corruption reported; safe staging cleanup does not certify anything |
-| Concurrent cancel/config/disconnect and ordinary recovery publication | Consistent lock order; winner determines publication; no deadlock hidden by retries |
-| Manifest migration/rollback fixtures | 0216 classified and ordered; populated rollback refuses; no 0215 collision |
+| Terminal match receipt lacks resultAssetId/outbox / repeated cleanup workers           | Cleanup succeeds from exact request/resource/path/downloaded digest binding alone; lease/CAS allows one finalization and does not recertify proof                                                                       |
+| Committed result asset gone / receipt ID or digest altered                             | No job targets replacement asset; exact stale jobs retired or corruption reported; safe staging cleanup does not certify anything                                                                                       |
+| Concurrent cancel/config/disconnect and ordinary recovery publication                  | Consistent lock order; winner determines publication; no deadlock hidden by retries                                                                                                                                     |
+| Manifest migration/rollback fixtures                                                   | 0216 classified and ordered; populated rollback refuses; no 0215 collision                                                                                                                                              |
 
 - [ ] Impact each edited symbol; report UNKNOWN/incomplete index coverage and actual callers. Perform git diff --check and static source/manifest review only locally.
 - [ ] detect_changes against the exact approved base and edited worktree before commit; manually reconcile schema and DI exclusions omitted by index.

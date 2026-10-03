@@ -229,8 +229,18 @@ describe('FL-94 linked timeline tools on the Freecut engine', () => {
 
   it.each(['audio', 'text'])('refuses negative single-gap positions for linked %s before clamping', async (type) => {
     const { graph, moving } = await singleLinkedGap(false)
-    itemsOf(graph).find((item) => moving.includes(item.id) && item.type === type)!.from = 20
+    const companion = itemsOf(graph).find((item) => moving.includes(item.id) && item.type === type)!
+    if (type === 'audio') {
+      // Keep the offset sound clear of the first clip so load-time overlap repair cannot move it.
+      graph.timeline!.tracks.push({
+        ...graph.timeline!.tracks.find((candidate) => candidate.id === 'a1')!,
+        id: 'negative-audio', name: 'Offset sound', order: 4, syncLock: false,
+      })
+      companion.trackId = 'negative-audio'
+    }
+    companion.from = 20
     const before = canonicalJson(graph)
+    expect(canonicalJson(await applied(graph, []))).toBe(before)
     const outcome = await applyCanonicalCommands(graph, [
       envelope('track.closeGap', { trackId: 'v1', at: seconds(9, 2) }),
     ], media)
