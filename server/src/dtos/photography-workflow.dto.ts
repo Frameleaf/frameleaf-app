@@ -10,6 +10,18 @@ const Ids = z
   .array(Id)
   .max(10_000)
   .refine((ids) => new Set(ids).size === ids.length, 'Duplicate IDs');
+export const PhotographyDownloadOutputSchema = z
+  .strictObject({
+    key: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/),
+    label: z.string().trim().min(1).max(100),
+    kind: z.enum(['print', 'web', 'social']),
+    maxEdge: z.int().min(320).max(65_535),
+    watermark: PhotographyWatermarkSchema.nullable(),
+  })
+  .refine(
+    (output) => (output.kind === 'print' ? output.maxEdge === 65_535 : output.maxEdge <= 4096),
+    'Output size does not match its kind',
+  );
 export const PhotographyConfigSchema = z.strictObject({
   presentation: z.strictObject({
     template: z.enum(['wedding', 'portrait', 'fine-art', 'proofing']),
@@ -38,6 +50,12 @@ export const PhotographyConfigSchema = z.strictObject({
   proofWatermark: PhotographyWatermarkSchema,
   webWatermark: PhotographyWatermarkSchema.nullable(),
   downloadWatermark: PhotographyWatermarkSchema.nullable(),
+  downloadOutputs: z
+    .array(PhotographyDownloadOutputSchema)
+    .min(1)
+    .max(6)
+    .refine((outputs) => new Set(outputs.map((output) => output.key)).size === outputs.length, 'Duplicate output key')
+    .optional(),
 });
 export type PhotographyConfig = z.infer<typeof PhotographyConfigSchema>;
 export const PhotographyChapterSchema = z.strictObject({
@@ -99,6 +117,22 @@ export class PhotographyRecipientCreateDto extends createZodDto(
 export class PhotographyRecipientUpdateDto extends createZodDto(
   z.strictObject({ expectedRevision: Revision, revoked: z.boolean(), ...RecipientRights }),
 ) {}
+export const PhotographyOutputDefinitionSchema = PhotographyDownloadOutputSchema.safeExtend({
+  revisions: z
+    .array(z.strictObject({ captureId: Id, revisionId: Id }))
+    .max(10_000)
+    .refine((items) => new Set(items.map((item) => item.captureId)).size === items.length, 'Duplicate revision mapping')
+    .default([]),
+});
+export type PhotographyOutputDefinition = z.infer<typeof PhotographyOutputDefinitionSchema>;
+export const PhotographyStudioPresetSchema = z.object({ id: Id, name: z.string(), config: PhotographyConfigSchema });
+export type PhotographyStudioPreset = z.infer<typeof PhotographyStudioPresetSchema>;
+export class PhotographyStudioPresetsDto extends createZodDto(
+  z.object({ revision: Revision, presets: z.array(PhotographyStudioPresetSchema) }),
+) {}
+export class PhotographyStudioPresetApplyDto extends createZodDto(
+  z.strictObject({ expectedRevision: Revision, expectedPresetRevision: Id }),
+) {}
 export class PhotographyOrderCreateDto extends createZodDto(
   z.strictObject({
     expectedRevision: Revision,
@@ -107,6 +141,12 @@ export class PhotographyOrderCreateDto extends createZodDto(
     recipientId: Id,
     pricing: z.enum(['package', 'collection', 'bundle']),
     bundleCount: z.int().min(1).max(10_000).optional(),
+    outputs: z
+      .array(PhotographyOutputDefinitionSchema)
+      .min(1)
+      .max(6)
+      .refine((outputs) => new Set(outputs.map((output) => output.key)).size === outputs.length, 'Duplicate output key')
+      .optional(),
   }),
 ) {}
 export class PhotographyPaymentDto extends createZodDto(
@@ -162,7 +202,25 @@ export class PhotographyGuestApprovalDto extends createZodDto(
     note: z.string().max(2000),
   }),
 ) {}
-export class PhotographyZipDto extends createZodDto(z.strictObject({ captureIds: Ids.min(1).max(1000) })) {}
+export class PhotographyZipDto extends createZodDto(
+  z
+    .strictObject({
+      captureIds: Ids.max(1000).default([]),
+      outputs: z
+        .array(z.strictObject({ captureId: Id, outputId: Id }))
+        .min(1)
+        .max(1000)
+        .refine(
+          (entries) => new Set(entries.map((entry) => entry.outputId)).size === entries.length,
+          'Duplicate output ID',
+        )
+        .optional(),
+    })
+    .refine(
+      (dto) => (dto.outputs ? dto.captureIds.length === 0 : dto.captureIds.length > 0),
+      'Choose photographs or outputs',
+    ),
+) {}
 const NoteSchema = PhotographyChoicesDto.schema.shape.notes.element;
 const RoundSchema = z.object({
   id: Id,
@@ -182,6 +240,27 @@ const PublicationSchema = z
     failedCaptureId: Id.nullable(),
   })
   .nullable();
+const ExportSpecSchema = z.object({
+  format: z.literal('jpeg'),
+  quality: z.literal(90),
+  maxEdge: z.int().min(320).max(65_535),
+});
+const OutputViewSchema = z.object({
+  id: Id,
+  label: z.string(),
+  kind: z.enum(['print', 'web', 'social']),
+  revisionId: Id.nullable(),
+  approved: z.boolean(),
+  clientApprovalRequired: z.boolean(),
+  ready: z.boolean(),
+  renderStatus: z.enum(['awaiting-approval', 'preparing', 'ready']),
+  branded: z.boolean(),
+  approvalPreviewUrl: z.string().nullable(),
+  exportSpec: ExportSpecSchema,
+  url: z.string(),
+  canDownload: z.boolean().optional(),
+  blockedReason: z.enum(['permission', 'order', 'payment', 'approval', 'render']).nullable().optional(),
+});
 const OrderSchema = z.object({
   id: Id,
   recipientId: Id,
@@ -208,7 +287,8 @@ const OrderSchema = z.object({
       approved: z.boolean(),
       clientApprovalRequired: z.boolean(),
       ready: z.boolean(),
-      exportSpec: z.object({ format: z.literal('jpeg'), quality: z.literal(90), maxEdge: z.literal(65_535) }),
+      exportSpec: ExportSpecSchema,
+      outputs: z.array(OutputViewSchema),
     }),
   ),
   readyCount: z.int(),
@@ -246,6 +326,9 @@ export const PhotographyWorkflowViewSchema = z.object({
   shootId: Id,
   config: PhotographyConfigSchema,
   presets: z.array(z.object({ id: Id, name: z.string(), config: PhotographyConfigSchema })),
+  studioPresets: PhotographyStudioPresetsDto.schema,
+  pendingEdits: z.int().min(0),
+  approvedVersions: z.array(z.object({ captureId: Id, revisionId: Id, approvedAt: z.string() })),
   ordering: PhotographyAssemblyDto.schema.shape.ordering,
   captures: z.array(
     z.object({
@@ -328,6 +411,7 @@ export class PhotographyGalleryDto extends createZodDto(
         canDownload: z.boolean(),
         blockedReason: z.enum(['permission', 'order', 'payment', 'approval', 'render']).nullable(),
         approvalRevisionId: Id.nullable(),
+        outputs: z.array(OutputViewSchema),
       }),
     ),
     pricing: z.object({
@@ -393,6 +477,7 @@ export class PhotographyWorkflowListDto extends createZodDto(
         submittedRounds: z.int(),
         unpaidOrders: z.int(),
         readyCount: z.int(),
+        pendingEdits: z.int(),
       }),
     ),
   }),

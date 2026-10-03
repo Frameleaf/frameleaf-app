@@ -38,6 +38,8 @@ import {
   PhotographyRecipientUpdateDto,
   PhotographySiteDto,
   PhotographySiteSaveDto,
+  PhotographyStudioPresetApplyDto,
+  PhotographyStudioPresetsDto,
   PhotographyWorkflowConfigDto,
   PhotographyWorkflowDto,
   PhotographyWorkflowListDto,
@@ -60,6 +62,29 @@ export class PhotographyWorkflowController {
     private service: PhotographyWorkflowService,
     private logger: LoggingRepository,
   ) {}
+  @Get('presets')
+  @Authenticated()
+  @ApiResponse({ status: 200, type: PhotographyStudioPresetsDto })
+  studioPresets(@Auth() auth: AuthDto) {
+    return this.service.studioPresets(auth);
+  }
+  @Post('presets')
+  @Authenticated()
+  @ApiResponse({ status: 201, type: PhotographyStudioPresetsDto })
+  saveStudioPreset(@Auth() auth: AuthDto, @Body() dto: PhotographyPresetSaveDto) {
+    return this.service.saveStudioPreset(auth, dto);
+  }
+  @Post('workflows/:id/studio-presets/:presetId/apply')
+  @Authenticated()
+  @ApiResponse({ status: 201, type: PhotographyWorkflowDto })
+  applyStudioPreset(
+    @Auth() auth: AuthDto,
+    @Param('id', uuid) id: string,
+    @Param('presetId', uuid) presetId: string,
+    @Body() dto: PhotographyStudioPresetApplyDto,
+  ) {
+    return this.service.applyStudioPreset(auth, id, presetId, dto);
+  }
   @Get('site')
   @Authenticated()
   @ApiResponse({ status: 200, type: PhotographySiteDto })
@@ -334,6 +359,44 @@ export class PhotographyWorkflowController {
     });
     if (res.destroyed || res.writableEnded) archive.stream.destroy();
     return asStreamableFile(archive);
+  }
+  @RemoteMediaCeiling()
+  @Get('galleries/:id/photos/:captureId/outputs/:outputId/preview')
+  @Authenticated({ public: true })
+  @FileResponse()
+  @ApiHeader({ name: 'X-Photography-Session', required: true, schema: { type: 'string', pattern: '^[a-f0-9]{64}$' } })
+  async outputPreview(
+    @Param('id', uuid) id: string,
+    @Param('captureId', uuid) captureId: string,
+    @Param('outputId', uuid) outputId: string,
+    @Headers('x-photography-session') session: string | undefined,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    res.header('Cache-Control', 'private, no-store');
+    await sendFile(res, next, () => this.service.outputPreview(id, session, captureId, outputId), this.logger);
+  }
+  @RemoteMediaCeiling()
+  @Get('galleries/:id/photos/:captureId/outputs/:outputId')
+  @Authenticated({ public: true })
+  @FileResponse()
+  @ApiHeader({ name: 'X-Photography-Session', required: true, schema: { type: 'string', pattern: '^[a-f0-9]{64}$' } })
+  async output(
+    @Param('id', uuid) id: string,
+    @Param('captureId', uuid) captureId: string,
+    @Param('outputId', uuid) outputId: string,
+    @Headers('x-photography-session') session: string | undefined,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    res.header('Cache-Control', 'private, no-store');
+    res.once('finish', () => {
+      if (res.statusCode === 200)
+        void this.service
+          .recordDelivery(id, session, captureId, undefined, outputId)
+          .catch(() => this.logger.warn('Could not record completed photography delivery'));
+    });
+    await sendFile(res, next, () => this.service.outputFile(id, session, captureId, outputId), this.logger);
   }
   @RemoteMediaCeiling()
   @Get('galleries/:id/photos/:captureId/:kind')
