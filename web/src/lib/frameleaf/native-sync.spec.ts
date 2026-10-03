@@ -1,8 +1,9 @@
-import { vi, it, expect, beforeEach } from 'vitest';
-import { syncNativeRecipes, cancelNativeSync } from './native-sync';
-import { initialNativeRecipe, newNativeMask } from './native-develop';
 import { getAssetDevelop, saveAssetDevelop, cancelAssetDevelopRender } from '@immich/sdk';
+import { vi, it, expect, beforeEach } from 'vitest';
+import { initialNativeRecipe, newNativeMask } from './native-develop';
 import { proposeNativeMask } from './native-develop';
+import { syncNativeRecipes, cancelNativeSync } from './native-sync';
+
 vi.mock('@immich/sdk', () => ({
   defaults: {},
   getBaseUrl: () => '/api',
@@ -55,4 +56,31 @@ it('stops new admissions on cancellation and refuses source brush transfer', asy
     status: 'failed',
     error: expect.stringContaining('Brush masks are photo-specific'),
   });
+});
+it('detaches nested source settings and each destination recipe before admission', async () => {
+  const current = { ...initialNativeRecipe(), crop: { x: 0.1, y: 0.2, w: 0.8, h: 0.7 }, sensorCanvas: true };
+  vi.mocked(getAssetDevelop).mockResolvedValue({ revisions: [{ isCurrent: true, recipe: current }] } as never);
+  const source = {
+    ...initialNativeRecipe(),
+    curve: [
+      { x: 0, y: 0 },
+      { x: 1, y: 0.9 },
+    ],
+    masks: [newNativeMask('radial')],
+  };
+  const before = structuredClone(source);
+  await syncNativeRecipes(['a', 'b'], source, ['curve', 'masks']);
+  const recipes = vi.mocked(saveAssetDevelop).mock.calls.map(([request]) => request.assetDevelopSaveDto.recipe);
+  expect(recipes[0]).not.toBe(recipes[1]);
+  expect(recipes[0].curve).not.toBe(recipes[1].curve);
+  expect(recipes[0].masks?.[0].id).not.toBe(recipes[1].masks?.[0].id);
+  recipes[0].curve![1].y = 0.5;
+  recipes[0].masks![0].adjustments.exposureEV = 3;
+  recipes[0].crop!.x = 0.4;
+  expect(recipes[1].curve![1].y).toBe(0.9);
+  expect(recipes[1].masks![0].adjustments.exposureEV).toBe(0);
+  expect(recipes[1].crop!.x).toBe(0.1);
+  expect(source).toEqual(before);
+  expect(current.crop.x).toBe(0.1);
+  expect(current.sensorCanvas).toBe(true);
 });
