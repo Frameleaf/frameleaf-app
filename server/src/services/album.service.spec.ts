@@ -22,6 +22,7 @@ describe(AlbumService.name, () => {
     ({ sut, mocks } = newTestService(AlbumService));
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.album.getPositions.mockResolvedValue(new Map());
+    mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
   });
 
   it('should work', () => {
@@ -44,6 +45,24 @@ describe(AlbumService.name, () => {
   });
 
   describe('getAll', () => {
+    it("labels the viewer's own albums copied from a partner with the original owner (FL-326)", async () => {
+      const album = AlbumFactory.from().albumUser().build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const other = AlbumFactory.from().owner(owner).build();
+      const rootOwnerId = newUuid();
+      mocks.album.getAll.mockResolvedValue([getForAlbum(album), getForAlbum(other)]);
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+      mocks.partnerOrigin.getOriginLabels.mockResolvedValue(
+        new Map([[album.id, { rootOwnerId, rootOwnerName: 'Jamie' }]]),
+      );
+
+      const result = await sut.getAll(AuthFactory.create(owner), {});
+
+      expect(mocks.partnerOrigin.getOriginLabels).toHaveBeenCalledWith('album', [album.id, other.id], owner.id);
+      expect(result[0].origin).toEqual({ rootOwnerId, rootOwnerName: 'Jamie' });
+      expect(result[1]).not.toHaveProperty('origin');
+    });
+
     it('gets list of albums for auth user', async () => {
       const album = AlbumFactory.from().albumUser().build();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
