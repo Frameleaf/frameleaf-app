@@ -211,12 +211,20 @@ jobs:
         run: |
           timeout 15m pnpm format:fix || true
           git diff --binary -- . > "$RUNNER_TEMP/web-format.patch"
+          if [ -f .svelte-kit/output/client/.vite/manifest.json ]; then
+            cp bundle-budget.json "$RUNNER_TEMP/web-bundle-baseline.json"
+            node ../scripts/frameleaf-web-bundle-budget.mjs --update
+            mv bundle-budget.json "$RUNNER_TEMP/web-bundle-measured.json"
+            cp "$RUNNER_TEMP/web-bundle-baseline.json" bundle-budget.json
+          fi
       - name: Archive automatic web formatting fixes
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: web-format-autofix
-          path: ${{ runner.temp }}/web-format.patch
+          path: |
+            ${{ runner.temp }}/web-format.patch
+            ${{ runner.temp }}/web-bundle-measured.json
           retention-days: 7
     timeout-minutes: 60
   i18n-tests:
