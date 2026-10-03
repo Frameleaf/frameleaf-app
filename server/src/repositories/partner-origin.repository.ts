@@ -87,6 +87,20 @@ const GENERATED_FILE_TYPES = [
 
 const COPY_REFUSAL = 'Partner sharing is unavailable during database handoff';
 
+/**
+ * Whether `sharedById` still shares with `sharedWithId`, holding the partner row FOR SHARE until the
+ * caller's transaction ends: `PartnerService.remove` deletes that row before it stops following, so a copy
+ * either commits first (and then stops following with the rest) or sees no partnership and is not made.
+ */
+const lockPartnership = async (trx: Transaction<DB>, sharedById: string, sharedWithId: string) => {
+  const { rows } = await sql<{ present: number }>`
+    SELECT 1 AS present FROM partner
+    WHERE "sharedById" = ${sharedById}::uuid AND "sharedWithId" = ${sharedWithId}::uuid
+    FOR SHARE
+  `.execute(trx);
+  return rows.length > 0;
+};
+
 /** Serializes copies of the same content into the same library (the one-copy rule under concurrency). */
 const lockLibraryContent = async (trx: Transaction<DB>, ownerId: string, checksum: Buffer) => {
   const key = createHash('sha1').update(ownerId).update(checksum).digest().readBigInt64BE(0);
@@ -150,6 +164,20 @@ export class PartnerOriginRepository {
         ${input.partnerSharedById}::uuid)
       ON CONFLICT (${sql.id(key)}) DO NOTHING
     `.execute(kysely);
+  }
+
+  /**
+   * Record an album copy's origin, only while its partnership still exists (held FOR SHARE, see
+   * `lockPartnership`). Returns false when the partnership has ended: the caller removes the album copy.
+   */
+  async createAlbumOriginIfPartnered(input: OriginInput): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      if (!(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
+        return false;
+      }
+      await this.createOrigin('album', input, trx);
+      return true;
+    });
   }
 
   createAssetOrigin(input: OriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
@@ -378,11 +406,15 @@ export class PartnerOriginRepository {
    * Favorites, trash, stacks, duplicates, edits and the Live Photo pairing are never copied: the copy
    * starts as the owner's own unedited, unfavorited item. The library is charged the full file size.
    *
-   * Returns the copy's id, or undefined when the library already holds the content.
+   * Returns the copy's id, or undefined when the library already holds the content or the partnership
+   * it is made for has ended.
    */
   async insertAssetCopy(input: AssetCopyInput): Promise<string | undefined> {
     return this.db.transaction().execute(async (trx) => {
       await lockPublicForkWrites(trx, COPY_REFUSAL);
+      if (!(await lockPartnership(trx, input.partnerSharedById, input.ownerId))) {
+        return;
+      }
       const source = await trx.selectFrom('asset').selectAll().where('id', '=', input.sourceAssetId).executeTakeFirst();
       if (!source) {
         return;
