@@ -2,12 +2,13 @@
   import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import { defaultIconFor, monthSpan, othersOf } from '$lib/frameleaf/album-directory';
+  import { originOwnerName } from '$lib/frameleaf/partner-sharing';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
   import { getAlbumDragData, isAlbumDrag, setAlbumDragData } from '$lib/utils/album-drag';
   import { AlbumKind, AssetMediaSize, type AlbumResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiAccountMultipleOutline, mdiAutoFix } from '@mdi/js';
+  import { mdiAccountArrowLeftOutline, mdiAccountMultipleOutline, mdiAutoFix } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
@@ -61,6 +62,11 @@
       : null,
   );
   const others = $derived(othersOf(album, currentUserId));
+  // FL-326: an album partner sharing copied into this library names the library it came from
+  const originName = $derived(originOwnerName(album.origin));
+  const originLabel = $derived(
+    originName ? $t('frameleaf_partner_origin', { values: { name: originName } }) : undefined,
+  );
   const meta = $derived(
     [
       $t('frameleaf_albums_items', { values: { count: album.assetCount } }),
@@ -135,6 +141,11 @@
     {#if album.kind === AlbumKind.Space}
       <span class="mark space" title={$t('frameleaf_albums_space_mark')} aria-hidden="true">
         <Icon icon={mdiAccountMultipleOutline} size="13" />
+      </span>
+    {/if}
+    {#if originLabel}
+      <span class="mark origin" role="img" title={originLabel} aria-label={originLabel} data-testid="album-origin-mark">
+        <Icon icon={mdiAccountArrowLeftOutline} size="13" aria-hidden />
       </span>
     {/if}
   </a>
@@ -226,6 +237,12 @@
   .mark.space {
     inset-inline-start: auto;
     inset-inline-end: 0.375rem;
+  }
+  /* collections.css .al-origin-mark: copied from a partner (FL-326) */
+  .mark.origin {
+    inset-inline-start: auto;
+    inset-inline-end: 0.375rem;
+    color: #fff3d6;
   }
   .text {
     display: flex;

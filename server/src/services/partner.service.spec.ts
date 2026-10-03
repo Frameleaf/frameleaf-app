@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { PushEventType } from 'src/enum.js';
+import { PartnerBackfillState } from 'src/repositories/partner-origin.repository.js';
 import { PartnerDirection } from 'src/repositories/partner.repository.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -14,6 +15,7 @@ describe(PartnerService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(PartnerService));
+    mocks.partnerOrigin.getBackfill.mockResolvedValue(undefined);
   });
 
   it('should work', () => {
@@ -21,6 +23,41 @@ describe(PartnerService.name, () => {
   });
 
   describe('search', () => {
+    it('shows the copy progress of the libraries shared each way (FL-326)', async () => {
+      const user1 = UserFactory.create();
+      const user2 = UserFactory.create();
+      const sharedWithUser2 = PartnerFactory.from().sharedBy(user1).sharedWith(user2).build();
+      const auth = AuthFactory.create({ id: user1.id });
+      mocks.partner.getAll.mockResolvedValue([getForPartner(sharedWithUser2)]);
+      mocks.partnerOrigin.getBackfill.mockResolvedValue({
+        sharedById: user1.id,
+        sharedWithId: user2.id,
+        state: PartnerBackfillState.Running,
+        cursor: null,
+        total: 3200,
+        done: 1240,
+      });
+
+      const [partner] = await sut.search(auth, { direction: PartnerDirection.SharedBy });
+
+      expect(mocks.partnerOrigin.getBackfill).toHaveBeenCalledWith(user1.id, user2.id);
+      expect(partner).toMatchObject({ id: user2.id, backfill: { state: 'running', total: 3200, done: 1240 } });
+    });
+
+    it('reports no progress for a partnership that was never copied', async () => {
+      const user1 = UserFactory.create();
+      const user2 = UserFactory.create();
+      const sharedWithUser1 = PartnerFactory.from().sharedBy(user2).sharedWith(user1).build();
+      mocks.partner.getAll.mockResolvedValue([getForPartner(sharedWithUser1)]);
+
+      const [partner] = await sut.search(AuthFactory.create({ id: user1.id }), {
+        direction: PartnerDirection.SharedWith,
+      });
+
+      expect(mocks.partnerOrigin.getBackfill).toHaveBeenCalledWith(user2.id, user1.id);
+      expect(partner.backfill).toBeNull();
+    });
+
     it("should return a list of partners with whom I've shared my library", async () => {
       const user1 = UserFactory.create();
       const user2 = UserFactory.create();
@@ -176,91 +213,22 @@ describe(PartnerService.name, () => {
       const user2 = UserFactory.create();
       const auth = AuthFactory.create();
 
-      await expect(sut.update(auth, user2.id, { inTimeline: false })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.update(auth, user2.id, {})).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('should update partner', async () => {
+    it('answers the partner without changing anything: a partnership has no settings left (FL-326)', async () => {
       const user1 = UserFactory.create();
       const user2 = UserFactory.create();
-      const partner = PartnerFactory.from().sharedBy(user1).sharedWith(user2).build();
+      const partner = PartnerFactory.from().sharedBy(user2).sharedWith(user1).build();
       const auth = AuthFactory.create({ id: user1.id });
 
       mocks.access.partner.checkUpdateAccess.mockResolvedValue(new Set([user2.id]));
-      mocks.partner.update.mockResolvedValue(getForPartner(partner));
-
-      await expect(sut.update(auth, user2.id, { inTimeline: true })).resolves.toBeDefined();
-      expect(mocks.partner.update).toHaveBeenCalledWith(
-        { sharedById: user2.id, sharedWithId: user1.id },
-        { inTimeline: true },
-      );
-    });
-
-    it('should reject a request that sets neither field', async () => {
-      const user2 = UserFactory.create();
-      const auth = AuthFactory.create();
-
-      await expect(sut.update(auth, user2.id, {})).rejects.toBeInstanceOf(BadRequestException);
-      expect(mocks.partner.update).not.toHaveBeenCalled();
-    });
-
-    it('should reject a request that sets both fields', async () => {
-      const user2 = UserFactory.create();
-      const auth = AuthFactory.create();
-
-      await expect(sut.update(auth, user2.id, { inTimeline: true, shareLocation: false })).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-      expect(mocks.partner.update).not.toHaveBeenCalled();
-    });
-
-    it('should let the sharing user turn location sharing off for one partner', async () => {
-      const sharer = UserFactory.create();
-      const recipient = UserFactory.create();
-      const partner = PartnerFactory.from({ shareLocation: false }).sharedBy(sharer).sharedWith(recipient).build();
-      const auth = AuthFactory.create({ id: sharer.id });
-
       mocks.partner.get.mockResolvedValue(getForPartner(partner));
-      mocks.partner.update.mockResolvedValue(getForPartner(partner));
 
-      await expect(sut.update(auth, recipient.id, { shareLocation: false })).resolves.toEqual(
-        expect.objectContaining({ id: recipient.id, shareLocation: false }),
-      );
-      expect(mocks.partner.get).toHaveBeenCalledWith({ sharedById: sharer.id, sharedWithId: recipient.id });
-      expect(mocks.partner.update).toHaveBeenCalledWith(
-        { sharedById: sharer.id, sharedWithId: recipient.id },
-        { shareLocation: false },
-      );
-      // the recipient-side access check is not what authorizes a sharer setting
-      expect(mocks.access.partner.checkUpdateAccess).not.toHaveBeenCalled();
-    });
-
-    it('should not let a recipient change location sharing on a library shared with them', async () => {
-      const sharer = UserFactory.create();
-      const recipient = UserFactory.create();
-      const auth = AuthFactory.create({ id: recipient.id });
-
-      // the recipient does not share their own library with the sharer, so no (recipient -> sharer) row exists
-      mocks.partner.get.mockResolvedValue(void 0);
-
-      await expect(sut.update(auth, sharer.id, { shareLocation: true })).rejects.toBeInstanceOf(BadRequestException);
-      expect(mocks.partner.get).toHaveBeenCalledWith({ sharedById: recipient.id, sharedWithId: sharer.id });
-      expect(mocks.partner.update).not.toHaveBeenCalled();
-    });
-
-    it('should report shareLocation alongside inTimeline in partner responses', async () => {
-      const user1 = UserFactory.create();
-      const user2 = UserFactory.create();
-      const partner = PartnerFactory.from({ inTimeline: true, shareLocation: true })
-        .sharedBy(user1)
-        .sharedWith(user2)
-        .build();
-      const auth = AuthFactory.create({ id: user1.id });
-
-      mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
-
-      await expect(sut.search(auth, { direction: PartnerDirection.SharedBy })).resolves.toEqual([
-        expect.objectContaining({ id: user2.id, inTimeline: true, shareLocation: true }),
-      ]);
+      const response = await sut.update(auth, user2.id, {});
+      expect(response).toEqual(expect.objectContaining({ id: user2.id }));
+      expect(response).not.toHaveProperty('inTimeline');
+      expect(response).not.toHaveProperty('shareLocation');
     });
   });
 });

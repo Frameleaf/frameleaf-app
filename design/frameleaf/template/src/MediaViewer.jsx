@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { originLabel } from "./partner-sharing.mjs";
 import { Icon } from "./Icon";
 import { Button, Dialog } from "./App";
 import { PersonAvatar } from "./People";
@@ -2338,6 +2339,7 @@ function InfoPanel(props) {
     sensitivity = sensitivityReview(asset),
     captured = formatCaptureDate(asset.takenAt || asset.date),
     owner = ownerLine(asset, currentUserId, users),
+    origin = originLabel(asset.origin, users),
     link = osmLink(asset.latitude, asset.longitude),
     place = locationLabel(asset),
     coords =
@@ -2518,6 +2520,12 @@ function InfoPanel(props) {
               ))}
             </div>
           </section>
+        )}
+        {origin && (
+          <p className="mv-owner mv-origin">
+            <Icon name="mdiAccountArrowLeftOutline" size={16} />
+            {origin}
+          </p>
         )}
         {owner && (
           <p className="mv-owner">

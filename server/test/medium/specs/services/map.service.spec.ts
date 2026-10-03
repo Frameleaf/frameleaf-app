@@ -100,7 +100,7 @@ describe(MapService.name, () => {
       );
     });
 
-    it('filters partner and shared-album map markers using private metadata', async () => {
+    it('filters shared-album map markers using private metadata, and never maps a partner (FL-326)', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const { user: partnerOwner } = await ctx.newUser();
@@ -130,15 +130,14 @@ describe(MapService.name, () => {
         }),
       ]);
 
-      const options = { withPartners: true, withSharedAlbums: true };
-      const hiddenMarkers = await sut.getMapMarkers({ ...auth, hideNsfwAssets: true }, options);
-      expect(hiddenMarkers.map(({ id }) => id)).toEqual(expect.arrayContaining([partnerVisible.id, albumVisible.id]));
-      expect(hiddenMarkers.map(({ id }) => id)).not.toEqual(expect.arrayContaining([partnerNsfw.id, albumNsfw.id]));
+      const options = { withSharedAlbums: true };
+      const hiddenMarkers = (await sut.getMapMarkers({ ...auth, hideNsfwAssets: true }, options)).map(({ id }) => id);
+      expect(hiddenMarkers).toEqual([albumVisible.id]);
 
-      const elevatedMarkers = await sut.getMapMarkers(auth, options);
-      expect(elevatedMarkers.map(({ id }) => id)).toEqual(
-        expect.arrayContaining([partnerVisible.id, partnerNsfw.id, albumVisible.id, albumNsfw.id]),
-      );
+      // FL-326: a partner's own rows are never mapped; the viewer's copies are
+      const elevatedMarkers = (await sut.getMapMarkers(auth, options)).map(({ id }) => id);
+      expect(elevatedMarkers.toSorted()).toEqual([albumVisible.id, albumNsfw.id].toSorted());
+      expect(elevatedMarkers).not.toContain(partnerVisible.id);
     });
   });
 
@@ -167,23 +166,16 @@ describe(MapService.name, () => {
   });
 
   describe('revocation and hidden content (FL-51)', () => {
-    it("drops a partner's markers and counts once the partnership is removed", async () => {
+    it("never maps a partner's rows: what they share arrives as the viewer's own copies (FL-326)", async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const { user: partner } = await ctx.newUser();
       const auth = factory.auth({ user });
-      await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id, inTimeline: true });
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id });
       const { asset: theirs } = await ctx.newAsset({ ownerId: partner.id });
       await addExif(ctx, [theirs]);
 
-      await expect(sut.getMapMarkers(auth, { withPartners: true })).resolves.toEqual([
-        expect.objectContaining({ id: theirs.id }),
-      ]);
-      await expect(sut.getMapStatistics(auth, {})).resolves.toEqual(expect.objectContaining({ partner: 1 }));
-
-      await ctx.get(PartnerRepository).remove({ sharedById: partner.id, sharedWithId: user.id });
-
-      await expect(sut.getMapMarkers(auth, { withPartners: true })).resolves.toEqual([]);
+      await expect(sut.getMapMarkers(auth, {})).resolves.toEqual([]);
       await expect(sut.getMapStatistics(auth, {})).resolves.toEqual(expect.objectContaining({ partner: 0 }));
     });
 
@@ -217,7 +209,7 @@ describe(MapService.name, () => {
       const { user } = await ctx.newUser();
       const { user: partner } = await ctx.newUser();
       const auth = factory.auth({ user });
-      await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id, inTimeline: true });
+      await ctx.newPartner({ sharedById: partner.id, sharedWithId: user.id });
 
       const { asset: located } = await ctx.newAsset({ ownerId: user.id });
       const { asset: archived } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
@@ -241,54 +233,25 @@ describe(MapService.name, () => {
           .map(({ id }) => id)
           .toSorted();
 
-      const all = { withPartners: true, withSharedAlbums: true, isArchived: true };
-      await expect(ids(all)).resolves.toEqual([located.id, archived.id, nsfw.id, partnerLocated.id].toSorted());
-      await expect(ids(all, true)).resolves.toEqual([located.id, archived.id, partnerLocated.id].toSorted());
+      // FL-326: a partner's own rows are never mapped
+      const all = { withSharedAlbums: true, isArchived: true };
+      await expect(ids(all)).resolves.toEqual([located.id, archived.id, nsfw.id].toSorted());
+      await expect(ids(all, true)).resolves.toEqual([located.id, archived.id].toSorted());
       await expect(ids({})).resolves.toEqual([located.id, nsfw.id].toSorted());
 
-      await expect(sut.getMapStatistics(auth, {})).resolves.toEqual({ archived: 1, partner: 1, unlocated: 1 });
+      await expect(sut.getMapStatistics(auth, {})).resolves.toEqual({ archived: 1, partner: 0, unlocated: 1 });
       // the counts follow the session's hidden content like the markers
       await ctx
         .newAsset({ ownerId: user.id })
         .then(({ asset }) =>
           ctx.newMetadata({ assetId: asset.id, key: AssetMetadataKey.MlEnrichment, value: nsfwMetadata(true) }),
         );
-      await expect(sut.getMapStatistics(auth, {})).resolves.toEqual({ archived: 1, partner: 1, unlocated: 2 });
+      await expect(sut.getMapStatistics(auth, {})).resolves.toEqual({ archived: 1, partner: 0, unlocated: 2 });
       await expect(sut.getMapStatistics({ ...auth, hideNsfwAssets: true }, {})).resolves.toEqual({
         archived: 1,
-        partner: 1,
+        partner: 0,
         unlocated: 1,
       });
-    });
-  });
-
-  describe('partner location (FL-54)', () => {
-    it("keeps a hiding owner's shared-album items off the viewer's map and the album map", async () => {
-      const { sut, ctx } = setup();
-      const { user } = await ctx.newUser();
-      const { user: hiding } = await ctx.newUser();
-      const auth = factory.auth({ user });
-      await ctx.newPartner({ sharedById: hiding.id, sharedWithId: user.id });
-      await defaultDatabase
-        .updateTable('partner')
-        .set({ shareLocation: false })
-        .where('sharedById', '=', hiding.id)
-        .where('sharedWithId', '=', user.id)
-        .execute();
-
-      const { asset: mine } = await ctx.newAsset({ ownerId: user.id });
-      const { asset: theirs } = await ctx.newAsset({ ownerId: hiding.id });
-      await addExif(ctx, [mine, theirs]);
-      const { album } = await ctx.newAlbum({ ownerId: hiding.id }, [mine.id, theirs.id]);
-      await ctx.newAlbumUser({ albumId: album.id, userId: user.id });
-
-      const markers = await sut.getMapMarkers(auth, { withSharedAlbums: true });
-      expect(markers.map(({ id }) => id)).toEqual([mine.id]);
-
-      const albumMarkers = await ctx
-        .get(MapRepository)
-        .getAlbumMapMarkers(album.id, { locationHiddenOwnerIds: [hiding.id] });
-      expect(albumMarkers.map(({ id }) => id)).toEqual([mine.id]);
     });
   });
 });

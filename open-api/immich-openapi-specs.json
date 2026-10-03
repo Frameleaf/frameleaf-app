@@ -21441,15 +21441,6 @@
             }
           },
           {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include partner assets",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
             "name": "withSharedAlbums",
             "required": false,
             "in": "query",
@@ -21624,15 +21615,6 @@
             "required": false,
             "in": "query",
             "description": "Filter by favorite status",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include partner assets",
             "schema": {
               "type": "boolean"
             }
@@ -26153,6 +26135,86 @@
         "x-immich-state": "Stable"
       }
     },
+    "/partners/locked-notice": {
+      "get": {
+        "description": "Whether to show the one-time notice that Locked items arrived from a partner and stay hidden until you set a PIN.",
+        "operationId": "getPartnerLockedNotice",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerLockedNoticeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the Locked partner items notice",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.read"
+      },
+      "put": {
+        "description": "Dismisses the one-time notice about Locked partner items for good. The items stay locked.",
+        "operationId": "dismissPartnerLockedNotice",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerLockedNoticeResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Dismiss the Locked partner items notice",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "partner.update"
+      }
+    },
     "/partners/{id}": {
       "delete": {
         "description": "Stop sharing assets with a partner.",
@@ -26265,7 +26327,7 @@
         "x-immich-state": "Deprecated"
       },
       "put": {
-        "description": "Specify whether a partner's assets should appear in the user's timeline (inTimeline), or, as the sharing user, whether that partner may see the locations of shared assets (shareLocation). Exactly one field per request.",
+        "description": "A partnership has no settings left (FL-326): partners receive their own copies and locations are always shared. Kept for older clients; returns the partner who shares with the user.",
         "operationId": "updatePartner",
         "parameters": [
           {
@@ -45220,15 +45282,6 @@
             }
           },
           {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include assets shared by partners",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
             "name": "withStacked",
             "required": false,
             "in": "query",
@@ -45451,15 +45504,6 @@
             "required": false,
             "in": "query",
             "description": "Include location data in the response",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include assets shared by partners",
             "schema": {
               "type": "boolean"
             }
@@ -45709,15 +45753,6 @@
             "required": false,
             "in": "query",
             "description": "Include location data in the response",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include assets shared by partners",
             "schema": {
               "type": "boolean"
             }
@@ -45980,15 +46015,6 @@
             "required": false,
             "in": "query",
             "description": "Include location data in the response",
-            "schema": {
-              "type": "boolean"
-            }
-          },
-          {
-            "name": "withPartners",
-            "required": false,
-            "in": "query",
-            "description": "Include assets shared by partners",
             "schema": {
               "type": "boolean"
             }
@@ -52529,6 +52555,10 @@
           "order": {
             "$ref": "#/components/schemas/AssetOrder"
           },
+          "origin": {
+            "$ref": "#/components/schemas/PartnerOriginDto",
+            "description": "FL-326: present on your own album when partner sharing copied it from another library"
+          },
           "parentId": {
             "description": "Collection this album belongs to (null = top-level)",
             "nullable": true,
@@ -58097,6 +58127,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "origin": {
+            "$ref": "#/components/schemas/PartnerOriginDto",
+            "description": "FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
+          },
           "originalFileName": {
             "description": "Original file name",
             "type": "string"
@@ -59447,6 +59481,10 @@
             "description": "The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer's local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by \"local\" days and months.",
             "format": "date-time",
             "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/PartnerOriginDto",
+            "description": "FL-326: present on your own asset when partner sharing copied it from another library (GET /assets/{id})"
           },
           "originalFileName": {
             "description": "Original file name",
@@ -72045,6 +72083,10 @@
           "CloudBackupVerify",
           "PushDeliver",
           "PushBackupStaleCheck",
+          "PartnerBackfill",
+          "PartnerCopyAsset",
+          "PartnerCopyAlbum",
+          "PartnerPropagate",
           "OcrQueueAll",
           "Ocr",
           "ImageDescriptionQueueAll",
@@ -73778,7 +73820,7 @@
             "type": "integer"
           },
           "partner": {
-            "description": "Located timeline items of partners who share their locations with the viewer",
+            "description": "Always 0: partners' items arrive as the viewer's own copies (kept for older clients)",
             "maximum": 9007199254740991,
             "minimum": 0,
             "type": "integer"
@@ -78922,6 +78964,38 @@
         ],
         "type": "object"
       },
+      "PartnerBackfillDto": {
+        "properties": {
+          "done": {
+            "description": "Items copied so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "description": "Where the first copy stands",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "stopped"
+            ],
+            "type": "string"
+          },
+          "total": {
+            "description": "Items to copy",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "done",
+          "state",
+          "total"
+        ],
+        "type": "object"
+      },
       "PartnerCreateDto": {
         "properties": {
           "sharedWithId": {
@@ -78944,11 +79018,58 @@
         ],
         "type": "string"
       },
+      "PartnerLockedNoticeResponseDto": {
+        "properties": {
+          "flaggedAt": {
+            "description": "When the first Locked item arrived for an account without a PIN",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "show": {
+            "description": "Whether to show the notice: Locked items arrived from a partner, no PIN is set, and it was not dismissed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "flaggedAt",
+          "show"
+        ],
+        "type": "object"
+      },
+      "PartnerOriginDto": {
+        "properties": {
+          "rootOwnerId": {
+            "description": "The account that originally uploaded or created it",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "rootOwnerName": {
+            "description": "That account's name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rootOwnerId",
+          "rootOwnerName"
+        ],
+        "type": "object"
+      },
       "PartnerResponseDto": {
         "description": "Partner response",
         "properties": {
           "avatarColor": {
             "$ref": "#/components/schemas/UserAvatarColor"
+          },
+          "backfill": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PartnerBackfillDto"
+              }
+            ],
+            "description": "FL-326: copy progress of the library shared this way; null when it was never copied",
+            "nullable": true
           },
           "email": {
             "description": "User email",
@@ -78962,10 +79083,6 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
-          "inTimeline": {
-            "description": "Show in timeline",
-            "type": "boolean"
-          },
           "name": {
             "description": "User name",
             "type": "string"
@@ -78978,10 +79095,6 @@
           "profileImagePath": {
             "description": "Profile image path",
             "type": "string"
-          },
-          "shareLocation": {
-            "description": "Sharer allows this partner to see asset locations",
-            "type": "boolean"
           }
         },
         "required": [
@@ -78995,16 +79108,7 @@
         "type": "object"
       },
       "PartnerUpdateDto": {
-        "properties": {
-          "inTimeline": {
-            "description": "Show partner assets in timeline",
-            "type": "boolean"
-          },
-          "shareLocation": {
-            "description": "Share asset locations with this partner; only the sharing user can change it",
-            "type": "boolean"
-          }
-        },
+        "properties": {},
         "type": "object"
       },
       "PeopleListItemDto": {
@@ -79462,7 +79566,8 @@
           "unassign",
           "remove",
           "merge",
-          "box-move"
+          "box-move",
+          "partner-merge"
         ],
         "type": "string"
       },
@@ -115382,7 +115487,8 @@
           "photography-workspace",
           "license",
           "onboarding",
-          "frameleaf-cloud-tour"
+          "frameleaf-cloud-tour",
+          "partner-locked-notice"
         ],
         "type": "string"
       },

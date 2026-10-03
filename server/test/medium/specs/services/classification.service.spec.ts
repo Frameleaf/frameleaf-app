@@ -1,6 +1,5 @@
 import { Kysely, sql } from 'kysely';
 import {
-  AlbumUserRole,
   AssetType,
   AssetVisibility,
   ClassificationMatchDecision,
@@ -396,43 +395,6 @@ describe(ClassificationService.name, () => {
       expect(plan.added).toBe(0);
       await sut.evaluateAsset(asset.id, user.id);
       expect(await albumAssetIds(ctx, rule.albumId)).toEqual([]);
-    });
-
-    it('lets a partner editor remove membership without rejecting the owner rule or taking its tag', async () => {
-      const { sut, ctx, albums } = setup();
-      const { user, auth } = await newOwner(ctx);
-      const { user: editor, auth: editorAuth } = await newOwner(ctx);
-      const lake = await tagOf(ctx, user.id, 'lake');
-      const { asset } = await ctx.newAsset({ ownerId: user.id });
-      await tagAsset(ctx, lake.id, asset.id);
-      const rule = await sut.createRule(auth, {
-        ...baseRule,
-        albumName: 'Lake',
-        tagIds: [lake.id],
-        action: ClassificationRuleAction.Tag,
-        tagName: 'Lake album',
-      });
-      await reevaluate(sut, auth, rule.id);
-      await ctx.newAlbumUser({ albumId: rule.albumId, userId: editor.id, role: AlbumUserRole.Editor });
-      await ctx.newPartner({ sharedById: user.id, sharedWithId: editor.id });
-
-      await expect(albums.removeAssets(editorAuth, rule.albumId, { ids: [asset.id] })).resolves.toEqual([
-        { id: asset.id, success: true },
-      ]);
-      expect(await albumAssetIds(ctx, rule.albumId)).toEqual([]);
-      expect(await decisionOf(ctx, rule.id, asset.id)).toBe(ClassificationMatchDecision.Matched);
-      expect(await tagIdsOf(ctx, asset.id)).toContain(rule.tag!.id);
-
-      await sut.evaluateAsset(asset.id, user.id);
-      expect(await decisionOf(ctx, rule.id, asset.id)).toBe(ClassificationMatchDecision.Matched);
-      expect(await tagIdsOf(ctx, asset.id)).toContain(rule.tag!.id);
-      expect(await albumAssetIds(ctx, rule.albumId)).toEqual([asset.id]);
-
-      await albums.removeAssets(editorAuth, rule.albumId, { ids: [asset.id] });
-      await expect(albums.addAssets(editorAuth, rule.albumId, { ids: [asset.id] })).resolves.toEqual([
-        { id: asset.id, success: true },
-      ]);
-      expect(await decisionOf(ctx, rule.id, asset.id)).toBe(ClassificationMatchDecision.Matched);
     });
 
     it('keeps a manual addition across reprocessing even when it does not match', async () => {

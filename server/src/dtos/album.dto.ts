@@ -6,6 +6,7 @@ import { AlbumUser, AuthSharedLink } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { BulkIdErrorReasonSchema } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
+import { PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
 import { SMART_ALBUM_BUILT_IN_KINDS } from 'src/dtos/system-config.dto.js';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
 import {
@@ -271,6 +272,9 @@ export const AlbumResponseSchema = z
       .meta({ format: 'double' })
       .nullable()
       .describe('Sibling display position. Lower values appear first.'),
+    origin: PartnerOriginSchema.optional().describe(
+      'FL-326: present on your own album when partner sharing copied it from another library',
+    ),
   })
   .meta({ id: 'AlbumResponseDto' });
 

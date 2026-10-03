@@ -72,90 +72,6 @@ it('delivers current full album assets, updates, retries and ACKs scoped deletes
   await ctx.assertSyncIsComplete(auth, albumTypes);
 });
 
-it('keeps the approved partner Locked marker blank then deletes on unshare and fully rehydrates on regrant', async () => {
-  const { ctx, auth, owner, asset } = await setup();
-  await warm(ctx, auth, partnerTypes);
-  await lock(asset.id);
-  const marker = await warm(ctx, auth, partnerTypes);
-  expect(marker[0]).toMatchObject({
-    type: SyncEntityType.PartnerAssetAccessV1,
-    data: {
-      sharedById: owner.id,
-      asset: {
-        id: asset.id,
-        visibility: AssetVisibility.Locked,
-        originalFileName: '',
-        thumbhash: null,
-        livePhotoVideoId: null,
-      },
-    },
-  });
-  expect(marker[0].data.asset.checksum).toBeTruthy();
-  expect(marker[0].data.asset).not.toHaveProperty('isLocked');
-  await db
-    .updateTable('asset')
-    .set({ originalFileName: 'changed-private.jpg', thumbhash: Buffer.from('private') })
-    .where('id', '=', asset.id)
-    .execute();
-  await ctx.assertSyncIsComplete(auth, partnerTypes);
-  await db.deleteFrom('partner').where('sharedById', '=', owner.id).where('sharedWithId', '=', auth.user.id).execute();
-  const removed = events(await ctx.syncStream(auth, partnerTypes));
-  expect(removed).toEqual([
-    expect.objectContaining({
-      type: SyncEntityType.PartnerAssetAccessDeleteV1,
-      data: { sharedById: owner.id, assetId: asset.id },
-    }),
-  ]);
-  await ctx.syncAckAll(auth, removed);
-  await unlock(asset.id);
-  await ctx.newPartner({ sharedById: owner.id, sharedWithId: auth.user.id });
-  const granted = await warm(ctx, auth, partnerTypes);
-  expect(granted[0].data.asset.originalFileName).toBe('changed-private.jpg');
-  await ctx.assertSyncIsComplete(auth, partnerTypes);
-});
-
-it('scopes removal to one album and preserves another album and the independent partner source', async () => {
-  const { ctx, auth, owner, asset, album } = await setup();
-  const { album: other } = await ctx.newAlbum({ ownerId: owner.id });
-  await ctx.newAlbumAsset({ albumId: other.id, assetId: asset.id });
-  await ctx.newAlbumUser({ albumId: other.id, userId: auth.user.id });
-  const initial = await warm(ctx, auth, [...albumTypes, ...partnerTypes]);
-  expect(initial).toHaveLength(3);
-  await db.deleteFrom('album_user').where('albumId', '=', album.id).where('userId', '=', auth.user.id).execute();
-  const removed = events(await ctx.syncStream(auth, [...albumTypes, ...partnerTypes]));
-  expect(removed).toEqual([
-    expect.objectContaining({
-      type: SyncEntityType.AlbumAssetAccessDeleteV1,
-      data: { albumId: album.id, assetId: asset.id },
-    }),
-  ]);
-  await ctx.syncAckAll(auth, removed);
-  await ctx.assertSyncIsComplete(auth, [...albumTypes, ...partnerTypes]);
-});
-
-it('album Lock deletes while the same partner source retains its approved marker', async () => {
-  const { ctx, auth, asset, album, owner } = await setup();
-  await warm(ctx, auth, [...albumTypes, ...partnerTypes]);
-  await lock(asset.id);
-  const rows = events(await ctx.syncStream(auth, [...albumTypes, ...partnerTypes]));
-  expect(rows).toHaveLength(2);
-  expect(rows).toContainEqual(
-    expect.objectContaining({
-      type: SyncEntityType.AlbumAssetAccessDeleteV1,
-      data: { albumId: album.id, assetId: asset.id },
-    }),
-  );
-  expect(rows).toContainEqual(
-    expect.objectContaining({
-      type: SyncEntityType.PartnerAssetAccessV1,
-      data: {
-        sharedById: owner.id,
-        asset: expect.objectContaining({ visibility: AssetVisibility.Locked, originalFileName: '' }),
-      },
-    }),
-  );
-});
-
 it('only an elevated media owner gets Locked album records and elevation loss revokes them', async () => {
   const { ctx, auth, asset, album } = await setup();
   await db.updateTable('asset').set({ ownerId: auth.user.id }).where('id', '=', asset.id).execute();
@@ -171,51 +87,45 @@ it('only an elevated media owner gets Locked album records and elevation loss re
   });
 });
 
-it.each(['albumAsset', 'partnerAsset'] as const)(
-  'does not disclose queued unsent %s records after revocation',
-  async (kind) => {
-    const { auth, asset, owner, repo } = await setup();
-    const pending = await repo.reconcile(auth, kind);
-    if (kind === 'albumAsset') await lock(asset.id);
-    else
-      await db
-        .deleteFrom('partner')
-        .where('sharedById', '=', owner.id)
-        .where('sharedWithId', '=', auth.user.id)
-        .execute();
-    expect(await repo.prepare(auth, kind, pending[0].eventId)).toBeUndefined();
-    expect(await repo.reconcile(auth, kind)).toEqual([]);
-    expect(
-      await db
-        .selectFrom('session_tag_sync_state')
-        .selectAll()
-        .where('sessionId', '=', auth.session!.id)
-        .where('kind', '=', kind)
-        .execute(),
-    ).toEqual([]);
-  },
-);
+it.each(['albumAsset'] as const)('does not disclose queued unsent %s records after revocation', async (kind) => {
+  const { auth, asset, owner, repo } = await setup();
+  const pending = await repo.reconcile(auth, kind);
+  if (kind === 'albumAsset') await lock(asset.id);
+  else
+    await db
+      .deleteFrom('partner')
+      .where('sharedById', '=', owner.id)
+      .where('sharedWithId', '=', auth.user.id)
+      .execute();
+  expect(await repo.prepare(auth, kind, pending[0].eventId)).toBeUndefined();
+  expect(await repo.reconcile(auth, kind)).toEqual([]);
+  expect(
+    await db
+      .selectFrom('session_tag_sync_state')
+      .selectAll()
+      .where('sessionId', '=', auth.session!.id)
+      .where('kind', '=', kind)
+      .execute(),
+  ).toEqual([]);
+});
 
-it.each(['albumAsset', 'partnerAsset'] as const)(
-  'refuses changed %s preparation and stale/unsent ACKs',
-  async (kind) => {
-    const { ctx, auth, asset, repo } = await setup();
-    const type = kind === 'albumAsset' ? SyncEntityType.AlbumAssetAccessV1 : SyncEntityType.PartnerAssetAccessV1;
-    const types = kind === 'albumAsset' ? albumTypes : partnerTypes;
-    const old = await repo.reconcile(auth, kind);
-    await repo.acknowledge(auth.session!.id, { type, updateId: old[0].eventId });
-    await db.updateTable('asset').set({ originalFileName: 'changed.jpg' }).where('id', '=', asset.id).execute();
-    expect(await repo.prepare(auth, kind, old[0].eventId)).toBeUndefined();
-    const current = events(await ctx.syncStream(auth, types));
-    expect(current[0].data.asset.originalFileName).toBe('changed.jpg');
-    await repo.acknowledge(auth.session!.id, { type, updateId: old[0].eventId });
-    expect(events(await ctx.syncStream(auth, types))).toEqual(current);
-    await ctx.syncAckAll(auth, current);
-    await ctx.assertSyncIsComplete(auth, types);
-  },
-);
+it.each(['albumAsset'] as const)('refuses changed %s preparation and stale/unsent ACKs', async (kind) => {
+  const { ctx, auth, asset, repo } = await setup();
+  const type = kind === 'albumAsset' ? SyncEntityType.AlbumAssetAccessV1 : SyncEntityType.PartnerAssetAccessV1;
+  const types = kind === 'albumAsset' ? albumTypes : partnerTypes;
+  const old = await repo.reconcile(auth, kind);
+  await repo.acknowledge(auth.session!.id, { type, updateId: old[0].eventId });
+  await db.updateTable('asset').set({ originalFileName: 'changed.jpg' }).where('id', '=', asset.id).execute();
+  expect(await repo.prepare(auth, kind, old[0].eventId)).toBeUndefined();
+  const current = events(await ctx.syncStream(auth, types));
+  expect(current[0].data.asset.originalFileName).toBe('changed.jpg');
+  await repo.acknowledge(auth.session!.id, { type, updateId: old[0].eventId });
+  expect(events(await ctx.syncStream(auth, types))).toEqual(current);
+  await ctx.syncAckAll(auth, current);
+  await ctx.assertSyncIsComplete(auth, types);
+});
 
-it.each(['albumAsset', 'partnerAsset'] as const)(
+it.each(['albumAsset'] as const)(
   'replaces an unacknowledged %s delete on regrant and rejects its stale ACK',
   async (kind) => {
     const { ctx, auth, asset, owner } = await setup();
@@ -269,7 +179,8 @@ it('denies unrelated users, admin nonowners, shared links and never-sent Locked 
 });
 
 it.each(['trash', 'delete', 'owner-delete'] as const)(
-  'revokes both delivered sources on %s without descriptive fields',
+  // FL-326: the partner source sends nothing any more (spec §4.8)
+  'revokes the delivered album source on %s without descriptive fields',
   async (cause) => {
     const { ctx, auth, asset, owner, album } = await setup();
     await warm(ctx, auth, [...albumTypes, ...partnerTypes]);
@@ -282,10 +193,6 @@ it.each(['trash', 'delete', 'owner-delete'] as const)(
       expect.objectContaining({
         type: SyncEntityType.AlbumAssetAccessDeleteV1,
         data: { albumId: album.id, assetId: asset.id },
-      }),
-      expect.objectContaining({
-        type: SyncEntityType.PartnerAssetAccessDeleteV1,
-        data: { sharedById: owner.id, assetId: asset.id },
       }),
     ]);
     await ctx.syncAckAll(auth, removed);

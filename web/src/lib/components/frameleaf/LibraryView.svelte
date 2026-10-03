@@ -767,7 +767,7 @@
   const ownTimeline = $derived(
     destination?.kind === 'library' &&
       options?.visibility === AssetVisibility.Timeline &&
-      Object.keys(options).every((key) => ['visibility', 'withStacked', 'withPartners'].includes(key)),
+      Object.keys(options).every((key) => ['visibility', 'withStacked'].includes(key)),
   );
 
   /** A matching archive the server has counted and frozen, waiting for the person to confirm it. */

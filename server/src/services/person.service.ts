@@ -63,6 +63,7 @@ import {
   VectorIndex,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
@@ -88,7 +89,14 @@ const staleFaceRemoval = () =>
   new ConflictException('This face changed in another view. Reload it before removing it.');
 
 /** FL-57: the decisions an owner can undo from their correction history. */
-const UNDOABLE_CORRECTIONS = new Set<FaceCorrectionAction>(['reassign', 'new-person', 'unassign', 'remove']);
+const UNDOABLE_CORRECTIONS = new Set<FaceCorrectionAction>([
+  'reassign',
+  'new-person',
+  'unassign',
+  'remove',
+  // FL-326: a partner's person auto-merged into one of the owner's people
+  'partner-merge',
+]);
 
 type CorrectionConflictReason =
   'already-undone' | 'not-undoable' | 'source-changed' | 'face-gone' | 'face-changed' | 'person-gone';
@@ -378,6 +386,12 @@ export class PersonService extends BaseService {
     }
     if (entry.undoneAt) {
       throw correctionConflict('already-undone', 'This change was already undone');
+    }
+    if (entry.action === 'partner-merge') {
+      // FL-326: the merged faces move to a person of their own for the partner's person
+      await BaseService.create(PartnerPeopleService, this).undoPartnerMerge(auth, entry);
+      const [undone] = await this.mapCorrections(auth, [{ ...entry, undoneAt: new Date() }]);
+      return undone;
     }
     if (!UNDOABLE_CORRECTIONS.has(entry.action) || !entry.assetId) {
       throw correctionConflict('not-undoable', 'This change cannot be undone');
@@ -789,6 +803,14 @@ export class PersonService extends BaseService {
 
     if (assetId) {
       await this.jobRepository.queue({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
+    }
+
+    // FL-326: an edit of a partner's person copy stops that detail following, and the person's own copies
+    // follow the new name, birth date and hidden state
+    const partnerPeople = BaseService.create(PartnerPeopleService, this);
+    await partnerPeople.noteEdit(ownerId, personGroupId, dto);
+    if (PartnerPeopleService.touchesFollowedFields(dto)) {
+      await partnerPeople.propagatePerson(ownerId, personGroupId);
     }
 
     // FL-57: a new name, or hiding or showing the person, changes the names generated text may use
@@ -1366,6 +1388,10 @@ export class PersonService extends BaseService {
             },
           ]);
           await this.refreshIdentities(targetPerson.ownerId, { personGroupIds: [targetPerson.personGroupId] });
+          // FL-326: later partner copies of a merged-away person's faces land on the survivor
+          await this.duringForkWrites('re-point partner people', () =>
+            this.personRepository.repointPartnerPersonLinks(targetPerson.ownerId, mergeId, targetPerson.personGroupId),
+          );
         } catch (error: any) {
           this.logger.error(`Unable to record the merge of ${mergeId}: ${error}`, error?.stack);
         }
