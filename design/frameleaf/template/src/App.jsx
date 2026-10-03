@@ -462,10 +462,6 @@ export function App() {
   const [publicLink, setPublicLink] = useState(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState(null);
-  const [partnerSettings, setPartnerSettings] = useState({
-    inTimeline: true,
-    shareLocation: false,
-  });
   const [page, setPage] = useState(1);
   const [uploadTargetId, setUploadTargetId] = useState(null);
   const uploadInput = useRef(null);
@@ -3033,16 +3029,11 @@ export function App() {
                     <PartnerHeader
                       partner={PARTNER}
                       count={visible.length}
-                      settings={partnerSettings}
                       onChange={(patch) => {
                         if (patch?.sharing === false) {
                           setToast(`Stopped sharing with ${PARTNER.name}.`);
                           navigate("Library");
-                        } else
-                          setPartnerSettings((current) => ({
-                            ...current,
-                            ...patch,
-                          }));
+                        }
                       }}
                       onOpenSettings={() => openSettings("sharing", "partner")}
                     />

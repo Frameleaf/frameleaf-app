@@ -1250,21 +1250,6 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.ph-toggles {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 8px;
-}
-.ph-toggles .slf-toggle {
-  background: var(--fl-raised);
-  border-radius: var(--fl-radius-control);
-  padding: 10px 12px;
-}
-.ph-toggles .slf-toggle + .slf-toggle {
-  border-top: 0;
-}
-
 /* ---------- Responsive ---------- */
 @media (max-width: 1000px) {
   .slf-grid {
