@@ -42,3 +42,21 @@ describe('photo tools DTOs (FL-64)', () => {
     ).toBe(false);
   });
 });
+
+it('keeps native presets explicit and refuses per-photo native geometry and raster masks', () => {
+  const native = {
+    version: 2,
+    renderer: 'darktable/5.6.1',
+    exposureEV: 1,
+    whiteBalance: { red: 1.1, green: 1, blue: 0.8 },
+  };
+  expect(DevelopPresetCreateDto.schema.parse({ name: 'Native warm', settings: { native } }).settings.native).toEqual(
+    native,
+  );
+  expect(
+    DevelopPresetCreateDto.schema.safeParse({
+      name: 'x',
+      settings: { native: { ...native, crop: { x: 0, y: 0, w: 1, h: 1 } } },
+    }).success,
+  ).toBe(false);
+});
