@@ -436,7 +436,11 @@ describe('weekly consent foundation, never execution authority', () => {
     process.env.FRAMELEAF_ICLOUD_STAGING_PATH = root;
     StorageCore.setMediaLocation(root);
     try {
-      const staging = new ICloudStagingService(sync, transport as never, { getAll: () => Promise.resolve([]) } as never);
+      const staging = new ICloudStagingService(
+        sync,
+        transport as never,
+        { getAll: () => Promise.resolve([]) } as never,
+      );
       const connection = (await sync.get(f.connection.id, f.user.id))!;
       const staged = await staging.download(connection, resource);
       expect(await readFile(staged)).toEqual(bytes);
