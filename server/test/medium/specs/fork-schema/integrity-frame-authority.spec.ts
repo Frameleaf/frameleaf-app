@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { IntegrityReport } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -27,7 +28,14 @@ describe('integrity authoritative duplicate frames', () => {
   it('protects active-sidecar frames during scanning, refresh, and single/batch stale-report deletion', async () => {
     const { sut, ctx } = newMediumService(IntegrityService, {
       database: db,
-      real: [IntegrityRepository, AssetRepository, ConfigRepository, SystemMetadataRepository, ForkSchemaRepository],
+      real: [
+        IntegrityRepository,
+        AssetRepository,
+        ConfigRepository,
+        SystemMetadataRepository,
+        ForkSchemaRepository,
+        PhysicalFileRepository,
+      ],
       mock: [LoggingRepository, EventRepository, StorageRepository, JobRepository],
     });
     const owner = await mediumFactory.userWithClusterGroup(db);

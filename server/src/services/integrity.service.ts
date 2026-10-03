@@ -245,9 +245,12 @@ export class IntegrityService extends BaseService {
     } else if (fileAssetId) {
       await this.assetRepository.deleteFiles([{ id: fileAssetId }]);
     } else {
-      // through the reference-counted guard: a path any row references (a shared original, a file in
-      // the file trash) is kept
-      await this.physicalFileRepository.deleteUnreferencedPath(path, () => this.storageRepository.unlink(path));
+      // kept while tracked (fork-only paths such as video duplicate frames), and otherwise only through
+      // the reference-counted guard: a path any row references (a shared original, the file trash) is kept
+      const trackedPaths = await this.integrityRepository.getTrackedPaths([path]);
+      if (trackedPaths.length === 0) {
+        await this.physicalFileRepository.deleteUnreferencedPath(path, () => this.storageRepository.unlink(path));
+      }
       await this.integrityRepository.deleteById(id);
     }
   }
@@ -862,7 +865,9 @@ export class IntegrityService extends BaseService {
     }
 
     if (byPath.length > 0) {
-      for (const { path } of byPath) {
+      const tracked = await this.integrityRepository.getTrackedPaths(byPath.map(({ path }) => path));
+      const trackedPaths = new Set(tracked.map(({ path }) => path));
+      for (const { path } of byPath.filter(({ path }) => !trackedPaths.has(path))) {
         await this.physicalFileRepository
           .deleteUnreferencedPath(path, () => this.storageRepository.unlink(path))
           .catch(() => void 0);

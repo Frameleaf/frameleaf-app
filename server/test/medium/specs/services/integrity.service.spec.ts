@@ -1,4 +1,5 @@
 import { Kysely } from 'kysely';
+import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { DateTime } from 'luxon';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -31,6 +32,7 @@ const setup = (db?: Kysely<DB>) => {
       ConfigRepository,
       SystemMetadataRepository,
       ForkSchemaRepository,
+      PhysicalFileRepository,
       // FL-81: a full run gets an id for its batches (`startCheckRun`).
       CryptoRepository,
     ],
