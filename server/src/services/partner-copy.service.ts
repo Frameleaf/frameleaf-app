@@ -377,6 +377,9 @@ export class PartnerCopyService extends BaseService {
     if (await this.partnerOriginRepository.getCopyId('album', album.id, targetOwnerId)) {
       return;
     }
+    if (!(await this.partnerRepository.get({ sharedById: partnerSharedById, sharedWithId: targetOwnerId }))) {
+      return;
+    }
 
     const assetIds = await this.partnerOriginRepository.getAlbumAssetCopyIds(album.id, targetOwnerId);
     const cover = album.albumThumbnailAssetId
@@ -394,13 +397,18 @@ export class PartnerCopyService extends BaseService {
       [{ userId: targetOwnerId, role: AlbumUserRole.Owner }],
       targetOwnerId,
     );
-    await this.partnerOriginRepository.createOrigin('album', {
+    const recorded = await this.partnerOriginRepository.createAlbumOriginIfPartnered({
       id: copy.id,
       sourceId: album.id,
       ownerId: targetOwnerId,
       rootOwnerId,
       partnerSharedById,
     });
+    if (!recorded) {
+      // the partnership ended while the album was being copied: no copy is made for it
+      await this.albumRepository.delete(copy.id);
+      return;
+    }
     return copy.id;
   }
 
