@@ -687,6 +687,18 @@ export class AssetService extends BaseService {
       this.eventRepository.emit('AssetDelete', { assetId: id, userId: asset.ownerId }),
     );
 
+    // universal storage: a shared file whose primary asset went is handed to the oldest remaining
+    // asset, and follows it to that asset's storage template path
+    await this.afterAssetRemoval(id, 'hand its shared file to another asset', async () => {
+      if (!asset.physicalOriginalFileId) {
+        return;
+      }
+      const next = await this.physicalFileRepository.electNextCanonical(asset.physicalOriginalFileId);
+      if (next) {
+        await this.jobRepository.queue({ name: JobName.StorageTemplateMigrationSingle, data: { id: next.assetId } });
+      }
+    });
+
     // delete the motion if it is not used by another asset
     await this.afterAssetRemoval(id, 'queue the deletion of its motion part', async () => {
       if (!asset.livePhotoVideoId) {

@@ -466,6 +466,57 @@ describe(PhysicalFileRepository.name, () => {
     });
   });
 
+  describe('electNextCanonical (primary handover)', () => {
+    const newSharedByThree = async (ctx: MediumTestContext, sut: PhysicalFileRepository) => {
+      const checksum = randomBytes(32);
+      const assets = [];
+      for (let i = 0; i < 3; i++) {
+        const { user } = await ctx.newUser();
+        assets.push(await newAssetWithSize(ctx, user.id, { checksum, createdAt: new Date(Date.UTC(2020, 0, i + 1)) }));
+      }
+      const physical = (await sut.ensureOriginalPhysicalFile(assets[0].id))!;
+      await sut.linkAssetToOriginalPhysicalFile(assets[1].id, physical);
+      await sut.linkAssetToOriginalPhysicalFile(assets[2].id, physical);
+      return { assets, physical };
+    };
+
+    it('makes the oldest remaining asset primary once the primary is deleted', async () => {
+      const { ctx, sut } = setup();
+      const { assets, physical } = await newSharedByThree(ctx, sut);
+      const preview = await sut.upsertPhysicalFile({
+        canonicalAssetId: assets[0].id,
+        checksum: randomBytes(20),
+        path: `/data/thumbs/${randomUUID()}-preview.jpg`,
+        sizeInBytes: 100,
+        type: PhysicalFileType.Preview,
+      });
+      await ctx.newAssetFile({
+        assetId: assets[1].id,
+        type: AssetFileType.Preview,
+        path: preview.path,
+        physicalFileId: preview.id,
+      });
+
+      await defaultDatabase.deleteFrom('asset').where('id', '=', assets[0].id).execute();
+
+      await expect(sut.electNextCanonical(physical.id)).resolves.toEqual({ assetId: assets[1].id });
+      await expect(sut.isOriginalCanonical(assets[1].id, physical.id)).resolves.toBe(true);
+      await expect(sut.getPhysicalFile(preview.id)).resolves.toMatchObject({ canonicalAssetId: assets[1].id });
+      // a second call changes nothing: the file has its primary
+      await expect(sut.electNextCanonical(physical.id)).resolves.toBeUndefined();
+    });
+
+    it('changes nothing when a non-primary copy is deleted', async () => {
+      const { ctx, sut } = setup();
+      const { assets, physical } = await newSharedByThree(ctx, sut);
+
+      await defaultDatabase.deleteFrom('asset').where('id', '=', assets[2].id).execute();
+
+      await expect(sut.electNextCanonical(physical.id)).resolves.toBeUndefined();
+      await expect(sut.isOriginalCanonical(assets[0].id, physical.id)).resolves.toBe(true);
+    });
+  });
+
   describe('getCanonicalGeneratedFile', () => {
     it('resolves the master-owned generated file only for linked duplicates', async () => {
       const { ctx, sut } = setup();

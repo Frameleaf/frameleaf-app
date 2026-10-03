@@ -218,6 +218,7 @@ export const getForAssetDeletion = (asset: ReturnType<AssetFactory['build']>) =>
   ownerId: asset.ownerId,
   livePhotoVideoId: asset.livePhotoVideoId,
   originalPath: asset.originalPath,
+  physicalOriginalFileId: asset.physicalOriginalFileId ?? null,
   isOffline: asset.isOffline,
   // a deletion job runs on an asset in the trash
   deletedAt: asset.deletedAt ?? new Date('2024-01-01T00:00:00.000Z'),
