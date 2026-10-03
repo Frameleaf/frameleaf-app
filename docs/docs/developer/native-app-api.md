@@ -1,0 +1,37 @@
+---
+title: Native app API changes
+---
+
+# Native app API changes
+
+The native Frameleaf apps (iOS and Android, in their own repositories) generate their clients from
+`open-api/immich-openapi-specs.json`. When a live end-to-end test finds an API that is missing or insufficient, the server
+is extended rather than worked around in the app (owner instruction, 2026-10-03). This page records each gap, the decision
+and the operationIds involved.
+
+Decisions are one of:
+
+- **Existing endpoint**: the API already supports the journey; the app was pointed at it.
+- **Extended**: an existing endpoint or DTO gained a backwards-compatible field or parameter.
+- **New**: no existing endpoint fitted, so one was added.
+
+## Gaps
+
+| Reported by | Journey | Decision | operationIds | Change |
+| ----------- | ------- | -------- | ------------ | ------ |
+
+## Server issues found by the live tests
+
+### FL-330: default smart-search model missing from the model mirror
+
+- **Found by:** live-stack, 2026-10-03. Every SmartSearch job failed with HTTP 500 on a fresh server.
+- **Root cause:** the server has defaulted `machineLearning.clip.modelName` to `ViT-B-16-SigLIP-384__webli` since
+  2026-05-18. The Frameleaf model mirror (`https://models.frameleaf.cloud`) was set up later and only carried
+  `ViT-B-32__openai`, so the ML service could not download the default model.
+- **Decision:** keep the default and publish the model on the mirror. The owner approved Apache-2.0 redistribution on
+  2026-10-03. The catalogue change is in frameleaf-cloud (`infra/models/models.json`); publishing is an operator action
+  (`models-mirror` workflow).
+- **Guard:** `server/test/model-mirror/default-models.spec.ts` (`pnpm test:model-mirror` in `server/`, workflow
+  `model-mirror-defaults.yml`) checks that every default CLIP, facial-recognition and OCR model answers 200 on the mirror.
+  It runs on pull requests that touch the ML defaults or model source, and weekly.
+- **API impact:** none. No operationIds changed.
