@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AlbumUserRole, AssetFileType, AssetLockReason, JobName, Permission, UserMetadataKey } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, AssetLockReason, AssetVisibility, JobName, Permission, UserMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -365,6 +365,33 @@ describe(PartnerCopyService.name, () => {
       await db.updateTable('asset').set({ isExternal: true }).where('id', '=', source.id).execute();
 
       await expect(sut.copyAsset(source.id, bob.id, alice.id)).resolves.toBeUndefined();
+    });
+
+    it('copies a Live Photo with its motion part, paired and linked to the same stored file', async () => {
+      const { sut, ctx } = setup();
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      const { asset: motion } = await ctx.newAsset({ ownerId: alice.id, visibility: AssetVisibility.Hidden });
+      const still = await newSourceAsset(ctx, alice.id);
+      await db.updateTable('asset').set({ livePhotoVideoId: motion.id }).where('id', '=', still.id).execute();
+
+      const copyId = await sut.copyAsset(still.id, bob.id, alice.id);
+
+      const copy = await db.selectFrom('asset').selectAll().where('id', '=', copyId!).executeTakeFirstOrThrow();
+      expect(copy.livePhotoVideoId).toBeTruthy();
+      const motionCopy = await db
+        .selectFrom('asset')
+        .selectAll()
+        .where('id', '=', copy.livePhotoVideoId!)
+        .executeTakeFirstOrThrow();
+      expect(motionCopy).toMatchObject({
+        ownerId: bob.id,
+        visibility: AssetVisibility.Hidden,
+        checksum: motion.checksum,
+        originalPath: motion.originalPath,
+      });
+      // the Hidden motion part is never copied on its own
+      await expect(sut.copyAsset(motion.id, bob.id, alice.id)).resolves.toBeUndefined();
     });
   });
 

@@ -115,6 +115,7 @@ const setup = () => {
     mediaHealthService as never,
     deduplication,
     fileTrash,
+    { emit: vi.fn() } as never,
   );
   return { sut, ctx, linkToPrimary, realLink, mediaHealthService };
 };

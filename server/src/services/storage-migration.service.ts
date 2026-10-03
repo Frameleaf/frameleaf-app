@@ -15,6 +15,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -81,6 +82,7 @@ export class StorageMigrationService {
     private mediaHealthService: MediaHealthService,
     private deduplication: PhysicalDeduplicationService,
     private fileTrash: PhysicalFileTrashService,
+    private eventRepository: EventRepository,
   ) {
     this.logger.setContext(StorageMigrationService.name);
   }
@@ -165,6 +167,7 @@ export class StorageMigrationService {
       this.logger.log(
         `Universal storage migration finished: ${state.groupsLinked} groups combined, ${state.trashed} extra copies in the file trash, ${state.toReview} to review`,
       );
+      await this.eventRepository.emit('StorageMigrationDone');
     } else {
       await this.queueNext();
     }

@@ -34,6 +34,8 @@ type Item<T extends EmitEvent> = {
 type EventMap = {
   // app events
   AppBootstrap: [];
+  // FL-326: the universal storage migration reached done; existing partnerships can be copied now
+  StorageMigrationDone: [];
   AppShutdown: [];
   AppRestart: [AppRestartEvent];
 
