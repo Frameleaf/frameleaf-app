@@ -997,10 +997,69 @@ describe('photography workflow integration boundaries', () => {
         presentation: { ...config.presentation, blocks: [{ ...blocks[0], text: 'Draft caption' }] },
       },
     });
-    expect((await s.service.gallery(s.shootId, client.session)).presentation.blocks).toEqual(blocks);
+    expect((await s.service.gallery(s.shootId, client.session)).presentation.blocks).toEqual(
+      blocks.map((block) => ({ ...block, selection: 'explicit' })),
+    );
     s.asset.isOffline = true;
     const guest = await s.service.gallery(s.shootId, client.session);
     expect(guest.photos).toEqual([]);
-    expect(guest.presentation.blocks![0]).toMatchObject({ captureIds: [], text: 'Published caption' });
+    expect(guest.presentation.blocks![0]).toMatchObject({
+      selection: 'explicit',
+      captureIds: [],
+      text: 'Published caption',
+    });
+  });
+  it('keys live pixels to the committed generation and binds ordinary approval to the served proof', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    expect((await s.service.gallery(s.shootId, client.session)).publishedGenerationId).toBeNull();
+    await s.service.config(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      config: { ...s.row().value.config, mode: 'edited-delivery' },
+    });
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: s.revisionId,
+      requestClientApproval: true,
+    });
+    await s.published();
+    const liveGeneration = s.row().value.publication!.id;
+    await s.service.order(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      roundId: null,
+      recipientId: client.recipientId,
+      pricing: 'package',
+      captureIds: [s.captureId],
+    });
+    const first = await s.service.gallery(s.shootId, client.session);
+    expect(first.publishedGenerationId).toBe(liveGeneration);
+    expect(first.publication!.id).not.toBe(liveGeneration);
+    expect(first.photos[0].approvalRevisionId).toBe(s.row().value.published!.photos[0].revisionId);
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    const latestLive = s.row().value.published!.generationId!;
+    const source = (await s.revisions.get(s.revisionId))!;
+    const next = { ...source, id: randomUUID() };
+    s.revisions.get.mockImplementation((id) =>
+      Promise.resolve(id === next.id ? next : id === source.id ? source : undefined),
+    );
+    await s.service.approval(s.auth, s.shootId, {
+      expectedRevision: s.row().revision,
+      captureId: s.captureId,
+      revisionId: next.id,
+      requestClientApproval: true,
+    });
+    await s.service.publish(s.auth, s.shootId, { expectedRevision: s.row().revision, scope: 'all-eligible' });
+    const pending = await s.service.gallery(s.shootId, client.session);
+    expect(pending.publishedGenerationId).toBe(latestLive);
+    expect(pending.publication!.id).not.toBe(latestLive);
+    expect(pending.photos[0].approvalRevisionId).toBeNull();
+    expect(s.row().value.published!.photos[0].revisionId).toBe(source.id);
+    expect(pending.photos[0].outputs.every((output) => output.approvalPreviewUrl === null)).toBe(true);
+    expect(await s.service.render({ id: s.shootId })).toBe(JobStatus.Success);
+    const committed = await s.service.gallery(s.shootId, client.session);
+    expect(committed.publishedGenerationId).toBe(pending.publication!.id);
+    expect(committed.photos[0].approvalRevisionId).toBe(next.id);
+    expect(committed.photos[0].outputs[0].approvalPreviewUrl).toBeTruthy();
   });
 });

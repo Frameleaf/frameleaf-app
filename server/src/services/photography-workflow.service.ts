@@ -202,6 +202,7 @@ export type PhotographyWorkflow = {
   orders: Order[];
   publication: Publication | null;
   published: {
+    generationId?: string;
     config: PhotographyConfig;
     chapters: PhotographyChapter[];
     photos: PublishedPhoto[];
@@ -591,6 +592,7 @@ export class PhotographyWorkflowService {
       if (config.presentation.blocks)
         config.presentation.blocks = config.presentation.blocks.map((block) => ({
           ...block,
+          selection: 'automatic',
           chapterId: null,
           captureIds: [],
         }));
@@ -995,7 +997,13 @@ export class PhotographyWorkflowService {
           canDownload: blockedReason === null,
           blockedReason,
           approvalRevisionId:
-            capture.approvalRequested && photo.revisionId === capture.proofRevisionId ? capture.proofRevisionId : null,
+            capture.approvalRequested &&
+            photo.revisionId === capture.proofRevisionId &&
+            outputs.some(
+              (output) => output.revisionId === photo.revisionId && output.clientApprovalRequired && !output.approved,
+            )
+              ? photo.revisionId
+              : null,
         };
       });
     const visible = new Set(photos.map((p) => p.id));
@@ -1017,6 +1025,7 @@ export class PhotographyWorkflowService {
     if (presentation.blocks)
       presentation.blocks = presentation.blocks.map((block) => ({
         ...block,
+        selection: block.selection ?? (block.captureIds.length > 0 ? 'explicit' : 'automatic'),
         captureIds: block.captureIds.filter((id) => visible.has(id)),
         chapterId:
           block.chapterId && published?.chapters.some((chapter) => chapter.id === block.chapterId)
@@ -1026,6 +1035,7 @@ export class PhotographyWorkflowService {
     return {
       revision: row.revision,
       checkoutAvailable: this.checkoutAvailable(row.ownerId),
+      publishedGenerationId: published?.generationId ?? null,
       title: published?.config.title ?? row.value.config.title,
       mode: published?.config.mode ?? row.value.config.mode,
       presentation,
@@ -1730,6 +1740,7 @@ export class PhotographyWorkflowService {
             output.approvalPreviewPath = prepared.path;
         }
         value.published = {
+          generationId: p.id,
           config: structuredClone(p.config),
           chapters: structuredClone(p.chapters),
           photos: structuredClone(p.photos),
