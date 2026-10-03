@@ -81,7 +81,7 @@ const identityRoleSql = sql`CASE r.role WHEN 'original' THEN 'original' WHEN 'mo
   WHEN 'raw' THEN 'raw-alternate' ELSE 'edit-render' END`;
 
 /** A resource the sync will still import: the same rule as the worker's own `hasPending`. */
-const pendingResourceSql = sql`r.status IN ('pending', 'retry', 'staging', 'validated', 'promoted', 'committed')
+const pendingResourceSql = sql`r."auditRequestId" IS NULL AND r.status IN ('pending', 'retry', 'staging', 'validated', 'promoted', 'committed')
   AND (r.status = 'committed' OR coalesce((r.source->>'current')::boolean, true))`;
 
 /**
@@ -98,7 +98,7 @@ const syncIdentities = (where: ReturnType<typeof sql>) => sql`
       THEN coalesce(r.source->'assetFields'->'adjustmentTimestamp'->>'value', '') || ':' || r.fingerprint ELSE '' END,
     r.sha256, r.source->'resource'->>'fileChecksum', 'icloud-sync:' || r."connectionId", 'exact'
   FROM immich_fork.icloud_resource r
-  WHERE r."assetId" IS NOT NULL AND r.sha256 IS NOT NULL AND r.status IN ('committed', 'finalized', 'reused')
+  WHERE r."auditRequestId" IS NULL AND r."assetId" IS NOT NULL AND r.sha256 IS NOT NULL AND r.status IN ('committed', 'finalized', 'reused')
     AND r.role IN ('original', 'motion', 'raw', 'edited-image', 'edited-video') AND ${where}
   ON CONFLICT ("ownerId", "cplAssetRecordName", role, "editVersion", "assetId") DO UPDATE
     SET sha256 = excluded.sha256, "libraryKey" = excluded."libraryKey", library = excluded.library,
@@ -125,11 +125,11 @@ export const releaseSyncClaim = async (db: Kysely<DB>, resourceId: string): Prom
   await sql`
     DELETE FROM immich_fork.icloud_claim c
     USING immich_fork.icloud_resource r
-    WHERE r.id = ${resourceId}::uuid AND c."ownerId" = r."ownerId" AND c."cplAssetRecordName" = upper(r."sourceAssetId")
+    WHERE r.id = ${resourceId}::uuid AND r."auditRequestId" IS NULL AND c."ownerId" = r."ownerId" AND c."cplAssetRecordName" = upper(r."sourceAssetId")
       AND c.holder = 'icloud-sync:' || r."connectionId"
       AND NOT EXISTS (
         SELECT 1 FROM immich_fork.icloud_resource o
-        WHERE o."connectionId" = r."connectionId" AND o."libraryKey" = r."libraryKey"
+        WHERE o."auditRequestId" IS NULL AND o."connectionId" = r."connectionId" AND o."libraryKey" = r."libraryKey"
           AND o."sourceAssetId" = r."sourceAssetId" AND o.id <> r.id
           AND o.status IN ('pending', 'retry', 'staging', 'validated', 'promoted', 'committed')
           AND coalesce((o.source->>'current')::boolean, true)
@@ -195,7 +195,7 @@ export class ICloudIdentityRepository {
     const { rows } = await sql<ICloudInventoryItem>`
       SELECT a."connectionId", upper(a."recordId") AS "cplAssetRecordName", a."masterId" AS "cplMasterRecordName",
         a.fields AS "assetFields", m.fields AS "masterFields",
-        EXISTS (SELECT 1 FROM immich_fork.icloud_resource r WHERE r."connectionId" = a."connectionId"
+        EXISTS (SELECT 1 FROM immich_fork.icloud_resource r WHERE r."auditRequestId" IS NULL AND r."connectionId" = a."connectionId"
           AND r."libraryKey" = a."libraryKey" AND r."sourceAssetId" = a."recordId") AS "inScope",
         coalesce((SELECT array_agg(DISTINCT ${identityRoleSql}) FROM immich_fork.icloud_resource r
           WHERE r."connectionId" = a."connectionId" AND r."libraryKey" = a."libraryKey"

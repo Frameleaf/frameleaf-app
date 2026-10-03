@@ -30,6 +30,100 @@ const excluded = new Set([
   "fork-integration.yml",
   "nsfw-unraid-docker.yml",
 ]);
+
+test("Studio graph recovery preserves the failed gate and generates only genuine fixture answers", () => {
+  const steps = workflow("frameleaf-studio-engine.yml").jobs.engine.steps;
+  const normal = steps.find((step) => step.id === "adapter_contracts");
+  const recovery = steps.find((step) => step.id === "graph_fixture_recovery");
+  const upload = steps.find(
+    (step) => step.with?.name === "frameleaf-studio-graph-fixture-recovery",
+  );
+  assert.ok(normal.run.includes("COMMAND_MATRIX_REPORT="));
+  assert.ok(normal.run.includes("node studio/tools/adapter.mjs test"));
+  assert.equal(normal["continue-on-error"], undefined);
+  assert.equal(normal.env?.GRAPH_CONFORMANCE_WRITE, undefined);
+  assert.equal(
+    recovery.if,
+    "${{ failure() && steps.adapter_contracts.outcome == 'failure' }}",
+  );
+  assert.equal(recovery.env.GRAPH_CONFORMANCE_WRITE, "1");
+  assert.equal(recovery["timeout-minutes"], 8);
+  assert.equal(recovery["continue-on-error"], undefined);
+  assert.ok(recovery.run.includes("test -f studio/engine/frameleaf-source.json"));
+  assert.ok(recovery.run.includes("cd studio/engine"));
+  assert.ok(recovery.run.includes("./node_modules/.bin/vp test run"));
+  assert.ok(recovery.run.includes("graph-conformance.test.ts"));
+  assert.ok(
+    recovery.run.includes(
+      "--testNamePattern 'replays every fixture through the engine without drift'",
+    ),
+  );
+  assert.ok(!recovery.run.includes("node studio/tools/adapter.mjs test"));
+  assert.ok(recovery.run.includes("node studio/tools/engine.mjs verify"));
+  assert.ok(
+    recovery.run.includes(
+      "git diff --binary -- studio/graph-conformance-v1.json",
+    ),
+  );
+  assert.ok(recovery.run.includes("fixtureInputSha256="));
+  assert.ok(recovery.run.includes("sha256sum"));
+  assert.ok(!/git (?:commit|push)|continue-on-error|\|\| true/.test(recovery.run));
+  assert.equal(
+    upload.if,
+    "${{ always() && steps.graph_fixture_recovery.outcome == 'success' }}",
+  );
+  assert.equal(upload.with["if-no-files-found"], "error");
+  assert.equal(
+    upload.uses,
+    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+  );
+  assert.ok(
+    steps.some((step) =>
+      step.run?.includes("node studio/tools/adapter.mjs build"),
+    ),
+  );
+});
+test("Studio source recovery retains evidence without bypassing normal preparation", () => {
+  const steps = workflow("frameleaf-studio-engine.yml").jobs.engine.steps;
+  const prepare = steps.find((step) => step.id === "prepare_source");
+  const probe = steps.find((step) => step.id === "source_recovery_receipt");
+  const upload = steps.find(
+    (step) => step.with?.name === "frameleaf-studio-source-recovery",
+  );
+  assert.equal(prepare.run, "node studio/tools/engine.mjs prepare");
+  assert.equal(prepare.env.STUDIO_SOURCE_RECOVERY, "1");
+  assert.equal(prepare["continue-on-error"], undefined);
+  assert.ok(probe.if.includes("always()"));
+  assert.ok(probe.run.includes('$RUNNER_TEMP/frameleaf-studio-source-recovery.json'));
+  assert.equal(
+    upload.if,
+    "${{ always() && steps.source_recovery_receipt.outputs.produced == 'true' }}",
+  );
+  assert.equal(
+    upload.with.path,
+    "${{ runner.temp }}/frameleaf-studio-source-recovery.json",
+  );
+  assert.equal(upload.with["if-no-files-found"], "error");
+  assert.equal(
+    upload.uses,
+    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+  );
+  for (const step of steps.filter((step) =>
+    /npm --prefix studio\/engine (?:ci|run build)/.test(step.run ?? ""),
+  )) {
+    assert.equal(step.if, undefined);
+    assert.equal(step["continue-on-error"], undefined);
+  }
+  const source = readFileSync(path.join(root, "studio/tools/engine.mjs"), "utf8");
+  assert.ok(
+    source.indexOf("await admitAdaptedSource(source, configuration.sourceSha256") <
+      source.indexOf("await rename(generated, engine)"),
+  );
+  assert.ok(
+    source.includes("finally { await rm(scratch, { recursive: true, force: true }); }"),
+  );
+  assert.ok(source.includes("'Adapted source digest mismatch'"));
+});
 const owned = readdirSync(path.join(root, ".github/workflows")).filter(
   (name) =>
     /\.ya?ml$/.test(name) &&

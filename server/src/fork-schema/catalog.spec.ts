@@ -89,7 +89,7 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 155 public tables (among them the workflow run steps, FL-179, the Frameleaf Cloud model choices,
+    // 157 public tables (among them the workflow run steps, FL-179, the Frameleaf Cloud model choices,
     // FL-186, the cloud backup index, manifests and manifest entries, FL-160, and the push device
     // registry, FL-228) and the fork tables,
     // among them the supporter keys (FL-156), Frameleaf account links and Sign in with Frameleaf
@@ -97,8 +97,16 @@ describe('catalog manifests', () => {
     // person (FL-83 AL-30b), generated Studio resources (FL-111) and Studio project imports (FL-103,
     // FL-105), Studio HDR intermediates (FL-97), persisted safety proof facts (FL-226), and the used
     // exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230), develop artifacts
-    // (FL-233), and iCloud source identities and claims (FL-296), in the integrated catalog.
-    expect(getCatalogTableLocks(fork)).toHaveLength(222);
+    // (FL-233), iCloud source identities, claims, audit and reuse receipts (FL-296),
+    // and photography workflows and studio sites (FL-283), in the integrated catalog.
+    expect(getCatalogTableLocks(fork)).toHaveLength(227);
+    expect(getCatalogTableLocks(fork)).toEqual(
+      expect.arrayContaining([
+        'immich_fork.icloud_weekly_grant',
+        'immich_fork.icloud_weekly_cohort',
+        'immich_fork.icloud_weekly_member',
+      ]),
+    );
     expect(getCatalogTableLocks(fork)).toEqual(
       expect.arrayContaining([
         'public.pet_audit',
@@ -143,6 +151,8 @@ describe('catalog manifests', () => {
         'immich_fork.asset_develop_artifact',
         'immich_fork.icloud_source_identity',
         'immich_fork.icloud_claim',
+        'immich_fork.icloud_identity_audit',
+        'immich_fork.icloud_identity_reuse',
         'immich_fork.album_cover_follows_newest',
         'immich_fork.asset_user_share',
         'immich_fork.buddy_backup_reference',
@@ -151,7 +161,7 @@ describe('catalog manifests', () => {
       ]),
     );
     // 66 v3.1.0 public + every fork table
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(131);
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(136);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {

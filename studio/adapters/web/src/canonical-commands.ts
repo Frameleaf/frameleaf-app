@@ -54,7 +54,7 @@ import {
   getLinkedItemIds,
   getUniqueLinkedItemAnchorIds,
 } from '@/features/timeline/utils/linked-items'
-import { expandIdsWithLinkedItems } from '@/features/timeline/stores/actions/linked-edit'
+import { buildLinkedLeftShiftUpdates, expandIdsWithLinkedItems } from '@/features/timeline/stores/actions/linked-edit'
 import { useEditorStore } from '@/shared/state/editor'
 import {
   buildDroppedMediaTimelineItems,
@@ -2148,8 +2148,24 @@ const handlers: Record<string, Handler> = {
         .sort((a, b) => a.from - b.from)
     if (payload.at === undefined) {
       // Every gap, from the start of the timeline, with linked clips following their clip.
-      assertUnlocked(linkedSet(onTrack().map((item) => item.id)), 'track.closeGap')
+      const affected = linkedSet(onTrack().map((item) => item.id))
+      assertUnlocked(affected, 'track.closeGap')
+      // The engine clamps negative starts during movement. Validate its intended linked shifts
+      // first, so an offset companion cannot be silently shortened or put out of sync.
+      const shifts = new Map<string, number>()
+      let end = 0
+      for (const item of onTrack()) {
+        const from = Math.min(item.from, end)
+        if (item.from > from) shifts.set(item.id, item.from - from)
+        end = from + item.durationInFrames
+      }
+      const moves = buildLinkedLeftShiftUpdates(items(), shifts, true)
+      if (moves.some((move) => move.from < 0)) failed('track.closeGap: clips would start before the timeline')
       withLinkedSelection(true, () => closeAllGapsOnTrack(track.id))
+      // Linked members can have intentional offsets, and their tracks can contain unrelated clips.
+      // Closing the picture gaps must not send that sound/caption before zero or into another item.
+      const changed = affected.map((id) => requireItem(id))
+      assertNoOverlap(changed.map((item) => item.trackId), 'track.closeGap')
       let cursor = 0
       for (const item of onTrack()) {
         if (item.from !== cursor) failed('track.closeGap: a gap could not be closed')
@@ -2170,7 +2186,39 @@ const handlers: Record<string, Handler> = {
     }
     if (gapEnd === undefined || gapEnd <= gapStart) invalid('track.closeGap: there is no gap on the track at that time')
     const later = onTrack().filter((item) => item.from >= gapEnd!)
+    const before = structuredClone(items())
+    const beforeById = new Map(before.map((item) => [item.id, item]))
+    const linked = linkedSet(later.map((item) => item.id))
+    assertUnlocked(linked, 'track.closeGap')
+    const moves = linked.map((id) => ({ id, from: beforeById.get(id)!.from - (gapEnd! - gapStart) }))
+    if (moves.some((move) => move.from < 0)) failed('track.closeGap: clips would start before the timeline')
+    const affectedTracks = new Set([
+      ...linked.map((id) => beforeById.get(id)!.trackId),
+      ...before.filter((item) => isTrackSyncLockEnabled(trackOf(item))).map((item) => item.trackId),
+    ])
     closeGapAtPosition(track.id, frame)
+    // Sync-lock propagation can split or remove a linked companion across the removed interval.
+    // Refuse that destructive case rather than reconstructing its source window or bookkeeping.
+    for (const id of linked) {
+      const original = beforeById.get(id)!
+      const current = useItemsStore.getState().itemById[id]
+      if (!current || canonicalJson(current) !== canonicalJson({ ...original, from: current.from })) {
+        failed('track.closeGap: sync lock would change a linked source window')
+      }
+    }
+    // Use captured absolute positions: sync-locked companions may already have moved, whereas
+    // linked sound/captions on tracks without sync lock still need the same shift as their clip.
+    const corrections = moves.filter((move) => requireItem(move.id).from !== move.from)
+    if (corrections.length > 0) {
+      useItemsStore.getState()._moveItems(corrections)
+      applyTransitionRepairs(corrections.map((move) => move.id))
+    }
+    for (const move of moves) {
+      if (canonicalJson(requireItem(move.id)) !== canonicalJson({ ...beforeById.get(move.id)!, from: move.from })) {
+        failed('track.closeGap: a linked item could not close the gap without changing its source data')
+      }
+    }
+    assertNoOverlap(affectedTracks, 'track.closeGap')
     for (const item of later) {
       if (requireItem(item.id).from !== item.from - (gapEnd! - gapStart)) failed('track.closeGap: the gap could not be closed')
     }

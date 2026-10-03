@@ -19,8 +19,17 @@ import {
   icloudRunProgress,
   icloudStatus,
   icloudSummary,
+  icloudWeeklyConsentIsCurrent,
   toggleLibrary,
 } from '$lib/frameleaf/icloud-sync';
+
+it('retires a weekly consent choice on account, connection or presentation replacement', () => {
+  const origin = { ownerId: 'owner', connectionId: 'connection', generation: 1 };
+  expect(icloudWeeklyConsentIsCurrent(origin, { ...origin })).toBe(true);
+  expect(icloudWeeklyConsentIsCurrent(origin, { ...origin, ownerId: 'other' })).toBe(false);
+  expect(icloudWeeklyConsentIsCurrent(origin, { ...origin, connectionId: 'other' })).toBe(false);
+  expect(icloudWeeklyConsentIsCurrent(origin, { ...origin, generation: 2 })).toBe(false);
+});
 
 const run = (overrides: Partial<ICloudSyncRunDto> = {}): ICloudSyncRunDto => ({
   id: '0195e2a0-0000-7000-8000-000000000001',
