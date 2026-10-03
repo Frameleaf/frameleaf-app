@@ -88,7 +88,9 @@ describe(ICloudStagingService.name, () => {
     expect(await readFile(path, 'utf8')).toBe('data');
     expect(transport.download).toHaveBeenCalledTimes(2);
     allowed.mockResolvedValue(false);
-    await expect(sut.download(connection, { ...audit, stagingPath: path }, allowed)).rejects.toThrow('audit_authority_changed');
+    await expect(sut.download(connection, { ...audit, stagingPath: path }, allowed)).rejects.toThrow(
+      'audit_authority_changed',
+    );
     expect(transport.download).toHaveBeenCalledTimes(2);
     expect(await readFile(original, 'utf8')).toBe('data');
   });

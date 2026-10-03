@@ -195,9 +195,7 @@ export class ICloudSyncRepository {
       if (update.config) {
         await sql`UPDATE immich_fork.icloud_resource SET source=source || '{"current":false}'::jsonb,
           "leaseToken"=NULL,"leaseExpiresAt"=NULL WHERE "connectionId"=${id}::uuid AND "ownerId"=${ownerId}::uuid AND status<>'committed'
-          AND ("auditRequestId" IS NULL OR status<>'finalized')`.execute(
-          db,
-        );
+          AND ("auditRequestId" IS NULL OR status<>'finalized')`.execute(db);
         await sql`DELETE FROM immich_fork.icloud_checkpoint WHERE "connectionId"=${id}::uuid`.execute(db);
       }
     });
@@ -412,7 +410,9 @@ export class ICloudSyncRepository {
       await sql`DELETE FROM immich_fork.icloud_checkpoint WHERE "connectionId" = ${connectionId}::uuid`.execute(db);
       await this.retryFailures(connectionId, db);
       await sql`UPDATE immich_fork.icloud_resource SET status = 'pending', "attempts" = 0, "nextAttemptAt" = NULL
-        WHERE "connectionId" = ${connectionId}::uuid AND "auditRequestId" IS NULL AND status IN ('retry','failed','finalized','reused')`.execute(db);
+        WHERE "connectionId" = ${connectionId}::uuid AND "auditRequestId" IS NULL AND status IN ('retry','failed','finalized','reused')`.execute(
+        db,
+      );
     }, transaction);
   }
 
@@ -611,7 +611,9 @@ export class ICloudSyncRepository {
       .where('ownerId', '=', ownerId)
       .where('kind', '=', MediaOperationKind.ICloudSync)
       .where(sql<string>`snapshot->>'connectionId'`, '=', connectionId);
-    if (!options.includeAudits) { query = query.where(sql<boolean>`snapshot->>'task' IS DISTINCT FROM 'identity-audit'`); }
+    if (!options.includeAudits) {
+      query = query.where(sql<boolean>`snapshot->>'task' IS DISTINCT FROM 'identity-audit'`);
+    }
     if (options.activeOnly) {
       query = query.where('status', 'in', [...ACTIVE_MEDIA_OPERATION_STATUSES]);
     }
@@ -1013,7 +1015,9 @@ export class ICloudSyncRepository {
         db,
       );
       await sql`UPDATE immich_fork.icloud_resource SET source=source #- '{_sync,relations,signature}'
-        WHERE "connectionId"=${connectionId}::uuid AND "auditRequestId" IS NULL AND source#>>'{_sync,relations,status}'='needs-review'`.execute(db);
+        WHERE "connectionId"=${connectionId}::uuid AND "auditRequestId" IS NULL AND source#>>'{_sync,relations,status}'='needs-review'`.execute(
+        db,
+      );
       await sql`UPDATE immich_fork.icloud_resource SET status=CASE WHEN status='committed' THEN 'committed' ELSE 'pending' END,attempts=0,"nextAttemptAt"=NULL
       WHERE "connectionId"=${connectionId}::uuid AND "auditRequestId" IS NULL AND status IN ('failed','retry','needs-review','unsupported','committed') AND "leaseToken" IS NULL`.execute(
         db,

@@ -1693,8 +1693,8 @@ export class MediaOperationRepository {
    * transaction once the job exists. Either everything lands or nothing does.
    */
   async createWithin<T>(
-    bind: (trx: Kysely<DB>) => Promise<{ operation: MediaOperationCreate; value: T }>,
-    after: (trx: Kysely<DB>, created: MediaOperation, value: T) => Promise<void>,
+    bind: (trx: Transaction<DB>) => Promise<{ operation: MediaOperationCreate; value: T }>,
+    after: (trx: Transaction<DB>, created: MediaOperation, value: T) => Promise<void>,
   ): Promise<{ operation: MediaOperation; value: T }> {
     const done = await this.db.transaction().execute(async (trx) => {
       await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);

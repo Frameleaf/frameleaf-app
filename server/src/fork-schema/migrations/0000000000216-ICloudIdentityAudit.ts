@@ -30,7 +30,7 @@ export async function up(db: Kysely<any>): Promise<void> {
 
 export async function down(db: Kysely<any>): Promise<void> {
   const { rows } = await sql`SELECT 1 FROM immich_fork.icloud_identity_audit LIMIT 1`.execute(db);
-  if (rows.length) { throw new Error('icloud_audit_receipts_require_retention'); }
+  if (rows.length > 0) { throw new Error('icloud_audit_receipts_require_retention'); }
   await sql`DROP INDEX immich_fork.icloud_resource_audit_request_key`.execute(db);
   await sql`DROP INDEX immich_fork.icloud_resource_ordinary_identity_key`.execute(db);
   await sql`ALTER TABLE immich_fork.icloud_resource DROP COLUMN "auditRequestId",

@@ -268,7 +268,9 @@ export class ICloudIdentityService {
               return { ...empty, state: 'review' as const };
             }
             const row = rows.at(-1);
-            if (row?.lastAuditResult === 'mismatch') { return { ...empty, state: 'review' as const }; }
+            if (row?.lastAuditResult === 'mismatch') {
+              return { ...empty, state: 'review' as const };
+            }
             // a hint is reported (so its rate can be measured) but never acted on
             let hinted = inventoryHint;
             if (row && parsed) {

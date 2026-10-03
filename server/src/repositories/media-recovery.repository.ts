@@ -24,9 +24,9 @@ import {
 } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { AuditAuthority, guardAudit, publishAudit } from 'src/repositories/icloud-audit.repository.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
-import { AuditAuthority, guardAudit, publishAudit } from 'src/repositories/icloud-audit.repository.js';
 
 export type VerifiedMedia = Extract<MediaIntegrityResult, { status: 'healthy' }>;
 export type RecoveryOutcome =
@@ -111,7 +111,9 @@ export class MediaRecoveryRepository {
   ) {}
 
   async getResource(input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
-    if (input.audit && !(await guardAudit(this.db, input.audit, input.ownerId))) { return; }
+    if (input.audit && !(await guardAudit(this.db, input.audit, input.ownerId))) {
+      return;
+    }
     const result = await sql<RecoveryResource>`
       SELECT r.*, r."expectedSize"::float8 AS "expectedSize" FROM immich_fork.icloud_resource r
       JOIN immich_fork.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
@@ -238,8 +240,10 @@ export class MediaRecoveryRepository {
         return;
       }
       if (input.audit) {
-        const audit = await guardAudit(trx,input.audit,input.ownerId,true);
-        if (!audit || audit.request.expectedSha256.equals(input.verified.sha256)) { return; }
+        const audit = await guardAudit(trx, input.audit, input.ownerId, true);
+        if (!audit || audit.request.expectedSha256.equals(input.verified.sha256)) {
+          return;
+        }
       }
       const matchedExternalAssetId = input.candidate ? undefined : input.matchedExternalAssetId;
       const target: RecoveryTarget = resource.expectedTarget ?? {
@@ -395,8 +399,10 @@ export class MediaRecoveryRepository {
             : undefined;
           // The worker's preliminary sourceHidden is not publication authority. Tags,
           // suppression and elevation may have changed before this transaction began.
-          const audit = input.audit ? await guardAudit(trx,input.audit,input.ownerId,true) : undefined;
-          if (input.audit && !audit) { throw new Error('audit_authority_changed'); }
+          const audit = input.audit ? await guardAudit(trx, input.audit, input.ownerId, true) : undefined;
+          if (input.audit && !audit) {
+            throw new Error('audit_authority_changed');
+          }
           await trx
             .insertInto('asset')
             .values({
@@ -523,14 +529,30 @@ export class MediaRecoveryRepository {
           outcome: target.outcome,
           identity: final.identity,
           sizeInBytes: final.sizeInBytes,
-          ...(input.audit && { auditStaging: { resourceId:input.resourceId,requestId:input.audit.auditRequestId,ownerId:input.ownerId,
-            stagingPath:resource.stagingPath,sha256:final.sha256.toString('hex'),sizeInBytes:final.sizeInBytes } }),
+          ...(input.audit && {
+            auditStaging: {
+              resourceId: input.resourceId,
+              requestId: input.audit.auditRequestId,
+              ownerId: input.ownerId,
+              stagingPath: resource.stagingPath,
+              sha256: final.sha256.toString('hex'),
+              sizeInBytes: final.sizeInBytes,
+            },
+          }),
           ...(target.matchedExternalAssetId && { matchedExternalAssetId: target.matchedExternalAssetId }),
         }}::jsonb,
         "pendingJobs" = ${pendingJobs}::jsonb, "lastError" = NULL, "updatedAt" = now()
         WHERE id = ${input.resourceId}::uuid`.execute(trx);
-      if (input.audit) { await publishAudit(trx, input.audit, input.ownerId, 'mismatch',
-        {id:input.resourceId,leaseToken:input.leaseToken}, assetId); }
+      if (input.audit) {
+        await publishAudit(
+          trx,
+          input.audit,
+          input.ownerId,
+          'mismatch',
+          { id: input.resourceId, leaseToken: input.leaseToken },
+          assetId,
+        );
+      }
       return { outcome: target.outcome, assetId };
     });
   }
@@ -619,7 +641,9 @@ export class MediaRecoveryRepository {
   }
 
   private async lockResource(trx: Kysely<DB>, input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
-    if (input.audit && !(await guardAudit(trx, input.audit, input.ownerId, true))) { return; }
+    if (input.audit && !(await guardAudit(trx, input.audit, input.ownerId, true))) {
+      return;
+    }
     const result = await sql<RecoveryResource>`SELECT r.*, r."expectedSize"::float8 AS "expectedSize"
       FROM immich_fork.icloud_resource r JOIN immich_fork.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
       WHERE r.id = ${input.resourceId}::uuid AND r."ownerId" = ${input.ownerId}::uuid
@@ -683,8 +707,10 @@ export class MediaRecoveryRepository {
       return;
     }
     if (input.audit) {
-      const audit = await guardAudit(trx,input.audit,input.ownerId,true);
-      if (!audit || (audit.private && !candidate.hidden)) { return; }
+      const audit = await guardAudit(trx, input.audit, input.ownerId, true);
+      if (!audit || (audit.private && !candidate.hidden)) {
+        return;
+      }
     }
     return candidate;
   }

@@ -20,25 +20,29 @@ import {
 } from 'src/dtos/icloud-identity.dto.js';
 import { Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
-import { ICloudIdentityService } from 'src/services/icloud-identity.service.js';
 import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
+import { ICloudIdentityService } from 'src/services/icloud-identity.service.js';
 
 /** FL-296 (NAPI-014): iCloud source identity, shared by iCloud Photos Sync and the native app. */
 @ApiTags('ICloud Sync')
 @Controller('icloud-sync')
 export class ICloudIdentityController {
-  constructor(private service: ICloudIdentityService, private audits: ICloudAuditService) {}
+  constructor(
+    private service: ICloudIdentityService,
+    private audits: ICloudAuditService,
+  ) {}
 
   @Post('identities/verify')
   @HttpCode(HttpStatus.ACCEPTED)
   @Authenticated({ permission: Permission.AssetRead })
   @Endpoint({
     summary: 'Download and verify named iCloud originals',
-    description: 'Owner sessions only. Queues fresh source-byte SHA-256 verification of current in-scope identities. Queued is not verified; results appear in identity lookup. Mismatches preserve the original and import a separate managed copy for review. Request keys replay the original complete batch outcomes.',
+    description:
+      'Owner sessions only. Queues fresh source-byte SHA-256 verification of current in-scope identities. Queued is not verified; results appear in identity lookup. Mismatches preserve the original and import a separate managed copy for review. Request keys replay the original complete batch outcomes.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   verifyICloudIdentities(@Auth() auth: AuthDto, @Body() dto: ICloudVerifyDto): Promise<ICloudVerifyResponseDto> {
-    return this.audits.submit(auth,dto);
+    return this.audits.submit(auth, dto);
   }
 
   @Post('coverage')
