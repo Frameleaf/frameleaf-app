@@ -380,6 +380,7 @@ describe(PartnerCopyService.name, () => {
       const { user: alice } = await ctx.newUser();
       const { user: bob } = await ctx.newUser();
       const { asset: motion } = await ctx.newAsset({ ownerId: alice.id, visibility: AssetVisibility.Hidden });
+      await ctx.newExif({ assetId: motion.id, fileSizeInByte: 999 });
       const still = await newSourceAsset(ctx, alice.id);
       await db.updateTable('asset').set({ livePhotoVideoId: motion.id }).where('id', '=', still.id).execute();
 
