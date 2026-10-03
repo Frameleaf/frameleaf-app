@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import sharp from 'sharp';
-import { renderDarktable, encodeNativeDevelopOutput } from 'src/utils/darktable-renderer.js';
+import { encodeNativeDevelopOutput, renderDarktable } from 'src/utils/darktable-renderer.js';
 
 it('develops an actual RAW through pinned darktable, changes EV, and preserves the original', async () => {
   const original = resolve('../e2e/test-assets/formats/raw/Canon/EOS_70D.CR2');

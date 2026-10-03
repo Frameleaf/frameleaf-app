@@ -68,7 +68,7 @@
   let stop: (() => void) | undefined;
   let revoke: (() => void) | undefined;
   const selected = $derived(recipe.masks?.find((mask) => mask.id === selectedMask));
-  const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+  const clone = <T,>(value: T): T => structuredClone($state.snapshot(value)) as T;
   const change = (next: NativeRecipe) => {
     undo = [...undo, clone(recipe)].slice(-200);
     redo = [];
@@ -100,7 +100,9 @@
         }
         if (state.published || state.terminal) {
           stop?.();
-          if (state.published) onRendered?.(asset.id);
+          if (state.published) {
+            onRendered?.(asset.id);
+          }
         }
       },
       {
@@ -113,7 +115,9 @@
   onMount(async () => {
     try {
       const [develop, savedPresets] = await Promise.all([getAssetDevelop({ id: asset.id }), getDevelopPresets()]);
-      if (!alive) return;
+      if (!alive) {
+        return;
+      }
       revisions = develop.revisions;
       presets = savedPresets;
       const current = develop.revisions.find((item) => item.isCurrent && isNativeRecipe(item.recipe));
@@ -123,9 +127,11 @@
       }
       loaded = true;
       const pending = revisions.find((item) => item.status === 'queued' || item.status === 'rendering');
-      if (pending) watch(pending.id);
-    } catch (failure) {
-      failed(failure);
+      if (pending) {
+        watch(pending.id);
+      }
+    } catch (error_) {
+      failed(error_);
     }
   });
   onDestroy(() => {
@@ -148,29 +154,37 @@
     const canvas = sensorCanvas;
     const ready = loaded;
     const previewSize = zoom > 1 ? 2048 : 1280;
-    if (!ready) return;
+    if (!ready) {
+      return;
+    }
     const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      busy = true;
-      error = '';
-      try {
-        const result = await requestDevelopPreview(
-          asset.id,
-          { ...candidate, sensorCanvas: canvas },
-          previewSize,
-          controller.signal,
-        );
-        if (result && !controller.signal.aborted) {
-          revoke?.();
-          revoke = result.revoke;
-          preview = result.url;
-          previewCanvas = canvas;
+    const timer = setTimeout(() => {
+      void (async () => {
+        busy = true;
+        error = '';
+        try {
+          const result = await requestDevelopPreview(
+            asset.id,
+            { ...candidate, sensorCanvas: canvas },
+            previewSize,
+            controller.signal,
+          );
+          if (result && !controller.signal.aborted) {
+            revoke?.();
+            revoke = result.revoke;
+            preview = result.url;
+            previewCanvas = canvas;
+          }
+        } catch (error_) {
+          if (!controller.signal.aborted) {
+            failed(error_);
+          }
+        } finally {
+          if (!controller.signal.aborted) {
+            busy = false;
+          }
         }
-      } catch (failure) {
-        if (!controller.signal.aborted) failed(failure);
-      } finally {
-        if (!controller.signal.aborted) busy = false;
-      }
+      })();
     }, PREVIEW_DEBOUNCE_MS);
     return () => {
       clearTimeout(timer);
@@ -178,10 +192,13 @@
     };
   });
   const save = async () => {
-    if (!loaded || busy || proposalBusy) return;
+    if (!loaded || busy || proposalBusy) {
+      return;
+    }
     error = '';
     try {
-      const { sensorCanvas: _canvas, ...final } = recipe;
+      const final = clone(recipe);
+      delete final.sensorCanvas;
       const result = await saveAssetDevelop({
         id: asset.id,
         assetDevelopSaveDto: {
@@ -197,8 +214,8 @@
       undo = [];
       redo = [];
       watch(result.id);
-    } catch (failure) {
-      failed(failure);
+    } catch (error_) {
+      failed(error_);
     }
   };
   const keyDown = (event: KeyboardEvent) => {
@@ -210,17 +227,19 @@
     const typing =
       event.target instanceof HTMLElement &&
       (['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName) || event.target.isContentEditable);
-    if (typing || !(event.metaKey || event.ctrlKey)) return;
+    if (typing || !(event.metaKey || event.ctrlKey)) {
+      return;
+    }
     const key = event.key.toLowerCase();
     if (key === 's') {
       event.preventDefault();
       void save();
-    } else if (key === 'z' && event.shiftKey && redo.length) {
+    } else if (key === 'z' && event.shiftKey && redo.length > 0) {
       event.preventDefault();
       undo = [...undo, clone(recipe)];
       recipe = redo.at(-1)!;
       redo = redo.slice(0, -1);
-    } else if (key === 'z' && undo.length) {
+    } else if (key === 'z' && undo.length > 0) {
       event.preventDefault();
       redo = [...redo, clone(recipe)];
       recipe = undo.at(-1)!;
@@ -228,28 +247,35 @@
     }
   };
   const addMask = (kind: NativeMask['kind'], artifact?: string) => {
-    if ((recipe.masks?.length ?? 0) >= 8) return;
+    if ((recipe.masks?.length ?? 0) >= 8) {
+      return;
+    }
     const mask = newNativeMask(kind, artifact);
     selectedMask = mask.id;
     sensorCanvas = true;
     // Empty brushes are kept in the UI only until the first stroke is committed.
-    if (kind !== 'brush') change({ ...recipe, masks: [...(recipe.masks ?? []), mask] });
-    else {
+    if (kind === 'brush') {
       change({ ...recipe, masks: [...(recipe.masks ?? []), { ...mask, enabled: false }] });
+    } else {
+      change({ ...recipe, masks: [...(recipe.masks ?? []), mask] });
     }
   };
   const suggest = async (target: 'subject' | 'sky') => {
-    if ((recipe.masks?.length ?? 0) >= 8) return;
+    if ((recipe.masks?.length ?? 0) >= 8) {
+      return;
+    }
     proposalBusy = true;
     error = '';
     proposalAbort?.abort();
     proposalAbort = new AbortController();
     try {
       const artifact = await proposeNativeMask(asset.id, target, proposalAbort.signal);
-      if (!alive) return;
+      if (!alive) {
+        return;
+      }
       addMask(target, artifact.id);
-    } catch (failure) {
-      failed(failure);
+    } catch (error_) {
+      failed(error_);
     } finally {
       proposalBusy = false;
     }
@@ -272,21 +298,29 @@
       !['brush', 'subject', 'sky', 'background'].includes(selected.kind) ||
       !preview ||
       event.button !== 0
-    )
+    ) {
       return;
+    }
     const canvas = event.currentTarget as HTMLElement;
     canvas.setPointerCapture(event.pointerId);
     strokeStart = clone(recipe);
     activeStroke = { points: [point(event)], radius: brushRadius, erase: event.altKey };
   };
   const continueStroke = (event: PointerEvent) => {
-    if (!activeStroke || !strokeStart || !selected) return;
-    if (activeStroke.points.length < 512) activeStroke.points.push(point(event));
+    if (!activeStroke || !strokeStart || !selected) {
+      return;
+    }
+    if (activeStroke.points.length < 512) {
+      activeStroke.points.push(point(event));
+    }
   };
   const finishStroke = () => {
-    if (!activeStroke || !strokeStart || !selected) return;
-    if ((selected.strokes?.length ?? 0) < 64)
+    if (!activeStroke || !strokeStart || !selected) {
+      return;
+    }
+    if ((selected.strokes?.length ?? 0) < 64) {
       maskPatch({ enabled: true, strokes: [...(selected.strokes ?? []), activeStroke] });
+    }
     activeStroke = undefined;
     strokeStart = undefined;
   };
@@ -296,10 +330,15 @@
       { x: 0.5, y: 0.5 },
       { x: 1, y: 1 },
     ];
-    if (curve.length >= 20) return;
+    if (curve.length >= 20) {
+      return;
+    }
     let gap = 0;
-    for (let i = 1; i < curve.length - 1; i++)
-      if (curve[i + 1].x - curve[i].x > curve[gap + 1].x - curve[gap].x) gap = i;
+    for (let i = 1; i < curve.length - 1; i++) {
+      if (curve[i + 1].x - curve[i].x > curve[gap + 1].x - curve[gap].x) {
+        gap = i;
+      }
+    }
     const left = curve[gap],
       right = curve[gap + 1];
     const next = clone(curve);
@@ -307,20 +346,22 @@
     patch({ curve: next });
   };
   const savePreset = async () => {
-    if (!presetName.trim()) return;
+    if (!presetName.trim()) {
+      return;
+    }
     try {
       const result = await createDevelopPreset({
         developPresetCreateDto: { name: presetName.trim(), settings: { native: nativePreset(recipe) } as never },
       });
       presets = [...presets, result];
       presetName = '';
-    } catch (failure) {
-      failed(failure);
+    } catch (error_) {
+      failed(error_);
     }
   };
   const applyPreset = (preset: DevelopPresetResponseDto) => {
     const native = (preset.settings as unknown as { native?: NativeRecipe }).native;
-    if (native)
+    if (native) {
       change({
         ...recipe,
         ...clone(native),
@@ -330,6 +371,7 @@
         flipHorizontal: recipe.flipHorizontal,
         flipVertical: recipe.flipVertical,
       });
+    }
   };
 </script>
 
@@ -353,7 +395,7 @@
     <button type="button" onclick={() => onClose()}>Close</button>
     <button
       type="button"
-      disabled={!undo.length}
+      disabled={undo.length === 0}
       onclick={() => {
         redo = [...redo, clone(recipe)];
         recipe = undo.at(-1)!;
@@ -362,7 +404,7 @@
     >
     <button
       type="button"
-      disabled={!redo.length}
+      disabled={redo.length === 0}
       onclick={() => {
         undo = [...undo, clone(recipe)];
         recipe = redo.at(-1)!;
@@ -414,7 +456,7 @@
               viewBox={`0 0 ${previewDimensions.width} ${previewDimensions.height}`}
               preserveAspectRatio="xMidYMid meet"
               aria-hidden="true"
-              >{#each [...(selected.strokes ?? []), ...(activeStroke ? [activeStroke] : [])] as stroke}
+              >{#each [...(selected.strokes ?? []), ...(activeStroke ? [activeStroke] : [])] as stroke (stroke)}
                 {@const overlay = nativeStrokeOverlay(stroke, previewDimensions.width, previewDimensions.height)}
                 {#if stroke.points.length === 1}
                   <circle
@@ -465,7 +507,7 @@
     <aside>
       <details open>
         <summary>Light and colour</summary>
-        {#each [['exposureEV', 'Exposure EV', -18, 18, 0.1, 0], ['shadows', 'Shadows', -100, 100, 1, 0], ['highlights', 'Highlights', -100, 100, 1, 0], ['saturation', 'Saturation', 0, 2, 0.01, 1], ['contrast', 'Contrast', 0.01, 1.99, 0.01, 1]] as [key, text, min, max, step, fallback]}
+        {#each [['exposureEV', 'Exposure EV', -18, 18, 0.1, 0], ['shadows', 'Shadows', -100, 100, 1, 0], ['highlights', 'Highlights', -100, 100, 1, 0], ['saturation', 'Saturation', 0, 2, 0.01, 1], ['contrast', 'Contrast', 0.01, 1.99, 0.01, 1]] as [key, text, min, max, step, fallback] (key)}
           <EditorSlider
             id={`native-${key}`}
             label={String(text)}
@@ -478,7 +520,7 @@
           />
         {/each}
         <p>White balance</p>
-        {#each ['red', 'green', 'blue'] as channel}<EditorSlider
+        {#each ['red', 'green', 'blue'] as channel (channel)}<EditorSlider
             id={`wb-${channel}`}
             label={`${channel} gain`}
             value={recipe.whiteBalance?.[channel as 'red'] ?? 1}
@@ -493,7 +535,7 @@
         <button type="button" disabled={(recipe.curve?.length ?? 3) >= 20} onclick={addCurvePoint}
           >Add curve point</button
         ><button type="button" onclick={() => patch({ curve: undefined })}>Reset curve</button>
-        {#each recipe.curve ?? [{ x: 0, y: 0 }, { x: 0.5, y: 0.5 }, { x: 1, y: 1 }] as point, index}<EditorSlider
+        {#each recipe.curve ?? [{ x: 0, y: 0 }, { x: 0.5, y: 0.5 }, { x: 1, y: 1 }] as point, index (index)}<EditorSlider
             id={`curve-${index}`}
             label={`Output at ${Math.round(point.x * 100)}%`}
             value={point.y}
@@ -531,7 +573,7 @@
           step={0.001}
           onChange={(value) => patch({ noiseThreshold: value })}
         />
-        {#each [['radius', 0, 12, 2], ['amount', 0, 2, 0], ['threshold', 0, 10, 0.5]] as [key, min, max, fallback]}<EditorSlider
+        {#each [['radius', 0, 12, 2], ['amount', 0, 2, 0], ['threshold', 0, 10, 0.5]] as [key, min, max, fallback] (key)}<EditorSlider
             id={`sharp-${key}`}
             label={`Sharpen ${key}`}
             value={recipe.sharpen?.[key as 'radius'] ?? Number(fallback)}
@@ -559,14 +601,14 @@
           onclick={() => patch({ rotation: (((recipe.rotation ?? 0) + 90) % 360) as NativeRecipe['rotation'] })}
           >Rotate 90°</button
         >
-        {#each ['flipHorizontal', 'flipVertical'] as flip}<label
+        {#each ['flipHorizontal', 'flipVertical'] as flip (flip)}<label
             ><input
               type="checkbox"
               checked={recipe[flip as 'flipHorizontal'] ?? false}
               onchange={(event) => patch({ [flip]: event.currentTarget.checked })}
             />{flip === 'flipHorizontal' ? 'Flip horizontally' : 'Flip vertically'}</label
           >{/each}
-        {#each ['x', 'y', 'w', 'h'] as key}<label
+        {#each ['x', 'y', 'w', 'h'] as key (key)}<label
             >Crop {key}<input
               type="number"
               min="0"
@@ -580,14 +622,14 @@
       </details>
       <details>
         <summary>Masks</summary>
-        {#each ['radial', 'linear', 'brush'] as kind}<button
+        {#each ['radial', 'linear', 'brush'] as kind (kind)}<button
             type="button"
             disabled={(recipe.masks?.length ?? 0) >= 8}
             onclick={() => addMask(kind as NativeMask['kind'])}>{kind === 'linear' ? 'Gradient' : kind}</button
           >{/each}
         <button type="button" disabled={busy || proposalBusy} onclick={() => suggest('subject')}>Suggest subject</button
         ><button type="button" disabled={busy || proposalBusy} onclick={() => suggest('sky')}>Suggest sky</button>
-        {#each recipe.masks ?? [] as mask}<button
+        {#each recipe.masks ?? [] as mask (mask.id)}<button
             type="button"
             aria-pressed={selectedMask === mask.id}
             onclick={() => {
@@ -638,7 +680,7 @@
             defaultValue={100}
             onChange={(value) => maskPatch({ amount: value })}
           />
-          {#each [['exposureEV', 'Exposure EV', -18, 18, 0.1, 0], ['shadows', 'Shadows', -100, 100, 1, 0], ['highlights', 'Highlights', -100, 100, 1, 0], ['saturation', 'Saturation', 0, 2, 0.01, 1], ['contrast', 'Contrast', 0.01, 1.99, 0.01, 1]] as [key, text, min, max, step, fallback]}<EditorSlider
+          {#each [['exposureEV', 'Exposure EV', -18, 18, 0.1, 0], ['shadows', 'Shadows', -100, 100, 1, 0], ['highlights', 'Highlights', -100, 100, 1, 0], ['saturation', 'Saturation', 0, 2, 0.01, 1], ['contrast', 'Contrast', 0.01, 1.99, 0.01, 1]] as [key, text, min, max, step, fallback] (key)}<EditorSlider
               id={`mask-${key}`}
               label={String(text)}
               value={Number(selected.adjustments[key as keyof typeof selected.adjustments] ?? fallback)}
@@ -648,7 +690,7 @@
               defaultValue={Number(fallback)}
               onChange={(value) => maskPatch({ adjustments: { ...selected!.adjustments, [key]: value } })}
             />{/each}
-          {#each selected.kind === 'radial' ? ['x', 'y', 'radiusX', 'radiusY'] : selected.kind === 'linear' ? ['x', 'y', 'endX', 'endY'] : [] as key}<EditorSlider
+          {#each selected.kind === 'radial' ? ['x', 'y', 'radiusX', 'radiusY'] : selected.kind === 'linear' ? ['x', 'y', 'endX', 'endY'] : [] as key (key)}<EditorSlider
               id={`mask-${key}`}
               label={key}
               value={Number(selected[key as keyof NativeMask])}
@@ -680,14 +722,14 @@
           type="button"
           onclick={savePreset}>Save preset</button
         >
-        {#each presets.filter((item) => !!(item.settings as unknown as { native?: NativeRecipe }).native) as preset}<button
+        {#each presets.filter((item) => !!(item.settings as unknown as { native?: NativeRecipe }).native) as preset (preset.id)}<button
             type="button"
             onclick={() => applyPreset(preset)}>{preset.name}</button
           >{/each}
       </details>
       <details>
         <summary>Versions</summary>
-        {#each revisions as version}<div class="native-version">
+        {#each revisions as version (version.id)}<div class="native-version">
             <span>{version.label ?? `Version ${version.revision}`} · {version.status} {version.progress}%</span>
             {#if version.error}<p>{version.error}</p>{/if}
             {#if isNativeRecipe(version.recipe)}<button
@@ -703,19 +745,19 @@
                   try {
                     await revertAssetDevelop({ id: asset.id, assetDevelopRevertDto: { revisionId: version.id } });
                     watch(version.id);
-                  } catch (failure) {
-                    failed(failure);
+                  } catch (error_) {
+                    failed(error_);
                   }
                 }}>Make current</button
               ><a href={developFileUrl(asset.id, version.id)} target="_blank" rel="noreferrer">Preview</a>{/if}
-            {#if version.status === 'failed' || version.status === 'saved' || version.status === 'cancelled'}<button
+            {#if ['failed', 'saved', 'cancelled'].includes(version.status)}<button
                 type="button"
                 onclick={async () => {
                   try {
                     await renderAssetDevelopRevision({ id: asset.id, revisionId: version.id });
                     watch(version.id);
-                  } catch (failure) {
-                    failed(failure);
+                  } catch (error_) {
+                    failed(error_);
                   }
                 }}>Render / retry</button
               >{/if}
@@ -725,8 +767,8 @@
                   try {
                     await cancelAssetDevelopRender({ id: asset.id, revisionId: version.id });
                     watch();
-                  } catch (failure) {
-                    failed(failure);
+                  } catch (error_) {
+                    failed(error_);
                   }
                 }}>Cancel render</button
               >{/if}

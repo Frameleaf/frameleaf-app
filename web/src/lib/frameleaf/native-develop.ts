@@ -46,17 +46,14 @@ export const initialNativeRecipe = (): NativeRecipe => ({ version: 2, renderer: 
 export const isNativeRecipe = (value: AssetDevelopRecipeDto): value is AssetDevelopRecipeDto & NativeRecipe =>
   value.version === 2 && value.renderer === 'darktable/5.6.1';
 export const nativePreset = (recipe: NativeRecipe): NativeRecipe => {
-  const {
-    crop: _crop,
-    rotation: _rotation,
-    straighten: _straighten,
-    flipHorizontal: _h,
-    flipVertical: _v,
-    sensorCanvas: _canvas,
-    masks,
-    ...adjustments
-  } = recipe;
-  return { ...adjustments, masks: masks?.filter((mask) => mask.kind === 'radial' || mask.kind === 'linear') };
+  const adjustments = { ...recipe };
+  delete adjustments.crop;
+  delete adjustments.rotation;
+  delete adjustments.straighten;
+  delete adjustments.flipHorizontal;
+  delete adjustments.flipVertical;
+  delete adjustments.sensorCanvas;
+  return { ...adjustments, masks: recipe.masks?.filter((mask) => mask.kind === 'radial' || mask.kind === 'linear') };
 };
 export const newNativeMask = (kind: NativeMask['kind'], artifact?: string): NativeMask => ({
   id: crypto.randomUUID(),
@@ -86,9 +83,10 @@ export async function proposeNativeMask(assetId: string, target: 'subject' | 'sk
     `${getBaseUrl()}/assets/${encodeURIComponent(assetId)}/develop/masks/propose`,
     { method: 'POST', headers, credentials: 'include', signal, body: JSON.stringify({ target }) },
   );
-  if (!response.ok)
+  if (!response.ok) {
     throw new Error(
       `Subject/sky detection is unavailable (${response.status}). Draw a manual mask or check the local worker.`,
     );
+  }
   return (await response.json()) as { id: string; width: number; height: number };
 }
