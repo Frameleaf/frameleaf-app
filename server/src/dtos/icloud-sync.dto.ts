@@ -62,17 +62,15 @@ export class ICloudIdentityReuseAuthorityDto extends createZodDto(
     .meta({ id: 'ICloudIdentityReuseAuthorityDto' }),
 ) {}
 
-const IdentityReuseAuthorityStatusSchema = z
-  .object({
-    enabled: z.boolean(),
-    includeProtected: z.boolean(),
-    available: z.boolean(),
-    regrantRequired: z.boolean(),
-    executionAvailable: z
-      .literal(false)
-      .describe('Foundation consent does not enable weekly execution or identity reuse'),
-  })
-  .meta({ id: 'ICloudIdentityReuseAuthorityStatusDto' });
+const IdentityReuseAuthorityStatusSchema = z.object({
+  enabled: z.boolean(),
+  includeProtected: z.boolean(),
+  available: z.boolean(),
+  regrantRequired: z.boolean(),
+  executionAvailable: z
+    .literal(false)
+    .describe('Foundation consent does not enable weekly execution or identity reuse'),
+});
 export class ICloudIdentityReuseAuthorityStatusDto extends createZodDto(IdentityReuseAuthorityStatusSchema) {}
 
 export class ICloudAuthDto extends createZodDto(
