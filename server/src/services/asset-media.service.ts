@@ -378,10 +378,10 @@ export class AssetMediaService extends BaseService {
   }
 
   /**
-   * FL-54: a file served as-is carries its embedded EXIF/XMP/QuickTime location. For a partner who may not
-   * see the owner's locations (and for playback through a link that hides metadata) serve a verified
-   * location-free copy instead; when none can be made, refuse rather than send the original bytes. A
-   * link that hides metadata never downloads (AL-27). Every other case is the untouched original.
+   * FL-54: a file served as-is carries its embedded EXIF/XMP/QuickTime location. For playback through a
+   * link that hides metadata serve a verified location-free copy instead; when none can be made, refuse
+   * rather than send the original bytes. A link that hides metadata never downloads (AL-27). Every other
+   * case is the untouched original (FL-326: partners always see locations).
    */
   private async withOriginalLocationPolicy(
     auth: AuthDto,
@@ -389,12 +389,7 @@ export class AssetMediaService extends BaseService {
     purpose: OriginalPurpose,
     response: ImmichFileResponse,
   ): Promise<ImmichFileResponse> {
-    const policyFor = await getOriginalLocationPolicies({
-      auth,
-      assets: [asset],
-      purpose,
-      repository: this.partnerRepository,
-    });
+    const policyFor = getOriginalLocationPolicies({ auth, assets: [asset], purpose });
 
     switch (policyFor(asset)) {
       case OriginalLocationPolicy.Serve: {

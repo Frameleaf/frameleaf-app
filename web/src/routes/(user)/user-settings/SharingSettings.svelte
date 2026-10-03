@@ -11,7 +11,6 @@
    * per-partner "Show in timeline" and the fork's location sharing.
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -32,7 +31,6 @@
     PartnerDirection,
     removePartner,
     searchUsers,
-    updatePartner,
     type ClusterGroupRequestResponseDto,
     type PartnerResponseDto,
     type UserResponseDto,
@@ -44,9 +42,6 @@
     user: UserResponseDto;
     sharedByMe: boolean;
     sharedWithMe: boolean;
-    inTimeline: boolean;
-    /** my setting towards this partner; meaningful only when `sharedByMe` */
-    shareLocation: boolean;
   };
 
   let clusterGroupId: string = $state('');
@@ -145,22 +140,13 @@
       user: candidate,
       sharedByMe: true,
       sharedWithMe: false,
-      inTimeline: candidate.inTimeline ?? false,
-      shareLocation: candidate.shareLocation ?? true,
     }));
     for (const candidate of sharedWith) {
       const existing = next.find((p) => p.user.id === candidate.id);
       if (existing) {
         existing.sharedWithMe = true;
-        existing.inTimeline = candidate.inTimeline ?? false;
       } else {
-        next.push({
-          user: candidate,
-          sharedByMe: false,
-          sharedWithMe: true,
-          inTimeline: candidate.inTimeline ?? false,
-          shareLocation: true,
-        });
+        next.push({ user: candidate, sharedByMe: false, sharedWithMe: true });
       }
     }
     partners = next;
@@ -282,27 +268,6 @@
         eventManager.emit('PartnerRevoke', { sharedById: authManager.user.id, sharedWithId: partner.user.id });
       }
       await refreshPartners();
-    }
-  };
-
-  const setInTimeline = async (partner: PartnerSharing, inTimeline: boolean) => {
-    try {
-      await updatePartner({ id: partner.user.id, partnerUpdateDto: { inTimeline } });
-      partner.inTimeline = inTimeline;
-      notice = $t('frameleaf_people_sharing.timeline_updated');
-    } catch (error) {
-      partner.inTimeline = !inTimeline;
-      handleError(error, $t('errors.unable_to_update_timeline_display_status'));
-    }
-  };
-
-  const setShareLocation = async (partner: PartnerSharing, shareLocation: boolean) => {
-    try {
-      await updatePartner({ id: partner.user.id, partnerUpdateDto: { shareLocation } });
-      partner.shareLocation = shareLocation;
-    } catch (error) {
-      partner.shareLocation = !shareLocation;
-      handleError(error, $t('errors.unable_to_change_partner_permission'));
     }
   };
 
@@ -436,24 +401,6 @@
                 ? $t('frameleaf_people_sharing.shares_with_you')
                 : $t('frameleaf_people_sharing.does_not_share')}
             </p>
-            {#if partner.sharedWithMe}
-              <SettingToggle
-                title={$t('frameleaf_people_sharing.in_timeline')}
-                bind:checked={partner.inTimeline}
-                onToggle={(checked) => setInTimeline(partner, checked)}
-              />
-            {/if}
-            {#if partner.sharedByMe}
-              <SettingToggle
-                title={$t('frameleaf_sharing.share_location_title')}
-                subtitle={$t('frameleaf_sharing.share_location_description', { values: { name: partner.user.name } })}
-                bind:checked={partner.shareLocation}
-                onToggle={(checked) => setShareLocation(partner, checked)}
-              />
-              {#if !partner.shareLocation}
-                <p>{$t('frameleaf_sharing.location_already_seen', { values: { name: partner.user.name } })}</p>
-              {/if}
-            {/if}
           </div>
           {#if partner.sharedByMe}
             <button type="button" class="button" disabled={working} onclick={() => stopSharing(partner)}>

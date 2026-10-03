@@ -11,18 +11,10 @@ const PartnerCreateSchema = z
   })
   .meta({ id: 'PartnerCreateDto' });
 
-// Exactly one field per request: `inTimeline` is the recipient's preference on the partner who shares
-// with them (`:id` shares with me); `shareLocation` is the sharing user's setting on the partner they
-// share with (I share with `:id`). The service rejects requests that set both or neither.
-const PartnerUpdateSchema = z
-  .object({
-    inTimeline: z.boolean().optional().describe('Show partner assets in timeline'),
-    shareLocation: z
-      .boolean()
-      .optional()
-      .describe('Share asset locations with this partner; only the sharing user can change it'),
-  })
-  .meta({ id: 'PartnerUpdateDto' });
+// FL-326: partners receive their own copies and locations are always shared, so a partnership has no
+// settings left (`inTimeline` and `shareLocation` are gone). The update body is kept, empty, for older
+// clients.
+const PartnerUpdateSchema = z.object({}).meta({ id: 'PartnerUpdateDto' });
 
 const PartnerSearchSchema = z
   .object({
@@ -30,12 +22,7 @@ const PartnerSearchSchema = z
   })
   .meta({ id: 'PartnerSearchDto' });
 
-const PartnerResponseSchema = UserResponseSchema.extend({
-  inTimeline: z.boolean().optional().describe('Show in timeline'),
-  shareLocation: z.boolean().optional().describe('Sharer allows this partner to see asset locations'),
-})
-  .describe('Partner response')
-  .meta({ id: 'PartnerResponseDto' });
+const PartnerResponseSchema = UserResponseSchema.describe('Partner response').meta({ id: 'PartnerResponseDto' });
 
 export class PartnerCreateDto extends createZodDto(PartnerCreateSchema) {}
 export class PartnerUpdateDto extends createZodDto(PartnerUpdateSchema) {}

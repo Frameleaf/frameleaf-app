@@ -179,35 +179,6 @@ describe(AssetService.name, () => {
       );
     });
 
-    it("should hide location on a partner's asset when the partner turned location sharing off", async () => {
-      const auth = AuthFactory.create();
-      const sharer = UserFactory.create();
-      const partner = PartnerFactory.from({ shareLocation: false })
-        .sharedBy(sharer)
-        .sharedWith({ id: auth.user.id })
-        .build();
-      const asset = AssetFactory.from({ ownerId: sharer.id })
-        .exif({ latitude: 42, longitude: 69, city: 'Calgary', state: 'Alberta', country: 'Canada', make: 'Canon' })
-        .build();
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
-      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
-      mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
-
-      const response = (await sut.get(auth, asset.id)) as AssetResponseDto;
-
-      expect(mocks.partner.getAll).toHaveBeenCalledWith(auth.user.id);
-      expect(response.exifInfo).toEqual(
-        expect.objectContaining({
-          latitude: null,
-          longitude: null,
-          city: null,
-          state: null,
-          country: null,
-          make: 'Canon',
-        }),
-      );
-    });
-
     it("should keep location on a partner's asset while location sharing is on", async () => {
       const auth = AuthFactory.create();
       const sharer = UserFactory.create();
@@ -218,7 +189,7 @@ describe(AssetService.name, () => {
       const asset = AssetFactory.from({ ownerId: sharer.id })
         .exif({ latitude: 42, longitude: 69, city: 'Calgary' })
         .build();
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
 
@@ -288,12 +259,10 @@ describe(AssetService.name, () => {
 
     it('should allow partner sharing access', async () => {
       const asset = AssetFactory.create();
-      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
 
       await sut.get(authStub.admin, asset.id);
-
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([asset.id]));
     });
 
     it('should allow shared album access', async () => {

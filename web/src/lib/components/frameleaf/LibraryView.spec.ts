@@ -133,11 +133,11 @@ describe('LibraryView', () => {
       expect(restore.mock.lastCall?.[1]).toBe('second-owner');
 
       session.select('private-asset');
-      await view.rerender({ ...props, options: { withPartners: true } });
+      await view.rerender({ ...props, options: { isFavorite: true } });
       await waitFor(() => expect(session.selection).toEqual([]));
 
       session.select('private-asset');
-      await view.rerender({ ...props, options: { withPartners: true }, publicView: true });
+      await view.rerender({ ...props, options: { isFavorite: true }, publicView: true });
       await waitFor(() => expect(session.selection).toEqual([]));
       expect(restore.mock.lastCall?.[1]).toBeUndefined();
     } finally {

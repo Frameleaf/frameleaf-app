@@ -80,7 +80,7 @@ export class PartnerController {
   @Endpoint({
     summary: 'Update a partner',
     description:
-      "Specify whether a partner's assets should appear in the user's timeline (inTimeline), or, as the sharing user, whether that partner may see the locations of shared assets (shareLocation). Exactly one field per request.",
+      'A partnership has no settings left (FL-326): partners receive their own copies and locations are always shared. Kept for older clients; returns the partner who shares with the user.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   updatePartner(

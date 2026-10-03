@@ -6880,7 +6880,7 @@ export type MapReverseGeocodeResponseDto = {
 export type MapStatisticsResponseDto = {
     /** The viewer's own located archived items */
     archived: number;
-    /** Located timeline items of partners who share their locations with the viewer */
+    /** Always 0: partners' items arrive as the viewer's own copies (kept for older clients) */
     partner: number;
     /** The viewer's own timeline items without a location */
     unlocated: number;
@@ -7754,23 +7754,7 @@ export type FrameleafAccountLinkResponseDto = {
     linked: boolean;
     linkedAt: string | null;
 };
-export type PartnerResponseDto = {
-    avatarColor: UserAvatarColor;
-    /** User email */
-    email: string;
-    /** User ID */
-    id: string;
-    /** Show in timeline */
-    inTimeline?: boolean;
-    /** User name */
-    name: string;
-    /** Profile change date */
-    profileChangedAt: string;
-    /** Profile image path */
-    profileImagePath: string;
-    /** Sharer allows this partner to see asset locations */
-    shareLocation?: boolean;
-};
+export type PartnerResponseDto = UserResponseDto;
 export type PartnerCreateDto = {
     /** User ID to share with */
     sharedWithId: string;
@@ -7781,12 +7765,7 @@ export type PartnerLockedNoticeResponseDto = {
     /** Whether to show the notice: Locked items arrived from a partner, no PIN is set, and it was not dismissed */
     show: boolean;
 };
-export type PartnerUpdateDto = {
-    /** Show partner assets in timeline */
-    inTimeline?: boolean;
-    /** Share asset locations with this partner; only the sharing user can change it */
-    shareLocation?: boolean;
-};
+export type PartnerUpdateDto = {};
 export type PeopleListItemDto = {
     /** Number of timeline assets showing this person */
     assetCount: number;
@@ -20015,12 +19994,11 @@ export function relinkLivePhotos({ livePhotoRelinkDto }: {
 /**
  * Retrieve map markers
  */
-export function getMapMarkers({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withPartners, withSharedAlbums }: {
+export function getMapMarkers({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withSharedAlbums }: {
     fileCreatedAfter?: string;
     fileCreatedBefore?: string;
     isArchived?: boolean;
     isFavorite?: boolean;
-    withPartners?: boolean;
     withSharedAlbums?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -20031,7 +20009,6 @@ export function getMapMarkers({ fileCreatedAfter, fileCreatedBefore, isArchived,
         fileCreatedBefore,
         isArchived,
         isFavorite,
-        withPartners,
         withSharedAlbums
     }))}`, {
         ...opts
@@ -20057,12 +20034,11 @@ export function reverseGeocode({ lat, lon }: {
 /**
  * Retrieve map statistics
  */
-export function getMapStatistics({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withPartners, withSharedAlbums }: {
+export function getMapStatistics({ fileCreatedAfter, fileCreatedBefore, isArchived, isFavorite, withSharedAlbums }: {
     fileCreatedAfter?: string;
     fileCreatedBefore?: string;
     isArchived?: boolean;
     isFavorite?: boolean;
-    withPartners?: boolean;
     withSharedAlbums?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -20073,7 +20049,6 @@ export function getMapStatistics({ fileCreatedAfter, fileCreatedBefore, isArchiv
         fileCreatedBefore,
         isArchived,
         isFavorite,
-        withPartners,
         withSharedAlbums
     }))}`, {
         ...opts
@@ -25763,7 +25738,7 @@ export function scanTakeoutImport({ id }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, timeBucket, userId, visibility, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -25783,7 +25758,6 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
-    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -25809,7 +25783,6 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
         userId,
         visibility,
         withCoordinates,
-        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -25818,7 +25791,7 @@ export function getTimeBucket({ albumId, assetType, bbox, dateType, isFavorite, 
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -25837,7 +25810,6 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
-    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -25862,7 +25834,6 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
         userId,
         visibility,
         withCoordinates,
-        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -25871,7 +25842,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, dateType, isFavorite,
 /**
  * Get timeline highlights
  */
-export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grouping, highlightCount, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -25892,7 +25863,6 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
-    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -25919,7 +25889,6 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
         userId,
         visibility,
         withCoordinates,
-        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -25928,7 +25897,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, dateType, grou
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavorite, isTrashed, key, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withCoordinates, withStacked }: {
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -25950,7 +25919,6 @@ export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavor
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
-    withPartners?: boolean;
     withStacked?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -25978,7 +25946,6 @@ export function getTimelineOrdered({ albumId, assetType, bbox, dateType, isFavor
         userId,
         visibility,
         withCoordinates,
-        withPartners,
         withStacked
     }))}`, {
         ...opts
@@ -29343,6 +29310,10 @@ export enum JobName {
     CloudBackupVerify = "CloudBackupVerify",
     PushDeliver = "PushDeliver",
     PushBackupStaleCheck = "PushBackupStaleCheck",
+    PartnerBackfill = "PartnerBackfill",
+    PartnerCopyAsset = "PartnerCopyAsset",
+    PartnerCopyAlbum = "PartnerCopyAlbum",
+    PartnerPropagate = "PartnerPropagate",
     OcrQueueAll = "OcrQueueAll",
     Ocr = "Ocr",
     ImageDescriptionQueueAll = "ImageDescriptionQueueAll",

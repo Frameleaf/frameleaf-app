@@ -103,11 +103,11 @@ describe('cross-account evidence of Locked items (FL-137)', () => {
     expect(own?.endDate).toBe(new Date(late).toISOString());
   });
 
-  it("never suggests or counts a partner's Locked places and cameras", async () => {
+  it("never suggests or counts a partner's places and cameras, Locked or not (FL-326)", async () => {
     const { sut, ctx } = search();
     const { user: owner } = await ctx.newUser();
     const { user: partner } = await ctx.newUser();
-    await ctx.newPartner({ sharedById: owner.id, sharedWithId: partner.id, inTimeline: true });
+    await ctx.newPartner({ sharedById: owner.id, sharedWithId: partner.id });
     const { asset: visible } = await ctx.newAsset({ ownerId: owner.id });
     await ctx.newExif({
       assetId: visible.id,
@@ -137,7 +137,8 @@ describe('cross-account evidence of Locked items (FL-137)', () => {
       const cities = await sut.getAssetsByCity(auth);
       const counts = await sut.getCityAssetCounts(auth);
       const body = JSON.stringify({ suggestions, cities, counts });
-      expect(body).toContain('Openville');
+      // FL-326: a partner's own rows are never searched; their items arrive as the viewer's copies
+      expect(body).not.toContain('Openville');
       expect(body).not.toMatch(/Hidden/);
       expect(body).not.toContain(locked.id);
     }

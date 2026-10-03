@@ -281,7 +281,10 @@
         return;
       }
       connections = connections.map((item) =>
-        item.id === origin.connectionId ? { ...item, identityReuseAuthority: authority } : item,
+        // a connection's authority never offers execution yet (the connection DTO's `false` literal)
+        item.id === origin.connectionId
+          ? { ...item, identityReuseAuthority: { ...authority, executionAvailable: false as const } }
+          : item,
       );
       weeklyEnabled = authority.enabled;
       weeklyProtected = authority.includeProtected;

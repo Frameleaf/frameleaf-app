@@ -283,51 +283,31 @@ describe(StudioExportRepository.name, () => {
   });
 
   describe('publish: inherited privacy', () => {
-    it.each(['owner', 'partner'] as const)(
-      'rechecks a motion linked to an already Locked still before publication for its %s',
-      async (viewer) => {
-        const context = setup();
-        const { user: owner } = await context.ctx.newUser();
-        const recipient = viewer === 'owner' ? owner : (await context.ctx.newUser()).user;
-        if (viewer === 'partner') {
-          await context.ctx.newPartner({ sharedById: owner.id, sharedWithId: recipient.id });
-        }
-        const source = {
-          ...(await ownSource(context.ctx, owner.id, { type: AssetType.Video, visibility: AssetVisibility.Hidden })),
-          access: viewer === 'owner' ? ('owner' as const) : ('shared' as const),
-        };
-        const access = new AccessRepository(defaultDatabase);
-        const reachable = () =>
-          viewer === 'owner'
-            ? access.asset.checkOwnerAccess(recipient.id, new Set([source.id]), false)
-            : access.asset.checkPartnerAccess(recipient.id, new Set([source.id]));
-        await expect(reachable()).resolves.toEqual(new Set([source.id]));
-        const staged = await stagedExport(context, recipient.id, [source]);
+    // FL-326: a partner no longer reaches the sharer's rows, so only the owner case remains
+    it('rechecks a motion linked to an already Locked still before publication for its owner', async () => {
+      const context = setup();
+      const { user: owner } = await context.ctx.newUser();
+      const source = {
+        ...(await ownSource(context.ctx, owner.id, { type: AssetType.Video, visibility: AssetVisibility.Hidden })),
+        access: 'owner' as const,
+      };
+      const access = new AccessRepository(defaultDatabase);
+      const reachable = () => access.asset.checkOwnerAccess(owner.id, new Set([source.id]), false);
+      await expect(reachable()).resolves.toEqual(new Set([source.id]));
+      const staged = await stagedExport(context, owner.id, [source]);
 
-        // Between source authorization and final publication, a previously Locked still is paired
-        // with this motion. No lock is written on the motion by that association update.
-        const still = await ownSource(context.ctx, owner.id, { visibility: AssetVisibility.Locked });
-        await context.assets.update({ id: still.id, livePhotoVideoId: source.id });
-        expect(await lockOf(source.id)).toBeNull();
-        await expect(reachable()).resolves.toEqual(new Set());
+      // Between source authorization and final publication, a previously Locked still is paired
+      // with this motion. No lock is written on the motion by that association update.
+      const still = await ownSource(context.ctx, owner.id, { visibility: AssetVisibility.Locked });
+      await context.assets.update({ id: still.id, livePhotoVideoId: source.id });
+      expect(await lockOf(source.id)).toBeNull();
+      await expect(reachable()).resolves.toEqual(new Set());
 
-        if (viewer === 'partner') {
-          await expectRefusal(context.sut.publish(publication(staged, [source])), 'source-access-lost');
-          expect(await context.sut.getById(staged.version.id)).toMatchObject({
-            state: StudioExportVersionState.Staged,
-            resultAssetId: null,
-            version: null,
-          });
-        } else {
-          const published = await context.sut.publish(publication(staged, [source]));
-          expect(published.privacy).toMatchObject({ lockReason: AssetLockReason.Marked, lockedSourceCount: 1 });
-          expect(await lockOf(published.createdAssetId!)).toBe(AssetLockReason.Marked);
-          await expect(
-            context.sut.getForOwner(staged.version.id, owner.id, { revealed: false }),
-          ).resolves.toBeUndefined();
-        }
-      },
-    );
+      const published = await context.sut.publish(publication(staged, [source]));
+      expect(published.privacy).toMatchObject({ lockReason: AssetLockReason.Marked, lockedSourceCount: 1 });
+      expect(await lockOf(published.createdAssetId!)).toBe(AssetLockReason.Marked);
+      await expect(context.sut.getForOwner(staged.version.id, owner.id, { revealed: false })).resolves.toBeUndefined();
+    });
 
     it('locks the result when a later clip is Locked, as a lock record and never a stored visibility', async () => {
       const context = setup();
@@ -385,12 +365,14 @@ describe(StudioExportRepository.name, () => {
       });
     });
 
-    it('never puts a result made with a partner’s shared media in the owner’s library', async () => {
+    it('never puts a result made with shared media in the owner’s library', async () => {
       const context = setup();
       const { user: owner } = await context.ctx.newUser();
       const { user: partner } = await context.ctx.newUser();
-      await context.ctx.newPartner({ sharedById: partner.id, sharedWithId: owner.id });
       const shared = { ...(await ownSource(context.ctx, partner.id)), access: 'shared' as const };
+      // FL-326: a partnership grants nothing any more, so the media is shared through an album
+      const { album } = await context.ctx.newAlbum({ ownerId: partner.id }, [shared.id]);
+      await context.ctx.newAlbumUser({ albumId: album.id, userId: owner.id });
       const sources = [await ownSource(context.ctx, owner.id), shared];
       const staged = await stagedExport(context, owner.id, sources);
 
@@ -775,34 +757,28 @@ describe(StudioExportRepository.name, () => {
       },
     );
 
-    it.each(['album', 'partner'] as const)(
-      'keeps existing %s grants independent of item suppression locks',
-      async (grant) => {
-        const { context, owner, recipient, shared, staged } = await sharedExport();
-        if (grant === 'album') {
-          const { album } = await context.ctx.newAlbum({ ownerId: owner.id }, [shared.id]);
-          await context.ctx.newAlbumUser({ albumId: album.id, userId: recipient.id });
-        } else {
-          await context.ctx.newPartner({ sharedById: owner.id, sharedWithId: recipient.id });
-        }
-        const locked = deferred();
-        const release = deferred();
-        const writer = defaultDatabase.transaction().execute(async (tx) => {
-          await sql`LOCK TABLE public.tag_asset IN ROW EXCLUSIVE MODE`.execute(tx);
-          locked.resolve();
-          await release.promise;
+    // FL-326: a partnership is no grant any more; only the album grant remains
+    it.each(['album'] as const)('keeps existing %s grants independent of item suppression locks', async () => {
+      const { context, owner, recipient, shared, staged } = await sharedExport();
+      const { album } = await context.ctx.newAlbum({ ownerId: owner.id }, [shared.id]);
+      await context.ctx.newAlbumUser({ albumId: album.id, userId: recipient.id });
+      const locked = deferred();
+      const release = deferred();
+      const writer = defaultDatabase.transaction().execute(async (tx) => {
+        await sql`LOCK TABLE public.tag_asset IN ROW EXCLUSIVE MODE`.execute(tx);
+        locked.resolve();
+        await release.promise;
+      });
+      await locked.promise;
+      try {
+        await expect(context.sut.publish(publication(staged, [shared]))).resolves.toMatchObject({
+          version: { state: StudioExportVersionState.Published, scope: StudioExportScope.Project },
         });
-        await locked.promise;
-        try {
-          await expect(context.sut.publish(publication(staged, [shared]))).resolves.toMatchObject({
-            version: { state: StudioExportVersionState.Published, scope: StudioExportScope.Project },
-          });
-        } finally {
-          release.resolve();
-          await writer;
-        }
-      },
-    );
+      } finally {
+        release.resolve();
+        await writer;
+      }
+    });
 
     it.each(['share', 'preferences'] as const)(
       'sees %s revocation committed while publication waits',
@@ -864,54 +840,6 @@ describe(StudioExportRepository.name, () => {
   });
 
   describe('publish: current access', () => {
-    it('refuses a partner source when its owner is deleted while publication waits (FL-137)', async () => {
-      const context = setup();
-      const { user: owner } = await context.ctx.newUser();
-      const { user: partner } = await context.ctx.newUser();
-      await context.ctx.newPartner({ sharedById: partner.id, sharedWithId: owner.id });
-      const shared = { ...(await ownSource(context.ctx, partner.id)), access: 'shared' as const };
-      const previous = await stagedExport(context, owner.id, [shared]);
-      await context.sut.publish(publication(previous, [shared]));
-      const staged = await stagedExport(context, owner.id, [shared], { projectId: previous.projectId });
-
-      const release = deferred();
-      const { promise: locked, resolve: signalLocked } = Promise.withResolvers<number>();
-      const deletion = defaultDatabase.transaction().execute(async (trx) => {
-        await trx.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', partner.id).execute();
-        const { rows } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx);
-        signalLocked(rows[0].pid);
-        await release.promise;
-      });
-      const blockerPid = await locked;
-      const publishing = context.sut.publish(publication(staged, [shared]));
-      const settled = Promise.allSettled([deletion, publishing]);
-      try {
-        await vi.waitFor(
-          async () => {
-            const { rows } = await sql<{ waiting: boolean }>`
-              SELECT EXISTS (
-                SELECT 1 FROM pg_stat_activity
-                WHERE wait_event_type = 'Lock'
-                  AND pg_blocking_pids(pid) @> ARRAY[${blockerPid}]::integer[]
-              ) AS waiting
-            `.execute(defaultDatabase);
-            expect(rows[0].waiting).toBe(true);
-          },
-          { timeout: 5000 },
-        );
-      } finally {
-        release.resolve();
-        await settled;
-      }
-
-      expect(await settled).toMatchObject([
-        { status: 'fulfilled' },
-        { status: 'rejected', reason: { code: 'source-access-lost' } },
-      ]);
-      expect((await context.sut.getById(staged.version.id))!.state).toBe(StudioExportVersionState.Staged);
-      expect((await context.sut.getById(previous.version.id))!.state).toBe(StudioExportVersionState.Published);
-    }, 10_000);
-
     it('refuses a multi-owner export once the album that shared a source is left', async () => {
       const context = setup();
       const { user: owner } = await context.ctx.newUser();
@@ -1629,8 +1557,10 @@ describe(StudioExportRepository.name, () => {
       const context = setup();
       const { user: owner } = await context.ctx.newUser();
       const { user: partner } = await context.ctx.newUser();
-      await context.ctx.newPartner({ sharedById: partner.id, sharedWithId: owner.id });
       const shared = { ...(await ownSource(context.ctx, partner.id)), access: 'shared' as const };
+      // FL-326: a partnership grants nothing any more, so the media is shared through an album
+      const { album } = await context.ctx.newAlbum({ ownerId: partner.id }, [shared.id]);
+      await context.ctx.newAlbumUser({ albumId: album.id, userId: owner.id });
       const staged = await stagedExport(context, owner.id, [shared]);
       await context.sut.publish(publication(staged, [shared]));
 

@@ -46,6 +46,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { getAssetEditFields, recordAssetEdit } from 'src/services/partner-copy.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
 import {
   getAssetFiles,
@@ -65,7 +66,6 @@ import { DecodeSupport, qualifySourceDecode } from 'src/utils/media-decode.js';
 import { EditedMasterColorPolicy, MediaPolicyError, resolveEditedMasterColorPolicy } from 'src/utils/media-policy.js';
 import { batched, findOrFail, isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
-import { applyAlbumLocationPolicy, applyPartnerLocationPolicy } from 'src/utils/partner-location.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
 const imageEditActions = new Set<AssetEditAction>([
@@ -178,12 +178,7 @@ export class AssetService extends BaseService {
       return mapAsset(asset, { stripMetadata: true, withStack: true, auth });
     }
 
-    // a sharer who hides locations from this viewer never hands over coordinates or place names
-    const locationOptions = { userId: auth.user.id, repository: this.partnerRepository };
-    const [data] = await applyAlbumLocationPolicy(
-      await applyPartnerLocationPolicy([mapAsset(asset, { withStack: true, auth })], locationOptions),
-      locationOptions,
-    );
+    const data = mapAsset(asset, { withStack: true, auth });
 
     if (auth.sharedLink) {
       delete data.owner;
@@ -243,6 +238,14 @@ export class AssetService extends BaseService {
     if (!asset) {
       throw new BadRequestException('Asset not found');
     }
+
+    // FL-326: an edited field of a partner copy is the owner's from now on; copies of this item follow it
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      [id],
+      getAssetEditFields(dto),
+    );
 
     // A visibility change that locks or unlocks a whole stack also changes the siblings `id` never
     // mentions (FL-34, FL-53); push the same real-time update to `id` and to every one of them, so every
@@ -324,6 +327,14 @@ export class AssetService extends BaseService {
     if (Object.keys(assetDto).length > 0) {
       await this.assetRepository.updateAll(ids, assetDto);
     }
+
+    // FL-326: edited fields of partner copies are the owner's from now on; copies of these items follow
+    await recordAssetEdit(
+      { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+      auth.user.id,
+      ids,
+      getAssetEditFields(dto),
+    );
 
     // A lock or unlock carries whole stacks along (FL-34, FL-53), including siblings `ids` never names;
     // push the same real-time update to `ids` and to every one of them, so every open session reflects
