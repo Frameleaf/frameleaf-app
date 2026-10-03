@@ -13,6 +13,8 @@ import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -363,7 +365,8 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     setup = newMediumService(MediaService, {
       database: db,
       real,
-      mock: BASE_SERVICE_DEPENDENCIES.filter((repository) => !real.includes(repository)),
+      // The medium factory leaves unused dependencies unset; its mock registry is explicit.
+      mock: [JobRepository, LoggingRepository],
     });
     previousConfig = await setup.ctx.getConfig({ withCache: false });
     const config = structuredClone(previousConfig);
@@ -418,6 +421,10 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     const info = await ctx.get(MediaRepository).probe(source);
     const video = info.videoStreams[0];
     const audio = info.audioStreams[0];
+    const { formatName, formatLongName } = info.format;
+    if (!formatName || !formatLongName) {
+      throw new Error('Native qualification fixture is missing required container format metadata');
+    }
     const { user } = await ctx.newUser();
     const { asset } = await ctx.newAsset({
       ownerId: user.id,
@@ -449,8 +456,8 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
         dvLevel: video.dvLevel,
         dvBlSignalCompatibilityId: video.dvBlSignalCompatibilityId,
         codecName: video.codecName!,
-        formatName: info.format.formatName,
-        formatLongName: info.format.formatLongName,
+        formatName,
+        formatLongName,
         pixelFormat: video.pixelFormat,
       },
       audio: audio
