@@ -1,0 +1,32 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "https://push.frameleaf.cloud/v1/push/send",
+    "headers": {
+      "Authorization": "DPoP <access_token>",
+      "DPoP": "<compact JWS signed by the instance key: htm POST, htu https://push.frameleaf.cloud/v1/push/send, ath, nonce>",
+      "Content-Type": "application/json"
+    },
+    "note": "Ends a Live Activity with its final state.",
+    "body": {
+      "platform": "apns",
+      "token": "cafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00d",
+      "type": "live-activity-end",
+      "priority": "high",
+      "ttlSec": 86400,
+      "liveActivity": {
+        "state": {
+          "step": "backup-done",
+          "progress": 1,
+          "done": 3000,
+          "total": 3000
+        }
+      }
+    }
+  },
+  "status": 200,
+  "headers": {},
+  "body": {
+    "status": "sent"
+  }
+}

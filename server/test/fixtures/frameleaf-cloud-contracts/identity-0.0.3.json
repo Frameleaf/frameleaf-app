@@ -1,0 +1,45 @@
+{
+  "name": "@frameleaf/cloud-contracts",
+  "version": "0.0.3",
+  "integrity": "sha512-hRIbOApFFDYvGCAidqtPuDUvZWxJNRUXhN3k2eRFJRBG0XY7on2Y5ztbfX51XH/cpBOsUqEdkg0OdQ+9pXwqvA==",
+  "sha256": "23aeee533b7b969473e1a6ab53f1d0299369ea015eb37f85c4cc847cfd194eba",
+  "sha1": "cb41d2f904172121f005e7c1b8897cdb88d5fa64",
+  "bytes": 441952,
+  "sourceTag": "contracts-v0.0.3",
+  "sourceCommit": "b7e9b37b53392694383ecc69fe4d7f18496d4ac2",
+  "registryVersionID": 1329556226,
+  "fixtures": [
+    {
+      "path": "identity/device-authorization-request.json",
+      "sha256": "4eb2eed71af724fe245138975d6c16be901031039d335f42f667eb6663c2f110"
+    },
+    {
+      "path": "identity/device-authorization-response.json",
+      "sha256": "679307395aa3c37824f9ae54800e9291d09e34e247f10c011af1354a0c91d585"
+    },
+    {
+      "path": "identity/device-token-request.json",
+      "sha256": "e784930d8cf6b457088207be55da5b5f581df0e8558468b574de29ffd2b02a2f"
+    },
+    {
+      "path": "identity/device-token-pending.json",
+      "sha256": "44ae08321b75d626e5c50b70aa668a804cf2761d3704f0344ec061794fb5a24f"
+    },
+    {
+      "path": "identity/token-request-client-credentials.json",
+      "sha256": "1dee0d83d1f4371f24bd2bbf4d6571d868a7bed55d1c916ee22ca9ec05119527"
+    },
+    {
+      "path": "identity/token-response-instance.json",
+      "sha256": "196b222a9b50fe1679541313276baf10fa812f1408c59534120368144381b5fa"
+    },
+    {
+      "path": "identity/token-response-link.json",
+      "sha256": "6f4dcc8933adbfe556fe7636dc27575cd646727f3387e6f16b3f6bb3091c447a"
+    },
+    {
+      "path": "identity/instance-claims.json",
+      "sha256": "48c2342d56097cf6bcb150d85f5e37fd8764bc03a03ab452e8ca8f65aa848c40"
+    }
+  ]
+}
