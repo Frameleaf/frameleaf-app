@@ -85,48 +85,6 @@ describe(TimelineService.name, () => {
       ]);
     });
 
-    it('should return error if time bucket is requested with partners asset and archived', async () => {
-      const { sut } = setup();
-      const auth = factory.auth();
-      const response1 = sut.getTimeBuckets(auth, { withPartners: true, visibility: AssetVisibility.Archive });
-      await expect(response1).rejects.toBeInstanceOf(BadRequestException);
-      await expect(response1).rejects.toThrow(
-        'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
-      );
-
-      const response2 = sut.getTimeBuckets(auth, { withPartners: true });
-      await expect(response2).rejects.toBeInstanceOf(BadRequestException);
-      await expect(response2).rejects.toThrow(
-        'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
-      );
-    });
-
-    it('should return error if time bucket is requested with partners asset and favorite', async () => {
-      const { sut } = setup();
-      const auth = factory.auth();
-      const response1 = sut.getTimeBuckets(auth, { withPartners: true, isFavorite: false });
-      await expect(response1).rejects.toBeInstanceOf(BadRequestException);
-      await expect(response1).rejects.toThrow(
-        'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
-      );
-
-      const response2 = sut.getTimeBuckets(auth, { withPartners: true, isFavorite: true });
-      await expect(response2).rejects.toBeInstanceOf(BadRequestException);
-      await expect(response2).rejects.toThrow(
-        'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
-      );
-    });
-
-    it('should return error if time bucket is requested with partners asset and trash', async () => {
-      const { sut } = setup();
-      const auth = factory.auth();
-      const response = sut.getTimeBuckets(auth, { withPartners: true, isTrashed: true });
-      await expect(response).rejects.toBeInstanceOf(BadRequestException);
-      await expect(response).rejects.toThrow(
-        'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
-      );
-    });
-
     it('should return error if time bucket is requested with locked visibility for partner', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
@@ -273,54 +231,32 @@ describe(TimelineService.name, () => {
       expect(response).toEqual(expect.objectContaining({ isTrashed: [true] }));
     });
 
-    it('should return false for favorite status unless asset owner', async () => {
+    it("shows a partner's item once, as the viewer's own copy, never the partner's row (FL-326)", async () => {
       const { sut, ctx } = setup();
-      const [{ asset: asset1 }, { asset: asset2 }] = await Promise.all([
-        ctx.newUser().then(async ({ user }) => {
-          const result = await ctx.newAsset({
-            ownerId: user.id,
-            fileCreatedAt: new Date('1970-02-12'),
-            localDateTime: new Date('1970-02-12'),
-            isFavorite: true,
-          });
-          await ctx.newExif({ assetId: result.asset.id, make: 'Canon' });
-          return result;
-        }),
-
-        ctx.newUser().then(async ({ user }) => {
-          const result = await ctx.newAsset({
-            ownerId: user.id,
-            fileCreatedAt: new Date('1970-02-13'),
-            localDateTime: new Date('1970-02-13'),
-            isFavorite: true,
-          });
-          await ctx.newExif({ assetId: result.asset.id, make: 'Canon' });
-          return result;
-        }),
-      ]);
-
-      await Promise.all([
-        ctx.newPartner({ sharedById: asset1.ownerId, sharedWithId: asset2.ownerId }),
-        ctx.newPartner({ sharedById: asset2.ownerId, sharedWithId: asset1.ownerId }),
-      ]);
-
-      const auth1 = factory.auth({ user: { id: asset1.ownerId } });
-      const rawResponse1 = await sut.getTimeBucket(auth1, {
-        timeBucket: '1970-02-01',
-        withPartners: true,
-        visibility: AssetVisibility.Timeline,
+      const { user: alice } = await ctx.newUser();
+      const { user: bob } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+      const { asset: theirs } = await ctx.newAsset({ ownerId: alice.id, localDateTime: new Date('1970-02-12') });
+      await ctx.newExif({ assetId: theirs.id, make: 'Canon' });
+      // bob's copy of it (the copy engine's row)
+      const { asset: copy } = await ctx.newAsset({
+        ownerId: bob.id,
+        checksum: theirs.checksum,
+        localDateTime: new Date('1970-02-12'),
       });
-      const response1 = JSON.parse(rawResponse1);
-      expect(response1).toEqual(expect.objectContaining({ id: [asset2.id, asset1.id], isFavorite: [false, true] }));
+      await ctx.newExif({ assetId: copy.id, make: 'Canon' });
 
-      const auth2 = factory.auth({ user: { id: asset2.ownerId } });
-      const rawResponse2 = await sut.getTimeBucket(auth2, {
-        timeBucket: '1970-02-01',
-        withPartners: true,
-        visibility: AssetVisibility.Timeline,
-      });
-      const response2 = JSON.parse(rawResponse2);
-      expect(response2).toEqual(expect.objectContaining({ id: [asset2.id, asset1.id], isFavorite: [true, false] }));
+      const auth = factory.auth({ user: { id: bob.id } });
+      const response = JSON.parse(
+        await sut.getTimeBucket(auth, {
+          timeBucket: '1970-02-01',
+          userId: bob.id,
+          visibility: AssetVisibility.Timeline,
+        }),
+      );
+      expect(response.id).toEqual([copy.id]);
+      // and the partner's own timeline is not readable
+      await expect(sut.getTimeBuckets(auth, { userId: alice.id })).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
@@ -512,12 +448,10 @@ describe(TimelineService.name, () => {
       await expect(sut.getTimeBuckets(elevated, { visibility: AssetVisibility.Timeline })).resolves.toEqual([
         { count: 2, timeBucket: '1970-02-01' },
       ]);
-      // never to anybody else, whatever their own session
-      const partnerView = await bucket(otherElevated, {
-        userId: owner.id,
-        visibility: AssetVisibility.Timeline,
-      });
-      expect(partnerView.id).toEqual([plain.id]);
+      // never to anybody else, whatever their own session (FL-326: nor is the timeline readable at all)
+      await expect(bucket(otherElevated, { userId: owner.id, visibility: AssetVisibility.Timeline })).rejects.toThrow(
+        'Not found or no timeline.read access',
+      );
     });
   });
 
@@ -608,42 +542,6 @@ describe(TimelineService.name, () => {
         await sut.getTimeBucket(elevated, { timeBucket: '1970-02-01', visibility: AssetVisibility.Locked }),
       );
       expect(lockedView.id).toEqual(bucket.id);
-    });
-
-    it('includes partners like the buckets and hides the locations a partner keeps private', async () => {
-      const { sut, ctx } = setup();
-      const { user: me } = await ctx.newUser();
-      const { user: partner } = await ctx.newUser();
-      await ctx.get(PartnerRepository).create({
-        sharedById: partner.id,
-        sharedWithId: me.id,
-        inTimeline: true,
-        shareLocation: false,
-      });
-      const mine = await newItem(ctx, me.id, 'a.jpg', 1, { city: 'Halifax' });
-      const theirs = await newItem(ctx, partner.id, 'b.jpg', 2, { city: 'Oslo' });
-      const auth = factory.auth({ user: { id: me.id } });
-
-      const page = JSON.parse(
-        await sut.getTimelineOrdered(auth, {
-          sort: 'filename',
-          skip: 0,
-          take: 10,
-          withPartners: true,
-          visibility: AssetVisibility.Timeline,
-        }),
-      );
-      expect(page.id).toEqual([mine.id, theirs.id]);
-      expect(page.city).toEqual(['Halifax', null]);
-
-      const bucket = JSON.parse(
-        await sut.getTimeBucket(auth, {
-          timeBucket: '1970-02-01',
-          withPartners: true,
-          visibility: AssetVisibility.Timeline,
-        }),
-      );
-      expect(bucket.id.toSorted()).toEqual(page.id.toSorted());
     });
 
     it('returns dimensions and size for the list view; a shared link without EXIF hides them and may not sort', async () => {

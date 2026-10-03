@@ -129,22 +129,18 @@ describe(SearchService.name, () => {
       expect(mocks.search.getCountries).toHaveBeenCalledWith([authStub.user1.user.id], {});
     });
 
-    it('should leave partners who hide their locations out of place suggestions only', async () => {
+    it("suggests only from the viewer's own library, never a partner's (FL-326)", async () => {
       const me = authStub.user1.user.id;
-      const hiding = PartnerFactory.create({ sharedWithId: me, inTimeline: true, shareLocation: false });
-      const sharing = PartnerFactory.create({ sharedWithId: me, inTimeline: true, shareLocation: true });
-      mocks.partner.getAll.mockResolvedValue([getForPartner(hiding), getForPartner(sharing)]);
+      const sharing = PartnerFactory.create({ sharedWithId: me });
+      mocks.partner.getAll.mockResolvedValue([getForPartner(sharing)]);
       mocks.search.getCities.mockResolvedValue(['Calgary']);
       mocks.search.getCameraMakes.mockResolvedValue(['Canon']);
 
       await sut.getSearchSuggestions(authStub.user1, { includeNull: false, type: SearchSuggestionType.CITY });
-      expect(mocks.search.getCities).toHaveBeenCalledWith([me, sharing.sharedById], expect.anything());
+      expect(mocks.search.getCities).toHaveBeenCalledWith([me], expect.anything());
 
       await sut.getSearchSuggestions(authStub.user1, { includeNull: false, type: SearchSuggestionType.CAMERA_MAKE });
-      expect(mocks.search.getCameraMakes).toHaveBeenCalledWith(
-        [me, hiding.sharedById, sharing.sharedById],
-        expect.anything(),
-      );
+      expect(mocks.search.getCameraMakes).toHaveBeenCalledWith([me], expect.anything());
     });
 
     it('should exclude NSFW assets from suggestions when privacy hiding is active', async () => {
@@ -533,10 +529,10 @@ describe(SearchService.name, () => {
       return { auth, partnerId: partner.sharedById };
     };
 
-    it("scopes an elevated session's Locked media to its own owner when partners are searched too", async () => {
-      const { auth, partnerId } = partnerSetup();
+    it("searches only the viewer's own library, with Locked media scoped to its owner (FL-326)", async () => {
+      const { auth } = partnerSetup();
       const scoped = expect.objectContaining({
-        userIds: [auth.user.id, partnerId],
+        userIds: [auth.user.id],
         lockedOwnerId: auth.user.id,
       });
 
@@ -576,38 +572,6 @@ describe(SearchService.name, () => {
       await sut.searchMetadata(auth, { size: 250, albumIds: [albumId] });
 
       expect(mocks.search.searchMetadata.mock.calls[0][1].lockedOwnerId).toBeUndefined();
-    });
-
-    it('keeps owners who hide their locations out of an album search by place (FL-54)', async () => {
-      const auth = AuthFactory.create();
-      const albumId = newUuid();
-      const hidingFromAlbumOwner = newUuid();
-      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
-      mocks.partner.getAll.mockResolvedValue([]);
-      mocks.partner.getLocationHiddenOwnerIdsForAlbums.mockResolvedValue([hidingFromAlbumOwner]);
-      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
-      mocks.search.searchMetadataV3.mockResolvedValue({ hasNextPage: false, items: [] });
-
-      await sut.searchMetadata(auth, { size: 250, albumIds: [albumId], city: 'Oslo' });
-      expect(mocks.search.searchMetadata.mock.calls[0][1].locationHiddenOwnerIds).toEqual([hidingFromAlbumOwner]);
-      expect(mocks.partner.getLocationHiddenOwnerIdsForAlbums).toHaveBeenCalledWith([albumId], auth.user.id);
-
-      await sut.searchMetadata(auth, { size: 250, filter: { albumIds: { any: [albumId] }, city: { eq: 'Oslo' } } });
-      expect(mocks.search.searchMetadataV3.mock.calls[0][2]).toMatchObject({
-        locationHiddenOwnerIds: [hidingFromAlbumOwner],
-      });
-    });
-
-    it('adds no owner exclusion to an album search without a place filter (FL-54)', async () => {
-      const auth = AuthFactory.create();
-      const albumId = newUuid();
-      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
-      mocks.search.searchMetadata.mockResolvedValue({ hasNextPage: false, items: [] });
-
-      await sut.searchMetadata(auth, { size: 250, albumIds: [albumId] });
-
-      expect(mocks.search.searchMetadata.mock.calls[0][1].locationHiddenOwnerIds).toBeUndefined();
-      expect(mocks.partner.getLocationHiddenOwnerIdsForAlbums).not.toHaveBeenCalled();
     });
 
     it('leaves the motion parts of Locked live photos out of every search (FL-34)', async () => {
@@ -1025,8 +989,6 @@ describe(SearchService.name, () => {
   describe('FL-49 facets, histogram and smart counts', () => {
     it('counts facets over the statistics scope and names nothing the session keeps Locked', async () => {
       const me = authStub.user1.user.id;
-      const hiding = PartnerFactory.create({ sharedWithId: me, inTimeline: true, shareLocation: false });
-      mocks.partner.getAll.mockResolvedValue([getForPartner(hiding)]);
       mocks.search.searchFacets.mockResolvedValue({
         total: 3,
         rows: [
@@ -1058,7 +1020,7 @@ describe(SearchService.name, () => {
         ],
       });
       const [options, facetOptions] = mocks.search.searchFacets.mock.calls[0];
-      // a place filter leaves out partners who hide their locations, exactly as statistics does
+      // only the viewer's own library, exactly as statistics does (FL-326)
       expect(options).toEqual(
         expect.objectContaining({ userIds: [me], visibility: 'not-locked', hiddenContent, hideLockedMotion: true }),
       );
@@ -1068,7 +1030,7 @@ describe(SearchService.name, () => {
         viewerId: me,
         facets: [SearchFacetField.Type, SearchFacetField.People],
         limit: 10,
-        locationHiddenOwnerIds: [hiding.sharedById],
+        locationHiddenOwnerIds: [],
         suppressedPersonIds: ['person-locked'],
         suppressedTagIds: ['tag-locked'],
         covers: false,

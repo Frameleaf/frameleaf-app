@@ -9,7 +9,7 @@ const query = (filter: DiscoveryQuery['filter'], text = ''): DiscoveryQuery => (
   text,
   filter,
 });
-const base = { visibility: AssetVisibility.Timeline, withStacked: true, withPartners: true };
+const base = { visibility: AssetVisibility.Timeline, withStacked: true };
 
 describe('timelineQueryOptions (FL-30, M3)', () => {
   it('applies a media type without dropping other conditions or replacing the page type (FL-40)', () => {
@@ -45,14 +45,11 @@ describe('timelineQueryOptions (FL-30, M3)', () => {
     expect(timelineQueryOptions(query({ albumIds: { any: ['a1'] } }), base).options.albumId).toBe('a1');
   });
 
-  it('applies favourites where the view has no partners, and leaves them to search where it does', () => {
-    const own = timelineQueryOptions(query({ isFavorite: { eq: true } }), { visibility: AssetVisibility.Timeline });
-    expect(own.options.isFavorite).toBe(true);
+  it("applies favourites to the time buckets: a view holds only the viewer's own items (FL-326)", () => {
+    const own = timelineQueryOptions(query({ isFavorite: { eq: true } }), base);
+    expect(own.options).toEqual({ ...base, isFavorite: true });
     expect(own.unapplied).toEqual([]);
-    const shared = timelineQueryOptions(query({ isFavorite: { eq: true } }), base);
-    expect(shared.options).toEqual(base);
-    expect(shared.unapplied).toEqual(['isFavorite']);
-    expect(viewInLibraryHref(query({ isFavorite: { eq: true } })).startsWith('/search?')).toBe(true);
+    expect(viewInLibraryHref(query({ isFavorite: { eq: true } })).startsWith('/photos?')).toBe(true);
   });
 
   it('reports what the buckets cannot express instead of pretending to apply it', () => {

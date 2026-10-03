@@ -789,6 +789,9 @@ export class JobRepository {
       case JobName.PartnerCopyAsset: {
         return { deduplication: { id: `partner-copy/${item.data.sourceAssetId}/${item.data.targetOwnerId}` } };
       }
+      case JobName.PartnerCopyAlbum: {
+        return { deduplication: { id: `partner-album/${item.data.sourceAlbumId}/${item.data.targetOwnerId}` } };
+      }
       case JobName.PushBackupStaleCheck: {
         return { deduplication: { id: JobName.PushBackupStaleCheck } };
       }

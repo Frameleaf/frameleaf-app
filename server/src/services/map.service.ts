@@ -7,50 +7,26 @@ import {
   MapStatisticsResponseDto,
 } from 'src/dtos/map.dto.js';
 import { BaseService } from 'src/services/base.service.js';
-import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
-import { getLocationHiddenPartnerIds } from 'src/utils/partner-location.js';
 
 @Injectable()
 export class MapService extends BaseService {
   async getMapMarkers(auth: AuthDto, options: MapMarkerDto): Promise<MapMarkerResponseDto[]> {
-    const userIds = [auth.user.id];
-    if (options.withPartners) {
-      // markers are pure location data, so partners who hide their locations contribute none
-      const partnerIds = await getMyPartnerIds({
-        userId: auth.user.id,
-        repository: this.partnerRepository,
-        locationSharedOnly: true,
-      });
-      userIds.push(...partnerIds);
-    }
-
+    // FL-326 (spec §4.8): the map holds only the viewer's rows; what partners share arrives as copies
     const albumIds = options.withSharedAlbums ? await this.albumRepository.getAllIds(auth.user.id) : [];
-    // FL-54: a shared album can hold items of an owner who hides their locations from this viewer
-    const locationHiddenOwnerIds =
-      albumIds.length > 0
-        ? [...(await getLocationHiddenPartnerIds({ userId: auth.user.id, repository: this.partnerRepository }))]
-        : [];
-
-    return this.mapRepository.getMapMarkers(auth.user.id, userIds, albumIds, {
+    return this.mapRepository.getMapMarkers(auth.user.id, [auth.user.id], albumIds, {
       ...options,
       ...getHiddenContentQueryOptions(auth),
-      ...(locationHiddenOwnerIds.length > 0 && { locationHiddenOwnerIds }),
     });
   }
 
   /**
-   * FL-51: the settings sheet's counts. Archived and unlocated items are the viewer's own; partner
-   * items come only from partners who share their timeline and their locations with the viewer, as
-   * the markers do. Hidden and Locked content follows the session, as for the markers.
+   * FL-51: the settings sheet's counts. Archived and unlocated items are the viewer's own. Hidden and
+   * Locked content follows the session, as for the markers. FL-326: partners' items are the viewer's own
+   * copies now, so the partner count is always 0 (kept for older clients).
    */
   async getMapStatistics(auth: AuthDto, options: MapMarkerDto): Promise<MapStatisticsResponseDto> {
-    const partnerIds = await getMyPartnerIds({
-      userId: auth.user.id,
-      repository: this.partnerRepository,
-      locationSharedOnly: true,
-    });
-    return this.mapRepository.getMapStatistics(auth.user.id, partnerIds, {
+    return this.mapRepository.getMapStatistics(auth.user.id, [], {
       isFavorite: options.isFavorite,
       fileCreatedAfter: options.fileCreatedAfter,
       fileCreatedBefore: options.fileCreatedBefore,

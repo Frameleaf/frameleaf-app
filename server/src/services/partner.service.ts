@@ -77,39 +77,19 @@ export class PartnerService extends BaseService {
       .map((partner) => this.mapPartner(partner, direction));
   }
 
-  async update(auth: AuthDto, partnerUserId: string, dto: PartnerUpdateDto): Promise<PartnerResponseDto> {
-    const hasInTimeline = dto.inTimeline !== undefined;
-    const hasShareLocation = dto.shareLocation !== undefined;
-    if (hasInTimeline === hasShareLocation) {
-      throw new BadRequestException('Specify exactly one of inTimeline or shareLocation');
-    }
-
-    if (hasInTimeline) {
-      // recipient preference: the partner identified by `:id` shares with me
-      await this.requireAccess({ auth, permission: Permission.PartnerUpdate, ids: [partnerUserId] });
-      const partnerId: PartnerIds = { sharedById: partnerUserId, sharedWithId: auth.user.id };
-
-      const entity = await this.partnerRepository.update(partnerId, { inTimeline: dto.inTimeline });
-      return this.mapPartner(entity, PartnerDirection.SharedWith);
-    }
-
-    // sharer setting: I share with the partner identified by `:id`; only the row owned by the caller
-    // as `sharedById` can be changed, so the recipient can never grant themselves location access
-    const partnerId: PartnerIds = { sharedById: auth.user.id, sharedWithId: partnerUserId };
-    const partner = await this.partnerRepository.get(partnerId);
-    if (!partner) {
+  /** FL-326: a partnership has no settings left; this answers the partner who shares with the caller. */
+  async update(auth: AuthDto, partnerUserId: string, _dto: PartnerUpdateDto): Promise<PartnerResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.PartnerUpdate, ids: [partnerUserId] });
+    const partner = await this.partnerRepository.get({ sharedById: partnerUserId, sharedWithId: auth.user.id });
+    if (!partner?.sharedBy || !partner.sharedWith) {
       throw new BadRequestException('Partner not found');
     }
-
-    const entity = await this.partnerRepository.update(partnerId, { shareLocation: dto.shareLocation });
-    return this.mapPartner(entity, PartnerDirection.SharedBy);
+    return this.mapPartner(partner as Partner, PartnerDirection.SharedWith);
   }
 
   private mapPartner(partner: Partner, direction: PartnerDirection): PartnerResponseDto {
     // this is opposite to return the non-me user of the "partner"
     const sharedUser = direction === PartnerDirection.SharedBy ? partner.sharedWith : partner.sharedBy;
-    const user = mapUser(sharedUser);
-
-    return { ...user, inTimeline: partner.inTimeline, shareLocation: partner.shareLocation };
+    return mapUser(sharedUser);
   }
 }
