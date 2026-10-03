@@ -128,7 +128,9 @@ describe(ICloudIdentityRepository.name, () => {
         SET "lastVerifiedAt" = '2026-06-01T10:00:00Z', "lastAuditResult" = ${result}, "appleFingerprint" = 'old-proof'
         WHERE "assetId" = ${assetId}::uuid`.execute(db);
       const replacement = Buffer.alloc(32, 2);
-      await sql`UPDATE immich_fork.icloud_resource SET sha256 = ${replacement} WHERE id = ${resourceId}::uuid`.execute(db);
+      await sql`UPDATE immich_fork.icloud_resource SET sha256 = ${replacement} WHERE id = ${resourceId}::uuid`.execute(
+        db,
+      );
       await recordSyncIdentity(db, resourceId);
       expect(await sut.identities(connection.ownerId, [ASSET])).toEqual([
         expect.objectContaining({
