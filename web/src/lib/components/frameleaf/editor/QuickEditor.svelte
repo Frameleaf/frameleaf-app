@@ -855,7 +855,9 @@
     target instanceof HTMLElement &&
     (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
   const onKeyDown = (event: KeyboardEvent) => {
-    if (nativeOpen) return;
+    if (nativeOpen) {
+      return;
+    }
     if (isVideo) {
       videoQuickEditor?.keyDown(event);
       return;
@@ -889,7 +891,9 @@
     }
   };
   const onKeyUp = (event: KeyboardEvent) => {
-    if (nativeOpen) return;
+    if (nativeOpen) {
+      return;
+    }
     if (isVideo) {
       videoQuickEditor?.keyUp(event);
       return;
