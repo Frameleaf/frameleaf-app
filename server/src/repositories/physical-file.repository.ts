@@ -8,6 +8,7 @@ import {
   AssetFileType,
   AssetStatus,
   ChecksumAlgorithm,
+  DatabaseLock,
   PhysicalFileType,
   StudioExportScope,
   StudioExportVersionState,
@@ -32,6 +33,15 @@ export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> 
   await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(db);
   const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
   await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
+};
+
+/**
+ * Serializes universal-storage linking per content hash (see `linkUploadedOriginal`). Taken before any
+ * path lock, never after one.
+ */
+export const lockChecksum = async (db: Kysely<DB>, checksum: Buffer): Promise<void> => {
+  const key = createHash('sha1').update(checksum).digest().readInt32BE(0);
+  await sql`SELECT pg_advisory_xact_lock(${DatabaseLock.UniversalStorageChecksum}::int, ${key}::int)`.execute(db);
 };
 
 export type PhysicalNormalizationAsset = {
@@ -155,6 +165,169 @@ export class PhysicalFileRepository {
       .orderBy('asset.id', 'asc')
       .limit(1)
       .executeTakeFirst();
+  }
+
+  /**
+   * Universal storage: the asset whose original file the server keeps for this content. Any active,
+   * non-external, online asset with the same SHA-256 and size qualifies, whoever owns it; the lowest id
+   * wins, so upload linking and the storage migration always agree on one file. `excludeAssetId` leaves
+   * out the asset being linked.
+   */
+  getServerOriginalCandidate(
+    checksum: Buffer,
+    sizeInBytes: number,
+    options: { excludeAssetId?: string; kysely?: Kysely<DB> } = {},
+  ) {
+    return (options.kysely ?? this.db)
+      .selectFrom('asset')
+      .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select(['asset.id', 'asset.originalPath', 'asset.physicalOriginalFileId'])
+      .where('asset.libraryId', 'is', null)
+      .where('asset.isExternal', '=', false)
+      .where('asset.isOffline', '=', false)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.status', '=', AssetStatus.Active)
+      .where('asset.checksum', '=', checksum)
+      .where('asset_exif.fileSizeInByte', '=', sizeInBytes)
+      .$if(!!options.excludeAssetId, (qb) => qb.where('asset.id', '!=', asUuid(options.excludeAssetId!)))
+      .orderBy('asset.id', 'asc')
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Universal storage upload linking (one file per content hash, server-wide). Under a per-checksum lock,
+   * an uploaded asset is pointed at the file the server already keeps for its content when another
+   * library holds it and that file is on disk (`linked: true`; the caller releases the temporary upload).
+   * Otherwise the upload's own file is registered with the asset as its primary (`linked: false`).
+   * Returns undefined for an asset that is not an eligible upload (external, offline, trashed).
+   *
+   * `ingestion` re-checks a resumable upload's durable claim before linking, as the claim may have expired.
+   */
+  async linkUploadedOriginal(
+    assetId: string,
+    file: { checksum: Buffer; sizeInBytes: number },
+    options: {
+      exists: (path: string) => Promise<boolean>;
+      ingestion?: { resourceId: string; token: string; ownerId: string };
+    },
+  ): Promise<{ physicalFile: PhysicalFile; linked: boolean } | undefined> {
+    return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
+      await lockChecksum(trx, file.checksum);
+
+      const asset = await trx
+        .selectFrom('asset')
+        .select(['asset.id', 'asset.originalPath', 'asset.physicalOriginalFileId'])
+        .where('asset.id', '=', asUuid(assetId))
+        .where('asset.checksum', '=', file.checksum)
+        .where('asset.libraryId', 'is', null)
+        .where('asset.isExternal', '=', false)
+        .where('asset.isOffline', '=', false)
+        .where('asset.deletedAt', 'is', null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!asset) {
+        return;
+      }
+
+      if (asset.physicalOriginalFileId) {
+        // already linked: a concurrent upload of the same content linked this one onto its file
+        const physicalFile = await this.getPhysicalFile(asset.physicalOriginalFileId, trx);
+        return physicalFile ? { physicalFile, linked: physicalFile.canonicalAssetId !== asset.id } : undefined;
+      }
+
+      const candidate = await this.getServerOriginalCandidate(file.checksum, file.sizeInBytes, {
+        excludeAssetId: asset.id,
+        kysely: trx,
+      });
+      if (candidate) {
+        const target = candidate.physicalOriginalFileId
+          ? await this.getPhysicalFile(candidate.physicalOriginalFileId, trx)
+          : undefined;
+        const path = target?.path ?? candidate.originalPath;
+        if (path !== asset.originalPath && (await options.exists(path))) {
+          await this.lockPath(trx, path);
+          if (options.ingestion) {
+            await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
+          }
+          const physicalFile =
+            target ??
+            (await this.registerOriginal(trx, {
+              canonicalAssetId: candidate.id,
+              checksum: file.checksum,
+              path,
+              sizeInBytes: file.sizeInBytes,
+            }));
+          // the candidate may have had no physical file yet: it becomes the primary of the one just made
+          await trx
+            .updateTable('asset')
+            .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
+            .where('physicalOriginalFileId', 'is', null)
+            .where((eb) => eb.or([eb('id', '=', asUuid(candidate.id)), eb('id', '=', asUuid(asset.id))]))
+            .execute();
+          return { physicalFile, linked: true };
+        }
+      }
+
+      await this.lockPath(trx, asset.originalPath);
+      const physicalFile = await this.registerOriginal(trx, {
+        canonicalAssetId: asset.id,
+        checksum: file.checksum,
+        path: asset.originalPath,
+        sizeInBytes: file.sizeInBytes,
+      });
+      await trx
+        .updateTable('asset')
+        .set({ physicalOriginalFileId: physicalFile.id })
+        .where('id', '=', asUuid(asset.id))
+        .execute();
+      return { physicalFile, linked: false };
+    });
+  }
+
+  private registerOriginal(
+    trx: Transaction<DB>,
+    values: { canonicalAssetId: string; checksum: Buffer; path: string; sizeInBytes: number },
+  ): Promise<PhysicalFile> {
+    return trx
+      .insertInto('physical_file')
+      .values({ ...values, type: PhysicalFileType.Original })
+      .onConflict((oc) =>
+        oc.column('path').doUpdateSet((eb) => ({
+          checksum: eb.ref('excluded.checksum'),
+          sizeInBytes: eb.ref('excluded.sizeInBytes'),
+          canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
+        })),
+      )
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  private async requireIngestionClaim(
+    trx: Transaction<DB>,
+    assetId: string,
+    checksum: Buffer,
+    ingestion: { resourceId: string; token: string; ownerId: string },
+  ) {
+    const claim = await trx
+      .selectFrom('asset_upload_resource')
+      .innerJoin('user as uploadOwner', 'uploadOwner.id', 'asset_upload_resource.ownerId')
+      .select('asset_upload_resource.id')
+      .where('asset_upload_resource.id', '=', ingestion.resourceId)
+      .where('asset_upload_resource.ownerId', '=', ingestion.ownerId)
+      .where('resultAssetId', '=', assetId)
+      .where('verifiedChecksum', '=', checksum)
+      .where('ingestionToken', '=', ingestion.token)
+      .where('ingestionLeaseExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where('state', '=', 'published')
+      .where('ingested', '=', false)
+      .where('uploadOwner.deletedAt', 'is', null)
+      .forShare()
+      .executeTakeFirst();
+    if (!claim) {
+      throw new ConflictException('Upload ingestion claim expired');
+    }
   }
 
   /**
