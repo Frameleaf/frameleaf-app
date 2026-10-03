@@ -70,6 +70,16 @@ conformance axes, which remain unqualified in `conformance.json`.
 
 Patch 0017 preserves `embeddedAudioMuted` when expanding nested composition audio, so unlinking a video from its audio does not restore the original sound during export. Its regression checks the retained audio samples in both full and windowed mixes. Hosted execution and wider audio, recording and caption conformance remain unqualified.
 
+Patch 0051 includes explicitly extracted embedded-caption segments and legacy caption text in
+the shared export collector and visual-copy filter. Burn retains authored styling; off removes
+these captions, sidecar emits SRT, and supported embedded WebM/MKV emits WebVTT. Ordinary
+titles and unclassified text remain visual items. SRT/VTT preserve cue text and timing, including
+bounded overlaps, rather than arbitrary typography. The existing MP4/MOV admission rejection
+and the shared helper's internal burn fallback remain unchanged. Authored regressions use the
+real source-window/speed-aware caption builder and shared serializers/parsers, with owned inline
+text, and preserve source provenance and the input graph. Hosted execution, real-container
+subtitle extraction and mux round trips remain unqualified; this is one FL-103 slice.
+
 Patch 0018 rejects paused scope captures completed after a newer playhead epoch, including seeking
 away and back to the same frame, in GPU and CPU paths. Normal GPU playback sampling continues.
 Scopes label their current display-referred sRGB/Rec.709 full-range preview input. Deferred-capture regressions run in the hosted engine suite;
