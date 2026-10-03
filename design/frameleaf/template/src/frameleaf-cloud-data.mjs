@@ -853,7 +853,7 @@ export function validateBucketSettings({ endpoint, bucket, accessKey, secret } =
       errors.endpoint = "Encrypted uploads with your key (SSE-C) need an HTTPS endpoint.";
     else if (url.username || url.password) errors.endpoint = "Keep credentials out of the endpoint address.";
   } catch {
-    errors.endpoint = "Enter the endpoint address, for example https://s3.eu-central-2.wasabisys.com.";
+    errors.endpoint = "Enter the endpoint address, for example https://s3.eu-central-2.storage.example.";
   }
   if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(String(bucket ?? "")) || /\.\.|^\d+\.\d+\.\d+\.\d+$/.test(bucket))
     errors.bucket = "Bucket names use 3–63 lowercase letters, numbers, dots or hyphens.";
@@ -926,7 +926,7 @@ export function configureBackup(state, config, now = Date.now()) {
       ...state.backup,
       configured: true,
       target: config.target === "byo" ? "byo" : "managed",
-      endpoint: config.target === "byo" ? config.endpoint : "https://s3.eu-central-2.wasabisys.com",
+      endpoint: config.target === "byo" ? config.endpoint : "https://s3.eu-central-1.backup.frameleaf.cloud",
       bucket: config.target === "byo" ? config.bucket : `fl-eu-${state.link.instanceId}`,
       keyMode: config.keyMode,
       keyFingerprint: config.fingerprint,

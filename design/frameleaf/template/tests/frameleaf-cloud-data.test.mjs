@@ -235,7 +235,7 @@ test("unlinking stops cloud features but keeps identity and backups", () => {
 
 test("backup targets need an HTTPS endpoint and a bucket dedicated to this server", () => {
   const valid = {
-    endpoint: "https://s3.eu-central-2.wasabisys.com",
+    endpoint: "https://s3.eu-central-2.storage.example",
     bucket: "taylor-frameleaf-backup",
     accessKey: "AKIAEXAMPLE",
     secret: "secret",

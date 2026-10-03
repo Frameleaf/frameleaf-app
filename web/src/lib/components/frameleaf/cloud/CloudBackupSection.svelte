@@ -360,8 +360,15 @@
       <dl class="fc-facts">
         <dt>{$t('frameleaf_cloud_backup_bucket')}</dt>
         <dd><code>{status.bucket}</code></dd>
-        <dt>{$t('frameleaf_cloud_backup_region')}</dt>
-        <dd>{status.region ?? '—'}</dd>
+        {#if status.target === CloudBackupTargetSetting.Managed}
+          <dt>{$t('frameleaf_cloud_backup_location')}</dt>
+          <dd>
+            {status.managed?.location ? `${status.managed.location.city}, ${status.managed.location.country}` : '—'}
+          </dd>
+        {:else}
+          <dt>{$t('frameleaf_cloud_backup_region')}</dt>
+          <dd>{status.region ?? '—'}</dd>
+        {/if}
         <dt>{$t('frameleaf_cloud_backup_key')}</dt>
         <dd>{status.keyMode ? $t(modeTitle[status.keyMode]) : '—'}</dd>
         <dt>{$t('frameleaf_cloud_backup_key_fingerprint')}</dt>

@@ -967,7 +967,7 @@ export type FrameleafCloudBackupRun = {
  */
 export type FrameleafCloudBackup = {
   target: CloudBackupTarget;
-  /** The claimed bucket's address, `<endpoint>/<bucket>`: the index key in `cloud_backup_object`. */
+  /** Managed storage uses its stable storage ID; BYO uses `<endpoint>/<bucket>`. The object index key. */
   bucketRef: string;
   endpoint: string;
   region: string;
@@ -1049,6 +1049,14 @@ export type FrameleafCloudBackupPrune = {
 
 /** FL-164: Frameleaf-managed storage as the grant and the usage report last described it. */
 export type FrameleafCloudBackupManaged = {
+  storageId?: string;
+  location?: {
+    locationId: string;
+    cityId: string;
+    city: string;
+    country: string;
+    countryCode: string;
+  };
   readOnly: boolean;
   readOnlyReason: string | null;
   quotaBytes: number;

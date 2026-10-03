@@ -39,13 +39,13 @@ describe('cloud backup helpers (FL-160)', () => {
   });
 
   it('reads the signing region from regional, dual-stack and virtual-hosted addresses', () => {
-    expect(signingRegion('https://s3.eu-central-2.wasabisys.com', '')).toBe('eu-central-2');
+    expect(signingRegion('https://s3.eu-central-2.storage.example', '')).toBe('eu-central-2');
     expect(signingRegion('https://s3-eu-west-1.amazonaws.com', '')).toBe('eu-west-1');
     expect(signingRegion('https://s3.dualstack.us-west-2.amazonaws.com', '')).toBe('us-west-2');
     expect(signingRegion('https://bucket.s3.dualstack.eu-west-1.amazonaws.com', '')).toBe('eu-west-1');
     expect(signingRegion('https://s3.amazonaws.com', '')).toBe('us-east-1');
     expect(signingRegion('https://minio.local:9000', '')).toBe('us-east-1');
-    expect(signingRegion('https://s3.eu-central-2.wasabisys.com', 'eu-west-9')).toBe('eu-west-9');
+    expect(signingRegion('https://s3.eu-central-2.storage.example', 'eu-west-9')).toBe('eu-west-9');
   });
 
   it('asks for HTTPS, a valid bucket name and both keys', () => {

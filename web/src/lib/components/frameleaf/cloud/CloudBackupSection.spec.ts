@@ -36,9 +36,17 @@ const status = (readOnly: boolean, readOnlyReason: string | null) =>
     escrow: { stored: false },
     managedAvailable: true,
     bucket: 'fl-eu-0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53',
-    endpoint: 'https://s3.eu-central-1.wasabisys.com',
+    endpoint: 'https://s3.eu-central-1.backup.frameleaf.cloud',
     region: 'eu-central-1',
     managed: {
+      storageId: '0194b445-9c8a-7001-8000-000000000002',
+      location: {
+        locationId: 'loc-07',
+        cityId: 'amsterdam',
+        city: 'Amsterdam',
+        country: 'Netherlands',
+        countryCode: 'NL',
+      },
       readOnly,
       readOnlyReason,
       quotaBytes: 1_000_000_000_000,
@@ -83,5 +91,15 @@ describe('CloudBackupSection read-only storage (FL-301)', () => {
     await vi.waitFor(() => expect(sdkMock.getCloudBackupStatus).toHaveBeenCalled());
     expect(screen.queryByText('Backup paused: plan full')).not.toBeInTheDocument();
     expect(screen.queryByText('Backups are read-only')).not.toBeInTheDocument();
+  });
+
+  it('shows the selected city and country instead of a physical region or connection hostname', async () => {
+    sdkMock.getCloudBackupStatus.mockResolvedValue(status(false, null));
+    render(CloudBackupSection);
+
+    expect(await screen.findByText('Amsterdam, Netherlands')).toBeInTheDocument();
+    expect(screen.getByText('Location')).toBeInTheDocument();
+    expect(screen.queryByText('eu-central-1')).not.toBeInTheDocument();
+    expect(screen.queryByText('s3.eu-central-1.backup.frameleaf.cloud')).not.toBeInTheDocument();
   });
 });

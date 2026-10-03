@@ -1225,7 +1225,7 @@ describe(SystemConfigService.name, () => {
 
     describe('the cloud backup secret access key (FL-160)', () => {
       const s3 = {
-        endpoint: 'https://s3.eu-central-2.wasabisys.com',
+        endpoint: 'https://s3.eu-central-2.storage.example',
         region: '',
         bucket: 'family-backup',
         accessKeyId: 'AKIAEXAMPLE',
