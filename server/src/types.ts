@@ -1479,6 +1479,8 @@ export interface UserMetadata extends Record<UserMetadataKey, Record<string, any
     seenAt: string;
     ending: 'finished' | 'skipped' | 'opened-settings' | 'setup';
   };
+  /** FL-326: when Locked partner copies first reached this account without a PIN, and when it was dismissed. */
+  [UserMetadataKey.PartnerLockedNotice]: { flaggedAt: string; dismissedAt: string | null };
 }
 
 export type MaybeDehydrated<T> = T | ShallowDehydrateObject<T>;
