@@ -29,6 +29,7 @@ export type StorageMigrationGroup = {
 export type StorageMigrationUnreferencedOriginal = {
   id: string;
   path: string;
+  checksum: Buffer;
   sizeInBytes: number;
   lastOwnerId: string | null;
   lastAssetId: string | null;
@@ -222,6 +223,7 @@ export class StorageMigrationRepository {
       .select([
         'physical_file.id',
         'physical_file.path',
+        'physical_file.checksum',
         'physical_file.sizeInBytes',
         'lastAsset.id as lastAssetId',
         'lastAsset.ownerId as lastOwnerId',

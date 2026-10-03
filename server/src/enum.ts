@@ -2475,6 +2475,12 @@ export enum DatabaseLock {
   BuddyBackup = 972,
   /** FL-326: one universal storage migration batch runs at a time across every worker. */
   UniversalStorageMigration = 973,
+  /**
+   * Universal storage: linking an upload to the server's one file for its content, or registering a new
+   * one, happens one upload at a time per checksum (taken with the checksum as the second key), so two
+   * uploads of the same new content never store it twice.
+   */
+  UniversalStorageChecksum = 980,
 }
 
 export enum MaintenanceAction {
@@ -3116,6 +3122,7 @@ export enum ApiTag {
   Duplicates = 'Duplicates',
   Enrichment = 'Enrichment',
   Faces = 'Faces',
+  FileTrash = 'File trash (admin)',
   FrameleafCloud = 'Frameleaf Cloud (admin)',
   FrameleafCloudMl = 'Frameleaf Cloud processing (admin)',
   FrameleafCloudJobs = 'Frameleaf Cloud jobs',

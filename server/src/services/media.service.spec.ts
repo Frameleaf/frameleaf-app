@@ -362,6 +362,29 @@ describe(MediaService.name, () => {
       });
       expect(mocks.move.create).toHaveBeenCalledTimes(3);
     });
+
+    it("never moves a shared generated file into a non-primary asset's folder", async () => {
+      const asset = AssetFactory.from()
+        .file({ type: AssetFileType.Preview, physicalFileId: 'shared-preview' })
+        .file({ type: AssetFileType.Thumbnail, physicalFileId: 'own-thumbnail' })
+        .build();
+      mocks.assetJob.getForMigrationJob.mockResolvedValue(asset);
+      mocks.physicalFile.getPhysicalFile.mockImplementation((id: string) =>
+        Promise.resolve({ id, canonicalAssetId: id === 'own-thumbnail' ? asset.id : 'primary-asset' } as never),
+      );
+      mocks.move.create.mockResolvedValue({
+        entityId: asset.id,
+        id: 'move-id',
+        newPath: '/new/path',
+        oldPath: '/old/path',
+        pathType: AssetPathType.Original,
+      });
+
+      await expect(sut.handleAssetMigration({ id: asset.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.move.create).not.toHaveBeenCalledWith(expect.objectContaining({ pathType: AssetFileType.Preview }));
+      expect(mocks.move.create).toHaveBeenCalledWith(expect.objectContaining({ pathType: AssetFileType.Thumbnail }));
+    });
   });
 
   describe('handleGenerateThumbnails', () => {
@@ -2624,6 +2647,32 @@ describe(MediaService.name, () => {
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
         data: { files: [file.path] },
+      });
+    });
+
+    it('keeps the canonical file on regeneration for a linked copy, with no master-user setting (universal storage)', async () => {
+      const file = {
+        assetId: 'asset-id',
+        type: AssetFileType.Thumbnail,
+        path: '/generated/thumbnail.webp',
+        isEdited: false,
+        isProgressive: false,
+        isTransparent: false,
+      };
+      const canonical = { id: 'physical-id', path: '/canonical/thumbnail.webp' };
+      const existing = { ...file, id: 'file-id', path: canonical.path, physicalFileId: canonical.id };
+      mocks.physicalFile.getCanonicalGeneratedFile.mockResolvedValue(canonical as never);
+      mocks.asset.upsertFiles.mockResolvedValue();
+      mocks.job.queue.mockResolvedValue();
+
+      await (sut as any).syncFiles([existing], [file]);
+
+      // the regenerated output is dropped; the shared file and its row stay as they were
+      expect(mocks.asset.upsertFiles).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: [file.path] } });
+      expect(mocks.job.queue).not.toHaveBeenCalledWith({
+        name: JobName.FileDelete,
+        data: { files: expect.arrayContaining([canonical.path]) },
       });
     });
 

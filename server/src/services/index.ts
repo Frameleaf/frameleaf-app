@@ -88,8 +88,8 @@ import { PhotoToolsService } from 'src/services/photo-tools.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
 import { PhysicalDeduplicationPlanService } from 'src/services/physical-deduplication-plan.service.js';
-import { StorageMigrationService } from 'src/services/storage-migration.service.js';
 import { PhysicalDeduplicationService } from 'src/services/physical-deduplication.service.js';
+import { PhysicalFileTrashService } from 'src/services/physical-file-trash.service.js';
 import { PinnedCollectionService } from 'src/services/pinned-collection.service.js';
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
@@ -108,6 +108,7 @@ import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { StackService } from 'src/services/stack.service.js';
+import { StorageMigrationService } from 'src/services/storage-migration.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
@@ -237,6 +238,7 @@ export const services = [
   PhysicalDeduplicationPlanService,
   StorageMigrationService,
   PhysicalDeduplicationService,
+  PhysicalFileTrashService,
   PluginService,
   PreservationService,
   PreservationWorkerService,

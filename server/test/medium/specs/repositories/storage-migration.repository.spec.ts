@@ -164,6 +164,7 @@ describe(StorageMigrationRepository.name, () => {
       expect(page.find(({ id }) => id === copyFile!.id)).toEqual({
         id: copyFile!.id,
         path: copy.originalPath,
+        checksum,
         sizeInBytes: 1000,
         lastAssetId: copy.id,
         lastOwnerId: user.id,

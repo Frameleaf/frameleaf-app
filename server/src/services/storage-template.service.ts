@@ -336,8 +336,11 @@ export class StorageTemplateService extends BaseService {
         }
 
         const sidecarPath = getAssetFile(asset.files, AssetFileType.Sidecar, { isEdited: false })?.path;
+        // universal storage: a non-primary asset's sidecar is its own owner's metadata. It goes to this
+        // asset's own template path, never beside the shared original, where the primary's sidecar lives.
+        const sidecarTargetIsShared = isSharedNonCanonical && newPath === oldPath;
         // FL-179: an original whose move was deferred or failed keeps its sidecar beside it
-        if (sidecarPath && moved) {
+        if (sidecarPath && moved && !sidecarTargetIsShared) {
           await this.storageCore.moveFile({
             entityId: id,
             pathType: AssetFileType.Sidecar,

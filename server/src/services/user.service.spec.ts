@@ -566,12 +566,77 @@ describe(UserService.name, () => {
 
       await sut.handleUserDelete({ id: user.id });
 
-      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(shared, expect.any(Function));
-      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(own, expect.any(Function));
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        shared,
+        expect.any(Function),
+        expect.anything(),
+      );
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        own,
+        expect.any(Function),
+        expect.anything(),
+      );
       expect(mocks.storage.unlink).toHaveBeenCalledWith(own);
       expect(mocks.storage.unlink).not.toHaveBeenCalledWith(shared);
       expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('Kept 1 file(s)'));
       expect(mocks.user.delete).toHaveBeenCalledWith(user, true);
+    });
+
+    it("sends the account's originals to the file trash, never unlinking them (universal storage)", async () => {
+      const user = { id: 'deleted-user', deletedAt: makeDeletedAt(10) } as UserAdmin;
+      mocks.user.get.mockResolvedValue(user);
+      const own = '/data/library/deleted-user/2024/own.jpg';
+      const thumbnail = '/data/thumbs/deleted-user/ow/n_/own_thumbnail.webp';
+      const checksum = Buffer.from('b'.repeat(64), 'hex');
+      mocks.asset.deleteAll.mockResolvedValue([
+        {
+          id: 'asset-id',
+          originalPath: own,
+          originalFileName: 'own.jpg',
+          checksum,
+          sizeInBytes: 42,
+          reservationTemporaryPath: null,
+          libraryId: null,
+          isOffline: false,
+        },
+      ]);
+      mocks.storage.walkFiles.mockImplementation((folder: string) =>
+        (async function* () {
+          yield* await Promise.resolve(
+            folder.endsWith('/library/deleted-user')
+              ? [own]
+              : folder.endsWith('/thumbs/deleted-user')
+                ? [thumbnail]
+                : [],
+          );
+        })(),
+      );
+      mocks.physicalFile.deleteUnreferencedPath.mockResolvedValue({ deleted: true, references: 0 });
+
+      await sut.handleUserDelete({ id: user.id });
+
+      const original = {
+        checksum,
+        sizeInBytes: 42,
+        ownerId: user.id,
+        assetId: 'asset-id',
+        originalFileName: 'own.jpg',
+      };
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(own, expect.any(Function), {
+        trash: { move: expect.any(Function), original },
+      });
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(thumbnail, expect.any(Function), {
+        trash: { move: expect.any(Function) },
+      });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.FileDelete,
+          data: {
+            files: [own],
+            original: { ...original, path: own, checksum: checksum.toString('hex') },
+          },
+        },
+      ]);
     });
 
     it('never deletes the account physical deduplication retains originals in (FL-44)', async () => {
