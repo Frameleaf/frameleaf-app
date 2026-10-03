@@ -518,6 +518,14 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
         120_000,
       );
       expect(completed.progress).toBe(100);
+      const adminProgress = await json<BuddyRestoreStatusDto>(
+        app,
+        `${adminRoute}/restores/${begun.operationId}`,
+        'GET',
+        app.admin.token,
+      );
+      expect(adminProgress.state).toBe('completed');
+      expect(adminProgress.progress).toBe(100);
     };
     for (const [index, app] of apps.entries()) {
       const { missing, current } = items[index];
