@@ -602,9 +602,11 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
       await json(app, `/assets/${items[index].current.id}`, 'PUT', app.admin.token, { visibility: 'locked' });
       await json(app, '/auth/session/lock', 'POST', app.admin.token, undefined, 204);
       const lockedOriginal = await response(app, `/assets/${items[index].current.id}/original`, 'GET', app.admin.token);
-      // The normal media API deliberately uses its existing non-enumerating missing/access refusal.
-      expect(lockedOriginal.status).toBe(400);
-      await lockedOriginal.body?.cancel();
+      // sendFile maps denied originals to the same generic 404 as a missing file, without media metadata.
+      expect(lockedOriginal.status).toBe(404);
+      expect(lockedOriginal.headers.get('content-type')).toMatch(/^application\/json\b/);
+      expect(lockedOriginal.headers.get('content-disposition')).toBeNull();
+      expect(await lockedOriginal.json()).toEqual({ message: 'Not Found' });
       for (const path of [`${ownerRoute}/snapshots/${snapshotIds[index]}`, `${adminRoute}/preflight`]) {
         const locked = await response(
           app,
