@@ -28,9 +28,9 @@ function routeForPage(path) {
   return `/${segments.join("/")}`;
 }
 
-test("committed Svelte routes exactly match the accepted 83-route inventory", () => {
+test("committed Svelte routes exactly match the accepted 86-route inventory", () => {
   const actual = [...new Set(pageFiles(routesRoot).map(routeForPage))].sort();
-  assert.equal(actual.length, 83);
+  assert.equal(actual.length, 86);
   assert.deepEqual(actual, [...inventory.productionRoutes].sort());
 });
 

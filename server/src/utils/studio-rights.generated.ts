@@ -26,7 +26,7 @@ export type StudioResourceRights = {
   restrictions: Readonly<Partial<Record<StudioRightsUseName, string>>>;
 };
 
-export const STUDIO_RIGHTS_SOURCE_SHA256 = 'c9d3c94361c9970c600a9f09833cc1896e2ecebe989a6dc0ab573b7f057818fe';
+export const STUDIO_RIGHTS_SOURCE_SHA256 = '562547d25ba230ceed3350999d97280fe858ce774102a27f6d0bc45e5cdffda7';
 
 /** The owner approval the allowed rows come from, or null when there is none. */
 export const STUDIO_RIGHTS_APPROVAL = {
@@ -34,7 +34,7 @@ export const STUDIO_RIGHTS_APPROVAL = {
   approvedOn: '2026-09-25',
   source:
     'Jira FL-146, comment 34941: Owner decisions (2026-09-25, afternoon), "Studio resource rights: all 210 bundled resources (fonts, LUTs, tracks, models) are approved. Rights enforcement stays in place for anything new or unknown."',
-  sha256: 'ce18e7359224e0df0cc02faf18da8336b2f26f58aebd253c172e1336478290e3',
+  sha256: '9a6b7a08b1b29fb9787a1d62924552ef4b1813538ff0828c3bb4b5f1aad3186b',
 } as const;
 
 /** Whether the engine as a whole may be redistributed. False blocks every redistribution. */
@@ -1274,7 +1274,7 @@ export const studioResourceRights: Readonly<Record<string, StudioResourceRights>
     redistribution: 'allowed',
     localRuntime: 'allowed',
     hostedUse: 'allowed',
-    approvedOn: '2026-09-25',
+    approvedOn: '2026-10-03',
     restrictions: {},
   },
   'model:supertonic-3': {
