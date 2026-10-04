@@ -166,12 +166,12 @@ describe('/map', () => {
   });
 
   describe('partner revocation and bounds (FL-51)', () => {
-    it("does not duplicate owned content or deliver new items after a partner stops sharing", async () => {
+    it('does not duplicate owned content or deliver new items after a partner stops sharing', async () => {
       const db = await utils.connectDatabase();
-      const partnership = await db.query(
-        'SELECT 1 FROM partner WHERE "sharedById" = $1 AND "sharedWithId" = $2',
-        [partner.userId, admin.userId],
-      );
+      const partnership = await db.query('SELECT 1 FROM partner WHERE "sharedById" = $1 AND "sharedWithId" = $2', [
+        partner.userId,
+        admin.userId,
+      ]);
       if (!partnership.rows.length) {
         await utils.createPartner(partner.accessToken, admin.userId);
       }
@@ -211,18 +211,20 @@ describe('/map', () => {
       expect(owned.rows).toHaveLength(3);
       expect(owned.rows.find(({ id }) => id === adminArchivedAssetId)).toMatchObject({ visibility: 'archive' });
       // The recipient already owns these bytes: the one-copy rule keeps its existing archived item.
-      expect((await db.query(
-        'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
-        [partnerLocatedId, admin.userId],
-      )).rows).toEqual([]);
+      expect(
+        (
+          await db.query(
+            'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
+            [partnerLocatedId, admin.userId],
+          )
+        ).rows,
+      ).toEqual([]);
       await request(app)
         .get(`/assets/${partnerLocatedId}`)
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .expect(400);
       expect(await markerIds()).toEqual(
-        expect.arrayContaining(
-          owned.rows.filter(({ visibility }) => visibility === 'timeline').map(({ id }) => id),
-        ),
+        expect.arrayContaining(owned.rows.filter(({ visibility }) => visibility === 'timeline').map(({ id }) => id)),
       );
       expect(await markerIds()).toHaveLength(2);
       expect(await markerIds()).not.toContain(partnerLocatedId);
@@ -237,25 +239,34 @@ describe('/map', () => {
       const later = await utils.createAsset(partner.accessToken);
       try {
         await utils.waitForAllQueuesFinish(admin.accessToken);
-        expect((await db.query(
-          'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
-          [later.id, admin.userId],
-        )).rows).toEqual([]);
-        expect((await db.query(
-          'SELECT id, visibility FROM asset WHERE "ownerId" = $1 AND "deletedAt" IS NULL ORDER BY id',
-          [admin.userId],
-        )).rows).toEqual(owned.rows);
+        expect(
+          (
+            await db.query(
+              'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
+              [later.id, admin.userId],
+            )
+          ).rows,
+        ).toEqual([]);
+        expect(
+          (
+            await db.query(
+              'SELECT id, visibility FROM asset WHERE "ownerId" = $1 AND "deletedAt" IS NULL ORDER BY id',
+              [admin.userId],
+            )
+          ).rows,
+        ).toEqual(owned.rows);
         expect(await markerIds()).toHaveLength(2);
         expect(await statistics()).toEqual({ archived: 1, partner: 0, unlocated: 0 });
         expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(2);
       } finally {
         await utils.waitForAllQueuesFinish(admin.accessToken);
         await request(app)
-          .delete('/assets').set('Authorization', `Bearer ${partner.accessToken}`)
-          .send({ ids: [later.id], force: true }).expect(204);
+          .delete('/assets')
+          .set('Authorization', `Bearer ${partner.accessToken}`)
+          .send({ ids: [later.id], force: true })
+          .expect(204);
         await utils.waitForAllQueuesFinish(admin.accessToken);
       }
-
     }, 90_000);
   });
 
