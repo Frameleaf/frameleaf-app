@@ -23,7 +23,7 @@ services:
       DB_HOSTNAME: database
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
-      DB_DATABASE_NAME: immich
+      DB_DATABASE_NAME: frameleaf
       FRAMELEAF_MACHINE_LEARNING_ENABLED: 'false'
       FRAMELEAF_ENV: testing
       FRAMELEAF_CLOUD_URL: https://cloud.frameleaf.test
@@ -36,8 +36,6 @@ services:
     depends_on:
       immich-init:
         condition: service_healthy
-      redis:
-        condition: service_started
       database:
         condition: service_healthy
 
@@ -55,27 +53,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  redis:
-    extends:
-      file: ../docker/docker-compose.dev.yml
-      service: redis
-    container_name: immich-e2e-redis
-
   database:
     extends:
       file: ../docker/docker-compose.dev.yml
       service: database
     container_name: immich-e2e-postgres
-    command: -c fsync=off -c shared_preload_libraries=vchord.so -c config_file=/var/lib/postgresql/data/postgresql.conf
+    command: -c fsync=off -c shared_preload_libraries=
     env_file: !reset []
     ports: !override
       - 5435:5432
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
-      POSTGRES_DB: immich
+      POSTGRES_DB: frameleaf
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres -d immich']
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d frameleaf']
       interval: 1s
       timeout: 5s
       retries: 30

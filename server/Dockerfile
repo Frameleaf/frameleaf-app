@@ -26,7 +26,7 @@ RUN ./configure-apt.sh && \
 ADD --checksum=sha256:0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76 --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
 
 RUN . /etc/os-release && \
-  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main 19" > /etc/apt/sources.list.d/pgdg.list && \
   apt-update-strict && \
   apt-get install --no-install-recommends -yqq \
   git \
@@ -59,11 +59,7 @@ RUN . /etc/os-release && \
   wget \
   unzip \
   zlib1g \
-  postgresql-client-14 \
-  postgresql-client-15 \
-  postgresql-client-16 \
-  postgresql-client-17 \
-  postgresql-client-18 \
+  postgresql-client-19 \
   tini \
   make \
   ocl-icd-libopencl1 \
@@ -225,7 +221,7 @@ RUN ./configure-apt.sh && \
 ADD --checksum=sha256:0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76 --chmod=644 https://www.postgresql.org/media/keys/ACCC4CF8.asc /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
 
 RUN . /etc/os-release && \
-  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main 19" > /etc/apt/sources.list.d/pgdg.list && \
   apt-update-strict && \
   apt-get install --no-install-recommends -yqq \
   jq \
@@ -249,11 +245,7 @@ RUN . /etc/os-release && \
   wget \
   zlib1g \
   ocl-icd-libopencl1 \
-  postgresql-client-14 \
-  postgresql-client-15 \
-  postgresql-client-16 \
-  postgresql-client-17 \
-  postgresql-client-18 \
+  postgresql-client-19 \
   libio-compress-brotli-perl \
   libwebp7 \
   libwebpdemux2 \
@@ -390,7 +382,7 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
 
 # Explicit manual RAW qualification uses the actual production native base and compiled/pruned
 # server adapter. It builds no web, Studio, CLI or plugin WASM and starts no application service.
-FROM base-server-prod AS native-raw-qualification
+FROM base-server-prod AS native-raw-validation
 WORKDIR /usr/src/app
 ENV NODE_ENV=production
 COPY --from=server /output/server-pruned ./server

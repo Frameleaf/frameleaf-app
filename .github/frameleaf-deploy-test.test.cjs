@@ -280,22 +280,22 @@ test("each image digest is signed, attested and verified with the committed key,
   );
 });
 
-test("the stack is ready only when all four services are healthy, and a stopped service fails at once", async () => {
+test("the stack is ready only when all three services are healthy, and a stopped service fails at once", async () => {
   const { serviceStates, waitHealthy } = require("./frameleaf-deploy-test.cjs");
   const row = (Service, Health, State = "running") =>
     JSON.stringify({ Service, State, Health });
   const all = (health) =>
-    ["immich-server", "immich-machine-learning", "redis", "database"]
+    ["immich-server", "immich-machine-learning", "database"]
       .map((s) => row(s, health))
       .join("\n");
-  assert.deepEqual(serviceStates(`[${row("redis", "healthy")}]`), [
-    { service: "redis", state: "running", health: "healthy" },
+  assert.deepEqual(serviceStates(`[${row("database", "healthy")}]`), [
+    { service: "database", state: "running", health: "healthy" },
   ]);
   const outputs = [all("starting"), all("unhealthy"), all("healthy")];
   const states = await waitHealthy(() => outputs.shift(), 60_000, {
     wait: async () => {},
   });
-  assert.equal(states.length, 4);
+  assert.equal(states.length, 3);
   await assert.rejects(
     waitHealthy(() => row("immich-server", "", "restarting"), 60_000, {
       wait: async () => {},

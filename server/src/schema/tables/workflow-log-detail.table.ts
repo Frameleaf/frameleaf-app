@@ -1,4 +1,4 @@
-import { Column, ForeignKeyColumn, PrimaryColumn, Table } from '@immich/sql-tools';
+import { Column, ForeignKeyColumn, PrimaryColumn, Table } from '@frameleaf/sql-tools';
 import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 
 /**

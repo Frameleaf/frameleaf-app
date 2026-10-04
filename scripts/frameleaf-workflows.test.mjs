@@ -26,7 +26,6 @@ const excluded = new Set([
   "docker.yml",
   "local-multi-runner-build.yml",
   "deploy-production.yml",
-  "fork-roundtrip.yml",
   "fork-integration.yml",
   "nsfw-unraid-docker.yml",
 ]);
@@ -259,25 +258,10 @@ test("standalone script tests install their locked JavaScript dependencies first
   }
 });
 
-test("roundtrip certification runs for cutover, handoff and migration service changes", () => {
-  const paths = workflow("fork-roundtrip.yml").on.pull_request.paths;
-  for (const file of [
-    "server/src/services/database.service.ts",
-    "server/src/services/fork-handoff.service.ts",
-    "server/src/services/fork-schema-cutover.service.ts",
-    "server/src/services/fork-schema-migration.service.ts",
-  ]) {
-    assert.ok(
-      paths.some((pattern) => path.matchesGlob(file, pattern)),
-      `${file} must trigger the official-container roundtrip proof`,
-    );
-    const spec = file.replace(/\.ts$/, ".spec.ts");
-    assert.equal(
-      paths.some((pattern) => path.matchesGlob(spec, pattern)),
-      false,
-      `${spec} must not trigger container lanes for a test-only change`,
-    );
-  }
+test("delivery has no official-container compatibility lanes", () => {
+  assert.equal(existsSync(path.resolve(root, ".github/workflows/fork-roundtrip.yml")), false);
+  assert.equal(workflow("fork-integration.yml").jobs["cli-fork-to-official"], undefined);
+  assert.equal(workflow("docker.yml").jobs.certification, undefined);
 });
 
 test("server E2E diagnostics preserve the failure state before maintenance", () => {
@@ -665,15 +649,10 @@ test("migration authority validation runs on Frameleaf and failures cannot be co
   const j = workflow("migration-order.yml").jobs["migration-order"];
   assert.equal(admission(j.if, "Frameleaf/frameleaf-app"), true);
   const verify = j.steps.find(
-    (s) => s.name === "Verify fork migration ORDER by authority",
+    (s) => s.name === "Verify canonical migration ORDER",
   );
   assert.equal(verify.if, undefined);
-  assert.match(verify.run, /check-fork-migration-order\.test\.mjs/);
   assert.match(verify.run, /migrations:verify-order/);
-  assert.match(
-    verify.run,
-    /check-fork-migration-order\.mjs "\$BASELINE" "\$ORDER"/,
-  );
   const sql = workflow("test.yml").jobs["sql-schema-up-to-date"];
   const generate = sql.steps.find((s) => s.name === "Generate new migrations");
   assert.equal(
@@ -1148,4 +1127,17 @@ test("only the integration image compiles the integration build channel (extra l
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+
+test("media fixture source is immutable and the owned archive cannot publish", () => {
+  const bootstrap = readFileSync(path.join(root, "scripts/checkout-test-assets.sh"), "utf8");
+  assert.match(bootstrap, /fixture_commit=6742055402de1aa48f93d12ded7d18f4057f9d1f/);
+  assert.match(bootstrap, /fetch --no-tags --depth=1/);
+  assert.doesNotMatch(bootstrap, /git (?:pull|submodule)/);
+  assert.equal(existsSync(path.join(root, ".gitmodules")), false);
+  const fixtures = workflow("test-fixtures.yml");
+  assert.deepEqual(Object.keys(fixtures.on), ["workflow_dispatch"]);
+  assert.deepEqual(fixtures.permissions, { contents: "read" });
+  assert.match(fixtures.jobs.archive.steps.find((step) => step.name === "Archive the owned fixture input with checksums").run, /sha256sum/);
 });

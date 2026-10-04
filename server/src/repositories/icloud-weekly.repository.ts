@@ -9,7 +9,6 @@ import { lockAuditOwner } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudConnection } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
-
 type Grant = {
   id: string;
   generation: number;
@@ -24,14 +23,15 @@ type Grant = {
 };
 const fingerprint = (value: unknown) => createHash('sha256').update(canonicalJson(value)).digest('hex');
 const pinBinding = (pin: string | null) => (pin === null ? null : fingerprint(['weekly-pin-v1', pin]));
-
 /** Private consent foundation. No method returns worker authority or creates a cohort/operation. */
 @Injectable()
 export class ICloudWeeklyRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   async status(connectionId: string, ownerId: string, db = this.db): Promise<ICloudIdentityReuseAuthorityStatusDto> {
-    const connection = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
+    const connection = await sql<ICloudConnection>`SELECT * FROM public.icloud_connection
       WHERE id=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(db);
     const owner = await db
       .selectFrom('user')
@@ -40,9 +40,11 @@ export class ICloudWeeklyRepository {
       .executeTakeFirst();
     const {
       rows: [metadata],
-    } = await sql<{ privacy: unknown }>`SELECT coalesce(value->'privacy','{}'::jsonb) AS privacy
+    } = await sql<{
+      privacy: unknown;
+    }>`SELECT coalesce(value->'privacy','{}'::jsonb) AS privacy
       FROM public.user_metadata WHERE "userId"=${ownerId}::uuid AND key=${UserMetadataKey.Preferences}`.execute(db);
-    const grant = await sql<Grant>`SELECT * FROM immich_fork.icloud_weekly_grant
+    const grant = await sql<Grant>`SELECT * FROM public.icloud_weekly_grant
       WHERE "connectionId"=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(db);
     const current = grant.rows[0];
     const connected = connection.rows[0];
@@ -66,7 +68,6 @@ export class ICloudWeeklyRepository {
       executionAvailable: false,
     };
   }
-
   async setAuthority(
     auth: AuthDto,
     connectionId: string,
@@ -100,13 +101,15 @@ export class ICloudWeeklyRepository {
         ON CONFLICT ("userId",key) DO NOTHING`.execute(db);
       const {
         rows: [metadata],
-      } = await sql<{ privacy: unknown }>`SELECT coalesce(value->'privacy','{}'::jsonb) AS privacy
+      } = await sql<{
+        privacy: unknown;
+      }>`SELECT coalesce(value->'privacy','{}'::jsonb) AS privacy
         FROM public.user_metadata WHERE "userId"=${auth.user.id}::uuid AND key=${UserMetadataKey.Preferences} FOR SHARE`.execute(
         db,
       );
       const {
         rows: [connection],
-      } = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
+      } = await sql<ICloudConnection>`SELECT * FROM public.icloud_connection
         WHERE id=${connectionId}::uuid AND "ownerId"=${auth.user.id}::uuid FOR UPDATE`.execute(db);
       if (!connection) {
         throw new NotFoundException();
@@ -129,7 +132,7 @@ export class ICloudWeeklyRepository {
       });
       const {
         rows: [grant],
-      } = await sql<Grant>`SELECT * FROM immich_fork.icloud_weekly_grant
+      } = await sql<Grant>`SELECT * FROM public.icloud_weekly_grant
         WHERE "connectionId"=${connectionId}::uuid AND "ownerId"=${auth.user.id}::uuid FOR UPDATE`.execute(db);
       const { rows: live } = await sql`SELECT id FROM public.session WHERE id=${auth.session!.id}::uuid
         AND "userId"=${auth.user.id}::uuid AND ("expiresAt" IS NULL OR "expiresAt">clock_timestamp())
@@ -161,7 +164,7 @@ export class ICloudWeeklyRepository {
         return status;
       }
       const history = { ...grant?.requestHistory, [requestKey]: inputFingerprint };
-      const result = await sql`INSERT INTO immich_fork.icloud_weekly_grant
+      const result = await sql`INSERT INTO public.icloud_weekly_grant
         ("ownerId","connectionId",generation,enabled,"includeProtected","configFingerprint","privacyFingerprint",
           "pinBinding","requestKey","inputFingerprint","requestHistory","revokedAt")
         SELECT ${auth.user.id}::uuid,${connectionId}::uuid,1,${input.enabled},${input.includeProtected},${configFingerprint},
@@ -171,7 +174,7 @@ export class ICloudWeeklyRepository {
         WHERE s.id=${auth.session!.id}::uuid AND u.id=${auth.user.id}::uuid AND u."deletedAt" IS NULL
           AND (s."expiresAt" IS NULL OR s."expiresAt">clock_timestamp())
           AND (${!input.includeProtected} OR (u."pinCode" IS NOT NULL AND s."pinExpiresAt">clock_timestamp()))
-        ON CONFLICT("connectionId","ownerId") DO UPDATE SET generation=immich_fork.icloud_weekly_grant.generation+1,
+        ON CONFLICT("connectionId","ownerId") DO UPDATE SET generation=public.icloud_weekly_grant.generation+1,
           enabled=excluded.enabled,"includeProtected"=excluded."includeProtected","configFingerprint"=excluded."configFingerprint",
           "privacyFingerprint"=excluded."privacyFingerprint","pinBinding"=excluded."pinBinding","requestKey"=excluded."requestKey",
           "inputFingerprint"=excluded."inputFingerprint","requestHistory"=excluded."requestHistory","revokedAt"=excluded."revokedAt"

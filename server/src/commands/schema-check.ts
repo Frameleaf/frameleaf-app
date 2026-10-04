@@ -1,4 +1,4 @@
-import { asHuman } from '@immich/sql-tools';
+import { asHuman } from '@frameleaf/sql-tools';
 import { Command, CommandRunner } from 'nest-commander';
 import { ErrorMessages } from 'src/constants.js';
 import { CliService } from 'src/services/cli.service.js';

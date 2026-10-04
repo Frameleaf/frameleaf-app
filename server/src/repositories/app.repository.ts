@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { createAdapter } from '@socket.io/redis-adapter';
-import { Redis } from 'ioredis';
 import { Server as SocketIO } from 'socket.io';
 import { ExitCode } from 'src/enum.js';
+import { PostgresSocketTransport } from 'src/middleware/websocket.adapter.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { AppRestartEvent } from 'src/repositories/event.repository.js';
 import { RESTART_BUDGET } from 'src/utils/shutdown.js';
@@ -51,35 +50,22 @@ export class AppRepository {
 
   async sendOneShotAppRestart(state: AppRestartEvent): Promise<void> {
     const server = new SocketIO();
-    const { redis } = new ConfigRepository().getEnv();
-    const pubClient = new Redis({ ...redis, lazyConnect: true });
-    const subClient = pubClient.duplicate();
+    const transport = new PostgresSocketTransport(new ConfigRepository());
 
     try {
-      await Promise.all([pubClient.connect(), subClient.connect()]);
-
-      server.adapter(createAdapter(pubClient, subClient));
-
-      // => corresponds to notification.service.ts#onAppRestart
-      await new Promise<void>((resolve, reject) => {
-        server.emit('AppRestartV1', state, () => {
-          void server
-            .serverSideEmitWithAck('AppRestart', state)
-            .then((responses) => {
-              if (responses.some((response) => response !== 'ok')) {
-                throw new Error("One or more node(s) returned a non-'ok' response to our restart request!");
-              }
-            })
-            .then(resolve)
-            .catch(reject);
-        });
-      });
+      await transport.attach(server, false);
+      const expectedWorkers = await transport.discoverWorkers(server);
+      // => corresponds to notification.service.ts#onAppRestart; client acknowledgement is bounded.
+      await server.timeout(5000).emitWithAck('AppRestartV1', state);
+      const responses = await server.serverSideEmitWithAck('AppRestart', state);
+      if (responses.length < expectedWorkers || responses.some((response) => response !== 'ok')) {
+        throw new Error("One or more node(s) returned a missing or non-'ok' response to our restart request!");
+      }
     } finally {
       try {
-        await server.sockets.adapter.close();
+        server.sockets.adapter.close();
       } finally {
-        pubClient.disconnect();
-        subClient.disconnect();
+        await transport.close();
       }
     }
   }

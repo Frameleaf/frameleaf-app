@@ -7,8 +7,8 @@ import {
   Table,
   Unique,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Int8, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Int8, Timestamp } from '@frameleaf/sql-tools';
 import type {
   TakeoutFileKind,
   TakeoutItemState,

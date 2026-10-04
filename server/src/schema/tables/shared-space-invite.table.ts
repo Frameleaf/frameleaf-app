@@ -1,5 +1,5 @@
-import { Column, CreateDateColumn, ForeignKeyColumn, Table } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { Column, CreateDateColumn, ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { AlbumUserRole } from 'src/enum.js';
 import { album_user_role_enum } from 'src/schema/enums.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';

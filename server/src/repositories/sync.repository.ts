@@ -20,38 +20,32 @@ import {
   notLockedOrOwnedBy,
 } from 'src/utils/locked.js';
 import { mapPartnerAsset, mapSyncAssetV2 } from 'src/utils/sync.js';
-
 export type SyncBackfillOptions = HiddenContentQueryOptions & {
   nowId: string;
   afterUpdateId?: string;
   beforeUpdateId: string;
 };
-
 const dummyBackfillOptions = {
   nowId: DummyValue.UUID,
   beforeUpdateId: DummyValue.UUID,
   afterUpdateId: DummyValue.UUID,
   excludeNsfw: true,
 };
-
 export type SyncCreatedAfterOptions = {
   nowId: string;
   userId: string;
   afterCreateId?: string;
 };
-
 const dummyCreateAfterOptions = {
   nowId: DummyValue.UUID,
   userId: DummyValue.UUID,
   afterCreateId: DummyValue.UUID,
 };
-
 export type SyncQueryOptions = HiddenContentQueryOptions & {
   nowId: string;
   userId: string;
   ack?: SyncAck;
 };
-
 const dummyQueryOptions = {
   nowId: DummyValue.UUID,
   userId: DummyValue.UUID,
@@ -60,7 +54,6 @@ const dummyQueryOptions = {
   },
   excludeNsfw: true,
 };
-
 const albumThumbnailAssetId = (options: HiddenContentQueryOptions) => {
   const hiddenContent = getHiddenContentFilter(options);
   return hiddenContent
@@ -70,7 +63,6 @@ const albumThumbnailAssetId = (options: HiddenContentQueryOptions) => {
       end`.as('thumbnailAssetId')
     : sql<string | null>`album."albumThumbnailAssetId"`.as('thumbnailAssetId');
 };
-
 const personFaceAssetId = (options: HiddenContentQueryOptions) => {
   const hiddenContent = getHiddenContentFilter(options);
   return hiddenContent
@@ -80,7 +72,6 @@ const personFaceAssetId = (options: HiddenContentQueryOptions) => {
       end`.as('faceAssetId')
     : sql<string | null>`person."faceAssetId"`.as('faceAssetId');
 };
-
 /**
  * The sha1 a device compares its local files against. No recorded digest of an asset with a path checksum
  * (an external-library original, however it was recorded), nor any external scan's (FL-69), is sent:
@@ -89,12 +80,11 @@ const personFaceAssetId = (options: HiddenContentQueryOptions) => {
  */
 const syncChecksum = () =>
   sql<Buffer>`coalesce(
-    (select checksum.sha1 from immich_fork.asset_checksum checksum where checksum."assetId" = asset.id
+    (select checksum.sha1 from public.asset_checksum checksum where checksum."assetId" = asset.id
       and asset."checksumAlgorithm" != ${sql.lit(ChecksumAlgorithm.sha1Path)}
       and checksum.evidence ->> 'source' is distinct from ${sql.lit(EXTERNAL_SCAN_CHECKSUM)}),
     asset.checksum
   )`.as('checksum');
-
 /**
  * An album stream never carries another member's Locked media (owner decision, September 22, 2026):
  * the album keeps the item, but only its owner's own devices learn of it — not its id, file name,
@@ -102,17 +92,14 @@ const syncChecksum = () =>
  * lock record (FL-34, `src/utils/locked.ts`).
  */
 const albumAssetVisibleTo = (userId: string) => notLockedOrOwnedBy(userId, 'asset');
-
 /**
  * The visibility a device receives (FL-34): `locked` for a locked asset, so a client that keeps the
  * upstream Locked folder still files it there; the stored visibility otherwise.
  */
 const syncVisibility = () => effectiveVisibility('asset').as('visibility');
-
 const syncAssetColumns = columns.syncAsset.filter(
   (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
-
 const syncLivePhotoVideoId = (options: HiddenContentQueryOptions) => {
   const hiddenContent = getHiddenContentFilter(options);
   return hiddenContent
@@ -122,16 +109,13 @@ const syncLivePhotoVideoId = (options: HiddenContentQueryOptions) => {
       end`.as('livePhotoVideoId')
     : sql<string | null>`asset."livePhotoVideoId"`.as('livePhotoVideoId');
 };
-
 const syncAsset = (options: HiddenContentQueryOptions) =>
   [...syncAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
-
 const syncAlbumAssetColumns = columns.syncAlbumAsset.filter(
   (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
 const syncAlbumAsset = (options: HiddenContentQueryOptions) =>
   [...syncAlbumAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
-
 const syncPartnerAssetColumns = columns.syncPartnerAsset.filter(
   (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
@@ -142,7 +126,6 @@ const syncPartnerAssetColumns = columns.syncPartnerAsset.filter(
  * itself is stripped and never reaches the device.
  */
 const syncPartnerLocked = () => isLocked('asset').as('isLocked');
-
 const syncPartnerAsset = (options: HiddenContentQueryOptions) =>
   [
     ...syncPartnerAssetColumns,
@@ -151,7 +134,6 @@ const syncPartnerAsset = (options: HiddenContentQueryOptions) =>
     syncVisibility(),
     syncPartnerLocked(),
   ] as const;
-
 @Injectable()
 export class SyncRepository {
   tag: TagSync;
@@ -178,8 +160,10 @@ export class SyncRepository {
   stack: StackSync;
   user: UserSync;
   userMetadata: UserMetadataSync;
-
-  constructor(@InjectKysely() private db: Kysely<DB>) {
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {
     this.tag = new TagSync(this.db, async (db, auth, kind, key) => {
       const rows =
         kind === 'albumAsset'
@@ -193,7 +177,14 @@ export class SyncRepository {
         data:
           kind === 'albumAsset'
             ? { albumId: scopeId, asset: mapSyncAssetV2(asset) }
-            : { sharedById: scopeId, asset: mapPartnerAsset(asset as typeof asset & { isLocked: boolean }) },
+            : {
+                sharedById: scopeId,
+                asset: mapPartnerAsset(
+                  asset as typeof asset & {
+                    isLocked: boolean;
+                  },
+                ),
+              },
       }));
     });
     this.album = new AlbumSync(this.db);
@@ -221,14 +212,11 @@ export class SyncRepository {
     this.userMetadata = new UserMetadataSync(this.db);
   }
 }
-
 export class BaseSync {
   constructor(protected db: Kysely<DB>) {}
-
   protected backfillQuery<T extends keyof DB>(t: T, { nowId, beforeUpdateId, afterUpdateId }: SyncBackfillOptions) {
     const { table, ref } = this.db.dynamic;
     const updateIdRef = ref(`${t}.updateId`);
-
     return this.db
       .selectFrom(table(t).as(t))
       .where(updateIdRef, '<', nowId)
@@ -236,31 +224,25 @@ export class BaseSync {
       .$if(!!afterUpdateId, (qb) => qb.where(updateIdRef, '>', afterUpdateId!))
       .orderBy(updateIdRef, 'asc');
   }
-
   protected auditQuery<T extends keyof DB>(t: T, { nowId, ack }: SyncQueryOptions) {
     const { table, ref } = this.db.dynamic;
     const idRef = ref(`${t}.id`);
-
     return this.db
       .selectFrom(table(t).as(t))
       .where(idRef, '<', nowId)
       .$if(!!ack, (qb) => qb.where(idRef, '>', ack!.updateId))
       .orderBy(idRef, 'asc');
   }
-
   protected auditCleanup<T extends keyof DB>(t: T, days: number) {
     const { table, ref } = this.db.dynamic;
-
     return this.db
       .deleteFrom(table(t).as(t))
       .where(ref(`${t}.deletedAt`), '<', sql.raw(`now() - interval '${days} days'`))
       .execute();
   }
-
   protected upsertQuery<T extends keyof DB>(t: T, { nowId, ack }: SyncQueryOptions) {
     const { table, ref } = this.db.dynamic;
     const updateIdRef = ref(`${t}.updateId`);
-
     return this.db
       .selectFrom(table(t).as(t))
       .where(updateIdRef, '<', nowId)
@@ -268,7 +250,6 @@ export class BaseSync {
       .orderBy(updateIdRef, 'asc');
   }
 }
-
 class AlbumSync extends BaseSync {
   /** V3 adds tree/trash fields; membership and parent-access changes refresh the payload. */
   private treeQuery(options: SyncQueryOptions) {
@@ -311,7 +292,6 @@ class AlbumSync extends BaseSync {
         ]),
     };
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getTreeUpserts(options: SyncQueryOptions) {
     const { query, eventId } = this.treeQuery(options);
@@ -328,12 +308,17 @@ class AlbumSync extends BaseSync {
       .orderBy('album.id', 'asc')
       .stream();
   }
-
   @GenerateSql({
     params: [dummyQueryOptions, { timestamp: '2026-01-01T00:00:00.000001Z', id: DummyValue.UUID }],
     stream: true,
   })
-  getTreeBootstrap(options: SyncQueryOptions, cursor?: { timestamp: string; id: string }) {
+  getTreeBootstrap(
+    options: SyncQueryOptions,
+    cursor?: {
+      timestamp: string;
+      id: string;
+    },
+  ) {
     const { query, eventId } = this.treeQuery(options);
     return query
       .where(eventId, '<', options.nowId)
@@ -351,7 +336,6 @@ class AlbumSync extends BaseSync {
       .orderBy('album.id', 'desc')
       .stream();
   }
-
   @GenerateSql({ params: [dummyCreateAfterOptions] })
   getCreatedAfter({ nowId, userId, afterCreateId }: SyncCreatedAfterOptions) {
     return this.db
@@ -363,7 +347,6 @@ class AlbumSync extends BaseSync {
       .orderBy('createId', 'asc')
       .execute();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     return this.auditQuery('album_audit', options)
@@ -371,11 +354,9 @@ class AlbumSync extends BaseSync {
       .where('userId', '=', options.userId)
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('album_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     const userId = options.userId;
@@ -396,13 +377,11 @@ class AlbumSync extends BaseSync {
       ])
       .stream();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async getAlbumUsers(albumId: string) {
     return this.db.selectFrom('album_user').select(['userId', 'role']).where('albumId', '=', albumId).execute();
   }
 }
-
 class AlbumAssetSync extends BaseSync {
   getCurrent(auth: AuthDto, key?: string) {
     const options = getHiddenContentQueryOptions(auth);
@@ -437,7 +416,6 @@ class AlbumAssetSync extends BaseSync {
       .orderBy('album.id', 'desc')
       .execute();
   }
-
   @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
   getBackfill(options: SyncBackfillOptions, albumId: string, userId: string) {
     return this.backfillQuery('album_asset', options)
@@ -458,7 +436,6 @@ class AlbumAssetSync extends BaseSync {
       .where(albumAssetVisibleTo(userId))
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions, { updateId: DummyValue.UUID }], stream: true })
   getUpdates(options: SyncQueryOptions, albumToAssetAck: SyncAck) {
     const userId = options.userId;
@@ -482,7 +459,6 @@ class AlbumAssetSync extends BaseSync {
       .where(albumAssetVisibleTo(userId))
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getCreates(options: SyncQueryOptions) {
     const userId = options.userId;
@@ -506,7 +482,6 @@ class AlbumAssetSync extends BaseSync {
       .stream();
   }
 }
-
 class AlbumAssetExifSync extends BaseSync {
   @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
   getBackfill(options: SyncBackfillOptions, albumId: string, userId: string) {
@@ -520,7 +495,6 @@ class AlbumAssetExifSync extends BaseSync {
       .where(albumAssetVisibleTo(userId))
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions, { updateId: DummyValue.UUID }], stream: true })
   getUpdates(options: SyncQueryOptions, albumToAssetAck: SyncAck) {
     const userId = options.userId;
@@ -536,7 +510,6 @@ class AlbumAssetExifSync extends BaseSync {
       .where(albumAssetVisibleTo(options.userId))
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getCreates(options: SyncQueryOptions) {
     const userId = options.userId;
@@ -553,7 +526,6 @@ class AlbumAssetExifSync extends BaseSync {
       .stream();
   }
 }
-
 class AlbumToAssetSync extends BaseSync {
   @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID, DummyValue.UUID], stream: true })
   getBackfill(options: SyncBackfillOptions, albumId: string, userId: string) {
@@ -565,7 +537,6 @@ class AlbumToAssetSync extends BaseSync {
       .where(albumAssetVisibleTo(userId))
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     const userId = options.userId;
@@ -582,11 +553,9 @@ class AlbumToAssetSync extends BaseSync {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('album_asset_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     const userId = options.userId;
@@ -600,7 +569,6 @@ class AlbumToAssetSync extends BaseSync {
       .stream();
   }
 }
-
 class AlbumUserSync extends BaseSync {
   @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
   getBackfill(options: SyncBackfillOptions, albumId: string) {
@@ -610,7 +578,6 @@ class AlbumUserSync extends BaseSync {
       .where('albumId', '=', albumId)
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     const userId = options.userId;
@@ -625,11 +592,9 @@ class AlbumUserSync extends BaseSync {
       )
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('album_user_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     const userId = options.userId;
@@ -649,14 +614,19 @@ class AlbumUserSync extends BaseSync {
       .stream();
   }
 }
-
 class AssetSync extends BaseSync {
   /** Initial own-assets snapshot only: incremental delivery keeps its updateId ordering. */
   @GenerateSql({
     params: [dummyQueryOptions, { timestamp: '2026-01-01T00:00:00.000001Z', id: DummyValue.UUID }],
     stream: true,
   })
-  getBootstrap(options: SyncQueryOptions, cursor?: { timestamp: string; id: string }) {
+  getBootstrap(
+    options: SyncQueryOptions,
+    cursor?: {
+      timestamp: string;
+      id: string;
+    },
+  ) {
     const date = sql<string>`coalesce(asset."localDateTime", '-infinity'::timestamptz)`;
     return (
       this.db
@@ -680,7 +650,6 @@ class AssetSync extends BaseSync {
         .stream()
     );
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     return this.auditQuery('asset_audit', options)
@@ -688,7 +657,6 @@ class AssetSync extends BaseSync {
       .where('ownerId', '=', options.userId)
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getHiddenDeletes(options: SyncQueryOptions) {
     const hiddenContent = getHiddenContentFilter(options);
@@ -697,18 +665,14 @@ class AssetSync extends BaseSync {
       .select(['asset_metadata.updateId as id', 'asset.id as assetId'])
       .where('asset.ownerId', '=', options.userId)
       .where('asset.deletedAt', 'is', null);
-
     query = hiddenContent
       ? query.where(hiddenContentAssetIdExists(sql.ref('asset.id'), hiddenContent))
       : query.where(sql<boolean>`false`);
-
     return query.stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('asset_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('asset', options)
@@ -719,7 +683,6 @@ class AssetSync extends BaseSync {
       .stream();
   }
 }
-
 class AuthUserSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
@@ -730,7 +693,6 @@ class AuthUserSync extends BaseSync {
       .stream();
   }
 }
-
 class PersonSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
@@ -739,11 +701,9 @@ class PersonSync extends BaseSync {
       .where('ownerId', '=', options.userId)
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('person_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('person', options)
@@ -804,13 +764,11 @@ class PersonSync extends BaseSync {
       .stream();
   }
 }
-
 class PersonGroupSync extends BaseSync {
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('person_group_audit', daysAgo);
   }
 }
-
 class AssetFaceSync extends BaseSync {
   // TODO(v5) drop when AssetFacesV2 is removed
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
@@ -822,7 +780,6 @@ class AssetFaceSync extends BaseSync {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletesV3(options: SyncQueryOptions) {
     return this.auditQuery('asset_face_audit', options)
@@ -836,11 +793,9 @@ class AssetFaceSync extends BaseSync {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('asset_face_audit', daysAgo);
   }
-
   // TODO(v5) drop when AssetFacesV2 is removed
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpsertsV2(options: SyncQueryOptions) {
@@ -852,7 +807,6 @@ class AssetFaceSync extends BaseSync {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpsertsV3(options: SyncQueryOptions) {
     return this.upsertQuery('asset_face', options)
@@ -868,7 +822,6 @@ class AssetFaceSync extends BaseSync {
       .stream();
   }
 }
-
 class AssetExifSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
@@ -881,7 +834,6 @@ class AssetExifSync extends BaseSync {
       .stream();
   }
 }
-
 class AssetEditSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
@@ -892,11 +844,9 @@ class AssetEditSync extends BaseSync {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('asset_edit_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('asset_edit', options)
@@ -907,7 +857,6 @@ class AssetEditSync extends BaseSync {
       .stream();
   }
 }
-
 class MemorySync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
@@ -916,11 +865,9 @@ class MemorySync extends BaseSync {
       .where('userId', '=', options.userId)
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('memory_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('memory', options)
@@ -943,7 +890,6 @@ class MemorySync extends BaseSync {
       .stream();
   }
 }
-
 class MemoryToAssetSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
@@ -954,11 +900,9 @@ class MemoryToAssetSync extends BaseSync {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('memory_asset_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('memory_asset', options)
@@ -970,7 +914,6 @@ class MemoryToAssetSync extends BaseSync {
       .stream();
   }
 }
-
 class PartnerSync extends BaseSync {
   @GenerateSql({ params: [dummyCreateAfterOptions] })
   getCreatedAfter({ nowId, userId, afterCreateId }: SyncCreatedAfterOptions) {
@@ -983,7 +926,6 @@ class PartnerSync extends BaseSync {
       .orderBy('partner.createId', 'asc')
       .execute();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     const userId = options.userId;
@@ -992,11 +934,9 @@ class PartnerSync extends BaseSync {
       .where((eb) => eb.or([eb('sharedById', '=', userId), eb('sharedWithId', '=', userId)]))
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('partner_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     const userId = options.userId;
@@ -1006,7 +946,6 @@ class PartnerSync extends BaseSync {
       .stream();
   }
 }
-
 class PartnerAssetsSync extends BaseSync {
   getCurrent(auth: AuthDto, key?: string) {
     const options = getHiddenContentQueryOptions(auth);
@@ -1028,7 +967,6 @@ class PartnerAssetsSync extends BaseSync {
       .orderBy('asset.id', 'desc')
       .execute();
   }
-
   @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
   getBackfill(options: SyncBackfillOptions, partnerId: string) {
     return this.backfillQuery('asset', options)
@@ -1039,7 +977,6 @@ class PartnerAssetsSync extends BaseSync {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     return this.auditQuery('asset_audit', options)
@@ -1049,7 +986,6 @@ class PartnerAssetsSync extends BaseSync {
       )
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('asset', options)
@@ -1063,7 +999,6 @@ class PartnerAssetsSync extends BaseSync {
       .stream();
   }
 }
-
 class PartnerAssetExifsSync extends BaseSync {
   @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
   getBackfill(options: SyncBackfillOptions, partnerId: string) {
@@ -1076,7 +1011,6 @@ class PartnerAssetExifsSync extends BaseSync {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return (
@@ -1095,7 +1029,6 @@ class PartnerAssetExifsSync extends BaseSync {
     );
   }
 }
-
 class StackSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
@@ -1104,11 +1037,9 @@ class StackSync extends BaseSync {
       .where('userId', '=', options.userId)
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('stack_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('stack', options)
@@ -1120,7 +1051,6 @@ class StackSync extends BaseSync {
       .stream();
   }
 }
-
 class PartnerStackSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
@@ -1131,7 +1061,6 @@ class PartnerStackSync extends BaseSync {
       )
       .stream();
   }
-
   @GenerateSql({ params: [dummyBackfillOptions, DummyValue.UUID], stream: true })
   getBackfill(options: SyncBackfillOptions, partnerId: string) {
     return this.backfillQuery('stack', options)
@@ -1142,7 +1071,6 @@ class PartnerStackSync extends BaseSync {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('stack', options)
@@ -1156,23 +1084,19 @@ class PartnerStackSync extends BaseSync {
       .stream();
   }
 }
-
 class UserSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
     return this.auditQuery('user_audit', options).select(['id', 'userId']).stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('user_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('user', options).select(columns.syncUser).stream();
   }
 }
-
 class UserMetadataSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getDeletes(options: SyncQueryOptions) {
@@ -1181,11 +1105,9 @@ class UserMetadataSync extends BaseSync {
       .where('userId', '=', options.userId)
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('user_metadata_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
   getUpserts(options: SyncQueryOptions) {
     return this.upsertQuery('user_metadata', options)
@@ -1194,7 +1116,6 @@ class UserMetadataSync extends BaseSync {
       .stream();
   }
 }
-
 class AssetMetadataSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions, DummyValue.UUID], stream: true })
   getDeletes(options: SyncQueryOptions, userId: string) {
@@ -1206,11 +1127,9 @@ class AssetMetadataSync extends BaseSync {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('asset_metadata_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions, DummyValue.UUID], stream: true })
   getUpserts(options: SyncQueryOptions, userId: string) {
     return this.upsertQuery('asset_metadata', options)
@@ -1222,7 +1141,6 @@ class AssetMetadataSync extends BaseSync {
       .stream();
   }
 }
-
 class AssetOcrSync extends BaseSync {
   @GenerateSql({ params: [dummyQueryOptions, DummyValue.UUID], stream: true })
   getDeletes(options: SyncQueryOptions, userId: string) {
@@ -1232,11 +1150,9 @@ class AssetOcrSync extends BaseSync {
       .where('asset.ownerId', '=', userId)
       .stream();
   }
-
   cleanupAuditTable(daysAgo: number) {
     return this.auditCleanup('asset_ocr_audit', daysAgo);
   }
-
   @GenerateSql({ params: [dummyQueryOptions, DummyValue.UUID], stream: true })
   getUpserts(options: SyncQueryOptions, userId: string) {
     return this.upsertQuery('asset_ocr', options)

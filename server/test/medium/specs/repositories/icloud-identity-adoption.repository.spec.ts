@@ -15,7 +15,6 @@ import {
   ChecksumAlgorithm,
   UserMetadataKey,
 } from 'src/enum.js';
-import * as reuseMigration from 'src/fork-schema/migrations/0000000000217-ICloudIdentityReuse.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -40,7 +39,7 @@ import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { appleFingerprintHash, identityRoleOf } from 'src/utils/icloud-identity.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB, getMocks } from 'test/utils.js';
+import { getKyselyDB, getMocks } from 'test/utils.js';
 
 const NAME = '32A01DD9-75DF-41B2-8773-80C153D73A5A';
 const execFile = promisify(execFileCallback);
@@ -56,13 +55,7 @@ describe('iCloud exact identity adoption', () => {
   const directories = new Set<string>();
   const connections = new Set<string>();
   beforeAll(async () => {
-    db = await getActiveForkKyselyDB();
-    const table = await sql<{
-      present: string | null;
-    }>`SELECT to_regclass('immich_fork.icloud_identity_reuse')::text AS present`.execute(db);
-    if (!table.rows[0].present) {
-      await reuseMigration.up(db);
-    }
+    db = await getKyselyDB();
     sync = new ICloudSyncRepository(db);
     repository = new ICloudIdentityAdoptionRepository(db);
     identities = new ICloudIdentityRepository(db);
@@ -80,7 +73,7 @@ describe('iCloud exact identity adoption', () => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
     if (connections.size > 0) {
-      await sql`DELETE FROM immich_fork.icloud_connection WHERE id=ANY(${[...connections]}::uuid[])`.execute(db);
+      await sql`DELETE FROM public.icloud_connection WHERE id=ANY(${[...connections]}::uuid[])`.execute(db);
       connections.clear();
     }
     await Promise.all([...directories].map((path) => rm(path, { recursive: true, force: true })));
@@ -186,7 +179,7 @@ describe('iCloud exact identity adoption', () => {
     expect(resource).toBeDefined();
     const device = randomUUID();
     const identityId = randomUUID();
-    await sql`INSERT INTO immich_fork.icloud_source_identity
+    await sql`INSERT INTO public.icloud_source_identity
       (id,"ownerId","assetId","libraryKey","cplAssetRecordName","cplMasterRecordName",role,sha256,"deliveredBy","cloudIdentifier","matchStrength")
       VALUES (${identityId}::uuid,${user.id}::uuid,${asset.id}::uuid,'library',${NAME},${master},${identityRoleOf[role]},
         ${sha256},${`device:${device}`},${`${NAME}:001:${master}`},'corroborated')`.execute(db);
@@ -219,7 +212,7 @@ describe('iCloud exact identity adoption', () => {
     const resource = await sync.resource(fixture.resource.id);
     expect(resource?.assetId).toBeNull();
     const receipts =
-      await sql`SELECT id FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
+      await sql`SELECT id FROM public.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
         db,
       );
     expect(receipts.rows).toHaveLength(0);
@@ -238,13 +231,13 @@ describe('iCloud exact identity adoption', () => {
       const receipts = await sql<{
         basis: string;
         role: string;
-      }>`SELECT basis,role FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
+      }>`SELECT basis,role FROM public.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
         db,
       );
       expect(receipts.rows).toEqual([{ basis: 'exact-identity', role: identityRoleOf[role] }]);
       const fingerprints = await sql<{
         appleFingerprint: string;
-      }>`SELECT "appleFingerprint" FROM immich_fork.icloud_identity_reuse
+      }>`SELECT "appleFingerprint" FROM public.icloud_identity_reuse
       WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(db);
       expect(fingerprints.rows[0].appleFingerprint).toBe(fixture.resourceFingerprint);
       if (role === 'motion') {
@@ -253,7 +246,7 @@ describe('iCloud exact identity adoption', () => {
       const proof = await sql<{
         lastAuditResult: string | null;
         lastVerifiedAt: Date | null;
-      }>`SELECT "lastAuditResult","lastVerifiedAt" FROM immich_fork.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(
+      }>`SELECT "lastAuditResult","lastVerifiedAt" FROM public.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(
         db,
       );
       expect(proof.rows[0]).toEqual({ lastAuditResult: null, lastVerifiedAt: null });
@@ -269,7 +262,7 @@ describe('iCloud exact identity adoption', () => {
     vi.stubEnv('FRAMELEAF_ICLOUD_IDENTITY_MATCHING', 'false');
     expect(await service.adopt(fixture.authority)).toBe('miss');
     vi.stubEnv('FRAMELEAF_ICLOUD_IDENTITY_MATCHING', 'true');
-    await sql`UPDATE immich_fork.icloud_source_identity SET "deliveredBy"=${`icloud-sync:${fixture.connection.id}`},"matchStrength"='exact' WHERE id=${fixture.identityId}::uuid`.execute(
+    await sql`UPDATE public.icloud_source_identity SET "deliveredBy"=${`icloud-sync:${fixture.connection.id}`},"matchStrength"='exact' WHERE id=${fixture.identityId}::uuid`.execute(
       db,
     );
     expect(await service.adopt(fixture.authority)).toBe('miss');
@@ -318,14 +311,14 @@ describe('iCloud exact identity adoption', () => {
       null,
       true,
     );
-    await sql`DELETE FROM immich_fork.icloud_checkpoint WHERE "connectionId"=${fixture.connection.id}::uuid AND scope='materialize:library'`.execute(
+    await sql`DELETE FROM public.icloud_checkpoint WHERE "connectionId"=${fixture.connection.id}::uuid AND scope='materialize:library'`.execute(
       db,
     );
     await sync.materialize(fixture.connection, 'library', { area: 'private', zoneID: { zoneName: 'PrimarySync' } });
     const resource = (await sync.claim(fixture.connection.id, fixture.connection.config.stagingBytes))!;
     expect(resource).toBeDefined();
     expect(resource.role).toBe('original');
-    await sql`INSERT INTO immich_fork.icloud_source_identity
+    await sql`INSERT INTO public.icloud_source_identity
       ("ownerId","assetId","libraryKey","cplAssetRecordName","cplMasterRecordName",role,sha256,"deliveredBy","cloudIdentifier")
       VALUES (${fixture.user.id}::uuid,${asset.id}::uuid,'library',${NAME},${fixture.master},'original',${sha256},
         ${`device:${randomUUID()}`},${`${NAME}:001:${fixture.master}`})`.execute(db);
@@ -340,7 +333,7 @@ describe('iCloud exact identity adoption', () => {
     const proof = await sql<{
       itemClaimId: string;
       role: string;
-    }>`SELECT "itemClaimId",role FROM immich_fork.icloud_identity_reuse
+    }>`SELECT "itemClaimId",role FROM public.icloud_identity_reuse
       WHERE "connectionId"=${fixture.connection.id}::uuid ORDER BY role`.execute(db);
     expect(proof.rows).toEqual([
       { itemClaimId: claim[0].id, role: 'live-motion' },
@@ -368,14 +361,14 @@ describe('iCloud exact identity adoption', () => {
           break;
         }
         case 'resource': {
-          await sql`UPDATE immich_fork.icloud_resource SET "leaseExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${fixture.resource.id}::uuid`.execute(
+          await sql`UPDATE public.icloud_resource SET "leaseExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${fixture.resource.id}::uuid`.execute(
             db,
           );
 
           break;
         }
         case 'item': {
-          await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second' WHERE "ownerId"=${fixture.user.id}::uuid`.execute(
+          await sql`UPDATE public.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second' WHERE "ownerId"=${fixture.user.id}::uuid`.execute(
             db,
           );
 
@@ -434,21 +427,21 @@ describe('iCloud exact identity adoption', () => {
 
   it('does not reuse another owner identity or a hash-mapped resource', async () => {
     const fixture = await arrange();
-    await sql`UPDATE immich_fork.icloud_source_identity SET "ownerId"=${randomUUID()}::uuid WHERE id=${fixture.identityId}::uuid`.execute(
+    await sql`UPDATE public.icloud_source_identity SET "ownerId"=${randomUUID()}::uuid WHERE id=${fixture.identityId}::uuid`.execute(
       db,
     );
     expect(await service.adopt(fixture.authority)).toBe('miss');
     await unpublished(fixture);
-    await sql`UPDATE immich_fork.icloud_source_identity SET "ownerId"=${fixture.user.id}::uuid WHERE id=${fixture.identityId}::uuid`.execute(
+    await sql`UPDATE public.icloud_source_identity SET "ownerId"=${fixture.user.id}::uuid WHERE id=${fixture.identityId}::uuid`.execute(
       db,
     );
-    await sql`UPDATE immich_fork.icloud_resource SET "assetId"=${fixture.asset.id}::uuid,sha256=${fixture.sha256} WHERE id=${fixture.resource.id}::uuid`.execute(
+    await sql`UPDATE public.icloud_resource SET "assetId"=${fixture.asset.id}::uuid,sha256=${fixture.sha256} WHERE id=${fixture.resource.id}::uuid`.execute(
       db,
     );
     expect(await service.adopt(fixture.authority)).toBe('miss');
     expect(
       (
-        await sql`SELECT id FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
+        await sql`SELECT id FROM public.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
           db,
         )
       ).rows,
@@ -466,7 +459,7 @@ describe('iCloud exact identity adoption', () => {
           break;
         }
         case 'source': {
-          await sql`UPDATE immich_fork.icloud_record SET deleted=true WHERE "connectionId"=${fixture.connection.id}::uuid AND "recordId"=${fixture.master}`.execute(
+          await sql`UPDATE public.icloud_record SET deleted=true WHERE "connectionId"=${fixture.connection.id}::uuid AND "recordId"=${fixture.master}`.execute(
             db,
           );
 
@@ -490,7 +483,7 @@ describe('iCloud exact identity adoption', () => {
           break;
         }
         case 'digest': {
-          await sql`UPDATE immich_fork.icloud_source_identity SET sha256=${Buffer.alloc(32)} WHERE id=${fixture.identityId}::uuid`.execute(
+          await sql`UPDATE public.icloud_source_identity SET sha256=${Buffer.alloc(32)} WHERE id=${fixture.identityId}::uuid`.execute(
             db,
           );
 
@@ -542,14 +535,13 @@ describe('iCloud exact identity adoption', () => {
     'offline',
     'external',
     'trashed',
-    'reservation',
     'album',
     'library',
   ] as const)('refuses %s evidence without publishing a mapping or receipt', async (kind) => {
     const fixture = await arrange();
     switch (kind) {
       case 'missing': {
-        await sql`DELETE FROM immich_fork.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(db);
+        await sql`DELETE FROM public.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(db);
 
         break;
       }
@@ -567,29 +559,29 @@ describe('iCloud exact identity adoption', () => {
           checksum: createHash('sha1').update(fixture.bytes).digest(),
           checksumAlgorithm: ChecksumAlgorithm.sha1File,
         });
-        await sql`INSERT INTO immich_fork.icloud_source_identity
+        await sql`INSERT INTO public.icloud_source_identity
           ("ownerId","assetId","libraryKey","cplAssetRecordName","cplMasterRecordName",role,sha256,"deliveredBy","cloudIdentifier")
           SELECT "ownerId",${asset.id}::uuid,"libraryKey","cplAssetRecordName","cplMasterRecordName",role,sha256,"deliveredBy","cloudIdentifier"
-          FROM immich_fork.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(db);
+          FROM public.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(db);
 
         break;
       }
       case 'master': {
-        await sql`UPDATE immich_fork.icloud_source_identity SET "cplMasterRecordName"='different' WHERE id=${fixture.identityId}::uuid`.execute(
+        await sql`UPDATE public.icloud_source_identity SET "cplMasterRecordName"='different' WHERE id=${fixture.identityId}::uuid`.execute(
           db,
         );
 
         break;
       }
       case 'role': {
-        await sql`UPDATE immich_fork.icloud_source_identity SET role='raw-alternate' WHERE id=${fixture.identityId}::uuid`.execute(
+        await sql`UPDATE public.icloud_source_identity SET role='raw-alternate' WHERE id=${fixture.identityId}::uuid`.execute(
           db,
         );
 
         break;
       }
       case 'review': {
-        await sql`UPDATE immich_fork.icloud_source_identity SET "lastAuditResult"='mismatch' WHERE id=${fixture.identityId}::uuid`.execute(
+        await sql`UPDATE public.icloud_source_identity SET "lastAuditResult"='mismatch' WHERE id=${fixture.identityId}::uuid`.execute(
           db,
         );
 
@@ -607,14 +599,6 @@ describe('iCloud exact identity adoption', () => {
       }
       case 'trashed': {
         await db.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', fixture.asset.id).execute();
-
-        break;
-      }
-      case 'reservation': {
-        await sql`INSERT INTO immich_fork.asset_storage_reservation
-          ("assetId",token,"sourcePath","upstreamPath","temporaryPath",status)
-          VALUES (${fixture.asset.id}::uuid,${randomUUID()}::uuid,${fixture.originalPath},${`${fixture.originalPath}.upstream`},
-            ${`${fixture.originalPath}.temporary`},'reserved')`.execute(db);
 
         break;
       }
@@ -725,8 +709,8 @@ describe('iCloud exact identity adoption', () => {
           { timeout: 1000 },
         )
         .toBe(true);
-      const current = await sql<{ isNsfw: boolean }>`SELECT "isNsfw" FROM immich_fork.asset_privacy
-        WHERE "assetId"=${fixture.asset.id}::uuid`.execute(db);
+      const current = await sql<{ isNsfw: boolean }>`SELECT is_nsfw AS "isNsfw" FROM public.asset
+        WHERE id=${fixture.asset.id}::uuid`.execute(db);
       expect(current.rows[0].isNsfw).toBe(false);
     } finally {
       resume.resolve();
@@ -737,7 +721,7 @@ describe('iCloud exact identity adoption', () => {
     expect(await service.adopt(fixture.authority)).toBe('miss');
     expect(
       (
-        await sql`SELECT id FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
+        await sql`SELECT id FROM public.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
           db,
         )
       ).rows,
@@ -812,7 +796,7 @@ describe('iCloud exact identity adoption', () => {
     expect(await service.adopt(fixture.authority)).toBe('retry');
     expect(
       (
-        await sql`SELECT id FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
+        await sql`SELECT id FROM public.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
           db,
         )
       ).rows,
@@ -832,14 +816,14 @@ describe('iCloud exact identity adoption', () => {
           break;
         }
         case 'resource': {
-          await sql`UPDATE immich_fork.icloud_resource SET "leaseExpiresAt"=clock_timestamp()+interval '1 second' WHERE id=${fixture.resource.id}::uuid`.execute(
+          await sql`UPDATE public.icloud_resource SET "leaseExpiresAt"=clock_timestamp()+interval '1 second' WHERE id=${fixture.resource.id}::uuid`.execute(
             db,
           );
 
           break;
         }
         case 'item': {
-          await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()+interval '1 second' WHERE "ownerId"=${fixture.user.id}::uuid`.execute(
+          await sql`UPDATE public.icloud_claim SET "expiresAt"=clock_timestamp()+interval '1 second' WHERE "ownerId"=${fixture.user.id}::uuid`.execute(
             db,
           );
 
@@ -876,7 +860,7 @@ describe('iCloud exact identity adoption', () => {
     ]);
     expect(
       (
-        await sql`SELECT id FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
+        await sql`SELECT id FROM public.icloud_identity_reuse WHERE "sourceResourceId"=${fixture.resource.id}::uuid`.execute(
           db,
         )
       ).rows,
@@ -889,14 +873,14 @@ describe('iCloud exact identity adoption', () => {
     const constraint = `test_receipt_${randomUUID().replaceAll('-', '')}`;
     // This owner's new receipt fails a real PG constraint after the real mapping UPDATE.
     // Other owners remain unaffected, and no production verification is substituted.
-    await sql`ALTER TABLE immich_fork.icloud_identity_reuse ADD CONSTRAINT ${sql.id(constraint)}
+    await sql`ALTER TABLE public.icloud_identity_reuse ADD CONSTRAINT ${sql.id(constraint)}
       CHECK ("ownerId"<>${sql.lit(fixture.user.id)}::uuid)`.execute(db);
     try {
       expect(await service.adopt(fixture.authority)).toBe('retry');
       await unpublished(fixture);
       expect(await readFile(fixture.originalPath)).toEqual(fixture.bytes);
     } finally {
-      await sql`ALTER TABLE immich_fork.icloud_identity_reuse DROP CONSTRAINT ${sql.id(constraint)}`.execute(db);
+      await sql`ALTER TABLE public.icloud_identity_reuse DROP CONSTRAINT ${sql.id(constraint)}`.execute(db);
     }
     expect(await service.adopt(fixture.authority)).toBe('adopted');
   });
@@ -944,12 +928,12 @@ describe('iCloud exact identity adoption', () => {
     const fixture = await arrange();
     expect(await service.adopt(fixture.authority)).toBe('adopted');
     await service.onShutdown();
-    await sql`DELETE FROM immich_fork.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(db);
-    await sql`DELETE FROM immich_fork.icloud_resource WHERE id=${fixture.resource.id}::uuid`.execute(db);
+    await sql`DELETE FROM public.icloud_source_identity WHERE id=${fixture.identityId}::uuid`.execute(db);
+    await sql`DELETE FROM public.icloud_resource WHERE id=${fixture.resource.id}::uuid`.execute(db);
     await sql`DELETE FROM public.asset WHERE id=${fixture.asset.id}::uuid`.execute(db);
     expect(
       (
-        await sql`SELECT id FROM immich_fork.icloud_identity_reuse WHERE "connectionId"=${fixture.connection.id}::uuid`.execute(
+        await sql`SELECT id FROM public.icloud_identity_reuse WHERE "connectionId"=${fixture.connection.id}::uuid`.execute(
           db,
         )
       ).rows,
@@ -961,7 +945,7 @@ describe('iCloud exact identity adoption', () => {
     expect(await sync.remove(fixture.connection.id, fixture.user.id, async () => {})).toBe('removed');
     expect(
       (
-        await sql`SELECT id FROM immich_fork.icloud_identity_reuse WHERE "connectionId"=${fixture.connection.id}::uuid`.execute(
+        await sql`SELECT id FROM public.icloud_identity_reuse WHERE "connectionId"=${fixture.connection.id}::uuid`.execute(
           db,
         )
       ).rows,

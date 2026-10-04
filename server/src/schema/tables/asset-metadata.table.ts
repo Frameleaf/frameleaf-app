@@ -5,8 +5,8 @@ import {
   PrimaryColumn,
   Table,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetMetadataKey } from 'src/enum.js';
 import { asset_metadata_audit } from 'src/schema/functions.js';

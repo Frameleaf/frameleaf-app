@@ -1,7 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes } from 'node:crypto';
 import { ChecksumAlgorithm } from 'src/enum.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -16,14 +16,14 @@ const setup = (db?: Kysely<DB>) => {
     real: [],
     mock: [LoggingRepository],
   });
-  return { ctx, sut: ctx.get(ForkSchemaRepository) };
+  return { ctx, sut: ctx.get(AssetChecksumRepository) };
 };
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
 
-describe(ForkSchemaRepository.name, () => {
+describe(AssetChecksumRepository.name, () => {
   describe('hasAssetChecksum', () => {
     it('matches either recorded digest for only the owning user', async () => {
       const { ctx, sut } = setup();

@@ -5,9 +5,8 @@ import { randomUUID } from 'node:crypto';
 import type { PhotographySite, PhotographyStudioPreset } from 'src/dtos/photography-workflow.dto.js';
 import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
 import { AlbumUserRole, AssetFileType, AssetStatus, AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
-import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
-import { DB } from 'src/schema/index.js';
 
+import { DB } from 'src/schema/index.js';
 export type WorkflowRow = {
   id: string;
   ownerId: string;
@@ -15,10 +14,13 @@ export type WorkflowRow = {
   revision: string;
   value: PhotographyWorkflow;
 };
-const TABLE = sql`immich_fork.photography_workflow`;
+const TABLE = sql`public.photography_workflow`;
 @Injectable()
 export class PhotographyWorkflowRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   async list(ownerId: string, ids: string[]) {
     if (ids.length === 0) return [];
     const { rows } = await sql<{
@@ -42,7 +44,7 @@ export class PhotographyWorkflowRepository {
       (SELECT count(*)::int FROM jsonb_array_elements(workflow.value->'orders') orders WHERE orders->>'status' IN ('quoted','accepted')) AS "unpaidOrders",
       (SELECT count(*)::int FROM jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item WHERE orders->>'status' IN ('settled','free') AND item->>'approved'='true' AND item->>'finalPath' IS NOT NULL) AS "readyCount",
       (SELECT count(DISTINCT item->>'captureId')::int FROM jsonb_array_elements(workflow.value->'orders') orders,jsonb_array_elements(orders->'items') item WHERE orders->>'status' IN ('accepted','settled','free') AND (orders->>'paymentTiming' <> 'before-editing' OR orders->>'status' IN ('settled','free')) AND (CASE WHEN item ? 'outputs' THEN EXISTS(SELECT 1 FROM jsonb_array_elements(item->'outputs') output WHERE output->>'approved' <> 'true' OR output->>'revisionId' IS NULL) ELSE item->>'approved' <> 'true' OR item->>'revisionId' IS NULL END)) AS "pendingEdits"
-      FROM immich_fork.photography_workflow workflow JOIN public.album album ON album.id=workflow."albumId"
+      FROM public.photography_workflow workflow JOIN public.album album ON album.id=workflow."albumId"
       JOIN public.album_user membership ON membership."albumId"=album.id AND membership."userId"=workflow."ownerId" AND membership.role='owner'
       JOIN public."user" studio ON studio.id=workflow."ownerId"
       WHERE workflow."ownerId"=${ownerId}::uuid AND workflow.id=ANY(${ids}::uuid[]) AND album."deletedAt" IS NULL AND studio."deletedAt" IS NULL AND studio.status='active' ORDER BY workflow."updatedAt" DESC LIMIT 200`.execute(
@@ -61,9 +63,11 @@ export class PhotographyWorkflowRepository {
     expected: string | null | undefined,
     initial: PhotographyWorkflow,
     change: (value: PhotographyWorkflow, tx: Kysely<DB>) => Promise<T> | T,
-  ): Promise<{ row: WorkflowRow; result: T }> {
+  ): Promise<{
+    row: WorkflowRow;
+    result: T;
+  }> {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'Photography changes are unavailable during database handoff');
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`.execute(tx);
       const owner = await tx
         .selectFrom('album')
@@ -88,8 +92,7 @@ export class PhotographyWorkflowRepository {
       const result = await change(value, tx);
       const revision = randomUUID();
       const encoded = JSON.stringify(value);
-      if (Buffer.byteLength(encoded) > 20_000_000)
-        throw new ConflictException('Workflow history storage limit reached');
+      if (Buffer.byteLength(encoded) > 20000000) throw new ConflictException('Workflow history storage limit reached');
       await sql`INSERT INTO ${TABLE} (id,"ownerId","albumId",revision,value)
         VALUES (${id}::uuid,${ownerId}::uuid,${albumId}::uuid,${revision}::uuid,${encoded}::text::jsonb)
         ON CONFLICT (id) DO UPDATE SET revision=EXCLUDED.revision,value=EXCLUDED.value,"updatedAt"=clock_timestamp()`.execute(
@@ -133,7 +136,7 @@ export class PhotographyWorkflowRepository {
       .where('asset.deletedAt', 'is', null)
       .orderBy('asset.fileCreatedAt')
       .orderBy('asset.id')
-      .limit(10_001);
+      .limit(10001);
     if (ids) {
       if (ids.length === 0) return [];
       query = query.where('asset.id', 'in', ids);
@@ -155,12 +158,14 @@ export class PhotographyWorkflowRepository {
       .where('asset.visibility', '!=', AssetVisibility.Locked)
       .where('asset.status', '=', AssetStatus.Active)
       .where('asset.deletedAt', 'is', null)
-      .where('asset_exif.fileSizeInByte', '<=', 512_000)
+      .where('asset_exif.fileSizeInByte', '<=', 512000)
       .execute();
   }
   async eligibleRevisions(row: WorkflowRow, ids: string[]) {
     if (ids.length === 0) return new Set<string>();
-    const { rows } = await sql<{ id: string }>`SELECT revision.id FROM immich_fork.asset_develop_revision revision
+    const { rows } = await sql<{
+      id: string;
+    }>`SELECT revision.id FROM public.asset_develop_revision revision
       JOIN public.asset asset ON asset.id=revision."assetId"
       JOIN public.album_asset membership ON membership."assetId"=asset.id
       WHERE revision.id=ANY(${ids}::uuid[]) AND revision."ownerId"=${row.ownerId}::uuid
@@ -213,7 +218,7 @@ export class PhotographyWorkflowRepository {
     const { rows } = await sql<{
       revision: string;
       value: PhotographySite | null;
-    }>`SELECT revision,CASE WHEN value ? 'site' THEN value->'site' ELSE value END AS value FROM immich_fork.photography_studio_site WHERE "ownerId"=${ownerId}::uuid`.execute(
+    }>`SELECT revision,CASE WHEN value ? 'site' THEN value->'site' ELSE value END AS value FROM public.photography_studio_site WHERE "ownerId"=${ownerId}::uuid`.execute(
       this.db,
     );
     return rows[0];
@@ -223,7 +228,7 @@ export class PhotographyWorkflowRepository {
     const { rows } = await sql<{
       revision: string;
       presets: PhotographyStudioPreset[];
-    }>`SELECT revision,CASE WHEN value ? 'site' THEN COALESCE(value->'presets','[]'::jsonb) ELSE '[]'::jsonb END AS presets FROM immich_fork.photography_studio_site WHERE "ownerId"=${ownerId}::uuid`.execute(
+    }>`SELECT revision,CASE WHEN value ? 'site' THEN COALESCE(value->'presets','[]'::jsonb) ELSE '[]'::jsonb END AS presets FROM public.photography_studio_site WHERE "ownerId"=${ownerId}::uuid`.execute(
       this.db,
     );
     return rows[0] ?? { revision: null, presets: [] };
@@ -232,7 +237,7 @@ export class PhotographyWorkflowRepository {
     const { rows } = await sql<{
       revision: string;
       presets: PhotographyStudioPreset[];
-    }>`SELECT revision,COALESCE(value->'presets','[]'::jsonb) AS presets FROM immich_fork.photography_studio_site WHERE "ownerId"=${ownerId}::uuid FOR SHARE`.execute(
+    }>`SELECT revision,COALESCE(value->'presets','[]'::jsonb) AS presets FROM public.photography_studio_site WHERE "ownerId"=${ownerId}::uuid FOR SHARE`.execute(
       tx,
     );
     if (rows[0]?.revision !== expected) throw new ConflictException('Studio preset changed; reload');
@@ -246,7 +251,6 @@ export class PhotographyWorkflowRepository {
     change: (record: { site: PhotographySite | null; presets: PhotographyStudioPreset[] }) => Promise<T> | T,
   ) {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'Photography changes are unavailable during database handoff');
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${ownerId},0))`.execute(tx);
       const owner = await tx
         .selectFrom('user')
@@ -259,8 +263,13 @@ export class PhotographyWorkflowRepository {
       if (!owner) throw new ForbiddenException('Studio unavailable');
       const { rows } = await sql<{
         revision: string;
-        value: PhotographySite | { site: PhotographySite | null; presets: PhotographyStudioPreset[] };
-      }>`SELECT revision,value FROM immich_fork.photography_studio_site WHERE "ownerId"=${ownerId}::uuid FOR UPDATE`.execute(
+        value:
+          | PhotographySite
+          | {
+              site: PhotographySite | null;
+              presets: PhotographyStudioPreset[];
+            };
+      }>`SELECT revision,value FROM public.photography_studio_site WHERE "ownerId"=${ownerId}::uuid FOR UPDATE`.execute(
         tx,
       );
       if ((rows[0]?.revision ?? null) !== expected) throw new ConflictException('Studio settings changed; reload');
@@ -268,9 +277,9 @@ export class PhotographyWorkflowRepository {
       const record = stored && 'site' in stored ? stored : { site: stored ?? null, presets: [] };
       const result = await change(record);
       const encoded = JSON.stringify(record);
-      if (Buffer.byteLength(encoded) > 20_000_000) throw new ConflictException('Studio settings storage limit reached');
+      if (Buffer.byteLength(encoded) > 20000000) throw new ConflictException('Studio settings storage limit reached');
       const revision = randomUUID();
-      await sql`INSERT INTO immich_fork.photography_studio_site ("ownerId",revision,value) VALUES (${ownerId}::uuid,${revision}::uuid,${encoded}::text::jsonb) ON CONFLICT ("ownerId") DO UPDATE SET revision=EXCLUDED.revision,value=EXCLUDED.value`.execute(
+      await sql`INSERT INTO public.photography_studio_site ("ownerId",revision,value) VALUES (${ownerId}::uuid,${revision}::uuid,${encoded}::text::jsonb) ON CONFLICT ("ownerId") DO UPDATE SET revision=EXCLUDED.revision,value=EXCLUDED.value`.execute(
         tx,
       );
       return { revision, record, result };

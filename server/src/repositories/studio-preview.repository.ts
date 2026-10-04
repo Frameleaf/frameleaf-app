@@ -4,7 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { AlbumUserRole, MediaOperationKind, MediaOperationStatus, StudioPreviewStatus } from 'src/enum.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
-import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { DB } from 'src/schema/index.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
 import {
@@ -16,7 +16,6 @@ import {
   PREVIEW_CONSUMER_PREFIX,
   isConsumerPreview,
 } from 'src/utils/studio-preview.js';
-
 export type StudioPreviewFrame = Selectable<StudioPreviewFrameTable>;
 export type StudioPreviewRetirement = {
   frame: StudioPreviewFrame;
@@ -25,12 +24,10 @@ export type StudioPreviewRetirement = {
   rendererReleased: true | null;
   cleanupAllowed: boolean;
 };
-
 export type StudioPreviewFrameCreate = Omit<
   Insertable<StudioPreviewFrameTable>,
   'id' | 'createdAt' | 'updatedAt' | 'updateId' | 'requestedAt' | 'lastAccessedAt' | 'status'
 >;
-
 /**
  * The revision-bound preview store (FL-96, `STU-402`).
  *
@@ -47,10 +44,10 @@ export type StudioPreviewFrameCreate = Omit<
 @Injectable()
 export class StudioPreviewRepository {
   constructor(
-    @InjectKysely() private db: Kysely<DB>,
+    @InjectKysely()
+    private db: Kysely<DB>,
     private privacy: DerivativePrivacyRepository,
   ) {}
-
   /**
    * Record a request, or return the existing row for the same key.
    *
@@ -67,9 +64,12 @@ export class StudioPreviewRepository {
    * the second condition is so that a mistake in the key could never hand one account's row to
    * another.
    */
-  async upsert(frame: StudioPreviewFrameCreate): Promise<{ frame: StudioPreviewFrame; created: boolean }> {
+  async upsert(frame: StudioPreviewFrameCreate): Promise<{
+    frame: StudioPreviewFrame;
+    created: boolean;
+  }> {
     if (isConsumerPreview(frame.cacheKey)) {
-      return withPublicForkWrites(this.db, async (tx) => {
+      return this.db.transaction().execute(async (tx) => {
         const inserted = await tx
           .insertInto('studio_preview_frame')
           .values(frame)
@@ -98,11 +98,9 @@ export class StudioPreviewRepository {
       .onConflict((builder) => builder.column('cacheKey').doNothing())
       .returningAll()
       .executeTakeFirst();
-
     if (inserted) {
       return { frame: inserted as unknown as StudioPreviewFrame, created: true };
     }
-
     const revived = await this.db
       .updateTable('studio_preview_frame')
       .set({
@@ -130,11 +128,9 @@ export class StudioPreviewRepository {
       .where('status', 'in', [StudioPreviewStatus.Superseded, StudioPreviewStatus.Evicted, StudioPreviewStatus.Failed])
       .returningAll()
       .executeTakeFirst();
-
     if (revived) {
       return { frame: revived as unknown as StudioPreviewFrame, created: true };
     }
-
     /**
      * The row is live (pending, rendering or ready). Refresh what belongs to *this* request: the
      * seek it answers and, for a manifest-bound request, the viewer-session grant. A grant is
@@ -152,10 +148,8 @@ export class StudioPreviewRepository {
       .where('ownerId', '=', frame.ownerId)
       .returningAll()
       .executeTakeFirstOrThrow();
-
     return { frame: refreshed as unknown as StudioPreviewFrame, created: false };
   }
-
   async getForOwner(id: string, ownerId: string): Promise<StudioPreviewFrame | undefined> {
     return (await this.db
       .selectFrom('studio_preview_frame')
@@ -164,7 +158,6 @@ export class StudioPreviewRepository {
       .where('ownerId', '=', ownerId)
       .executeTakeFirst()) as unknown as StudioPreviewFrame | undefined;
   }
-
   /** The scoped enqueue holds this lock through allocation and attachment in createWithin. */
   async lockPendingAdmission(tx: Transaction<DB>, frame: StudioPreviewFrame): Promise<void> {
     const current = await tx
@@ -181,7 +174,6 @@ export class StudioPreviewRepository {
       throw new ConflictException('Preview admission was retired before allocation');
     }
   }
-
   async attachAdmissionOperation(tx: Transaction<DB>, frame: StudioPreviewFrame, operationId: string): Promise<void> {
     const attached = await tx
       .updateTable('studio_preview_frame')
@@ -196,7 +188,6 @@ export class StudioPreviewRepository {
       throw new ConflictException('Preview admission was retired before attachment');
     }
   }
-
   /** Fence and actual cancellation share a commit; a failed cancellation keeps a durable fence. */
   async retireConsumer(
     observed: StudioPreviewFrame,
@@ -205,7 +196,6 @@ export class StudioPreviewRepository {
     snapshot = true,
   ): Promise<StudioPreviewRetirement | undefined> {
     return this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx);
       const current = await tx
         .selectFrom('studio_preview_frame')
         .selectAll()
@@ -260,7 +250,6 @@ export class StudioPreviewRepository {
         })
         .where('id', '=', current.id)
         .execute();
-
       let changedOperation: MediaOperation | undefined;
       let unavailable = false;
       if (
@@ -330,7 +319,6 @@ export class StudioPreviewRepository {
       };
     });
   }
-
   async markConsumerCleaned(frame: StudioPreviewFrame): Promise<void> {
     await this.db
       .updateTable('studio_preview_frame')
@@ -342,7 +330,6 @@ export class StudioPreviewRepository {
       .where(sql<boolean>`"operationId" IS NOT DISTINCT FROM ${frame.operationId}::uuid`)
       .execute();
   }
-
   async getByCacheKey(cacheKey: string, ownerId: string): Promise<StudioPreviewFrame | undefined> {
     return (await this.db
       .selectFrom('studio_preview_frame')
@@ -351,7 +338,6 @@ export class StudioPreviewRepository {
       .where('ownerId', '=', ownerId)
       .executeTakeFirst()) as unknown as StudioPreviewFrame | undefined;
   }
-
   /**
    * The binding (manifest) digest most recently requested for a project by this owner.
    *
@@ -368,10 +354,8 @@ export class StudioPreviewRepository {
       .orderBy('requestedAt', 'desc')
       .limit(1)
       .executeTakeFirst();
-
     return row?.revisionDigest;
   }
-
   /** Every row for one project and owner, for the eviction and supersession planner. */
   async listForProject(projectId: string, ownerId: string, limit: number): Promise<StudioPreviewFrame[]> {
     return (await this.db
@@ -383,12 +367,10 @@ export class StudioPreviewRepository {
       .limit(limit)
       .execute()) as unknown as StudioPreviewFrame[];
   }
-
   /** Touch the recency clock. Least-recently-used eviction is only as good as this write. */
   async markAccessed(id: string, at: Date): Promise<void> {
     await this.db.updateTable('studio_preview_frame').set({ lastAccessedAt: at }).where('id', '=', id).execute();
   }
-
   /** Scoped delivery and recency share one admission write after all preceding read awaits. */
   async markConsumerAccessed(frame: StudioPreviewFrame, at: Date): Promise<boolean> {
     if (!frame.operationId || !frame.framePath || !isConsumerPreview(frame.cacheKey)) {
@@ -407,7 +389,6 @@ export class StudioPreviewRepository {
       .executeTakeFirst();
     return !!admitted;
   }
-
   async markRendering(id: string, operationId: string): Promise<boolean> {
     const result = await this.db
       .updateTable('studio_preview_frame')
@@ -415,10 +396,8 @@ export class StudioPreviewRepository {
       .where('id', '=', id)
       .where('status', '=', StudioPreviewStatus.Pending)
       .executeTakeFirst();
-
     return Number(result.numUpdatedRows) > 0;
   }
-
   /**
    * Publish a validated frame.
    *
@@ -461,7 +440,6 @@ export class StudioPreviewRepository {
       if (!current) {
         return false;
       }
-
       // Match getReadableRevision, holding the account, project and review membership through commit.
       const owner = await tx
         .selectFrom('user')
@@ -491,7 +469,6 @@ export class StudioPreviewRepository {
           .forShare()
           .executeTakeFirst());
       }
-
       // The signed preview grant names these sources. As for exports, source and granting rows
       // stay share-locked until publication commits, so revocation cannot land between checks.
       const ids = [...new Set(authorization.assetIds)];
@@ -517,7 +494,6 @@ export class StudioPreviewRepository {
           .execute();
         return false;
       }
-
       const result = await tx
         .updateTable('studio_preview_frame')
         .set({
@@ -537,11 +513,9 @@ export class StudioPreviewRepository {
         .where('revisionDigest', '=', revisionDigest)
         .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering])
         .executeTakeFirst();
-
       return Number(result.numUpdatedRows) > 0;
     });
   }
-
   /** A late refusal may discard only its observed binding, never a renewed request or result. */
   async evictObserved(
     frame: StudioPreviewFrame,
@@ -571,10 +545,12 @@ export class StudioPreviewRepository {
       return evicted as unknown as StudioPreviewFrame;
     });
   }
-
   async markFailed(
     id: string,
-    binding: { ownerId: string; operationId: string },
+    binding: {
+      ownerId: string;
+      operationId: string;
+    },
     errorCode: string,
     removeFiles: () => Promise<void>,
   ): Promise<boolean> {
@@ -595,7 +571,6 @@ export class StudioPreviewRepository {
       return true;
     });
   }
-
   /**
    * Mark every frame of one account's project that is not on the current binding as superseded.
    *
@@ -614,7 +589,6 @@ export class StudioPreviewRepository {
       .returningAll()
       .execute()) as unknown as StudioPreviewFrame[];
   }
-
   /**
    * A stored revision was committed (FL-89): supersede every live frame of the project rendered
    * for an earlier revision, for every account that previewed it — the owner and each reviewer.
@@ -634,13 +608,11 @@ export class StudioPreviewRepository {
       .returningAll()
       .execute()) as unknown as StudioPreviewFrame[];
   }
-
   /** Retention. The row survives as a tombstone so the answer stays "gone", not "missing". */
   async evict(ids: readonly string[]): Promise<StudioPreviewFrame[]> {
     if (ids.length === 0) {
       return [];
     }
-
     return (await this.db
       .updateTable('studio_preview_frame')
       .set({
@@ -654,7 +626,6 @@ export class StudioPreviewRepository {
       .returningAll()
       .execute()) as unknown as StudioPreviewFrame[];
   }
-
   /**
    * FL-90: frames of these projects that can still be delivered or are still being made, for
    * revocation. With `ownerId`, only that account's frames.
@@ -671,7 +642,6 @@ export class StudioPreviewRepository {
       .where('status', 'in', [StudioPreviewStatus.Pending, StudioPreviewStatus.Rendering, StudioPreviewStatus.Ready])
       .execute()) as unknown as StudioPreviewFrame[];
   }
-
   /**
    * Rows whose file can go: ready frames past their expiry, and superseded or failed frames last
    * touched before `retiredBefore`. For the retention sweep.
@@ -702,7 +672,6 @@ export class StudioPreviewRepository {
       .limit(limit)
       .execute()) as unknown as StudioPreviewFrame[];
   }
-
   /** Expired rows across all projects, for the retention sweep. */
   async listExpired(now: Date, limit: number): Promise<StudioPreviewFrame[]> {
     return (await this.db
@@ -715,7 +684,6 @@ export class StudioPreviewRepository {
       .limit(limit)
       .execute()) as unknown as StudioPreviewFrame[];
   }
-
   /** Tombstones with no remaining consumer. Only an evicted row is ever removed outright. */
   async deleteEvictedBefore(before: Date, limit: number): Promise<number> {
     const ids = await this.db
@@ -731,11 +699,9 @@ export class StudioPreviewRepository {
       .where('updatedAt', '<', before)
       .limit(limit)
       .execute();
-
     if (ids.length === 0) {
       return 0;
     }
-
     const result = await this.db
       .deleteFrom('studio_preview_frame')
       .where(
@@ -744,7 +710,6 @@ export class StudioPreviewRepository {
         ids.map((row) => row.id),
       )
       .executeTakeFirst();
-
     return Number(result.numDeletedRows);
   }
 }

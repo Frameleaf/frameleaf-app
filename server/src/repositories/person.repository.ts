@@ -26,26 +26,21 @@ import {
 import { lockForkWrites } from 'src/utils/fork-write-lock.js';
 import { effectiveVisibility, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
-
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
   withHidden: boolean;
   closestFaceAssetId?: string;
 }
-
 export interface PersonNameSearchOptions extends HiddenContentQueryOptions {
   withHidden?: boolean;
 }
-
 export interface PersonNameResponse {
   personGroupId: string;
   name: string;
 }
-
 export interface AssetFaceId {
   assetId: string;
   personGroupId: string;
 }
-
 export interface UpdateFacesData {
   oldPersonGroupId?: string;
   faceIds?: string[];
@@ -62,42 +57,37 @@ export interface UpdateFacesData {
    */
   onlyUndecided?: boolean;
 }
-
 export interface PersonStatistics {
   assets: number;
   photos: number;
   videos: number;
 }
-
 export interface DeleteFacesOptions {
   sourceType: SourceType;
 }
-
 export interface GetAllPeopleOptions {
   ownerId?: string;
   thumbnailPath?: string;
   faceAssetId?: string | null;
   isHidden?: boolean;
 }
-
 export interface GetAllFacesOptions {
   personGroupId?: string | null;
   assetId?: string;
   sourceType?: SourceType;
   clusterGroupId?: string;
 }
-
-export type UnassignFacesOptions = DeleteFacesOptions & { clusterGroupId?: string };
-
+export type UnassignFacesOptions = DeleteFacesOptions & {
+  clusterGroupId?: string;
+};
 /**
  * FL-57: an owner's answer to a merge suggestion they did not accept. `different` never suggests the
  * pair again, `later` skips it for 30 days, and `ignore` stops suggesting the person with anyone
  * (stored as the person paired with itself).
  */
 export type PersonMergeVerdict = 'different' | 'later' | 'ignore';
-
 /**
- * FL-57: the kinds of manual face decisions kept in `immich_fork.face_correction`. `box-move` is
+ * FL-57: the kinds of manual face decisions kept in `public.face_correction`. `box-move` is
  * written by the FL-38 face editor when it moves a face box.
  */
 export type FaceCorrectionAction =
@@ -109,7 +99,6 @@ export type FaceCorrectionAction =
   | 'box-move'
   /** FL-326: a partner's person auto-merged into one of the owner's people by face similarity. */
   | 'partner-merge';
-
 /**
  * One manual face decision to record (FL-57). For a face decision (`faceId` set), the asset, the
  * original's checksum and the face box (normalized to 0..1) are read from the face row as it is when
@@ -128,7 +117,6 @@ export interface FaceCorrectionInput {
   fromPersonName?: string | null;
   toPersonName?: string | null;
 }
-
 export interface FaceCorrection {
   id: string;
   ownerId: string;
@@ -148,7 +136,6 @@ export interface FaceCorrection {
   createdAt: Date;
   undoneAt: Date | null;
 }
-
 /** A face that stands for a person in a merge suggestion (FL-57): on the viewer's own, visible media. */
 export interface ReferenceFace {
   personGroupId: string;
@@ -161,18 +148,14 @@ export interface ReferenceFace {
   boundingBoxX2: number;
   boundingBoxY2: number;
 }
-
-const FACE_CORRECTION_COLUMNS = sql.raw(
-  `id, "ownerId", "actorId", action, "faceId", "assetId", "assetChecksum", "boxX1", "boxY1", "boxX2", "boxY2",
-   "fromPersonId", "toPersonId", "fromPersonName", "toPersonName", "createdAt", "undoneAt"`,
-);
-
+const FACE_CORRECTION_COLUMNS =
+  sql.raw(`id, "ownerId", "actorId", action, "faceId", "assetId", "assetChecksum", "boxX1", "boxY1", "boxX2", "boxY2",
+   "fromPersonId", "toPersonId", "fromPersonName", "toPersonName", "createdAt", "undoneAt"`);
 export type GetFacesOptions = WithPersonOptions & {
   isVisible?: boolean;
   /** FL-38: also return faces the owner hid (soft-deleted, `deletedAt` set). */
   withHidden?: boolean;
 };
-
 /** FL-38: a face box in pixels of an image of `imageWidth` x `imageHeight`. */
 export type FaceBoxPixels = {
   imageWidth: number;
@@ -182,7 +165,6 @@ export type FaceBoxPixels = {
   boundingBoxX2: number;
   boundingBoxY2: number;
 };
-
 /**
  * FL-38: one revision-checked correction of a face. `personGroupId: null` unassigns it, a box
  * moves or resizes it (in original-image pixels) and `hidden` hides or restores it.
@@ -192,10 +174,11 @@ export type FaceCorrectionChange = {
   box?: FaceBoxPixels;
   hidden?: boolean;
 };
-
 /** a person is identified by its owner and the group it belongs to */
-export type PersonId = { ownerId: string; personGroupId: string };
-
+export type PersonId = {
+  ownerId: string;
+  personGroupId: string;
+};
 /** FL-326: a recipient's mapping of a partner's person onto one of their own (`partner_person_link`). */
 export type PartnerPersonLink = {
   ownerId: string;
@@ -207,17 +190,20 @@ export type PartnerPersonLink = {
   /** The auto-merge's correction history entry, for `merged`. */
   correctionId: string | null;
 };
-
 /** FL-326: a face a partner copy carries over. */
-export type PartnerCopyFace = { id: string; personGroupId: string | null; hasEmbedding: boolean };
-
-export type ReassignCluster = { userId: string; newClusterId: string };
-
+export type PartnerCopyFace = {
+  id: string;
+  personGroupId: string | null;
+  hasEmbedding: boolean;
+};
+export type ReassignCluster = {
+  userId: string;
+  newClusterId: string;
+};
 export type WithPersonOptions = {
   /** whose version of the person to select */
   viewingUserId: string;
 };
-
 const withPerson = ({ viewingUserId }: WithPersonOptions) => {
   return (eb: ExpressionBuilder<DB, 'asset_face'>) =>
     jsonObjectFrom(
@@ -228,17 +214,17 @@ const withPerson = ({ viewingUserId }: WithPersonOptions) => {
         .where('person.ownerId', '=', viewingUserId),
     ).as('person');
 };
-
 const withFaceSearch = (eb: ExpressionBuilder<DB, 'asset_face'>) => {
   return jsonObjectFrom(
     eb.selectFrom('face_search').selectAll('face_search').whereRef('face_search.faceId', '=', 'asset_face.id'),
   ).as('faceSearch');
 };
-
 @Injectable()
 export class PersonRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   @GenerateSql({ params: [{ oldPersonGroupId: DummyValue.UUID, newPersonGroupId: DummyValue.UUID }] })
   async reassignFaces({
     oldPersonGroupId,
@@ -264,10 +250,8 @@ export class PersonRepository {
         qb.where('asset_face.personGroupId', 'is', null).where('asset_face.correctedAt', 'is', null),
       )
       .executeTakeFirst();
-
     return Number(result.numUpdatedRows ?? 0);
   }
-
   /**
    * Takes recognition's assignments off faces before a forced recognition rebuild. FL-57: a face with
    * an explicit decision (`correctedAt`: moved, split or merged by a person) keeps its person, so a
@@ -289,14 +273,12 @@ export class PersonRepository {
       )
       .execute();
   }
-
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.UUID] })
   @Chunked()
   async delete(personGroupIds: string[], ownerId?: string) {
     if (personGroupIds.length === 0) {
       return [];
     }
-
     return this.db
       .deleteFrom('person')
       .$if(!!ownerId, (qb) => qb.where('ownerId', '=', ownerId!))
@@ -304,17 +286,14 @@ export class PersonRepository {
       .returning(['personGroupId', 'ownerId', 'thumbnailPath'])
       .execute();
   }
-
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @Chunked()
   async deleteGroups(ids: string[]): Promise<void> {
     if (ids.length === 0) {
       return;
     }
-
     await this.db.deleteFrom('person_group').where('person_group.id', 'in', ids).execute();
   }
-
   @GenerateSql()
   async deleteEmptyGroups(): Promise<number> {
     const result = await this.db
@@ -329,10 +308,8 @@ export class PersonRepository {
         ),
       )
       .executeTakeFirst();
-
     return Number(result.numDeletedRows);
   }
-
   @GenerateSql()
   async deleteOrphanedClusterGroups(): Promise<number> {
     const result = await this.db
@@ -341,10 +318,8 @@ export class PersonRepository {
         not(exists(selectFrom('user').whereRef('user.clusterGroupId', '=', 'cluster_group.id').select('user.id'))),
       )
       .executeTakeFirst();
-
     return Number(result.numDeletedRows);
   }
-
   /**
    * Removes every face of a source before a forced detection rebuild. FL-57: a face carrying an
    * explicit decision (moved to someone, or "not a face of anyone") stays, so the decision survives the
@@ -360,7 +335,7 @@ export class PersonRepository {
           eb.and([
             eb.or([eb('asset_face.correctedAt', 'is not', null), eb('asset_face.deletedAt', 'is not', null)]),
             sql<boolean>`not exists (
-              select 1 from immich_fork.face_correction correction
+              select 1 from public.face_correction correction
               inner join asset on asset.id = correction."assetId"
               where correction."faceId" = asset_face.id
                 and correction."undoneAt" is null
@@ -371,7 +346,6 @@ export class PersonRepository {
       )
       .execute();
   }
-
   @GenerateSql({
     params: [{ personGroupId: null, sourceType: SourceType.MachineLearning, clusterGroupId: DummyValue.UUID }],
     stream: true,
@@ -394,7 +368,6 @@ export class PersonRepository {
       .where('asset_face.isVisible', 'is', true)
       .stream();
   }
-
   getAll(options: GetAllPeopleOptions = {}) {
     return this.db
       .selectFrom('person')
@@ -406,7 +379,6 @@ export class PersonRepository {
       .$if(options.isHidden !== undefined, (qb) => qb.where('person.isHidden', '=', options.isHidden!))
       .stream();
   }
-
   @GenerateSql()
   getFileSamples() {
     return this.db
@@ -416,7 +388,6 @@ export class PersonRepository {
       .limit(sql.lit(3))
       .execute();
   }
-
   @GenerateSql({ params: [{ take: 1, skip: 0 }, DummyValue.UUID] })
   async getAllForUser(pagination: PaginationOptions, userId: string, options?: PersonSearchOptions) {
     const items = await this.db
@@ -488,10 +459,8 @@ export class PersonRepository {
       .offset(pagination.skip ?? 0)
       .limit(pagination.take + 1)
       .execute();
-
     return paginationHelper(items, pagination.take);
   }
-
   @GenerateSql()
   getAllWithoutFaces() {
     return this.db
@@ -504,11 +473,9 @@ export class PersonRepository {
       .groupBy(['person.ownerId', 'person.personGroupId'])
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, { viewingUserId: DummyValue.UUID, isVisible: true }] })
   getFaces(assetId: string, options: GetFacesOptions) {
     const { viewingUserId, isVisible, withHidden } = options;
-
     return this.db
       .selectFrom('asset_face')
       .selectAll('asset_face')
@@ -519,7 +486,6 @@ export class PersonRepository {
       .orderBy('asset_face.boundingBoxX1', 'asc')
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, { viewingUserId: DummyValue.UUID }] })
   getFaceById(id: string, { viewingUserId }: WithPersonOptions) {
     // TODO return null instead of find or fail
@@ -531,7 +497,6 @@ export class PersonRepository {
       .where('asset_face.deletedAt', 'is', null)
       .executeTakeFirstOrThrow();
   }
-
   /** FL-38: a face for a correction, including one its owner hid (so it can be shown again). */
   getFaceForCorrection(id: string, { viewingUserId }: WithPersonOptions) {
     return this.db
@@ -541,7 +506,6 @@ export class PersonRepository {
       .where('asset_face.id', '=', id)
       .executeTakeFirst();
   }
-
   /**
    * FL-38: applies a correction only while the face is still at `expectedRevision` (its
    * `updateId`, renewed by the `asset_face_updatedAt` trigger on every update), so a correction
@@ -563,12 +527,18 @@ export class PersonRepository {
       .where('asset_face.id', '=', id)
       .where('asset_face.updateId', '=', expectedRevision)
       .executeTakeFirst();
-
     return Number(result.numUpdatedRows);
   }
-
   /** FL-38: deletes (or soft-deletes) a face only while it is still at `expectedRevision`. */
-  async deleteFaceAtRevision(id: string, expectedRevision: string, { force }: { force: boolean }) {
+  async deleteFaceAtRevision(
+    id: string,
+    expectedRevision: string,
+    {
+      force,
+    }: {
+      force: boolean;
+    },
+  ) {
     // a revision is opaque to clients: one that is not a face's `updateId` matches nothing
     if (!isUuid(expectedRevision)) {
       return 0;
@@ -585,10 +555,8 @@ export class PersonRepository {
           .where('asset_face.id', '=', id)
           .where('asset_face.updateId', '=', expectedRevision)
           .executeTakeFirst();
-
     return Number('numDeletedRows' in result ? result.numDeletedRows : result.numUpdatedRows);
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   getFaceForFacialRecognitionJob(id: string) {
     return this.db
@@ -619,7 +587,6 @@ export class PersonRepository {
       .where('asset_face.deletedAt', 'is', null)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [{ ownerId: DummyValue.UUID, personGroupId: DummyValue.UUID }] })
   getDataForThumbnailGenerationJob({ ownerId, personGroupId }: PersonId) {
     return this.db
@@ -645,21 +612,18 @@ export class PersonRepository {
       .where('asset_face.deletedAt', 'is', null)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   async reassignFace(assetFaceId: string, newPersonGroupId: string): Promise<number> {
     // FL-57: stamps `correctedAt`, the explicit-decision marker that keeps a face a person moved
     // between people out of recognition rebuilds. The history itself is kept in
-    // `immich_fork.face_correction` (`recordFaceCorrections`).
+    // `public.face_correction` (`recordFaceCorrections`).
     const result = await this.db
       .updateTable('asset_face')
       .set({ personGroupId: newPersonGroupId, correctedAt: sql`clock_timestamp()` })
       .where('asset_face.id', '=', assetFaceId)
       .executeTakeFirst();
-
     return Number(result.numUpdatedRows);
   }
-
   @GenerateSql({ params: [{ ownerId: DummyValue.UUID, personGroupId: DummyValue.UUID }] })
   getByGroupId({ ownerId, personGroupId }: PersonId) {
     return this.db //
@@ -669,7 +633,6 @@ export class PersonRepository {
       .where('person.ownerId', '=', ownerId)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, { withHidden: true }] })
   getByName(userId: string, personName: string, options: PersonNameSearchOptions) {
     return this.db
@@ -701,7 +664,6 @@ export class PersonRepository {
       )
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, { withHidden: true }] })
   getDistinctNames(userId: string, { withHidden }: PersonNameSearchOptions): Promise<PersonNameResponse[]> {
     return this.db
@@ -712,7 +674,6 @@ export class PersonRepository {
       .$if(!withHidden, (qb) => qb.where('person.isHidden', '=', false))
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
   async getStatistics(
     personGroupId: string,
@@ -745,14 +706,12 @@ export class PersonRepository {
       .where('asset_face.isVisible', 'is', true)
       .where('asset_face.personGroupId', '=', personGroupId)
       .executeTakeFirst();
-
     return {
       assets: result ? Number(result.count) : 0,
       photos: result ? Number(result.photos) : 0,
       videos: result ? Number(result.videos) : 0,
     };
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   getNumberOfPeople(userId: string, options: HiddenContentQueryOptions = {}) {
     const zero = sql.lit(0);
@@ -782,19 +741,15 @@ export class PersonRepository {
       .select((eb) => eb.fn.coalesce(eb.fn.countAll<number>().filterWhere('isHidden', '=', true), zero).as('hidden'))
       .executeTakeFirstOrThrow();
   }
-
   create(person: Insertable<PersonTable>) {
     return this.db.insertInto('person').values(person).returningAll().executeTakeFirstOrThrow();
   }
-
   async createAll(people: Insertable<PersonTable>[]) {
     if (people.length === 0) {
       return [];
     }
-
     return this.db.insertInto('person').values(people).returningAll().execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   createGroup(ownerId: string) {
     return this.db
@@ -804,7 +759,6 @@ export class PersonRepository {
       .returningAll()
       .executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [{ userId: DummyValue.UUID, newClusterId: DummyValue.UUID }] })
   async reassignCluster({ userId, newClusterId }: ReassignCluster): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
@@ -826,7 +780,6 @@ export class PersonRepository {
           ),
         )
         .execute();
-
       // the rest is shared with someone else, so this user gets a group of their own for each
       const mapping = await trx
         .with('shared', (db) =>
@@ -859,11 +812,9 @@ export class PersonRepository {
         .selectFrom('mapping')
         .select(['mapping.oldId', 'mapping.newId'])
         .execute();
-
       if (mapping.length === 0) {
         return;
       }
-
       const oldIds = mapping.map(({ oldId }) => oldId);
       const newIds = mapping.map(({ newId }) => newId);
       const remapped = sql<{
@@ -872,7 +823,6 @@ export class PersonRepository {
       }>`(select unnest(${`{${oldIds}}`}::uuid[]) as "oldId", unnest(${`{${newIds}}`}::uuid[]) as "newId")`.as(
         'mapping',
       );
-
       await trx
         .updateTable('person')
         .from(remapped)
@@ -880,7 +830,6 @@ export class PersonRepository {
         .whereRef('person.personGroupId', '=', 'mapping.oldId')
         .where('person.ownerId', '=', userId)
         .execute();
-
       await trx
         .updateTable('asset_face')
         .from(remapped)
@@ -897,19 +846,18 @@ export class PersonRepository {
         .execute();
     });
   }
-
   @GenerateSql({ params: [DummyValue.UUID, 2] })
   async createGroups(personGroups: Insertable<PersonGroupTable>[]) {
     if (personGroups.length === 0) {
       return [];
     }
-
     return this.db.insertInto('person_group').values(personGroups).returningAll().execute();
   }
-
   @GenerateSql({ params: [[], [], [{ faceId: DummyValue.UUID, embedding: DummyValue.VECTOR }]] })
   async refreshFaces(
-    facesToAdd: (Insertable<AssetFaceTable> & { assetId: string })[],
+    facesToAdd: (Insertable<AssetFaceTable> & {
+      assetId: string;
+    })[],
     faceIdsToRemove: string[],
     embeddingsToAdd?: Insertable<FaceSearchTable>[],
   ): Promise<void> {
@@ -917,13 +865,11 @@ export class PersonRepository {
     if (facesToAdd.length > 0) {
       (query as any) = query.with('added', (db) => db.insertInto('asset_face').values(facesToAdd));
     }
-
     if (faceIdsToRemove.length > 0) {
       (query as any) = query.with('removed', (db) =>
         db.deleteFrom('asset_face').where('asset_face.id', '=', (eb) => eb.fn.any(eb.val(faceIdsToRemove))),
       );
     }
-
     if (embeddingsToAdd?.length) {
       // FL-57: a face kept for its explicit decision takes the new detection's embedding
       (query as any) = query.with('added_embeddings', (db) =>
@@ -933,10 +879,8 @@ export class PersonRepository {
           .onConflict((oc) => oc.column('faceId').doUpdateSet((eb) => ({ embedding: eb.ref('excluded.embedding') }))),
       );
     }
-
     await query.selectFrom(dummy).execute();
   }
-
   async update(person: Updateable<PersonTable> & PersonId) {
     return this.db
       .updateTable('person')
@@ -946,12 +890,10 @@ export class PersonRepository {
       .returningAll()
       .executeTakeFirstOrThrow();
   }
-
   async updateAll(people: Insertable<PersonTable>[]): Promise<void> {
     if (people.length === 0) {
       return;
     }
-
     await this.db
       .insertInto('person')
       .values(people)
@@ -973,7 +915,6 @@ export class PersonRepository {
       )
       .execute();
   }
-
   @GenerateSql({
     params: [[{ assetId: DummyValue.UUID, personGroupId: DummyValue.UUID }], { viewingUserId: DummyValue.UUID }],
   })
@@ -982,14 +923,12 @@ export class PersonRepository {
     if (ids.length === 0) {
       return Promise.resolve([]);
     }
-
     const assetIds: string[] = [];
     const personGroupIds: string[] = [];
     for (const { assetId, personGroupId } of ids) {
       assetIds.push(assetId);
       personGroupIds.push(personGroupId);
     }
-
     return this.db
       .selectFrom('asset_face')
       .selectAll('asset_face')
@@ -999,7 +938,6 @@ export class PersonRepository {
       .where('asset_face.deletedAt', 'is', null)
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   getRandomFace(personGroupId: string) {
     return (
@@ -1019,7 +957,6 @@ export class PersonRepository {
         .executeTakeFirst()
     );
   }
-
   /**
    * People with a face on one of `assetIds`, or on another photo of their stacks, who have a featured
    * face but no thumbnail: after those assets move into the Locked folder, taking the rest of their
@@ -1032,7 +969,6 @@ export class PersonRepository {
     if (assetIds.length === 0) {
       return Promise.resolve([]);
     }
-
     return this.db
       .selectFrom('person')
       .select(['person.ownerId', 'person.personGroupId'])
@@ -1061,36 +997,33 @@ export class PersonRepository {
       )
       .execute();
   }
-
   @GenerateSql()
   async getLatestFaceDate(): Promise<string | undefined> {
     const result = (await this.db
       .selectFrom('asset_job_status')
       .select((eb) => sql`${eb.fn.max('asset_job_status.facesRecognizedAt')}::text`.as('latestDate'))
-      .executeTakeFirst()) as { latestDate: string } | undefined;
-
+      .executeTakeFirst()) as
+      | {
+          latestDate: string;
+        }
+      | undefined;
     return result?.latestDate;
   }
-
   async createAssetFace(face: Insertable<AssetFaceTable>): Promise<void> {
     await this.db.insertInto('asset_face').values(face).execute();
   }
-
   /** FL-326: a followed partner copy's faces, replaced by its source's when they change. */
   async deleteFacesOfAsset(assetId: string): Promise<void> {
     await this.db.deleteFrom('asset_face').where('asset_face.assetId', '=', assetId).execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async deleteAssetFace(id: string): Promise<void> {
     await this.db.deleteFrom('asset_face').where('asset_face.id', '=', id).execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async softDeleteAssetFaces(id: string): Promise<void> {
     await this.db.updateTable('asset_face').set({ deletedAt: new Date() }).where('asset_face.id', '=', id).execute();
   }
-
   async vacuum({ reindexVectors }: { reindexVectors: boolean }): Promise<void> {
     await sql`VACUUM ANALYZE asset_face, face_search, person`.execute(this.db);
     await sql`REINDEX TABLE asset_face`.execute(this.db);
@@ -1099,13 +1032,11 @@ export class PersonRepository {
       await sql`REINDEX TABLE face_search`.execute(this.db);
     }
   }
-
   @GenerateSql({ params: [[], []] })
   async updateVisibility(visible: AssetFace[], hidden: AssetFace[]): Promise<void> {
     if (visible.length === 0 && hidden.length === 0) {
       return;
     }
-
     await this.db.transaction().execute(async (trx) => {
       if (visible.length > 0) {
         await trx
@@ -1118,7 +1049,6 @@ export class PersonRepository {
           )
           .execute();
       }
-
       if (hidden.length > 0) {
         await trx
           .updateTable('asset_face')
@@ -1132,7 +1062,6 @@ export class PersonRepository {
       }
     });
   }
-
   @GenerateSql({ params: [{ personGroupId: DummyValue.UUID, assetId: DummyValue.UUID }] })
   getForFeatureFaceUpdate({ personGroupId, assetId }: { personGroupId: string; assetId: string }) {
     return (
@@ -1150,7 +1079,6 @@ export class PersonRepository {
         .executeTakeFirst()
     );
   }
-
   /**
    * FL-37: the photo a person's featured face is in, with what decides whether it may be shown. A
    * person group can span the accounts of a cluster, so the featured face may sit on another
@@ -1169,7 +1097,6 @@ export class PersonRepository {
       .where('asset.ownerId', '=', ownerId)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [[DummyValue.UUID]] })
   getForMergePerson(personGroupIds: string[]) {
     return this.db
@@ -1179,7 +1106,6 @@ export class PersonRepository {
       .orderBy('person.ownerId')
       .execute();
   }
-
   /**
    * FL-57: guided merge-suggestion candidates. Reuses the same face-embedding distance
    * metric (`<=>`, cosine distance) the facial-recognition job already uses to cluster
@@ -1192,17 +1118,26 @@ export class PersonRepository {
    * not allow referencing a SELECT alias directly in the same query's WHERE clause.
    */
   @GenerateSql({ params: [DummyValue.UUID, { maxDistance: 0.5, limit: 20 }] })
-  getMergeSuggestions(ownerId: string, { maxDistance, limit = 20 }: { maxDistance: number; limit?: number }) {
+  getMergeSuggestions(
+    ownerId: string,
+    {
+      maxDistance,
+      limit = 20,
+    }: {
+      maxDistance: number;
+      limit?: number;
+    },
+  ) {
     // a pair the owner answered "different" is never suggested again, one deferred with "later" not for
     // 30 days (see `setMergeVerdict`), and a person the owner chose to ignore is not suggested at all
     const unanswered = sql<boolean>`not exists (
-      select 1 from immich_fork.person_merge_verdict verdict
+      select 1 from public.person_merge_verdict verdict
       where verdict."ownerId" = ${ownerId}::uuid
         and verdict."personId" = "candidates"."personId"
         and verdict."suggestionId" = "candidates"."suggestionId"
         and (verdict.verdict = 'different' or verdict."createdAt" > now() - interval '30 days')
     ) and not exists (
-      select 1 from immich_fork.person_merge_verdict verdict
+      select 1 from public.person_merge_verdict verdict
       where verdict."ownerId" = ${ownerId}::uuid
         and verdict.verdict = 'ignore'
         and verdict."personId" in ("candidates"."personId", "candidates"."suggestionId")
@@ -1233,7 +1168,6 @@ export class PersonRepository {
       .limit(limit)
       .execute();
   }
-
   /**
    * FL-57: the face that stands for each person in a merge suggestion, with its complete photo. Only
    * media the viewer may be shown qualifies: their own (never someone else's in the cluster), not in the
@@ -1249,7 +1183,6 @@ export class PersonRepository {
     if (personGroupIds.length === 0) {
       return [];
     }
-
     return (
       this.db
         .selectFrom('person')
@@ -1283,7 +1216,6 @@ export class PersonRepository {
         .execute()
     );
   }
-
   /**
    * FL-57: which of `assetIds` the viewer may still be shown as evidence (a correction history
    * thumbnail): their own, not in the trash, in the timeline or archive, never Locked, and not hidden by
@@ -1298,7 +1230,6 @@ export class PersonRepository {
     if (assetIds.length === 0) {
       return new Set();
     }
-
     const rows = await this.db
       .selectFrom('asset')
       .select('asset.id')
@@ -1312,7 +1243,6 @@ export class PersonRepository {
       .execute();
     return new Set(rows.map(({ id }) => id));
   }
-
   /**
    * FL-57: the owner's assets showing any of `personGroupIds`, a page at a time from `after`, for
    * invalidating the generated text that named them.
@@ -1321,12 +1251,17 @@ export class PersonRepository {
   async getAssetIdsForPeople(
     ownerId: string,
     personGroupIds: string[],
-    { after, limit }: { after?: string; limit: number },
+    {
+      after,
+      limit,
+    }: {
+      after?: string;
+      limit: number;
+    },
   ): Promise<string[]> {
     if (personGroupIds.length === 0) {
       return [];
     }
-
     const rows = await this.db
       .selectFrom('asset')
       .select('asset.id')
@@ -1347,7 +1282,6 @@ export class PersonRepository {
       .execute();
     return rows.map(({ id }) => id);
   }
-
   /**
    * FL-57: records an owner's answer to a merge suggestion, replacing any earlier one for the pair.
    * `personId` must sort before `suggestionId` (the order `getMergeSuggestions` returns pairs in); for
@@ -1360,9 +1294,11 @@ export class PersonRepository {
    */
   setMergeVerdict(ownerId: string, personId: string, suggestionId: string, verdict: PersonMergeVerdict) {
     return this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx);
-      const { rows } = await sql<{ verdict: PersonMergeVerdict; createdAt: Date }>`
-        INSERT INTO immich_fork.person_merge_verdict
+      const { rows } = await sql<{
+        verdict: PersonMergeVerdict;
+        createdAt: Date;
+      }>`
+        INSERT INTO public.person_merge_verdict
           ("ownerId", "personId", "suggestionId", verdict, "personFaceId", "suggestionFaceId")
         VALUES (
           ${ownerId}::uuid, ${personId}::uuid, ${suggestionId}::uuid, ${verdict},
@@ -1372,32 +1308,32 @@ export class PersonRepository {
         ON CONFLICT ("ownerId", "personId", "suggestionId")
         DO UPDATE SET verdict = excluded.verdict, "createdAt" = excluded."createdAt",
           "personFaceId" = excluded."personFaceId", "suggestionFaceId" = excluded."suggestionFaceId"
-        WHERE NOT (excluded.verdict = 'later' AND immich_fork.person_merge_verdict.verdict = 'different')
+        WHERE NOT (excluded.verdict = 'later' AND public.person_merge_verdict.verdict = 'different')
         RETURNING verdict, "createdAt"
       `.execute(tx);
       if (rows[0]) {
         return rows[0];
       }
-      const stored = await sql<{ verdict: PersonMergeVerdict; createdAt: Date }>`
-        SELECT verdict, "createdAt" FROM immich_fork.person_merge_verdict
+      const stored = await sql<{
+        verdict: PersonMergeVerdict;
+        createdAt: Date;
+      }>`
+        SELECT verdict, "createdAt" FROM public.person_merge_verdict
         WHERE "ownerId" = ${ownerId}::uuid AND "personId" = ${personId}::uuid AND "suggestionId" = ${suggestionId}::uuid
       `.execute(tx);
       return stored.rows[0];
     });
   }
-
   /** FL-57: undoes a merge-suggestion answer; true when there was one. */
   deleteMergeVerdict(ownerId: string, personId: string, suggestionId: string) {
     return this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx);
       const { numAffectedRows } = await sql`
-        DELETE FROM immich_fork.person_merge_verdict
+        DELETE FROM public.person_merge_verdict
         WHERE "ownerId" = ${ownerId}::uuid AND "personId" = ${personId}::uuid AND "suggestionId" = ${suggestionId}::uuid
       `.execute(tx);
       return (numAffectedRows ?? 0n) > 0n;
     });
   }
-
   /**
    * FL-57: keeps merge-suggestion answers with their people. An answer naming a person the owner no
    * longer has (merged away, or rebuilt by a forced recognition run) moves to the person that now holds
@@ -1408,7 +1344,6 @@ export class PersonRepository {
    */
   async reanchorMergeVerdicts(ownerId?: string): Promise<number> {
     return this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx);
       const { rows } = await sql<{
         ownerId: string;
         personId: string;
@@ -1432,7 +1367,7 @@ export class PersonRepository {
           (pf.id IS NOT NULL AND pf."deletedAt" IS NULL) AS "personAnchorLive",
           (SELECT p."personGroupId" FROM public.person p WHERE p."ownerId" = verdict."ownerId" AND p."personGroupId" = sf."personGroupId") AS "suggestionAnchor",
           (sf.id IS NOT NULL AND sf."deletedAt" IS NULL) AS "suggestionAnchorLive"
-        FROM immich_fork.person_merge_verdict verdict
+        FROM public.person_merge_verdict verdict
         LEFT JOIN public.asset_face pf ON pf.id = verdict."personFaceId"
         LEFT JOIN public.asset_face sf ON sf.id = verdict."suggestionFaceId"
         WHERE (${ownerId ?? null}::uuid IS NULL OR verdict."ownerId" = ${ownerId ?? null}::uuid)
@@ -1441,7 +1376,6 @@ export class PersonRepository {
             OR NOT EXISTS (SELECT 1 FROM public.person p WHERE p."ownerId" = verdict."ownerId" AND p."personGroupId" = verdict."suggestionId")
           )
       `.execute(tx);
-
       let dropped = 0;
       for (const row of rows) {
         const resolve = (exists: boolean, id: string, anchor: string | null, live: boolean) => {
@@ -1455,9 +1389,8 @@ export class PersonRepository {
         if (first === 'pending' || second === 'pending') {
           continue;
         }
-
         await sql`
-          DELETE FROM immich_fork.person_merge_verdict
+          DELETE FROM public.person_merge_verdict
           WHERE "ownerId" = ${row.ownerId}::uuid AND "personId" = ${row.personId}::uuid AND "suggestionId" = ${row.suggestionId}::uuid
         `.execute(tx);
         const merged = row.verdict !== 'ignore' && first === second;
@@ -1465,12 +1398,11 @@ export class PersonRepository {
           dropped++;
           continue;
         }
-
         const [personId, suggestionId] = first < second ? [first, second] : [second, first];
         const [personFaceId, suggestionFaceId] =
           first < second ? [row.personFaceId, row.suggestionFaceId] : [row.suggestionFaceId, row.personFaceId];
         await sql`
-          INSERT INTO immich_fork.person_merge_verdict
+          INSERT INTO public.person_merge_verdict
             ("ownerId", "personId", "suggestionId", verdict, "createdAt", "personFaceId", "suggestionFaceId")
           VALUES (${row.ownerId}::uuid, ${personId}::uuid, ${suggestionId}::uuid, ${row.verdict}, ${row.createdAt},
             ${personFaceId}::uuid, ${suggestionFaceId}::uuid)
@@ -1480,24 +1412,19 @@ export class PersonRepository {
       return dropped;
     });
   }
-
   /** FL-57: a deleted account's merge answers and correction history go with it. */
   async deleteForkPeopleData(ownerId: string): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx);
-      await sql`DELETE FROM immich_fork.person_merge_verdict WHERE "ownerId" = ${ownerId}::uuid`.execute(tx);
-      await sql`DELETE FROM immich_fork.face_correction WHERE "ownerId" = ${ownerId}::uuid`.execute(tx);
+      await sql`DELETE FROM public.person_merge_verdict WHERE "ownerId" = ${ownerId}::uuid`.execute(tx);
+      await sql`DELETE FROM public.face_correction WHERE "ownerId" = ${ownerId}::uuid`.execute(tx);
     });
   }
-
   private lockForkWrites(tx: Transaction<DB>, what = 'Merge suggestion answers') {
     return lockForkWrites(tx, what);
   }
-
   /* ------------------------------------------------------------------------------------------ */
-  /* FL-57: face correction history (immich_fork.face_correction)                               */
+  /* FL-57: face correction history (public.face_correction)                               */
   /* ------------------------------------------------------------------------------------------ */
-
   /**
    * Records manual face decisions (see {@link FaceCorrectionInput}). A face decision copies the face's
    * asset, the original's checksum and the normalized box from the face row now, soft-deleted or not;
@@ -1507,9 +1434,7 @@ export class PersonRepository {
     if (entries.length === 0) {
       return [];
     }
-
     return this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx, 'Face corrections');
       const recorded: FaceCorrection[] = [];
       for (const entry of entries) {
         const values = sql`
@@ -1518,7 +1443,7 @@ export class PersonRepository {
           ${entry.fromPersonName ?? null}::text AS "fromPersonName", ${entry.toPersonName ?? null}::text AS "toPersonName"`;
         const { rows } = entry.faceId
           ? await sql<FaceCorrection>`
-              INSERT INTO immich_fork.face_correction
+              INSERT INTO public.face_correction
                 ("ownerId", "actorId", action, "fromPersonId", "toPersonId", "fromPersonName", "toPersonName",
                  "faceId", "assetId", "assetChecksum", "boxX1", "boxY1", "boxX2", "boxY2")
               SELECT entry.*, face.id, face."assetId", asset.checksum,
@@ -1532,7 +1457,7 @@ export class PersonRepository {
               RETURNING ${FACE_CORRECTION_COLUMNS}
             `.execute(tx)
           : await sql<FaceCorrection>`
-              INSERT INTO immich_fork.face_correction
+              INSERT INTO public.face_correction
                 ("ownerId", "actorId", action, "fromPersonId", "toPersonId", "fromPersonName", "toPersonName")
               SELECT entry.* FROM (SELECT ${values}) entry
               RETURNING ${FACE_CORRECTION_COLUMNS}
@@ -1542,11 +1467,10 @@ export class PersonRepository {
       return recorded;
     });
   }
-
   /** The owner's decisions that moved a face onto or off `personGroupId`, newest first, a page at a time. */
   async getFaceCorrections(ownerId: string, personGroupId: string, pagination: PaginationOptions) {
     const { rows } = await sql<FaceCorrection>`
-      SELECT ${FACE_CORRECTION_COLUMNS} FROM immich_fork.face_correction
+      SELECT ${FACE_CORRECTION_COLUMNS} FROM public.face_correction
       WHERE "ownerId" = ${ownerId}::uuid
         AND ("toPersonId" = ${personGroupId}::uuid OR "fromPersonId" = ${personGroupId}::uuid)
       ORDER BY "createdAt" DESC, id DESC
@@ -1554,24 +1478,20 @@ export class PersonRepository {
     `.execute(this.db);
     return paginationHelper(rows, pagination.take);
   }
-
   getFaceCorrection(ownerId: string, id: string): Promise<FaceCorrection | undefined> {
     return sql<FaceCorrection>`
-      SELECT ${FACE_CORRECTION_COLUMNS} FROM immich_fork.face_correction
+      SELECT ${FACE_CORRECTION_COLUMNS} FROM public.face_correction
       WHERE "ownerId" = ${ownerId}::uuid AND id = ${id}::uuid
     `
       .execute(this.db)
       .then(({ rows }) => rows[0]);
   }
-
   /** Withdraws a decision recorded ahead of a change that was then refused (FL-57 with FL-38). */
   async deleteFaceCorrection(id: string): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx, 'Face corrections');
-      await sql`DELETE FROM immich_fork.face_correction WHERE id = ${id}::uuid`.execute(tx);
+      await sql`DELETE FROM public.face_correction WHERE id = ${id}::uuid`.execute(tx);
     });
   }
-
   /**
    * Undoes one decision in a single transaction (FL-57 with FL-38): the history entry is marked
    * undone and the face is put back (restored, or given `personGroupId`) only while the face is
@@ -1580,15 +1500,23 @@ export class PersonRepository {
    */
   async undoFaceCorrection(
     id: string,
-    face: { id: string; expectedRevision: string },
-    change: { restore: true } | { personGroupId: string | null },
+    face: {
+      id: string;
+      expectedRevision: string;
+    },
+    change:
+      | {
+          restore: true;
+        }
+      | {
+          personGroupId: string | null;
+        },
   ): Promise<'undone' | 'already-undone' | 'face-changed'> {
     const faceChanged = new Error('face-changed');
     try {
       return await this.db.transaction().execute(async (tx) => {
-        await this.lockForkWrites(tx, 'Face corrections');
         const { numAffectedRows } = await sql`
-          UPDATE immich_fork.face_correction SET "undoneAt" = clock_timestamp()
+          UPDATE public.face_correction SET "undoneAt" = clock_timestamp()
           WHERE id = ${id}::uuid AND "undoneAt" IS NULL
         `.execute(tx);
         if ((numAffectedRows ?? 0n) === 0n) {
@@ -1617,14 +1545,13 @@ export class PersonRepository {
       throw error;
     }
   }
-
   /**
    * The latest standing decision about each face of `assetId` whose face row no longer exists: what a
    * new detection of the same face (overlapping box, same original) takes over.
    */
   async getOrphanedFaceCorrections(assetId: string): Promise<FaceCorrection[]> {
     const { rows } = await sql<FaceCorrection>`
-      SELECT DISTINCT ON ("faceId") ${FACE_CORRECTION_COLUMNS} FROM immich_fork.face_correction correction
+      SELECT DISTINCT ON ("faceId") ${FACE_CORRECTION_COLUMNS} FROM public.face_correction correction
       WHERE "assetId" = ${assetId}::uuid
         AND "faceId" IS NOT NULL
         AND "undoneAt" IS NULL
@@ -1635,23 +1562,19 @@ export class PersonRepository {
     `.execute(this.db);
     return rows;
   }
-
   /** Points every decision about a replaced face at the face that replaced it. */
   async reanchorFaceCorrections(oldFaceId: string, newFaceId: string): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx, 'Face corrections');
       await sql`
-        UPDATE immich_fork.face_correction SET "faceId" = ${newFaceId}::uuid WHERE "faceId" = ${oldFaceId}::uuid
+        UPDATE public.face_correction SET "faceId" = ${newFaceId}::uuid WHERE "faceId" = ${oldFaceId}::uuid
       `.execute(tx);
     });
   }
-
   /** Every face of an asset, soft-deleted ones included (FL-57: undo and re-applied decisions). */
   @GenerateSql({ params: [DummyValue.UUID] })
   getAllFacesOfAsset(assetId: string) {
     return this.db.selectFrom('asset_face').selectAll('asset_face').where('asset_face.assetId', '=', assetId).execute();
   }
-
   /**
    * The checksum each face's standing decision was anchored to (its latest decision not undone), for
    * the faces that have one (FL-57).
@@ -1660,14 +1583,16 @@ export class PersonRepository {
     if (faceIds.length === 0) {
       return new Map();
     }
-    const { rows } = await sql<{ faceId: string; assetChecksum: Buffer | null }>`
-      SELECT DISTINCT ON ("faceId") "faceId", "assetChecksum" FROM immich_fork.face_correction
+    const { rows } = await sql<{
+      faceId: string;
+      assetChecksum: Buffer | null;
+    }>`
+      SELECT DISTINCT ON ("faceId") "faceId", "assetChecksum" FROM public.face_correction
       WHERE "faceId" = ANY(${`{${faceIds.join(',')}}`}::uuid[]) AND "undoneAt" IS NULL AND action <> 'merge'
       ORDER BY "faceId", "createdAt" DESC, id DESC
     `.execute(this.db);
     return new Map(rows.map(({ faceId, assetChecksum }) => [faceId, assetChecksum]));
   }
-
   /** Whether a person has any face at all (FL-57: a move to a person with none is a move to someone new). */
   async hasFaces(personGroupId: string): Promise<boolean> {
     const row = await this.db
@@ -1678,28 +1603,25 @@ export class PersonRepository {
       .executeTakeFirst();
     return !!row;
   }
-
   /**
    * FL-326: how a recipient maps a partner's person (`sourcePersonGroupId`) onto one of their own, while
-   * that person still exists (`immich_fork.partner_person_link`, fork migration 0000000000221).
+   * that person still exists (`public.partner_person_link`, fork migration 0000000000221).
    */
   async getPartnerPersonLink(ownerId: string, sourcePersonGroupId: string): Promise<PartnerPersonLink | undefined> {
     const { rows } = await sql<PartnerPersonLink>`
       SELECT link."ownerId", link."sourcePersonGroupId", link."personGroupId", link.kind, link."partnerSharedById",
         link."correctionId"
-      FROM immich_fork.partner_person_link link
+      FROM public.partner_person_link link
       JOIN public.person person ON person."ownerId" = link."ownerId" AND person."personGroupId" = link."personGroupId"
       WHERE link."ownerId" = ${ownerId}::uuid AND link."sourcePersonGroupId" = ${sourcePersonGroupId}::uuid
     `.execute(this.db);
     return rows[0];
   }
-
   /** FL-326: records (or replaces) a recipient's mapping of a partner's person. */
   async savePartnerPersonLink(link: PartnerPersonLink): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx, 'Partner people');
       await sql`
-        INSERT INTO immich_fork.partner_person_link
+        INSERT INTO public.partner_person_link
           ("ownerId", "sourcePersonGroupId", "personGroupId", kind, "partnerSharedById", "correctionId")
         VALUES (${link.ownerId}::uuid, ${link.sourcePersonGroupId}::uuid, ${link.personGroupId}::uuid, ${link.kind},
           ${link.partnerSharedById}::uuid, ${link.correctionId}::uuid)
@@ -1709,7 +1631,6 @@ export class PersonRepository {
       `.execute(tx);
     });
   }
-
   /** FL-326: a person group's recognition (cluster) group. */
   async getGroupClusterId(personGroupId: string): Promise<string | undefined> {
     const row = await this.db
@@ -1719,31 +1640,29 @@ export class PersonRepository {
       .executeTakeFirst();
     return row?.clusterGroupId;
   }
-
   /** FL-326: the original uploader behind a person that is itself a partner copy, if it is one. */
   async getPersonOriginRoot(ownerId: string, personGroupId: string): Promise<string | undefined> {
-    const { rows } = await sql<{ rootOwnerId: string }>`
-      SELECT "rootOwnerId" FROM immich_fork.person_origin
+    const { rows } = await sql<{
+      rootOwnerId: string;
+    }>`
+      SELECT "rootOwnerId" FROM public.person_origin
       WHERE "ownerId" = ${ownerId}::uuid AND "personGroupId" = ${personGroupId}::uuid
     `.execute(this.db);
     return rows[0]?.rootOwnerId;
   }
-
   /**
    * FL-326: after the owner merged `fromPersonGroupId` into `toPersonGroupId`, partner people mapped to the
    * merged-away person map to the survivor, which is the owner's own (it never follows a partner).
    */
   async repointPartnerPersonLinks(ownerId: string, fromPersonGroupId: string, toPersonGroupId: string): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx, 'Partner people');
       await sql`
-        UPDATE immich_fork.partner_person_link
+        UPDATE public.partner_person_link
         SET "personGroupId" = ${toPersonGroupId}::uuid, kind = 'merged', "correctionId" = NULL
         WHERE "ownerId" = ${ownerId}::uuid AND "personGroupId" = ${fromPersonGroupId}::uuid
       `.execute(tx);
     });
   }
-
   /** FL-326: the mapping an auto-merge correction made, for its undo. */
   async getPartnerPersonLinkByCorrection(
     ownerId: string,
@@ -1751,12 +1670,11 @@ export class PersonRepository {
   ): Promise<PartnerPersonLink | undefined> {
     const { rows } = await sql<PartnerPersonLink>`
       SELECT "ownerId", "sourcePersonGroupId", "personGroupId", kind, "partnerSharedById", "correctionId"
-      FROM immich_fork.partner_person_link
+      FROM public.partner_person_link
       WHERE "ownerId" = ${ownerId}::uuid AND "correctionId" = ${correctionId}::uuid
     `.execute(this.db);
     return rows[0];
   }
-
   /**
    * FL-326: the faces of a source asset a partner copy carries over: the ones not hidden, with their
    * person and whether recognition has an embedding for them.
@@ -1771,7 +1689,6 @@ export class PersonRepository {
     `.execute(this.db);
     return rows;
   }
-
   /** FL-326: the stored embedding of one face, as recognition's searches take it. */
   async getFaceEmbedding(faceId: string): Promise<string | undefined> {
     const row = await this.db
@@ -1781,7 +1698,6 @@ export class PersonRepository {
       .executeTakeFirst();
     return row?.embedding;
   }
-
   /**
    * FL-326: copies faces onto a partner copy with no ML re-run: the exact boxes, detection source and
    * visibility, the recognition embedding, and the person each maps to in the recipient's library. A box
@@ -1789,7 +1705,11 @@ export class PersonRepository {
    */
   async copyFacesToAsset(
     targetAssetId: string,
-    faces: Array<{ sourceFaceId: string; faceId: string; personGroupId: string | null }>,
+    faces: Array<{
+      sourceFaceId: string;
+      faceId: string;
+      personGroupId: string | null;
+    }>,
   ): Promise<number> {
     if (faces.length === 0) {
       return 0;
@@ -1801,7 +1721,9 @@ export class PersonRepository {
       ),
     );
     return this.db.transaction().execute(async (tx) => {
-      const { rows } = await sql<{ id: string }>`
+      const { rows } = await sql<{
+        id: string;
+      }>`
         WITH map ("sourceFaceId", "faceId", "personGroupId") AS (VALUES ${values})
         INSERT INTO asset_face (id, "assetId", "personGroupId", "imageWidth", "imageHeight", "boundingBoxX1",
           "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType", "isVisible")
@@ -1829,7 +1751,6 @@ export class PersonRepository {
       return rows.length;
     });
   }
-
   /**
    * FL-326: the recipient's faces an auto-merge put on `personGroupId`: faces of their partner copies whose
    * source face (same box, on the asset the copy came from) belongs to `sourcePersonGroupId`, and that
@@ -1840,11 +1761,13 @@ export class PersonRepository {
     sourcePersonGroupId: string,
     personGroupId: string,
   ): Promise<string[]> {
-    const { rows } = await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
       SELECT face.id
       FROM asset_face face
       JOIN asset ON asset.id = face."assetId"
-      JOIN immich_fork.asset_origin origin ON origin."assetId" = asset.id
+      JOIN public.asset_origin origin ON origin."assetId" = asset.id
       WHERE asset."ownerId" = ${ownerId}::uuid
         AND face."personGroupId" = ${personGroupId}::uuid
         AND face."deletedAt" IS NULL
@@ -1859,7 +1782,6 @@ export class PersonRepository {
     `.execute(this.db);
     return rows.map(({ id }) => id);
   }
-
   /**
    * FL-326: undoes a partner auto-merge in one transaction: the history entry is marked undone and the
    * merged faces move to `personGroupId` (the recipient's new person for the partner's person). Returns
@@ -1867,9 +1789,8 @@ export class PersonRepository {
    */
   async undoPartnerMerge(correctionId: string, faceIds: string[], personGroupId: string): Promise<boolean> {
     return this.db.transaction().execute(async (tx) => {
-      await this.lockForkWrites(tx, 'Face corrections');
       const { numAffectedRows } = await sql`
-        UPDATE immich_fork.face_correction SET "undoneAt" = clock_timestamp()
+        UPDATE public.face_correction SET "undoneAt" = clock_timestamp()
         WHERE id = ${correctionId}::uuid AND "undoneAt" IS NULL
       `.execute(tx);
       if ((numAffectedRows ?? 0n) === 0n) {
@@ -1885,7 +1806,6 @@ export class PersonRepository {
       return true;
     });
   }
-
   /** Sets a face's person as an explicit decision (FL-57), or clears it (`null`). */
   async setFacePerson(id: string, personGroupId: string | null): Promise<void> {
     await this.db

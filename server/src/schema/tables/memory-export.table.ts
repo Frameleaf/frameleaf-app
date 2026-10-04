@@ -6,8 +6,8 @@ import {
   PrimaryGeneratedColumn,
   Table,
   UpdateDateColumn,
-} from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { MemoryExportFormat, MemoryExportStatus } from 'src/enum.js';
 import { MemoryTable } from 'src/schema/tables/memory.table.js';
 import { StudioExportVersionTable } from 'src/schema/tables/studio-export.table.js';

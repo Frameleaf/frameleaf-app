@@ -1,3 +1,5 @@
+import { parentPort } from 'node:worker_threads';
+import { jobSignal, advanceJobProgress } from 'src/queue/context.js';
 import { Injectable } from '@nestjs/common';
 import { ExifDateTime, WriteTags, exiftool } from 'exiftool-vendored';
 import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
@@ -642,42 +644,73 @@ export class MediaRepository {
     });
   }
 
-  transcode(input: string, output: string | Writable, options: TranscodeCommand): Promise<void> {
-    if (!options.twoPass) {
-      return new Promise((resolve, reject) => {
-        this.configureFfmpegCall(input, output, options)
-          .on('error', reject)
-          .on('end', () => resolve())
-          .run();
+  async transcode(input: string, output: string | Writable, options: TranscodeCommand): Promise<void> {
+    const signal = jobSignal();
+    signal?.throwIfAborted();
+    const run = (target: string | Writable, pass?: number) =>
+      new Promise<void>((resolve, reject) => {
+        const command = this.configureFfmpegCall(input, target, options);
+        if (pass) {
+          command.addOptions('-pass', String(pass)).addOptions('-passlogfile', output as string);
+          if (pass === 1) {
+            command.addOptions('-f null');
+          }
+        }
+        let killTimer: ReturnType<typeof setTimeout> | undefined;
+        const abort = () => {
+          command.kill('SIGTERM');
+          killTimer ??= setTimeout(() => command.kill('SIGKILL'), 5000);
+        };
+        let pid: number | undefined;
+        command.on('start', () => {
+          pid = (command as unknown as { ffmpegProc?: { pid?: number } }).ffmpegProc?.pid;
+          if (pid) {
+            parentPort?.postMessage({ type: 'queue-child', pid, active: true });
+          }
+        });
+        const cleanup = () => {
+          if (pid) {
+            parentPort?.postMessage({ type: 'queue-child', pid, active: false });
+          }
+          signal?.removeEventListener('abort', abort);
+          clearTimeout(killTimer);
+        };
+        let lastFrames = 0;
+        command
+          .on('progress', (progress: ProgressEvent) => {
+            if (progress.frames > lastFrames) {
+              advanceJobProgress(progress.frames - lastFrames);
+              lastFrames = progress.frames;
+            }
+          })
+          .on('error', (error) => {
+            cleanup();
+            reject(error);
+          })
+          .on('end', () => {
+            cleanup();
+            signal?.aborted ? reject(signal.reason) : resolve();
+          });
+        signal?.addEventListener('abort', abort, { once: true });
+        command.run();
+        if (signal?.aborted) {
+          abort();
+        }
       });
+    if (!options.twoPass) {
+      await run(output);
+      return;
     }
-
     if (typeof output !== 'string') {
       throw new TypeError('Two-pass transcoding does not support writing to a stream');
     }
-
-    // two-pass allows for precise control of bitrate at the cost of running twice
-    // recommended for vp9 for better quality and compression
-    return new Promise((resolve, reject) => {
-      // first pass output is not saved as only the .log file is needed
-      this.configureFfmpegCall(input, '/dev/null', options)
-        .addOptions('-pass', '1')
-        .addOptions('-passlogfile', output)
-        .addOptions('-f null')
-        .on('error', reject)
-        .on('end', () => {
-          // second pass
-          this.configureFfmpegCall(input, output, options)
-            .addOptions('-pass', '2')
-            .addOptions('-passlogfile', output)
-            .on('error', reject)
-            .on('end', () => handlePromiseError(fs.unlink(`${output}-0.log`), this.logger))
-            .on('end', () => handlePromiseError(fs.rm(`${output}-0.log.mbtree`, { force: true }), this.logger))
-            .on('end', () => resolve())
-            .run();
-        })
-        .run();
-    });
+    try {
+      await run('/dev/null', 1);
+      signal?.throwIfAborted();
+      await run(output, 2);
+    } finally {
+      await Promise.all([fs.rm(`${output}-0.log`, { force: true }), fs.rm(`${output}-0.log.mbtree`, { force: true })]);
+    }
   }
 
   /**

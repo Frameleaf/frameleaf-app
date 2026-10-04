@@ -1,5 +1,12 @@
-import { Column, CreateDateColumn, PrimaryGeneratedColumn, Table, Unique, UpdateDateColumn } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import {
+  Column,
+  CreateDateColumn,
+  PrimaryGeneratedColumn,
+  Table,
+  Unique,
+  UpdateDateColumn,
+} from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { PluginTemplate } from 'src/dtos/plugin.dto.js';
 
 @Unique({ columns: ['name', 'version'] })

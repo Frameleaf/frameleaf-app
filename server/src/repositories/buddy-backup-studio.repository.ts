@@ -6,7 +6,7 @@ import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js
 import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 import { AssetLockReason, MediaOperationKind, MediaOperationStatus, StudioExportScope } from 'src/enum.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
-import { lockForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import {
   type BuddyStudioProject,
@@ -30,15 +30,19 @@ import {
 } from 'src/utils/derivative-privacy.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
-
 type Row = Record<string, unknown>;
-type RetiredFile = { path: string; checksum: string; size: number | null; importId?: string };
+type RetiredFile = {
+  path: string;
+  checksum: string;
+  size: number | null;
+  importId?: string;
+};
 const tables = {
   project: 'public.studio_project',
   revision: 'public.studio_project_revision',
   comment: 'public.studio_project_comment',
-  imported: 'immich_fork.studio_project_import',
-  generated: 'immich_fork.studio_generated_resource',
+  imported: 'public.studio_project_import',
+  generated: 'public.studio_generated_resource',
   exported: 'public.studio_export_version',
   source: 'public.studio_export_version_source',
 } as const;
@@ -49,22 +53,23 @@ const recordJson = (table: Table) =>
   table === tables.comment
     ? sql`to_jsonb(item) || jsonb_build_object('timeNum', item."timeNum"::text, 'timeDen', item."timeDen"::text)`
     : sql`to_jsonb(item)`;
-
 /** Buddy-only typed archive adapter. Historical grants, worker state and operation IDs are deliberately absent. */
 export class BuddyBackupStudioRepository {
   constructor(private db: Kysely<DB>) {}
-
   private async rows(table: Table, column: string, id: string): Promise<Row[]> {
-    const { rows } = await sql<{ record: Row }>`SELECT ${recordJson(table)} AS record FROM ${sql.table(table)} item
+    const { rows } = await sql<{
+      record: Row;
+    }>`SELECT ${recordJson(table)} AS record FROM ${sql.table(table)} item
       WHERE ${sql.ref(column)}=${id}::uuid ORDER BY ${sql.ref(table === tables.source ? 'key' : 'id')}`.execute(
       this.db,
     );
     return rows.map(({ record }) => record);
   }
-
   /** Uses the capture transaction's already-exported repeatable-read snapshot, including projects with no assets. */
   async capture(): Promise<BuddyStudioSnapshot> {
-    const { rows } = await sql<{ record: Row }>`SELECT to_jsonb(project) AS record FROM public.studio_project project
+    const { rows } = await sql<{
+      record: Row;
+    }>`SELECT to_jsonb(project) AS record FROM public.studio_project project
       JOIN public.user owner ON owner.id=project."ownerId" WHERE owner."deletedAt" IS NULL ORDER BY project.id`.execute(
       this.db,
     );
@@ -87,7 +92,6 @@ export class BuddyBackupStudioRepository {
     }
     return { version: 1, projects };
   }
-
   bindFiles(project: BuddyStudioProject, inventory: ReadonlyMap<string, CloudBackupManifestFile>) {
     project.files = [...new Set(buddyStudioPaths(project))].sort().map((path) => {
       const file = inventory.get(path);
@@ -95,7 +99,6 @@ export class BuddyBackupStudioRepository {
       return file;
     });
   }
-
   /** No asset anchor: a metadata-only project still needs the current administrator/PIN/operation and project locks. */
   async guarded<T>(
     options: {
@@ -109,7 +112,6 @@ export class BuddyBackupStudioRepository {
     action: (trx: Transaction<DB>, owner: AuthDto) => Promise<T>,
   ): Promise<T> {
     return this.db.transaction().execute(async (trx) => {
-      await lockForkWrites(trx, 'Buddy Studio restore is unavailable during database handoff');
       const actor = await trx
         .selectFrom('user')
         .select('id')
@@ -144,7 +146,9 @@ export class BuddyBackupStudioRepository {
         .noWait()
         .executeTakeFirst();
       if (!actor || !session || !operation) throw new Error('Buddy Studio authorization or lease changed');
-      const lock = await sql<{ locked: boolean }>`SELECT pg_try_advisory_xact_lock(hashtextextended(
+      const lock = await sql<{
+        locked: boolean;
+      }>`SELECT pg_try_advisory_xact_lock(hashtextextended(
         ${`buddy-studio:${options.project.id}`},0)) AS locked`.execute(trx);
       if (!lock.rows[0]?.locked) throw new Error('Buddy Studio project is changing');
       const current = await trx
@@ -180,7 +184,6 @@ export class BuddyBackupStudioRepository {
       return result;
     });
   }
-
   async publish(options: {
     manifest: BuddyManifest;
     projectId: string;
@@ -206,7 +209,6 @@ export class BuddyBackupStudioRepository {
       throw new Error('Choose replace to restore revision history into an existing empty Studio project');
     if (current && options.mode === 'replace' && project.currentRevision === 0 && current.currentRevision > 0)
       throw new Error('A metadata-only Studio snapshot cannot replace an existing document; choose keep');
-    await lockForkWrites(trx, 'Buddy Studio restore is unavailable during database handoff');
     // Project deletion detaches published exports instead of deleting them; their previous
     // file remains part of the rebind even while projectId is null.
     const exportIds = project.exports.map((row) => row.id);
@@ -457,9 +459,12 @@ export class BuddyBackupStudioRepository {
     }
     // Reuse Studio's import ledger. Generated/project render outputs use the restore's free-disk
     // admission; normal Studio does not add those derivatives to the library usage counter.
-    const totals = await sql<{ imports: number; count: number }>`SELECT
-      (SELECT coalesce(sum("sizeBytes"),0)::float8 FROM immich_fork.studio_project_import WHERE "ownerId"=${project.ownerId}::uuid) AS imports,
-      (SELECT count(*)::int FROM immich_fork.studio_project_import WHERE "projectId"=${project.id}::uuid) AS count`.execute(
+    const totals = await sql<{
+      imports: number;
+      count: number;
+    }>`SELECT
+      (SELECT coalesce(sum("sizeBytes"),0)::float8 FROM public.studio_project_import WHERE "ownerId"=${project.ownerId}::uuid) AS imports,
+      (SELECT count(*)::int FROM public.studio_project_import WHERE "projectId"=${project.id}::uuid) AS count`.execute(
       trx,
     );
     if (totals.rows[0].count > STUDIO_IMPORT_MAX_PER_PROJECT) throw new Error('Buddy Studio has too many imports');
@@ -535,7 +540,6 @@ export class BuddyBackupStudioRepository {
     await options.verify();
     return project.id;
   }
-
   /** Runs after every selected project exists, so duplicate lineage never depends on restore ordering. */
   async restoreLineage(project: BuddyStudioProject, mode: 'keep' | 'replace') {
     if (!this.db.isTransaction) throw new Error('Buddy Studio lineage requires its authorization transaction');
@@ -561,7 +565,6 @@ export class BuddyBackupStudioRepository {
         .where('id', '=', project.id)
         .execute();
   }
-
   private async put(
     table: Table,
     row: Row,
@@ -586,7 +589,9 @@ export class BuddyBackupStudioRepository {
       VALUES (${sql.join(columns.map((column) => value(column)))}) ON CONFLICT DO NOTHING RETURNING ${sql.ref(keys[0])}`.execute(
       this.db,
     );
-    const stored = await sql<{ record: Row }>`SELECT ${recordJson(table)} AS record FROM ${sql.table(table)} item
+    const stored = await sql<{
+      record: Row;
+    }>`SELECT ${recordJson(table)} AS record FROM ${sql.table(table)} item
       WHERE ${where} FOR UPDATE`.execute(this.db);
     if (!stored.rows[0]) throw new Error('Buddy Studio revision identity conflicts with existing history');
     const current = normalize(stored.rows[0].record);

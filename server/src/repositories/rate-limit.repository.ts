@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Redis } from 'ioredis';
+import { type Pool } from 'pg';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { closeSharedServicePool, createSharedServicePool, trackPoolClients } from 'src/utils/shared-service-pool.js';
 
 export type RateLimitHit = {
   /** Requests counted in the current window, including this one. */
@@ -9,106 +10,109 @@ export type RateLimitHit = {
   resetSeconds: number;
 };
 
-/**
- * FL-161: fixed-window request counters in Redis, shared by every API process of this server.
- *
- * Each hit is an `INCR`; the key gets its window with `EXPIRE` when it has none yet (a new key, or
- * one left without an expiry by a process that stopped between the two commands), so a counter can
- * never outlive its window. The connection opens when the API starts; commands fail at once instead
- * of queueing while Redis is away (`enableOfflineQueue: false`), so a caller decides what an
- * unavailable counter means.
- */
-/** `DECR` only an existing counter; delete it at zero or below. Returns the new count (0 when gone). */
-export const RELEASE_SCRIPT = `
-if redis.call('EXISTS', KEYS[1]) == 0 then
-  return 0
-end
-local count = redis.call('DECR', KEYS[1])
-if count <= 0 then
-  redis.call('DEL', KEYS[1])
-  return 0
-end
-return count
-`;
-
-export const RELEASE_UPLOAD_STREAM_SCRIPT = `
-if redis.call('GET', KEYS[1]) == ARGV[1] then
-  return redis.call('DEL', KEYS[1])
-end
-return 0
-`;
-
 @Injectable()
 export class RateLimitRepository implements OnModuleInit, OnModuleDestroy {
-  private client?: Redis;
+  private pool?: Pool;
+  private clients?: ReturnType<typeof trackPoolClients>;
+  private cleanupAt = 0;
+  private cleaning?: Promise<void>;
 
   constructor(private configRepository: ConfigRepository) {}
 
-  private getClient(): Redis {
-    if (!this.client) {
-      const { redis } = this.configRepository.getEnv();
-      this.client = new Redis({
-        ...redis,
-        enableOfflineQueue: false,
-        maxRetriesPerRequest: 1,
-        commandTimeout: 2000,
-      });
-      // connection errors surface on the commands; the client reconnects on its own
-      this.client.on('error', () => {
-        // reported by the command that failed
-      });
+  private getClient(): Pool {
+    if (!this.pool) {
+      this.pool = createSharedServicePool(this.configRepository, 'admission');
+      this.clients = trackPoolClients(this.pool);
     }
-    return this.client;
+    return this.pool;
   }
 
   onModuleInit() {
     this.getClient();
   }
 
+  /** Bounded opportunistic cleanup, at most once a minute per process, outside admission results. */
+  private cleanExpired() {
+    if (this.cleaning || Date.now() < this.cleanupAt) {
+      return;
+    }
+    this.cleanupAt = Date.now() + 60_000;
+    this.cleaning = (async () => {
+      for (const table of ['frameleaf_rate_limit', 'frameleaf_upload_lease']) {
+        await this.getClient().query(`DELETE FROM public.${table} WHERE key IN (
+          SELECT key FROM public.${table} WHERE expires_at <= statement_timestamp()
+          ORDER BY expires_at LIMIT 256 FOR UPDATE SKIP LOCKED
+        ) AND expires_at <= statement_timestamp()`);
+      }
+    })()
+      .catch(() => {
+        // Cleanup never changes the result of a successful admission.
+      })
+      .finally(() => (this.cleaning = undefined));
+  }
+
   async hit(key: string, windowSeconds: number): Promise<RateLimitHit> {
-    const client = this.getClient();
-    const results = await client.multi().incr(key).ttl(key).exec();
-    if (!results) {
-      throw new Error('Rate limit counter transaction was discarded');
+    if (!Number.isSafeInteger(windowSeconds) || windowSeconds < 1) {
+      throw new Error('Rate limit window must be a positive integer');
     }
-    const [[incrError, count], [ttlError, ttl]] = results as [[Error | null, number], [Error | null, number]];
-    if (incrError || ttlError) {
-      throw incrError ?? ttlError;
-    }
-    if (ttl < 0) {
-      await client.expire(key, windowSeconds);
-      return { count, resetSeconds: windowSeconds };
-    }
-    return { count, resetSeconds: Math.max(1, ttl) };
+    const { rows } = await this.getClient().query<{ count: number; resetSeconds: number }>(
+      `INSERT INTO public.frameleaf_rate_limit AS counter (key, count, expires_at)
+       VALUES ($1, 1, statement_timestamp() + make_interval(secs => $2))
+       ON CONFLICT (key) DO UPDATE SET
+         count = CASE WHEN counter.expires_at <= statement_timestamp() THEN 1 ELSE counter.count + 1 END,
+         expires_at = CASE WHEN counter.expires_at <= statement_timestamp()
+           THEN statement_timestamp() + make_interval(secs => $2) ELSE counter.expires_at END
+       RETURNING count, GREATEST(1, CEIL(EXTRACT(EPOCH FROM expires_at - statement_timestamp())))::integer AS "resetSeconds"`,
+      [key, windowSeconds],
+    );
+    this.cleanExpired();
+    return rows[0];
   }
 
-  /**
-   * Give one counted attempt back: an attempt counted up front that turned out not to be a failure.
-   * One atomic script: a counter that no longer exists (its window ended) is left alone rather than
-   * recreated without an expiry, and one given back to zero is removed.
-   */
+  /** Row-locked decrement never recreates an expired counter; zero starts a fresh window on the next hit. */
   async release(key: string): Promise<void> {
-    await this.getClient().eval(RELEASE_SCRIPT, 1, key);
+    await this.getClient().query(
+      `UPDATE public.frameleaf_rate_limit SET count = GREATEST(0, count - 1),
+       expires_at = CASE WHEN count <= 1 THEN statement_timestamp() ELSE expires_at END
+       WHERE key = $1 AND expires_at > statement_timestamp()`,
+      [key],
+    );
   }
 
-  /** Native upload admission only; longer than the ten-minute request-body timeout. */
+  /** Native upload admission only; fifteen minutes exceeds the request-body timeout. */
   async claimUploadStream(resourceId: string, token: string): Promise<boolean> {
-    return (await this.getClient().set(`frameleaf:upload-stream:${resourceId}`, token, 'EX', 900, 'NX')) === 'OK';
+    const { rowCount } = await this.getClient().query(
+      `INSERT INTO public.frameleaf_upload_lease AS lease (key, token, expires_at)
+       VALUES ($1, $2, clock_timestamp() + interval '900 seconds')
+       ON CONFLICT (key) DO UPDATE SET token = EXCLUDED.token, expires_at = clock_timestamp() + interval '900 seconds'
+       WHERE lease.expires_at <= clock_timestamp() RETURNING key`,
+      [resourceId, token],
+    );
+    this.cleanExpired();
+    return rowCount === 1;
   }
 
   async isUploadStreamCurrent(resourceId: string, token: string): Promise<boolean> {
-    return (await this.getClient().get(`frameleaf:upload-stream:${resourceId}`)) === token;
+    const { rowCount } = await this.getClient().query(
+      `SELECT 1 FROM public.frameleaf_upload_lease WHERE key = $1 AND token = $2 AND expires_at > clock_timestamp()`,
+      [resourceId, token],
+    );
+    return rowCount === 1;
   }
 
   async releaseUploadStream(resourceId: string, token: string): Promise<void> {
-    await this.getClient().eval(RELEASE_UPLOAD_STREAM_SCRIPT, 1, `frameleaf:upload-stream:${resourceId}`, token);
+    await this.getClient().query(`DELETE FROM public.frameleaf_upload_lease WHERE key = $1 AND token = $2`, [
+      resourceId,
+      token,
+    ]);
   }
 
   async onModuleDestroy() {
-    const client = this.client;
-    this.client = undefined;
-    if (client && client.status !== 'end') {
-      await client.quit().catch(() => client.disconnect());
+    await this.cleaning;
+    const pool = this.pool;
+    this.pool = undefined;
+    if (pool) {
+      await closeSharedServicePool(pool, this.clients);
     }
   }
 }

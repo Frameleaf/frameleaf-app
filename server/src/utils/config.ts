@@ -6,7 +6,6 @@ import type { DeepPartial } from 'src/types.js';
 import { AdminConfigDto, SystemConfig, defaults, mapAdminConfig } from 'src/dtos/config.dto.js';
 import { DatabaseLock, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { getKeysDeep, unsetDeep } from 'src/utils/misc.js';
@@ -16,7 +15,6 @@ type RepoDeps = {
   configRepo: ConfigRepository;
   metadataRepo: SystemMetadataRepository;
   logger: LoggingRepository;
-  forkSchemaRepo?: ForkSchemaRepository;
 };
 
 const asyncLock = new AsyncLock();
@@ -41,7 +39,7 @@ export const getConfig = async (repos: RepoDeps, { withCache }: { withCache: boo
     });
   }
 
-  return repos.forkSchemaRepo ? repos.forkSchemaRepo.overlayConfig(config!) : config!;
+  return config!;
 };
 
 /**
@@ -51,7 +49,7 @@ export const getConfig = async (repos: RepoDeps, { withCache }: { withCache: boo
  */
 export const readConfig = async (repos: RepoDeps): Promise<SystemConfig> => {
   const config = await buildConfig(repos);
-  return repos.forkSchemaRepo ? repos.forkSchemaRepo.overlayConfig(config) : config;
+  return config;
 };
 
 /**
@@ -108,9 +106,7 @@ export const updateConfig = async (repos: RepoDeps, newConfig: SystemConfig): Pr
     set(partialConfig, property, newValue);
   }
 
-  await (repos.forkSchemaRepo
-    ? repos.forkSchemaRepo.persistConfig(partialConfig, newConfig)
-    : metadataRepo.set(SystemMetadataKey.SystemConfig, partialConfig));
+  await metadataRepo.set(SystemMetadataKey.SystemConfig, partialConfig);
 
   clearConfigCache();
 

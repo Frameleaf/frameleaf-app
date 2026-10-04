@@ -3,7 +3,6 @@ import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, UserMetadataKey } from 'src/enum.js';
-import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -14,7 +13,6 @@ import { resourcesForICloudAsset } from 'src/utils/icloud-records.js';
 import { isNotLocked } from 'src/utils/locked.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
-
 export type IdentityAdoptionAuthority = {
   ownerId: string;
   connectionId: string;
@@ -35,7 +33,6 @@ export type IdentityAdoptionCandidate = {
   checksumAlgorithm: ChecksumAlgorithm;
   updateId: string;
   physicalId: string | null;
-  forkPhysicalId: string | null;
   cplMasterRecordName: string;
   cloudIdentifier: string;
   libraryKey: string | null;
@@ -49,28 +46,35 @@ export type IdentityAdoptionEvidence = {
   current: () => Promise<boolean>;
 };
 export type IdentityAdoptionResult = 'miss' | 'retry' | 'adopted';
-type Source = { resource: ICloudResource; sourceRevision: string; masterRevision: string; itemClaimId: string };
+type Source = {
+  resource: ICloudResource;
+  sourceRevision: string;
+  masterRevision: string;
+  itemClaimId: string;
+};
 class Retired extends Error {}
-
 /** No public/authenticated endpoint: this producer accepts only the claimed local sync operation. */
 @Injectable()
 export class ICloudIdentityAdoptionRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   async adopt(
     authority: IdentityAdoptionAuthority,
     verify: (candidate: IdentityAdoptionCandidate) => Promise<IdentityAdoptionEvidence | 'miss' | undefined>,
   ): Promise<IdentityAdoptionResult> {
     try {
       return await this.db.transaction().execute(async (db) => {
-        await lockPublicForkWrites(db);
         // Match the managed writer global-before-path ordering, before any asset/user row lock.
         // lockFilePath acquires this shared capture lock before its per-path lock as well.
         await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(db);
         // Hints determine only the lock key, never adoption. Final selection must still be the same
         // single identity under current source/destination guards after this digest-before-user prefix.
-        const hints = await sql<{ sha256: Buffer }>`SELECT i.sha256 FROM immich_fork.icloud_source_identity i
-          JOIN immich_fork.icloud_resource r ON r.id=${authority.resourceId}::uuid
+        const hints = await sql<{
+          sha256: Buffer;
+        }>`SELECT i.sha256 FROM public.icloud_source_identity i
+          JOIN public.icloud_resource r ON r.id=${authority.resourceId}::uuid
             AND r."ownerId"=i."ownerId" AND i."cplAssetRecordName"=upper(r."sourceAssetId")
           WHERE r."connectionId"=${authority.connectionId}::uuid AND i."ownerId"=${authority.ownerId}::uuid
             AND i."deliveredBy" LIKE 'device:%' AND i."editVersion"=''
@@ -101,9 +105,8 @@ export class ICloudIdentityAdoptionRepository {
         const { rows } = await sql<IdentityAdoptionCandidate>`
           SELECT i.id AS "identityId",i."assetId",i.sha256,i."cplMasterRecordName",i."cloudIdentifier",i."libraryKey",
             a."originalPath",a."originalFileName",a.type,a.checksum,a."checksumAlgorithm",a."updateId",
-            to_jsonb(a)->>'physicalOriginalFileId' AS "physicalId",p."physicalFileId" AS "forkPhysicalId"
-          FROM immich_fork.icloud_source_identity i JOIN public.asset a ON a.id=i."assetId" AND a."ownerId"=i."ownerId"
-          LEFT JOIN immich_fork.asset_physical_file p ON p."assetId"=a.id
+            a."physicalOriginalFileId" AS "physicalId"
+          FROM public.icloud_source_identity i JOIN public.asset a ON a.id=i."assetId" AND a."ownerId"=i."ownerId"
           WHERE i."ownerId"=${authority.ownerId}::uuid AND i."cplAssetRecordName"=upper(${source.resource.sourceAssetId})
             AND i.role=${identityRoleOf[source.resource.role]} AND i."editVersion"=''
             AND i."cplMasterRecordName"=${String(source.resource.source.sourceMasterId ?? '')}
@@ -121,8 +124,10 @@ export class ICloudIdentityAdoptionRepository {
           return 'miss';
         }
         if (!candidate.libraryKey) {
-          const inventories = await sql<{ count: number }>`SELECT count(DISTINCT a."connectionId")::int AS count
-            FROM immich_fork.icloud_record a JOIN immich_fork.icloud_connection c ON c.id=a."connectionId"
+          const inventories = await sql<{
+            count: number;
+          }>`SELECT count(DISTINCT a."connectionId")::int AS count
+            FROM public.icloud_record a JOIN public.icloud_connection c ON c.id=a."connectionId"
             WHERE c."ownerId"=${authority.ownerId}::uuid AND c.state='connected' AND c."encryptedSession" IS NOT NULL
               AND a."recordType"='CPLAsset' AND NOT a.deleted AND upper(a."recordId")=upper(${source.resource.sourceAssetId})
               AND a."masterId"=${candidate.cplMasterRecordName}`.execute(db);
@@ -142,7 +147,7 @@ export class ICloudIdentityAdoptionRepository {
         if (typeof fingerprint !== 'string' || !isAppleFingerprint(fingerprint)) {
           return 'miss';
         }
-        // Classification can write the active privacy sidecar without touching the asset row.
+        // Classification can update privacy metadata independently of the asset row.
         // Match DatabaseRepository.withAssetMetadataLock BEFORE any asset row lock, and hold
         // its authority through every file await, mapping/receipt publication and replay.
         await sql`SELECT pg_advisory_xact_lock(-1, hashtext(${candidate.assetId})::int)`.execute(db);
@@ -150,12 +155,16 @@ export class ICloudIdentityAdoptionRepository {
         if (!(await this.destination(db, authority.ownerId, candidate, source.resource.role))) {
           return 'miss';
         }
-        let replay: { snapshot: Record<string, unknown> } | undefined;
+        let replay:
+          | {
+              snapshot: Record<string, unknown>;
+            }
+          | undefined;
         if (source.resource.assetId !== null) {
           // A prior hash mapping cannot be relabelled as adoption. Replays need this producer's receipt.
           const receipt = await sql<{
             snapshot: Record<string, unknown>;
-          }>`SELECT snapshot FROM immich_fork.icloud_identity_reuse
+          }>`SELECT snapshot FROM public.icloud_identity_reuse
             WHERE "sourceResourceId"=${source.resource.id}::uuid AND "ownerId"=${authority.ownerId}::uuid
               AND "connectionId"=${authority.connectionId}::uuid AND "identityId"=${candidate.identityId}::uuid
               AND "assetId"=${candidate.assetId}::uuid AND "expectedSha256"=${candidate.sha256}`.execute(db);
@@ -195,7 +204,7 @@ export class ICloudIdentityAdoptionRepository {
         ) {
           throw new Retired();
         }
-        const identity = await sql`SELECT id FROM immich_fork.icloud_source_identity
+        const identity = await sql`SELECT id FROM public.icloud_source_identity
           WHERE id=${candidate.identityId}::uuid AND "ownerId"=${authority.ownerId}::uuid
             AND "assetId"=${candidate.assetId}::uuid AND sha256=${evidence.sha256}
             AND "cplAssetRecordName"=upper(${source.resource.sourceAssetId})
@@ -217,7 +226,6 @@ export class ICloudIdentityAdoptionRepository {
           checksum: candidate.checksum.toString('hex'),
           algorithm: candidate.checksumAlgorithm,
           physicalId: candidate.physicalId,
-          forkPhysicalId: candidate.forkPhysicalId,
           fileIdentity: evidence.identity,
           sourceChecksum: fingerprint,
         };
@@ -226,9 +234,9 @@ export class ICloudIdentityAdoptionRepository {
           return 'retry';
         }
         if (replay) {
-          const live = await sql`SELECT r.id FROM immich_fork.icloud_resource r
+          const live = await sql`SELECT r.id FROM public.icloud_resource r
             JOIN public.media_operation o ON o.id=${authority.operationId}::uuid
-            JOIN immich_fork.icloud_claim c ON c.id=${source.itemClaimId}::uuid
+            JOIN public.icloud_claim c ON c.id=${source.itemClaimId}::uuid
             WHERE r.id=${authority.resourceId}::uuid AND r."ownerId"=${authority.ownerId}::uuid
               AND r."leaseToken"=${authority.resourceLeaseToken}::uuid AND r."leaseExpiresAt">clock_timestamp()
               AND o."ownerId"=r."ownerId" AND o."claimToken"=${authority.operationClaimToken}::uuid
@@ -241,7 +249,7 @@ export class ICloudIdentityAdoptionRepository {
             : 'retry';
         }
         // Final SQL uses database time after every awaited file/privacy check. It cannot resurrect an expired claim.
-        const mapped = await sql`UPDATE immich_fork.icloud_resource SET "assetId"=${candidate.assetId}::uuid,
+        const mapped = await sql`UPDATE public.icloud_resource SET "assetId"=${candidate.assetId}::uuid,
           path=${candidate.originalPath},sha1=${evidence.sha1},sha256=${evidence.sha256},status='committed',
           verification=${{ outcome: 'reused', basis: 'exact-identity', identity: evidence.identity, sizeInBytes: evidence.sizeInBytes }}::jsonb,
           "lastError"=NULL,"updatedAt"=clock_timestamp()
@@ -251,13 +259,13 @@ export class ICloudIdentityAdoptionRepository {
               AND "ownerId"=${authority.ownerId}::uuid AND "claimToken"=${authority.operationClaimToken}::uuid
               AND "claimExpiresAt">clock_timestamp() AND status IN ('preparing','rendering','validating')
               AND "cancelRequestedAt" IS NULL AND "pauseRequestedAt" IS NULL)
-            AND EXISTS (SELECT 1 FROM immich_fork.icloud_claim WHERE id=${source.itemClaimId}::uuid
+            AND EXISTS (SELECT 1 FROM public.icloud_claim WHERE id=${source.itemClaimId}::uuid
               AND "ownerId"=${authority.ownerId}::uuid AND holder=${`icloud-sync:${authority.connectionId}`}
               AND "expiresAt">clock_timestamp()) RETURNING id`.execute(db);
         if (mapped.rows.length !== 1) {
           throw new Retired();
         }
-        await sql`INSERT INTO immich_fork.icloud_identity_reuse
+        await sql`INSERT INTO public.icloud_identity_reuse
           ("ownerId","connectionId","sourceResourceId","identityId","assetId","operationId","itemClaimId",basis,
            "libraryKey","cplAssetRecordName","cplMasterRecordName",role,"expectedSha256","appleFingerprint",snapshot)
           VALUES (${authority.ownerId}::uuid,${authority.connectionId}::uuid,${authority.resourceId}::uuid,
@@ -271,9 +279,8 @@ export class ICloudIdentityAdoptionRepository {
       return 'retry';
     }
   }
-
   private async source(db: Transaction<DB>, authority: IdentityAdoptionAuthority): Promise<Source> {
-    const connection = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
+    const connection = await sql<ICloudConnection>`SELECT * FROM public.icloud_connection
       WHERE id=${authority.connectionId}::uuid AND "ownerId"=${authority.ownerId}::uuid AND state='connected'
         AND "encryptedSession" IS NOT NULL AND "lastError" IS DISTINCT FROM 'owner_removed' FOR SHARE`
       .execute(db)
@@ -288,7 +295,7 @@ export class ICloudIdentityAdoptionRepository {
       throw new Retired();
     }
     const resource = await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize"
-      FROM immich_fork.icloud_resource WHERE id=${authority.resourceId}::uuid AND "ownerId"=${authority.ownerId}::uuid
+      FROM public.icloud_resource WHERE id=${authority.resourceId}::uuid AND "ownerId"=${authority.ownerId}::uuid
         AND "connectionId"=${authority.connectionId}::uuid AND "auditRequestId" IS NULL
         AND status IN ('pending','retry','staging','committed') AND coalesce((source->>'current')::boolean,true)
         AND "leaseToken"=${authority.resourceLeaseToken}::uuid AND "leaseExpiresAt">clock_timestamp() FOR UPDATE`
@@ -310,7 +317,7 @@ export class ICloudIdentityAdoptionRepository {
       revision: string;
       fields: Record<string, unknown>;
     }>`
-      SELECT "recordId","recordType",revision,fields FROM immich_fork.icloud_record
+      SELECT "recordId","recordType",revision,fields FROM public.icloud_record
       WHERE "connectionId"=${authority.connectionId}::uuid AND "libraryKey"=${resource.libraryKey} AND NOT deleted
         AND "recordId" IN (${resource.sourceAssetId},${String(resource.source.sourceMasterId ?? '')}) FOR SHARE`.execute(
       db,
@@ -345,7 +352,7 @@ export class ICloudIdentityAdoptionRepository {
     }
     if (connection.config.albums.length > 0) {
       const member =
-        await sql`SELECT 1 FROM immich_fork.icloud_membership WHERE "connectionId"=${authority.connectionId}::uuid
+        await sql`SELECT 1 FROM public.icloud_membership WHERE "connectionId"=${authority.connectionId}::uuid
         AND "libraryKey"=${resource.libraryKey} AND "sourceAssetId"=${resource.sourceAssetId} AND "sourcePresent"
         AND ("libraryKey"||':'||"sourceAlbumId")=ANY(${connection.config.albums}::text[]) FOR SHARE`.execute(db);
       if (member.rows.length === 0) {
@@ -354,7 +361,7 @@ export class ICloudIdentityAdoptionRepository {
     }
     const claim = await sql<{
       id: string;
-    }>`SELECT id FROM immich_fork.icloud_claim WHERE "ownerId"=${authority.ownerId}::uuid
+    }>`SELECT id FROM public.icloud_claim WHERE "ownerId"=${authority.ownerId}::uuid
       AND "cplAssetRecordName"=upper(${resource.sourceAssetId}) AND holder=${`icloud-sync:${authority.connectionId}`}
       AND "expiresAt">clock_timestamp() FOR SHARE`
       .execute(db)
@@ -364,7 +371,6 @@ export class ICloudIdentityAdoptionRepository {
     }
     return { resource, sourceRevision: asset.revision, masterRevision: master.revision, itemClaimId: claim.id };
   }
-
   private async destination(
     db: Transaction<DB>,
     ownerId: string,
@@ -419,28 +425,12 @@ export class ICloudIdentityAdoptionRepository {
         return false;
       }
     }
-    const mapping = await sql<{
-      physicalId: string | null;
-      forkPhysicalId: string | null;
-      upstreamPath: string | null;
-    }>`
-      SELECT to_jsonb(a)->>'physicalOriginalFileId' AS "physicalId",p."physicalFileId" AS "forkPhysicalId",p."upstreamPath"
-      FROM public.asset a LEFT JOIN immich_fork.asset_physical_file p ON p."assetId"=a.id
-      WHERE a.id=${candidate.assetId}::uuid`.execute(db);
-    if (
-      mapping.rows[0]?.physicalId !== candidate.physicalId ||
-      mapping.rows[0]?.forkPhysicalId !== candidate.forkPhysicalId ||
-      (candidate.forkPhysicalId && mapping.rows[0]?.upstreamPath !== candidate.originalPath)
-    ) {
+    if (row.physicalOriginalFileId !== candidate.physicalId) {
       return false;
     }
-    await sql`SELECT "assetId" FROM immich_fork.asset_physical_file WHERE "assetId"=${candidate.assetId}::uuid FOR UPDATE`.execute(
-      db,
-    );
-    const unsafe =
-      await sql`SELECT 1 FROM immich_fork.asset_storage_reservation WHERE "assetId"=${candidate.assetId}::uuid AND status='reserved'
-      UNION ALL SELECT 1 FROM immich_fork.asset_health WHERE "assetId"=${candidate.assetId}::uuid AND category IN ('missing','corrupt')
-        AND "resolvedAt" IS NULL AND status NOT IN ('resolved','relinked','trashed')`.execute(db);
+    const unsafe = await sql`SELECT 1 FROM public.asset_health
+          WHERE "assetId"=${candidate.assetId}::uuid AND category IN ('missing','corrupt')
+            AND "resolvedAt" IS NULL AND status NOT IN ('resolved','relinked','trashed')`.execute(db);
     return unsafe.rows.length === 0;
   }
 }

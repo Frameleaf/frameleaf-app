@@ -1,4 +1,4 @@
-import { BeforeUpdateTrigger, Column, ColumnOptions } from '@immich/sql-tools';
+import { BeforeUpdateTrigger, Column, ColumnOptions } from '@frameleaf/sql-tools';
 import { SetMetadata, applyDecorators } from '@nestjs/common';
 import { ApiOperation, ApiOperationOptions, ApiTags } from '@nestjs/swagger';
 import { chunk, flatten } from 'lodash-es';

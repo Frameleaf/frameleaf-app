@@ -11,7 +11,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
@@ -74,7 +74,7 @@ const setup = () => {
     ConfigRepository,
     CryptoRepository,
     DatabaseRepository,
-    ForkSchemaRepository,
+    AssetChecksumRepository,
     PhysicalFileRepository,
     PhysicalFileTrashRepository,
     StorageRepository,
@@ -105,7 +105,7 @@ const setup = () => {
   const sut = new StorageMigrationService(
     logger as never,
     ctx.get(DatabaseRepository),
-    ctx.get(ForkSchemaRepository),
+    ctx.get(AssetChecksumRepository),
     jobs as never,
     new MediaHealthRepository(database),
     ctx.get(PhysicalFileRepository),

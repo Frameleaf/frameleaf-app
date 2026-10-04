@@ -9,7 +9,7 @@ import type {
   ReconciliationStartDto,
 } from 'src/dtos/backup-device.dto.js';
 import type { DB } from 'src/schema/index.js';
-import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import {
   assertInventoryUnchanged,
@@ -17,13 +17,14 @@ import {
   startProgress,
   validateBucket,
 } from 'src/utils/backup-reconciliation.js';
-
 @Injectable()
 export class BackupDeviceRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   register(ownerId: string, dto: BackupDeviceWriteDto) {
-    return withPublicForkWrites(this.db, (tx) =>
+    return this.db.transaction().execute((tx) =>
       tx
         .insertInto('backup_device')
         .values({
@@ -48,7 +49,6 @@ export class BackupDeviceRepository {
         .executeTakeFirstOrThrow(),
     );
   }
-
   list(ownerId: string | undefined, page: BackupDevicePageDto) {
     return this.db
       .selectFrom('backup_device')
@@ -60,9 +60,8 @@ export class BackupDeviceRepository {
       .offset(page.offset)
       .execute();
   }
-
   async remove(ownerId: string, id: string) {
-    const row = await withPublicForkWrites(this.db, (tx) =>
+    const row = await this.db.transaction().execute((tx) =>
       tx
         .updateTable('backup_device')
         .set({ deletedAt: sql`clock_timestamp()` })
@@ -74,7 +73,6 @@ export class BackupDeviceRepository {
     );
     if (!row) throw new NotFoundException('Backup device not found');
   }
-
   private async inventory(auth: AuthDto, db: Kysely<DB>) {
     const query = new IntegrityRepository(db).getSafetyQuery(auth);
     const hashes: string[] = [];
@@ -91,7 +89,6 @@ export class BackupDeviceRepository {
     }
     return { hashes, buckets: bucketInventory(hashes) };
   }
-
   private async ownedDevice(db: Kysely<DB>, ownerId: string, deviceId: string) {
     const device = await db
       .selectFrom('backup_device')
@@ -103,17 +100,17 @@ export class BackupDeviceRepository {
       .executeTakeFirst();
     if (!device) throw new NotFoundException('Backup device not found');
   }
-
   async start(auth: AuthDto, deviceId: string, dto: ReconciliationStartDto) {
     return this.db
       .transaction()
       .setIsolationLevel('repeatable read')
       .execute(async (tx) => {
-        await lockPublicForkWrites(tx);
         await this.ownedDevice(tx, auth.user.id, deviceId);
         const {
           rows: [time],
-        } = await sql<{ at: Date }>`SELECT transaction_timestamp() as at`.execute(tx);
+        } = await sql<{
+          at: Date;
+        }>`SELECT transaction_timestamp() as at`.execute(tx);
         const server = await this.inventory(auth, tx);
         const progress = startProgress(dto, server.buckets);
         const itemsChecked = server.buckets.reduce(
@@ -140,13 +137,11 @@ export class BackupDeviceRepository {
         throw error;
       });
   }
-
   async submit(auth: AuthDto, deviceId: string, runId: string, dto: ReconciliationBucketDto) {
     return this.db
       .transaction()
       .setIsolationLevel('repeatable read')
       .execute(async (tx) => {
-        await lockPublicForkWrites(tx);
         await this.ownedDevice(tx, auth.user.id, deviceId);
         const run = await tx
           .selectFrom('backup_reconciliation')
@@ -159,7 +154,9 @@ export class BackupDeviceRepository {
         if (!run) throw new NotFoundException('Reconciliation not found');
         const {
           rows: [time],
-        } = await sql<{ at: Date }>`SELECT transaction_timestamp() as at`.execute(tx);
+        } = await sql<{
+          at: Date;
+        }>`SELECT transaction_timestamp() as at`.execute(tx);
         const current = await this.inventory(auth, tx);
         assertInventoryUnchanged(run.progress, current.buckets);
         const { bucket, hashes } = validateBucket(dto, run.progress);
@@ -188,7 +185,6 @@ export class BackupDeviceRepository {
         throw error;
       });
   }
-
   history(ownerId: string, deviceId: string, page: BackupDevicePageDto) {
     return this.db
       .selectFrom('backup_reconciliation')

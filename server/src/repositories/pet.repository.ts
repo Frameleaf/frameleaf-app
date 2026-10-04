@@ -4,8 +4,8 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { AssetVisibility } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { PetObservationState, PetRecognitionRunStatus, PetSpecies, VectorIndex } from 'src/enum.js';
-import { probes } from 'src/repositories/database.repository.js';
+import { PetObservationState, PetRecognitionRunStatus, PetSpecies } from 'src/enum.js';
+
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { PetCandidateTable, PetDetectionTable, PetObservationTable, PetTable } from 'src/schema/tables/pet.table.js';
@@ -16,12 +16,10 @@ import {
   isLockedAsset,
   lockedOwnerScope,
 } from 'src/utils/database.js';
-import { lockForkWrites } from 'src/utils/fork-write-lock.js';
 
 export type Pet = Selectable<PetTable>;
 export type PetObservation = Selectable<PetObservationTable>;
 export type PetDetection = Selectable<PetDetectionTable>;
-
 export interface RecognitionAsset {
   id: string;
   ownerId: string;
@@ -33,8 +31,7 @@ export interface RecognitionAsset {
   exifImageHeight: number | null;
   embedding: string;
 }
-
-/** An owner's latest pet recognition run (`immich_fork.pet_recognition_run`, FL-58). */
+/** An owner's latest pet recognition run (`public.pet_recognition_run`, FL-58). */
 export interface PetRecognitionRun {
   ownerId: string;
   id: string;
@@ -48,23 +45,27 @@ export interface PetRecognitionRun {
   updatedAt: Date;
   finishedAt: Date | null;
 }
-
 export interface PetWithCounts extends Pet {
   /** Durable `confirmed` observations. Never a count of detections. */
   assetCount: number;
 }
-
 /**
  * `lockedOwnerId`: the owner, when their session is elevated. Only then do counts, observations and
  * proposals include their Locked media (FL-34). `withLocked` is for writes that must see every
  * observation (merging), never for a response.
  */
-type PetListOptions = { withHidden: boolean; forSync?: boolean; id?: string } & HiddenContentQueryOptions &
+type PetListOptions = {
+  withHidden: boolean;
+  forSync?: boolean;
+  id?: string;
+} & HiddenContentQueryOptions &
   LockedVisibilityOptions;
-
 export type PetLockedOptions = LockedVisibilityOptions &
-  HiddenContentQueryOptions & { withLocked?: boolean; forSync?: boolean; observationId?: string };
-
+  HiddenContentQueryOptions & {
+    withLocked?: boolean;
+    forSync?: boolean;
+    observationId?: string;
+  };
 export interface PetReviewCandidate {
   id: string;
   score: number;
@@ -83,7 +84,6 @@ export interface PetReviewCandidate {
   imageWidth: number;
   imageHeight: number;
 }
-
 /**
  * Pet identities and recognition review (FL-58).
  *
@@ -98,14 +98,13 @@ export interface PetReviewCandidate {
 @Injectable()
 export class PetRepository {
   constructor(
-    @InjectKysely() private db: Kysely<DB>,
+    @InjectKysely()
+    private db: Kysely<DB>,
     private logger: LoggingRepository,
   ) {
     this.logger.setContext(PetRepository.name);
   }
-
   // ---------------------------------------------------------------- durable: identity
-
   /**
    * The owner's pets. With a hidden-content filter (a session that is not unlocked while the owner
    * suppresses content, FL-58) a pet behaves like a suppressed person or tag: a pet the owner
@@ -198,7 +197,6 @@ export class PetRepository {
         .then((rows) => rows.map((row) => ({ ...row, assetCount: Number(row.assetCount ?? 0) })))
     );
   }
-
   /** Owner-scoped by construction: a wrong owner gets `undefined`, never another's pet. */
   getById(
     ownerId: string,
@@ -223,19 +221,15 @@ export class PetRepository {
       .executeTakeFirst()
       .then((row) => (row ? { ...row, assetCount: Number(row.assetCount ?? 0) } : undefined));
   }
-
   getByIds(ownerId: string, ids: string[]): Promise<Pet[]> {
     if (ids.length === 0) {
       return Promise.resolve([]);
     }
-
     return this.db.selectFrom('pet').selectAll().where('id', 'in', ids).where('ownerId', '=', ownerId).execute();
   }
-
   create(pet: Insertable<PetTable>): Promise<Pet> {
     return this.db.insertInto('pet').values(pet).returningAll().executeTakeFirstOrThrow();
   }
-
   update(ownerId: string, id: string, pet: Updateable<PetTable>): Promise<Pet | undefined> {
     return this.db
       .updateTable('pet')
@@ -245,11 +239,9 @@ export class PetRepository {
       .returningAll()
       .executeTakeFirst();
   }
-
   async delete(ownerId: string, id: string): Promise<void> {
     await this.db.deleteFrom('pet').where('id', '=', id).where('ownerId', '=', ownerId).execute();
   }
-
   /** Whether an asset is one this owner may be shown as a pet's featured photo. */
   async isOwnedAsset(ownerId: string, assetId: string): Promise<boolean> {
     const row = await this.db
@@ -261,7 +253,6 @@ export class PetRepository {
       .executeTakeFirst();
     return !!row;
   }
-
   /** Whether an asset is this owner's own and locked (FL-34), which is never a featured photo (FL-53). */
   async isOwnLockedAsset(ownerId: string, assetId: string): Promise<boolean> {
     const row = await this.db
@@ -273,9 +264,7 @@ export class PetRepository {
       .executeTakeFirst();
     return !!row;
   }
-
   // ------------------------------------------------------------- durable: observations
-
   getObservations(
     ownerId: string,
     petId: string | string[],
@@ -303,7 +292,6 @@ export class PetRepository {
       .orderBy('pet_observation.createdAt', 'desc')
       .execute();
   }
-
   getObservationById(
     ownerId: string,
     id: string,
@@ -319,7 +307,6 @@ export class PetRepository {
       .where((eb) => lockedOwnerScope(eb, lockedOwnerId))
       .executeTakeFirst();
   }
-
   /**
    * Record or replace the owner's decision about one (pet, asset) pair.
    *
@@ -357,7 +344,6 @@ export class PetRepository {
       .returningAll()
       .executeTakeFirstOrThrow();
   }
-
   /** The current checksum of one of this owner's assets, or undefined when it is not theirs. */
   async getOwnedAssetChecksum(ownerId: string, assetId: string): Promise<Buffer | undefined> {
     const row = await this.db
@@ -368,7 +354,6 @@ export class PetRepository {
       .executeTakeFirst();
     return row?.checksum;
   }
-
   /**
    * This owner's decisions about one asset, for the viewer's "Pets in this photo". Only the owner's
    * pets appear; a Locked asset is left out unless the owner's session is elevated.
@@ -389,7 +374,6 @@ export class PetRepository {
       .orderBy('pet_observation.createdAt', 'asc')
       .execute();
   }
-
   /**
    * After an original was replaced (FL-58): every drawn region on it whose recorded checksum no
    * longer matches is marked stale for review. Nothing is deleted and no state changes, so the
@@ -409,7 +393,6 @@ export class PetRepository {
       .executeTakeFirst();
     return Number(result.numUpdatedRows ?? 0);
   }
-
   /**
    * The owner filter is repeated in the delete itself, not left to the caller's earlier
    * read, so a row that changed owner between the two statements is still not removed.
@@ -422,11 +405,15 @@ export class PetRepository {
       .executeTakeFirst();
     return Number(result.numDeletedRows ?? 0) > 0;
   }
-
   /** Every durable decision this owner has made, used to filter the review queue. */
-  getDecisions(
-    ownerId: string,
-  ): Promise<Array<{ id: string; assetId: string; petId: string; state: PetObservationState }>> {
+  getDecisions(ownerId: string): Promise<
+    Array<{
+      id: string;
+      assetId: string;
+      petId: string;
+      state: PetObservationState;
+    }>
+  > {
     return this.db
       .selectFrom('pet_observation')
       .innerJoin('pet', 'pet.id', 'pet_observation.petId')
@@ -439,12 +426,16 @@ export class PetRepository {
       .where('pet.ownerId', '=', ownerId)
       .execute();
   }
-
   /** The owner's decisions about one asset, in either direction: those pets are never proposed for it. */
   getDecisionsForAsset(
     ownerId: string,
     assetId: string,
-  ): Promise<Array<{ petId: string; state: PetObservationState }>> {
+  ): Promise<
+    Array<{
+      petId: string;
+      state: PetObservationState;
+    }>
+  > {
     return this.db
       .selectFrom('pet_observation')
       .innerJoin('pet', 'pet.id', 'pet_observation.petId')
@@ -453,9 +444,7 @@ export class PetRepository {
       .where('pet_observation.assetId', '=', assetId)
       .execute();
   }
-
   // ------------------------------------------------------------------- merge (durable)
-
   /**
    * Move the whole durable side of one pet onto another, inside one transaction.
    *
@@ -485,17 +474,14 @@ export class PetRepository {
         .where('id', 'in', [sourceId, targetId])
         .where('ownerId', '=', ownerId)
         .execute();
-
       if (owned.length !== 2) {
         // Re-checked inside the transaction so a concurrent delete or owner change
         // cannot let a merge land on a pet the caller no longer owns.
         return;
       }
-
       if (discard.length > 0) {
         await tx.deleteFrom('pet_observation').where('id', 'in', discard).execute();
       }
-
       if (promote.length > 0) {
         await tx
           .updateTable('pet_observation')
@@ -503,7 +489,6 @@ export class PetRepository {
           .where('id', 'in', promote)
           .execute();
       }
-
       if (reassign.length > 0) {
         await tx
           .updateTable('pet_observation')
@@ -511,14 +496,11 @@ export class PetRepository {
           .where('id', 'in', reassign)
           .execute();
       }
-
       // The candidates of the disappearing pet are replaceable; they go with it.
       await tx.deleteFrom('pet').where('id', '=', sourceId).where('ownerId', '=', ownerId).execute();
     });
   }
-
   // ----------------------------------------------------------- replaceable: model side
-
   /**
    * The review queue: proposals over this owner's own assets and this owner's own pets.
    *
@@ -561,7 +543,6 @@ export class PetRepository {
       .execute()
       .then((rows) => rows.map((row) => ({ ...row, score: Number(row.score ?? 0) })));
   }
-
   getCandidateById(
     ownerId: string,
     id: string,
@@ -596,7 +577,6 @@ export class PetRepository {
       .executeTakeFirst()
       .then((row) => (row ? { ...row, score: Number(row.score ?? 0) } : undefined));
   }
-
   /**
    * Remove the proposals the owner just answered. Only the named pets' proposals go: a detection
    * made on the whole photo (FL-58, CLIP) can carry proposals for several pets that are all in it,
@@ -612,11 +592,9 @@ export class PetRepository {
       .where('petId', 'in', petIds)
       .execute();
   }
-
   getDetectionsForAsset(assetId: string): Promise<PetDetection[]> {
     return this.db.selectFrom('pet_detection').selectAll().where('assetId', '=', assetId).execute();
   }
-
   /**
    * Replace the model side for one asset.
    *
@@ -633,11 +611,9 @@ export class PetRepository {
       if (detectionIds.length > 0) {
         await tx.deleteFrom('pet_detection').where('id', 'in', detectionIds).where('assetId', '=', assetId).execute();
       }
-
       if (detections.length === 0) {
         return [];
       }
-
       return tx
         .insertInto('pet_detection')
         .values(detections.map((detection) => ({ ...detection, assetId })))
@@ -645,12 +621,10 @@ export class PetRepository {
         .execute();
     });
   }
-
   async upsertCandidates(candidates: Array<Insertable<PetCandidateTable>>): Promise<void> {
     if (candidates.length === 0) {
       return;
     }
-
     await this.db
       .insertInto('pet_candidate')
       .values(candidates)
@@ -659,9 +633,7 @@ export class PetRepository {
       )
       .execute();
   }
-
   // --------------------------------------------------------- recognition inputs (FL-58)
-
   /**
    * One asset as pet recognition reads it: its owner, whether it may be read at all, its size for
    * the whole-photo region and its CLIP embedding from smart search. No embedding, no recognition.
@@ -685,7 +657,6 @@ export class PetRepository {
       .where('asset.id', '=', assetId)
       .executeTakeFirst();
   }
-
   /**
    * What the owner has confirmed each of their visible pets in, as CLIP embeddings: at most
    * `perPet` photos per pet, newest decisions first. A region flagged stale still names the right
@@ -695,7 +666,13 @@ export class PetRepository {
     ownerId: string,
     excludeAssetId: string,
     perPet: number,
-  ): Promise<Array<{ petId: string; species: PetSpecies; embedding: string }>> {
+  ): Promise<
+    Array<{
+      petId: string;
+      species: PetSpecies;
+      embedding: string;
+    }>
+  > {
     const rows = await this.db
       .selectFrom((eb) =>
         eb
@@ -720,9 +697,12 @@ export class PetRepository {
       .select(['ranked.petId', 'ranked.species', 'ranked.embedding'])
       .where('ranked.rank', '<=', perPet)
       .execute();
-    return rows as Array<{ petId: string; species: PetSpecies; embedding: string }>;
+    return rows as Array<{
+      petId: string;
+      species: PetSpecies;
+      embedding: string;
+    }>;
   }
-
   /** Whether this owner has confirmed any visible pet in any photo, which recognition needs to start. */
   async hasConfirmedObservations(ownerId: string): Promise<boolean> {
     const row = await this.db
@@ -736,7 +716,6 @@ export class PetRepository {
       .executeTakeFirst();
     return !!row;
   }
-
   /** The owners with at least one confirmed pet photo; only their libraries are worth a run. */
   async getOwnersWithConfirmedPets(): Promise<string[]> {
     const rows = await this.db
@@ -749,7 +728,6 @@ export class PetRepository {
       .execute();
     return rows.map(({ ownerId }) => ownerId);
   }
-
   /** Every asset of one owner that has a CLIP embedding and is not in the trash. */
   getRecognizableAssetIds(ownerId: string): Promise<string[]> {
     return this.db
@@ -762,7 +740,6 @@ export class PetRepository {
       .execute()
       .then((rows) => rows.map(({ id }) => id));
   }
-
   /**
    * The owner's photos that look most like one photo, by CLIP distance: where a newly confirmed pet
    * is most likely to be found again. Bounded by `limit`, owner's assets only.
@@ -778,7 +755,7 @@ export class PetRepository {
     }
     // The CLIP index needs its probe count set, as `SearchRepository.searchSmart` does.
     return this.db.transaction().execute(async (trx) => {
-      await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.Clip])}`.execute(trx);
+      await sql`set local hnsw.ef_search = 100`.execute(trx);
       const rows = await trx
         .selectFrom('asset')
         .innerJoin('smart_search', 'smart_search.assetId', 'asset.id')
@@ -792,22 +769,19 @@ export class PetRepository {
       return rows.map(({ id }) => id);
     });
   }
-
   // ---------------------------------------------------------- recognition runs (FL-58)
-
   getRun(ownerId: string): Promise<PetRecognitionRun | undefined> {
     return sql<PetRecognitionRun>`
-      SELECT * FROM immich_fork.pet_recognition_run WHERE "ownerId" = ${ownerId}
+      SELECT * FROM public.pet_recognition_run WHERE "ownerId" = ${ownerId}
     `
       .execute(this.db)
       .then(({ rows }) => rows[0]);
   }
-
   /** Start (or restart) the owner's run: a new run id, so jobs of an earlier run stop counting. */
   startRun(ownerId: string, destinationKind: string | null): Promise<PetRecognitionRun> {
     return this.forkWrite((tx) =>
       sql<PetRecognitionRun>`
-      INSERT INTO immich_fork.pet_recognition_run ("ownerId", id, status, "destinationKind")
+      INSERT INTO public.pet_recognition_run ("ownerId", id, status, "destinationKind")
       VALUES (${ownerId}, gen_random_uuid(), ${PetRecognitionRunStatus.Queued}, ${destinationKind})
       ON CONFLICT ("ownerId") DO UPDATE SET
         id = gen_random_uuid(),
@@ -826,23 +800,20 @@ export class PetRepository {
         .then(({ rows }) => rows[0]),
     );
   }
-
   /**
    * Every pet_recognition_run write takes the fork-state lock first (as face_correction writes do),
    * so it is refused cleanly (ConflictException) during a database handoff.
    */
   private forkWrite<T>(write: (tx: Transaction<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (tx) => {
-      await lockForkWrites(tx, 'Pet recognition runs');
       return write(tx);
     });
   }
-
   /** The run found its assets; with none it is complete at once. Only the named run is touched. */
   async setRunAssets(runId: string, assetCount: number): Promise<void> {
     await this.forkWrite((tx) =>
       sql`
-      UPDATE immich_fork.pet_recognition_run
+      UPDATE public.pet_recognition_run
       SET "assetCount" = ${assetCount},
         status = CASE WHEN ${assetCount}::integer = 0 THEN ${PetRecognitionRunStatus.Completed} ELSE ${PetRecognitionRunStatus.Running} END,
         "finishedAt" = CASE WHEN ${assetCount}::integer = 0 THEN clock_timestamp() ELSE NULL END,
@@ -851,23 +822,23 @@ export class PetRepository {
     `.execute(tx),
     );
   }
-
   /** Whether the run a job belongs to is still wanted. A cancelled or replaced run is not. */
   async isRunActive(runId: string): Promise<boolean> {
-    const { rows } = await sql<{ active: boolean }>`
+    const { rows } = await sql<{
+      active: boolean;
+    }>`
       SELECT EXISTS (
-        SELECT 1 FROM immich_fork.pet_recognition_run
+        SELECT 1 FROM public.pet_recognition_run
         WHERE id = ${runId} AND status IN (${PetRecognitionRunStatus.Queued}, ${PetRecognitionRunStatus.Running})
       ) AS active
     `.execute(this.db);
     return !!rows[0]?.active;
   }
-
   /** One asset of the run is done; the last one completes the run. */
   async recordRunProgress(runId: string, proposals: number): Promise<void> {
     await this.forkWrite((tx) =>
       sql`
-      UPDATE immich_fork.pet_recognition_run
+      UPDATE public.pet_recognition_run
       SET "processedCount" = LEAST("assetCount", "processedCount" + 1),
         "proposalCount" = "proposalCount" + ${proposals},
         status = CASE WHEN "processedCount" + 1 >= "assetCount" THEN ${PetRecognitionRunStatus.Completed} ELSE status END,
@@ -877,12 +848,11 @@ export class PetRepository {
     `.execute(tx),
     );
   }
-
   /** The owner cancelled; jobs still queued for this run see it and stop. Returns the run as it is now. */
   cancelRun(ownerId: string): Promise<PetRecognitionRun | undefined> {
     return this.forkWrite((tx) =>
       sql<PetRecognitionRun>`
-      UPDATE immich_fork.pet_recognition_run
+      UPDATE public.pet_recognition_run
       SET status = ${PetRecognitionRunStatus.Cancelled}, "finishedAt" = clock_timestamp(), "updatedAt" = clock_timestamp()
       WHERE "ownerId" = ${ownerId} AND status IN (${PetRecognitionRunStatus.Queued}, ${PetRecognitionRunStatus.Running})
       RETURNING *
@@ -891,11 +861,10 @@ export class PetRepository {
         .then(({ rows }) => rows[0]),
     );
   }
-
   async failRun(runId: string, error: string): Promise<void> {
     await this.forkWrite((tx) =>
       sql`
-      UPDATE immich_fork.pet_recognition_run
+      UPDATE public.pet_recognition_run
       SET status = ${PetRecognitionRunStatus.Failed}, error = ${error.slice(0, 500)},
         "finishedAt" = clock_timestamp(), "updatedAt" = clock_timestamp()
       WHERE id = ${runId} AND status IN (${PetRecognitionRunStatus.Queued}, ${PetRecognitionRunStatus.Running})

@@ -2,28 +2,22 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { dirname, join, parse } from 'node:path';
+import { join, parse } from 'node:path';
 import type { PhysicalDeduplicationEvidenceRow } from 'src/utils/physical-deduplication-plan.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AssetFileType,
   AssetStatus,
-  ChecksumAlgorithm,
   DatabaseLock,
   PhysicalFileType,
   StudioExportScope,
   StudioExportVersionState,
 } from 'src/enum.js';
-import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { DB } from 'src/schema/index.js';
 import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { anyUuid, asUuid } from 'src/utils/database.js';
-
 type PhysicalFile = Selectable<PhysicalFileTable>;
-
-export const PHYSICAL_FILE_HANDOFF_REFUSAL = 'Shared files cannot change during database handoff';
 export const BUDDY_CAPTURE_LOCK = -311;
-
 /**
  * Takes the transaction-scoped advisory lock that guards one file path against concurrent reference
  * changes (see `deleteUnreferencedPath`). Released on commit or rollback. The key is derived in JS
@@ -35,7 +29,6 @@ export const lockFilePath = async (db: Kysely<DB>, path: string): Promise<void> 
   const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
   await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
 };
-
 /**
  * Serializes universal-storage linking per content hash (see `linkUploadedOriginal`). Taken before any
  * path lock, never after one.
@@ -44,7 +37,6 @@ export const lockChecksum = async (db: Kysely<DB>, checksum: Buffer): Promise<vo
   const key = createHash('sha1').update(checksum).digest().readInt32BE(0);
   await sql`SELECT pg_advisory_xact_lock(${DatabaseLock.UniversalStorageChecksum}::int, ${key}::int)`.execute(db);
 };
-
 /**
  * Every row that keeps `path` on disk. The caller holds the path's lock (`lockFilePath`), so the count
  * stays true until its transaction ends.
@@ -68,7 +60,6 @@ export const countPathReferences = async (
       ]),
     )
     .executeTakeFirstOrThrow();
-
   const fileRefs = await trx
     .selectFrom('asset_file')
     .select((eb) => eb.fn.countAll<number>().as('count'))
@@ -79,49 +70,29 @@ export const countPathReferences = async (
       ]),
     )
     .executeTakeFirstOrThrow();
-
   // Saved versions remain owners of their rendered files (and a master's lineage sidecar) even
   // after they leave the current asset projection. A version's source is its asset's original,
   // which the asset row already protects, so the recorded source path is not a reference.
-  const historyRefs = await sql<{ count: string }>`SELECT count(*) FROM (
-    SELECT 1 FROM immich_fork.video_edit_version v
+  const historyRefs = await sql<{
+    count: string;
+  }>`SELECT count(*) FROM (
+    SELECT 1 FROM public.video_edit_version v
     WHERE v."masterPath"=${path} OR v."proxyPath"=${path} OR v."masterPath" || '.lineage.json'=${path}
       OR EXISTS(SELECT 1 FROM jsonb_array_elements(v.files) f WHERE f->>'path'=${path})
-    UNION ALL SELECT 1 FROM immich_fork.orphaned_records o
-    WHERE o."sourceTable"='video_edit_version' AND (
-      o.payload->>'masterPath'=${path} OR o.payload->>'proxyPath'=${path}
-      OR (o.payload->>'masterPath') || '.lineage.json'=${path}
-      OR EXISTS(SELECT 1 FROM jsonb_array_elements(o.payload->'files') f WHERE f->>'path'=${path}))
-  ) retained`.execute(trx);
 
-  // FL-44 (FN-304): after cutover a live asset's original can be recorded only in its fork
-  // mapping (asset.repository deleteAll resolves `upstreamPath` first), and the fork physical
-  // file keeps the canonical path its sharers resolve to. A mapping of an asset that no longer
-  // exists holds nothing: its row is swept with the asset and must not pin the file forever.
-  // Outputs a Frameleaf feature still serves are owned by their rows the same way: a Studio
-  // export version, a preservation package not yet removed, and a restoration's preview or
-  // result (each clears its path before queueing the file's deletion), a Studio HDR
-  // intermediate (FL-97; its row goes before its file is queued), and a develop artifact (FL-233:
-  // released with its row, so a re-upload that records the same file again keeps it).
-  const retainedRefs = await sql<{ count: string }>`SELECT count(*) FROM (
-    SELECT 1 FROM immich_fork.buddy_backup_reference reference WHERE reference.path = ${path} AND NOT reference.released
-    UNION ALL
-    SELECT 1 FROM immich_fork.asset_physical_file mapping
-    JOIN public.asset asset ON asset.id = mapping."assetId"
-    WHERE mapping."upstreamPath" = ${path}
-    UNION ALL SELECT 1 FROM immich_fork.physical_file physical
-    WHERE physical."canonicalPath" = ${path}
-      AND EXISTS (
-        SELECT 1 FROM immich_fork.asset_physical_file mapping
-        JOIN public.asset asset ON asset.id = mapping."assetId"
-        WHERE mapping."physicalFileId" = physical.id
-      )
+  ) retained`.execute(trx);
+  // Outputs served by Frameleaf features and retained Buddy snapshots are live file owners.
+  // Their references are released only when the owning rows are removed or cleared.
+  const retainedRefs = await sql<{
+    count: string;
+  }>`SELECT count(*) FROM (
+    SELECT 1 FROM public.buddy_backup_reference reference WHERE reference.path = ${path} AND NOT reference.released
     UNION ALL SELECT 1 FROM public.studio_export_version version WHERE version."outputPath" = ${path}
-    UNION ALL SELECT 1 FROM immich_fork.studio_project_import imported WHERE imported.path = ${path}
-    UNION ALL SELECT 1 FROM immich_fork.studio_generated_resource generated WHERE generated.path = ${path}
-    UNION ALL SELECT 1 FROM immich_fork.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
-    UNION ALL SELECT 1 FROM immich_fork.asset_develop_artifact artifact WHERE artifact.path = ${path}
-    UNION ALL SELECT 1 FROM immich_fork.physical_file_trash trashed WHERE trashed.path = ${path}
+    UNION ALL SELECT 1 FROM public.studio_project_import imported WHERE imported.path = ${path}
+    UNION ALL SELECT 1 FROM public.studio_generated_resource generated WHERE generated.path = ${path}
+    UNION ALL SELECT 1 FROM public.studio_hdr_intermediate intermediate WHERE intermediate.path = ${path}
+    UNION ALL SELECT 1 FROM public.asset_develop_artifact artifact WHERE artifact.path = ${path}
+    UNION ALL SELECT 1 FROM public.physical_file_trash trashed WHERE trashed.path = ${path}
     UNION ALL SELECT 1 FROM public.preservation_package package
     WHERE package.path = ${path} AND package."removedAt" IS NULL
     UNION ALL SELECT 1 FROM public.asset_restoration restoration
@@ -137,10 +108,8 @@ export const countPathReferences = async (
     Number(retainedRefs.rows[0].count)
   );
 };
-
 /** Moves (or copies and removes) a file; rejects with ENOENT when the source is gone. */
 export type PhysicalFileTrashMove = (from: string, to: string) => Promise<void>;
-
 /** An original that is not (or no longer) registered as a physical file, described by the asset that held it. */
 export type TrashedOriginal = {
   checksum: Buffer;
@@ -149,7 +118,6 @@ export type TrashedOriginal = {
   assetId: string | null;
   originalFileName: string;
 };
-
 /**
  * Moves an unreferenced original to `<media>/file-trash/<physicalFileId or entry id>/<name>` and records
  * it, inside the caller's transaction, which holds the path's lock and has counted no reference. A
@@ -167,7 +135,13 @@ export const trashUnreferencedOriginal = async (
     lastAssetId: string | null;
     originalFileName: string;
   },
-): Promise<false | { id: string; path: string }> => {
+): Promise<
+  | false
+  | {
+      id: string;
+      path: string;
+    }
+> => {
   const id = randomUUID();
   const target = StorageCore.getFileTrashPath(entry.physicalFileId ?? id, entry.originalFileName);
   try {
@@ -179,80 +153,12 @@ export const trashUnreferencedOriginal = async (
     throw error;
   }
   await sql`
-    INSERT INTO immich_fork.physical_file_trash
+    INSERT INTO public.physical_file_trash
       (id, "physicalFileId", path, checksum, "sizeInBytes", "lastOwnerId", "lastAssetId", "originalFileName")
     VALUES (${id}::uuid, ${entry.physicalFileId}::uuid, ${target}, ${entry.checksum}, ${entry.sizeInBytes}::bigint,
       ${entry.lastOwnerId}::uuid, ${entry.lastAssetId}::uuid, ${entry.originalFileName})`.execute(trx);
   return { id, path: target };
 };
-
-export type PhysicalNormalizationAsset = {
-  id: string;
-  checksum: Buffer;
-  checksumAlgorithm: ChecksumAlgorithm;
-  originalPath: string;
-  physicalFileId: string | null;
-  physicalCanonicalAssetId: string | null;
-  physicalChecksum: Buffer | null;
-  physicalCreatedAt: Date | null;
-  physicalPath: string | null;
-  physicalSizeInBytes: number | null;
-  physicalType: string | null;
-  physicalUpdatedAt: Date | null;
-  sharedPathCount: number;
-  libraryImportPaths: string[];
-  mappedUpstreamPath: string | null;
-};
-
-export type PhysicalNormalizationCommit = {
-  asset: PhysicalNormalizationAsset;
-  evidence: Record<string, unknown>;
-  linkCount: number;
-  sha1: Buffer;
-  sha256: Buffer;
-  sizeInBytes: number;
-  upstreamPath: string;
-  verifiedPaths: string[];
-};
-
-export type PhysicalNormalizationReservation = {
-  assetId: string;
-  token: string;
-  sourcePath: string;
-  upstreamPath: string;
-  temporaryPath: string;
-};
-
-export type PhysicalNormalizationCompleted = {
-  upstreamPath: string;
-  sha1: Buffer;
-  sha256: Buffer;
-  sizeInBytes: number;
-  linkCount: number;
-  verifiedPaths: string[];
-};
-
-export type PhysicalNormalizationPreparation =
-  | {
-      status: 'completed';
-      asset: PhysicalNormalizationAsset;
-      completed: PhysicalNormalizationCompleted;
-      reservation: PhysicalNormalizationReservation | null;
-    }
-  | {
-      status: 'reserved';
-      asset: PhysicalNormalizationAsset;
-      reservation: PhysicalNormalizationReservation;
-      recovered: boolean;
-      stale?: boolean;
-    };
-
-export type ReturnNormalizationClaim = {
-  kind: 'storage' | 'checksum';
-  claimToken: string;
-  claimedIds: string[];
-};
-
 export interface PhysicalFileInput {
   canonicalAssetId: string | null;
   checksum: Buffer;
@@ -260,18 +166,12 @@ export interface PhysicalFileInput {
   sizeInBytes: number;
   type: PhysicalFileType;
 }
-
 @Injectable()
 export class PhysicalFileRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
-  protected afterNormalizationAuthority(
-    _transaction: Kysely<DB>,
-    _action: 'reserve' | 'run' | 'release',
-  ): Promise<void> {
-    return Promise.resolve();
-  }
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /**
    * The ordering is load-bearing: when the master account holds several copies
    * of the same file, an unordered limit lets upload-time dedup and the dedup
@@ -308,7 +208,6 @@ export class PhysicalFileRepository {
       .limit(1)
       .executeTakeFirst();
   }
-
   /**
    * Universal storage: the asset whose original file the server keeps for this content. Any active,
    * non-external, online asset with the same SHA-256 and size qualifies, whoever owns it; the lowest id
@@ -318,7 +217,10 @@ export class PhysicalFileRepository {
   getServerOriginalCandidate(
     checksum: Buffer,
     sizeInBytes: number,
-    options: { excludeAssetId?: string; kysely?: Kysely<DB> } = {},
+    options: {
+      excludeAssetId?: string;
+      kysely?: Kysely<DB>;
+    } = {},
   ) {
     return (options.kysely ?? this.db)
       .selectFrom('asset')
@@ -336,7 +238,6 @@ export class PhysicalFileRepository {
       .limit(1)
       .executeTakeFirst();
   }
-
   /**
    * Universal storage upload linking (one file per content hash, server-wide). Under a per-checksum lock,
    * an uploaded asset is pointed at the file the server already keeps for its content when another
@@ -348,18 +249,29 @@ export class PhysicalFileRepository {
    */
   async linkUploadedOriginal(
     assetId: string,
-    file: { checksum: Buffer; sizeInBytes: number },
+    file: {
+      checksum: Buffer;
+      sizeInBytes: number;
+    },
     options: {
       exists: (path: string) => Promise<boolean>;
       /** Moves a file out of the file trash; given, content found there is restored and linked. */
       untrash?: (from: string, to: string) => Promise<void>;
-      ingestion?: { resourceId: string; token: string; ownerId: string };
+      ingestion?: {
+        resourceId: string;
+        token: string;
+        ownerId: string;
+      };
     },
-  ): Promise<{ physicalFile: PhysicalFile; linked: boolean } | undefined> {
+  ): Promise<
+    | {
+        physicalFile: PhysicalFile;
+        linked: boolean;
+      }
+    | undefined
+  > {
     return this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       await lockChecksum(trx, file.checksum);
-
       const asset = await trx
         .selectFrom('asset')
         .select(['asset.id', 'asset.originalPath', 'asset.physicalOriginalFileId'])
@@ -374,13 +286,11 @@ export class PhysicalFileRepository {
       if (!asset) {
         return;
       }
-
       if (asset.physicalOriginalFileId) {
         // already linked: a concurrent upload of the same content linked this one onto its file
         const physicalFile = await this.getPhysicalFile(asset.physicalOriginalFileId, trx);
         return physicalFile ? { physicalFile, linked: physicalFile.canonicalAssetId !== asset.id } : undefined;
       }
-
       const candidate = await this.getServerOriginalCandidate(file.checksum, file.sizeInBytes, {
         excludeAssetId: asset.id,
         kysely: trx,
@@ -418,11 +328,13 @@ export class PhysicalFileRepository {
           return { physicalFile, linked: true };
         }
       }
-
       // the content is in the file trash: take that file back out and link to it, never keep two copies
       if (options.untrash) {
-        const trashed = await sql<{ id: string; path: string }>`
-          SELECT id, path FROM immich_fork.physical_file_trash
+        const trashed = await sql<{
+          id: string;
+          path: string;
+        }>`
+          SELECT id, path FROM public.physical_file_trash
           WHERE checksum = ${file.checksum} AND "sizeInBytes" = ${file.sizeInBytes}::bigint
           ORDER BY "trashedAt" DESC, id
           LIMIT 1
@@ -438,7 +350,7 @@ export class PhysicalFileRepository {
             await this.requireIngestionClaim(trx, asset.id, file.checksum, options.ingestion);
           }
           await options.untrash(entry.path, target);
-          await sql`DELETE FROM immich_fork.physical_file_trash WHERE id = ${entry.id}::uuid`.execute(trx);
+          await sql`DELETE FROM public.physical_file_trash WHERE id = ${entry.id}::uuid`.execute(trx);
           const physicalFile = await this.registerOriginal(trx, {
             canonicalAssetId: asset.id,
             checksum: file.checksum,
@@ -453,7 +365,6 @@ export class PhysicalFileRepository {
           return { physicalFile, linked: true };
         }
       }
-
       await this.lockPath(trx, asset.originalPath);
       const physicalFile = await this.registerOriginal(trx, {
         canonicalAssetId: asset.id,
@@ -469,7 +380,6 @@ export class PhysicalFileRepository {
       return { physicalFile, linked: false };
     });
   }
-
   /**
    * For a generated file with no `physical_file` row (made before universal storage, and inherited by a
    * partner copy of such an asset): the asset that owns the file at `path`, chosen as a primary is
@@ -490,7 +400,6 @@ export class PhysicalFileRepository {
       .executeTakeFirst();
     return row?.id;
   }
-
   /**
    * The stored originals whose primary asset is one of `ownerId`'s: read before that account's assets are
    * removed, so each can be handed to its next primary afterwards (`electNextCanonical`).
@@ -506,7 +415,6 @@ export class PhysicalFileRepository {
       .execute();
     return rows.map(({ id }) => id);
   }
-
   /**
    * Universal storage primary handover: once a shared original's primary asset is gone (its
    * `canonicalAssetId` was set null by the asset's removal), the oldest remaining asset that references
@@ -514,12 +422,16 @@ export class PhysicalFileRepository {
    * shares follow it. Returns undefined when the file still has a primary or nothing references it.
    * The caller queues the new primary's storage-template move, so the file follows its new owner.
    */
-  async electNextCanonical(physicalFileId: string): Promise<{ assetId: string } | undefined> {
+  async electNextCanonical(physicalFileId: string): Promise<
+    | {
+        assetId: string;
+      }
+    | undefined
+  > {
     const physicalFile = await this.getPhysicalFile(physicalFileId);
     if (!physicalFile || physicalFile.canonicalAssetId) {
       return;
     }
-
     return this.withPathLock(physicalFile.path, async (trx) => {
       const current = await trx
         .selectFrom('physical_file')
@@ -530,7 +442,6 @@ export class PhysicalFileRepository {
       if (!current || current.canonicalAssetId) {
         return;
       }
-
       const next = await trx
         .selectFrom('asset')
         .select('id')
@@ -543,7 +454,6 @@ export class PhysicalFileRepository {
       if (!next) {
         return;
       }
-
       await trx
         .updateTable('physical_file')
         .set({ canonicalAssetId: next.id })
@@ -565,10 +475,14 @@ export class PhysicalFileRepository {
       return { assetId: next.id };
     });
   }
-
   private registerOriginal(
     trx: Transaction<DB>,
-    values: { canonicalAssetId: string; checksum: Buffer; path: string; sizeInBytes: number },
+    values: {
+      canonicalAssetId: string;
+      checksum: Buffer;
+      path: string;
+      sizeInBytes: number;
+    },
   ): Promise<PhysicalFile> {
     return trx
       .insertInto('physical_file')
@@ -583,12 +497,15 @@ export class PhysicalFileRepository {
       .returningAll()
       .executeTakeFirstOrThrow();
   }
-
   private async requireIngestionClaim(
     trx: Transaction<DB>,
     assetId: string,
     checksum: Buffer,
-    ingestion: { resourceId: string; token: string; ownerId: string },
+    ingestion: {
+      resourceId: string;
+      token: string;
+      ownerId: string;
+    },
   ) {
     const claim = await trx
       .selectFrom('asset_upload_resource')
@@ -609,7 +526,6 @@ export class PhysicalFileRepository {
       throw new ConflictException('Upload ingestion claim expired');
     }
   }
-
   /**
    * Active assets whose original is backed by this physical file, including the canonical
    * asset itself. Used by the deduplication preview for its reference counts.
@@ -623,7 +539,6 @@ export class PhysicalFileRepository {
       .executeTakeFirstOrThrow();
     return Number(count);
   }
-
   /**
    * Physical files' reference counts, as `countOriginalReferences` counts one (FL-73). A file
    * nothing references is absent from the map.
@@ -633,7 +548,6 @@ export class PhysicalFileRepository {
     if (ids.length === 0) {
       return new Map();
     }
-
     const rows = await this.db
       .selectFrom('asset')
       .select(['asset.physicalOriginalFileId'])
@@ -644,7 +558,6 @@ export class PhysicalFileRepository {
       .execute();
     return new Map(rows.map((row) => [row.physicalOriginalFileId as string, Number(row.count)]));
   }
-
   /**
    * What a reviewed deduplication plan is checked against before review, before apply and before
    * each copy's file is touched (FL-73): owner, path, checksum, size, state and physical original
@@ -655,7 +568,6 @@ export class PhysicalFileRepository {
     if (ids.length === 0) {
       return [];
     }
-
     const rows = await this.db
       .selectFrom('asset')
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
@@ -678,11 +590,9 @@ export class PhysicalFileRepository {
       .execute();
     return rows as unknown as PhysicalDeduplicationEvidenceRow[];
   }
-
   getPhysicalFile(id: string, kysely: Kysely<DB> = this.db): Promise<PhysicalFile | undefined> {
     return kysely.selectFrom('physical_file').selectAll().where('id', '=', asUuid(id)).executeTakeFirst();
   }
-
   getOriginalPhysicalFile(assetId: string): Promise<PhysicalFile | undefined> {
     return this.db
       .selectFrom('asset')
@@ -691,508 +601,25 @@ export class PhysicalFileRepository {
       .where('asset.id', '=', asUuid(assetId))
       .executeTakeFirst();
   }
-
-  private async getNormalizationAssetFrom(
-    db: Kysely<DB> | Transaction<DB>,
-    assetId: string,
-  ): Promise<PhysicalNormalizationAsset | undefined> {
-    const result = await sql<PhysicalNormalizationAsset>`
-      SELECT
-        asset.id,
-        asset.checksum,
-        asset."checksumAlgorithm",
-        asset."originalPath",
-        coalesce(asset."physicalOriginalFileId", mapping."physicalFileId") AS "physicalFileId",
-        coalesce(physical."canonicalAssetId", fork_physical."canonicalAssetId") AS "physicalCanonicalAssetId",
-        coalesce(physical.checksum, fork_physical.checksum) AS "physicalChecksum",
-        coalesce(physical."createdAt", fork_physical."createdAt") AS "physicalCreatedAt",
-        coalesce(physical.path, fork_physical."canonicalPath") AS "physicalPath",
-        coalesce(physical."sizeInBytes", fork_physical."sizeInBytes")::float8 AS "physicalSizeInBytes",
-        coalesce(physical.type::text, fork_physical.type) AS "physicalType",
-        coalesce(physical."updatedAt", fork_physical."updatedAt") AS "physicalUpdatedAt",
-        coalesce(library."importPaths", ARRAY[]::text[]) AS "libraryImportPaths",
-        mapping."upstreamPath" AS "mappedUpstreamPath",
-        (
-          SELECT count(*)::int FROM public.asset shared
-          WHERE shared."originalPath" = asset."originalPath"
-             OR (
-               asset."physicalOriginalFileId" IS NOT NULL
-               AND shared."physicalOriginalFileId" = asset."physicalOriginalFileId"
-             )
-        ) AS "sharedPathCount"
-      FROM public.asset asset
-      LEFT JOIN public.physical_file physical ON physical.id = asset."physicalOriginalFileId"
-      LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
-      LEFT JOIN immich_fork.physical_file fork_physical ON fork_physical.id = mapping."physicalFileId"
-      LEFT JOIN public.library library ON library.id = asset."libraryId"
-      WHERE asset.id = ${assetId}::uuid
-    `.execute(db);
-    return result.rows[0];
-  }
-
-  async getNormalizationAsset(assetId: string): Promise<PhysicalNormalizationAsset | undefined> {
-    return this.getNormalizationAssetFrom(this.db, assetId);
-  }
-
-  async createNormalizationReservation(
-    assetId: string,
-    selectUpstreamPath: (asset: PhysicalNormalizationAsset) => string,
-  ): Promise<PhysicalNormalizationPreparation> {
-    return this.createNormalizationReservationForMode(assetId, selectUpstreamPath);
-  }
-
-  async createReturnNormalizationReservation(
-    assetId: string,
-    selectUpstreamPath: (asset: PhysicalNormalizationAsset) => string,
-    claim: ReturnNormalizationClaim,
-  ): Promise<PhysicalNormalizationPreparation> {
-    return this.createNormalizationReservationForMode(assetId, selectUpstreamPath, claim);
-  }
-
-  private async createNormalizationReservationForMode(
-    assetId: string,
-    selectUpstreamPath: (asset: PhysicalNormalizationAsset) => string,
-    claim?: ReturnNormalizationClaim,
-  ): Promise<PhysicalNormalizationPreparation> {
-    return this.db.transaction().execute(async (trx) => {
-      await this.assertNormalizationAuthority(trx, assetId, claim, 'reserve');
-      const locked = await sql`SELECT id FROM public.asset WHERE id = ${assetId}::uuid FOR UPDATE`.execute(trx);
-      if (locked.rows.length === 0) {
-        throw new Error(`Asset ${assetId} does not exist`);
-      }
-      const asset = await this.getNormalizationAssetFrom(trx, assetId);
-      if (!asset) {
-        throw new Error(`Asset ${assetId} does not exist`);
-      }
-      const completed = await sql<
-        PhysicalNormalizationCompleted & {
-          reservationAssetId: string | null;
-          reservationToken: string | null;
-          reservationSourcePath: string | null;
-          reservationUpstreamPath: string | null;
-          reservationTemporaryPath: string | null;
-        }
-      >`
-        SELECT
-          mapping."upstreamPath",
-          checksum.sha1,
-          checksum.sha256,
-          checksum."sizeInBytes"::float8 AS "sizeInBytes",
-          checksum."linkCount"::int AS "linkCount",
-          checksum."verifiedPaths",
-          reservation."assetId" AS "reservationAssetId",
-          reservation.token AS "reservationToken",
-          reservation."sourcePath" AS "reservationSourcePath",
-          reservation."upstreamPath" AS "reservationUpstreamPath",
-          reservation."temporaryPath" AS "reservationTemporaryPath"
-        FROM public.asset asset
-        INNER JOIN immich_fork.asset_checksum checksum ON checksum."assetId" = asset.id
-        INNER JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
-        LEFT JOIN immich_fork.asset_storage_reservation reservation ON reservation."assetId" = asset.id
-        WHERE asset.id = ${assetId}::uuid
-          AND asset."originalPath" = mapping."upstreamPath"
-          ${
-            claim
-              ? sql`
-          AND asset.checksum = checksum.sha1
-          AND asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha1File}::asset_checksum_algorithm_enum
-          AND asset."physicalOriginalFileId" IS NULL`
-              : sql`
-          AND (asset.checksum = checksum.sha1 OR asset.checksum = checksum.sha256)`
-          }
-      `.execute(trx);
-      const committed = completed.rows[0];
-      if (committed) {
-        const reservation =
-          committed.reservationAssetId &&
-          committed.reservationToken &&
-          committed.reservationSourcePath &&
-          committed.reservationUpstreamPath &&
-          committed.reservationTemporaryPath
-            ? {
-                assetId: committed.reservationAssetId,
-                token: committed.reservationToken,
-                sourcePath: committed.reservationSourcePath,
-                upstreamPath: committed.reservationUpstreamPath,
-                temporaryPath: committed.reservationTemporaryPath,
-              }
-            : null;
-        return {
-          status: 'completed',
-          asset,
-          completed: {
-            upstreamPath: committed.upstreamPath,
-            sha1: committed.sha1,
-            sha256: committed.sha256,
-            sizeInBytes: committed.sizeInBytes,
-            linkCount: committed.linkCount,
-            verifiedPaths: committed.verifiedPaths,
-          },
-          reservation,
-        };
-      }
-      const upstreamPath = selectUpstreamPath(asset);
-      const existing = await sql<PhysicalNormalizationReservation>`
-        SELECT
-          "assetId", token, "sourcePath", "upstreamPath", "temporaryPath"
-        FROM immich_fork.asset_storage_reservation
-        WHERE "assetId" = ${assetId}::uuid
-        FOR UPDATE
-      `.execute(trx);
-      const reservation = existing.rows[0];
-      if (reservation) {
-        const reservationMatchesSource =
-          reservation.sourcePath === asset.originalPath && reservation.upstreamPath === upstreamPath;
-        const reservationMatchesCommittedMapping =
-          asset.originalPath === reservation.upstreamPath && asset.mappedUpstreamPath === reservation.upstreamPath;
-        if (!reservationMatchesSource && !reservationMatchesCommittedMapping) {
-          // A reservation created by the old always-split behavior (same source,
-          // different target) is stale in steady-state mode; surface it so the
-          // caller can clean it up and re-reserve instead of failing forever.
-          if (!claim && reservation.sourcePath === asset.originalPath) {
-            return { status: 'reserved', asset, reservation, recovered: true, stale: true };
-          }
-          throw new Error(`Asset ${assetId} has a conflicting durable storage reservation`);
-        }
-        return { status: 'reserved', asset, reservation, recovered: true };
-      }
-
-      // In steady-state fork mode (no claim) the target IS the asset's own
-      // (possibly shared, deduplicated) path: no file is ever created or
-      // moved, so no durable reservation is needed — and the unique
-      // upstreamPath constraint would forbid concurrent sharers anyway. Use an
-      // ephemeral reservation instead of inserting a row.
-      const sharedSteadyStateTarget = !claim && upstreamPath === asset.originalPath;
-      if (sharedSteadyStateTarget) {
-        const token = randomUUID();
-        return {
-          status: 'reserved',
-          asset,
-          reservation: {
-            assetId: asset.id,
-            token,
-            sourcePath: asset.originalPath,
-            upstreamPath,
-            temporaryPath: this.getNormalizationTemporaryPath(upstreamPath, token),
-          },
-          recovered: false,
-        };
-      }
-      {
-        const conflictingReservation = await sql<{ assetId: string }>`
-          SELECT "assetId" FROM immich_fork.asset_storage_reservation WHERE "upstreamPath" = ${upstreamPath}
-        `.execute(trx);
-        if (conflictingReservation.rows[0]) {
-          throw new Error(`Normalization target is reserved by another asset: ${upstreamPath}`);
-        }
-      }
-      // Exclusive fork-mapping ownership only applies to foreign targets. When
-      // the target is the asset's own current path, other sharers' steady-state
-      // mappings may still reference it until their own destructive pass
-      // re-points them — that is expected, not a takeover.
-      if (upstreamPath !== asset.originalPath) {
-        const existingMapping = await sql<{ assetId: string }>`
-          SELECT "assetId" FROM immich_fork.asset_physical_file
-          WHERE "upstreamPath" = ${upstreamPath} AND "assetId" <> ${asset.id}::uuid
-          LIMIT 1
-        `.execute(trx);
-        if (existingMapping.rows[0]) {
-          throw new Error(`Normalization target is owned by another fork asset: ${upstreamPath}`);
-        }
-      }
-      if (upstreamPath !== asset.originalPath) {
-        const publicOwner = await sql<{ id: string }>`
-          SELECT id FROM public.asset WHERE "originalPath" = ${upstreamPath} AND id <> ${asset.id}::uuid LIMIT 1
-        `.execute(trx);
-        if (publicOwner.rows[0]) {
-          throw new Error(`Normalization target is owned by another public asset: ${upstreamPath}`);
-        }
-      }
-
-      const token = randomUUID();
-      const temporaryPath = this.getNormalizationTemporaryPath(upstreamPath, token);
-      const inserted = await sql<PhysicalNormalizationReservation>`
-        INSERT INTO immich_fork.asset_storage_reservation
-          ("assetId", token, "sourcePath", "upstreamPath", "temporaryPath", status)
-        VALUES (${asset.id}::uuid, ${token}::uuid, ${asset.originalPath}, ${upstreamPath}, ${temporaryPath}, 'reserved')
-        RETURNING "assetId", token, "sourcePath", "upstreamPath", "temporaryPath"
-      `.execute(trx);
-      return { status: 'reserved', asset, reservation: inserted.rows[0]!, recovered: false };
-    });
-  }
-
-  private getNormalizationTemporaryPath(upstreamPath: string, token: string): string {
-    return join(dirname(upstreamPath), `.${parse(upstreamPath).base}.${token}.normalize`);
-  }
-
-  async releaseNormalizationReservation(assetId: string, token: string): Promise<void> {
-    await this.releaseNormalizationReservationForMode(assetId, token);
-  }
-
-  async releaseReturnNormalizationReservation(
-    assetId: string,
-    token: string,
-    claim: ReturnNormalizationClaim,
-  ): Promise<void> {
-    await this.releaseNormalizationReservationForMode(assetId, token, claim);
-  }
-
-  private async releaseNormalizationReservationForMode(
-    assetId: string,
-    token: string,
-    claim?: ReturnNormalizationClaim,
-  ): Promise<void> {
-    await this.db.transaction().execute(async (trx) => {
-      await this.assertNormalizationAuthority(trx, assetId, claim, 'release');
-      await sql`
-        DELETE FROM immich_fork.asset_storage_reservation
-        WHERE "assetId" = ${assetId}::uuid AND token = ${token}::uuid
-      `.execute(trx);
-    });
-  }
-
-  async withLockedNormalizationAsset<T>(
-    assetId: string,
-    token: string,
-    callback: (context: {
-      asset: PhysicalNormalizationAsset;
-      reservation: PhysicalNormalizationReservation;
-      commit: (input: Omit<PhysicalNormalizationCommit, 'asset'>) => Promise<void>;
-    }) => Promise<T>,
-  ): Promise<T> {
-    return this.withLockedNormalizationAssetForMode(assetId, token, callback);
-  }
-
-  async withLockedReturnNormalizationAsset<T>(
-    assetId: string,
-    token: string,
-    claim: ReturnNormalizationClaim,
-    callback: (context: {
-      asset: PhysicalNormalizationAsset;
-      reservation: PhysicalNormalizationReservation;
-      commit: (input: Omit<PhysicalNormalizationCommit, 'asset'>) => Promise<void>;
-    }) => Promise<T>,
-  ): Promise<T> {
-    return this.withLockedNormalizationAssetForMode(assetId, token, callback, claim);
-  }
-
-  private async withLockedNormalizationAssetForMode<T>(
-    assetId: string,
-    token: string,
-    callback: (context: {
-      asset: PhysicalNormalizationAsset;
-      reservation: PhysicalNormalizationReservation;
-      commit: (input: Omit<PhysicalNormalizationCommit, 'asset'>) => Promise<void>;
-    }) => Promise<T>,
-    claim?: ReturnNormalizationClaim,
-  ): Promise<T> {
-    return this.db.transaction().execute(async (trx) => {
-      await this.assertNormalizationAuthority(trx, assetId, claim, 'run');
-      const locked = await sql`SELECT id FROM public.asset WHERE id = ${assetId}::uuid FOR UPDATE`.execute(trx);
-      if (locked.rows.length === 0) {
-        throw new Error(`Asset ${assetId} does not exist`);
-      }
-      const asset = await this.getNormalizationAssetFrom(trx, assetId);
-      if (!asset) {
-        throw new Error(`Asset ${assetId} does not exist`);
-      }
-      const reservations = await sql<PhysicalNormalizationReservation>`
-        SELECT "assetId", token, "sourcePath", "upstreamPath", "temporaryPath"
-        FROM immich_fork.asset_storage_reservation
-        WHERE "assetId" = ${assetId}::uuid AND token = ${token}::uuid
-        FOR UPDATE
-      `.execute(trx);
-      // Steady-state reservations are ephemeral (never inserted) — reconstruct
-      // one from the token when the target is the asset's own path.
-      const reservation: PhysicalNormalizationReservation | undefined =
-        reservations.rows[0] ??
-        (claim
-          ? undefined
-          : {
-              assetId: asset.id,
-              token,
-              sourcePath: asset.originalPath,
-              upstreamPath: asset.originalPath,
-              temporaryPath: this.getNormalizationTemporaryPath(asset.originalPath, token),
-            });
-      const reservationMatchesSource = reservation?.sourcePath === asset.originalPath;
-      const reservationMatchesCommittedMapping =
-        reservation &&
-        asset.originalPath === reservation.upstreamPath &&
-        asset.mappedUpstreamPath === reservation.upstreamPath;
-      if (!reservation || (!reservationMatchesSource && !reservationMatchesCommittedMapping)) {
-        throw new Error(`Asset ${assetId} durable storage reservation is missing or stale`);
-      }
-      return callback({
-        asset,
-        reservation,
-        commit: async (input) => {
-          await this.commitNormalization(trx, { ...input, asset }, claim);
-        },
-      });
-    });
-  }
-
-  private async assertNormalizationAuthority(
-    trx: Transaction<DB>,
-    assetId: string,
-    claim: ReturnNormalizationClaim | undefined,
-    action: 'reserve' | 'run' | 'release',
-  ): Promise<void> {
-    if (!claim) {
-      const state = await sql<{ phase: string }>`
-        SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE
-      `.execute(trx);
-      if (!['dual-write', 'ready', 'active'].includes(state.rows[0]?.phase ?? '')) {
-        throw new Error(`Storage normalization cannot ${action} in the current phase`);
-      }
-      return;
-    }
-    const state = await sql<{ active: boolean; phase: string }>`
-      SELECT active, phase FROM immich_fork.state WHERE id = 1 FOR SHARE
-    `.execute(trx);
-    // A destructive (upstream-form) claim is honored under exactly two
-    // audited authorities: return reconciliation (inactive phase) and
-    // official handoff preparation (ready phase).
-    const audit = await sql<{ id: string }>`
-      SELECT id::text AS id FROM immich_fork.migration_audit
-      WHERE (name = 'fork-return-reconciliation' AND phase = 'inactive' AND status = 'running'
-          AND ${state.rows[0]?.phase ?? ''} = 'inactive')
-         OR (name = 'official-handoff-preparation' AND phase = 'ready' AND status = 'running'
-          AND ${state.rows[0]?.phase ?? ''} = 'ready')
-      ORDER BY id DESC LIMIT 1 FOR SHARE
-    `.execute(trx);
-    const progress = await sql<{ claimToken: string | null; claimedIds: string[] }>`
-      SELECT "claimToken", "claimedIds" FROM immich_fork.backfill_progress
-      WHERE kind = ${claim.kind} FOR SHARE
-    `.execute(trx);
-    const progressRow = progress.rows[0];
-    const exactIds =
-      progressRow?.claimedIds.length === claim.claimedIds.length &&
-      progressRow.claimedIds.every((id, index) => id === claim.claimedIds[index]);
-    if (
-      (state.rows[0]?.phase !== 'inactive' && state.rows[0]?.phase !== 'ready') ||
-      state.rows[0]?.active ||
-      !audit.rows[0] ||
-      progressRow?.claimToken !== claim.claimToken ||
-      !exactIds ||
-      !progressRow.claimedIds.includes(assetId)
-    ) {
-      throw new Error('Storage normalization requires the durable return storage claim');
-    }
-    await this.afterNormalizationAuthority(trx, action);
-  }
-
-  private async commitNormalization(
-    db: Transaction<DB>,
-    input: PhysicalNormalizationCommit,
-    claim?: ReturnNormalizationClaim,
-  ): Promise<void> {
-    const { asset, evidence, linkCount, sha1, sha256, sizeInBytes, upstreamPath, verifiedPaths } = input;
-    if (asset.physicalFileId && asset.physicalPath && asset.physicalChecksum && asset.physicalType) {
-      // Different assets can insert the same physical row concurrently. Serialize
-      // that upsert so the secondary unique path index cannot race the primary key.
-      await this.lockPath(db, `fork-normalization:${asset.physicalFileId}`);
-      await sql`
-          INSERT INTO immich_fork.physical_file
-            (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath", "createdAt", "updatedAt")
-          VALUES (
-            ${asset.physicalFileId}::uuid,
-            ${asset.physicalCanonicalAssetId}::uuid,
-            ${asset.physicalType},
-            ${asset.physicalChecksum},
-            ${asset.physicalSizeInBytes ?? sizeInBytes},
-            ${asset.physicalPath},
-            ${asset.physicalCreatedAt ?? new Date()},
-            ${asset.physicalUpdatedAt ?? new Date()}
-          )
-          ON CONFLICT (id) DO UPDATE SET
-            "canonicalAssetId" = excluded."canonicalAssetId",
-            type = excluded.type,
-            checksum = excluded.checksum,
-            "sizeInBytes" = excluded."sizeInBytes",
-            "canonicalPath" = excluded."canonicalPath",
-            "updatedAt" = excluded."updatedAt"
-        `.execute(db);
-    }
-
-    await sql`
-        INSERT INTO immich_fork.asset_checksum
-          ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
-        VALUES (
-          ${asset.id}::uuid,
-          ${sha1},
-          ${sha256},
-          ${sizeInBytes},
-          ${verifiedPaths},
-          ${linkCount},
-          ${JSON.stringify(evidence)}::text::jsonb,
-          now(),
-          now()
-        )
-        ON CONFLICT ("assetId") DO UPDATE SET
-          sha1 = excluded.sha1,
-          sha256 = excluded.sha256,
-          "sizeInBytes" = excluded."sizeInBytes",
-          "verifiedPaths" = excluded."verifiedPaths",
-          "linkCount" = excluded."linkCount",
-          evidence = excluded.evidence,
-          "verifiedAt" = excluded."verifiedAt",
-          "updatedAt" = excluded."updatedAt"
-      `.execute(db);
-    await sql`
-        INSERT INTO immich_fork.asset_physical_file
-          ("assetId", "physicalFileId", "upstreamPath", "verifiedAt", "updatedAt")
-        VALUES (${asset.id}::uuid, ${asset.physicalFileId}::uuid, ${upstreamPath}, now(), now())
-        ON CONFLICT ("assetId") DO UPDATE SET
-          "physicalFileId" = excluded."physicalFileId",
-          "upstreamPath" = excluded."upstreamPath",
-          "verifiedAt" = excluded."verifiedAt",
-          "updatedAt" = excluded."updatedAt"
-      `.execute(db);
-    // Rewriting public.asset to upstream-compatible form (SHA-1 checksum,
-    // per-asset path, no physical dedup link) is destructive to the fork's
-    // physical deduplication feature. Only the explicit return-to-upstream
-    // flow may do it; steady-state fork normalization records evidence in the
-    // immich_fork tables above and leaves public.asset untouched.
-    if (claim) {
-      await sql`
-        UPDATE public.asset
-        SET
-          checksum = ${sha1},
-          "checksumAlgorithm" = ${ChecksumAlgorithm.sha1File}::asset_checksum_algorithm_enum,
-          "originalPath" = ${upstreamPath},
-          "physicalOriginalFileId" = NULL,
-          "updatedAt" = now()
-        WHERE id = ${asset.id}::uuid
-      `.execute(db);
-    }
-  }
-
   async upsertPhysicalFile(input: PhysicalFileInput): Promise<PhysicalFile> {
-    return withPublicForkWrites(
-      this.db,
-      (trx) =>
-        trx
-          .insertInto('physical_file')
-          .values(input)
-          .onConflict((oc) =>
-            oc.column('path').doUpdateSet((eb) => ({
-              checksum: eb.ref('excluded.checksum'),
-              sizeInBytes: eb.ref('excluded.sizeInBytes'),
-              type: eb.ref('excluded.type'),
-              canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
-            })),
-          )
-          .returningAll()
-          .executeTakeFirstOrThrow(),
-      PHYSICAL_FILE_HANDOFF_REFUSAL,
+    return this.db.transaction().execute((trx) =>
+      trx
+        .insertInto('physical_file')
+        .values(input)
+        .onConflict((oc) =>
+          oc.column('path').doUpdateSet((eb) => ({
+            checksum: eb.ref('excluded.checksum'),
+            sizeInBytes: eb.ref('excluded.sizeInBytes'),
+            type: eb.ref('excluded.type'),
+            canonicalAssetId: eb.ref('excluded.canonicalAssetId'),
+          })),
+        )
+        .returningAll()
+        .executeTakeFirstOrThrow(),
     );
   }
-
   async ensureOriginalPhysicalFile(assetId: string): Promise<PhysicalFile | undefined> {
     const execute = async (trx: Transaction<DB>) => {
-      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       const asset = await trx
         .selectFrom('asset')
         .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
@@ -1211,11 +638,9 @@ export class PhysicalFileRepository {
         .where('asset.isOffline', '=', false)
         .where('asset.deletedAt', 'is', null)
         .executeTakeFirst();
-
       if (!asset || !asset.sizeInBytes) {
         return;
       }
-
       if (asset.existingPhysicalFileId) {
         return trx
           .selectFrom('physical_file')
@@ -1223,7 +648,6 @@ export class PhysicalFileRepository {
           .where('id', '=', asUuid(asset.existingPhysicalFileId))
           .executeTakeFirst();
       }
-
       const physicalFile = await trx
         .insertInto('physical_file')
         .values({
@@ -1242,18 +666,15 @@ export class PhysicalFileRepository {
         )
         .returningAll()
         .executeTakeFirstOrThrow();
-
       await trx
         .updateTable('asset')
         .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
         .where('id', '=', asUuid(asset.id))
         .execute();
-
       return physicalFile;
     };
     return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
-
   // Aliases an asset onto a file another asset already owns, so it takes the
   // path lock: without it this can add a reference to a path a concurrent
   // FileDelete job has already counted as unreferenced.
@@ -1264,7 +685,11 @@ export class PhysicalFileRepository {
       masterOwnerId: string;
       checksum: Buffer;
       size: number;
-      ingestion: { resourceId: string; token: string; ownerId: string };
+      ingestion: {
+        resourceId: string;
+        token: string;
+        ownerId: string;
+      };
     },
   ) {
     await this.withPathLock(physicalFile.path, async (trx) => {
@@ -1329,12 +754,10 @@ export class PhysicalFileRepository {
       }
     });
   }
-
   async isOriginalCanonical(assetId: string, physicalFileId: string, kysely: Kysely<DB> = this.db): Promise<boolean> {
     const physicalFile = await this.getPhysicalFile(physicalFileId, kysely);
     return physicalFile?.canonicalAssetId === assetId;
   }
-
   /**
    * Point an asset back at its own original file (FL-73): the rollback a verified physical
    * deduplication offers for a copy whose own file is still on disk. The file gets (or keeps) its
@@ -1343,7 +766,11 @@ export class PhysicalFileRepository {
    */
   async restoreOriginalPhysicalFile(
     assetId: string,
-    file: { path: string; checksum: Buffer; sizeInBytes: number },
+    file: {
+      path: string;
+      checksum: Buffer;
+      sizeInBytes: number;
+    },
   ): Promise<PhysicalFile> {
     return this.withPathLock(file.path, async (trx) => {
       const physicalFile = await trx
@@ -1364,17 +791,14 @@ export class PhysicalFileRepository {
         )
         .returningAll()
         .executeTakeFirstOrThrow();
-
       await trx
         .updateTable('asset')
         .set({ physicalOriginalFileId: physicalFile.id, originalPath: physicalFile.path })
         .where('id', '=', asUuid(assetId))
         .execute();
-
       return physicalFile;
     });
   }
-
   // Moves a physical file onto `path`, which makes that path referenced.
   async updateOriginalPhysicalPathForAsset(assetId: string, path: string) {
     await this.withPathLock(path, async (trx) => {
@@ -1384,11 +808,9 @@ export class PhysicalFileRepository {
         .where('canonicalAssetId', '=', asUuid(assetId))
         .where('type', '=', PhysicalFileType.Original)
         .executeTakeFirst();
-
       if (!physicalFile) {
         return;
       }
-
       await trx.updateTable('physical_file').set({ path }).where('id', '=', physicalFile.id).execute();
       await trx
         .updateTable('asset')
@@ -1397,10 +819,8 @@ export class PhysicalFileRepository {
         .execute();
     });
   }
-
   async getCanonicalGeneratedFile(assetId: string, type: AssetFileType) {
     const physicalType = this.toPhysicalFileType(type);
-
     return this.db
       .selectFrom('asset as duplicateAsset')
       .innerJoin('physical_file as originalPhysical', 'originalPhysical.id', 'duplicateAsset.physicalOriginalFileId')
@@ -1414,7 +834,6 @@ export class PhysicalFileRepository {
       .whereRef('duplicateAsset.id', '!=', 'originalPhysical.canonicalAssetId')
       .executeTakeFirst();
   }
-
   // Same aliasing hazard as linkAssetToOriginalPhysicalFile, for derivatives.
   async linkGeneratedFile(assetId: string, type: AssetFileType, physicalFileId: string, path: string) {
     await this.withPathLock(path, (trx) =>
@@ -1427,33 +846,30 @@ export class PhysicalFileRepository {
         .execute(),
     );
   }
-
   private countPathReferencesIn(trx: Transaction<DB>, path: string, physicalFileId?: string): Promise<number> {
     return countPathReferences(trx, path, physicalFileId);
   }
-
   /** Advisory lock guarding one path against concurrent reference changes (`lockFilePath`). */
   private async lockPath(trx: Transaction<DB>, path: string): Promise<void> {
     await lockFilePath(trx, path);
   }
-
-  // Every caller changes which rows reference a file (or deletes it), so it is refused while a
-  // database handoff holds the schema (FL-44), before the path lock is taken.
+  // Keep the path lock and reference-changing writes in the same transaction.
   private async withPathLock<T>(path: string, callback: (trx: Transaction<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       await this.lockPath(trx, path);
       return callback(trx);
     });
   }
-
   /** Owner restore runs after remote staging, under the existing reference-writer path lock. */
   async withOwnerRestorePath<T>(
     path: string,
     assetId: string,
     ownerId: string,
     callback: () => Promise<T>,
-    derivative?: { type: AssetFileType; isEdited: boolean },
+    derivative?: {
+      type: AssetFileType;
+      isEdited: boolean;
+    },
   ): Promise<T> {
     const execute = async (trx: Transaction<DB>) => {
       const access = await this.ownerRestorePathAccess(trx, path, assetId, ownerId, derivative);
@@ -1462,7 +878,6 @@ export class PhysicalFileRepository {
     };
     return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
-
   /** Buddy's recomputed immutable project target, under its live administrator/project transaction. */
   async withStudioRestorePath<T>(
     path: string,
@@ -1474,15 +889,16 @@ export class PhysicalFileRepository {
     if (!this.db.isTransaction || !/^[a-f0-9]{64}$/.test(sha256))
       throw new Error('Studio restore requires its authorization transaction');
     const trx = this.db as Transaction<DB>;
-    await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
     await lockFilePath(trx, path);
     const physical = await trx.selectFrom('physical_file').select('id').where('path', '=', path).executeTakeFirst();
     const references = await this.countPathReferencesIn(trx, path, physical?.id);
-    const { rows } = await sql<{ count: string }>`SELECT count(*) FROM (
-      SELECT 1 FROM immich_fork.studio_project_import imported
+    const { rows } = await sql<{
+      count: string;
+    }>`SELECT count(*) FROM (
+      SELECT 1 FROM public.studio_project_import imported
       WHERE imported.path=${path} AND imported."projectId"=${projectId}::uuid
         AND imported."ownerId"=${ownerId}::uuid AND imported.checksum=${sha256}
-      UNION ALL SELECT 1 FROM immich_fork.studio_generated_resource generated
+      UNION ALL SELECT 1 FROM public.studio_generated_resource generated
       WHERE generated.path=${path} AND generated."projectId"=${projectId}::uuid
         AND generated."ownerId"=${ownerId}::uuid AND generated.checksum=${sha256}
       UNION ALL SELECT 1 FROM public.studio_export_version exported
@@ -1493,13 +909,15 @@ export class PhysicalFileRepository {
       throw new Error('Studio restore destination is shared or pinned');
     return callback();
   }
-
   /** Inspection has no mutation callback. A supplied transaction keeps the path lock for its metadata checks. */
   async inspectOwnerRestorePath(
     path: string,
     assetId: string,
     ownerId: string,
-    derivative?: { type: AssetFileType; isEdited: boolean },
+    derivative?: {
+      type: AssetFileType;
+      isEdited: boolean;
+    },
   ): Promise<void> {
     const execute = async (trx: Transaction<DB>) => {
       const access = await this.ownerRestorePathAccess(trx, path, assetId, ownerId, derivative);
@@ -1507,15 +925,16 @@ export class PhysicalFileRepository {
     };
     return this.db.isTransaction ? execute(this.db as Transaction<DB>) : this.db.transaction().execute(execute);
   }
-
   private async ownerRestorePathAccess(
     trx: Transaction<DB>,
     path: string,
     assetId: string,
     ownerId: string,
-    derivative?: { type: AssetFileType; isEdited: boolean },
+    derivative?: {
+      type: AssetFileType;
+      isEdited: boolean;
+    },
   ) {
-    await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
     const barrier = await sql<{
       locked: boolean;
     }>`SELECT pg_try_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint) AS locked`.execute(trx);
@@ -1544,7 +963,7 @@ export class PhysicalFileRepository {
       .where('asset_file.type', '=', derivative?.type ?? AssetFileType.Sidecar)
       .$if(!!derivative, (query) => query.where('asset_file.isEdited', '=', derivative!.isEdited))
       .execute();
-    // Any other original, derivative, history or orphan reference refuses publication, even same-owner.
+    // Any other original, derivative, history or retained reference refuses publication, even same-owner.
     return {
       inspectable: (!physical && references === 0) || !!own || ownFiles.length > 0,
       mutable:
@@ -1552,7 +971,6 @@ export class PhysicalFileRepository {
         (!physical || !!own || ownFiles.some((file) => derivative && file.physicalFileId === physical.id)),
     };
   }
-
   /**
    * Unlinks `path` only while nothing references it, holding the path's
    * advisory lock across the count and the unlink so a writer cannot introduce
@@ -1566,7 +984,7 @@ export class PhysicalFileRepository {
    * FL-169: `removedAssetId` names an asset whose removal queued this delete inside its transaction
    * while holding this path's lock. Holding the lock here means that transaction has ended; if the
    * asset still exists it rolled back, and the path is kept even when no counted row names it (a
-   * video duplicate frame, a storage reservation, a develop revision output: those are not counted
+   * video duplicate frame, a develop revision output: those are not counted
    * by `countPathReferencesIn`, which is why the asset's survival keeps them).
    */
   async deleteUnreferencedPath(
@@ -1574,15 +992,33 @@ export class PhysicalFileRepository {
     unlink: () => Promise<void>,
     options: {
       removedAssetId?: string;
-      orphanStudioImport?: { projectId: string; id: string; ownerId: string; checksum: string; sizeBytes: number };
-      retiredStudioExport?: { id: string; ownerId: string; checksum: Buffer | null; sizeBytes: number | null };
+      orphanStudioImport?: {
+        projectId: string;
+        id: string;
+        ownerId: string;
+        checksum: string;
+        sizeBytes: number;
+      };
+      retiredStudioExport?: {
+        id: string;
+        ownerId: string;
+        checksum: Buffer | null;
+        sizeBytes: number | null;
+      };
       /**
        * Moves an unreferenced original into the file trash instead of unlinking it. An original is a path
        * with an `original` physical file row, or `original` here (an unregistered original being removed).
        */
-      trash?: { move: PhysicalFileTrashMove; original?: TrashedOriginal };
+      trash?: {
+        move: PhysicalFileTrashMove;
+        original?: TrashedOriginal;
+      };
     } = {},
-  ): Promise<{ deleted: boolean; references: number; trashed?: boolean }> {
+  ): Promise<{
+    deleted: boolean;
+    references: number;
+    trashed?: boolean;
+  }> {
     return this.withPathLock(path, async (trx) => {
       if (options.removedAssetId) {
         const kept = await trx
@@ -1594,17 +1030,18 @@ export class PhysicalFileRepository {
           return { deleted: false, references: 1 };
         }
       }
-
       const imported = options.orphanStudioImport;
       const exported = options.retiredStudioExport;
       if (imported && exported) throw new Error('Only one Studio file identity can be released');
       if (imported) {
         // A restored project can recreate an absent ID. Do not wait in the reverse lock order
         // of its project-before-path transaction, or credit an import that has since changed.
-        const lock = await sql<{ locked: boolean }>`SELECT pg_try_advisory_xact_lock(hashtextextended(
+        const lock = await sql<{
+          locked: boolean;
+        }>`SELECT pg_try_advisory_xact_lock(hashtextextended(
           ${`buddy-studio:${imported.projectId}`},0)) AS locked`.execute(trx);
         if (!lock.rows[0]?.locked) return { deleted: false, references: 1 };
-        const orphan = await sql`SELECT item.id FROM immich_fork.studio_project_import item
+        const orphan = await sql`SELECT item.id FROM public.studio_project_import item
           WHERE item."projectId"=${imported.projectId}::uuid AND item.id=${imported.id}::uuid
             AND item."ownerId"=${imported.ownerId}::uuid AND item.path=${path}
             AND item.checksum=${imported.checksum} AND item."sizeBytes"=${imported.sizeBytes}
@@ -1636,24 +1073,21 @@ export class PhysicalFileRepository {
           .executeTakeFirst();
         if (!retired) return { deleted: false, references: 1 };
       }
-
       const physicalFile = await trx
         .selectFrom('physical_file')
         .select(['id', 'type', 'checksum', 'sizeInBytes'])
         .where('path', '=', path)
         .executeTakeFirst();
-
       // Only this exact orphan row may be released. Other imports, generated outputs, live
       // assets and Buddy capture pins remain references, even when owned by the same person.
       const references =
         (await this.countPathReferencesIn(trx, path, physicalFile?.id)) - (imported || exported ? 1 : 0);
       if (references > 0) {
-        await sql`UPDATE immich_fork.buddy_backup_reference SET "deleteRequested" = true WHERE path = ${path} AND NOT released`.execute(
+        await sql`UPDATE public.buddy_backup_reference SET "deleteRequested" = true WHERE path = ${path} AND NOT released`.execute(
           trx,
         );
         return { deleted: false, references };
       }
-
       // universal storage: an original is never unlinked by a job. Its last copy goes to the file trash,
       // which only an administrator empties (spec §3.5); generated files are deleted as before.
       const original = options.trash?.original;
@@ -1671,11 +1105,10 @@ export class PhysicalFileRepository {
       if (!trashed) {
         await unlink();
       }
-
       if (imported) {
         // The row is the durable retry intent: retain it through pin deferral and unlink failure.
         // A crash after unlink but before commit retries the same idempotent unlink next sweep.
-        await sql`DELETE FROM immich_fork.studio_project_import
+        await sql`DELETE FROM public.studio_project_import
           WHERE "projectId"=${imported.projectId}::uuid AND id=${imported.id}::uuid`.execute(trx);
       }
       if (exported)
@@ -1688,31 +1121,12 @@ export class PhysicalFileRepository {
           })
           .where('id', '=', exported.id)
           .execute();
-
       if (physicalFile) {
         await trx.deleteFrom('physical_file').where('id', '=', physicalFile.id).execute();
       }
-
       return trashed ? { deleted: true, references: 0, trashed: true } : { deleted: true, references: 0 };
     });
   }
-
-  /**
-   * Universal storage: the bytes a return to an official server needs to give every asset that shares
-   * another asset's original its own copy (the claim flow's split). External-library files never split.
-   */
-  async getReturnSplitRequiredBytes(): Promise<number> {
-    const { rows } = await sql<{ requiredBytes: number }>`
-      SELECT coalesce(sum(exif."fileSizeInByte"), 0)::float8 AS "requiredBytes"
-      FROM public.asset asset
-      JOIN public.physical_file physical ON physical.id = asset."physicalOriginalFileId"
-      LEFT JOIN public.asset_exif exif ON exif."assetId" = asset.id
-      WHERE physical."canonicalAssetId" IS DISTINCT FROM asset.id
-        AND asset."libraryId" IS NULL
-        AND NOT asset."isExternal"`.execute(this.db);
-    return Number(rows[0]?.requiredBytes ?? 0);
-  }
-
   getMigrationCandidates(masterUserId: string) {
     return this.db
       .selectFrom('asset')
@@ -1738,7 +1152,6 @@ export class PhysicalFileRepository {
       .where('asset.status', '=', AssetStatus.Active)
       .stream();
   }
-
   getGeneratedFile(assetId: string, type: AssetFileType) {
     return this.db
       .selectFrom('asset_file')
@@ -1748,7 +1161,6 @@ export class PhysicalFileRepository {
       .where('isEdited', '=', false)
       .executeTakeFirst();
   }
-
   getGeneratedFiles(assetId: string) {
     return this.db
       .selectFrom('asset_file')
@@ -1763,7 +1175,6 @@ export class PhysicalFileRepository {
       .where('isEdited', '=', false)
       .execute();
   }
-
   private toPhysicalFileType(type: AssetFileType) {
     switch (type) {
       case AssetFileType.Thumbnail: {

@@ -55,11 +55,11 @@ for enabled in (False, True):
     assert not any("METRICS" in name for name in result["services"]["server"]["environment"])
     assert "api_metrics_port" not in candidate["network"] and "microservices_metrics_port" not in candidate["network"]
     postgres = result["services"]["pgvecto"]
-    assert postgres["environment"]["PGDATA"] == "/var/lib/postgresql/14/docker"
+    assert postgres["environment"]["PGDATA"] == "/var/lib/postgresql/19/docker"
     assert postgres["user"] == "999:999"
     assert any(mount["target"] == "/var/lib/postgresql" for mount in postgres["volumes"])
     assert "pg_isready" in str(postgres["healthcheck"])
-    db = candidate["images"]["vectorchord_14_image"]
+    db = candidate["images"]["pgvector_19_image"]
     assert result["services"]["pgvecto"]["image"] == f'{db["repository"]}:{db["tag"]}'
     assert result["services"]["pgvecto"]["image"].startswith("ghcr.io/frameleaf/frameleaf-postgres:")
 print("TrueNAS library render passed with ML disabled and enabled")

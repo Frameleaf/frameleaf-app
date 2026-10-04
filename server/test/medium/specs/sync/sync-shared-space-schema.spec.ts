@@ -1,4 +1,4 @@
-import { schemaDiff, schemaFromCode, schemaFromDatabase } from '@immich/sql-tools';
+import { schemaDiff, schemaFromCode, schemaFromDatabase } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { writeFile } from 'node:fs/promises';
 import { getCatalogEvidence, serializeCatalogManifest } from 'src/fork-schema/catalog.js';

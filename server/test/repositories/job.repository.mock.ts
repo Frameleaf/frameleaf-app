@@ -5,6 +5,13 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository>> => {
   return {
     setup: vitest.fn(),
+    collectFollowups: vitest.fn().mockImplementation((action) => action()),
+    createRun: vitest.fn().mockImplementation(async (_kind, _selection, enqueue) => {
+      await enqueue();
+      return 'test-run';
+    }),
+    listRuns: vitest.fn().mockResolvedValue([]),
+    dispatchImportedWork: vitest.fn().mockResolvedValue(0),
     startWorkers: vitest.fn(),
     stopWorkers: vitest.fn().mockResolvedValue(undefined),
     watchWorkers: vitest.fn(),
@@ -16,6 +23,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     resume: vitest.fn(),
     searchJobs: vitest.fn(),
     queue: vitest.fn().mockImplementation(() => Promise.resolve()),
+    queueSelection: vitest.fn().mockResolvedValue(undefined),
     queueAll: vitest.fn().mockImplementation(() => Promise.resolve()),
     isActive: vitest.fn(),
     isPaused: vitest.fn(),

@@ -1,4 +1,4 @@
-import { Column, ForeignKeyColumn, Table } from '@immich/sql-tools';
+import { Column, ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 
 @Table('asset_audio')

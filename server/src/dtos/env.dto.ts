@@ -173,15 +173,8 @@ export const EnvSchema = z
     DB_SSL_MODE: DatabaseSslModeSchema.optional(),
     DB_URL: z.string().optional(),
     DB_USERNAME: z.string().optional(),
-    DB_VECTOR_EXTENSION: z.enum(['pgvector', 'vectorchord']).optional(),
+    DB_VECTOR_EXTENSION: z.enum(['pgvector']).optional(),
     NO_COLOR: z.string().optional(),
-    REDIS_HOSTNAME: z.string().optional(),
-    REDIS_PORT: z.coerce.number().int().optional(),
-    REDIS_DBINDEX: z.coerce.number().int().optional(),
-    REDIS_USERNAME: z.string().optional(),
-    REDIS_PASSWORD: z.string().optional(),
-    REDIS_SOCKET: z.string().optional(),
-    REDIS_URL: z.string().optional(),
   })
   .superRefine((env, context) => {
     // FL-291: running work must be handed back before the deadline ends the server

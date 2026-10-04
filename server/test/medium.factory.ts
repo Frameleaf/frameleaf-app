@@ -41,7 +41,7 @@ import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
@@ -553,7 +553,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case MediaOperationRepository:
     case MemoryRepository:
     case DownloadRepository:
-    case ForkSchemaRepository:
+    case AssetChecksumRepository:
     case FrameleafAccountRepository:
     case FrameleafUserLicenseRepository:
     case LibraryRepository:
@@ -632,7 +632,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
   }
 };
 
-const newMockRepository = <T>(key: ClassConstructor<T>) => {
+const newMockRepository = <T,>(key: ClassConstructor<T>) => {
   switch (key) {
     case ActivityRepository:
     case AdminAuditRepository:
@@ -642,7 +642,7 @@ const newMockRepository = <T>(key: ClassConstructor<T>) => {
     case AssetJobRepository:
     case ConfigRepository:
     case CryptoRepository:
-    case ForkSchemaRepository:
+    case AssetChecksumRepository:
     case LibraryRepository:
     case MemoryRepository:
     case IntegrityRepository:
