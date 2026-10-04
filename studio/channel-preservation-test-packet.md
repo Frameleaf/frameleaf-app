@@ -154,3 +154,79 @@ application, preparation or runtime was generated or executed.
 `enginePublishedAtObservation: false`; `runtimeQualified: false`. Strict patch
 application and source identity are confirmed; production behavioral green and
 FL-103 acceptance remain unqualified.
+
+## Test-only actual SoundTouch retiming packet (0056)
+
+Base: `687b61826c25f3ef3ef79720642f4ec4bc644955`, branch
+`aj/fl103-retiming-red`. Prior CLI and scheduled decoder observer branches are
+preserved. The approved full FL-103 authority is the October 3 requirements
+handoff, FL-103 section: channel layouts, nonedited tracks, sample-accurate sync,
+pitch/EQ automation and reference renders remain required.
+
+Patch 0056 adds only `canvas-audio-retiming-preservation.test.ts`. It uses the same
+decoded/demux boundary double convention as 0054 and the pinned existing mixer
+suite. No SoundTouch, mix, extraction, downmix, timing, gain or resampling code is
+mocked or changed. Immutable pinned source was read as data from the retained
+archive and `/tmp/fl103-pinned-canvas-audio.ts`; no engine was reconstructed.
+
+Six full-mix cases exercise actual `processAudio`: stereo, six-plane 5.1(side),
+and eight-plane 7.1(wide), each at speed 2 with pitch unchanged or independently
+shifted down one octave. Every decoded source plane carries a distinct low-level
+tone. Independent Fourier measurements assert its expected pitch, reject other
+planes and speed-shifted pitch, and reject nonfinite PCM. These checks distinguish
+the real time-stretch result from simple speed resampling; no production DSP
+helper supplies the reference. Four-second output totals and the exact edited
+timeline interval `[24_000, 168_000)` samples are checked independently.
+
+Each case then mixes a separate unity companion track through the real pipeline.
+Subtracting a separate deterministic actual retimed-only render isolates all
+companion samples, including overlap with the retimed clip. Three unique impulses
+per companion channel must remain at their exact samples and amplitudes, with no
+extra samples. Composition inputs must remain unchanged. Stereo supplies two
+positive controls; the six/eight-plane cases are expected to expose the current
+0011 stereo downmix at the actual channel-count assertion. Expected failure is
+not observed failure until the root owner's hosted run executes these tests.
+
+Six windowed controls assert the actual support predicate is false and the first
+`processAudioWindows().next()` rejects before yielding. Pinned
+`canvas-audio.ts:2164-2182` excludes speed and pitch edits; `:2625-2626` refuses
+them. Thus these controls qualify refusal only, never windowed SoundTouch output.
+Pinned `canvas-render-orchestrator.ts:508-512` (video) and `:1026-1027` (audio-only)
+select windows only for supported timelines of at least five minutes.
+`:117-134` sends unsupported timelines to full `processAudio`. No adaptation
+patch changes those selection sites. That is static evidence of full-mix
+fallback, not executed end-to-end export qualification. Actual long-retimed
+export/fallback resource behavior and encoder timestamps remain hosted acceptance
+work; full FL-103 scope is retained without a new user-permission gate.
+
+This packet checks decoded plane identity, pitch discrimination, timeline
+containment and exact companion timing. It does not establish sample-accurate
+internal transient alignment or SoundTouch tail/latency, encoded semantic speaker
+tags, actual codec decode/mux, equal-count layout distinctions, cross-channel
+phase coherence, EQ/automation/transitions, recording/devices, removal undo,
+caption export, browsers or native clients. Those full-parent acceptance gates
+remain open. Existing gain-only tests and patch 0011 regression are unchanged;
+any later production preservation policy must reconcile that older explicit
+stereo-policy regression after a genuine behavioral red.
+
+The workflow adds the exact focused invocation after the gain tests:
+
+```sh
+cd studio/engine
+./node_modules/.bin/vp test run src/features/export/utils/canvas-audio-retiming-preservation.test.ts
+```
+
+The root owner must first obtain and independently review the genuine hosted
+source recovery receipt including ordered patch 0056, then import its observed
+adapted digest in a separate packet. `engine-build.json` deliberately retains
+the last authenticated `sourceSha256`
+`aaf508828b8881a3314e5b364da5326c6706dffe191fa6a63abe2dff67e4468c`.
+A strict digest/preparation/fixture/type failure supplies no behavioral red.
+Only actual preservation failure after admitted preparation authorizes a bounded
+production retiming fix. `runtimeQualified: false`.
+
+GitNexus query/impacts did not resolve the mixers, actual processor, new test
+helpers, decoded-boundary classes or workflow; blast-radius coverage is UNKNOWN,
+with no HIGH/CRITICAL result. Only tracked patch bytes were hashed to register the
+new patch. No local adapted-source hash, prepare, engine reconstruction, runtime,
+test, build, formatter, install, index, CI, push or provider action was performed.

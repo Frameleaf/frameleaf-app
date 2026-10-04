@@ -1,0 +1,192 @@
+Subject: Test actual SoundTouch retiming plane and companion preservation
+
+Test-only Freecut MIT adaptation. Immutable source and production patches are unchanged.
+
+diff --git a/src/features/export/utils/canvas-audio-retiming-preservation.test.ts b/src/features/export/utils/canvas-audio-retiming-preservation.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/canvas-audio-retiming-preservation.test.ts
+@@ -0,0 +1,183 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { CompositionInputProps } from '@/types/export'
++import type { AudioItem, TimelineTrack } from '@/types/timeline'
++
++// Decode/demux boundary only. Actual extraction, mix, SoundTouch, gain and timing
++// remain production code. Plane identities do not qualify encoded speaker tags.
++const { decodedFixtures } = vi.hoisted(() => ({
++  decodedFixtures: new Map<string, { channels: number; companion: boolean }>(),
++}))
++const frequencies = [210, 390, 690, 1110, 1590, 2190, 2790, 3390] as const
++
++vi.mock('mediabunny', () => {
++  class UrlSource {
++    constructor(public readonly url: string) {}
++  }
++  class Input {
++    private disposed = false
++    constructor(private readonly params: { source: UrlSource }) {}
++    async getPrimaryAudioTrack() {
++      if (!decodedFixtures.has(this.params.source.url)) throw new Error('Unknown retiming source')
++      return { src: this.params.source.url, isDisposed: () => this.disposed }
++    }
++    async computeDuration() { return 8 }
++    dispose() { this.disposed = true }
++  }
++  class AudioSampleSink {
++    constructor(private readonly track: { src: string; isDisposed: () => boolean }) {}
++    async *samples(startTime = 0, endTime = 8) {
++      if (this.track.isDisposed()) throw new Error('Disposed retiming source')
++      const fixture = decodedFixtures.get(this.track.src)
++      if (!fixture) throw new Error('Unknown retiming source')
++      const start = Math.round(startTime * 48_000)
++      const length = Math.round(endTime * 48_000) - start
++      if (length <= 0) throw new Error('Empty retiming decode')
++      yield {
++        numberOfFrames: length, numberOfChannels: fixture.channels, sampleRate: 48_000,
++        copyTo(destination: Float32Array, options: { planeIndex: number; format: string }) {
++          const channel = options.planeIndex
++          if (options.format !== 'f32-planar' || channel < 0 || channel >= fixture.channels)
++            throw new Error('Invalid retiming plane request')
++          destination.fill(0)
++          if (fixture.companion) {
++            // Before, during and after the edited clip. Separate track, unity gain.
++            for (const pulse of [32 + channel * 19, 48_000 + channel * 17, 180_000 + channel * 13])
++              if (pulse >= start && pulse < start + length) destination[pulse - start] = -0.125
++          } else {
++            for (let index = 0; index < length; index++)
++              destination[index] = 0.0625 * Math.sin(2 * Math.PI * frequencies[channel]! * (start + index) / 48_000)
++          }
++        },
++        close() {},
++      }
++    }
++  }
++  return { ALL_FORMATS: [], Input, UrlSource, AudioSampleSink }
++})
++
++import {
++  clearAudioDecodeCache, processAudio, processAudioWindows, supportsWindowedAudioProcessing,
++} from './canvas-audio'
++
++const layouts = [
++  { name: 'stereo', planes: ['FL', 'FR'] },
++  { name: '5.1(side)', planes: ['FL', 'FR', 'FC', 'LFE', 'SL', 'SR'] },
++  { name: '7.1(wide)', planes: ['FL', 'FR', 'FC', 'LFE', 'BL', 'BR', 'FLC', 'FRC'] },
++] as const
++const edits = [
++  { name: 'double speed with preserved pitch', speed: 2, pitch: 0, ratio: 1 },
++  { name: 'double speed and one octave down pitch edit', speed: 2, pitch: -12, ratio: 0.5 },
++] as const
++
++function retimedComposition(channels: number, speed: number, pitch: number): CompositionInputProps {
++  const tracks = [false, true].map((companion, order): TimelineTrack => {
++    const id = companion ? 'untouched-companion' : 'retimed'
++    const src = `blob:fl103-retiming-${id}-${channels}-${speed}-${pitch}`
++    decodedFixtures.set(src, { channels, companion })
++    const item: AudioItem = {
++      id, type: 'audio', trackId: id, src, label: id,
++      from: companion ? 0 : 15, durationInFrames: companion ? 120 : 90,
++      sourceStart: 0, sourceEnd: companion ? 120 : 180,
++      sourceDuration: 240, sourceFps: 30, volume: 0,
++      speed: companion ? 1 : speed, audioPitchSemitones: companion ? 0 : pitch,
++    } as AudioItem
++    return {
++      id, name: id, kind: 'audio', order, height: 80, locked: false,
++      visible: true, muted: false, solo: false, volume: 0, items: [item],
++    }
++  })
++  return {
++    fps: 30, durationInFrames: 120, width: 1920, height: 1080,
++    tracks, masterBusDb: 0, masterBusMuted: false, transitions: [], keyframes: [],
++  }
++}
++
++// Independent Fourier measurement: phase-insensitive amplitude at a fixture
++// frequency over 0.1 s. No production DSP/reference render supplies expectations.
++function spectralAmplitude(plane: Float32Array, frequency: number): number {
++  let real = 0
++  let imaginary = 0
++  for (let index = 0; index < 4_800; index++) {
++    const angle = 2 * Math.PI * frequency * index / 48_000
++    const value = plane[72_000 + index]!
++    real += value * Math.cos(angle)
++    imaginary += value * Math.sin(angle)
++  }
++  return 2 * Math.hypot(real, imaginary) / 4_800
++}
++
++function assertRetimedPlanes(samples: Float32Array[], planes: readonly string[], ratio: number): void {
++  expect(samples).toHaveLength(planes.length)
++  for (const [channel, label] of planes.entries()) {
++    const plane = samples[channel]!
++    // Four-second output, edited timeline interval [0.5, 3.5) seconds.
++    expect(plane, label).toHaveLength(192_000)
++    for (let index = 0; index < plane.length; index++) {
++      if (!Number.isFinite(plane[index])) throw new Error(`${label} nonfinite PCM at sample ${index}`)
++      if ((index < 24_000 || index >= 168_000) && plane[index] !== 0)
++        throw new Error(`${label} retimed audio escaped timeline at sample ${index}`)
++    }
++    expect(spectralAmplitude(plane, frequencies[channel]! * ratio), `${label} retained tone/pitch`)
++      .toBeGreaterThan(0.035)
++    // Wrong plane, stereo fold-down/duplication and naive speed resampling fail.
++    for (let other = 0; other < planes.length; other++) {
++      if (other !== channel)
++        expect(spectralAmplitude(plane, frequencies[other]! * ratio), `${label} excludes plane ${other}`)
++          .toBeLessThan(0.0075)
++    }
++    expect(spectralAmplitude(plane, frequencies[channel]! * ratio * 2), `${label} excludes speed-shifted pitch`)
++      .toBeLessThan(0.0075)
++  }
++}
++
++function assertCompanionImpulses(mixed: Float32Array[], edited: Float32Array[], planes: readonly string[]): void {
++  expect(mixed).toHaveLength(planes.length)
++  for (const [channel, label] of planes.entries()) {
++    expect(mixed[channel], label).toHaveLength(192_000)
++    const pulses = new Set([32 + channel * 19, 48_000 + channel * 17, 180_000 + channel * 13])
++    for (let index = 0; index < 192_000; index++) {
++      const difference = mixed[channel]![index]! - edited[channel]![index]!
++      const expected = pulses.has(index) ? -0.125 : 0
++      if (!Number.isFinite(difference) || Math.abs(difference - expected) > 1e-7)
++        throw new Error(`${label} companion changed at output sample ${index}`)
++    }
++  }
++}
++
++describe('FL-103 actual SoundTouch retiming preserves decoded planes and separate tracks', () => {
++  beforeEach(() => { clearAudioDecodeCache(); decodedFixtures.clear() })
++  afterEach(() => { clearAudioDecodeCache(); decodedFixtures.clear() })
++
++  for (const layout of layouts) {
++    for (const edit of edits) {
++      it(`full mix retains ${layout.name}: ${edit.name}, timing and untouched companion`, async () => {
++        const composition = retimedComposition(layout.planes.length, edit.speed, edit.pitch)
++        const before = structuredClone(composition)
++        const editedOnly = structuredClone(composition)
++        editedOnly.tracks = editedOnly.tracks!.filter((track) => track.id === 'retimed')
++        const edited = await processAudio(editedOnly)
++        expect(edited).not.toBeNull()
++        expect(edited!.sampleRate).toBe(48_000)
++        expect(edited!.channels).toBe(layout.planes.length)
++        assertRetimedPlanes(edited!.samples, layout.planes, edit.ratio)
++        // Clear only the decode cache; actual SoundTouch runs again. Subtracting
++        // identical retimed output isolates the companion, including overlap.
++        clearAudioDecodeCache()
++        const mixed = await processAudio(composition)
++        expect(mixed).not.toBeNull()
++        expect(mixed!.channels).toBe(layout.planes.length)
++        assertCompanionImpulses(mixed!.samples, edited!.samples, layout.planes)
++        expect(composition).toEqual(before)
++      })
++
++      it(`windowed ${layout.name} ${edit.name} refuses before yielding`, async () => {
++        const composition = retimedComposition(layout.planes.length, edit.speed, edit.pitch)
++        const before = structuredClone(composition)
++        expect(supportsWindowedAudioProcessing(composition)).toBe(false)
++        const iterator = processAudioWindows(composition)
++        await expect(iterator.next()).rejects.toThrow('Audio timeline requires full-segment processing')
++        expect(composition).toEqual(before)
++      })
++    }
++  }
++})
