@@ -43,6 +43,7 @@ describe('Immich import PostgreSQL restart boundaries', () => {
     vi.spyOn(importer, 'preflight').mockImplementation(async () => {
       const [state] = await connection.db.query('SELECT status FROM public.frameleaf_immich_import');
       return {
+        embeddings: [],
         sourceVersion: '3.0.0',
         sourceCommit: 'fixture',
         fingerprint: 'same-source',

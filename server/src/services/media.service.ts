@@ -668,7 +668,7 @@ export class MediaService extends BaseService {
       orientation: Buffer.isBuffer(inputImage) && exifOrientation ? Number(exifOrientation) : undefined,
     });
 
-    const thumbnailPath = StorageCore.getPersonThumbnailPath({ ownerId, personGroupId });
+    const thumbnailPath = attemptOutputPath(StorageCore.getPersonThumbnailPath({ ownerId, personGroupId }));
     this.storageCore.ensureFolders(thumbnailPath);
 
     const thumbnailOptions: GenerateThumbnailOptions = {
@@ -691,7 +691,18 @@ export class MediaService extends BaseService {
     };
 
     await this.mediaRepository.generateThumbnail(decodedImage, thumbnailOptions, thumbnailPath);
-    await this.personRepository.update({ ownerId, personGroupId, thumbnailPath });
+    if (
+      !deferJobAdoption(async (tx) => {
+        await tx
+          .updateTable('person')
+          .set({ thumbnailPath })
+          .where('ownerId', '=', ownerId)
+          .where('personGroupId', '=', personGroupId)
+          .execute();
+      })
+    ) {
+      await this.personRepository.update({ ownerId, personGroupId, thumbnailPath });
+    }
 
     return JobStatus.Success;
   }

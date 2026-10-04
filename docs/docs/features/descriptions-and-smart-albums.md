@@ -491,7 +491,7 @@ The cost modal has three buttons:
 
 - **Cancel** — close, no action.
 - **Re-queue later** — set `pendingRequeueAt` on the config. A persistent banner appears at the top of the Image Description settings reminding you to act. Useful when you're making several prompt edits in a single session and want to run the actual re-queue once at the end.
-- **Re-queue** — dispatch the re-queue job immediately. Idempotent via BullMQ deduplication — clicking twice while a job is in flight returns _"already in flight"_ instead of duplicating work.
+- **Re-queue** — dispatch the re-queue job immediately. Idempotent via atomic PostgreSQL job deduplication — clicking twice while a job is in flight returns _"already in flight"_ instead of duplicating work.
 
 When you click **Re-queue now** from the banner, the modal opens with the latest live counts; on dispatch, `pendingRequeueAt` is cleared automatically.
 
@@ -501,7 +501,7 @@ Each kind's accordion in Smart Albums settings has a **Re-evaluate this album** 
 
 The page-bottom **Re-evaluate all assets** button runs every kind.
 
-Per-kind jobs use their own BullMQ deduplication namespace (`SmartAlbumReevaluateAll:<kind>`), so you can run a per-kind re-evaluate at the same time as another kind's re-evaluate or the all-kinds run without collisions.
+Per-kind jobs use their own durable PostgreSQL deduplication key (`SmartAlbumReevaluateAll:<kind>`), so you can run a per-kind re-evaluate at the same time as another kind's re-evaluate or the all-kinds run without collisions.
 
 ### Excluding an asset from a smart album
 

@@ -10,7 +10,6 @@ frameleaf:
   log_level: log
   hugging_face_endpoint: ""
   db_password: immich
-  db_storage_type: SSD
   additional_envs: []
 
 network:

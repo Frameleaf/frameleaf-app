@@ -27,8 +27,7 @@ This environment includes the services below. Additional details are available i
 - Server - [`/server`](https://github.com/Frameleaf/frameleaf-app/tree/fork/main/server)
 - Web app - [`/web`](https://github.com/Frameleaf/frameleaf-app/tree/fork/main/web)
 - Machine learning - [`/machine-learning`](https://github.com/Frameleaf/frameleaf-app/tree/fork/main/machine-learning)
-- Redis
-- PostgreSQL development database with exposed port `5432` so you can use any database client to access it
+- PostgreSQL 19 with pgvector 0.8.7 and HNSW development database with exposed port `5432` so you can use any database client to access it
 
 All the services are packaged to run with a single Docker Compose command.
 

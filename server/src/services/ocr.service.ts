@@ -3,12 +3,13 @@ import { Injectable } from '@nestjs/common';
 import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { AssetVisibility, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
+import { deferJobAdoption } from 'src/queue/context.js';
 import { OCR } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { tokenizeForSearch } from 'src/utils/database.js';
 import { DocumentRegion, cropBoxOf, isRegionInsideCrop } from 'src/utils/documents.js';
-import { batched, isOcrEnabled } from 'src/utils/misc.js';
+import { isOcrEnabled } from 'src/utils/misc.js';
 
 @Injectable()
 export class OcrService extends BaseService {
@@ -23,9 +24,7 @@ export class OcrService extends BaseService {
       await this.ocrRepository.deleteAll();
     }
 
-    for await (const assets of batched(this.assetJobRepository.streamForOcrJob(force))) {
-      await this.jobRepository.queueAll(assets.map((asset) => ({ name: JobName.Ocr, data: { id: asset.id } })));
-    }
+    await this.jobRepository.queueSelection(JobName.Ocr, this.assetJobRepository.selectionForOcrJob(force));
 
     return JobStatus.Success;
   }
@@ -55,7 +54,18 @@ export class OcrService extends BaseService {
     const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults, await this.getCropVisibility(id));
     await this.ocrRepository.upsert(id, ocrDataList, searchText);
 
-    await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
+    const status = { assetId: id, ocrAt: new Date() };
+    if (
+      !deferJobAdoption(async (tx) => {
+        await tx
+          .insertInto('asset_job_status')
+          .values(status)
+          .onConflict((oc) => oc.column('assetId').doUpdateSet(status))
+          .execute();
+      })
+    ) {
+      await this.assetRepository.upsertJobStatus(status);
+    }
 
     this.logger.debug(`Processed ${ocrResults.text.length} OCR result(s) for ${id}`);
     return JobStatus.Success;

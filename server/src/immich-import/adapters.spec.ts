@@ -1,5 +1,5 @@
 import { CONTENT_TABLES, clusterId, frozenSource, transformRow, vectorCompatible } from './adapters.js';
-import { ImportConfig } from './types.js';
+import { EmbeddingTransferEvidence } from './embeddings.js';
 
 describe('frozen Immich adapters', () => {
   it.each(['3.0.0', '3.0.1', '3.0.2', '3.0.3', '3.1.0', '3.2.0', '3.2.1', '3.2.2', '3.2.3', '3.2.4'])(
@@ -60,25 +60,20 @@ describe('frozen Immich adapters', () => {
     expect(CONTENT_TABLES).not.toContain('system_metadata');
   });
 
-  it('requires exact model and dimension compatibility for value-only embedding transfer', () => {
-    const config = {
-      embeddings: {
-        sourceClipModel: 'clip-a',
-        targetClipModel: 'clip-a',
-        sourceFaceModel: 'face-a',
-        targetFaceModel: 'face-a',
-      },
-    } as ImportConfig;
-    const vector = JSON.stringify(Array.from({ length: 512 }, () => 0.1));
-    expect(vectorCompatible('smart_search', vector, config)).toBe(true);
-    expect(
-      vectorCompatible('smart_search', vector, {
-        ...config,
-        embeddings: { ...config.embeddings!, targetClipModel: 'clip-b' },
-      }),
-    ).toBe(false);
-    expect(vectorCompatible('face_search', '[0,1]', config)).toBe(false);
-    expect(vectorCompatible('face_search', vector, {} as ImportConfig)).toBe(false);
-    expect(vectorCompatible('face_search', vector, { embeddings: {} } as ImportConfig)).toBe(false);
+  it('requires producer evidence, selected models, destination dimensions and finite vector values', () => {
+    const evidence: EmbeddingTransferEvidence = {
+      sourceDimensions: 768,
+      destinationDimensions: 768,
+      sourceConfiguredModel: 'clip-a',
+      destinationConfiguredModel: 'clip-a',
+      producingModel: 'clip-a',
+    };
+    const vector = JSON.stringify(Array.from({ length: 768 }, () => 0.1));
+    expect(vectorCompatible(vector, evidence)).toBe(true);
+    expect(vectorCompatible(vector, { ...evidence, producingModel: null })).toBe(false);
+    expect(vectorCompatible(vector, { ...evidence, destinationDimensions: 512 })).toBe(false);
+    expect(vectorCompatible(vector, { ...evidence, destinationConfiguredModel: 'clip-b' })).toBe(false);
+    expect(vectorCompatible('[0,1]', evidence)).toBe(false);
+    expect(vectorCompatible(vector)).toBe(false);
   });
 });

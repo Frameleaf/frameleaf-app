@@ -674,7 +674,7 @@ test("a reused candidate restates the index annotations validateIndex requires",
   ]);
 });
 
-test("release accepts truthful reused candidate index and rejects changed qualification or children", async () => {
+test("release accepts truthful reused candidate index and rejects changed release provenance or children", async () => {
   const { candidateImage } = require("./frameleaf-release.cjs");
   const f = fixture();
   f.entries.set(f.result.digest, f.result);
@@ -764,8 +764,7 @@ test("manual dispatch rejects existing fresh or reused same-SHA candidates befor
     for (const reused of [false, true]) {
       const f = fixture();
       if (reused)
-        f.index.annotations["org.frameleaf.reuse.revision"] =
-          "b".repeat(40);
+        f.index.annotations["org.frameleaf.reuse.revision"] = "b".repeat(40);
       await fs.writeFile(output, "");
       await assert.rejects(
         planReuse(
@@ -828,8 +827,7 @@ async function dependencyRoot(databaseImage) {
   await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
   return root;
 }
-const database =
-  "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7";
+const database = "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7";
 const published = (entries) => ({
   read: async (image, reference) => {
     const found = entries[`${image}:${reference}`];

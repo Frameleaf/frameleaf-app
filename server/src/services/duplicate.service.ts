@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { SystemConfig } from 'src/config.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { JobItem, JobOf } from 'src/types.js';
-import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants.js';
+import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
@@ -26,7 +25,7 @@ import { suggestDuplicateKeepAssetIds } from 'src/utils/duplicate.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
-import { batched, isDuplicateDetectionEnabled } from 'src/utils/misc.js';
+import { isDuplicateDetectionEnabled } from 'src/utils/misc.js';
 
 type ResolveRequest = {
   assetUpdate: {
@@ -389,11 +388,10 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    for await (const assets of batched(this.assetJobRepository.streamForSearchDuplicates(force))) {
-      await this.jobRepository.queueAll(
-        assets.map((asset) => ({ name: JobName.AssetDetectDuplicates, data: { id: asset.id } })),
-      );
-    }
+    await this.jobRepository.queueSelection(
+      JobName.AssetDetectDuplicates,
+      this.assetJobRepository.selectionForSearchDuplicates(force),
+    );
 
     return JobStatus.Success;
   }
@@ -412,24 +410,10 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    let jobs: JobItem[] = [];
-    const queueAll = async () => {
-      await this.jobRepository.queueAll(jobs);
-      jobs = [];
-    };
-
-    const assets = this.assetJobRepository.streamForVideoDuplicateFrames({
-      force,
-      frameCount: enhancedVideo.frameCount,
-    });
-    for await (const asset of assets) {
-      jobs.push({ name: JobName.AssetGenerateVideoDuplicateFrames, data: { id: asset.id } });
-      if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
-        await queueAll();
-      }
-    }
-
-    await queueAll();
+    await this.jobRepository.queueSelection(
+      JobName.AssetGenerateVideoDuplicateFrames,
+      this.assetJobRepository.selectionForVideoDuplicateFrames({ force, frameCount: enhancedVideo.frameCount }),
+    );
 
     return JobStatus.Success;
   }

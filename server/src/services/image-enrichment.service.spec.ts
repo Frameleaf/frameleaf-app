@@ -19,7 +19,7 @@ import { VIDEO_MOMENT_EXTRACTOR_VERSION, identityHash, sourceFingerprint } from 
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { newUuid } from 'test/small.factory.js';
-import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(ImageEnrichmentService.name, () => {
   let sut: ImageEnrichmentService;
@@ -95,17 +95,18 @@ describe(ImageEnrichmentService.name, () => {
     mocks.systemMetadata.get.mockResolvedValue({
       machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
     });
-    mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(
-      makeStream([{ id: firstAssetId }, { id: secondAssetId }]),
-    );
+    mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue({
+      selected: [{ id: firstAssetId }, { id: secondAssetId }],
+    } as never);
 
     await expect(sut.handleQueueImageDescription({ force: false })).resolves.toBe(JobStatus.Success);
 
-    expect(mocks.assetJob.streamForImageDescriptionJob).toHaveBeenCalledWith(false);
-    expect(mocks.job.queueAll).toHaveBeenCalledWith([
-      { name: JobName.ImageDescription, data: { id: firstAssetId } },
-      { name: JobName.ImageDescription, data: { id: secondAssetId } },
-    ]);
+    expect(mocks.assetJob.selectionForImageDescriptionJob).toHaveBeenCalledWith(false);
+    expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+      JobName.ImageDescription,
+      mocks.assetJob.selectionForImageDescriptionJob.mock.results[0].value,
+      {},
+    );
   });
 
   describe('description confidence (FL-36)', () => {
@@ -219,7 +220,7 @@ describe(ImageEnrichmentService.name, () => {
 
     await expect(sut.handleQueueNsfwDetection({ force: false })).resolves.toBe(JobStatus.Skipped);
 
-    expect(mocks.assetJob.streamForNsfwDetectionJob).not.toHaveBeenCalled();
+    expect(mocks.assetJob.selectionForNsfwDetectionJob).not.toHaveBeenCalled();
     expect(mocks.job.queueAll).not.toHaveBeenCalled();
   });
 
@@ -651,13 +652,15 @@ describe(ImageEnrichmentService.name, () => {
         machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
         libraryCare: { incrementalEnrichment: true },
       });
-      mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(makeStream([{ id: assetId }]));
+      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue({ selected: [{ id: assetId }] } as never);
 
       await sut.handleQueueImageDescription({ force: true });
 
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.ImageDescription, data: { id: assetId, onlyAffected: true } },
-      ]);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.ImageDescription,
+        mocks.assetJob.selectionForImageDescriptionJob.mock.results[0].value,
+        { onlyAffected: true },
+      );
     });
 
     it('reruns everything when it is off', async () => {
@@ -665,11 +668,15 @@ describe(ImageEnrichmentService.name, () => {
         machineLearning: { enabled: true, nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
         libraryCare: { incrementalEnrichment: false },
       });
-      mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(makeStream([{ id: assetId }]));
+      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue({ selected: [{ id: assetId }] } as never);
 
       await sut.handleQueueImageDescription({ force: true });
 
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.ImageDescription, data: { id: assetId } }]);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.ImageDescription,
+        mocks.assetJob.selectionForImageDescriptionJob.mock.results[0].value,
+        {},
+      );
     });
 
     it('keeps a current description and redoes one that is missing', async () => {
@@ -2567,12 +2574,16 @@ describe(ImageEnrichmentService.name, () => {
 
     it('does not claim batches for describe-all while cloud processing is off (review re-check)', async () => {
       configure(false, { enabled: false });
-      mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(makeStream([{ id: assetId }]));
+      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue({ selected: [{ id: assetId }] } as never);
 
       await expect(sut.handleQueueImageDescription({ force: false })).resolves.toBe(JobStatus.Success);
 
       // each photo is then refused with the reason (cloud-turned-off), never described here
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.ImageDescription, data: { id: assetId } }]);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.ImageDescription,
+        mocks.assetJob.selectionForImageDescriptionJob.mock.results[0].value,
+        {},
+      );
     });
 
     describe('a batch result (publishCloudDescription)', () => {
@@ -2646,11 +2657,11 @@ describe(ImageEnrichmentService.name, () => {
 
     it('queues no library-wide description jobs while descriptions are routed to Frameleaf Cloud', async () => {
       configure(false);
-      mocks.assetJob.streamForImageDescriptionJob.mockReturnValue(makeStream([{ id: assetId }]));
+      mocks.assetJob.selectionForImageDescriptionJob.mockReturnValue({ selected: [{ id: assetId }] } as never);
 
       await expect(sut.handleQueueImageDescription({ force: false })).resolves.toBe(JobStatus.Skipped);
 
-      expect(mocks.assetJob.streamForImageDescriptionJob).not.toHaveBeenCalled();
+      expect(mocks.assetJob.selectionForImageDescriptionJob).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
   });

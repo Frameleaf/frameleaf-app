@@ -10,7 +10,7 @@ import { authStub } from 'test/fixtures/auth.stub.js';
 import { probeStub } from 'test/fixtures/media.stub.js';
 import { getForDuplicate } from 'test/mappers.js';
 import { newUuid } from 'test/small.factory.js';
-import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 vitest.useFakeTimers();
 
@@ -152,32 +152,28 @@ describe(DuplicateService.name, () => {
 
     it('should queue missing assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForSearchDuplicates.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForSearchDuplicates.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueSearchDuplicates({});
 
-      expect(mocks.assetJob.streamForSearchDuplicates).toHaveBeenCalledWith(undefined);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetDetectDuplicates,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForSearchDuplicates).toHaveBeenCalledWith(undefined);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetDetectDuplicates,
+        mocks.assetJob.selectionForSearchDuplicates.mock.results[0].value,
+      );
     });
 
     it('should queue all assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForSearchDuplicates.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForSearchDuplicates.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueSearchDuplicates({ force: true });
 
-      expect(mocks.assetJob.streamForSearchDuplicates).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetDetectDuplicates,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForSearchDuplicates).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetDetectDuplicates,
+        mocks.assetJob.selectionForSearchDuplicates.mock.results[0].value,
+      );
     });
   });
 
@@ -202,17 +198,15 @@ describe(DuplicateService.name, () => {
 
     it('should queue videos with missing enhanced frames', async () => {
       const asset = AssetFactory.create({ type: AssetType.Video });
-      mocks.assetJob.streamForVideoDuplicateFrames.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForVideoDuplicateFrames.mockReturnValue({ selected: [asset] } as never);
 
       await expect(sut.handleQueueGenerateVideoDuplicateFrames({})).resolves.toBe(JobStatus.Success);
 
-      expect(mocks.assetJob.streamForVideoDuplicateFrames).toHaveBeenCalledWith({ force: undefined, frameCount: 4 });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetGenerateVideoDuplicateFrames,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForVideoDuplicateFrames).toHaveBeenCalledWith({ force: undefined, frameCount: 4 });
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetGenerateVideoDuplicateFrames,
+        mocks.assetJob.selectionForVideoDuplicateFrames.mock.results[0].value,
+      );
     });
 
     it('should skip when enhanced video duplicate detection is disabled', async () => {
@@ -233,7 +227,7 @@ describe(DuplicateService.name, () => {
       });
 
       await expect(sut.handleQueueGenerateVideoDuplicateFrames({})).resolves.toBe(JobStatus.Skipped);
-      expect(mocks.assetJob.streamForVideoDuplicateFrames).not.toHaveBeenCalled();
+      expect(mocks.assetJob.selectionForVideoDuplicateFrames).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
   });

@@ -24,7 +24,7 @@ images:
 consts:
   server_container_name: server
   ml_container_name: machine-learning
-  pgvecto_container_name: pgvecto
+  postgres_container_name: postgres
   perms_container_name: permissions
   ml_port: 32002
   ml_cache_path: /mlcache

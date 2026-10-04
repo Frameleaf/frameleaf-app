@@ -1,12 +1,12 @@
 name: Test
-'on':
+"on":
   workflow_dispatch:
     inputs:
-      candidate_sha:
-        description: Reviewed commit for Cloud consumer qualification only (leave blank for normal tests)
+      development_validation:
+        description: Generate Linux lockfile, server reports and API/schema artifacts instead of the full test suite
         required: false
-        default: ''
-        type: string
+        default: false
+        type: boolean
   pull_request:
     branches:
       - fork/main
@@ -20,35 +20,20 @@ concurrency:
 permissions:
   contents: read
 jobs:
-  cloud-consumer-request:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha != '' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    permissions: {}
-    steps:
-      - name: Validate reviewed qualification request
-        env:
-          FRAMELEAF_REQUEST_REPOSITORY: ${{ github.repository }}
-          FRAMELEAF_REQUEST_REF: ${{ github.ref }}
-          FRAMELEAF_REQUEST_SHA: ${{ inputs.candidate_sha }}
-          FRAMELEAF_REQUEST_HEAD: ${{ github.sha }}
-        run: |
-          if [[ "$FRAMELEAF_REQUEST_REPOSITORY" != 'Frameleaf/frameleaf-app' || "$FRAMELEAF_REQUEST_REF" != 'refs/heads/master/frameleaf-implementation' || "$FRAMELEAF_REQUEST_SHA" != "$FRAMELEAF_REQUEST_HEAD" || ! "$FRAMELEAF_REQUEST_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo '::error::Cloud consumer qualification requires the exact reviewed integration commit.'
-            exit 1
-          fi
-  cloud-consumer-qualification:
-    needs: cloud-consumer-request
-    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && inputs.candidate_sha == github.sha }}
+  development-validation:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.development_validation && github.repository == 'Frameleaf/frameleaf-app' }}
+    uses: ./.github/workflows/development-validation.yml
+    permissions:
+      contents: read
+  cloud-consumer-tests:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     permissions:
       contents: read
       packages: read
     uses: ./.github/workflows/frameleaf-cloud-consumers.yml
-    with:
-      candidate_sha: ${{ inputs.candidate_sha }}
   script-unit-tests:
     name: Scripts unit tests
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -68,7 +53,7 @@ jobs:
       - name: Run unit tests
         run: pnpm --filter @immich/scripts test
       - name: Validate Frameleaf workflow contracts
-        run: node --test scripts/frameleaf-workflows.test.mjs
+        run: node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs
       - name: Validate Frameleaf branding
         run: node --test scripts/frameleaf-branding.test.mjs
       - name: Validate Frameleaf variable and command names
@@ -90,7 +75,7 @@ jobs:
     timeout-minutes: 60
   server-unit-tests:
     name: Test & Lint Server
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -128,7 +113,7 @@ jobs:
     timeout-minutes: 60
   cli-unit-tests:
     name: Unit Test CLI
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -151,7 +136,7 @@ jobs:
     timeout-minutes: 60
   cli-unit-tests-win:
     name: Unit Test CLI (Windows)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: windows-latest
     permissions:
       contents: read
@@ -182,7 +167,7 @@ jobs:
     timeout-minutes: 60
   web-lint:
     name: Lint Web
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -222,7 +207,7 @@ jobs:
     timeout-minutes: 60
   web-unit-tests:
     name: Test Web
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -265,7 +250,7 @@ jobs:
     timeout-minutes: 60
   i18n-tests:
     name: Test i18n
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -301,7 +286,7 @@ jobs:
     timeout-minutes: 60
   e2e-tests-lint:
     name: End-to-End Lint
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -337,7 +322,7 @@ jobs:
     timeout-minutes: 60
   server-medium-tests:
     name: Medium Tests (Server)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -350,6 +335,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Retrieve frozen media fixtures
+        working-directory: .
         run: bash scripts/checkout-test-assets.sh
       - name: Setup Mise
         uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
@@ -363,7 +349,7 @@ jobs:
     timeout-minutes: 60
   e2e-tests-server-cli:
     name: End-to-End Tests (Server & CLI)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -383,6 +369,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Retrieve frozen media fixtures
+        working-directory: .
         run: bash scripts/checkout-test-assets.sh
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
@@ -391,7 +378,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: '**/pnpm-lock.yaml'
+          cache-dependency-path: "**/pnpm-lock.yaml"
       - name: Setup packages
         run:
           pnpm --filter @immich/sdk --filter @immich/cli --filter @immich/plugin-sdk install --frozen-lockfile && pnpm
@@ -560,7 +547,7 @@ jobs:
         working-directory: ./server
         env:
           BUDDY_FIXTURE_OUTCOME: ${{ steps.buddy-fixture.outcome }}
-          FRAMELEAF_BUDDY_BACKUP: 'true'
+          FRAMELEAF_BUDDY_BACKUP: "true"
         run: |
           # Setup failure is a failed required lane, never a skipped or green acceptance test.
           if [ "$BUDDY_FIXTURE_OUTCOME" != success ]; then
@@ -644,7 +631,7 @@ jobs:
     timeout-minutes: 120
   e2e-tests-web:
     name: End-to-End Tests (Web)
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -664,6 +651,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Retrieve frozen media fixtures
+        working-directory: .
         run: bash scripts/checkout-test-assets.sh
       - name: Setup pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
@@ -672,7 +660,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: '**/pnpm-lock.yaml'
+          cache-dependency-path: "**/pnpm-lock.yaml"
       - name: Run setup @immich/sdk
         run: pnpm --filter @immich/sdk install --frozen-lockfile && pnpm --filter @immich/sdk build
         if: ${{ !cancelled() }}
@@ -697,7 +685,7 @@ jobs:
       - name: Run e2e tests (web)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
-          FL144_ML_FIXTURE: 'true'
+          FL144_ML_FIXTURE: "true"
         run: pnpm test:web
         if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
       - name: Archive e2e test (web) results
@@ -774,7 +762,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-24.04
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') && always() }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) && always() }}
     steps:
       - name: Verify required E2E jobs succeeded
         env:
@@ -788,7 +776,7 @@ jobs:
     timeout-minutes: 60
   ml-unit-tests:
     name: Unit Test ML
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -810,7 +798,7 @@ jobs:
     timeout-minutes: 60
   github-files-formatting:
     name: .github Files Formatting
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -835,7 +823,7 @@ jobs:
         if: ${{ !cancelled() }}
     timeout-minutes: 60
   shellcheck:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: ShellCheck
     runs-on: ubuntu-24.04
     permissions:
@@ -847,10 +835,10 @@ jobs:
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38
         with:
-          ignore_paths: '**/open-api/** **/openapi** **/node_modules/**'
+          ignore_paths: "**/open-api/** **/openapi** **/node_modules/**"
     timeout-minutes: 60
   generated-api-up-to-date:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: OpenAPI Clients
     runs-on: ubuntu-24.04
     permissions:
@@ -902,7 +890,7 @@ jobs:
           retention-days: 7
     timeout-minutes: 60
   sql-schema-up-to-date:
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || inputs.candidate_sha == '') }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}
     name: SQL Schema Checks
     runs-on: ubuntu-24.04
     permissions:

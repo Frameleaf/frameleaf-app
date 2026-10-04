@@ -1,0 +1,180 @@
+name: Frameleaf development validation
+"on":
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  development:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.ref == 'refs/heads/master/frameleaf-implementation' || github.ref == 'refs/heads/aj/FL-333-pg19') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
+      DB_URL: postgres://postgres:postgres@localhost:5432/frameleaf
+    steps:
+      - name: Checkout workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prepare diagnostics
+        run: |
+          mkdir -p "$RUNNER_TEMP/frameleaf-development/generated" "$RUNNER_TEMP/frameleaf-development/reports"
+          git rev-parse HEAD > "$RUNNER_TEMP/frameleaf-development/source-commit.txt"
+      - name: Set up locked tools
+        uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - name: Generate Linux workspace lockfile
+        id: lockfile
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm install --lockfile-only --ignore-scripts 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/lockfile.log"
+      - name: Install generated lockfile
+        id: install
+        if: ${{ always() && steps.lockfile.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm install --frozen-lockfile 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/install.log"
+      - name: Build required SDKs
+        id: sdks
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          { pnpm --filter @immich/sdk build; pnpm --filter @immich/plugin-sdk build; pnpm --filter @immich/plugin-core build; } 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/sdks.log"
+      - name: Report server types
+        id: types
+        if: ${{ always() && steps.sdks.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm --dir server exec tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-types.log"
+      - name: Report server lint
+        id: lint
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm --dir server lint 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-lint.log"
+      - name: Build server generators
+        id: server
+        if: ${{ always() && steps.sdks.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm --dir server build 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-build.log"
+      - name: Start fresh owned PostgreSQL 19
+        id: postgres
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          docker build --tag frameleaf-postgres:development docker/postgres 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/postgres-build.log"
+          docker run -d --name frameleaf-development-postgres -p 127.0.0.1:5432:5432 \
+            --tmpfs /var/lib/postgresql -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=frameleaf \
+            frameleaf-postgres:development
+          for attempt in $(seq 1 90); do
+            logs=$(docker logs frameleaf-development-postgres 2>&1 || true)
+            if [[ "$logs" == *'PostgreSQL init process complete'* ]] && \
+              docker exec frameleaf-development-postgres /usr/local/bin/healthcheck.sh; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo '::error::Fresh PostgreSQL 19 did not become ready'
+          exit 1
+      - name: Apply canonical baseline
+        id: schema
+        if: ${{ always() && steps.install.outcome == 'success' && steps.postgres.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm --dir server migrations:run 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/schema.log"
+      - name: Generate schema catalog
+        id: catalog
+        if: ${{ always() && steps.schema.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm --dir server exec tsx scripts/snapshot-frameleaf-schema-catalog.ts \
+            "$RUNNER_TEMP/frameleaf-development/generated/frameleaf-schema-catalog.json" \
+            2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/catalog.log"
+      - name: Generate OpenAPI
+        id: openapi
+        if: ${{ always() && steps.server.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm --dir server exec node dist/bin/sync-open-api.js 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/openapi.log"
+      - name: Generate TypeScript API client
+        id: client
+        if: ${{ always() && steps.openapi.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          oazapfts --optimistic --argumentStyle=object --useEnumType --allSchemas \
+            open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts \
+            2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/api-client.log"
+      - name: Generate SQL queries
+        id: queries
+        if: ${{ always() && steps.server.outcome == 'success' && steps.schema.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm --dir server exec node dist/bin/sync-sql.js 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/sql-queries.log"
+      - name: Collect generated files and outcomes
+        if: ${{ always() }}
+        env:
+          STEP_RESULTS: ${{ toJSON(steps) }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/frameleaf-development"
+          mkdir -p "$output/generated" "$output/reports"
+          printf '%s\n' "$STEP_RESULTS" > "$output/reports/step-outcomes.json"
+          for file in pnpm-lock.yaml open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts; do
+            if [[ -f "$file" ]]; then
+              mkdir -p "$output/generated/$(dirname "$file")"
+              cp "$file" "$output/generated/$file"
+            fi
+          done
+          if [[ -d server/src/queries ]]; then
+            mkdir -p "$output/generated/server/src"
+            cp -R server/src/queries "$output/generated/server/src/queries"
+          fi
+          git add -N -- pnpm-lock.yaml open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts server/src/queries
+          git diff --binary > "$output/generated.patch"
+          git status --short > "$output/reports/generated-status.txt"
+          docker logs frameleaf-development-postgres > "$output/reports/postgres.log" 2>&1 || true
+      - name: Stop disposable database
+        if: ${{ always() }}
+        run: docker rm -f frameleaf-development-postgres || true
+      - name: Upload development diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frameleaf-development-${{ github.sha }}
+          path: ${{ runner.temp }}/frameleaf-development/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require successful validation and generation
+        if: ${{ always() }}
+        env:
+          STEP_RESULTS: ${{ toJSON(steps) }}
+        run: |
+          node --input-type=module <<'NODE'
+          const results = JSON.parse(process.env.STEP_RESULTS);
+          const required = ['lockfile', 'install', 'sdks', 'types', 'lint', 'server', 'postgres', 'schema', 'catalog', 'openapi', 'client', 'queries'];
+          const failed = required.filter(name => results[name]?.outcome !== 'success');
+          if (failed.length) {
+            console.error(`Development validation requires successful steps: ${failed.join(', ')}`);
+            process.exit(1);
+          }
+          NODE

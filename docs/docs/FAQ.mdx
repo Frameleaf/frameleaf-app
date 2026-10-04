@@ -374,12 +374,6 @@ You need to [enable WebSockets](/administration/reverse-proxy/) on your reverse 
 
 Frameleaf components are typically deployed using docker. To see logs for deployed docker containers, you can use the [Docker CLI](https://docs.docker.com/engine/reference/commandline/cli/), specifically the `docker logs` command. For examples, see [Docker Help](/guides/docker-help.md).
 
-### How can I reduce the log verbosity of Redis?
-
-To decrease Redis logs, you can add the following line to the `redis:` section of the `docker-compose.yml`:
-
-`    command: redis-server --loglevel warning`
-
 ### How can I run Frameleaf as a non-root user?
 
 You can change the user in the container by setting the `user` argument in `docker-compose.yml` for each service.
@@ -387,10 +381,6 @@ You can change the user in the container by setting the `user` argument in `dock
 [Example docker-compose.rootless.yml file](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.rootless.yml)
 
 <ComposeBuilder query="rootless.enabled=true" />
-
-You may need to add mount points or docker volumes for the following internal container paths:
-
-- `redis:/data`
 
 The non-root user/group needs read/write access to the volume mounts, including `UPLOAD_LOCATION` and `/cache` for machine-learning.
 
@@ -456,7 +446,7 @@ If it mentions SIGILL (note the lack of a K) or error code 132, it most likely m
 
 ### Why am I getting database ownership errors?
 
-If you get database errors such as `FATAL:  data directory "/var/lib/postgresql/data" has wrong ownership` upon database startup, this is likely due to an issue with your filesystem.
+If you get database errors such as `FATAL:  data directory "/var/lib/postgresql/19/docker" has wrong ownership` upon database startup, this is likely due to an issue with your filesystem.
 NTFS and ex/FAT/32 filesystems are not supported. See [here](/install/requirements#special-requirements-for-windows-users) for more details.
 
 ### How can I verify the integrity of my database?

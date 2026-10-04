@@ -6,7 +6,7 @@
 {% set perms_config = {"uid": values.run_as.user, "gid": values.run_as.group, "mode": "check"} %}
 
 {# The generic Postgres helper only accepts its own repository allowlist. #}
-{% set postgres = tpl.add_container(values.consts.pgvecto_container_name, values.frameleaf.postgres_image_selector) %}
+{% set postgres = tpl.add_container(values.consts.postgres_container_name, values.frameleaf.postgres_image_selector) %}
 {% do postgres.set_user(999, 999) %}
 {% do postgres.remove_devices() %}
 {% do postgres.set_shm_size_mb(256) %}
@@ -16,7 +16,6 @@
 {% do postgres.environment.add_env("POSTGRES_DB", values.consts.db_name) %}
 {% do postgres.environment.add_env("POSTGRES_INITDB_ARGS", "--data-checksums") %}
 {% do postgres.environment.add_env("PGDATA", "/var/lib/postgresql/19/docker") %}
-{% do postgres.environment.add_env("DB_STORAGE_TYPE", values.frameleaf.db_storage_type) %}
 {% do postgres.healthcheck.set_test("postgres", {"user": values.consts.db_user, "db": values.consts.db_name, "port": 5432}) %}
 {% do postgres.add_storage("/var/lib/postgresql", values.storage.postgres_data) %}
 {% do perm_container.add_or_skip_action("postgres_data", values.storage.postgres_data, {"uid": 999, "gid": 999, "mode": "check"}) %}
@@ -31,7 +30,7 @@
 {# FL-291: must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default); running jobs finish or go back to waiting first #}
 {% do server_container.set_grace_period(10) %}
 {% do server_container.healthcheck.set_custom_test(["CMD", "frameleaf-healthcheck"]) %}
-{% do server_container.depends.add_dependency(values.consts.pgvecto_container_name, "service_healthy") %}
+{% do server_container.depends.add_dependency(values.consts.postgres_container_name, "service_healthy") %}
 
 {% set cli_temp_storage = tpl.funcs.temp_config("cli-temp-storage") %}
 {% do server_container.add_storage("/.config", cli_temp_storage) %}
@@ -52,7 +51,7 @@
 {% do server_container.environment.add_env("FRAMELEAF_PORT", values.network.web_port.port_number) %}
 {% do server_container.environment.add_env("DB_USERNAME", values.consts.db_user) %}
 {% do server_container.environment.add_env("DB_PASSWORD", values.frameleaf.db_password) %}
-{% do server_container.environment.add_env("DB_HOSTNAME", values.consts.pgvecto_container_name) %}
+{% do server_container.environment.add_env("DB_HOSTNAME", values.consts.postgres_container_name) %}
 {% do server_container.environment.add_env("DB_DATABASE_NAME", values.consts.db_name) %}
 {% do server_container.environment.add_env("DB_PORT", "5432") %}
 {% do server_container.environment.add_user_envs(values.frameleaf.additional_envs) %}

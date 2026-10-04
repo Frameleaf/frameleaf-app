@@ -121,12 +121,4 @@ A timeout is unresolved validation, not proof of corruption or successful repair
 
 Back up the Frameleaf database, managed media, retained source resources, private staging state, and encryption key as one consistent checkpoint. Restrict backup access as tightly as production secrets. Stop/pause workers before taking an application-consistent snapshot. Keep the bearer token and TLS material separately recoverable; restore permissions before starting services. Restoring a database without its matching encryption key requires Apple reauthentication. Never attach session values, tokens, signed URLs, passwords, or keys to support reports.
 
-All connector tables live in `immich_fork`. During a certified handoff to the official upstream server they remain dormant. On return, missing public asset/album mappings are archived and cleared, source records remain, and deleted owners' connections are disabled. Follow the existing [switching procedure](../features/switching-between-fork-and-official.md); deploying an arbitrary official image is not a compatibility check.
-
-## Verify before a large import
-
-Use a small selected album first. Check sign-in and device approval, a photo and Live Photo, an available Apple edit, a repeated run, and a pause/resume. Confirm that originals remain accessible and edited versions appear in their Stack. Test recovery using disposable synthetic media, not a valuable original.
-
-Local fixtures and database tests cover recovery and restart boundaries, but live Apple-account compatibility has not yet been verified for this implementation. The [user guide](icloud-photos-sync.md#supported-media-and-limits) lists the supported scope. An HTTPS health response alone does not prove an Apple sync succeeded.
-
-For missing files, count differences, and orphan reports, see [Recover missing or corrupt media](media-recovery.md).
+All connector state is in the canonical `public` schema. Back up the database together with the original connector encryption key and matching media files. A one-time offline Immich import uses a separate read-only source and never shares this database with another server implementation. See [Backup and restore](../administration/backup-and-restore.md).

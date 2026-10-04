@@ -8,7 +8,7 @@ import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, MlWork
 import { BaseService } from 'src/services/base.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
-import { batched, getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
+import { getCLIPModelInfo, isSmartSearchEnabled } from 'src/utils/misc.js';
 
 @Injectable()
 export class SmartInfoService extends BaseService {
@@ -98,9 +98,7 @@ export class SmartInfoService extends BaseService {
       await this.databaseRepository.setDimensionSize(dimSize);
     }
 
-    for await (const assets of batched(this.assetJobRepository.streamForEncodeClip(force))) {
-      await this.jobRepository.queueAll(assets.map((asset) => ({ name: JobName.SmartSearch, data: { id: asset.id } })));
-    }
+    await this.jobRepository.queueSelection(JobName.SmartSearch, this.assetJobRepository.selectionForEncodeClip(force));
 
     return JobStatus.Success;
   }

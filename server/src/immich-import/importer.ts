@@ -7,7 +7,8 @@ import {
   transformRow,
   vectorCompatible,
 } from './adapters.js';
-import { mapMediaPath, verifyMediaFile } from './media.js';
+import { EmbeddingAdmission, inspectEmbeddingAdmission } from './embeddings.js';
+import { mapMediaPath, pathChecksum, verifyMediaFile } from './media.js';
 import { ImmichSource } from './source.js';
 import { getImmichImportState } from './state.js';
 import { ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from './types.js';
@@ -28,6 +29,7 @@ const localColumns = new Set(['updateId', 'createId']);
 
 export class ImmichImportService {
   readonly source: ImmichSource;
+  private embeddingAdmission?: EmbeddingAdmission;
   constructor(
     readonly destination: ImportDatabase,
     source: ImportDatabase,
@@ -43,6 +45,7 @@ export class ImmichImportService {
   async preflight() {
     const fingerprint = await this.source.preflight();
     await this.assertDistinctDestination();
+    this.embeddingAdmission = await inspectEmbeddingAdmission(this.source.db, this.destination);
     const [run] = await this.destination.query(
       'SELECT status,source_fingerprint,config_fingerprint FROM public.frameleaf_immich_import',
     );
@@ -57,6 +60,13 @@ export class ImmichImportService {
       await this.assertFresh();
     }
     return {
+      embeddings: Object.entries(this.embeddingAdmission).map(([table, evidence]) => ({
+        table,
+        sourceDimensions: evidence.sourceDimensions,
+        destinationDimensions: evidence.destinationDimensions,
+        action: 'regenerate',
+        reason: 'SOURCE_PRODUCER_MODEL_UNRECORDED',
+      })),
       sourceVersion: this.config.version,
       sourceCommit: this.source.fixture.commit,
       fingerprint,
@@ -284,7 +294,10 @@ export class ImmichImportService {
 
   private async mapRow(table: string, source: ImportRow): Promise<ImportRow | null> {
     const row = transformRow(table, source, this.legacyPeople);
-    if ((table === 'smart_search' || table === 'face_search') && !vectorCompatible(table, row.embedding, this.config)) {
+    if (
+      (table === 'smart_search' || table === 'face_search') &&
+      !vectorCompatible(row.embedding, this.embeddingAdmission?.[table])
+    ) {
       return null;
     }
     for (const column of PATH_COLUMNS[table] ?? []) {
@@ -309,6 +322,13 @@ export class ImmichImportService {
           }
         }
       }
+    }
+    if (table === 'asset' && row.checksumAlgorithm === 'sha1-path') {
+      if (row.isExternal !== true || !row.libraryId || typeof row.originalPath !== 'string') {
+        throw new ImportRefused('PATH_CHECKSUM_REQUIRES_EXTERNAL_LIBRARY_ASSET');
+      }
+      // Source verification used the upstream path. Destination identity must use its mapped path.
+      row.checksum = `\\x${pathChecksum(row.originalPath)}`;
     }
     if (table === 'library') {
       row.importPaths = (row.importPaths as string[]).map((path) => mapMediaPath(path, this.config.mediaRoots).target);

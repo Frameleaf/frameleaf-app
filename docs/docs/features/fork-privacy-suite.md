@@ -2,7 +2,7 @@
 
 This page explains what is different in Frameleaf compared with the upstream project, and how to roll it out safely in a home lab.
 
-Frameleaf is downstream-only. The upstream project did not accept this feature set, so these changes are maintained in Frameleaf instead. Frameleaf is kept up to date with the upstream project while preserving the privacy and image-enrichment features described here.
+Frameleaf independently maintains the privacy and image-enrichment features described here. Supported Immich installations are a frozen, read-only source for a one-time offline content import into a fresh Frameleaf database.
 
 ## Who Frameleaf is for
 
@@ -150,7 +150,7 @@ Start slowly. Do not enable automatic hiding until you have reviewed classifier 
 
 1. Make a backup and confirm your normal Frameleaf backup plan works. DO NOT SKIP THIS.
 2. Deploy Frameleaf using Frameleaf's server, web, and machine-learning images or build outputs. Do not mix upstream containers with Frameleaf server or web code.
-3. Open `Administration > Settings > Machine Learning Settings`. I have tested Frameleaf on v3.0 and above and did not identify any issues using my existing upstream deployment.
+3. Create a fresh canonical PostgreSQL 19 database. If you have an existing Immich library, follow the [offline import](../administration/import-immich.md), then open `Administration > Settings > Machine Learning Settings`.
 4. Choose the image-enrichment hardware profile that matches your server:
    - `Auto-detect` for most users;
    - `Intel iGPU (OpenVINO)` for Intel integrated graphics;
@@ -223,12 +223,11 @@ For NSFW discovery, prefer improving the dedicated NSFW classifier before relyin
 - Do not treat generated tags as a security boundary.
 - Expect first backfills to take time on large libraries.
 - Watch machine-learning container logs during early setup, especially when testing GPU acceleration.
-- Keep Frameleaf updated so you continue receiving upstream fixes and improvements.
-- Before switching to the official upstream server, follow the certified handoff procedure. The official upstream server does not enforce Frameleaf privacy filters, so assets Frameleaf hides can become visible while the official image is running.
+- Keep Frameleaf updated with Frameleaf releases.
 
 ## More Detailed Docs
 
-- [Switching between Frameleaf and the upstream server](switching-between-fork-and-official.md)
+- [One-time offline Immich import](../administration/import-immich.md)
 - [Image Enrichment](image-enrichment.md)
 - [Hardware-Accelerated Machine Learning](ml-hardware-acceleration.md)
 - [Administration: System Settings](../administration/system-settings.md)

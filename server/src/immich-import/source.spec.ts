@@ -12,15 +12,19 @@ const fixture = frozenSource(config.version);
 const makeSource = (
   overrides: { writers?: boolean; writable?: boolean; extraMigration?: boolean; extraColumn?: boolean } = {},
 ) => {
-  const columns = Object.entries(fixture.tables)
-    .flatMap(([table, shape]) =>
-      [...shape.columns]
-        .sort()
-        .map((column) => ({ table_name: table, column_name: column, type: shape.types[column], not_null: false })),
-    )
-    .sort((a, b) => a.table_name.localeCompare(b.table_name) || a.column_name.localeCompare(b.column_name));
+  const columns = Object.entries(fixture.structure.tables).flatMap(([table, shape]) =>
+    Object.entries(shape).map(([column, properties]) => ({ table_name: table, column_name: column, ...properties })),
+  );
   if (overrides.extraColumn) {
-    columns.push({ table_name: 'user', column_name: 'unexpected', type: 'text', not_null: false });
+    columns.push({
+      table_name: 'user',
+      column_name: 'unexpected',
+      type: 'text',
+      not_null: false,
+      default: null,
+      identity: '',
+      generated: '',
+    });
   }
   const statements: string[] = [];
   const db: ImportDatabase = {
@@ -43,6 +47,9 @@ const makeSource = (
       if (statement.includes('format_type')) {
         return columns;
       }
+      if (statement.includes('pg_constraint p')) return fixture.structure.constraints;
+      if (statement.includes('pg_index p')) return fixture.structure.uniqueIndexes;
+      if (statement.includes('pg_enum e')) return fixture.structure.enums;
       if (statement.includes('pg_control_system')) {
         return [{ database: 'immich', database_oid: '42', system_identifier: 'source-instance' }];
       }

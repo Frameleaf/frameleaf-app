@@ -1,0 +1,45 @@
+{
+  "dump": "upstream-3.1.0.sql.gz.base64",
+  "dumpSha256": "809f3807b1d90821875a799a501632f52f1de5c60745034d430b50f0c72dfd9a",
+  "migrationCommit": "db355f79d910bbfc6378117ed10868493c97b922",
+  "migrations": [
+    {
+      "path": "server/src/schema/migrations/1784986754473-ConvertUserPasswordEmptyStringToNull.ts",
+      "sha256": "b2cbe89166b7eb6d035a5ea9b4efa938ed9b82ad2ee453d20f88e69386bab048",
+      "fixture": "1784986754473-ConvertUserPasswordEmptyStringToNull.ts.txt"
+    },
+    {
+      "path": "server/src/schema/migrations/1784986754474-AlbumDescriptionNullable.ts",
+      "sha256": "c26d4d1df283363f74e5b8589dc5bf7bb6c620119f922f3ba4558af6091d4b21",
+      "fixture": "1784986754474-AlbumDescriptionNullable.ts.txt"
+    },
+    {
+      "path": "server/src/schema/migrations/1786741078327-AddWorkflowLogsTable.ts",
+      "sha256": "55e0a7eb51fd7706c9ea209144b45990e7ed391559faa63a7b428a44c73e32d7",
+      "fixture": "1786741078327-AddWorkflowLogsTable.ts.txt"
+    },
+    {
+      "path": "server/src/schema/migrations/1786972746371-AssetOcrUpdatedAtTrigger.ts",
+      "sha256": "6c34aea347bfecb3b93720c4b1c41efd210edf89f884ef812016286ad9e91ca7",
+      "fixture": "1786972746371-AssetOcrUpdatedAtTrigger.ts.txt"
+    },
+    {
+      "path": "server/src/schema/migrations/1787148183729-ClusterGroups.ts",
+      "sha256": "3c36d0d9a3e7d58e3f475cc9a26d09f546048a606b1e2f1d47363a53d52b80be",
+      "fixture": "1787148183729-ClusterGroups.ts.txt"
+    }
+  ],
+  "qualification": "Static extraction only; hosted PostgreSQL catalog qualification required.",
+  "baseCommit": "8aa95c67470a02a8ddedf03c2e52963af33065ff",
+  "structuralSql": {
+    "3.1.0.sql": "c490bbfe214b899e1ecaf4fc74f206ef6db2222f45907f6016ae5d8ca83d054c",
+    "3.0.0-from-3.1.0.sql": "ddd63ede2f012c64d2bc937c070923efe91becbd6729536aba8874fc60ec623e",
+    "3.2.0-from-3.1.0.sql": "4f972a47fd84feff6dcb2a9d787920db32465f27f020b149c79eeef94bcca965"
+  },
+  "reverseMigration": {
+    "path": "server/src/schema/migrations/1784647658615-AddOAuthBearerTokenToSession.ts",
+    "commit": "8aa95c67470a02a8ddedf03c2e52963af33065ff",
+    "fixture": "1784647658615-AddOAuthBearerTokenToSession.ts.txt",
+    "sha256": "d54d778e0913f7db59c70cb67dcfa37aa745d203525a40ba3e4c3ff4904717a7"
+  }
+}

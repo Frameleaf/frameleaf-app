@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type ExpressionBuilder, type Insertable, type Kysely, type Transaction, type Updateable, sql } from 'kysely';
+import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable, sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { validate as isUuid } from 'uuid';
@@ -23,7 +23,6 @@ import {
   withFilePath,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
-import { lockForkWrites } from 'src/utils/fork-write-lock.js';
 import { effectiveVisibility, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
@@ -351,6 +350,9 @@ export class PersonRepository {
     stream: true,
   })
   getAllFaces(options: GetAllFacesOptions = {}) {
+    return this.selectionForFaces(options).stream();
+  }
+  selectionForFaces(options: GetAllFacesOptions = {}) {
     return this.db
       .selectFrom('asset_face')
       .selectAll('asset_face')
@@ -365,8 +367,7 @@ export class PersonRepository {
           .where('user.clusterGroupId', '=', options.clusterGroupId!),
       )
       .where('asset_face.deletedAt', 'is', null)
-      .where('asset_face.isVisible', 'is', true)
-      .stream();
+      .where('asset_face.isVisible', 'is', true);
   }
   getAll(options: GetAllPeopleOptions = {}) {
     return this.db
@@ -1419,9 +1420,7 @@ export class PersonRepository {
       await sql`DELETE FROM public.face_correction WHERE "ownerId" = ${ownerId}::uuid`.execute(tx);
     });
   }
-  private lockForkWrites(tx: Transaction<DB>, what = 'Merge suggestion answers') {
-    return lockForkWrites(tx, what);
-  }
+
   /* ------------------------------------------------------------------------------------------ */
   /* FL-57: face correction history (public.face_correction)                               */
   /* ------------------------------------------------------------------------------------------ */

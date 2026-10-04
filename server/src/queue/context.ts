@@ -43,3 +43,13 @@ export const advanceJobProgress = (units: number) => {
     context.progress(context.progressUnits);
   }
 };
+
+/** Observers run only after acceptance; reconnecting clients read durable state if delivery is lost. */
+export const afterJobCommit = async (notify: () => Promise<void>) => {
+  const context = queueExecution.getStore();
+  if (context) {
+    (context.afterCommit ??= []).push(notify);
+  } else {
+    await notify();
+  }
+};

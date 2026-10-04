@@ -45,14 +45,11 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.AssetGenerateThumbnails,
   JobName.AssetEncodeVideo,
   JobName.SmartSearch,
-  JobName.AssetExtractMetadata,
-  JobName.AssetDetectFaces,
   JobName.Ocr,
-  JobName.AssetGenerateThumbnailsQueueAll,
+  JobName.BestPhotosScore,
   JobName.AssetEncodeVideoQueueAll,
   JobName.SmartSearchQueueAll,
   JobName.AssetExtractMetadataQueueAll,
-  JobName.AssetDetectFacesQueueAll,
 ]);
 
 @Injectable()
@@ -183,6 +180,14 @@ export class JobRepository {
         }
       });
       if (accepted) {
+        // Notification failure cannot change an already committed outcome or replay media work.
+        for (const notify of context.afterCommit ?? []) {
+          try {
+            await notify();
+          } catch {
+            this.logger.warn('Unable to deliver an accepted job notification');
+          }
+        }
         const buffer = (this.rollingAvgBuffers[claim.name as JobName] ??= []);
         buffer.push(Date.now() - new Date(claim.startedAt).getTime());
         if (buffer.length > 100) {
@@ -336,6 +341,7 @@ export class JobRepository {
       options: this.getNamedJobOptions(item) ?? undefined,
       safeToRetry:
         !data.operationId &&
+        !(data.force && item.name === JobName.SmartSearchQueueAll) &&
         REPEATABLE_JOBS.has(item.name) &&
         !JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(item.name) &&
         !JOBS_NOT_RETRIED.has(item.name),
@@ -350,10 +356,14 @@ export class JobRepository {
   }
 
   /** Materialize the full selected ID set in PostgreSQL before workers see any item. */
-  async queueSelection(name: JobName, selection: SelectQueryBuilder<any, any, { id: string }>) {
+  async queueSelection(
+    name: JobName,
+    selection: SelectQueryBuilder<any, any, { id: string }>,
+    data: Record<string, unknown> = {},
+  ) {
     const context = queueExecution.getStore();
     const runId = context?.claim.runId ?? runSubmission.getStore() ?? (await this.store.createRun(name, {}));
-    const intent = this.intent({ name, data: {} } as JobItem);
+    const intent = this.intent({ name, data } as JobItem);
     await this.store.db.transaction().execute(async (tx) => {
       await sql`select name from job_queue where name = ${intent.queue} for update`.execute(tx);
       if (context) {
@@ -364,9 +374,21 @@ export class JobRepository {
           throw new Error('Selection producer lost its claim');
         }
       }
-      await sql`insert into job_run_item("runId", "itemKey", stage, selection)
-        select ${runId}::uuid, selected.id::text, ${name}, jsonb_build_object('id', selected.id)
-        from (${selection}) selected on conflict do nothing`.execute(tx);
+      const {
+        rows: [run],
+      } = await sql<{
+        materialized: boolean;
+      }>`select coalesce((selection -> '_materializedStages') ? ${name}, false) materialized
+        from job_run where id = ${runId}::uuid for update`.execute(tx);
+      if (!run.materialized) {
+        await sql`insert into job_run_item("runId", "itemKey", stage, selection)
+          select ${runId}::uuid, selected.id::text, ${name}, ${JSON.stringify(data)}::jsonb || jsonb_build_object('id', selected.id)
+          from (${selection}) selected on conflict do nothing`.execute(tx);
+        // A producer restart must not enumerate a moving library a second time.
+        await sql`update job_run set selection = jsonb_set(selection, '{_materializedStages}',
+          coalesce(selection -> '_materializedStages', '{}'::jsonb) || jsonb_build_object(${name}::text, true))
+          where id = ${runId}::uuid`.execute(tx);
+      }
       await sql`with added as (
         insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", "runId", "itemKey")
         select gen_random_uuid(), ${intent.queue}, ${name}, selection, ${intent.safeToRetry}, ${intent.sensitive},

@@ -82,7 +82,7 @@ import { ImmichFileResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, isSuppressedWhileLocked } from 'src/utils/hidden-content.js';
 import { isLockedAssetRow } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { batched, isFacialRecognitionEnabled } from 'src/utils/misc.js';
+import { isFacialRecognitionEnabled } from 'src/utils/misc.js';
 import { Point, transformFaceBoundingBox, transformPoints } from 'src/utils/transform.js';
 
 const personKey = ({ ownerId, personGroupId }: PersonId) => `${ownerId}/${personGroupId}`;
@@ -101,7 +101,12 @@ const UNDOABLE_CORRECTIONS = new Set<FaceCorrectionAction>([
 ]);
 
 type CorrectionConflictReason =
-  'already-undone' | 'not-undoable' | 'source-changed' | 'face-gone' | 'face-changed' | 'person-gone';
+  | 'already-undone'
+  | 'not-undoable'
+  | 'source-changed'
+  | 'face-gone'
+  | 'face-changed'
+  | 'person-gone';
 
 /** A 409 whose body names why a correction could not be undone (FL-57). */
 const correctionConflict = (reason: CorrectionConflictReason, message: string) =>
@@ -897,11 +902,10 @@ export class PersonService extends BaseService {
       await this.personRepository.vacuum({ reindexVectors: true });
     }
 
-    for await (const assets of batched(this.assetJobRepository.streamForDetectFacesJob(force))) {
-      await this.jobRepository.queueAll(
-        assets.map((asset) => ({ name: JobName.AssetDetectFaces, data: { id: asset.id } })),
-      );
-    }
+    await this.jobRepository.queueSelection(
+      JobName.AssetDetectFaces,
+      this.assetJobRepository.selectionForDetectFacesJob(force),
+    );
 
     if (force === undefined) {
       await this.jobRepository.queue({ name: JobName.PersonCleanup });
@@ -1137,16 +1141,14 @@ export class PersonService extends BaseService {
 
     const lastRun = new Date().toISOString();
 
-    const faces = this.personRepository.getAllFaces(
+    const faces = this.personRepository.selectionForFaces(
       force
         ? { clusterGroupId, sourceType: clusterGroupId ? SourceType.MachineLearning : undefined }
         : { personGroupId: null, clusterGroupId, sourceType: SourceType.MachineLearning },
     );
-    for await (const batch of batched(faces)) {
-      await this.jobRepository.queueAll(
-        batch.map((face) => ({ name: JobName.FacialRecognition, data: { id: face.id, deferred: false } })),
-      );
-    }
+    await this.jobRepository.queueSelection(JobName.FacialRecognition, faces.clearSelect().select('asset_face.id'), {
+      deferred: false,
+    });
 
     await this.systemMetadataRepository.set(SystemMetadataKey.FacialRecognitionState, { lastRun });
 

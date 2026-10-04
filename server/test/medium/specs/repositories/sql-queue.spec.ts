@@ -1,5 +1,8 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { JobName, QueueName } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_TIMING, QueueIntent } from 'src/queue/types.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -157,5 +160,116 @@ describe('PostgreSQL queue', () => {
     } = await sql<{ state: string }>`select state from job where "parentId" = ${parent.id}::uuid`.execute(db);
     expect(child.state).toBe('blocked');
     expect(await store.claim(queue, workerB)).toHaveLength(1);
+  });
+  it('settles superseded runs separately and dispatches the newest request after a terminal predecessor failure', async () => {
+    const runs = await Promise.all([1, 2, 3].map(() => store.createRun('overlap', {})));
+    const options = { deduplication: { id: 'overlap', keepLastIfActive: true } };
+    await store.enqueue([intent({ options, safeToRetry: false, runId: runs[0], itemKey: 'asset' })]);
+    const [first] = await store.claim(queue, workerA);
+    await store.enqueue([intent({ options, runId: runs[1], itemKey: 'asset', data: { revision: 2 } })]);
+    await store.enqueue([intent({ options, runId: runs[2], itemKey: 'asset', data: { revision: 3 } })]);
+    for (const run of runs) {
+      await store.finishEnumeration(run);
+    }
+    await store.fail(first, 'ambiguous predecessor');
+    const states = async () =>
+      (
+        await sql<{ runId: string; state: string }>`select "runId", state from job_run_item
+      where "runId" = any(${runs}::uuid[])`.execute(db)
+      ).rows;
+    expect(await states()).toEqual(
+      expect.arrayContaining([
+        { runId: runs[0], state: 'needs_attention' },
+        { runId: runs[1], state: 'cancelled' },
+        { runId: runs[2], state: 'pending' },
+      ]),
+    );
+    const [latest] = await store.claim(queue, workerB);
+    expect(latest.data).toEqual({ revision: 3 });
+    await store.complete(latest, []);
+    expect(await states()).toContainEqual({ runId: runs[2], state: 'completed' });
+    expect(await store.claim(queue, workerA)).toEqual([]);
+  });
+
+  it('keeps a repeated stage in one run pending until its newest revision commits', async () => {
+    const runId = await store.createRun('same-run', {});
+    const options = { deduplication: { id: 'same-run', keepLastIfActive: true } };
+    await store.enqueue([intent({ options, runId, itemKey: 'asset' })]);
+    const [first] = await store.claim(queue, workerA);
+    await store.enqueue([intent({ options, runId, itemKey: 'asset', data: { revision: 2 } })]);
+    await store.finishEnumeration(runId);
+    await store.complete(first, []);
+    const [next] = await store.claim(queue, workerB);
+    expect(next.id).toBe(first.id);
+    expect(next.attempt).toBe(first.attempt + 1);
+    expect(next.data).toEqual({ revision: 2 });
+    expect(await store.complete(first, [])).toBe(false);
+    await store.complete(next, []);
+    const {
+      rows: [run],
+    } = await sql<{ finishedAt: Date }>`select "finishedAt" from job_run where id = ${runId}::uuid`.execute(db);
+    expect(run.finishedAt).not.toBeNull();
+  });
+  it('reuses an immutable producer selection after restart while the source library changes', async () => {
+    const runId = await store.createRun('selection-restart', {});
+    await store.enqueue([intent({ runId, itemKey: 'producer' })]);
+    const [claim] = await store.claim(queue, workerA);
+    const repository = new JobRepository({} as never, {} as never, {} as never, { setContext: vi.fn() } as never, db);
+    repository['handlers'][JobName.AssetGenerateThumbnails] = {
+      queueName: queue as QueueName,
+      jobName: JobName.AssetGenerateThumbnails,
+      label: 'fixture',
+      handler: vi.fn(),
+    };
+    const later = randomUUID();
+    const selection = db.selectFrom('job_worker').select('id').where('id', 'in', [workerA, workerB, later]);
+    await queueExecution.run(
+      {
+        claim,
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      },
+      async () => {
+        await repository.queueSelection(JobName.AssetGenerateThumbnails, selection);
+        await store.initialize([], later);
+        await repository.queueSelection(JobName.AssetGenerateThumbnails, selection);
+      },
+    );
+    const { rows } = await sql<{ itemKey: string }>`select "itemKey" from job_run_item
+      where "runId" = ${runId}::uuid and stage = ${JobName.AssetGenerateThumbnails}`.execute(db);
+    expect(rows.map((row) => row.itemKey).sort()).toEqual([workerA, workerB].sort());
+  });
+  it('carries required child stages into every run sharing a deduplicated parent', async () => {
+    const firstRun = await store.createRun('shared-parent', {});
+    const otherRun = await store.createRun('shared-parent', {});
+    const options = { deduplication: { id: 'shared-parent' } };
+    await store.enqueue([intent({ runId: firstRun, itemKey: 'asset', options })]);
+    const [parent] = await store.claim(queue, workerA);
+    await store.enqueue([intent({ runId: otherRun, itemKey: 'asset', options })]);
+    await store.finishEnumeration(firstRun);
+    await store.finishEnumeration(otherRun);
+    await store.complete(parent, [
+      intent({ name: 'required-ml', runId: firstRun, itemKey: 'asset', parentId: parent.id }),
+    ]);
+    const runs = await store.listRuns(100, 0);
+    for (const id of [firstRun, otherRun]) {
+      expect(runs.find((run) => run.id === id)).toMatchObject({ total: 2, completed: 1, waiting: 1, finishedAt: null });
+    }
+  });
+
+  it('does not replay unsafe side effects through a newer pending request after an ambiguous stop', async () => {
+    const options = { deduplication: { id: 'unsafe-latest', keepLastIfActive: true } };
+    await store.enqueue([intent({ options, safeToRetry: false })]);
+    const [first] = await store.claim(queue, workerA);
+    await store.enqueue([intent({ options, safeToRetry: false, data: { revision: 2 } })]);
+    await store.fail(first, 'worker lost');
+    expect(await store.claim(queue, workerB)).toEqual([]);
+    const { rows } = await sql<{ state: string }>`select state from job where queue = ${queue}`.execute(db);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.state === 'needs_attention')).toBe(true);
   });
 });

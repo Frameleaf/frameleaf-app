@@ -1,5 +1,5 @@
 import { Kysely, Transaction, sql } from 'kysely';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   QUEUE_BATCH,
   QUEUE_HIGH_WATER,
@@ -46,21 +46,49 @@ export class SqlQueueStore {
       if (key) {
         const {
           rows: [existing],
-        } = await sql<{ id: string; state: QueueState }>`
-          select id, state from job where queue = ${intent.queue} and "dedupKey" = ${key}
+        } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`
+          select id, state, "latestPending" from job where queue = ${intent.queue} and "dedupKey" = ${key}
           and state in ('pending','waiting','active') for update
         `.execute(db);
         if (existing) {
           if (intent.options?.deduplication?.keepLastIfActive) {
             if (existing.state === 'active') {
+              // Replaced requests did not execute; they cannot inherit the predecessor's success.
+              const previous = existing.latestPending;
+              if (
+                previous?.runId &&
+                previous.itemKey &&
+                (previous.runId !== intent.runId || previous.itemKey !== intent.itemKey)
+              ) {
+                await sql`update job_run_item set state = 'cancelled'
+                  where "runId" = ${previous.runId}::uuid and "itemKey" = ${previous.itemKey} and stage = ${previous.name}
+                  and "jobId" is null`.execute(db);
+              }
+              if (intent.runId && intent.itemKey) {
+                await this.insertRunItem(intent, db);
+              }
               await sql`update job set "latestPending" = ${JSON.stringify(intent)}::jsonb where id = ${existing.id}::uuid`.execute(
                 db,
               );
+              await this.settleRuns(db);
+              continue;
             } else {
-              // Waiting deduplicated work always carries the most recent request.
+              // Pending replacement transfers ownership to the newest run. Older requests
+              // are cancelled explicitly instead of inheriting an output they never requested.
+              await sql`update job_run_item set state = 'cancelled', "jobId" = null
+                where "jobId" = ${existing.id}::uuid and not
+                  ("runId" is not distinct from ${intent.runId ?? null}::uuid and "itemKey" is not distinct from ${intent.itemKey ?? null})`.execute(
+                db,
+              );
+              if (intent.runId && intent.itemKey) {
+                await this.insertRunItem(intent, db);
+              }
               await sql`update job set data = ${JSON.stringify(intent.data)}::jsonb,
+                "safeToRetry" = ${intent.safeToRetry}, sensitive = ${intent.sensitive}, "deadlineMs" = ${intent.deadlineMs},
+                "runId" = ${intent.runId ?? null}::uuid, "itemKey" = ${intent.itemKey ?? null},
                 "availableAt" = now() + ${intent.options.delay ?? 0} * interval '1 millisecond'
                 where id = ${existing.id}::uuid`.execute(db);
+              await this.settleRuns(db);
             }
           }
           // Runs must never count a deduplicated selection as silently absent.
@@ -138,12 +166,14 @@ export class SqlQueueStore {
       `.execute(tx);
       if (counts.ready <= QUEUE_LOW_WATER) {
         // Keep the ready + active set bounded even for a 15,000-item selection.
-        await sql`update job set state = 'waiting' where id in (
+        for (let slots = QUEUE_HIGH_WATER - counts.ready; slots > 0; slots -= QUEUE_BATCH) {
+          await sql`update job set state = 'waiting' where id in (
           select id from job j where queue = ${queue} and state = 'pending' and "availableAt" <= now()
             and ("parentId" is null or exists (select 1 from job p where p.id = j."parentId" and p.state = 'completed'))
-          order by "createdAt", id limit ${Math.min(QUEUE_BATCH, QUEUE_HIGH_WATER - counts.ready)}
+          order by "createdAt", id limit ${Math.min(QUEUE_BATCH, slots)}
           for update skip locked
         )`.execute(tx);
+        }
       }
       const capacity = Math.min(QUEUE_BATCH, config.concurrency - counts.active);
       if (capacity <= 0) {
@@ -212,7 +242,31 @@ export class SqlQueueStore {
         tx,
       );
       await this.syncItem(claim.id, tx);
-      await this.enqueue([...followups, ...(job.latestPending ? [job.latestPending] : [])], tx);
+      const { rows: lineage } = await sql<{
+        runId: string;
+        itemKey: string;
+      }>`select "runId", "itemKey" from job_run_item
+        where "jobId" = ${claim.id}::uuid and state != 'cancelled'`.execute(tx);
+      const inherited = followups.flatMap((intent) => {
+        if (!lineage.length || (intent.runId && intent.runId !== claim.runId)) {
+          return [intent];
+        }
+        return lineage.map((parent) => ({
+          ...intent,
+          runId: parent.runId,
+          itemKey:
+            intent.itemKey === claim.itemKey
+              ? parent.itemKey
+              : (intent.itemKey ??
+                String(
+                  intent.data.id ??
+                    intent.data.assetId ??
+                    createHash('sha256').update(JSON.stringify(intent.data)).digest('hex'),
+                )),
+        }));
+      });
+      await this.enqueue(inherited, tx);
+      await this.scheduleLatest(claim.id, job.latestPending, tx);
       await this.settleRuns(tx);
       return true;
     });
@@ -221,24 +275,68 @@ export class SqlQueueStore {
   async fail(claim: QueueClaim, reason: string) {
     return this.db.transaction().execute(async (tx) => {
       await sql`select name from job_queue where name = ${claim.queue} for update`.execute(tx);
-      const { rows } = await sql<{ id: string; state: QueueState }>`update job set
+      const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
         state = case when not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
         "availableAt" = now() + interval '30 seconds', token = null, "leaseExpiresAt" = null,
         "finishedAt" = case when not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
         error = case when sensitive then 'Job failed; sensitive details omitted' else ${reason.slice(0, 500)} end,
         data = case when sensitive then '{}'::jsonb else data end
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
-        returning id, state`.execute(tx);
+        returning id, state, "latestPending"`.execute(tx);
       if (!rows.length) {
         return false;
       }
       await sql`update job_attempt set outcome = ${rows[0].state}, "finishedAt" = now(),
         error = (select error from job where id = ${claim.id}::uuid) where token = ${claim.token}::uuid`.execute(tx);
       await this.syncItem(claim.id, tx);
+      if (rows[0].state !== 'pending') {
+        await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
+        await this.scheduleLatest(claim.id, rows[0].latestPending, tx, false);
+      }
       await this.settleDependencies(tx);
       await this.settleRuns(tx);
       return true;
     });
+  }
+
+  private async scheduleLatest(
+    previousId: string,
+    latest: QueueIntent | null,
+    tx: Executor,
+    predecessorSucceeded = true,
+  ) {
+    if (!latest) {
+      return;
+    }
+    // A repeated item/stage in one run retains its ledger row and monotonic attempt audit.
+    const { rows } = await sql`update job set state = 'pending', data = ${JSON.stringify(latest.data)}::jsonb,
+      "safeToRetry" = ${latest.safeToRetry}, sensitive = ${latest.sensitive}, "deadlineMs" = ${latest.deadlineMs},
+      "availableAt" = now() + ${latest.options?.delay ?? 0} * interval '1 millisecond',
+      "retryBaseAttempt" = attempt, "finishedAt" = null, "cancelRequestedAt" = null, error = null,
+      "workerId" = null, "latestPending" = null
+      where id = ${previousId}::uuid and "runId" = ${latest.runId ?? null}::uuid
+      and "itemKey" = ${latest.itemKey ?? null} and name = ${latest.name} returning id`.execute(tx);
+    if (rows.length) {
+      await this.syncItem(previousId, tx);
+    } else {
+      // A fresh safe request is not a dependency on the predecessor's success.
+      await this.enqueue([{ ...latest, parentId: latest.parentId === previousId ? undefined : latest.parentId }], tx);
+    }
+    if (!predecessorSucceeded && !latest.safeToRetry) {
+      // An ambiguous external effect cannot be replayed via the latest-request back door.
+      const key = latest.options?.deduplication?.id ?? latest.options?.jobId;
+      const { rows: blocked } = await sql<{
+        id: string;
+      }>`update job set state = 'needs_attention', "finishedAt" = now(),
+        error = 'Previous execution did not settle safely; review this request before rerunning',
+        data = case when sensitive then '{}'::jsonb else data end
+        where queue = ${latest.queue} and "dedupKey" = ${key ?? null} and state in ('pending','waiting') returning id`.execute(
+        tx,
+      );
+      for (const item of blocked) {
+        await this.syncItem(item.id, tx);
+      }
+    }
   }
 
   /** Only the coordinator observes persisted deadlines; no handler event-loop timer is trusted. */
@@ -374,6 +472,10 @@ export class SqlQueueStore {
     // Keep run accounting and dependency history. Clearing hides payloads and cancels pending work.
     await this.db.transaction().execute(async (tx) => {
       await sql`select name from job_queue where name = ${queue} for update`.execute(tx);
+      await sql`update job_run_item i set state = 'cancelled' where i."jobId" is null and exists (
+        select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
+        and j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey"
+        and j."latestPending" ->> 'name' = i.stage)`.execute(tx);
       const { rows } = await sql<{ id: string }>`update job set state = 'cancelled', data = '{}'::jsonb,
         "latestPending" = null, "finishedAt" = now() where queue = ${queue} and state = any(${states}::text[])
         and state != 'active' returning id`.execute(tx);
@@ -416,6 +518,10 @@ export class SqlQueueStore {
 
 /** Restore happens with all workers stopped. Ambiguous active effects are retained for human review. */
 export async function resetQueueAfterRestore(db: Executor) {
+  await sql`update job_run_item i set state = 'needs_attention' where i."jobId" is null and exists (
+    select 1 from job j where (j.state = 'active' or (not j."safeToRetry" and j.state in ('pending','waiting')))
+    and j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey"
+    and j."latestPending" ->> 'name' = i.stage)`.execute(db);
   await sql`update job set state = 'needs_attention', token = null, "leaseExpiresAt" = null,
     "finishedAt" = now(), "latestPending" = null, error = 'Restore interrupted an active execution',
     data = case when sensitive then '{}'::jsonb else data end

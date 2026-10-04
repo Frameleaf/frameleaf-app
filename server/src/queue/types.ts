@@ -55,6 +55,7 @@ export type QueueExecution = {
   progress: (units: number) => void;
   followups: QueueIntent[];
   adoptions: Array<(tx: Transaction<any>) => Promise<void>>;
+  afterCommit?: Array<() => Promise<void>>;
   buffering: boolean;
   progressUnits: number;
   outcome?: 'completed' | 'failed';

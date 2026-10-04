@@ -500,23 +500,8 @@ test("Compose resolves all deployment files and hardware overlays without a daem
   }
 });
 
-// FL-191: nothing Frameleaf builds or runs pulls an upstream image. The official server image is the
-// compatibility target of the handoff and appears only in its certification lane and handoff code.
+// Frameleaf operational paths use owned images; frozen attribution records remain historical.
 const upstreamRegistry = ["ghcr.io", "immich-app"].join("/");
-const compatibilityTargetFiles = new Set([
-  "docker/postgres/Dockerfile",
-  "docs/docs/administration/upstream-handoff.md",
-  "docs/docs/features/revert-to-upstream.md",
-  "e2e/docker-compose.fork-roundtrip.yml",
-  "scripts/test-fork-roundtrip.sh",
-  "scripts/test-fork-roundtrip.test.mjs",
-  "scripts/test-cli-fork-to-official.mjs",
-  "server/src/commands/fork-handoff.command.spec.ts",
-  "server/src/fork-schema/supported-versions.json",
-  "server/src/repositories/fork-handoff.repository.ts",
-  "server/src/services/fork-handoff.service.spec.ts",
-  "server/test/medium/specs/fork-schema/return-reconciliation.spec.ts",
-]);
 // Dated records of what was used when they were written; new files are never exempt.
 const historicalRecords = new Set([
   ".superpowers/sdd/task-3-report.md",
@@ -546,20 +531,11 @@ const trackedFilesContaining = (needle) => {
   return result.stdout.split("\n").filter(Boolean);
 };
 
-test("only the compatibility-target exceptions name an upstream image", () => {
+test("operational paths do not pull upstream images", () => {
   const unexpected = trackedFilesContaining(upstreamRegistry).filter(
-    (file) => !compatibilityTargetFiles.has(file) && !historicalRecord(file),
+    (file) => !historicalRecord(file),
   );
   assert.deepEqual(unexpected, []);
-  // The exception is the official server image only, never a database, base or build-cache image.
-  for (const file of compatibilityTargetFiles) {
-    if (!existsSync(resolve(root, file))) continue;
-    for (const match of read(file).matchAll(
-      /ghcr\.io\/immich-app\/([a-z0-9-]+)/g,
-    ))
-      assert.equal(match[1], "immich-server", `${file}: ${match[0]}`);
-  }
-
 });
 
 test("installation files and instructions come from Frameleaf releases, not upstream ones", () => {
@@ -827,9 +803,16 @@ test("release Compose files pull only digest-pinned or promotion-verified images
   );
 });
 
-
 test("canonical deployment uses PostgreSQL jobs with no cache service", () => {
-  for (const file of ["docker/docker-compose.yml", "docker/docker-compose.rootless.yml", "docker/docker-compose.dev.yml", "docker/docker-compose.prod.yml", "e2e/docker-compose.yml", "e2e/docker-compose.dev.yml", "e2e/docker-compose.buddy.yml"]) {
+  for (const file of [
+    "docker/docker-compose.yml",
+    "docker/docker-compose.rootless.yml",
+    "docker/docker-compose.dev.yml",
+    "docker/docker-compose.prod.yml",
+    "e2e/docker-compose.yml",
+    "e2e/docker-compose.dev.yml",
+    "e2e/docker-compose.buddy.yml",
+  ]) {
     const body = read(file);
     assert.doesNotMatch(body, /REDIS_|redis:|valkey|vchord/);
     assert.doesNotMatch(body, /\/var\/lib\/postgresql\/data/);
@@ -840,8 +823,13 @@ test("canonical deployment uses PostgreSQL jobs with no cache service", () => {
   }
   assert.match(read("docker/example.env"), /^DB_DATABASE_NAME=frameleaf$/m);
   const workflow = load(read(".github/workflows/postgres.yml"));
-  assert.deepEqual(workflow.jobs.build.strategy.matrix.runner, ["ubuntu-24.04", "ubuntu-24.04-arm"]);
-  const probe = workflow.jobs.build.steps.find((step) => step.name === "Verify PostgreSQL and extension versions");
+  assert.deepEqual(workflow.jobs.build.strategy.matrix.runner, [
+    "ubuntu-24.04",
+    "ubuntu-24.04-arm",
+  ]);
+  const probe = workflow.jobs.build.steps.find(
+    (step) => step.name === "Verify PostgreSQL and extension versions",
+  );
   assert.equal(probe.env.EXPECTED_PG_MAJOR, "19");
   assert.equal(probe.env.EXPECTED_PGVECTOR, "0.8.7");
   assert.match(probe.run, /USING hnsw/);

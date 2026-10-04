@@ -37,8 +37,6 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkPrivacyRepository, PrivacySidecar } from 'src/repositories/fork-privacy.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -702,20 +700,16 @@ export class ImageEnrichmentService extends BaseService {
       );
       return JobStatus.Skipped;
     }
+
     // Library care → "Reprocess only affected outputs" (FL-69, settings-catalog.mjs:966-971): a full
     // rerun still visits every photo, but each keeps a current description and only one that is
     // missing, failed or out of date (its original, confirmed names or prompt changed) is redone.
     const onlyAffected = !!force && libraryCare.incrementalEnrichment;
-    let jobs: JobItem[] = [];
-    const assets = this.assetJobRepository.streamForImageDescriptionJob(force);
-    for await (const asset of assets) {
-      jobs.push({ name: JobName.ImageDescription, data: { id: asset.id, ...(onlyAffected && { onlyAffected }) } });
-      if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
-        await this.jobRepository.queueAll(jobs);
-        jobs = [];
-      }
-    }
-    await this.jobRepository.queueAll(jobs);
+    await this.jobRepository.queueSelection(
+      JobName.ImageDescription,
+      this.assetJobRepository.selectionForImageDescriptionJob(force),
+      { ...(onlyAffected && { onlyAffected }) },
+    );
     return JobStatus.Success;
   }
   @OnJob({ name: JobName.NsfwDetectionQueueAll, queue: QueueName.NsfwDetection })
@@ -724,16 +718,11 @@ export class ImageEnrichmentService extends BaseService {
     if (!isNsfwDetectionEnabled(machineLearning)) {
       return JobStatus.Skipped;
     }
-    let jobs: JobItem[] = [];
-    const assets = this.assetJobRepository.streamForNsfwDetectionJob(force);
-    for await (const asset of assets) {
-      jobs.push({ name: JobName.NsfwDetection, data: { id: asset.id } });
-      if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
-        await this.jobRepository.queueAll(jobs);
-        jobs = [];
-      }
-    }
-    await this.jobRepository.queueAll(jobs);
+
+    await this.jobRepository.queueSelection(
+      JobName.NsfwDetection,
+      this.assetJobRepository.selectionForNsfwDetectionJob(force),
+    );
     return JobStatus.Success;
   }
   @OnJob({ name: JobName.NsfwDetection, queue: QueueName.NsfwDetection })
@@ -2147,7 +2136,7 @@ const chooseGridLayout = (
   }
   return { cols: 3, rows: 3 };
 };
-const subsampleFrames = <T,>(frames: T[], target: number): T[] => {
+const subsampleFrames = <T>(frames: T[], target: number): T[] => {
   if (frames.length <= target) {
     return frames;
   }

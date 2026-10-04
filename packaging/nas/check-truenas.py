@@ -35,7 +35,7 @@ digests = sorted(hashlib.sha256(entry.read_bytes()).hexdigest() for entry in fil
 actual_hash = hashlib.sha256(("\n".join(digests) + "\n").encode()).hexdigest()
 if actual_hash != expected_hash:
     raise ValueError("TrueNAS library hash mismatch")
-# Verification precedes every library import; avoid mutating its certified content with bytecode.
+# Verification precedes every library import; avoid mutating its pinned source with bytecode.
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(library.parent))
 render = importlib.import_module(f"{library.name}.render")
@@ -54,12 +54,12 @@ for enabled in (False, True):
     # FL-300: no metrics ports are asked for, published or passed to the server
     assert not any("METRICS" in name for name in result["services"]["server"]["environment"])
     assert "api_metrics_port" not in candidate["network"] and "microservices_metrics_port" not in candidate["network"]
-    postgres = result["services"]["pgvecto"]
+    postgres = result["services"]["postgres"]
     assert postgres["environment"]["PGDATA"] == "/var/lib/postgresql/19/docker"
     assert postgres["user"] == "999:999"
     assert any(mount["target"] == "/var/lib/postgresql" for mount in postgres["volumes"])
     assert "pg_isready" in str(postgres["healthcheck"])
     db = candidate["images"]["pgvector_19_image"]
-    assert result["services"]["pgvecto"]["image"] == f'{db["repository"]}:{db["tag"]}'
-    assert result["services"]["pgvecto"]["image"].startswith("ghcr.io/frameleaf/frameleaf-postgres:")
+    assert result["services"]["postgres"]["image"] == f'{db["repository"]}:{db["tag"]}'
+    assert result["services"]["postgres"]["image"].startswith("ghcr.io/frameleaf/frameleaf-postgres:")
 print("TrueNAS library render passed with ML disabled and enabled")
