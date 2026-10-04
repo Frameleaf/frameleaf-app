@@ -21,6 +21,7 @@ import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -316,6 +317,7 @@ export type ServiceOverrides = {
   sharedLink: SharedLinkRepository;
   sharedLinkAsset: SharedLinkAssetRepository;
   itemShare: ItemShareRepository;
+  albumSource: AlbumSourceRepository;
   stack: StackRepository;
   storage: StorageRepository;
   sync: SyncRepository;
@@ -428,6 +430,7 @@ export const getMocks = () => {
     sharedLink: automock(SharedLinkRepository),
     sharedLinkAsset: automock(SharedLinkAssetRepository),
     itemShare: automock(ItemShareRepository, { strict: false }),
+    albumSource: automock(AlbumSourceRepository, { strict: false }),
     stack: automock(StackRepository),
     storage: newStorageRepositoryMock(),
     sync: automock(SyncRepository),
@@ -557,6 +560,7 @@ export const newTestService = <T extends BaseService>(
     overrides.sharedLink || (mocks.sharedLink as As<SharedLinkRepository>),
     overrides.sharedLinkAsset || (mocks.sharedLinkAsset as As<SharedLinkAssetRepository>),
     overrides.itemShare || (mocks.itemShare as As<ItemShareRepository>),
+    overrides.albumSource || (mocks.albumSource as As<AlbumSourceRepository>),
     overrides.stack || (mocks.stack as As<StackRepository>),
     overrides.storage || (mocks.storage as As<StorageRepository>),
     overrides.sync || (mocks.sync as As<SyncRepository>),
