@@ -284,9 +284,12 @@ const assertScriptTestWiring = (job) => {
   const install = scripts.findIndex(
     (step) =>
       step.run ===
-      "pnpm --filter @immich/scripts --filter immich install --frozen-lockfile",
+      "pnpm --filter @immich/scripts --filter 'immich...' install --frozen-lockfile",
   );
-  assert.ok(install >= 0);
+  assert.ok(
+    install >= 0,
+    "Required locked install must include the server dependency closure",
+  );
   for (const command of [
     "pnpm --filter @immich/scripts test",
     "node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs",
@@ -311,6 +314,35 @@ test("standalone script tests install locked dependencies and run every workflow
 
 test("script wiring rejects missing contracts, skipped coverage and suppressed failures", () => {
   const job = workflow("test.yml").jobs["script-unit-tests"];
+  assertScriptTestWiring(job);
+  const installCommand = job.steps.find(
+    (step) => step.name === "Install script test dependencies",
+  ).run;
+  for (const change of [
+    { run: installCommand.replace("'immich...'", "immich") },
+    { run: installCommand.replace(" --frozen-lockfile", "") },
+    { run: installCommand.replace("--filter @immich/scripts ", "") },
+    { run: `${installCommand} || true` },
+    { if: "false" },
+    { "continue-on-error": true },
+  ]) {
+    const changed = structuredClone(job);
+    Object.assign(
+      changed.steps.find(
+        (step) => step.name === "Install script test dependencies",
+      ),
+      change,
+    );
+    assert.throws(
+      () => assertScriptTestWiring(changed),
+      JSON.stringify(change),
+    );
+  }
+  const missingInstall = structuredClone(job);
+  missingInstall.steps = missingInstall.steps.filter(
+    (step) => step.name !== "Install script test dependencies",
+  );
+  assert.throws(() => assertScriptTestWiring(missingInstall));
   const command = job.steps.find(
     (step) => step.name === "Validate Frameleaf workflow contracts",
   ).run;
