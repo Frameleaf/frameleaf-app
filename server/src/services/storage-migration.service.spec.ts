@@ -96,6 +96,7 @@ const setup = () => {
   const service = new StorageMigrationService(
     mocks.logger as never,
     mocks.databaseRepository as never,
+    {} as never, // Canonical checksum repository is not used by this operation.
     mocks.jobRepository as never,
     mocks.mediaHealthRepository as never,
     mocks.physicalFileRepository as never,

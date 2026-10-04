@@ -3,10 +3,10 @@ import {
   type ChunkPlan,
   MEDIA_OPERATION_AUTO_RETRIES,
   MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
+  SAFE_MEDIA_OPERATION_REPLAY_KINDS,
   type StoredChunk,
   canDismissMediaOperation,
   canPauseMediaOperation,
-  canResumeLostClaim,
   canResumeMediaOperation,
   canRetryMediaOperation,
   canReuseChunk,
@@ -172,31 +172,21 @@ describe('pause and resume (FL-104)', () => {
 describe('automatic retry (FL-104)', () => {
   it('gives every job exactly one automatic retry, after a delay', () => {
     expect(MEDIA_OPERATION_AUTO_RETRIES).toBe(1);
-    expect(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS).toBeGreaterThan(0);
+    expect(MEDIA_OPERATION_AUTO_RETRY_DELAY_MS).toBe(30_000);
   });
 });
 
-describe('lost claims (FL-43)', () => {
-  it('resumes a resumable kind at most twice, whatever its maxAttempts', () => {
-    const job = (attempt: number, maxAttempts = 20) => ({
-      kind: MediaOperationKind.StudioExport,
-      attempt,
-      maxAttempts,
-    });
-    expect([1, 2, 3].map((attempt) => canResumeLostClaim(job(attempt)))).toEqual([true, true, false]);
-    // A lower allowance still wins.
-    expect(canResumeLostClaim(job(1, 1))).toBe(false);
-  });
-
-  it('never resumes a kind that would start again from nothing', () => {
+describe('safe automatic replay', () => {
+  it('allows local resumable rendering, while excluding remote submissions and destructive operations', () => {
+    expect(SAFE_MEDIA_OPERATION_REPLAY_KINDS).toContain(MediaOperationKind.StudioExport);
+    expect(SAFE_MEDIA_OPERATION_REPLAY_KINDS).toContain(MediaOperationKind.QuickEdit);
     for (const kind of [
-      MediaOperationKind.StudioPreview,
-      MediaOperationKind.RestorationPreview,
-      MediaOperationKind.QuickEdit,
-      MediaOperationKind.StudioBundleExport,
-      MediaOperationKind.StudioBundleImport,
+      MediaOperationKind.CloudMlJob,
+      MediaOperationKind.BuddyRestore,
+      MediaOperationKind.PhysicalDeduplication,
+      MediaOperationKind.CloudRestore,
     ]) {
-      expect(canResumeLostClaim({ kind, attempt: 1, maxAttempts: 3 })).toBe(false);
+      expect(SAFE_MEDIA_OPERATION_REPLAY_KINDS).not.toContain(kind);
     }
   });
 });

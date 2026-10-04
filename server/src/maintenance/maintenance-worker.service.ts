@@ -21,7 +21,7 @@ import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.
 import { MaintenanceWebsocketRepository } from 'src/maintenance/maintenance-websocket.repository.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { DatabaseRepository, type HeldLock } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
@@ -29,7 +29,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { type ApiService as _ApiService } from 'src/services/api.service.js';
 import { type BaseService as _BaseService } from 'src/services/base.service.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
-import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { DatabaseBackupService, type DatabaseRestoreFence } from 'src/services/database-backup.service.js';
 import { type ServerService as _ServerService } from 'src/services/server.service.js';
 import { type VersionService as _VersionService } from 'src/services/version.service.js';
 import { buddyMaintenancePath, buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
@@ -367,25 +367,17 @@ export class MaintenanceWorkerService {
   async runRestoreDatabase(action: SetMaintenanceModeDto) {
     // also set here, before the first await, for a restore resumed from the stored state on start
     this.#restoring = true;
-    const held = action.buddyRecoveryId
-      ? await this.databaseRepository.holdLock(DatabaseLock.MaintenanceOperation)
-      : null;
-    const isLock = action.buddyRecoveryId
-      ? !!held
-      : await this.databaseRepository.tryLock(DatabaseLock.MaintenanceOperation);
-    if (!isLock) {
-      // another process holds the maintenance lock; the claim is released so this worker is not stuck
-      this.#restoring = false;
-      return;
-    }
-
-    this.logger.log(`Running maintenance action ${action.action}`);
-
+    let held: HeldLock | null = null;
     const assert = async () => {
-      if (action.buddyRecoveryId && (!held || !(await held.verify())))
+      if (!held || !(await held.verify()))
         throw new Error('Recovery lost its maintenance lock; retry in maintenance mode');
     };
     try {
+      held = await this.databaseRepository.holdLock(DatabaseLock.MaintenanceOperation);
+      if (!held) {
+        return;
+      }
+      this.logger.log(`Running maintenance action ${action.action}`);
       await assert();
       await this.systemMetadataRepository.set(SystemMetadataKey.MaintenanceMode, {
         isMaintenanceMode: true,
@@ -429,7 +421,10 @@ export class MaintenanceWorkerService {
         throw new Error("Expected restoreBackupFilename but it's missing!");
       }
 
-      await this.restoreBackup(action.restoreBackupFilename, action.keepSafetyBackup !== false);
+      await this.restoreBackup(action.restoreBackupFilename, action.keepSafetyBackup !== false, {
+        backendPid: held.backendPid,
+        assert,
+      });
     } catch (error) {
       this.logger.error(`Encountered error running action: ${error}`);
       this.setStatus({
@@ -439,12 +434,15 @@ export class MaintenanceWorkerService {
         error: '' + error,
       });
     } finally {
-      await held?.release();
-      this.#restoring = false;
+      try {
+        await held?.release();
+      } finally {
+        this.#restoring = false;
+      }
     }
   }
 
-  private async restoreBackup(filename: string, keepSafetyBackup: boolean): Promise<void> {
+  private async restoreBackup(filename: string, keepSafetyBackup: boolean, fence: DatabaseRestoreFence): Promise<void> {
     this.setStatus({
       active: true,
       action: MaintenanceAction.RestoreDatabase,
@@ -461,9 +459,10 @@ export class MaintenanceWorkerService {
           progress,
           task,
         }),
-      { keepSafetyBackup },
+      { keepSafetyBackup, fence },
     );
 
+    await fence.assert();
     await this.setAction({
       action: MaintenanceAction.End,
     });

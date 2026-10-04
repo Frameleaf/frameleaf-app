@@ -407,15 +407,25 @@ export class DatabaseBackupService {
   }
 
   private readDatabaseDump(filePath: string): Readable {
-    const file = this.storageRepository.createPlainReadStream(filePath);
-    if (!filePath.endsWith('.gz')) {
-      return file;
-    }
-    const decoded = this.storageRepository.createGunzip();
-    // Pipe does not forward source errors. Forward them, and stop disk reads when the consumer stops.
-    file.on('error', (error) => decoded.destroy(error));
-    decoded.once('close', () => file.destroy());
-    return file.pipe(decoded);
+    const storage = this.storageRepository;
+    // Opening is deferred until iteration, after the restore fence has been checked.
+    return Readable.from(
+      (async function* () {
+        const file = storage.createPlainReadStream(filePath);
+        const decoded = filePath.endsWith('.gz') ? storage.createGunzip() : file;
+        try {
+          if (decoded !== file) {
+            // Pipe does not forward disk errors to the decoder's async iterator.
+            file.on('error', (error) => decoded.destroy(error));
+            file.pipe(decoded);
+          }
+          yield* decoded;
+        } finally {
+          file.destroy();
+          decoded.destroy();
+        }
+      })(),
+    );
   }
 
   async uploadBackup(file: Express.Multer.File): Promise<void> {
@@ -728,27 +738,33 @@ const SQL_RESET_SCHEMA = (username: string) => `
 `;
 
 async function* sql(inputStream: Readable, databaseUsername: string, fence?: DatabaseRestoreFence) {
-  await fence?.assert();
-  yield SQL_DROP_CONNECTIONS(fence?.backendPid);
-  yield SQL_RESET_SCHEMA(databaseUsername);
-
-  for await (const chunk of inputStream) {
+  try {
     await fence?.assert();
-    yield chunk;
+    yield SQL_DROP_CONNECTIONS(fence?.backendPid);
+    yield SQL_RESET_SCHEMA(databaseUsername);
+    for await (const chunk of inputStream) {
+      await fence?.assert();
+      yield chunk;
+    }
+    await fence?.assert();
+  } finally {
+    inputStream.destroy();
   }
-  await fence?.assert();
 }
 
 async function* sqlRollback(inputStream: Readable, databaseUsername: string, fence?: DatabaseRestoreFence) {
-  await fence?.assert();
-  yield SQL_DROP_CONNECTIONS(fence?.backendPid);
-  yield SQL_RESET_SCHEMA(databaseUsername);
-
-  for await (const chunk of inputStream) {
+  try {
     await fence?.assert();
-    yield chunk;
+    yield SQL_DROP_CONNECTIONS(fence?.backendPid);
+    yield SQL_RESET_SCHEMA(databaseUsername);
+    for await (const chunk of inputStream) {
+      await fence?.assert();
+      yield chunk;
+    }
+    await fence?.assert();
+  } finally {
+    inputStream.destroy();
   }
-  await fence?.assert();
 }
 
 function createSqlProgressStreams(cb: (progress: number) => void) {

@@ -1,18 +1,14 @@
 import { Reflector } from '@nestjs/core';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { ForkHandoffCommand } from 'src/commands/fork-handoff.command.js';
-import { ForkSchemaCutoverCommand } from 'src/commands/fork-schema-cutover.command.js';
-import { ConfirmForkSchemaAdoptQuestion, ForkSchemaCommand } from 'src/commands/fork-schema.command.js';
+import { ImportImmichCommand } from 'src/commands/import-immich.command.js';
 import { commandsAndQuestions } from 'src/commands/index.js';
 
 // nest-commander stores @QuestionSet options under this key (`QuestionSetMeta`, not exported).
 const QUESTION_SET_METADATA = 'CommandBuilder:QuestionSet:Meta';
 
-it('registers the schema conversion and both official handoff directions in the admin CLI', () => {
-  expect(commandsAndQuestions).toEqual(
-    expect.arrayContaining([ForkSchemaCommand, ForkSchemaCutoverCommand, ForkHandoffCommand]),
-  );
+it('registers the one-way Immich importer in the admin CLI', () => {
+  expect(commandsAndQuestions).toEqual(expect.arrayContaining([ImportImmichCommand]));
 });
 
 it('registers the question set of every question a command asks', () => {
@@ -35,9 +31,6 @@ it('registers the question set of every question a command asks', () => {
     }),
   );
 
-  expect(registered).toContain('confirm-fork-schema-adopt');
-  expect(asked).toContain('confirm-fork-schema-adopt');
-  expect(asked).toContain('confirm-fork-schema-start');
   expect([...asked].filter((name) => !registered.has(name))).toEqual([]);
-  expect(commandsAndQuestions.filter((provider) => provider === ConfirmForkSchemaAdoptQuestion)).toHaveLength(1);
+  expect(commandsAndQuestions.filter((provider) => provider === ImportImmichCommand)).toHaveLength(1);
 });

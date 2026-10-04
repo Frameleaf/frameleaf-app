@@ -50,11 +50,11 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 })
 @Index({
   name: 'asset_localDateTime_idx',
-  expression: `("localDateTime" at time zone 'UTC')::date`,
+  expression: `(("localDateTime" at time zone 'UTC')::date)`,
 })
 @Index({
   name: 'asset_localDateTime_month_idx',
-  expression: `date_trunc('MONTH'::text, ("localDateTime" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text`,
+  expression: `(date_trunc('MONTH'::text, ("localDateTime" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)`,
 })
 @Index({ columns: ['originalPath', 'libraryId'] })
 @Index({ columns: ['id', 'stackId'] })

@@ -1095,6 +1095,50 @@ describe(DatabaseBackupService.name, () => {
       expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalled();
     });
 
+    it('does not open the restore input while its initial SQL fence is pending, then propagates disk failure', async () => {
+      const pending = Promise.withResolvers<void>();
+      const checked = Promise.withResolvers<void>();
+      const failure = new Error('restore disk read failed');
+      const input = new Readable({
+        read() {
+          this.destroy(failure);
+        },
+      });
+      mocks.storage.createPlainReadStream
+        .mockImplementationOnce(() => Readable.from(mockData()))
+        .mockReturnValue(input);
+      vi.spyOn(sut, 'createDatabaseBackup').mockResolvedValue('restore-point.sql.gz');
+      const assert = vi
+        .fn()
+        .mockResolvedValue(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockImplementationOnce(async () => {
+          checked.resolve();
+          await pending.promise;
+        });
+
+      const result = sut.restoreDatabaseBackup('candidate.sql.gz', undefined, { fence: { backendPid: 7123, assert } });
+      const rejected = expect(result).rejects.toThrow(failure);
+      await checked.promise;
+      expect(mocks.storage.createPlainReadStream).toHaveBeenCalledTimes(1);
+      expect(input.readableDidRead).toBe(false);
+      pending.resolve();
+      await rejected;
+      expect(input.destroyed).toBe(true);
+      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
+    it('closes the unopened input after losing the SQL fence without reading the restore file', async () => {
+      vi.spyOn(sut, 'createDatabaseBackup').mockResolvedValue('restore-point.sql.gz');
+      const assert = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValue(new Error('restore lock lost'));
+      await expect(
+        sut.restoreDatabaseBackup('candidate.sql.gz', undefined, { fence: { backendPid: 7123, assert } }),
+      ).rejects.toThrow('restore lock lost');
+      // The one read is the completed preflight. SQL did not reopen or consume the file.
+      expect(mocks.storage.createPlainReadStream).toHaveBeenCalledTimes(1);
+      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
     it('fails before mutating the destination when a compressed dump is corrupt', async () => {
       mocks.storage.createPlainReadStream.mockImplementation(() => Readable.from([Buffer.from('invalid gzip')]));
       mocks.storage.createGunzip.mockImplementation(() => createGunzip());

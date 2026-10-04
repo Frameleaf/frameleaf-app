@@ -25,11 +25,30 @@ export async function up(db: Kysely<any>): Promise<void> {
     warnings: [],
   };
   const schema = getFrameleafBaselineSchema();
-  for (const statement of schemaDiff(schema, empty).asSql()) await sql.raw(statement).execute(db);
-  for (const statement of FRAMELEAF_FEATURE_SCHEMA_SQL) await sql.raw(statement).execute(db);
-  await createQueueSchema(db);
-  await createSharedServicesSchema(db);
-  await sql.raw(IMMICH_IMPORT_SCHEMA_SQL).execute(db);
+  const runStage = async (context: string, execute: () => Promise<unknown>) => {
+    try {
+      await execute();
+    } catch (error) {
+      throw new Error(`Frameleaf baseline failed during ${context}`, { cause: error });
+    }
+  };
+  for (const [phase, statements] of [
+    ['model', schemaDiff(schema, empty).asSql()],
+    ['features', FRAMELEAF_FEATURE_SCHEMA_SQL],
+  ] as const) {
+    for (const [index, statement] of statements.entries()) {
+      // Report only the DDL command and object identifier, never a function body or data literal.
+      const object = statement.match(
+        /^\s*((?:CREATE(?: OR REPLACE)?|ALTER|DROP)\s+(?:UNIQUE\s+)?(?:TABLE|INDEX|FUNCTION|TRIGGER|TYPE|EXTENSION|SEQUENCE)\s+(?:"(?:[^"]|"")*"|[\w.]+))/i,
+      )?.[1];
+      await runStage(`${phase} statement ${index + 1}${object ? ` (${object})` : ''}`, () =>
+        sql.raw(statement).execute(db),
+      );
+    }
+  }
+  await runStage('queue schema', () => createQueueSchema(db));
+  await runStage('shared services schema', () => createSharedServicesSchema(db));
+  await runStage('import state schema', () => sql.raw(IMMICH_IMPORT_SCHEMA_SQL).execute(db));
 }
 
 export async function down(): Promise<never> {
