@@ -295,7 +295,8 @@ function testQualificationFixture() {
   const fixture = { run, runs: [run], jobs, finalRun: undefined };
   fixture.request = async (endpoint) => {
     if (
-      endpoint === `actions/workflows/test.yml/runs?head_sha=${sha}&per_page=100`
+      endpoint ===
+      `actions/workflows/test.yml/runs?head_sha=${sha}&per_page=100`
     )
       return { total_count: fixture.runs.length, workflow_runs: fixture.runs };
     if (endpoint === "actions/runs/42") return fixture.finalRun || fixture.run;
@@ -357,7 +358,9 @@ test("a green Test rollup cannot qualify missing, failed, skipped or wrong-SHA j
       const fixture = testQualificationFixture();
       const job = fixture.jobs.find((job) => job.name === name);
       if (defect === "missing")
-        fixture.jobs = fixture.jobs.filter((candidate) => candidate.name !== name);
+        fixture.jobs = fixture.jobs.filter(
+          (candidate) => candidate.name !== name,
+        );
       if (["failure", "skipped"].includes(defect)) job.conclusion = defect;
       if (defect === "wrong-sha") job.head_sha = "b".repeat(40);
       if (defect === "older-attempt") job.run_attempt = 1;
@@ -466,7 +469,9 @@ test("Test qualification rejects a truncated run list that could hide a newer fa
   await assert.rejects(
     requireTestQualification(sha, async (endpoint) => {
       const response = await fixture.request(endpoint);
-      return response.workflow_runs ? { ...response, total_count: 101 } : response;
+      return response.workflow_runs
+        ? { ...response, total_count: 101 }
+        : response;
     }),
     /Test qualification: incomplete runs response/,
   );
