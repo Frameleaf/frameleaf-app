@@ -34,7 +34,6 @@ interface FixtureAsset {
 }
 
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('base64');
-const sha1 = (bytes: Buffer) => createHash('sha1').update(bytes).digest('base64');
 
 const readBody = async (req: IncomingMessage): Promise<Buffer> => {
   const chunks: Buffer[] = [];
@@ -60,6 +59,7 @@ async function listen(handler: (req: IncomingMessage, res: ServerResponse, body:
 
 /** SERVER A: a read-only library. Records every request so tests can prove nothing is written. */
 class SourceFixture {
+  config: unknown = { frameleaf: { cloudConfigured: false } };
   requests: Array<{ method: string; path: string }> = [];
   failing = new Set<string>();
   assets: FixtureAsset[] = [];
@@ -97,6 +97,9 @@ class SourceFixture {
     const path = (req.url ?? '').replace(/^\/api/, '');
     this.requests.push({ method: req.method ?? '', path });
     const route = `${req.method} ${path.split('?', 1)[0]}`;
+    if (route === 'GET /server/config') {
+      return send(res, 200, this.config);
+    }
     if (route === 'GET /users/me') {
       return send(res, 200, { id: 'user-a', email: 'owner@source.test' });
     }
@@ -157,8 +160,9 @@ class SourceFixture {
   }
 }
 
-/** SERVER B: stores new uploads as SHA-1, like the certified official server. */
+/** SERVER B: a canonical Frameleaf destination storing SHA-256 checksums. */
 class DestinationFixture {
+  config: unknown = { frameleaf: { cloudConfigured: false } };
   uploads = 0;
   assets = new Map<string, { id: string; checksum: string }>();
   albums: Array<{ id: string; albumName: string; parentId?: string; assetIds: Set<string> }> = [];
@@ -179,6 +183,9 @@ class DestinationFixture {
     const path = (req.url ?? '').replace(/^\/api/, '');
     const route = `${req.method} ${path.split('?', 1)[0]}`;
     const json = () => JSON.parse(body.toString() || '{}') as Json;
+    if (route === 'GET /server/config') {
+      return send(res, 200, this.config);
+    }
     if (route === 'GET /users/me') {
       return send(res, 200, { id: 'user-b', email: 'owner@destination.test' });
     }
@@ -367,6 +374,27 @@ describe('migrate against disposable source/destination fixtures', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it.each([{}, { frameleaf: null }, { frameleaf: { cloudConfigured: 'false' } }])(
+    'refuses an unsupported API source before creating a ledger or transferring media: %j',
+    async (config) => {
+      source.config = config;
+      await expect(run(options())).rejects.toThrow(/Frameleaf.*offline.*import/i);
+      expect(existsSync(options().ledger)).toBe(false);
+      expect(destination.uploads).toBe(0);
+      expect(destination.assets.size).toBe(0);
+      expect(source.writes()).toEqual([]);
+    },
+  );
+
+  it('refuses an unsupported API destination before creating a ledger or uploading media', async () => {
+    destination.config = {};
+    await expect(run(options())).rejects.toThrow(/Frameleaf.*offline.*import/i);
+    expect(existsSync(options().ledger)).toBe(false);
+    expect(destination.uploads).toBe(0);
+    expect(destination.assets.size).toBe(0);
+    expect(source.writes()).toEqual([]);
+  });
+
   it('dry run writes nothing to the destination and never clears the source', async () => {
     const { report, auditPath } = await run(options({ dryRun: true }));
 
@@ -435,7 +463,7 @@ describe('migrate against disposable source/destination fixtures', () => {
     expect(destination.uploads).toBe(5); // each original uploaded exactly once overall
     expect(resumed!.ok).toBe(true);
     expect(resumed!.assets).toEqual({ total: 5, transferred: 5, checked: 5, verified: 5, missing: 0, failed: 0 });
-    expect(destination.assets.has(sha1(source.assets[0].bytes))).toBe(true);
+    expect(destination.assets.has(sha256(source.assets[0].bytes))).toBe(true);
 
     // A third, repeated run transfers nothing and still passes.
     const { report: repeated } = await run(options());

@@ -15,8 +15,8 @@ const BATCH = 1000;
 
 /**
  * Phase 3: for every asset not already on B, stream the original from A to a temp file,
- * compute both digests, upload with the compatible SHA-1 header, and record B's actual
- * checksum (SHA-1 on official, SHA-256 on the fork). Runs a fresh bounded
+ * compute its SHA-256 digest, upload to Frameleaf, and verify B's canonical
+ * checksum against those bytes. Runs a fresh bounded
  * Queue per batch so task objects never accumulate. B's confirmed checksum is
  * persisted for the audit.
  */
@@ -45,20 +45,19 @@ export async function transfer(
       await pipeline(Readable.fromWeb(res.body as Parameters<typeof Readable.fromWeb>[0]), createWriteStream(tmp));
       const { size } = await stat(tmp);
       const hashes = await hashFile(tmp);
-      const sha1 = Buffer.from(hashes.sha1, 'hex').toString('base64');
       const sha256 = Buffer.from(hashes.sha256, 'hex').toString('base64');
       const uploaded = await to.uploadAsset({
         filepath: tmp,
         size,
         filename: asset.filename,
-        checksum: sha1,
+        checksum: sha256,
         fileCreatedAt: asset.fileCreatedAt,
         fileModifiedAt: asset.fileModifiedAt,
         isFavorite: asset.isFavorite,
         visibility: asset.visibility,
       });
       const { checksum } = await to.getAssetInfo(uploaded.id);
-      if (checksum !== sha1 && checksum !== sha256) {
+      if (checksum !== sha256) {
         throw new Error(`destination checksum differs from uploaded bytes for ${asset.aId}`);
       }
       const via = uploaded.status === AssetMediaStatus.Duplicate ? 'duplicate' : 'upload';

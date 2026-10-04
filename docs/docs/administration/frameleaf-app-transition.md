@@ -1,38 +1,24 @@
 # Moving to the Frameleaf app
 
-The Frameleaf mobile app and the upstream mobile app are separate apps. Both can be installed on the same phone and both can connect to the same server at the same time. This page explains what changes, and what does not, when someone starts using the Frameleaf app.
+Frameleaf runs its own application and PostgreSQL 19 database. Moving an existing library into Frameleaf is a one-time offline import into a fresh database. Follow the [offline import runbook](./import-immich.md), verify the imported library, and activate Frameleaf before signing in with the Frameleaf app.
 
-## What carries over
+The source database and media remain the recovery copy. Frameleaf does not synchronize changes with that source or provide a switch-back compatibility contract. Use the Frameleaf app with the Frameleaf server; ongoing upstream client compatibility is not supported.
 
-Everything that lives on the server is shared, because both apps sign in to the same account:
+## What the library import preserves
 
-- photos and videos, albums, people, memories, favourites and the trash;
-- sharing, partners and shared links;
-- the account's settings that are stored on the server, such as Locked content rules.
+The importer maps supported users and password hashes, ownership, albums, sharing permissions, relationships, metadata and media references into Frameleaf's canonical schema. Its validation checks permissions, relationships and explicit media-root mappings before activation. Compatible embeddings are imported as values; missing or incompatible derived results become resumable processing work.
 
-## What does not carry over
+## What to set up on the phone
 
-The Frameleaf app starts as a new client. It does not inherit anything from the upstream mobile app on the phone:
+The Frameleaf app starts as a new client. Source sessions and temporary credentials are excluded from the database import, and on-phone state is separate:
 
-- **Sign-in.** Sign in again in the Frameleaf app. Its session is a new session, listed separately under Signed-in devices in the account settings, and signing out of one app never signs out of the other.
-- **Access tokens and API keys.** Nothing is copied from the upstream mobile app. Revoking the upstream mobile app's session does not affect the Frameleaf app, and the other way round.
-- **Phone permissions.** The phone asks again for photo library, notification and background access. Grant them to the Frameleaf app.
-- **App settings and caches.** Backup album choices, Wi-Fi and battery rules, thumbnails and other on-phone caches are per app. Choose the backup albums again in the Frameleaf app.
-- **Locked content PIN entry.** The PIN is the account's PIN on the server, but unlocking in one app does not unlock the other.
+- **Sign-in.** Sign in to the new Frameleaf server. The app creates a new Frameleaf session.
+- **Phone permissions.** Grant photo library, notification and background access to the Frameleaf app.
+- **App settings and caches.** Choose backup albums and Wi-Fi and battery rules again. Thumbnails and other on-phone caches are not imported.
+- **Locked content.** Unlock with the account's Frameleaf PIN when requested. Unlocking another app does not unlock Frameleaf.
 
-## Running both apps for a while
-
-Old clients keep working. The server still accepts the upstream mobile app, its `app.immich:///oauth-callback` sign-in callback and its API, so nobody has to switch on a set date.
-
-If both apps back up the same phone, turn backup off in one of them. The server recognises a file it already has for the same account and does not store it twice, but running two backups still uses battery and data for nothing.
+Keep the source application stopped during the offline import. When setting up phone backup afterward, select the intended Frameleaf server and review the backup albums before enabling it.
 
 ## OAuth sign-in
 
-Each app gets its own OAuth callback, so neither app is opened for the other's sign-in:
-
-| App       | Without the mobile redirect override | With the override                                      |
-| :-------- | :----------------------------------- | :----------------------------------------------------- |
-| Frameleaf | `frameleaf-auth:///oauth-callback`   | `https://<server>/api/oauth/frameleaf-mobile-redirect` |
-| Upstream  | `app.immich:///oauth-callback`       | `https://<server>/api/oauth/mobile-redirect`           |
-
-Allow both with your identity provider. Administration → Settings → Authentication shows the exact addresses for this server under **Mobile app callbacks**, and says when the configured override cannot be used by the Frameleaf app. See [OAuth Authentication](./oauth.md#frameleaf-mobile-app) for details.
+Configure the Frameleaf callback with your identity provider: `frameleaf-auth:///oauth-callback`, or `https://<server>/api/oauth/frameleaf-mobile-redirect` when using the mobile redirect override. Administration → Settings → Authentication shows the exact addresses for this server. See [OAuth Authentication](./oauth.md#frameleaf-mobile-app) for configuration details.
