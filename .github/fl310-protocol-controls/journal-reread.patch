@@ -1,0 +1,12 @@
+diff --git a/server/src/utils/buddy-boot-binding.ts b/server/src/utils/buddy-boot-binding.ts
+--- a/server/src/utils/buddy-boot-binding.ts
++++ b/server/src/utils/buddy-boot-binding.ts
+@@ -232,7 +232,7 @@
+         {
+           ...binding,
+-          publicationDigest,
++          publicationDigest: hash(await readPrivateBootFile(join(binding.recoveryDirectory, 'publication.json'))),
+           entries: configuration.entries,
+         },
+         local.publicKey,
+       );

@@ -1,0 +1,12 @@
+diff --git a/server/src/utils/buddy-boot-binding.ts b/server/src/utils/buddy-boot-binding.ts
+--- a/server/src/utils/buddy-boot-binding.ts
++++ b/server/src/utils/buddy-boot-binding.ts
+@@ -245,7 +245,7 @@
+       throw refusal();
+     if (current.marker) {
+-      if (binding.version === 2 || current.marker.action?.buddyRecoveryId !== binding.recoveryId) throw refusal();
++      if (current.marker.action?.buddyRecoveryId !== binding.recoveryId) throw refusal();
+       return;
+     }
+     // All IO and validation have finished. Apply only selected canonical/alias names.
+     // Actual DB/Redis *_FILE sources remain untouched without a matching service adapter.

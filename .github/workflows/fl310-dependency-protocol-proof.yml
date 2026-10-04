@@ -1,0 +1,67 @@
+name: FL310 dependency protocol admission proof
+on:
+  push:
+    branches: [aj/fl310-dependency-protocol-qualified]
+permissions:
+  contents: read
+jobs:
+  dependency-protocol:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - run: mise run //server:install
+      - run: mise run //:plugins
+      - run: mise run //packages/plugin-core:build
+      - name: Prove the journal reread regression fails with the reviewed former defect
+        run: |
+          set -euo pipefail
+          trap 'git restore -- server/src/utils/buddy-boot-binding.ts' EXIT
+          git apply .github/fl310-protocol-controls/journal-reread.patch
+          mise run //server:build
+          if node --test --test-timeout=90000 server/test/runtime/buddy-dependency-protocol.test.mjs > "$RUNNER_TEMP/journal-negative.log" 2>&1; then
+            cat "$RUNNER_TEMP/journal-negative.log"
+            echo '::error::Journal negative control unexpectedly passed'; exit 1
+          fi
+          cat "$RUNNER_TEMP/journal-negative.log"
+          grep -F 'Receipt must bind the exact complete journal bytes validated' "$RUNNER_TEMP/journal-negative.log"
+          git restore -- server/src/utils/buddy-boot-binding.ts
+      - name: Prove the late marker regression fails with the reviewed former defect
+        run: |
+          set -euo pipefail
+          trap 'git restore -- server/src/utils/buddy-boot-binding.ts' EXIT
+          git apply .github/fl310-protocol-controls/late-marker.patch
+          mise run //server:build
+          if node --test --test-timeout=90000 server/test/runtime/buddy-dependency-protocol.test.mjs > "$RUNNER_TEMP/marker-negative.log" 2>&1; then
+            cat "$RUNNER_TEMP/marker-negative.log"
+            echo '::error::Late marker negative control unexpectedly passed'; exit 1
+          fi
+          cat "$RUNNER_TEMP/marker-negative.log"
+          grep -F 'V2 must refuse a matching maintenance marker appearing after initial identity check' "$RUNNER_TEMP/marker-negative.log"
+          git restore -- server/src/utils/buddy-boot-binding.ts
+      - name: Build the corrected actual replacement distribution
+        run: mise run //server:build
+      - name: Check real entrypoint protocol admission after capture and recovery prerequisites
+        run: node --test --test-timeout=90000 server/test/runtime/buddy-boot-binding.test.mjs server/test/runtime/buddy-dependency-protocol.test.mjs
+      - name: Collect genuine protocol regression formatting output
+        if: ${{ !cancelled() }}
+        working-directory: server
+        run: |
+          pnpm exec prettier --write src/utils/buddy-boot-binding.ts src/utils/buddy-dependency-protocol.ts test/runtime/buddy-dependency-protocol.test.mjs
+          git diff --binary -- src/utils/buddy-boot-binding.ts src/utils/buddy-dependency-protocol.ts test/runtime/buddy-dependency-protocol.test.mjs > "$RUNNER_TEMP/dependency-protocol-format.patch"
+      - name: Archive protocol regression formatter output
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fl310-dependency-protocol-format
+          path: ${{ runner.temp }}/dependency-protocol-format.patch
+          retention-days: 7
