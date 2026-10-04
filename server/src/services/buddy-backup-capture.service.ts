@@ -45,6 +45,7 @@ import {
 } from 'src/utils/cloud-backup.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
+import { type BuddyBootConfiguration, captureBuddyBootConfiguration } from 'src/utils/buddy-boot-configuration.js';
 
 export type BuddyContent = { blocks: string[]; keyVersion: number; bytes: number };
 export type BuddyManifest = {
@@ -70,6 +71,7 @@ export type BuddyManifest = {
   configurationFiles: CloudBackupManifestFile[];
   cloudBackupKeys?: Array<{ fingerprint: string; content: string }>;
   environment: Record<string, string | undefined>;
+  bootConfiguration?: BuddyBootConfiguration;
   storageRoot: string;
   storageRoots: string[];
   settings: {
@@ -193,7 +195,10 @@ export class BuddyBackupCaptureService {
       assetFidelity: {},
       dependencies: [],
       configurationFiles: [],
-      environment: { ...process.env },
+      environment: {},
+      ...(settings.bootConfiguration && {
+        bootConfiguration: captureBuddyBootConfiguration(settings.bootConfiguration),
+      }),
       storageRoot: StorageCore.getMediaLocation(),
       storageRoots: [],
       settings: { system: null, fork: [], users: [], buddy: readBuddySettingsSnapshot({ version: 1, settings }) },
