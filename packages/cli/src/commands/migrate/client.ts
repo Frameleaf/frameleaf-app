@@ -69,7 +69,7 @@ const buildQuery = (params: Record<string, string | number | boolean | undefined
 };
 
 /**
- * A minimal, self-contained API client for one Immich server. Unlike `@immich/sdk`
+ * A minimal, self-contained API client for one Frameleaf server. Unlike `@immich/sdk`
  * (which keeps a single global `defaults`), each instance is fully independent, so
  * SERVER A and SERVER B can be driven concurrently. Uses the SDK only for types.
  */
@@ -92,6 +92,12 @@ export class ServerClient {
       // no well-known endpoint; use the URL as given
     }
     const client = new ServerClient(baseUrl, key);
+    const config = await client.json<{ frameleaf?: { cloudConfigured?: unknown } } | null>('GET', '/server/config');
+    if (typeof config?.frameleaf?.cloudConfigured !== 'boolean') {
+      throw new TypeError(
+        'API transfer requires Frameleaf servers. Use the offline import-immich administration command with a fresh Frameleaf database to import a supported external library.',
+      );
+    }
     const user = await client.getMyUser();
     return { client, user };
   }
@@ -175,7 +181,7 @@ export class ServerClient {
     filepath: string;
     size: number;
     filename: string;
-    checksum: string; // base64 SHA-1, accepted by both the fork and certified official server
+    checksum: string; // base64 SHA-256 for the canonical Frameleaf destination
     fileCreatedAt: string;
     fileModifiedAt: string;
     isFavorite: boolean;
