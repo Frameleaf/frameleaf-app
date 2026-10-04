@@ -2,6 +2,8 @@ import { Kysely, sql } from 'kysely';
 import { QUEUE_BATCH } from 'src/queue/types.js';
 import { preserveAttemptEvidence, pruneWorkerStopEvidence } from 'src/utils/attempt-evidence.js';
 
+const RETENTION_CURSOR = 'frameleaf-queue-retention-cursor';
+
 /** Retain run outcomes; bound payload/attempt cleanup independently of media execution. */
 export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
   return db.transaction().execute(async (tx) => {
@@ -9,8 +11,26 @@ export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
       rows: [lock],
     } = await sql<{ acquired: boolean }>`select pg_try_advisory_xact_lock(-333, 1) acquired`.execute(tx);
     if (!lock.acquired) return 0;
+    const {
+      rows: [cursor],
+    } = await sql<{ finishedAt: string | null; id: string | null }>`select
+      value->>'finishedAt' as "finishedAt", (value->>'id')::uuid as id
+      from system_metadata where key=${RETENTION_CURSOR}`.execute(tx);
+    // LIMIT must precede dependency/evidence checks. Otherwise an ineligible parent prefix
+    // can force every coordinator sweep to rescan the entire retained history.
+    const { rows: candidates } = await sql<{ id: string; finishedAt: string }>`select id, "finishedAt"::text from job
+      where state in ('completed','failed','cancelled','blocked') and "latestPending" is null
+        and "finishedAt" is not null
+        ${cursor?.finishedAt && cursor.id ? sql`and ("finishedAt",id) > (${cursor.finishedAt}::timestamptz,${cursor.id}::uuid)` : sql``}
+      order by job."finishedAt", id limit ${QUEUE_BATCH} for update skip locked`.execute(tx);
+    const last = candidates.at(-1);
+    // A complete pass wraps, so parents are revisited after their children disappear.
+    // Cursor and deletion commit together; interruption cannot skip a partially checked page.
+    await sql`insert into system_metadata(key,value) values (${RETENTION_CURSOR},
+      ${last && candidates.length === QUEUE_BATCH ? sql`jsonb_build_object('finishedAt',${last.finishedAt}::timestamptz,'id',${last.id}::uuid)` : sql`'{}'::jsonb`})
+      on conflict(key) do update set value=excluded.value`.execute(tx);
     const { rows } = await sql<{ id: string }>`select j.id from job j
-      where j.state in ('completed','failed','cancelled','blocked') and j."latestPending" is null
+      where j.id = any(${candidates.map(({ id }) => id)}::uuid[])
         and j."finishedAt" < now() - case when j.state = 'completed' then interval '7 days' else interval '30 days' end
         and not exists(select 1 from job child where child."parentId" = j.id)
         and not exists(select 1 from job_run_item i join job_run r on r.id = i."runId"
@@ -23,7 +43,7 @@ export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
           and not exists(select 1 from system_metadata m
             where m.key='frameleaf-worker-stopped:' || a."workerId"::text
               and m.value->>'workerId'=a."workerId"::text and m.value ? 'stoppedAt'))
-      order by j."finishedAt", j.id limit ${QUEUE_BATCH} for update of j skip locked`.execute(tx);
+      order by j."finishedAt", j.id`.execute(tx);
     let pruned = 0;
     if (rows.length > 0) {
       const ids = await preserveAttemptEvidence(

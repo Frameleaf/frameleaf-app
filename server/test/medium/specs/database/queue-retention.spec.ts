@@ -1,7 +1,9 @@
-import { Kysely, sql } from 'kysely';
+import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { pruneQueueHistory } from 'src/queue/retention.js';
 import { SqlQueueStore } from 'src/queue/store.js';
+import { getKyselyConfig } from 'src/utils/database.js';
+import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('bounded PostgreSQL queue history', () => {
@@ -84,6 +86,117 @@ describe('bounded PostgreSQL queue history', () => {
         .count,
     ).toBe(6);
   });
+
+  it('advances past an ineligible prefix with microsecond timestamps and revisits it after children disappear', async () => {
+    await sql`insert into job(id,queue,name,data,state,"safeToRetry","deadlineMs","finishedAt")
+      select md5('parent:' || n)::uuid,${queue},'parent','{}','completed',true,600000,
+        '2026-01-01 00:00:00.123456+00'::timestamptz from generate_series(1,750) n`.execute(db);
+    await sql`insert into job(id,queue,name,data,state,"safeToRetry","deadlineMs","parentId")
+      select md5('child:' || n)::uuid,${queue},'child','{}','pending',true,600000,
+        md5('parent:' || n)::uuid from generate_series(1,750) n`.execute(db);
+    await sql`insert into job(id,queue,name,data,state,"safeToRetry","deadlineMs","finishedAt")
+      select md5('tail:' || n)::uuid,${queue},'tail','{}','completed',true,600000,
+        '2026-01-02 00:00:00.123456+00'::timestamptz from generate_series(1,10) n`.execute(db);
+
+    const positions = new Set<string>();
+    for (let page = 0; page < 3; page++) {
+      expect(await pruneQueueHistory(db)).toBe(0);
+      const { rows } = await sql<{ id: string; precise: boolean }>`select value->>'id' as id,
+        (value->>'finishedAt')::timestamptz='2026-01-01 00:00:00.123456+00'::timestamptz as precise
+        from system_metadata where key='frameleaf-queue-retention-cursor'`.execute(db);
+      expect(rows[0].precise).toBe(true);
+      positions.add(rows[0].id);
+    }
+    expect(positions.size).toBe(3);
+    expect(await pruneQueueHistory(db)).toBe(10);
+    await sql`delete from job where queue=${queue} and name='child'`.execute(db);
+    for (let page = 0; page < 3; page++) expect(await pruneQueueHistory(db)).toBe(250);
+    expect(await pruneQueueHistory(db)).toBe(0);
+    expect((await sql`select id from job where queue=${queue}`.execute(db)).rows).toEqual([]);
+  });
+
+  it('rolls the candidate cursor back when deletion fails and retries that same page', async () => {
+    await store.enqueue([
+      { queue, name: 'rollback', data: {}, safeToRetry: true, sensitive: false, deadlineMs: 600_000 },
+    ]);
+    await sql`update job set state='completed',"finishedAt"=now()-interval '40 days' where queue=${queue}`.execute(db);
+    await sql`create function retention_failure() returns trigger language plpgsql as $$
+      begin raise exception 'retention deletion failure'; end $$`.execute(db);
+    await sql`create trigger retention_failure before delete on job for each row execute function retention_failure()`.execute(
+      db,
+    );
+    await expect(pruneQueueHistory(db)).rejects.toThrow('retention deletion failure');
+    expect(
+      (await sql`select key from system_metadata where key='frameleaf-queue-retention-cursor'`.execute(db)).rows,
+    ).toEqual([]);
+    expect((await sql`select id from job where queue=${queue}`.execute(db)).rows).toHaveLength(1);
+    await sql`drop trigger retention_failure on job`.execute(db);
+    await sql`drop function retention_failure()`.execute(db);
+    expect(await pruneQueueHistory(db)).toBe(1);
+  });
+
+  it.each([50_000, 500_000])(
+    'bounds candidate work with %i ineligible retained parents',
+    async (size) => {
+      // Seed retained history, not executed media. Only two actual cleanup visits run here.
+      await sql`insert into job(id,queue,name,data,state,"safeToRetry","deadlineMs","finishedAt")
+        select md5('parent:' || n)::uuid,${queue},'parent','{}','completed',true,600000,
+          '2026-01-01 00:00:00.123456+00'::timestamptz from generate_series(1,${size}) n`.execute(db);
+      await sql`insert into job(id,queue,name,data,state,"safeToRetry","deadlineMs","parentId")
+        select md5('child:' || n)::uuid,${queue},'child','{}','pending',true,600000,
+          md5('parent:' || n)::uuid from generate_series(1,${size}) n`.execute(db);
+      await sql`analyze job`.execute(db);
+      const { rows: databases } = await sql<{ name: string }>`select current_database() name`.execute(db);
+      const queries: CompiledQuery[] = [];
+      const observed = new Kysely({
+        ...getKyselyConfig({
+          connectionType: 'url',
+          url: canonicalDatabaseUrl(process.env.IMMICH_TEST_POSTGRES_URL!, databases[0].name),
+        }),
+        log: (event) => {
+          if (event.level === 'query') queries.push(event.query);
+        },
+      });
+      try {
+        expect(await pruneQueueHistory(observed)).toBe(0);
+        expect(await pruneQueueHistory(observed)).toBe(0);
+        const pages = queries.filter(({ sql }) => sql.includes('select id, "finishedAt"::text from job'));
+        expect(pages).toHaveLength(2);
+        type Plan = {
+          'Relation Name'?: string;
+          'Actual Rows': number;
+          'Actual Loops': number;
+          'Rows Removed by Filter'?: number;
+          Plans?: Plan[];
+        };
+        const examined = (node: Plan): number =>
+          (node['Relation Name']
+            ? (node['Actual Rows'] + (node['Rows Removed by Filter'] ?? 0)) * node['Actual Loops']
+            : 0) + (node.Plans ?? []).reduce((sum, child) => sum + examined(child), 0);
+        const explain = async (query: CompiledQuery) => {
+          const { rows } = await db.executeQuery<{ 'QUERY PLAN': [{ Plan: Plan }] }>(
+            CompiledQuery.raw(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query.sql}`, [...query.parameters]),
+          );
+          return examined(rows[0]['QUERY PLAN'][0].Plan);
+        };
+        for (const page of pages) expect(await explain(page)).toBeLessThanOrEqual(250);
+        // The prior eligibility-first selector must exceed the same physical-work budget.
+        const unbounded = sql`select j.id from job j
+          where j.state in ('completed','failed','cancelled','blocked') and j."latestPending" is null
+            and j."finishedAt" < now()-interval '30 days'
+            and not exists(select 1 from job child where child."parentId"=j.id)
+          order by j."finishedAt",j.id limit 250`.compile(db);
+        expect(await explain(unbounded)).toBeGreaterThanOrEqual(size);
+        const { rows } = await sql<{ count: number }>`select count(*)::int count from job where queue=${queue}`.execute(
+          db,
+        );
+        expect(rows[0].count).toBe(size * 2);
+      } finally {
+        await observed.destroy();
+      }
+    },
+    120_000,
+  );
 
   it('installs vacuum settings on the frequently updated queue tables', async () => {
     const { rows } = await sql<{ relname: string; reloptions: string[] }>`select relname, reloptions from pg_class
