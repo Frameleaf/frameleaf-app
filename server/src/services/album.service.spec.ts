@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import type { AlbumRepository } from 'src/repositories/album.repository.js';
 import { CreateAlbumDto } from 'src/dtos/album.dto.js';
 import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumKind, AlbumUserRole, AssetOrder, AssetVisibility, PushEventType, UserMetadataKey } from 'src/enum.js';
@@ -21,6 +22,8 @@ describe(AlbumService.name, () => {
     ({ sut, mocks } = newTestService(AlbumService));
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.album.getPositions.mockResolvedValue(new Map());
+    mocks.album.withMembershipWrite.mockImplementation(async (_ids, write) =>
+      write(undefined!, mocks.album as unknown as AlbumRepository));
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
   });
 
