@@ -111,11 +111,11 @@ export const isDuplicateDetectionEnabled = (machineLearning: SystemConfig['machi
   isSmartSearchEnabled(machineLearning) && machineLearning.duplicateDetection.enabled;
 export const isFaceImportEnabled = (metadata: SystemConfig['metadata']) => metadata.faces.import;
 
-export const handlePromiseError = <T>(promise: Promise<T>, logger: LoggingRepository): void => {
+export const handlePromiseError = <T,>(promise: Promise<T>, logger: LoggingRepository): void => {
   promise.catch((error: Error | any) => logger.error(`Promise error: ${error}`, error?.stack));
 };
 
-export const findOrFail = async <T>(find: () => Promise<T>, entity: string): Promise<NonNullable<T>> => {
+export const findOrFail = async <T,>(find: () => Promise<T>, entity: string): Promise<NonNullable<T>> => {
   const value = await find();
   if (!value) {
     throw new BadRequestException(`${entity} not found`);
@@ -185,28 +185,38 @@ const isSchema = (schema: string | ReferenceObject | SchemaObject): schema is Sc
   return !(typeof schema === 'string' || '$ref' in schema);
 };
 
+/** Removes or rewrites JSON Schema 2020-12 keywords that OpenAPI 3.0 (this spec's version) does not allow. */
+export const removeOpenApi30IncompatibleKeys = (target: unknown): void => {
+  if (!target || typeof target !== 'object') {
+    return;
+  }
+
+  if (Array.isArray(target)) {
+    for (const item of target) {
+      removeOpenApi30IncompatibleKeys(item);
+    }
+    return;
+  }
+
+  const object = target as Record<string, unknown>;
+  delete object.propertyNames;
+  delete object.contentEncoding;
+  // A tuple (JSON Schema `prefixItems`) is not OpenAPI 3.0: generators such as openapi-generator reject it. Describe
+  // it as an array of its item schema (the first one when they differ); request validation stays the tuple's and the
+  // schema's description says its shape. No minItems/maxItems are added: the published document never had them, and
+  // adding them reads as a breaking request change to the compatibility check.
+  if (Array.isArray(object.prefixItems)) {
+    const prefixItems = object.prefixItems as unknown[];
+    object.items ??= prefixItems[0];
+    delete object.prefixItems;
+  }
+
+  for (const value of Object.values(object)) {
+    removeOpenApi30IncompatibleKeys(value);
+  }
+};
+
 const patchOpenAPI = (document: OpenAPIObject) => {
-  const removeOpenApi30IncompatibleKeys = (target: unknown) => {
-    if (!target || typeof target !== 'object') {
-      return;
-    }
-
-    if (Array.isArray(target)) {
-      for (const item of target) {
-        removeOpenApi30IncompatibleKeys(item);
-      }
-      return;
-    }
-
-    const object = target as Record<string, unknown>;
-    delete object.propertyNames;
-    delete object.contentEncoding;
-
-    for (const value of Object.values(object)) {
-      removeOpenApi30IncompatibleKeys(value);
-    }
-  };
-
   document.paths = sortKeys(document.paths);
   // Allowed in OpenAPI v3.1 (JSON Schema 2020-12), but not in OpenAPI v3.0 (current spec).
   removeOpenApi30IncompatibleKeys(document);

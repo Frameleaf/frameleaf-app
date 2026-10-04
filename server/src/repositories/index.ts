@@ -1,6 +1,7 @@
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AnalyticsRepository } from 'src/repositories/analytics.repository.js';
@@ -215,6 +216,7 @@ export const repositories = [
   SharedLinkRepository,
   SharedLinkAssetRepository,
   ItemShareRepository,
+  AlbumSourceRepository,
   StackRepository,
   StudioPreviewRepository,
   StorageRepository,

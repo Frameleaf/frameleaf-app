@@ -1,4 +1,5 @@
 import { ActivityService } from 'src/services/activity.service.js';
+import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
@@ -250,6 +251,7 @@ export const services = [
   SessionService,
   SharedLinkService,
   ItemShareService,
+  AlbumSourceService,
   SharedSpaceService,
   SmartAlbumService,
   SmartInfoService,

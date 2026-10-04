@@ -5,8 +5,10 @@ import { createHash } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { PinnedCollectionsResponseDto } from 'src/dtos/pinned-collection.dto.js';
 import type { SyncAck } from 'src/types.js';
+import { mapAlbumSourceLink } from 'src/dtos/album-source.dto.js';
 import { mapPet, mapPetObservation } from 'src/dtos/pet.dto.js';
 import { AlbumKind, AlbumUserRole, SyncEntityType } from 'src/enum.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 
@@ -37,7 +39,8 @@ type Kind =
   | 'spaceAlbum'
   | 'spacePerson'
   | 'albumAsset'
-  | 'partnerAsset';
+  | 'partnerAsset'
+  | 'albumSourceLink';
 type ReadPins = () => Promise<PinnedCollectionsResponseDto>;
 const orderedKinds = new Set<Kind>([
   'tag',
@@ -53,6 +56,7 @@ const orderedKinds = new Set<Kind>([
   'spacePerson',
   'albumAsset',
   'partnerAsset',
+  'albumSourceLink',
 ]);
 export type SharedAssetReader = (
   db: Kysely<DB>,
@@ -83,6 +87,7 @@ const types = {
   assetTag: { upsert: SyncEntityType.AssetTagV1, delete: SyncEntityType.AssetTagDeleteV1 },
   pet: { upsert: SyncEntityType.PetV1, delete: SyncEntityType.PetDeleteV1 },
   petObservation: { upsert: SyncEntityType.PetObservationV1, delete: SyncEntityType.PetObservationDeleteV1 },
+  albumSourceLink: { upsert: SyncEntityType.AlbumSourceLinkV1, delete: SyncEntityType.AlbumSourceLinkDeleteV1 },
 } as const;
 /** Only additive ledger types have delivery IDs. Existing sync cursors are untouched. */
 export class TagSync {
@@ -275,6 +280,19 @@ export class TagSync {
           ),
         ])
         .execute();
+    }
+    if (kind === 'albumSourceLink') {
+      // FL-331: every device of the account sees every link whose album is live; links are the owner's own.
+      if (auth.sharedLink) return [];
+      const links = await new AlbumSourceRepository(db).getAll(db, auth.user.id);
+      return links
+        .filter((link) => !key || link.id === key)
+        .map((link) => {
+          const { albumName: _albumName, ...data } = mapAlbumSourceLink(link);
+          const digest = createHash('sha256').update(JSON.stringify(data)).digest('hex').slice(0, 32);
+          const sourceId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20)}`;
+          return { key: link.id, entityId: link.id, assetId: null, sourceId, data: { ...data } };
+        });
     }
     if (kind === 'pet' || kind === 'petObservation') {
       const pets = new PetRepository(db, LoggingRepository.create());
@@ -536,7 +554,9 @@ export class TagSync {
                                   ? { tagId: state.entityId, assetId: state.assetId! }
                                   : kind === 'pet'
                                     ? { petId: state.entityId }
-                                    : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
+                                    : kind === 'albumSourceLink'
+                                      ? { linkId: state.entityId }
+                                      : { observationId: state.key, petId: state.entityId, assetId: state.assetId! },
       };
     });
   }
