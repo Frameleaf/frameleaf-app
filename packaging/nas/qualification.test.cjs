@@ -98,3 +98,46 @@ test('qualification workflow has trusted step names but cannot certify incomplet
 test('media extractor rejects traversal, links, special files and duplicate aliases', () => {
   execFileSync('python3', [path.join(__dirname, 'extract-checkpoint.test.py')], { stdio: 'inherit' });
 });
+
+function assertWorkflowWorkspaceContract(workflow) {
+  const job = workflow.jobs.qualification;
+  assert(!/\brunner\s*(?:\.|\[)/.test(JSON.stringify(job.env)), 'Runner context is unavailable in job-level env');
+  assert(!Object.hasOwn(job.env, 'QUALIFICATION_ROOT'), 'Workspace must be initialized on the runner');
+  const steps = job.steps;
+  const initialization = steps.findIndex((step) => step.id === 'qualification-workspace');
+  assert.equal(initialization, 0, 'Workspace initialization must precede setup and every consumer');
+  const initialize = steps[initialization];
+  assert.equal(initialize.shell, 'bash');
+  assert.match(initialize.run, /qualification_root="\$\{RUNNER_TEMP:\?\}\/nas-qualification"/);
+  assert.match(initialize.run, /test ! -e "\$qualification_root"/);
+  assert.match(initialize.run, /test ! -L "\$qualification_root"/);
+  assert.match(initialize.run, /printf 'QUALIFICATION_ROOT=%s\\n' "\$qualification_root" >> "\$GITHUB_ENV"/);
+  const consumers = steps.map((step, index) => ({ step, index })).filter(({ step, index }) => index !== initialization && /QUALIFICATION_ROOT/.test(JSON.stringify(step)));
+  assert(consumers.length >= 5, 'Qualification and cleanup must use the initialized workspace');
+  assert(consumers.every(({ index }) => index > initialization), 'Workspace consumed before initialization');
+  const cleanup = steps.find((step) => step.name === 'Remove disposable checkpoint files');
+  assert.match(cleanup.if, /always\(\)\s*&&\s*steps\.qualification-workspace\.outcome\s*==\s*'success'/, 'Early initialization failure must skip cleanup');
+  assert.match(cleanup.run, /expected_root="\$\{RUNNER_TEMP:\?\}\/nas-qualification"/);
+  const guard = cleanup.run.indexOf('test "${QUALIFICATION_ROOT:-}" = "$expected_root"');
+  const remove = cleanup.run.indexOf('rm -rf -- "$expected_root"');
+  assert(guard >= 0 && remove > guard, 'Cleanup must check its exact owned temporary path before removal');
+}
+
+test('workflow workspace uses runner-time initialization and fails safe on early failure', () => {
+  const workflow = load(fs.readFileSync(path.join(__dirname, '../../.github/workflows/nas-qualification.yml'), 'utf8'));
+  assertWorkflowWorkspaceContract(workflow);
+  const mutations = [
+    (w) => { w.jobs.qualification.env.QUALIFICATION_ROOT = '${{ runner.temp }}/nas-qualification'; },
+    (w) => { w.jobs.qualification.env.OTHER_ROOT = "${{ runner['temp'] }}"; },
+    (w) => { w.jobs.qualification.steps.push(w.jobs.qualification.steps.shift()); },
+    (w) => { w.jobs.qualification.steps.shift(); },
+    (w) => { w.jobs.qualification.steps[0].run = 'echo QUALIFICATION_ROOT=/tmp >> "$GITHUB_ENV"'; },
+    (w) => { w.jobs.qualification.steps.at(-1).if = 'always()'; },
+    (w) => { w.jobs.qualification.steps.at(-1).run = 'rm -rf -- "$QUALIFICATION_ROOT"'; },
+  ];
+  for (const mutate of mutations) {
+    const changed = structuredClone(workflow);
+    mutate(changed);
+    assert.throws(() => assertWorkflowWorkspaceContract(changed));
+  }
+});
