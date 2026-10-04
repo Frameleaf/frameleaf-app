@@ -168,7 +168,7 @@ export async function feedManifest(
       await sql`update job_queue set "manifestFilling" = false where name = ${queue}`.execute(tx);
       return 0;
     }
-    const { rows } = await sql<{
+    type ManifestItem = {
       runId: string;
       itemKey: string;
       rootItemKey: string | null;
@@ -179,11 +179,31 @@ export async function feedManifest(
       safeToRetry: boolean;
       sensitive: boolean;
       deadlineMs: number;
-    }>`
-      select i.*, s."safeToRetry", s.sensitive, s."deadlineMs" from job_run_item i
-      join job_selection s on s.id = i."selectionId" and s."runId" = i."runId"
-      where s.queue = ${queue} and s.state = 'ready' and i."jobId" is null and i.state = 'pending'
-      order by s."createdAt", s.id, i."itemKey" limit ${capacity} for update of i skip locked`.execute(tx);
+    };
+    const rows: ManifestItem[] = [];
+    let afterSelection: string | undefined;
+    // Select a snapshot before reading its items. LIMIT then uses the pending source index,
+    // instead of sorting every remaining item across a large manifest. Visits are bounded too.
+    for (let visited = 0; visited < capacity && rows.length < capacity; visited++) {
+      const {
+        rows: [selection],
+      } = await sql<{ id: string; runId: string }>`
+        select s.id, s."runId" from job_selection s
+        where s.queue = ${queue} and s.state = 'ready'
+          ${afterSelection ? sql`and (s."createdAt", s.id) > (select "createdAt", id from job_selection where id = ${afterSelection}::uuid)` : sql``}
+          and exists (select 1 from job_run_item i where i."selectionId" = s.id and i."runId" = s."runId"
+            and i."jobId" is null and i.state = 'pending')
+        order by s."createdAt", s.id limit 1`.execute(tx);
+      if (!selection) break;
+      const { rows: page } = await sql<ManifestItem>`
+        select i.*, s."safeToRetry", s.sensitive, s."deadlineMs" from job_run_item i
+        join job_selection s on s.id = i."selectionId"
+        where i."selectionId" = ${selection.id}::uuid and i."runId" = ${selection.runId}::uuid
+          and i."jobId" is null and i.state = 'pending'
+        order by i."itemKey" limit ${capacity - rows.length} for update of i skip locked`.execute(tx);
+      rows.push(...page);
+      afterSelection = selection.id;
+    }
     await enqueue(
       rows.map((row) => ({
         queue: row.queue,

@@ -4,6 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { type MessagePort, parentPort, workerData } from 'node:worker_threads';
 import postgres from 'postgres';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
+import { coalescedTask } from 'src/queue/coalesced-task.js';
 import { queueNotifications } from 'src/queue/notifications.js';
 import { pruneQueueHistory } from 'src/queue/retention.js';
 import { SqlQueueStore } from 'src/queue/store.js';
@@ -34,7 +35,6 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
   const active = new Map<string, QueueClaim>();
   let stopping = false;
   let ready = false;
-  let busy = false;
   let lastHeartbeat = performance.now();
   let lastSweep = 0;
   let lastBeat = 0;
@@ -46,6 +46,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
       case 'settled': {
         active.delete(message.id);
         watchdog.remove(message.id);
+        void tick();
         break;
       }
       case 'progress': {
@@ -68,11 +69,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
     lastHeartbeat: () => lastHeartbeat,
   });
 
-  const tick = async () => {
-    if (busy) {
-      return;
-    }
-    busy = true;
+  const tick = coalescedTask(async () => {
     try {
       if (!ready) {
         await store.initialize(queues, workerId);
@@ -121,10 +118,8 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
     } catch {
       // The watchdog owns the outage decision. Do not leak connection strings or job payloads.
       parentPort!.postMessage({ type: 'unavailable' });
-    } finally {
-      busy = false;
     }
-  };
+  });
   const notifications = queueNotifications(listener, () => void tick());
   notifications.connect();
   const scan = setInterval(() => {
