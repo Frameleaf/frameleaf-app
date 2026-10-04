@@ -179,7 +179,8 @@ describe('/download', () => {
         await utils.waitForAllQueuesFinish(admin.accessToken);
         const db = await utils.connectDatabase();
         for (const user of users) {
-          expect((await db.query('SELECT id FROM "user" WHERE id = $1', [user.userId])).rows).toEqual([]);
+          const deletedUser = await db.query('SELECT id FROM "user" WHERE id = $1', [user.userId]);
+          expect(deletedUser.rows).toEqual([]);
           // Fork provenance has no official-schema foreign keys; remove the drained fixture's orphan rows.
           await db.query('DELETE FROM immich_fork.asset_origin WHERE "ownerId" = $1 OR "partnerSharedById" = $1', [
             user.userId,
