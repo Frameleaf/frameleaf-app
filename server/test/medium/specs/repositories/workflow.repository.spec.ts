@@ -44,19 +44,18 @@ beforeAll(async () => {
 });
 
 describe(WorkflowRepository.name, () => {
-  it('upserts plugin methods on the legacy no-column schema before handoff', async () => {
+  it('upserts plugin methods with canonical allowed hosts', async () => {
     const database = await getKyselyDB();
-    // The migrated template already owns the column; recreate the legacy shape.
-    await sql`ALTER TABLE public.plugin_method DROP COLUMN "allowedHosts"`.execute(database);
     const sut = new PluginRepository(database, { setContext: vi.fn() } as never);
 
     await expect(sut.upsert(pluginDto(randomUUID()), [methodDto(['hooks.example.test'])])).resolves.toEqual(
-      expect.objectContaining({ methods: [expect.objectContaining({ name: 'webhook' })] }),
+      expect.objectContaining({
+        methods: [expect.objectContaining({ name: 'webhook', allowedHosts: ['hooks.example.test'] })],
+      }),
     );
   });
 
-  it('updates allowedHosts after the official upstream migration owns the column', async () => {
-    // The migrated template already reflects the upstream migration.
+  it('updates canonical allowedHosts while preserving plugin identity', async () => {
     const database = await getKyselyDB();
     const sut = new PluginRepository(database, { setContext: vi.fn() } as never);
     const dto = pluginDto(randomUUID());
@@ -68,11 +67,8 @@ describe(WorkflowRepository.name, () => {
     expect(method.allowedHosts).toEqual(['second.example.test']);
   });
 
-  it('returns legacy defaults before handoff and official allowedHosts after the upstream migration', async () => {
+  it('returns default and updated allowedHosts from the canonical workflow', async () => {
     const database = await getKyselyDB();
-    // The migrated template already owns the column; recreate the legacy shape
-    // so the test can walk through the upstream migration itself.
-    await sql`ALTER TABLE public.plugin_method DROP COLUMN "allowedHosts"`.execute(database);
     const { ctx, sut } = setup(database);
     const { user } = await ctx.newUser();
     const pluginId = randomUUID();
@@ -103,10 +99,6 @@ describe(WorkflowRepository.name, () => {
     const legacyWorkflow = await sut.getForWorkflowRun(workflowId);
     expect(legacyWorkflow?.steps[0]).toEqual(expect.objectContaining({ allowedHosts: [] }));
 
-    await sql`
-      ALTER TABLE public.plugin_method
-      ADD COLUMN "allowedHosts" varchar[] NOT NULL DEFAULT '{}'
-    `.execute(database);
     await sql`
       UPDATE public.plugin_method
       SET "allowedHosts" = ARRAY['hooks.example.test', '*.trusted.example']::varchar[]

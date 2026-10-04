@@ -439,10 +439,10 @@ describe(AssetService.name, () => {
         const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
         const thumbnailPath = `/path/to/${asset.id}-thumbnail.jpg`;
         await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: thumbnailPath });
-        queue.mockRejectedValueOnce(new Error('redis unavailable'));
+        queue.mockRejectedValueOnce(new Error('queue database unavailable'));
 
         await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).rejects.toThrow(
-          'redis unavailable',
+          'queue database unavailable',
         );
         await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toMatchObject({ id: asset.id });
 
@@ -545,7 +545,7 @@ describe(AssetService.name, () => {
       const addDevelopRevision = async (assetId: string, ownerId: string) => {
         const masterPath = `/data/develop/${assetId}-master.tif`;
         await sql`
-          INSERT INTO immich_fork.asset_develop_revision ("assetId", "ownerId", revision, recipe, "masterPath")
+          INSERT INTO public.asset_develop_revision ("assetId", "ownerId", revision, recipe, "masterPath")
           VALUES (${assetId}::uuid, ${ownerId}::uuid, 1, '{}'::jsonb, ${masterPath})
         `.execute(forkDatabase);
         return masterPath;
@@ -570,7 +570,7 @@ describe(AssetService.name, () => {
         const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
         const thumbnailPath = `/path/to/${asset.id}-thumbnail.jpg`;
         await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Thumbnail, path: thumbnailPath });
-        // no row is counted as referencing a develop output, so only the removed asset can keep it
+        // Both the retained revision and the rolled-back asset keep these outputs referenced.
         const developPath = await addDevelopRevision(asset.id, user.id);
         let queued: { files: Array<string | null | undefined>; removedAssetId?: string } | undefined;
         ctx.getMock(JobRepository).queue.mockImplementation((job) => {
@@ -610,7 +610,7 @@ describe(AssetService.name, () => {
         const [files] = fileDeletes(ctx);
         expect(files).toEqual(expect.arrayContaining([...restorationPaths, developPath, asset.originalPath]));
         const revisions = await sql`
-          SELECT 1 FROM immich_fork.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid
+          SELECT 1 FROM public.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid
         `.execute(forkDatabase);
         expect(revisions.rows).toEqual([]);
         const unlink = vi.fn(async () => {});
@@ -621,7 +621,7 @@ describe(AssetService.name, () => {
         }
       });
 
-      describe('stacks, handoffs and storage moves (FL-179)', () => {
+      describe('stacks and storage moves (FL-179)', () => {
         // Every medium asset shares one default original path; these tests move and reserve paths, and a move
         // follows every row naming its path, so each asset here gets its own.
         const ownOriginalPath = () => `/data/library/${randomUUID()}.jpg`;
@@ -750,40 +750,6 @@ describe(AssetService.name, () => {
           await expect(ctx.get(StackRepository).getById(stack.id)).resolves.toMatchObject({
             primaryAssetId: primary.id,
           });
-        });
-
-        it('keeps develop revisions while a handoff runs, for the listener to clean up later', async () => {
-          const { sut, ctx } = setup(forkDatabase);
-          ctx.getMock(JobRepository).queue.mockResolvedValue();
-          const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({
-            ownerId: user.id,
-            originalPath: ownOriginalPath(),
-            deletedAt: new Date(),
-          });
-          const developPath = await addDevelopRevision(asset.id, user.id);
-
-          await sql`
-            INSERT INTO immich_fork.migration_audit (name, phase, status)
-            VALUES ('official-handoff-preparation', 'active', 'running')
-          `.execute(forkDatabase);
-          try {
-            await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).resolves.toBe(
-              JobStatus.Success,
-            );
-          } finally {
-            await sql`
-              DELETE FROM immich_fork.migration_audit
-              WHERE name = 'official-handoff-preparation' AND status = 'running'
-            `.execute(forkDatabase);
-          }
-
-          await expect(ctx.get(AssetRepository).getById(asset.id)).resolves.toBeUndefined();
-          expect(fileDeletes(ctx).flat()).not.toContain(developPath);
-          const revisions = await sql`
-            SELECT 1 FROM immich_fork.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid
-          `.execute(forkDatabase);
-          expect(revisions.rows).toHaveLength(1);
         });
 
         it('releases a file a storage move left at its new path, and forgets the move', async () => {
@@ -1117,10 +1083,12 @@ describe(AssetService.name, () => {
             originalPath: ownOriginalPath(),
             deletedAt: new Date(),
           });
-          await sql`
-            INSERT INTO immich_fork.asset_physical_file ("assetId", "upstreamPath")
-            VALUES (${asset.id}::uuid, ${asset.originalPath})
-          `.execute(forkDatabase);
+          const physicalId = await addPhysicalOriginal(asset.originalPath, asset.id);
+          await forkDatabase
+            .updateTable('asset')
+            .set({ physicalOriginalFileId: physicalId })
+            .where('id', '=', asset.id)
+            .execute();
           const to = `/data/library/${asset.id}-mapped.jpg`;
           const moveId = await recordMove(asset.id, asset.originalPath, to);
 
@@ -1128,10 +1096,12 @@ describe(AssetService.name, () => {
             repository.moveFile(originalMove(asset, moveId, to), { rename: renamed, finish: noop, undo: noop }),
           ).resolves.toBe('moved');
 
-          const mapping = await sql<{ upstreamPath: string }>`
-            SELECT "upstreamPath" FROM immich_fork.asset_physical_file WHERE "assetId" = ${asset.id}::uuid
-          `.execute(forkDatabase);
-          expect(mapping.rows).toEqual([{ upstreamPath: to }]);
+          const mapping = await forkDatabase
+            .selectFrom('physical_file')
+            .select('path')
+            .where('id', '=', physicalId)
+            .execute();
+          expect(mapping).toEqual([{ path: to }]);
           const queued: string[][] = [];
           await expect(
             repository.remove(
@@ -1146,84 +1116,6 @@ describe(AssetService.name, () => {
             ),
           ).resolves.toMatchObject({ originalPath: to });
           expect(queued).toEqual([[to]]);
-        });
-
-        it('moves nothing a mapping names while a handoff runs, and keeps the move recorded', async () => {
-          const { ctx } = setup(forkDatabase);
-          const repository = ctx.get(AssetRepository);
-          const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
-          await sql`
-            INSERT INTO immich_fork.asset_physical_file ("assetId", "upstreamPath")
-            VALUES (${asset.id}::uuid, ${asset.originalPath})
-          `.execute(forkDatabase);
-          const to = `/data/library/${asset.id}-handoff.jpg`;
-          const moveId = await recordMove(asset.id, asset.originalPath, to);
-          const rename = vi.fn(renamed);
-
-          await sql`
-            INSERT INTO immich_fork.migration_audit (name, phase, status)
-            VALUES ('official-handoff-preparation', 'active', 'running')
-          `.execute(forkDatabase);
-          try {
-            await expect(
-              repository.moveFile(originalMove(asset, moveId, to), { rename, finish: noop, undo: noop }),
-            ).resolves.toBe('deferred');
-          } finally {
-            await sql`
-              DELETE FROM immich_fork.migration_audit
-              WHERE name = 'official-handoff-preparation' AND status = 'running'
-            `.execute(forkDatabase);
-          }
-
-          expect(rename).not.toHaveBeenCalled();
-          await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: asset.originalPath });
-          await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
-        });
-
-        it('defers a move while a normalization has the asset reserved, and keeps it recorded', async () => {
-          const { ctx } = setup(forkDatabase);
-          const repository = ctx.get(AssetRepository);
-          const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
-          await sql`
-            INSERT INTO immich_fork.asset_storage_reservation
-              ("assetId", token, "sourcePath", "upstreamPath", "temporaryPath", status)
-            VALUES (${asset.id}::uuid, ${randomUUID()}::uuid, ${asset.originalPath},
-              ${`/data/upstream/${asset.id}.jpg`}, ${`/data/upstream/${asset.id}.tmp`}, 'reserved')
-          `.execute(forkDatabase);
-          const to = `/data/library/${asset.id}-reserved.jpg`;
-          const moveId = await recordMove(asset.id, asset.originalPath, to);
-          const rename = vi.fn(renamed);
-
-          await expect(
-            repository.moveFile(originalMove(asset, moveId, to), { rename, finish: noop, undo: noop }),
-          ).resolves.toBe('deferred');
-
-          expect(rename).not.toHaveBeenCalled();
-          await expect(repository.getById(asset.id)).resolves.toMatchObject({ originalPath: asset.originalPath });
-          await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
-        });
-
-        it('keeps the move recorded, moving nothing, while the mapping names another file', async () => {
-          const { ctx } = setup(forkDatabase);
-          const repository = ctx.get(AssetRepository);
-          const { user } = await ctx.newUser();
-          const { asset } = await ctx.newAsset({ ownerId: user.id, originalPath: ownOriginalPath() });
-          await sql`
-            INSERT INTO immich_fork.asset_physical_file ("assetId", "upstreamPath")
-            VALUES (${asset.id}::uuid, ${`/data/upstream/${asset.id}.jpg`})
-          `.execute(forkDatabase);
-          const to = `/data/library/${asset.id}-mismatched.jpg`;
-          const moveId = await recordMove(asset.id, asset.originalPath, to);
-          const rename = vi.fn(renamed);
-
-          await expect(
-            repository.moveFile(originalMove(asset, moveId, to), { rename, finish: noop, undo: noop }),
-          ).resolves.toBe('mismatched');
-
-          expect(rename).not.toHaveBeenCalled();
-          await expect(movesOf(asset.id)).resolves.toEqual([{ id: moveId }]);
         });
 
         it('moves every asset naming the file, with or without a physical file linking them', async () => {
@@ -1243,16 +1135,15 @@ describe(AssetService.name, () => {
         });
       });
 
-      it('deletes develop revisions with the asset in the legacy phase', async () => {
+      it('deletes canonical develop revisions with the asset', async () => {
         const legacyDatabase = await getKyselyDB();
-        await sql`UPDATE immich_fork.state SET phase = 'legacy', active = false WHERE id = 1`.execute(legacyDatabase);
         const { sut, ctx } = setup(legacyDatabase);
         ctx.getMock(JobRepository).queue.mockResolvedValue();
         const { user } = await ctx.newUser();
         const { asset } = await ctx.newAsset({ ownerId: user.id, deletedAt: new Date() });
         const masterPath = `/data/develop/${asset.id}-legacy.tif`;
         await sql`
-          INSERT INTO immich_fork.asset_develop_revision ("assetId", "ownerId", revision, recipe, "masterPath")
+          INSERT INTO public.asset_develop_revision ("assetId", "ownerId", revision, recipe, "masterPath")
           VALUES (${asset.id}::uuid, ${user.id}::uuid, 1, '{}'::jsonb, ${masterPath})
         `.execute(legacyDatabase);
 
@@ -1260,7 +1151,7 @@ describe(AssetService.name, () => {
 
         expect(fileDeletes(ctx).flat()).toContain(masterPath);
         const revisions = await sql`
-          SELECT 1 FROM immich_fork.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid
+          SELECT 1 FROM public.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid
         `.execute(legacyDatabase);
         expect(revisions.rows).toEqual([]);
       });

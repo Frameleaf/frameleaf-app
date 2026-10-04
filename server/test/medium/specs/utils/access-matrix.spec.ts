@@ -35,7 +35,6 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   await db?.destroy();
@@ -216,7 +215,7 @@ const library = async (ctx: Context) => {
   await ctx.newPartner({ sharedById: owner.id, sharedWithId: partner.id });
   // Rows written directly: the service refuses sharing Locked items, but a share made before an item
   // was locked must be held to the same rule.
-  await sql`INSERT INTO immich_fork.asset_user_share ("assetId", "ownerId", "sharedWithId")
+  await sql`INSERT INTO public.asset_user_share ("assetId", "ownerId", "sharedWithId")
     SELECT unnest(${members}::uuid[]), ${owner.id}::uuid, ${recipient.id}::uuid`.execute(db);
 
   const links = ctx.get(SharedLinkRepository);

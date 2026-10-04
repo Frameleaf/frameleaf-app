@@ -353,7 +353,6 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     });
     expect(native('ffmpeg', ['-v', 'error', '-encoders']).toString()).toContain('libx264');
     db = await getKyselyDB();
-    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
   });
   beforeEach(async () => {
     folder = mkdtempSync(join(tmpdir(), 'fl16-master-'));
@@ -487,7 +486,7 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
   const selection = async (assetId: string) =>
     (
       await sql<Selection>`SELECT "currentVersionId","requestedVersionId"
-        FROM immich_fork.video_edit_selection WHERE "assetId"=${assetId}::uuid`.execute(db)
+        FROM public.video_edit_selection WHERE "assetId"=${assetId}::uuid`.execute(db)
     ).rows[0];
 
   it('keeps real 4K frames and authored geometry despite low-resolution proxy policy', async () => {

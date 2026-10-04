@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { AssetLockReason, ChecksumAlgorithm } from 'src/enum.js';
 import { BackupDeviceRepository } from 'src/repositories/backup-device.repository.js';
@@ -200,24 +200,5 @@ describe('backup device registry and measured inventory reconciliation', () => {
       itemsChecked: 1,
       itemsMissing: 1,
     });
-  });
-  it('refuses fork writes during handoff without creating registry or audit rows', async () => {
-    const { ctx, sut } = setup();
-    const { user } = await ctx.newUser();
-    const auth = factory.auth({ user, session: { hasElevatedPermission: true } });
-    const device = await sut.register(auth, report());
-    const {
-      rows: [prior],
-    } = await sql<{ phase: string }>`SELECT phase FROM immich_fork.state WHERE id=1`.execute(db);
-    try {
-      await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
-      await expect(sut.register(auth, report())).rejects.toThrow('database handoff');
-      await expect(sut.remove(auth, device.id)).rejects.toThrow('database handoff');
-      await expect(sut.start(auth, device.id, { buckets: bucketInventory([]) })).rejects.toThrow('database handoff');
-    } finally {
-      await sql`UPDATE immich_fork.state SET phase=${prior.phase} WHERE id=1`.execute(db);
-    }
-    expect((await sut.list(auth, page)).devices).toHaveLength(1);
-    expect((await sut.history(auth, device.id, page)).runs).toEqual([]);
   });
 });

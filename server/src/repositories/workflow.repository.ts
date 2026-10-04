@@ -25,32 +25,7 @@ export type WorkflowRunLog = Insertable<WorkflowLogTable> & {
 
 @Injectable()
 export class WorkflowRepository {
-  private allowedHostsColumn: Promise<boolean> | undefined;
-  private runStepTable: Promise<boolean> | undefined;
   constructor(@InjectKysely() private db: Kysely<DB>) {}
-
-  /**
-   * FL-179: whether `workflow_run_step` exists. A database past its handoff cutover does not receive
-   * new Frameleaf public migrations, so the table can be missing; then no step is recorded or skipped
-   * and a stalled replay runs every step again, as before the table existed. Checked once and cached;
-   * `resetRunStepTable` (after the startup migrations) checks again.
-   */
-  hasRunStepTable(): Promise<boolean> {
-    return (this.runStepTable ??= sql<{ table: string | null }>`
-      SELECT to_regclass('public.workflow_run_step')::text AS "table"
-    `
-      .execute(this.db)
-      .then(({ rows }) => !!rows[0]?.table)
-      .catch((error: unknown) => {
-        // a failed check is not remembered
-        this.runStepTable = undefined;
-        throw error;
-      }));
-  }
-
-  resetRunStepTable() {
-    this.runStepTable = undefined;
-  }
 
   private queryBuilder(db?: Kysely<DB>) {
     return (db ?? this.db)
@@ -104,7 +79,6 @@ export class WorkflowRepository {
 
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForWorkflowRun(id: string) {
-    const hasAllowedHosts = await this.hasAllowedHostsColumn();
     return this.db
       .selectFrom('workflow')
       .leftJoin('workflow_definition', 'workflow_definition.workflowId', 'workflow.id')
@@ -123,7 +97,7 @@ export class WorkflowRepository {
             .innerJoin('plugin', 'plugin.id', 'plugin_method.pluginId')
             .whereRef('workflow_step.workflowId', '=', 'workflow.id')
             .where('workflow_step.enabled', '=', true)
-            .select((eb) => [
+            .select([
               'workflow_step.id',
               'workflow_step.config',
               'workflow_step.order',
@@ -133,9 +107,7 @@ export class WorkflowRepository {
               'plugin_method.name as methodName',
               'plugin_method.types as types',
               'plugin_method.hostFunctions',
-              hasAllowedHosts
-                ? eb.ref('plugin_method.allowedHosts').as('allowedHosts')
-                : sql<string[]>`ARRAY[]::character varying[]`.as('allowedHosts'),
+              'plugin_method.allowedHosts',
             ])
             // run in the order the owner put the steps in
             .orderBy('workflow_step.order', 'asc'),
@@ -144,20 +116,6 @@ export class WorkflowRepository {
       .where('workflow.id', '=', id)
       .where('workflow.enabled', '=', true)
       .executeTakeFirst();
-  }
-
-  private hasAllowedHostsColumn(): Promise<boolean> {
-    return (this.allowedHostsColumn ??= sql<{ exists: boolean }>`
-      SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'plugin_method'
-          AND column_name = 'allowedHosts'
-      ) AS "exists"
-    `
-      .execute(this.db)
-      .then(({ rows }) => rows[0]?.exists));
   }
 
   create(dto: Insertable<WorkflowTable>, definition: WorkflowDefinitionDocument, steps: WorkflowStepUpsert[]) {
@@ -241,9 +199,6 @@ export class WorkflowRepository {
    * of them stopped the run. A replay of the same job skips them.
    */
   async getCompletedSteps(executionId: string): Promise<Map<string, { halted: boolean }>> {
-    if (!(await this.hasRunStepTable())) {
-      return new Map();
-    }
     const rows = await this.db
       .selectFrom('workflow_run_step')
       .select(['stepId', 'halted'])
@@ -254,9 +209,6 @@ export class WorkflowRepository {
 
   /** Records that a queued run completed a step (FL-179); recording it again changes nothing. */
   async completeStep(step: { executionId: string; workflowId: string; stepId: string; halted: boolean }) {
-    if (!(await this.hasRunStepTable())) {
-      return;
-    }
     await this.db
       .insertInto('workflow_run_step')
       .values(step)
@@ -266,9 +218,6 @@ export class WorkflowRepository {
 
   /** Forgets completed steps recorded before `before`; no replay of those runs can still happen. */
   async deleteCompletedStepsBefore(before: Date): Promise<number> {
-    if (!(await this.hasRunStepTable())) {
-      return 0;
-    }
     const result = await this.db.deleteFrom('workflow_run_step').where('createdAt', '<', before).executeTakeFirst();
     return Number(result.numDeletedRows);
   }

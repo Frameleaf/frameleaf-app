@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -56,8 +56,7 @@ beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
 
-beforeEach(async () => {
-  await sql`UPDATE immich_fork.state SET phase = 'legacy', active = true WHERE id = 1`.execute(defaultDatabase);
+beforeEach(() => {
   clearConfigCache();
 });
 
