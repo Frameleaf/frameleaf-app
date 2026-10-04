@@ -11491,7 +11491,8 @@
     "0000000000219-PhysicalFileTrash",
     "0000000000220-PartnerOrigins",
     "0000000000221-PartnerPeopleLinks",
-    "0000000000222-AlbumSourceLinks"
+    "0000000000222-AlbumSourceLinks",
+    "0000000000223-AlbumSourceMembershipGeneration"
   ],
   "functions": [
     {
