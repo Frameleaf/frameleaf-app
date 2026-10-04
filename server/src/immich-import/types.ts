@@ -1,9 +1,12 @@
+import type { DatabaseSchema } from '@frameleaf/sql-tools';
 import type { SourceStructure } from 'src/immich-import/schema.js';
 
 export type ImportRow = Record<string, unknown>;
 export interface ImportDatabase {
   query(sql: string, parameters?: unknown[]): Promise<ImportRow[]>;
   transaction<T>(body: (db: ImportDatabase) => Promise<T>): Promise<T>;
+  /** Destination-only introspection, bound to the same URL as query/transaction. */
+  readSchema?(): Promise<DatabaseSchema>;
 }
 export type MediaRootMap = { source: string; target: string };
 export type ImportConfig = {

@@ -7,6 +7,7 @@ import {
   transformRow,
   vectorCompatible,
 } from 'src/immich-import/adapters.js';
+import { assertCanonicalDestination } from 'src/immich-import/destination-schema.js';
 import { EmbeddingAdmission, inspectEmbeddingAdmission } from 'src/immich-import/embeddings.js';
 import { mapMediaPath, pathChecksum, verifyMediaFile } from 'src/immich-import/media.js';
 import { ImmichSource } from 'src/immich-import/source.js';
@@ -45,6 +46,7 @@ export class ImmichImportService {
   async preflight() {
     const fingerprint = await this.source.preflight();
     await this.assertDistinctDestination();
+    await assertCanonicalDestination(this.destination);
     this.embeddingAdmission = await inspectEmbeddingAdmission(this.source.db, this.destination);
     const [run] = await this.destination.query(
       'SELECT status,source_fingerprint,config_fingerprint FROM public.frameleaf_immich_import',
@@ -157,6 +159,8 @@ export class ImmichImportService {
       // These are fresh pgvector indexes on the destination, never copied from upstream.
       await this.destination.query('REINDEX INDEX public.clip_index');
       await this.destination.query('REINDEX INDEX public.face_index');
+      // Recheck after verification/dispatch: an intact ledger does not authorize schema drift.
+      await assertCanonicalDestination(this.destination);
       await this.destination.query(
         "UPDATE public.frameleaf_immich_import SET status='activated',verified_at=now() WHERE status='verifying'",
       );
