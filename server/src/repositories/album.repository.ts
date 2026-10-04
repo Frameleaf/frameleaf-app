@@ -492,7 +492,7 @@ export class AlbumRepository {
       .select('id_descendant')
       .where('id_ancestor', '=', id)
       .execute();
-    const subtreeIds = subtree.length > 0 ? subtree.map(({ id_descendant }) => id_descendant) : [id];
+    const subtreeIds = _subtree.length > 0 ? _subtree.map(({ id_descendant }) => id_descendant) : [id];
     await this.smartAlbums.deleteAlbums(subtreeIds, tx);
     await this.deletePositions({ albumIds: subtreeIds }, tx);
     await this.deleteCoverFollowsNewest(subtreeIds, tx);

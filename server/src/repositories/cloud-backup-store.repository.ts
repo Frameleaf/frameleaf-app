@@ -61,11 +61,7 @@ export type CloudBackupConnection = {
 export type CloudBackupObjectInfo = { key: string; size: number; etag: string | null };
 
 export type CloudBackupClaimRefusal =
-  | 'claimed-by-another-server'
-  | 'other-key'
-  | 'not-empty'
-  | 'sse-c-unsupported'
-  | 'claim-missing';
+  'claimed-by-another-server' | 'other-key' | 'not-empty' | 'sse-c-unsupported' | 'claim-missing';
 
 /** A provider answered with an error, or could not be reached. The message never holds a secret. */
 export class CloudBackupStoreError extends Error {

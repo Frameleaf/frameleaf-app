@@ -299,8 +299,7 @@ describe(StudioExportService.name, () => {
       // the owner rule of StudioProjectService.requireOwnedProject, for a stranger: 404 as if missing
       requireOwnedProject: vi.fn(async (actor: AuthDto, id: string) => {
         const project = (await (projects.getById as (id: string) => Promise<{ ownerId: string } | undefined>)(id)) as
-          | { ownerId: string }
-          | undefined;
+          { ownerId: string } | undefined;
         if (!project || project.ownerId !== actor.user.id) {
           throw new NotFoundException('Studio project not found');
         }
@@ -942,10 +941,9 @@ describe(StudioExportService.name, () => {
 
     it('admits the render-finished notification inside the publication transaction', async () => {
       const tx = { isTransaction: true };
-      repository.publish.mockImplementation(async (_input, _metadata, notification) => {
-        await notification(tx, published().version, 'Lake trip');
-        return published();
-      });
+      repository.publish.mockImplementation((_input, _metadata, notification) =>
+        Promise.try(() => notification(tx, published().version, 'Lake trip')).then(() => published()),
+      );
       await sut.run(job());
       expect(jobs.queueInTransaction).toHaveBeenCalledWith(tx, {
         name: JobName.PushDeliver,
@@ -1030,10 +1028,9 @@ describe(StudioExportService.name, () => {
     });
 
     it('verifies the file, moves it into the library and publishes it with the sources re-checked', async () => {
-      repository.publish.mockImplementation(async (_input, metadata) => {
-        await metadata({ isTransaction: true }, 'asset-new');
-        return published();
-      });
+      repository.publish.mockImplementation((_input, metadata) =>
+        Promise.try(() => metadata({ isTransaction: true }, 'asset-new')).then(() => published()),
+      );
 
       await sut.run(job());
 

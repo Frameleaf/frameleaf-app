@@ -1,7 +1,7 @@
 import { once } from 'node:events';
-import { createServer, type Socket } from 'node:net';
-import { WorkerStopProofRecorder } from 'src/queue/worker-stop-proof.js';
+import { type Socket, createServer } from 'node:net';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
+import { WorkerStopProofRecorder } from 'src/queue/worker-stop-proof.js';
 
 it('bounds a real silent PostgreSQL handshake and retains its proof for a later retry', async () => {
   const sockets = new Set<Socket>();
@@ -33,7 +33,7 @@ it('bounds a real silent PostgreSQL handshake and retains its proof for a later 
   const recorder = new WorkerStopProofRecorder(config, { timeoutMs: 50, retryMs: 100, diagnostic });
   try {
     const startedAt = performance.now();
-    await recorder.record({ workerId: '9278736b-d61f-4b66-8de9-41d17a5e59ca', stoppedAt: 12345 });
+    await recorder.record({ workerId: '9278736b-d61f-4b66-8de9-41d17a5e59ca', stoppedAt: 12_345 });
     expect(performance.now() - startedAt).toBeLessThan(1000);
     expect(diagnostic).toHaveBeenCalled();
     await vi.waitFor(() => expect(connections).toBeGreaterThan(1), { timeout: 2000 });
@@ -75,14 +75,14 @@ it('destroys a timed-out query connection and retries the same proof after proto
         if (pending.length < length) return;
         const packet = pending.subarray(0, length);
         pending = pending.subarray(length);
-        const type = String.fromCharCode(packet[0]);
+        const type = String.fromCodePoint(packet[0]);
         if (type === 'B') submitted.push(packet.toString('base64'));
         if (!healthy) continue;
         if (type === 'P') socket.write(frame('1', Buffer.alloc(0)));
-        if (type === 'B') socket.write(frame('2', Buffer.alloc(0)));
-        if (type === 'D') socket.write(frame('n', Buffer.alloc(0)));
-        if (type === 'E') socket.write(frame('C', Buffer.from('INSERT 0 1\0')));
-        if (type === 'S') socket.write(frame('Z', Buffer.from('I')));
+        else if (type === 'B') socket.write(frame('2', Buffer.alloc(0)));
+        else if (type === 'D') socket.write(frame('n', Buffer.alloc(0)));
+        else if (type === 'E') socket.write(frame('C', Buffer.from('INSERT 0 1\0')));
+        else if (type === 'S') socket.write(frame('Z', Buffer.from('I')));
       }
     });
   });
@@ -104,7 +104,7 @@ it('destroys a timed-out query connection and retries the same proof after proto
   const recorder = new WorkerStopProofRecorder(config, { timeoutMs: 50, retryMs: 100, diagnostic });
   try {
     const startedAt = performance.now();
-    await recorder.record({ workerId: '9278736b-d61f-4b66-8de9-41d17a5e59ca', stoppedAt: 12345 });
+    await recorder.record({ workerId: '9278736b-d61f-4b66-8de9-41d17a5e59ca', stoppedAt: 12_345 });
     expect(performance.now() - startedAt).toBeLessThan(1000);
     expect(diagnostic).toHaveBeenCalled();
     await vi.waitFor(() => expect(sockets.size).toBe(0));

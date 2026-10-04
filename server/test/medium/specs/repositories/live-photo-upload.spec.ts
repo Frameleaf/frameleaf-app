@@ -77,10 +77,15 @@ const setup = async (quota?: number, existingOwnerId?: string) => {
   });
   const commit = (locked = false) =>
     uploads.lockedMany([video.id, still.id], user.id, (tx, rows) =>
-      uploads.publishLivePhoto(tx, rows.find((row) => row.id === still.id)!, rows.find((row) => row.id === video.id)!, {
-        still: prepared(still, AssetType.Image, locked),
-        video: prepared(video, AssetType.Video, locked),
-      }),
+      uploads.publishLivePhoto(
+        tx,
+        rows.find((row) => row.id === still.id)!,
+        rows.find((row) => row.id === video.id)!,
+        {
+          still: prepared(still, AssetType.Image, locked),
+          video: prepared(video, AssetType.Video, locked),
+        },
+      ),
     );
   const state = async () => ({
     assets: await db
@@ -237,10 +242,15 @@ describe('atomic Live Photo verified-resource publication', () => {
       .execute();
     await expect(
       uploads.lockedMany([h.still.id, h.video.id], h.user.id, (tx, rows) =>
-        uploads.publishLivePhoto(tx, rows.find((r) => r.id === h.still.id)!, rows.find((r) => r.id === h.video.id)!, {
-          still: h.prepared(h.still, AssetType.Video),
-          video: h.prepared(h.video, AssetType.Video),
-        }),
+        uploads.publishLivePhoto(
+          tx,
+          rows.find((r) => r.id === h.still.id)!,
+          rows.find((r) => r.id === h.video.id)!,
+          {
+            still: h.prepared(h.still, AssetType.Video),
+            video: h.prepared(h.video, AssetType.Video),
+          },
+        ),
       ),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(await h.state()).toEqual(before);

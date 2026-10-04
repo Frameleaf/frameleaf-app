@@ -2,8 +2,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter, once } from 'node:events';
 import { Worker } from 'node:worker_threads';
-import { superviseQueueWorker } from 'src/queue/supervisor.js';
 import type { WorkerStoppedProof } from 'src/queue/worker-stop-proof.js';
+import { superviseQueueWorker } from 'src/queue/supervisor.js';
 import { SupervisorStop } from 'src/utils/shutdown.js';
 
 /** Real worker threads and child processes; fake clocks cannot prove event-loop isolation. */

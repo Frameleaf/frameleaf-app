@@ -11,14 +11,15 @@ export const emptyAttemptCursor = (): AttemptCursor => ({ root: 0, stack: [] });
 export function attemptIdentity(path: string): AttemptIdentity | undefined {
   const parts = resolve(path).split(sep);
   const index = parts.lastIndexOf('.attempts');
-  if (index < 0 || parts.length !== index + 4 || !UUID.test(parts[index + 1]) || !UUID.test(parts[index + 2])) return;
+  if (index === -1 || parts.length !== index + 4 || !UUID.test(parts[index + 1]) || !UUID.test(parts[index + 2]))
+    return;
   return { jobId: parts[index + 1], token: parts[index + 2] };
 }
 
 /** Check each component before descending: a symlink is never a directory to traverse. */
 export async function realAttemptEntry(path: string) {
   const absolute = resolve(path);
-  let current = sep;
+  let current: string = sep;
   try {
     const parts = absolute.split(sep).filter(Boolean);
     for (let index = 0; index < parts.length; index++) {
@@ -103,7 +104,7 @@ export async function sweepAttemptTree(options: {
   // Metadata corruption or a changed mount must never expand the configured roots.
   const root = roots[cursor.root];
   if (
-    !Number.isInteger(cursor.root) ||
+    !Number.isSafeInteger(cursor.root) ||
     cursor.root < 0 ||
     cursor.root > roots.length ||
     cursor.stack.length > 16 ||

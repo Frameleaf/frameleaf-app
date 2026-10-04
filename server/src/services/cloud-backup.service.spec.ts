@@ -355,7 +355,7 @@ describe(CloudBackupService.name, () => {
         ).checkpointTask(operation, 'claim-1', { checked: processed }, { processed, total: 10, progress: 10 });
       let advance!: (processed: number) => Promise<string>;
       const task = withOperationExecution(
-        { renew: async () => true, pollMs: 10, deadlineMs: 100, idleMs: 100 },
+        { renew: () => Promise.resolve(true), pollMs: 10, deadlineMs: 100, idleMs: 100 },
         async () => {
           const signal = executionSignal()!;
           const context = operationExecution.getStore()!;

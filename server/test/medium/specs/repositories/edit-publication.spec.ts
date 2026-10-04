@@ -123,16 +123,25 @@ describe('queue and edit publication atomicity', () => {
     async (fault) => {
       const fixture = await prepare();
       const { operations, operation, revisions, candidate, asset, previous, claim, user } = fixture;
-      if (fault === 'cancel') await operations.requestCancel(operation.id, user.id);
-      else if (fault === 'expired operation')
-        await sql`update media_operation set "claimExpiresAt" = now() - interval '1 second' where id = ${operation.id}::uuid`.execute(
-          db,
-        );
-      else if (fault === 'expired queue')
-        await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(
-          db,
-        );
-      else if (fault === 'expired queue') expect(await fixture.commit()).toBe(false);
+      switch (fault) {
+        case 'cancel': {
+          await operations.requestCancel(operation.id, user.id);
+          break;
+        }
+        case 'expired operation': {
+          await sql`update media_operation set "claimExpiresAt" = now() - interval '1 second' where id = ${operation.id}::uuid`.execute(
+            db,
+          );
+          break;
+        }
+        case 'expired queue': {
+          await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(
+            db,
+          );
+          break;
+        }
+      }
+      if (fault === 'expired queue') expect(await fixture.commit()).toBe(false);
       else await expect(fixture.commit()).rejects.toThrow('lost its claim');
       expect((await revisions.getCurrent(asset.id))?.id).toBe(previous.id);
       expect((await revisions.get(candidate.id))?.masterPath).toBeNull();
