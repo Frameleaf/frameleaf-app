@@ -30,7 +30,13 @@ if (baselineRef) {
       { cwd: repository, encoding: 'utf8' },
     ).trim();
     if (!frozen) break;
-    const previous = execFileSync('git', ['show', `${baselineRef}:${path}`], { cwd: repository, encoding: 'utf8' });
+    // The complete frozen catalog exceeds Node's default 1 MiB pipe buffer.
+    // Retain the full byte comparison; an oversized/erroring read must still fail closed.
+    const previous = execFileSync('git', ['show', `${baselineRef}:${path}`], {
+      cwd: repository,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
     if (previous !== (await readFile(resolve(repository, path), 'utf8')))
       throw new Error(`Immutable Frameleaf baseline changed: ${path}`);
   }

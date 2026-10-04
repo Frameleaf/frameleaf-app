@@ -49,7 +49,7 @@ jobs:
           install_args: --locked
           version: 2026.7.12
       - name: Install script test dependencies
-        run: pnpm --filter @immich/scripts --filter immich install --frozen-lockfile
+        run: pnpm --filter @immich/scripts --filter 'immich...' install --frozen-lockfile
       - name: Run unit tests
         run: pnpm --filter @immich/scripts test
       - name: Validate Frameleaf workflow contracts
@@ -855,7 +855,7 @@ jobs:
           install_args: --locked
           version: 2026.7.12
       - name: Install server dependencies
-        run: pnpm --filter immich install --frozen-lockfile
+        run: pnpm --filter 'immich...' install --frozen-lockfile
       - name: Verify generated API artifacts are tracked
         run: git ls-files --error-unmatch -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
       - name: Run API generation

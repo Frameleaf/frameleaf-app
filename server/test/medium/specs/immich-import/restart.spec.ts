@@ -69,6 +69,7 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
         migrationLockTableName: 'frameleaf_migrations_lock',
         provider: createMigrationProvider(
           fileURLToPath(new URL('../../../../src/schema/migrations/', import.meta.url)),
+          { import: (path) => import(path) },
         ),
       }).migrateToLatest();
       if (error) {

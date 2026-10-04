@@ -126,6 +126,7 @@ export class PostgresImportFixture {
         migrationLockTableName: 'frameleaf_migrations_lock',
         provider: createMigrationProvider(
           fileURLToPath(new URL('../../../../src/schema/migrations/', import.meta.url)),
+          { import: (path) => import(path) },
         ),
       }).migrateToLatest();
       if (error) throw error;

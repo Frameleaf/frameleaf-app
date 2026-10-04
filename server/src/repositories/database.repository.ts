@@ -326,7 +326,9 @@ export class DatabaseRepository {
       db: this.db,
       migrationTableName: 'frameleaf_migrations',
       migrationLockTableName: 'frameleaf_migrations_lock',
-      provider: createMigrationProvider(fileURLToPath(new URL('../schema/migrations/', import.meta.url))),
+      provider: createMigrationProvider(fileURLToPath(new URL('../schema/migrations/', import.meta.url)), {
+        import: (path) => import(path),
+      }),
     });
     const { error, results } = await migrator.migrateToLatest();
     if (error) throw error;
