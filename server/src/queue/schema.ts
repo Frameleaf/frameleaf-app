@@ -27,7 +27,7 @@ export async function createQueueSchema(db: Kysely<any>) {
     create table job_selection_run (
       "runId" uuid not null references job_run(id) on delete cascade,
       "selectionId" uuid not null references job_selection(id) on delete cascade,
-      "copyAfter" text, "copyComplete" boolean not null default false,
+      "copyAfter" text, "lineageAfter" bigint not null default 0, "copyComplete" boolean not null default false,
       primary key ("runId", "selectionId")
     );
     create index job_selection_run_selection on job_selection_run("selectionId", "runId");
@@ -41,6 +41,16 @@ export async function createQueueSchema(db: Kysely<any>) {
     );
     create index job_run_item_job on job_run_item("jobId") where "jobId" is not null;
     create index job_run_root_item on job_run_item("runId", "rootItemKey");
+    create table job_selection_lineage (
+      id bigint generated always as identity primary key,
+      "selectionId" uuid not null references job_selection(id) on delete cascade,
+      "runId" uuid not null, "itemKey" text not null, stage text not null,
+      superseded boolean not null default false,
+      unique ("selectionId", "itemKey", stage),
+      foreign key ("runId", "itemKey", stage) references job_run_item("runId", "itemKey", stage) on delete cascade
+    );
+    create index job_selection_lineage_page on job_selection_lineage("selectionId", id);
+    create index job_selection_lineage_source on job_selection_lineage("runId", "itemKey", stage);
     create table job (
       id uuid primary key, queue text not null references job_queue(name), name text not null,
       data jsonb not null, state text not null default 'pending',

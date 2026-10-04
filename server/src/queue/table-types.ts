@@ -80,5 +80,19 @@ export interface QueueDatabase {
   job_worker: JobWorkerTable;
   job_run: JobRunTable;
   job_run_item: JobRunItemTable;
-  job_selection_run: { runId: string; selectionId: string; copyAfter: string | null; copyComplete: Generated<boolean> };
+  job_selection_run: {
+    runId: string;
+    selectionId: string;
+    copyAfter: string | null;
+    lineageAfter: Generated<string>;
+    copyComplete: Generated<boolean>;
+  };
+  job_selection_lineage: {
+    id: Generated<string>;
+    selectionId: string;
+    runId: string;
+    itemKey: string;
+    stage: string;
+    superseded: Generated<boolean>;
+  };
 }

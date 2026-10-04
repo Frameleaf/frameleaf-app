@@ -33,6 +33,8 @@ export type QueueIntent = {
   itemKey?: string;
   rootItemKey?: string | null;
   parentId?: string;
+  /** Internal accounting identities sharing this one accepted execution, including deferred latest requests. */
+  memberships?: Array<{ runId: string; itemKey: string; rootItemKey: string | null }>;
 };
 export type JobDependencyReason =
   | 'workload-disabled'

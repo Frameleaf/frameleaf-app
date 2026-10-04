@@ -6,6 +6,7 @@ import { freezeSelection, shareSelectionPage } from 'src/queue/manifest.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { QueueClaim, QueueExecution, QueueIntent } from 'src/queue/types.js';
 import * as selectionHeaders from 'src/schema/migrations/1791101300000-SelectionOutcomeHeaders.js';
+import * as selectionLineage from 'src/schema/migrations/1791101500000-RetainSelectionLineage.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('selection capture isolation', () => {
@@ -421,14 +422,20 @@ describe('selection capture isolation', () => {
     await store.enqueue([producer(runs[1])]);
     expect(await store.fail(claim, 'manual review required')).toBe(true);
     expect(await capturedKeys(runs[1])).toEqual([]);
-    await db.transaction().execute(selectionHeaders.down);
+    await db.transaction().execute(async (tx) => {
+      await selectionLineage.down(tx);
+      await selectionHeaders.down(tx);
+    });
     try {
       const { rows } = await sql`select "runId", count(*)::int count from job_run_item
         where "runId" = any(${runs}::uuid[]) and "selectionId" is not null and state = 'needs_attention'
         group by "runId" order by "runId"`.execute(db);
       expect(rows).toEqual(runs.toSorted().map((runId) => ({ runId, count: 6 })));
     } finally {
-      await db.transaction().execute(selectionHeaders.up);
+      await db.transaction().execute(async (tx) => {
+        await selectionHeaders.up(tx);
+        await selectionLineage.up(tx);
+      });
     }
     const summaries = await store.listRuns(100, 0);
     for (const runId of runs) {
