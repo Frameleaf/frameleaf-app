@@ -755,6 +755,124 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     expect(digest(source)).toBe(before);
   }, 120_000);
 
+  it('refuses a timestamp-only audio offset before replacing the current real master', async () => {
+    // Existing pre-cutover production admission: this does not qualify the final PG19 graph or lossless encoding.
+    const source = fixture(folder, 320, 240, 36, 1);
+    const originalHash = digest(source);
+    const asset = await seed(source);
+    const initial = await requested(asset.id, [fullCrop(320, 240)]);
+    expect(await render(asset.id, initial.id)).toBe(JobStatus.Success);
+    const repository = setup.ctx.get(AssetEditRepository);
+    const current = (await repository.getVideoVersion(asset.id, initial.id))!;
+    const currentHash = digest(current.masterPath!);
+    const failed = await requested(asset.id, [
+      fullCrop(320, 240),
+      { action: AssetEditAction.Rotate, parameters: { angle: 180 } },
+    ]);
+    expect(failed.id).not.toBe(initial.id);
+    const media = setup.ctx.get(MediaRepository);
+    const transcode = media.transcode.bind(media);
+    const probe = media.probe.bind(media);
+    const publish = vi.spyOn(repository, 'publishVideoVersion');
+    let candidate = '';
+    let proxyStarted = false;
+    let actualCandidateProbe: Awaited<ReturnType<typeof probe>> | undefined;
+    let evidence:
+      | {
+          before: ReturnType<typeof presentation>;
+          shifted: ReturnType<typeof presentation>;
+          beforeFrames: number[];
+          shiftedFrames: number[];
+          beforeTimes: number[];
+          shiftedTimes: number[];
+          beforeAudio: string[];
+          shiftedAudio: string[];
+        }
+      | undefined;
+    vi.spyOn(media, 'probe').mockImplementation(async (...args) => {
+      const result = await probe(...args); // Observe the actual production probe without replacing its result.
+      if (args[0] === candidate) {
+        actualCandidateProbe = result;
+      }
+      return result;
+    });
+    vi.spyOn(media, 'transcode').mockImplementation(async (input, output, command) => {
+      if (typeof output === 'string' && output.includes(failed.id) && output.endsWith('.proxy.mp4')) {
+        proxyStarted = true;
+      }
+      await transcode(input, output, command);
+      if (typeof output === 'string' && output.includes(failed.id) && output.endsWith('.master.mp4')) {
+        candidate = output;
+        const before = presentation(output);
+        const beforeFrames = frameIds(output);
+        const beforeTimes = frameTimes(output);
+        const beforeAudio = audioPackets(output);
+        const shifted = join(folder, 'injected-native-audio-offset.mp4');
+        // The same native timestamp-only construction used by the independent oracle control above.
+        ffmpeg(
+          '-copyts',
+          '-i',
+          output,
+          '-itsoffset',
+          '0.25',
+          '-i',
+          output,
+          '-map',
+          '0:v:0',
+          '-map',
+          '1:a:0',
+          '-c',
+          'copy',
+          '-avoid_negative_ts',
+          'disabled',
+          '-video_track_timescale',
+          '90000',
+          shifted,
+        );
+        writeFileSync(output, readFileSync(shifted)); // Only the completed, unpublished candidate changes.
+        evidence = {
+          before,
+          shifted: presentation(output),
+          beforeFrames,
+          shiftedFrames: frameIds(output),
+          beforeTimes,
+          shiftedTimes: frameTimes(output),
+          beforeAudio,
+          shiftedAudio: audioPackets(output),
+        };
+      }
+    });
+    const status = await render(asset.id, failed.id);
+    // All setup/observation checks precede the intended behavioral RED assertion.
+    expect(candidate).not.toBe('');
+    expect(evidence, 'Native offset construction and independent decoding must complete').toBeDefined();
+    expect(actualCandidateProbe, 'The shifted candidate must reach the actual production probe').toBeDefined();
+    assertAVPresentation(evidence!.before);
+    expect(evidence!.beforeFrames).toEqual(Array.from({ length: 36 }, (_, index) => index % 12));
+    expect(evidence!.shiftedFrames).toEqual(evidence!.beforeFrames);
+    expect(evidence!.shiftedTimes).toEqual(evidence!.beforeTimes);
+    expect(evidence!.shiftedAudio).toEqual(evidence!.beforeAudio);
+    expect(evidence!.shifted.audioStart - evidence!.before.audioStart).toBeGreaterThan(0.2);
+    expect(evidence!.shifted.audioStart - evidence!.shifted.videoStart).toBeGreaterThan(0.2);
+    expect(() => assertAVPresentation(evidence!.shifted, evidence!.before)).toThrow();
+    expect(actualCandidateProbe!.audioStreams[0]).toMatchObject({ channels: 6, sampleRate: 48_000 });
+    expect(digest(source)).toBe(originalHash);
+    expect(digest(current.masterPath!)).toBe(currentHash);
+
+    expect(status, 'Production must refuse the measured A/V offset before publishing the candidate').toBe(
+      JobStatus.Failed,
+    );
+    expect(proxyStarted, 'Refusal must occur at master admission, before playback proxy rendering').toBe(false);
+    expect(publish).not.toHaveBeenCalled();
+    expect((await selection(asset.id)).currentVersionId).toBe(initial.id);
+    expect((await repository.getVideoVersion(asset.id, failed.id))!.status).toBe('failed');
+    expect(existsSync(candidate)).toBe(false);
+    expect(existsSync(`${candidate}.lineage.json`)).toBe(false);
+    expect(existsSync(candidate.replace('.master.mp4', '.proxy.mp4'))).toBe(false);
+    expect(digest(current.masterPath!)).toBe(currentHash);
+    expect(digest(source)).toBe(originalHash);
+  }, 120_000);
+
   it.each(['silent', 'muted', 'irregular', 'reordered-nonzero'] as const)(
     'publishes a measured complete %s clip with its independently decoded frames and clock',
     async (mode) => {
