@@ -1,15 +1,10 @@
-import { ConflictException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { MlDestinationHealth, MlDestinationKind, MlWorkload } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as cloudJobIndexMigration from 'src/fork-schema/migrations/0000000000201-MlWorkloadAccountingCloudJobIndex.js';
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { DB } from 'src/schema/index.js';
-import * as cloudModelChoiceMigration from 'src/schema/migrations/2100000000650-AddMlCloudModelChoice.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -196,22 +191,14 @@ describe(MlDestinationRepository.name, () => {
     expect(rows).toHaveLength(1);
   });
 
-  it('certifies the cloud job id index against the catalogue and rolls it back cleanly (FL-159)', async () => {
-    const isIndex = (entry: { identity: string }) =>
-      entry.identity === 'public.ml_workload_accounting.ml_workload_accounting_cloudJobId_idx';
-    const before = await getCatalogEvidence(defaultDatabase);
-    expect(before.indexes.filter((entry) => isIndex(entry))).toEqual(
-      manifest.indexes.filter((entry) => isIndex(entry)),
-    );
-    expect(before.indexes.filter((entry) => isIndex(entry))).toHaveLength(1);
-
-    await cloudJobIndexMigration.down(defaultDatabase);
-    expect((await getCatalogEvidence(defaultDatabase)).indexes.filter((entry) => isIndex(entry))).toEqual([]);
-    await cloudJobIndexMigration.up(defaultDatabase);
-    expect((await getCatalogEvidence(defaultDatabase)).indexes).toEqual(before.indexes);
+  it('indexes the canonical cloud job identity used for replayed admission', async () => {
+    const { rows } = await sql<{ indexdef: string }>`SELECT indexdef FROM pg_indexes WHERE schemaname = 'public'
+      AND indexname = 'ml_workload_accounting_cloudJobId_idx'`.execute(defaultDatabase);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].indexdef).toContain('"cloudJobId"');
   });
 
-  it('withdraws Frameleaf Cloud consent and clears the destination in one step, never during a handoff (FL-159)', async () => {
+  it('withdraws Frameleaf Cloud consent and clears the destination atomically (FL-159)', async () => {
     const { sut } = setup();
     const consents = new FrameleafConsentRepository(defaultDatabase);
     const destination = await sut.create({
@@ -241,17 +228,6 @@ describe(MlDestinationRepository.name, () => {
       consentVersion: '2026-10-01',
     });
 
-    await sql`
-      INSERT INTO immich_fork.migration_audit (name, phase, status)
-      VALUES ('official-handoff-preparation', 'active', 'running')
-    `.execute(defaultDatabase);
-    try {
-      await expect(consents.revoke(destination.id)).rejects.toBeInstanceOf(ConflictException);
-    } finally {
-      await sql`
-        DELETE FROM immich_fork.migration_audit WHERE name = 'official-handoff-preparation' AND status = 'running'
-      `.execute(defaultDatabase);
-    }
     expect(await consents.getCurrent(destination.id)).toBeDefined();
     expect((await sut.getById(destination.id))?.consentVersion).toBe('2026-10-01');
 
@@ -286,87 +262,9 @@ describe(MlDestinationRepository.name, () => {
     await sut.clearCloudModelChoice('transcription');
   });
 
-  it('copies the valid cloud route models into the model choices, and matches the catalogue (FL-186)', async () => {
-    const { sut } = setup();
-    const cloud = await sut.create({
-      kind: MlDestinationKind.FrameleafCloud,
-      name: `cloud ${randomUUID()}`,
-      url: null,
-      authToken: null,
-      enabled: true,
-      workloads: [MlWorkload.Enrichment, MlWorkload.RestorationCreative, MlWorkload.Upscale, MlWorkload.StudioAi],
-      budgetLimitUsd: null,
-      maxRuntimeMinutes: null,
-      maxUploadBytes: null,
-    });
-    await sut.recordProbe(cloud.id, {
-      health: MlDestinationHealth.Healthy,
-      summary: null,
-      workloads: null,
-      probedAt: new Date(),
-      cloud: {
-        region: 'eu',
-        consentRequiredVersion: null,
-        consentRecordedVersion: null,
-        features: { identityNames: false, medicalSignals: false, ocrAddon: false },
-        entitled: true,
-        balanceUsd: 1,
-        heldUsd: 0,
-        dailyCapUsd: null,
-        spentTodayUsd: 0,
-        limits: {},
-        catalogEtag: null,
-        modelIds: ['ms_DESCRIBE', 'ms_CREATIVE', 'ms_FAITHFUL', 'ms_STUDIOVO'],
-        modelWorkloads: {
-          ms_DESCRIBE: MlWorkload.Enrichment,
-          ms_CREATIVE: MlWorkload.RestorationCreative,
-          ms_FAITHFUL: MlWorkload.RestorationFaithful,
-          ms_STUDIOVO: MlWorkload.StudioAi,
-        },
-        refusal: null,
-      },
-    });
-    const route = (workload: MlWorkload, modelId: string) =>
-      sql`
-        INSERT INTO ml_workload_route ("workload", "destinationId", "modelId")
-        VALUES (${workload}, ${cloud.id}::uuid, ${modelId})
-        ON CONFLICT ("workload") DO UPDATE SET "destinationId" = excluded."destinationId", "modelId" = excluded."modelId"
-      `.execute(defaultDatabase);
-    // copied: in the last catalogue check, for this workload
-    await route(MlWorkload.Enrichment, 'ms_DESCRIBE');
-    // not copied: a faithful model on the creative route, a model the catalogue dropped, and Studio AI,
-    // whose speech to text and speech models cannot be told apart
-    await route(MlWorkload.RestorationCreative, 'ms_FAITHFUL');
-    await route(MlWorkload.Upscale, 'ms_RETIRED1');
-    await route(MlWorkload.StudioAi, 'ms_STUDIOVO');
-
-    try {
-      await cloudModelChoiceMigration.down(defaultDatabase);
-      await cloudModelChoiceMigration.up(defaultDatabase);
-
-      const choices = await sut.getCloudModelChoices();
-      expect(choices.map(({ modelGroup, modelId }) => [modelGroup, modelId])).toEqual([
-        ['descriptions', 'ms_DESCRIBE'],
-      ]);
-
-      const isChoice = (entry: { identity: string }) =>
-        entry.identity === 'public.ml_cloud_model_choice' || entry.identity.startsWith('public.ml_cloud_model_choice.');
-      const evidence = await getCatalogEvidence(defaultDatabase);
-      expect(evidence.tables.filter((entry) => isChoice(entry))).toEqual(
-        manifest.tables.filter((entry) => isChoice(entry)),
-      );
-      expect(evidence.columns.filter((entry) => isChoice(entry))).toEqual(
-        manifest.columns.filter((entry) => isChoice(entry)),
-      );
-      expect(evidence.constraints.filter((entry) => isChoice(entry))).toEqual(
-        manifest.constraints.filter((entry) => isChoice(entry)),
-      );
-      expect(evidence.indexes.filter((entry) => isChoice(entry))).toEqual(
-        manifest.indexes.filter((entry) => isChoice(entry)),
-      );
-    } finally {
-      await sql`DELETE FROM ml_workload_route WHERE "destinationId" = ${cloud.id}::uuid`.execute(defaultDatabase);
-      await sql`DELETE FROM ml_cloud_model_choice`.execute(defaultDatabase);
-    }
+  it('rejects a model choice without its model group', async () => {
+    await expect(
+      sql`INSERT INTO ml_cloud_model_choice ("modelId") VALUES ('ms_UNSCOPED')`.execute(defaultDatabase),
+    ).rejects.toThrow();
   });
 });

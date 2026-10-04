@@ -4,6 +4,7 @@ import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
 import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.js';
@@ -88,6 +89,7 @@ export class SmartInfoService extends BaseService {
   async handleQueueEncodeClip({ force }: JobOf<JobName.SmartSearchQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isSmartSearchEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -106,11 +108,13 @@ export class SmartInfoService extends BaseService {
   async handleEncodeClip({ id }: JobOf<JobName.SmartSearch>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isSmartSearchEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForClipEncoding(id);
+    if (asset && asset.files.length !== 1) deferJobUntilDependency('source-unavailable');
     if (!asset || asset.files.length !== 1) {
       return JobStatus.Failed;
     }

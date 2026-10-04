@@ -25,7 +25,7 @@ const compose = (path) =>
   load(read(path).replace(/!(?:reset|override)\b/g, ""));
 // FL-191: Frameleaf publishes its own database image, built from docker/postgres.
 const databaseImage =
-  "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7";
+  "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:c599a95a6697dcd2f33b35dfde9c5e3728e2fdcdc55971a19daec1f75f13994d";
 
 for (const [filename, project, rootless] of [
   ["docker-compose.yml", "immich", false],
@@ -114,7 +114,7 @@ test("local builds retain projects/storage and build ordinary ML from the prod s
       ),
     );
     assert.deepEqual(config.services.database.volumes, [
-      "${UPLOAD_LOCATION}/postgres:/var/lib/postgresql",
+      "${UPLOAD_LOCATION}/postgres19:/var/lib/postgresql",
     ]);
     // Local stacks build the database from source, so they work before any publication.
     assert.equal(config.services.database.image, "frameleaf-postgres:local");
@@ -287,7 +287,7 @@ test("pinned build dependencies, runtime identity and orphan adoption remain com
     read("server/Dockerfile"),
     /^RUN ln -s \.\.\/\.\.\/cli\/bin\/frameleaf server\/bin\/frameleaf && ln -s \.\.\/\.\.\/cli\/bin\/immich server\/bin\/immich$/m,
   );
-  assert.match(read("docker/example.env"), /^DB_DATABASE_NAME=immich$/m);
+  assert.match(read("docker/example.env"), /^DB_DATABASE_NAME=frameleaf$/m);
 });
 
 test("installation points to Frameleaf release artifacts, not another application distribution", () => {
@@ -370,7 +370,7 @@ test("Compose resolves all deployment files and hardware overlays without a daem
       `DB_DATA_LOCATION=${temporary}/database`,
       "DB_PASSWORD=fixture-only",
       "DB_USERNAME=postgres",
-      "DB_DATABASE_NAME=immich",
+      "DB_DATABASE_NAME=frameleaf",
       "IMMICH_VERSION=frameleaf-v3.1.0-7",
     ].join("\n");
     writeFileSync(resolve(directory, ".env"), env);

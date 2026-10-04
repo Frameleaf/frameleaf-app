@@ -14,6 +14,7 @@ import {
   MlWorkload,
   RESTORATION_ML_WORKLOADS,
 } from 'src/enum.js';
+import { noteAdmissionDependency } from 'src/queue/dependency.js';
 import {
   FRAMELEAF_CLOUD_ENDPOINT,
   ML_PROBE_FRESHNESS_MS,
@@ -118,6 +119,7 @@ export class MlDestinationRefusedError extends BadRequestException {
       statusCode: 400,
       code: refusal,
     });
+    noteAdmissionDependency(refusal);
   }
 }
 
@@ -129,6 +131,7 @@ export class MlDestinationNotFoundError extends NotFoundException {
     readonly destinationId: string,
   ) {
     super(`Machine learning destination ${destinationId} does not exist (${MlAdmissionRefusal.DestinationMissing})`);
+    noteAdmissionDependency(this.refusal);
   }
 }
 

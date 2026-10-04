@@ -1,148 +1,133 @@
-import { getQueueToken } from '@nestjs/bullmq';
-import { ModuleRef } from '@nestjs/core';
-import { Job, Queue } from 'bullmq';
+import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
-import { JobName, QueueName } from 'src/enum.js';
-import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { EventRepository } from 'src/repositories/event.repository.js';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { JobName } from 'src/enum.js';
+import { publishJobResult, queueExecution } from 'src/queue/context.js';
+import { SqlQueueStore } from 'src/queue/store.js';
+import { QUEUE_TIMING, QueueClaim } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
-import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { getKyselyDB } from 'test/utils.js';
 
-/**
- * FL-291: a server stop against a real BullMQ and Valkey. A job still running when the grace period
- * ends goes back to waiting at once, a short job finishes first, and the next worker picks a handed
- * back job up without waiting for the stalled-job check (30 s, twice).
- */
-describe('JobRepository graceful stop (FL-291)', () => {
-  let valkey: StartedTestContainer;
-  let connection: { host: string; port: number };
-  const cleanups: Array<() => Promise<unknown>> = [];
-
+/** Real PostgreSQL claims; supervisor process termination is covered separately in sql-queue.spec. */
+describe('JobRepository graceful stop', () => {
+  let db: Kysely<any>;
+  let store: SqlQueueStore;
+  let queue: string;
+  let worker: string;
   beforeAll(async () => {
-    valkey = await new GenericContainer('docker.io/valkey/valkey:9')
-      .withExposedPorts(6379)
-      .withWaitStrategy(Wait.forLogMessage('Ready to accept connections'))
-      .start();
-    connection = { host: valkey.getHost(), port: valkey.getMappedPort(6379) };
-  }, 120_000);
-
-  afterEach(async () => {
-    const pending = cleanups.toReversed();
-    cleanups.length = 0;
-    for (const cleanup of pending) {
-      await cleanup().catch(() => {});
-    }
+    db = await getKyselyDB();
+    store = new SqlQueueStore(db);
   });
-
-  afterAll(async () => {
-    await valkey?.stop();
+  beforeEach(async () => {
+    queue = `shutdown-${randomUUID()}`;
+    worker = randomUUID();
+    await store.initialize([queue], worker);
   });
-
-  /** One microservices process: a JobRepository with its workers started, and its queues. */
-  const boot = (prefix: string, run: (job: Job) => Promise<void>) => {
-    const queues = new Map<string, Queue>();
-    const queue = (name: QueueName) => {
-      const token = getQueueToken(name);
-      let found = queues.get(token);
-      if (!found) {
-        found = new Queue(name, { prefix, connection });
-        queues.set(token, found);
-      }
-      return found;
-    };
-    for (const name of Object.values(QueueName)) {
-      queue(name);
-    }
-
-    const repository = new JobRepository(
-      { get: (token: string) => queues.get(token) } as unknown as ModuleRef,
-      { getEnv: () => ({ bull: { config: { prefix, connection } } }) } as unknown as ConfigRepository,
-      { emit: (_event: string, _queueName: QueueName, job: Job) => run(job) } as unknown as EventRepository,
-      LoggingRepository.create(),
-    );
-    repository.startWorkers();
-
-    cleanups.push(
-      () => repository.stopWorkers(0),
-      () => Promise.all(queues.values().map((item) => item.close())),
-    );
-    return { repository, queue };
-  };
+  afterAll(async () => db?.destroy());
 
   const deferred = () => {
     let resolve!: () => void;
     const promise = new Promise<void>((done) => (resolve = done));
     return { promise, resolve };
   };
-
-  it('hands a long-running job back to waiting, and the next boot runs it straight away', async () => {
-    const prefix = `fl291-${randomUUID()}`;
+  const start = async (handler: () => Promise<void>, safeToRetry = true) => {
+    await store.enqueue([
+      {
+        queue,
+        name: JobName.AssetGenerateThumbnails,
+        data: {},
+        safeToRetry,
+        sensitive: false,
+        deadlineMs: QUEUE_TIMING.opaqueDeadline,
+      },
+    ]);
+    const [claim] = await store.claim(queue, worker);
+    expect(claim).toBeDefined();
     const started = deferred();
-    const transcode = deferred();
-    cleanups.push(() => Promise.resolve(transcode.resolve()));
-    const first = boot(prefix, () => {
-      started.resolve();
-      return transcode.promise;
-    });
-    const video = first.queue(QueueName.VideoConversion);
-    const job = await video.add(JobName.AssetEncodeVideo, { id: 'asset-1' }, { removeOnComplete: false });
+    const repository = new JobRepository(
+      {} as never,
+      {} as never,
+      {
+        emit: async () => {
+          started.resolve();
+          await handler();
+        },
+      } as never,
+      { setContext: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
+      db,
+    );
+    const abort = new AbortController();
+    const finished = repository['execute'](claim, abort).finally(() => repository['active'].delete(claim.id));
+    repository['active'].set(claim.id, { abort, finished });
     await started.promise;
-    expect(await video.getJobCounts('active', 'waiting')).toMatchObject({ active: 1, waiting: 0 });
+    return { repository, claim, finished, abort };
+  };
+  const state = async (claim: QueueClaim) => {
+    const { rows } = await sql<{ state: string; token: string | null; attempt: number; delayed: boolean }>`
+      SELECT state, token, attempt, "availableAt" > now() AS delayed FROM job WHERE id = ${claim.id}::uuid`.execute(db);
+    return rows[0];
+  };
 
-    const stoppedAt = Date.now();
-    await first.repository.stopWorkers(500);
-    expect(Date.now() - stoppedAt).toBeLessThan(3000);
-
-    expect(await video.getJobCounts('active', 'waiting')).toMatchObject({ active: 0, waiting: 1 });
-    expect(await video.getJobState(job.id!)).toBe('waiting');
-
-    const ran = deferred();
-    const bootedAt = Date.now();
-    boot(prefix, (next) => {
-      expect(next.id).toBe(job.id);
-      ran.resolve();
-      return Promise.resolve();
+  it('lets a short job commit before closing its workers', async () => {
+    const adopted = vi.fn();
+    const job = await start(async () => {
+      await sleep(30);
+      await publishJobResult(async () => {
+        adopted();
+      });
     });
-    await ran.promise;
-    // well inside BullMQ's 30 s stalled-job interval
-    expect(Date.now() - bootedAt).toBeLessThan(5000);
-    await vi.waitFor(async () => expect(await video.getJobState(job.id!)).toBe('completed'), { timeout: 5000 });
-  }, 60_000);
+    await job.repository.stopWorkers(1000);
+    await job.finished;
+    expect(await state(job.claim)).toMatchObject({ state: 'completed' });
+    expect(adopted).toHaveBeenCalledOnce();
+  });
 
-  it('lets a short job finish before the workers close', async () => {
-    const prefix = `fl291-${randomUUID()}`;
-    const started = deferred();
-    const first = boot(prefix, async () => {
-      started.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 300));
+  it('cancels cooperative work and schedules exactly one safe delayed retry', async () => {
+    const job = await start(async () => {
+      await sleep(60_000, undefined, { signal: queueExecution.getStore()!.signal });
     });
-    const thumbnails = first.queue(QueueName.ThumbnailGeneration);
-    const job = await thumbnails.add(JobName.AssetGenerateThumbnails, { id: 'asset-2' }, { removeOnComplete: false });
-    await started.promise;
+    await job.repository.stopWorkers(0);
+    await job.finished;
+    expect(await state(job.claim)).toMatchObject({ state: 'pending', token: null, attempt: 1, delayed: true });
+    expect(await store.claim(queue, worker)).toEqual([]);
+    // Advance only the retry availability to avoid a thirty-second test sleep.
+    await sql`UPDATE job SET "availableAt" = now() WHERE id = ${job.claim.id}::uuid`.execute(db);
+    const [retry] = await store.claim(queue, worker);
+    expect(retry.attempt).toBe(2);
+    await store.fail(retry, 'second cancellation');
+    expect(await state(retry)).toMatchObject({ state: 'failed', attempt: 2 });
+    expect(await store.claim(queue, worker)).toEqual([]);
+  });
 
-    await first.repository.stopWorkers(5000);
-
-    expect(await thumbnails.getJobState(job.id!)).toBe('completed');
-    expect(await thumbnails.getJobCounts('active', 'waiting')).toMatchObject({ active: 0, waiting: 0 });
-  }, 60_000);
-
-  it('does not hand back a job that is unsafe to run again', async () => {
-    const prefix = `fl291-${randomUUID()}`;
-    const started = deferred();
-    const sending = deferred();
-    cleanups.push(() => Promise.resolve(sending.resolve()));
-    const first = boot(prefix, () => {
-      started.resolve();
-      return sending.promise;
+  it('retains a live uncooperative claim and rejects its late publication after cancellation', async () => {
+    const release = deferred();
+    const adopted = vi.fn();
+    const job = await start(async () => {
+      await release.promise;
+      await publishJobResult(async () => {
+        adopted();
+      });
     });
-    const notifications = first.queue(QueueName.Notification);
-    const job = await notifications.add(JobName.SendMail, { to: 'someone' }, { removeOnFail: false });
-    await started.promise;
+    try {
+      await job.repository.stopWorkers(0);
+      expect(job.abort.signal.aborted).toBe(true);
+      expect(await state(job.claim)).toMatchObject({ state: 'active', token: job.claim.token });
+      expect(await store.claim(queue, worker)).toEqual([]);
+    } finally {
+      release.resolve();
+      await job.finished;
+    }
+    expect(adopted).not.toHaveBeenCalled();
+    expect(await state(job.claim)).toMatchObject({ state: 'pending', attempt: 1 });
+  });
 
-    await first.repository.stopWorkers(200);
-
-    expect(await notifications.getJobState(job.id!)).toBe('failed');
-    expect(await notifications.getJobCounts('active', 'waiting')).toMatchObject({ active: 0, waiting: 0 });
-  }, 60_000);
+  it('does not replay an unsafe effect after cancellation', async () => {
+    const job = await start(async () => {
+      await sleep(60_000, undefined, { signal: queueExecution.getStore()!.signal });
+    }, false);
+    await job.repository.stopWorkers(0);
+    await job.finished;
+    expect(await state(job.claim)).toMatchObject({ state: 'needs_attention', token: null });
+    expect(await store.claim(queue, worker)).toEqual([]);
+  });
 });

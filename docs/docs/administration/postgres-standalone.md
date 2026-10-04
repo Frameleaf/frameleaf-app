@@ -1,6 +1,6 @@
 # Standalone PostgreSQL
 
-Frameleaf uses one PostgreSQL 19 database with pgvector 0.8.7 and HNSW indexes. The owned database image is `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7`. Use the digest in the Frameleaf release manifest for deployment. PostgreSQL 19 beta 4 is the current development baseline; an image build or source review does not establish production readiness.
+Frameleaf uses one PostgreSQL 19 database with pgvector 0.8.7 and HNSW indexes. The owned database image is `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:c599a95a6697dcd2f33b35dfde9c5e3728e2fdcdc55971a19daec1f75f13994d`. Use the digest in the Frameleaf release manifest for deployment. PostgreSQL 19 beta 4 is the current development baseline; an image build or source review does not establish production readiness.
 
 All Frameleaf content, configuration, jobs, import journals and shared coordination tables live in the canonical `public` schema. Every API and job worker must connect to this same database. There is no separate cache or queue service to configure. Do not attach an Immich database or an older PostgreSQL data directory to this installation; use the [offline import](./import-immich.md) to copy supported source content into a fresh destination.
 

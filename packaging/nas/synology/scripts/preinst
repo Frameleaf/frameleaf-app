@@ -44,12 +44,9 @@ if [ ! -x "$wizard_database_path" ] || ! ls "$wizard_database_path" >/dev/null 2
   echo 'Cannot inspect database directory before install.' >&2
   exit 1
 fi
-if [ -e "$wizard_database_path/PG_VERSION" ] || [ -L "$wizard_database_path/PG_VERSION" ]; then
-  [ -f "$wizard_database_path/PG_VERSION" ] && [ ! -L "$wizard_database_path/PG_VERSION" ] &&
-    [ "$(cat "$wizard_database_path/PG_VERSION")" = 14 ] || {
-      echo 'Database directory is not a PostgreSQL 14 cluster.' >&2
-      exit 1
-    }
+if [ -n "$(ls -A "$wizard_database_path")" ]; then
+  echo 'A fresh Frameleaf PostgreSQL 19 installation requires an empty database directory. Use import-immich for an existing Immich library.' >&2
+  exit 1
 fi
 case "${wizard_web_port:-}" in ''|*[!0-9]*) exit 1 ;; esac
 [ "$wizard_web_port" -ge 1024 ] && [ "$wizard_web_port" -le 65535 ] || exit 1

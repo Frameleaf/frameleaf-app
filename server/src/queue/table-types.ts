@@ -26,6 +26,7 @@ export interface JobRunItemTable {
   itemKey: string;
   rootItemKey: string | null;
   stage: string;
+  queue: string;
   selection: Record<string, unknown>;
   state: Generated<QueueState>;
   jobId: string | null;
@@ -58,6 +59,7 @@ export interface JobTable {
   progressAt: Timestamp | null;
   progressUnits: Generated<string>;
   cancelRequestedAt: Timestamp | null;
+  dependencyReason: string | null;
   error: string | null;
 }
 export interface JobAttemptTable {

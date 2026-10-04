@@ -186,6 +186,10 @@ export class JobRepository {
         this.eventRepository.emit('JobRun', claim.queue as QueueName, toJobItem(claim)),
       );
       abort.signal.throwIfAborted();
+      if (context.dependencyReason) {
+        await this.store.defer(claim, context.dependencyReason);
+        return;
+      }
       if (context.outcome === 'failed') {
         throw new Error('Handler returned Failed');
       }
@@ -217,6 +221,10 @@ export class JobRepository {
       }
     } catch (error) {
       try {
+        if (context.dependencyReason) {
+          await this.store.defer(claim, context.dependencyReason);
+          return;
+        }
         await this.store.fail(
           claim,
           error instanceof Error ? error.message : 'Job failed',
@@ -412,6 +420,7 @@ export class JobRepository {
     const runId = context?.claim.runId ?? runSubmission.getStore() ?? (await this.store.createRun(name, {}));
     const intent = this.intent({ name, data } as JobItem);
     await this.store.db.transaction().execute(async (tx) => {
+      await sql`insert into job_queue(name) values (${intent.queue}) on conflict do nothing`.execute(tx);
       await sql`select name from job_queue where name = ${intent.queue} for update`.execute(tx);
       if (context) {
         const claim = context.claim;
@@ -430,8 +439,8 @@ export class JobRepository {
       }>`select coalesce((selection -> '_materializedStages') ? ${name}, false) materialized
         from job_run where id = ${runId}::uuid for update`.execute(tx);
       if (!run.materialized) {
-        await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, selection)
-          select ${runId}::uuid, selected.id::text, selected.id::text, ${name}, ${JSON.stringify(data)}::jsonb || jsonb_build_object('id', selected.id)
+        await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection)
+          select ${runId}::uuid, selected.id::text, selected.id::text, ${name}, ${intent.queue}, ${JSON.stringify(data)}::jsonb || jsonb_build_object('id', selected.id)
           from (${selection}) selected on conflict do nothing`.execute(tx);
         // A producer restart must not enumerate a moving library a second time.
         await sql`update job_run set selection = jsonb_set(selection, '{_materializedStages}',

@@ -168,7 +168,7 @@ services:
       POSTGRES_DB: ${DB_DATABASE_NAME}
       POSTGRES_INITDB_ARGS: "--data-checksums"
     volumes:
-      - ${UPLOAD_LOCATION}/postgres:/var/lib/postgresql
+      - ${UPLOAD_LOCATION}/postgres19:/var/lib/postgresql
     ports:
       - 5432:5432
     shm_size: 128mb

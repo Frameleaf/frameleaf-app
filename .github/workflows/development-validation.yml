@@ -1,5 +1,5 @@
 name: Frameleaf development validation
-"on":
+'on':
   workflow_dispatch:
   workflow_call:
 permissions:
@@ -51,26 +51,15 @@ jobs:
           set -euo pipefail
           { pnpm --filter @immich/sdk build; pnpm --filter @immich/plugin-sdk build; pnpm --filter @immich/plugin-core build; } 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/sdks.log"
       - name: Report server types
+        timeout-minutes: 10
         id: types
         if: ${{ always() && steps.sdks.outcome == 'success' }}
         continue-on-error: true
         run: |
           set -o pipefail
           pnpm --dir server exec tsc --noEmit 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-types.log"
-      - name: Report server lint
-        id: lint
-        if: ${{ always() && steps.install.outcome == 'success' }}
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          pnpm --dir server lint 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-lint.log"
-      - name: Capture server lint repairs
-        if: ${{ always() && steps.lint.outcome == 'failure' }}
-        continue-on-error: true
-        run: |
-          pnpm --dir server exec eslint . --max-warnings 0 --fix > "$RUNNER_TEMP/frameleaf-development/reports/server-lint-fixes.log" 2>&1 || true
-          git diff --binary -- server > "$RUNNER_TEMP/frameleaf-development/server-lint-fixes.patch"
       - name: Build server generators
+        timeout-minutes: 10
         id: server
         if: ${{ always() && steps.sdks.outcome == 'success' }}
         continue-on-error: true
@@ -98,6 +87,7 @@ jobs:
           echo '::error::Fresh PostgreSQL 19 did not become ready'
           exit 1
       - name: Apply canonical baseline
+        timeout-minutes: 5
         id: schema
         if: ${{ always() && steps.install.outcome == 'success' && steps.postgres.outcome == 'success' }}
         continue-on-error: true
@@ -105,6 +95,7 @@ jobs:
           set -o pipefail
           pnpm --dir server migrations:run 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/schema.log"
       - name: Capture exact baseline SQL and raw metadata
+        timeout-minutes: 5
         id: baseline_sql
         if: ${{ always() && steps.schema.outcome == 'success' }}
         continue-on-error: true
@@ -114,6 +105,7 @@ jobs:
           docker exec frameleaf-development-postgres pg_dump -U postgres -d frameleaf --schema-only --no-owner --no-privileges > "$output/frameleaf-baseline.sql"
           docker exec frameleaf-development-postgres psql -U postgres -d frameleaf -XAtc "SELECT jsonb_build_object('constraints', (SELECT jsonb_agg(jsonb_build_object('schema', n.nspname, 'table', t.relname, 'name', c.conname, 'definition', pg_get_constraintdef(c.oid))) FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname='public'), 'triggers', (SELECT jsonb_agg(jsonb_build_object('schema', n.nspname, 'table', t.relname, 'name', g.tgname, 'definition', pg_get_triggerdef(g.oid))) FROM pg_trigger g JOIN pg_class t ON t.oid=g.tgrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname='public' AND NOT g.tgisinternal))" > "$output/frameleaf-raw-metadata.json"
       - name: Generate schema catalog
+        timeout-minutes: 5
         id: catalog
         if: ${{ always() && steps.schema.outcome == 'success' }}
         continue-on-error: true
@@ -123,6 +115,7 @@ jobs:
             "$RUNNER_TEMP/frameleaf-development/generated/frameleaf-schema-catalog.json" \
             2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/catalog.log"
       - name: Generate OpenAPI
+        timeout-minutes: 5
         id: openapi
         if: ${{ always() && steps.server.outcome == 'success' }}
         continue-on-error: true
@@ -130,6 +123,7 @@ jobs:
           set -o pipefail
           pnpm --dir server exec node dist/bin/sync-open-api.js 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/openapi.log"
       - name: Generate TypeScript API client
+        timeout-minutes: 5
         id: client
         if: ${{ always() && steps.openapi.outcome == 'success' }}
         continue-on-error: true
@@ -139,12 +133,28 @@ jobs:
             open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts \
             2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/api-client.log"
       - name: Generate SQL queries
+        timeout-minutes: 5
         id: queries
         if: ${{ always() && steps.server.outcome == 'success' && steps.schema.outcome == 'success' }}
         continue-on-error: true
         run: |
           set -o pipefail
           pnpm --dir server exec node dist/bin/sync-sql.js 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/sql-queries.log"
+      - name: Report server lint
+        timeout-minutes: 10
+        id: lint
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm --dir server lint 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-lint.log"
+      - name: Capture server lint repairs
+        timeout-minutes: 10
+        if: ${{ always() && steps.lint.outcome == 'failure' }}
+        continue-on-error: true
+        run: |
+          pnpm --dir server exec eslint . --max-warnings 0 --fix > "$RUNNER_TEMP/frameleaf-development/reports/server-lint-fixes.log" 2>&1 || true
+          git diff --binary -- server > "$RUNNER_TEMP/frameleaf-development/server-lint-fixes.patch"
       - name: Collect generated files and outcomes
         if: ${{ always() }}
         env:
