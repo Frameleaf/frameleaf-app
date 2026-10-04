@@ -33,12 +33,12 @@ import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.s
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { BUDDY_BLOCK_BYTES, type BuddyKeyring, decryptBuddyBlock } from 'src/utils/buddy-backup-crypto.js';
 import { buddyBackupCommand } from 'src/utils/buddy-backup-offline.js';
+import { BuddyVault, buddySnapshotBytes } from 'src/utils/buddy-backup-vault.js';
 import {
   captureBuddyBootConfiguration,
   readBuddyBootConfiguration,
   stageBuddyBootConfiguration,
 } from 'src/utils/buddy-boot-configuration.js';
-import { BuddyVault, buddySnapshotBytes } from 'src/utils/buddy-backup-vault.js';
 import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
@@ -961,7 +961,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     vi.stubEnv('FRAMELEAF_SUPPORT_URL', ' https://canonical.example.test/support/ ');
     vi.stubEnv('IMMICH_THIRD_PARTY_SUPPORT_URL', 'https://legacy.example.test/support');
     vi.stubEnv('FRAMELEAF_BUG_FEATURE_URL', '');
-    // eslint-disable-next-line unicorn/prefer-secure-protocols -- Invalid legacy HTTP must remain inert in report-only fallback.
+    // eslint-disable-next-line unicorn/prefer-https -- Invalid legacy HTTP must remain inert in report-only fallback.
     vi.stubEnv('IMMICH_THIRD_PARTY_BUG_FEATURE_URL', 'http://invalid-legacy.example.test');
     vi.stubEnv('FRAMELEAF_SOURCE_URL', ' ');
     vi.stubEnv('IMMICH_THIRD_PARTY_SOURCE_URL', 'https://legacy.example.test/source/');
@@ -980,13 +980,13 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       { key: 'FRAMELEAF_BUG_FEATURE_URL', state: 'unset' },
       { key: 'FRAMELEAF_SOURCE_URL', state: 'value', value: 'https://legacy.example.test/source' },
     ]);
-    // eslint-disable-next-line unicorn/prefer-secure-protocols -- Invalid canonical HTTP must exercise capture refusal.
+    // eslint-disable-next-line unicorn/prefer-https -- Invalid canonical HTTP must exercise capture refusal.
     vi.stubEnv('FRAMELEAF_DOCS_URL', 'http://invalid-canonical.example.test');
     expect(() => captureBuddyBootConfiguration(declaration)).toThrow('Invalid declared boot configuration values');
     expect(() =>
       readBuddyBootConfiguration({
         version: 1,
-        // eslint-disable-next-line unicorn/prefer-secure-protocols -- Invalid typed HTTP must exercise configuration refusal.
+        // eslint-disable-next-line unicorn/prefer-https -- Invalid typed HTTP must exercise configuration refusal.
         entries: [{ key: 'FRAMELEAF_SUPPORT_URL', state: 'value', value: 'http://invalid-canonical.example.test' }],
       }),
     ).toThrow('Invalid declared boot configuration values');
