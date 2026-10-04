@@ -571,6 +571,8 @@ describe('certified fork return evidence', () => {
     ['person_origin missing copy', 'person_origin'],
     ['partner_backfill missing partnership', 'partner_backfill'],
     ['partner_person_link missing person', 'partner_person_link'],
+    ['album_source_link missing album', 'album_source_link'],
+    ['album_source_asset missing asset', 'album_source_asset'],
   ] as const)('independently archives and deletes %s', async (predicate, sourceTable) => {
     const user = await mediumFactory.userWithClusterGroup(db);
     const asset = mediumFactory.assetInsert({ ownerId: user.id });
@@ -726,6 +728,22 @@ describe('certified fork return evidence', () => {
       }
       case 'partner_person_link missing person': {
         await sql`INSERT INTO immich_fork.partner_person_link ("ownerId", "sourcePersonGroupId", "personGroupId", kind, "partnerSharedById") VALUES (${user.id}::uuid, ${randomUUID()}::uuid, ${randomUUID()}::uuid, 'created', ${user.id}::uuid)`.execute(
+          db,
+        );
+        break;
+      }
+      case 'album_source_link missing album': {
+        await sql`INSERT INTO immich_fork.album_source_link ("userId", "albumId", "sourceKind", "sourceId", "lastSourceName") VALUES (${user.id}::uuid, ${orphanAlbumId}::uuid, 'ios-photos', 'cloud-1', 'Trip')`.execute(
+          db,
+        );
+        break;
+      }
+      case 'album_source_asset missing asset': {
+        const linkId = randomUUID();
+        await sql`INSERT INTO immich_fork.album_source_link (id, "userId", "albumId", "sourceKind", "sourceId", "lastSourceName") VALUES (${linkId}::uuid, ${user.id}::uuid, ${album.id}::uuid, 'ios-photos', 'cloud-2', 'Trip')`.execute(
+          db,
+        );
+        await sql`INSERT INTO immich_fork.album_source_asset ("linkId", "assetId") VALUES (${linkId}::uuid, ${orphanAssetId}::uuid)`.execute(
           db,
         );
         break;

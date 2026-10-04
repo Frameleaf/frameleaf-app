@@ -1,6 +1,8 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Kysely } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
+import type { DB } from 'src/schema/index.js';
 import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
 import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 'src/constants/album-icons.js';
 import {
@@ -27,6 +29,7 @@ import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset
 import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { AlbumKind, AlbumUserRole, Permission, PushEventType, SharedSpaceEventType } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
+import { ALBUM_SOURCE_WRITE_REFUSAL } from 'src/repositories/album-source.repository.js';
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAlbumEditFields, queueAlbumCopies, recordAlbumEdit } from 'src/services/partner-copy.service.js';
@@ -527,14 +530,59 @@ export class AlbumService extends BaseService {
       : this.albumRepository.delete(id));
   }
 
-  async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
+  async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto, sourceLinkId?: string): Promise<BulkIdResponseDto[]> {
     const album = await this.findOrFail(id, auth, { withAssets: false });
     await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
 
-    const results = await addAssets(
-      auth,
-      { access: this.accessRepository, bulk: this.albumRepository },
-      { parentId: id, assetIds: dto.ids, permission: Permission.AssetShare },
+    const { results, response } = await this.albumRepository.withMembershipWrite(
+      [id],
+      async (tx, bulk) => {
+        if (sourceLinkId) {
+          await this.requireSourceLink(tx, auth, id, sourceLinkId);
+        }
+        const recorded = sourceLinkId
+          ? await this.albumSourceRepository.getRecordedAssetIds(tx, id, dto.ids)
+          : new Set<string>();
+        let inserted: Set<string> | undefined;
+        const sourceBulk = sourceLinkId
+          ? {
+              getAssetIds: bulk.getAssetIds.bind(bulk),
+              removeAssetIds: bulk.removeAssetIds.bind(bulk),
+              addAssetIds: async (albumId: string, assetIds: string[]) => {
+                const memberships = await bulk.addAssetIdsReturning(albumId, assetIds);
+                inserted = new Set(memberships.map(({ assetId }) => assetId));
+              },
+            }
+          : bulk;
+        const attempted = await addAssets(
+          auth,
+          { access: this.accessRepository, bulk: sourceBulk },
+          { parentId: id, assetIds: dto.ids, permission: Permission.AssetShare },
+        );
+        // An unfenced writer may win an absent-row insert after the utility's read. That is a
+        // duplicate, not source ownership, and must not produce addition events or follow-up jobs.
+        const results = attempted.map((result) =>
+          result.success && inserted && !inserted.has(result.id)
+            ? { id: result.id, success: false, error: BulkIdErrorReason.DUPLICATE }
+            : result,
+        );
+        const syncOwned = results.filter(
+          ({ success, error, id }) => !success && error === BulkIdErrorReason.DUPLICATE && recorded.has(id),
+        );
+        if (sourceLinkId) {
+          await this.albumSourceRepository.record(
+            tx,
+            sourceLinkId,
+            [...results.filter(({ success }) => success), ...syncOwned].map(({ id }) => id),
+          );
+        }
+        const owned = new Set(syncOwned.map(({ id }) => id));
+        return {
+          results,
+          response: results.map((result) => (owned.has(result.id) ? { id: result.id, success: true } : result)),
+        };
+      },
+      sourceLinkId ? ALBUM_SOURCE_WRITE_REFUSAL : undefined,
     );
 
     const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
@@ -571,7 +619,7 @@ export class AlbumService extends BaseService {
       );
     }
 
-    return results;
+    return response;
   }
 
   async addAssetsToAlbums(auth: AuthDto, dto: AlbumsAddAssetsDto): Promise<AlbumsAddAssetsResponseDto> {
@@ -653,14 +701,51 @@ export class AlbumService extends BaseService {
     return results;
   }
 
-  async removeAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
+  async removeAssets(auth: AuthDto, id: string, dto: BulkIdsDto, sourceLinkId?: string): Promise<BulkIdResponseDto[]> {
     await this.requireAccess({ auth, permission: Permission.AlbumAssetDelete, ids: [id] });
 
     const album = await this.findOrFail(id, auth, { withAssets: false });
-    const results = await removeAssets(
-      auth,
-      { access: this.accessRepository, bulk: this.albumRepository },
-      { parentId: id, assetIds: dto.ids, canAlwaysRemove: Permission.AlbumDelete },
+    const { results, response } = await this.albumRepository.withMembershipWrite(
+      [id],
+      async (tx, bulk) => {
+        let ids = dto.ids;
+        let mine: Set<string> | undefined;
+        if (sourceLinkId) {
+          await this.requireSourceLink(tx, auth, id, sourceLinkId);
+          mine = await this.albumSourceRepository.getRecordedAssetIds(tx, id, ids, sourceLinkId);
+          // Drop this link's claim first, then see whether another link still owns the same generation.
+          await this.albumSourceRepository.unrecord(tx, sourceLinkId, [...mine]);
+          const held = await this.albumSourceRepository.getRecordedAssetIds(tx, id, [...mine]);
+          ids = [...mine.difference(held)];
+        }
+        const results = await removeAssets(
+          auth,
+          { access: this.accessRepository, bulk },
+          { parentId: id, assetIds: ids, canAlwaysRemove: Permission.AlbumDelete },
+        );
+        // A refused removal must keep its claim so a later authorized attempt can remove it.
+        if (sourceLinkId) {
+          await this.albumSourceRepository.record(
+            tx,
+            sourceLinkId,
+            results.filter(({ success, error }) => !success && error === BulkIdErrorReason.NO_PERMISSION).map(({ id }) => id),
+          );
+        }
+        const failures = new Map(results.filter(({ success }) => !success).map((result) => [result.id, result]));
+        const response = mine
+          ? dto.ids.map((assetId) => {
+              const failure = failures.get(assetId);
+              if (failure) {
+                return failure;
+              }
+              return mine.has(assetId)
+                ? { id: assetId, success: true }
+                : { id: assetId, success: false, error: BulkIdErrorReason.NOT_FOUND };
+            })
+          : results;
+        return { results, response };
+      },
+      sourceLinkId ? ALBUM_SOURCE_WRITE_REFUSAL : undefined,
     );
 
     const removedIds = results.filter(({ success }) => success).map(({ id }) => id);
@@ -685,7 +770,15 @@ export class AlbumService extends BaseService {
       );
     }
 
-    return results;
+    return response;
+  }
+
+  /** Source ownership is revalidated after acquiring the ordinary membership fence. */
+  private async requireSourceLink(tx: Kysely<DB>, auth: AuthDto, albumId: string, linkId: string) {
+    const link = await this.albumSourceRepository.get(tx, auth.user.id, linkId);
+    if (!link || link.albumName === null || link.albumId !== albumId) {
+      throw new NotFoundException('Album source link not found');
+    }
   }
 
   /**
