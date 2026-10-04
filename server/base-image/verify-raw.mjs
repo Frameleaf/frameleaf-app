@@ -19,7 +19,12 @@ const checksum = () => createHash('sha256').update(readFileSync(fixture)).digest
 const before = checksum();
 const tiff = await renderRawWithLibRaw(fixture);
 const metadata = await sharp(tiff).metadata();
-assert.equal(metadata.format, 'tiff');
+// The production image decodes TIFF through ImageMagick when libvips' TIFF loader is disabled.
+// Sharp reports that loader as "magick"; validate the container bytes, not the loader name.
+assert.ok(
+  ['49492a00', '4d4d002a'].includes(tiff.subarray(0, 4).toString('hex')),
+  'sensor rendering must return actual TIFF bytes',
+);
 assert.equal(metadata.depth, 'ushort', 'sensor rendering must retain 16-bit channels');
 assert.equal(metadata.width, Number(width));
 assert.equal(metadata.height, Number(height));
