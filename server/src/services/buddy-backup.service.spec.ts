@@ -606,14 +606,8 @@ describe('Buddy production run controls and checkpoints', () => {
 
   it('keeps same-operation replacement completion when the old worker resumes after successful settlement', async () => {
     const { worker, operation, fetch, operations, repository } = fixture;
-    let releaseOld!: () => void;
-    let settledOld!: () => void;
-    const oldBarrier = new Promise<void>((resolve) => {
-      releaseOld = resolve;
-    });
-    const settled = new Promise<void>((resolve) => {
-      settledOld = resolve;
-    });
+    const { promise: oldBarrier, resolve: releaseOld } = Promise.withResolvers<void>();
+    const { promise: settled, resolve: settledOld } = Promise.withResolvers<void>();
     operations.requeue.mockImplementationOnce(async (_id, _token, _options, publish) => {
       // The real repository calls publication before committing its locked requeue.
       await publish?.(undefined as never);
