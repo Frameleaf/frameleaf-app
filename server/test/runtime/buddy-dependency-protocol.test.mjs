@@ -13,7 +13,31 @@ const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 // Observe the existing first cache at its existing pre-bootstrap signal boundary.
 // No loader/config/client is replaced. No SQL, Redis or worker connection runs.
 const observer = `
-import { writeFile } from 'node:fs/promises';
+import { open, realpath, rename, writeFile } from 'node:fs/promises';
+if (process.env.FRAMELEAF_PROTOCOL_TEST_RACE) {
+  const race = JSON.parse(process.env.FRAMELEAF_PROTOCOL_TEST_RACE);
+  const handle = await open(race.publication, 'r');
+  const prototype = Object.getPrototypeOf(handle);
+  const originalRead = prototype.readFile;
+  await handle.close();
+  // IO barrier only: return the actual original read unchanged. Defer mutation
+  // until genuine close, after readPrivateBootFile's postread identity/stat checks.
+  prototype.readFile = async function (...args) {
+    const named = await realpath('/proc/self/fd/' + this.fd);
+    const bytes = await originalRead.apply(this, args);
+    if (named === race.publication) {
+      prototype.readFile = originalRead;
+      const originalClose = this.close;
+      this.close = async function (...closeArgs) {
+        await originalClose.apply(this, closeArgs);
+        if (race.replacement) await rename(race.replacement, race.publication);
+        if (race.marker) await writeFile(race.marker, race.markerBytes, { mode: 0o600 });
+        await writeFile(race.reached, JSON.stringify({ actualJournalClosed: true }), { mode: 0o600 });
+      };
+    }
+    return bytes;
+  };
+}
 const originalOn = process.on;
 const boundary = new Error('protocol test pre-bootstrap boundary');
 const expected = JSON.parse(process.env.FRAMELEAF_PROTOCOL_TEST_EXPECTED);
@@ -35,6 +59,8 @@ originalOn.call(process, 'unhandledRejection', async (error) => {
       securityPreserved: process.env.FRAMELEAF_EDGE_SECRET === expected.edgeSecret,
       linkInert: process.env.FRAMELEAF_LINK_TOKEN === undefined,
       entitlementInert: process.env.FRAMELEAF_LICENSE_EXTRA_JWKS_FILE === undefined,
+      dependencyInputsPreserved: Object.entries(expected.dependencyInputs)
+        .every(([key, value]) => process.env[key] === value),
     });
   } catch {
     await finish({ cacheReached: false });
@@ -46,9 +72,25 @@ process.on = function (event, ...args) {
 };
 `;
 
-const observeMain = async (root, identityDir, binding, port) => {
+const observeMain = async (root, identityDir, binding, port, race) => {
   const resultFile = join(root, randomUUID() + '.json');
   const edgeSecret = randomBytes(24).toString('base64url');
+  const dbPassword = randomBytes(24).toString('base64url');
+  const redisPassword = randomBytes(24).toString('base64url');
+  const dependencyInputs = {
+    DB_HOSTNAME: '127.0.0.1',
+    DB_PORT: '1',
+    DB_DATABASE_NAME: 'replacement_local',
+    DB_USERNAME: 'replacement_local',
+    DB_PASSWORD: dbPassword,
+    REDIS_HOSTNAME: '127.0.0.1',
+    REDIS_PORT: '1',
+    REDIS_DBINDEX: '0',
+    REDIS_USERNAME: 'replacement_local',
+    REDIS_PASSWORD: redisPassword,
+    DB_PASSWORD_FILE: join(root, 'replacement-db-source'),
+    REDIS_PASSWORD_FILE: join(root, 'replacement-cache-source'),
+  };
   const child = spawn(process.execPath, ['--import', join(root, 'observer.mjs'), join(server, 'dist/main.js')], {
     cwd: server,
     env: {
@@ -58,18 +100,12 @@ const observeMain = async (root, identityDir, binding, port) => {
       FRAMELEAF_IDENTITY_DIR: identityDir,
       FRAMELEAF_MEDIA_LOCATION: join(root, 'media'),
       FRAMELEAF_EDGE_SECRET: edgeSecret,
-      DB_HOSTNAME: '127.0.0.1',
-      DB_PORT: '1',
-      DB_DATABASE_NAME: 'replacement_local',
-      DB_USERNAME: 'replacement_local',
-      DB_PASSWORD: randomBytes(24).toString('base64url'),
-      REDIS_HOSTNAME: '127.0.0.1',
-      REDIS_PORT: '1',
-      REDIS_PASSWORD: randomBytes(24).toString('base64url'),
+      ...dependencyInputs,
       FRAMELEAF_PROTOCOL_TEST_RESULT: resultFile,
       FRAMELEAF_PROTOCOL_TEST_CONFIG: pathToFileURL(join(server, 'dist/repositories/config.repository.js')).href,
-      FRAMELEAF_PROTOCOL_TEST_EXPECTED: JSON.stringify({ identityDir, edgeSecret, port }),
+      FRAMELEAF_PROTOCOL_TEST_EXPECTED: JSON.stringify({ identityDir, edgeSecret, port, dependencyInputs }),
       ...(binding ? { FRAMELEAF_BUDDY_BOOT_BINDING_FILE: binding } : {}),
+      ...(race ? { FRAMELEAF_PROTOCOL_TEST_RACE: JSON.stringify(race) } : {}),
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -114,6 +150,7 @@ const assertCache = (result) => {
     'securityPreserved',
     'linkInert',
     'entitlementInert',
+    'dependencyInputsPreserved',
   ])
     assert.equal(result[key], true, 'Compiled cache and replacement-local security control failed');
 };
@@ -444,6 +481,155 @@ test('compiled main admits a replacement-local v2 dependency grant before the fi
       'Reviewed v2 dependency protocol must be admitted before application cache',
     );
     assertCache(admitted);
+    // Admission-only GREEN must keep dependency consumers unmeasured and inert.
+    // Negatives still invoke the actual fresh compiled main, never a parser mock.
+    const assertV2Refusal = async (input) => {
+      await writeBuddyFile(binding, JSON.stringify(input), false, fence);
+      const result = await observeMain(root, identityDir, binding, 2391);
+      assert.equal(result.code, 1, 'Invalid v2 authority must refuse startup');
+      assert.equal(result.explicitRefusal, true);
+      assert.equal(result.cacheReached, false);
+    };
+    const mutateGrant = (mutate, resign = false) => {
+      const changed = structuredClone(v2);
+      const grant = changed.dependencyGrants[0];
+      mutate(grant);
+      if (resign) {
+        grant.receipt.requestDigest = digest(Buffer.from(JSON.stringify(grant.request)));
+        grant.signature = sign(null, Buffer.from(JSON.stringify(grant.receipt)), privateKey).toString('base64url');
+      }
+      return changed;
+    };
+    for (const input of [
+      { ...v2, version: 1 },
+      { ...v2, state: 'request' },
+      { ...v2, dependencyGrants: [] },
+      { ...v2, dependencyGrants: [dependencyGrants[0], dependencyGrants[0]] },
+      { ...v2, environmentKeys: [...v2.environmentKeys, 'FRAMELEAF_EDGE_SECRET'] },
+      { ...v2, unknown: true },
+      mutateGrant((grant) => {
+        grant.signature = 'A'.repeat(86);
+      }),
+      mutateGrant((grant) => {
+        grant.request.registration.hostname = 'foreign.example.test';
+      }, true),
+      mutateGrant((grant) => {
+        grant.receipt.serviceRevision = randomUUID();
+      }, true),
+      mutateGrant((grant) => {
+        grant.receipt.challenge.requestNonce = randomBytes(24).toString('base64url');
+      }, true),
+      mutateGrant((grant) => {
+        grant.receipt.publicationDigest = '0'.repeat(64);
+      }, true),
+      mutateGrant((grant) => {
+        grant.receipt.artifactDigest = '0'.repeat(64);
+      }, true),
+      mutateGrant((grant) => {
+        grant.receipt.replacementIdentity = 'A'.repeat(43);
+      }, true),
+      mutateGrant((grant) => {
+        grant.request.sourceBindings[0].source = 'private-file';
+      }, true),
+      mutateGrant((grant) => {
+        grant.request.sourceBindings.pop();
+      }, true),
+      mutateGrant((grant) => {
+        grant.receipt.journal.pop();
+      }, true),
+      mutateGrant((grant) => {
+        grant.receipt.publicationFence.epoch = randomUUID();
+      }, true),
+    ])
+      await assertV2Refusal(input);
+    await writeBuddyFile(binding, JSON.stringify(v2), false, fence);
+    for (const state of ['publishing', 'files-ready', 'database-ready', 'rolled-back']) {
+      await files.state(state);
+      const result = await observeMain(root, identityDir, binding, 2391);
+      assert.equal(result.code, 1, 'V2 requires the unchanged complete publication journal');
+      assert.equal(result.cacheReached, false);
+    }
+    await files.state('complete');
+    // Replace complete journal after its actual read/integrity checks/close with different,
+    // noncomplete bytes signed by the fixture. The admission digest must bind
+    // the complete bytes already validated, not a later unvalidated reread.
+    const publication = join(recoveryDirectory, 'publication.json');
+    const replacement = join(recoveryDirectory, 'replacement-publication.json');
+    const replacementBytes = Buffer.from(JSON.stringify({ version: 2, state: 'files-ready' }));
+    const replacedGrant = structuredClone(v2);
+    for (const grant of replacedGrant.dependencyGrants) {
+      grant.receipt.publicationDigest = digest(replacementBytes);
+      grant.signature = sign(null, Buffer.from(JSON.stringify(grant.receipt)), privateKey).toString('base64url');
+    }
+    await writeBuddyFile(binding, JSON.stringify(replacedGrant), false, fence);
+    await writeBuddyFile(replacement, replacementBytes);
+    const journalReached = join(root, 'journal-race-reached.json');
+    const replaced = await observeMain(root, identityDir, binding, 2391, {
+      publication,
+      replacement,
+      reached: journalReached,
+    });
+    assert.equal(JSON.parse(await readFile(journalReached)).actualJournalClosed, true, 'Actual close barrier required');
+    assert.equal(replaced.code, 1, 'Receipt must bind the exact complete journal bytes validated');
+    assert.equal(replaced.cacheReached, false);
+    assert.equal(replaced.explicitRefusal, true);
+    await files.state('complete');
+    await writeBuddyFile(binding, JSON.stringify(v2), false, fence);
+    const markerBytes = JSON.stringify({
+      isMaintenanceMode: true,
+      secret: randomUUID(),
+      action: { buddyRecoveryId: recoveryId },
+    });
+    const lateReached = join(root, 'late-marker-reached.json');
+    const late = await observeMain(root, identityDir, binding, 2391, {
+      publication,
+      marker,
+      markerBytes,
+      reached: lateReached,
+    });
+    assert.equal(JSON.parse(await readFile(lateReached)).actualJournalClosed, true, 'Actual late marker barrier required');
+    assert.equal(late.code, 1, 'V2 must refuse a matching maintenance marker appearing after initial identity check');
+    assert.equal(late.cacheReached, false);
+    assert.equal(late.explicitRefusal, true);
+    assert((await readFile(marker)).equals(Buffer.from(markerBytes)), 'Late marker must remain intact');
+    await rm(marker);
+    // V1's matching-marker return remains compatible and keeps replacement port.
+    await writeBuddyFile(binding, JSON.stringify(v1), false, fence);
+    const v1Reached = join(root, 'v1-late-marker-reached.json');
+    assertCache(
+      await observeMain(root, identityDir, binding, 2283, {
+        publication,
+        marker,
+        markerBytes,
+        reached: v1Reached,
+      }),
+    );
+    assert.equal(JSON.parse(await readFile(v1Reached)).actualJournalClosed, true);
+    await rm(marker);
+    await writeBuddyFile(binding, JSON.stringify(v2), false, fence);
+    await writeBuddyFile(
+      marker,
+      JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: recoveryId } }),
+    );
+    const markerBefore = await readFile(marker);
+    const pending = await observeMain(root, identityDir, binding, 2391);
+    assert.equal(pending.code, 1, 'V2 admission cannot bypass pending maintenance');
+    assert.equal(pending.cacheReached, false);
+    try {
+      Object.assign(process.env, localEnvironment);
+      await writeBuddyFile(binding, JSON.stringify({ ...v2, state: 'request' }), false, fence);
+      await assert.rejects(finalizeBuddyBootBinding(root, recoveryId, fence));
+      assert((await readFile(marker)).equals(markerBefore), 'V2 finalization must not erase the maintenance marker');
+      assert.equal(JSON.parse(await readFile(binding)).state, 'request');
+    } finally {
+      for (const [name, value] of Object.entries(previousLocal)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+    await rm(marker);
+    await writeBuddyFile(binding, JSON.stringify(v2), false, fence);
+    assertCache(await observeMain(root, identityDir, binding, 2391));
     fenceHeld = false;
   } finally {
     await rm(root, { recursive: true, force: true });

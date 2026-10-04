@@ -11,6 +11,11 @@ import { writeBuddyFile } from './buddy-backup-vault.ts';
 import { ENV_ALIASES, resolveEnvAliases } from './env-aliases.ts';
 import { EnvSchema } from './environment-schema.ts';
 import { parseHelpLinks } from './app-releases.ts';
+import {
+  BuddyDependencyGrantSchema,
+  isBuddyDependencyProtocolKey,
+  validateBuddyDependencyProtocol,
+} from './buddy-dependency-protocol.ts';
 
 // Local application-setting authority only. Capture remains all-canonical; security,
 // identity/link/entitlement, mounts, feature enabling and dependency service inputs
@@ -28,7 +33,7 @@ const applicationKeys = new Set([
   'FRAMELEAF_SOURCE_URL',
   'NO_COLOR',
 ]);
-const bindingSchema = z.strictObject({
+const v1BindingSchema = z.strictObject({
   version: z.literal(1),
   state: z.enum(['request', 'ready']),
   recoveryId: z.string().regex(BUDDY_UUID),
@@ -44,6 +49,14 @@ const bindingSchema = z.strictObject({
   artifactDigest: z.string().regex(/^[\da-f]{64}$/),
   preparedDigest: z.string().regex(/^[\da-f]{64}$/),
 });
+const v2BindingSchema = v1BindingSchema.extend({
+  version: z.literal(2),
+  environmentKeys: BuddyBootDeclarationSchema.shape.environmentKeys.refine((keys) =>
+    keys.every((key) => applicationKeys.has(key) || isBuddyDependencyProtocolKey(key)),
+  ),
+  dependencyGrants: z.array(BuddyDependencyGrantSchema).min(1).max(2),
+});
+const bindingSchema = z.discriminatedUnion('version', [v1BindingSchema, v2BindingSchema]);
 type BootBinding = z.infer<typeof bindingSchema>;
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const refusal = () => new Error('Invalid replacement-local Buddy boot authority');
@@ -128,7 +141,7 @@ const replacementBootIdentity = async (bindingFile: string, env: NodeJS.ProcessE
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
   }
-  return { identity, marker };
+  return { identity, marker, publicKey: createPublicKey(privateKey) };
 };
 
 const bindingEvidence = async (binding: BootBinding, requireComplete: boolean) => {
@@ -153,14 +166,15 @@ const bindingEvidence = async (binding: BootBinding, requireComplete: boolean) =
   if (JSON.stringify(configuration) !== JSON.stringify(readBuddyBootConfiguration(plan.manifest.bootConfiguration)))
     throw refusal();
   if (binding.environmentKeys.some((key) => !configuration.entries.some((entry) => entry.key === key))) throw refusal();
+  let publicationDigest: string | undefined;
   if (requireComplete) {
-    const journal = JSON.parse(
-      (await readPrivateBootFile(join(binding.recoveryDirectory, 'publication.json'))).toString(),
-    );
+    const journalBytes = await readPrivateBootFile(join(binding.recoveryDirectory, 'publication.json'));
+    const journal = JSON.parse(journalBytes.toString());
     if (!z.strictObject({ version: z.literal(2), state: z.literal('complete') }).safeParse(journal).success)
       throw refusal();
+    publicationDigest = hash(journalBytes);
   }
-  return configuration;
+  return { configuration, publicationDigest };
 };
 
 /** Validate the entire prospective environment before changing a single selected input. */
@@ -181,6 +195,9 @@ const bootEnvironmentOverlay = (
     FRAMELEAF_SOURCE_URL: helpLinks.sourceUrl,
   };
   for (const key of binding.environmentKeys) {
+    // V2 protocol admission does not establish matching-service readiness.
+    // Dependency credentials/sources remain replacement-local until real adapters qualify.
+    if (!applicationKeys.has(key)) continue;
     const aliases = ENV_ALIASES.filter((alias) => alias.current === key).map((alias) => alias.legacy);
     const existing = Object.hasOwn(helpValues, key) ? helpValues[key] !== undefined : current[key] !== undefined;
     if (binding.mode === 'keep' && existing) continue;
@@ -207,7 +224,19 @@ export const loadBuddyBootBinding = async () => {
       (local.marker && local.marker.action?.buddyRecoveryId !== binding.recoveryId)
     )
       throw refusal();
-    const configuration = await bindingEvidence(binding, binding.state === 'ready');
+    const { configuration, publicationDigest } = await bindingEvidence(binding, binding.state === 'ready');
+    if (binding.version === 2) {
+      if (binding.state !== 'ready' || local.marker || !publicationDigest) throw refusal();
+      validateBuddyDependencyProtocol(
+        JSON.parse(original.toString()).dependencyGrants,
+        {
+          ...binding,
+          publicationDigest,
+          entries: configuration.entries,
+        },
+        local.publicKey,
+      );
+    }
     if (local.marker) return; // Resume maintenance on replacement inputs, never historical inputs.
     if (binding.state !== 'ready') throw refusal();
     const prospective = bootEnvironmentOverlay(binding, configuration, process.env);
@@ -215,12 +244,13 @@ export const loadBuddyBootBinding = async () => {
     if (current.identity !== binding.replacementIdentity || !(await readPrivateBootFile(path)).equals(original))
       throw refusal();
     if (current.marker) {
-      if (current.marker.action?.buddyRecoveryId !== binding.recoveryId) throw refusal();
+      if (binding.version === 2 || current.marker.action?.buddyRecoveryId !== binding.recoveryId) throw refusal();
       return;
     }
     // All IO and validation have finished. Apply only selected canonical/alias names.
     // Actual DB/Redis *_FILE sources remain untouched without a matching service adapter.
     for (const key of binding.environmentKeys) {
+      if (!applicationKeys.has(key)) continue;
       const aliases = ENV_ALIASES.filter((alias) => alias.current === key).map((alias) => alias.legacy);
       for (const name of [key, ...aliases]) {
         if (prospective[name] === undefined) delete process.env[name];
@@ -240,6 +270,9 @@ export const finalizeBuddyBootBinding = async (root: string, id: string, assert:
     await assert();
     const original = await readPrivateBootFile(path);
     const binding = await readBootBinding(path, original);
+    // No production matching-service adapter/readiness has qualified v2 yet.
+    // Refuse before publication/finalization; never clear a marker or promote authored eligibility.
+    if (binding.version === 2) throw refusal();
     if (binding.recoveryId !== id || binding.recoveryDirectory !== join(root, 'recovery', id)) throw refusal();
     const local = await replacementBootIdentity(path, process.env);
     if (local.identity !== binding.replacementIdentity || local.marker?.action?.buddyRecoveryId !== id) throw refusal();
