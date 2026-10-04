@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 import test from "node:test";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -63,6 +64,20 @@ test("package credentials never reach repository checkout or consumer execution"
   const call = entry.jobs["cloud-consumer-tests"];
   assert.match(call.if, /github\.repository == 'Frameleaf\/frameleaf-app'/);
   assert.match(call.if, /!inputs\.development_validation/);
+  for (const repository of ["Frameleaf/frameleaf-app", "immich-app/immich"]) {
+    for (const event_name of ["pull_request", "push", "workflow_dispatch"]) {
+      for (const development_validation of [false, true]) {
+        assert.equal(
+          runInNewContext(call.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""), {
+            github: { repository, event_name },
+            inputs: { development_validation },
+          }),
+          repository === "Frameleaf/frameleaf-app" &&
+            (event_name !== "workflow_dispatch" || !development_validation),
+        );
+      }
+    }
+  }
   assert.equal(call.with, undefined);
   assert.equal(
     entry.on.workflow_dispatch.inputs.development_validation.type,
@@ -76,8 +91,31 @@ test("package credentials never reach repository checkout or consumer execution"
   }
 });
 
-test("ordinary consumers retain installed-package and SDK regression coverage", () => {
-  const steps = document().jobs.consumers.steps;
+const assertConsumerCoverage = (job) => {
+  const steps = job.steps;
+  assert.equal(job.if, undefined);
+  assert.equal(job["continue-on-error"], undefined);
+  const required = [
+    "Install locked App test dependencies",
+    "Build required SDKs",
+    "Install isolated locked Cloud test dependency",
+    "Receive verified archive",
+    "Validate credential isolation and package pins",
+    "Test actual Library consumers against installed registry bytes",
+    "Run existing discovery, push and scheduling regressions",
+  ];
+  let previous = -1;
+  for (const name of required) {
+    const index = steps.findIndex((step) => step.name === name);
+    assert.ok(
+      index > previous,
+      `Required consumer step must execute in order: ${name}`,
+    );
+    assert.equal(steps[index].if, undefined);
+    assert.equal(steps[index]["continue-on-error"], undefined);
+    assert.doesNotMatch(steps[index].run ?? "", /\|\| true|exit 0/);
+    previous = index;
+  }
   assert.match(
     steps.find((step) => step.name === "Install locked App test dependencies")
       .run,
@@ -86,6 +124,76 @@ test("ordinary consumers retain installed-package and SDK regression coverage", 
   assert.match(
     steps.find((step) => step.name === "Build required SDKs").run,
     /@immich\/sdk build[\s\S]*@immich\/plugin-sdk build/,
+  );
+  const installed = steps.find(
+    (step) =>
+      step.name ===
+      "Test actual Library consumers against installed registry bytes",
+  );
+  assert.equal(installed.run, "node test/lifecycle/run-installed-package.mjs");
+  assert.equal(installed["working-directory"], "server");
+  assert.deepEqual(installed.env, {
+    FRAMELEAF_CLOUD_LIFECYCLE_TGZ:
+      "${{ runner.temp }}/cloud-contracts/frameleaf-cloud-contracts-0.0.5.tgz",
+    FRAMELEAF_CLOUD_LIFECYCLE_NODE_MODULES:
+      "${{ runner.temp }}/cloud-test-dependencies/node_modules",
+  });
+  assert.equal(
+    steps.find(
+      (step) => step.name === "Validate credential isolation and package pins",
+    ).run,
+    "node --test scripts/frameleaf-cloud-consumer-workflow.test.mjs",
+  );
+  const regressions = steps.find(
+    (step) =>
+      step.name === "Run existing discovery, push and scheduling regressions",
+  );
+  assert.equal(regressions["working-directory"], "server");
+  assert.equal(
+    regressions.run.trim(),
+    [
+      "pnpm test frameleaf-push.spec.ts frameleaf-cloud-push.repository.spec.ts frameleaf-cloud-contracts.spec.ts",
+      "pnpm test cloud-ml-job.service.spec.ts -t 'long-polls a started job|waits out a read'",
+    ].join("\n"),
+  );
+};
+
+test("ordinary consumers retain installed-package and SDK regression coverage", () => {
+  assertConsumerCoverage(document().jobs.consumers);
+});
+
+test("consumer coverage rejects omitted, skipped or masked installed-package and scheduling tests", () => {
+  const job = document().jobs.consumers;
+  for (const name of [
+    "Test actual Library consumers against installed registry bytes",
+    "Run existing discovery, push and scheduling regressions",
+  ]) {
+    const missing = structuredClone(job);
+    missing.steps = missing.steps.filter((step) => step.name !== name);
+    assert.throws(() => assertConsumerCoverage(missing));
+    for (const change of [
+      { run: "exit 0" },
+      { if: "false" },
+      { "continue-on-error": true },
+    ]) {
+      const changed = structuredClone(job);
+      Object.assign(
+        changed.steps.find((step) => step.name === name),
+        change,
+      );
+      assert.throws(() => assertConsumerCoverage(changed));
+    }
+  }
+  const partial = structuredClone(job);
+  partial.steps.find(
+    (step) =>
+      step.name === "Run existing discovery, push and scheduling regressions",
+  ).run =
+    "pnpm test frameleaf-push.spec.ts frameleaf-cloud-push.repository.spec.ts frameleaf-cloud-contracts.spec.ts";
+  assert.throws(() => assertConsumerCoverage(partial));
+  assert.throws(() => assertConsumerCoverage({ ...job, if: "false" }));
+  assert.throws(() =>
+    assertConsumerCoverage({ ...job, "continue-on-error": true }),
   );
 });
 
