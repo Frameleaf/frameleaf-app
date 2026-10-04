@@ -1,12 +1,12 @@
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { Readable } from 'node:stream';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BuddyBackupClient } from 'src/utils/buddy-backup-client.js';
+import { BuddyBackupClient, BuddyExecutionError, BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
 import { verifyBuddyProof } from 'src/utils/buddy-backup-protocol.js';
 import { BuddyVault } from 'src/utils/buddy-backup-vault.js';
 import { BuddyGrantClaims, BuddyGrantResponse } from 'src/utils/frameleaf-buddy.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import { FrameleafKeySigner, jwsSigningInput } from 'src/utils/frameleaf-dpop.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const newSigner = (): FrameleafKeySigner => {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
@@ -234,6 +234,19 @@ describe('Buddy peer fetch authentication (FL-310, FC-100)', () => {
       }
     },
   );
+
+  it.each(['TimeoutError', 'AbortError'])(
+    'classifies a %s as a failed execution, not a prerequisite wait',
+    async (name) => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new DOMException('request stopped', name));
+      await expect(fixture.client.request('GET', 'snapshots')).rejects.toBeInstanceOf(BuddyExecutionError);
+    },
+  );
+
+  it('retains an explicit quota refusal as a prerequisite wait', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 507 }));
+    await expect(fixture.client.request('GET', 'snapshots')).rejects.toBeInstanceOf(BuddyPeerUnavailable);
+  });
 
   it('sends nothing if the source key cannot sign', async () => {
     const { client, source } = fixture;

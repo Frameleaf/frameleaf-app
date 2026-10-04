@@ -6,17 +6,17 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { Duplex, PassThrough, Readable } from 'node:stream';
 import { createGunzip, createGzip, gzipSync } from 'node:zlib';
-import type { Stats } from 'node:fs';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
+import { defaults, SystemConfig } from 'src/dtos/config.dto.js';
 import { ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { queueExecution } from 'src/queue/context.js';
-import type { QueueExecution } from 'src/queue/types.js';
 import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
-import { AutoMocked, ServiceMocks, automock, getMocks, mockDuplex, mockSpawn } from 'test/utils.js';
+import { automock, AutoMocked, getMocks, mockDuplex, mockSpawn, ServiceMocks } from 'test/utils.js';
+import type { Stats } from 'node:fs';
+import type { QueueExecution } from 'src/queue/types.js';
 
 describe(DatabaseBackupService.name, () => {
   let sut: DatabaseBackupService;
@@ -197,6 +197,52 @@ describe(DatabaseBackupService.name, () => {
 
     afterEach(async () => {
       await rm(folder, { recursive: true, force: true });
+    });
+
+    it('waits for a cancelled dump to close before cleanup or returning a retryable failure', async () => {
+      let readStarted!: () => void;
+      const reading = new Promise<void>((resolve) => {
+        readStarted = resolve;
+      });
+      let destroyStarted!: () => void;
+      const destroying = new Promise<void>((resolve) => {
+        destroyStarted = resolve;
+      });
+      let close!: () => void;
+      const canClose = new Promise<void>((resolve) => {
+        close = resolve;
+      });
+      const dump = new Duplex({
+        read() {
+          readStarted();
+        },
+        write(_chunk, _encoding, done) {
+          done();
+        },
+        destroy(error, done) {
+          destroyStarted();
+          void canClose.then(() => done(error));
+        },
+      });
+      mocks.process.spawnDuplexStream.mockImplementation((command) => (command === 'gzip' ? createGzip() : dump));
+      const controller = new AbortController();
+      let returned = false;
+      const task = sut.createDatabaseBackup('', { signal: controller.signal }).finally(() => {
+        returned = true;
+      });
+      const rejection = expect(task).rejects.toMatchObject({ name: 'AbortError' });
+      await reading;
+      controller.abort();
+      await destroying;
+      expect(returned).toBe(false);
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      close();
+      await rejection;
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(await leftFiles()).toEqual([]);
+      expect(mocks.process.spawnDuplexStream.mock.calls.every((call) => call[2]?.signal === controller.signal)).toBe(
+        true,
+      );
     });
 
     it('keeps a verified backup and no temporary file on success (FL-298)', async () => {

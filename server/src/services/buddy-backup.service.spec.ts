@@ -2,7 +2,6 @@ import { createHash, randomUUID, sign } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Readable } from 'node:stream';
 import { DatabaseLock, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
 import { BuddyBackupRepository, type BuddyState } from 'src/repositories/buddy-backup.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -21,6 +20,7 @@ import { type FrameleafKeySigner, jwsSigningInput } from 'src/utils/frameleaf-dp
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { makeLicenseSigner } from 'test/fixtures/frameleaf-license.fixture.js';
 import { automock } from 'test/utils.js';
+import type { Readable } from 'node:stream';
 
 const now = new Date('2026-10-02T23:59:00.000Z');
 
@@ -342,6 +342,20 @@ describe('Buddy production run controls and checkpoints', () => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it('charges a transport timeout to the automatic retry budget and preserves its capture', async () => {
+    const { worker, operation, operations, fetch, capturePath, captureBytes } = fixture;
+    fetch.mockRejectedValue(new DOMException('stalled peer', 'TimeoutError'));
+    await worker.run(operation, 'first-claim');
+    expect(operations.requeue).not.toHaveBeenCalled();
+    expect(operations.fail).toHaveBeenCalledWith(
+      operation.id,
+      'first-claim',
+      expect.objectContaining({ errorCode: 'buddy_incomplete' }),
+      { retry: true },
+    );
+    expect(await readFile(capturePath)).toEqual(captureBytes);
   });
 
   it('pauses at an upload checkpoint and resumes the same capture without resending acknowledged objects', async () => {

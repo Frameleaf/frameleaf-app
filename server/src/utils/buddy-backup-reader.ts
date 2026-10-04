@@ -1,3 +1,4 @@
+import { advanceExecutionProgress, assertExecutionActive } from 'src/utils/execution-signal.js';
 /* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
 import { createHash, randomUUID } from 'node:crypto';
 import { open, rename, rm } from 'node:fs/promises';
@@ -5,9 +6,9 @@ import { dirname, join } from 'node:path';
 import { BUDDY_ID, type BuddyKeyring, decryptBuddyBlock } from './buddy-backup-crypto.ts';
 import { readBuddyMetadata } from './buddy-backup-metadata.ts';
 import {
+  buddyDigest,
   type BuddyReceipt,
   type BuddySignedSnapshot,
-  buddyDigest,
   createBuddyDirectory,
   flushBuddyDirectory,
 } from './buddy-backup-vault.ts';
@@ -99,17 +100,21 @@ export class BuddyBackupReader {
       let size = 0;
       try {
         for (const id of content.blocks) {
+          assertExecutionActive();
           const bytes = await this.block(id, content.keyVersion);
           size += bytes.length;
           if (size > content.bytes) throw new Error('Buddy file exceeds its declared size');
           hash.update(bytes);
+          assertExecutionActive();
           await file.writeFile(bytes);
+          advanceExecutionProgress(bytes.length);
         }
         if (size !== content.bytes || hash.digest('hex') !== sha256) throw new Error('Buddy plaintext checksum failed');
         await file.sync();
       } finally {
         await file.close();
       }
+      assertExecutionActive();
       await rename(temporary, destination);
       await flushBuddyDirectory(dirname(destination));
       return { sha256, size };

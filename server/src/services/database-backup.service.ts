@@ -4,10 +4,8 @@ import { DateTime } from 'luxon';
 import { randomUUID } from 'node:crypto';
 import path, { basename } from 'node:path';
 import { Duplex, PassThrough, Readable, Writable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import { finished, pipeline } from 'node:stream/promises';
 import { coerce, gt, satisfies } from 'semver';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -27,6 +25,7 @@ import {
   SystemMetadataKey,
 } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
+import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -39,16 +38,18 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { appendConfigHistory, readConfigHistory, reviewHistoryTitle } from 'src/utils/config-history.js';
 import { getConfig } from 'src/utils/config.js';
 import {
-  UnsupportedPostgresError,
   findDatabaseBackupVersion,
   isCloudBackupDumpName,
   isFailedDatabaseBackupName,
   isValidDatabaseBackupName,
   isValidDatabaseRoutineBackupName,
+  UnsupportedPostgresError,
 } from 'src/utils/database-backups.js';
+import { advanceExecutionProgress, executionSignal } from 'src/utils/execution-signal.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { handlePromiseError } from 'src/utils/misc.js';
-import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 
 /** FL-71 (CC-9): how often a backup should be proved to restore before the Overview asks again. */
 export const RESTORE_VERIFICATION_INTERVAL_DAYS = 90;
@@ -281,7 +282,19 @@ export class DatabaseBackupService {
    */
   async createDatabaseBackup(
     filenamePrefix: string = '',
-    { label, verify = true, snapshot }: { label?: string; verify?: boolean; snapshot?: string } = {},
+    {
+      label,
+      verify = true,
+      snapshot,
+      signal = executionSignal(),
+      progress = advanceExecutionProgress,
+    }: {
+      label?: string;
+      verify?: boolean;
+      snapshot?: string;
+      signal?: AbortSignal;
+      progress?: (bytes: number) => void;
+    } = {},
   ): Promise<string> {
     this.logger.debug(`Database Backup Started`);
 
@@ -304,24 +317,30 @@ export class DatabaseBackupService {
 
     try {
       pgdump = this.processRepository.spawnDuplexStream(bin, args, {
+        signal,
         env: {
           PATH: process.env.PATH,
           PGPASSWORD: databasePassword,
         },
       });
 
-      gzip = this.processRepository.spawnDuplexStream('gzip', ['--rsyncable']);
+      gzip = this.processRepository.spawnDuplexStream('gzip', ['--rsyncable'], { signal });
+      pgdump.on('data', (chunk: Buffer) => progress(chunk.length));
       const fileStream = this.storageRepository.createWriteStream(temporaryFilePath);
 
-      await pipeline(pgdump, gzip, fileStream, { signal: jobSignal() });
+      await pipeline(pgdump, gzip, fileStream, { signal });
       if (verify) {
-        await this.verifyDatabaseBackup(temporaryFilePath);
+        await this.verifyDatabaseBackup(temporaryFilePath, { signal, progress });
       }
+      signal?.throwIfAborted();
       await this.storageRepository.rename(temporaryFilePath, backupFilePath);
     } catch (error) {
       this.logger.error(`Database Backup Failure: ${error}`);
       pgdump?.destroy();
       gzip?.destroy();
+      await Promise.all(
+        [pgdump, gzip].filter((stream): stream is Duplex => !!stream).map((stream) => finished(stream).catch(() => {})),
+      );
       await this.storageRepository
         .unlink(temporaryFilePath)
 
@@ -338,7 +357,13 @@ export class DatabaseBackupService {
    * ends with the line `pg_dump` writes once it has finished. Throws
    * {@link DatabaseBackupVerificationError} saying what is wrong.
    */
-  async verifyDatabaseBackup(filePath: string): Promise<void> {
+  async verifyDatabaseBackup(
+    filePath: string,
+    {
+      signal = executionSignal(),
+      progress = advanceExecutionProgress,
+    }: { signal?: AbortSignal; progress?: (bytes: number) => void } = {},
+  ): Promise<void> {
     const { size } = await this.storageRepository.stat(filePath);
     if (!size) {
       throw new DatabaseBackupVerificationError(`${basename(filePath)} is empty`);
@@ -353,12 +378,12 @@ export class DatabaseBackupService {
         new Writable({
           write(chunk: Buffer, _encoding, callback) {
             bytes += chunk.length;
-            advanceJobProgress(chunk.length);
+            progress(chunk.length);
             tail = (tail + chunk.toString('latin1')).slice(-DUMP_TAIL_BYTES);
             callback();
           },
         }),
-        { signal: jobSignal() },
+        { signal },
       );
     } catch (error) {
       throw new DatabaseBackupVerificationError(`${basename(filePath)} is not a complete gzip file (${error})`);

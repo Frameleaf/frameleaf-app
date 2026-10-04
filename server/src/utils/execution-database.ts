@@ -1,7 +1,7 @@
-import type { createPostgres } from '@frameleaf/sql-tools';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { parentPort } from 'node:worker_threads';
-import { jobSignal } from 'src/queue/context.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
+import type { createPostgres } from '@frameleaf/sql-tools';
 
 type Client = ReturnType<typeof createPostgres>;
 export const DATABASE_ACQUIRE_TIMEOUT_MS = 5000;
@@ -10,7 +10,7 @@ export const DATABASE_CLEANUP_TIMEOUT_MS = 2000;
 const cleanupExecution = new AsyncLocalStorage<AbortSignal>();
 
 /** Only rollback and mandatory session-lock cleanup may outlive an aborted job. */
-export const withDatabaseCleanup = <T,>(callback: () => Promise<T>): Promise<T> =>
+export const withDatabaseCleanup = <T>(callback: () => Promise<T>): Promise<T> =>
   cleanupExecution.run(AbortSignal.timeout(DATABASE_CLEANUP_TIMEOUT_MS), callback);
 
 const requestDatabaseRestart = () => {
@@ -35,7 +35,7 @@ export const boundExecutionReservations = (client: Client, onUnusable: () => voi
   };
   client.reserve = async () => {
     if (unusable) throw new Error('Database pool requires worker restart');
-    const signal = cleanupExecution.getStore() ?? jobSignal();
+    const signal = cleanupExecution.getStore() ?? executionSignal();
     signal?.throwIfAborted();
     if (pending >= DATABASE_MAX_WAITERS) throw new Error('Database acquisition capacity exhausted');
     pending++;
@@ -73,7 +73,7 @@ export const boundExecutionReservations = (client: Client, onUnusable: () => voi
             const cleanup =
               cleanupExecution.getStore() ??
               (/^\s*rollback\b/i.test(args[0]) ? AbortSignal.timeout(DATABASE_CLEANUP_TIMEOUT_MS) : undefined);
-            const cancellation = cleanup ?? jobSignal();
+            const cancellation = cleanup ?? executionSignal();
             if (!cancellation) return query;
             const cancel = () => {
               query.cancel();
