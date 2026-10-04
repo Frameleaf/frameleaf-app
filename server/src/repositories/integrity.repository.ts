@@ -24,6 +24,20 @@ export class IntegrityRepository {
   /** Current own library only, using the owner-access lock and hidden-content predicates. */
   getSafetyQuery(auth: AuthDto, hashes?: string[]) {
     const privacy = auth.hiddenContent ?? auth.hideNsfwAssets;
+    return this.getOwnedOriginalSafetyQuery(auth.user.id, hashes)
+      .$if(!auth.session?.hasElevatedPermission, (qb) =>
+        qb.where(isNotLocked('asset')).where((eb) => eb.not(isMotionOfLockedStill(eb))),
+      )
+      .$call((qb) =>
+        withHiddenContentFilter(
+          qb,
+          typeof privacy === 'object' ? { hiddenContent: privacy } : privacy ? { excludeNsfw: true } : {},
+        ),
+      );
+  }
+
+  /** Structural ownership/content query only. Callers must apply their actual privacy authority. */
+  getOwnedOriginalSafetyQuery(ownerId: string, hashes?: string[]) {
     const sha256 = sql<string | null>`CASE
       WHEN asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha256File} THEN encode(asset.checksum, 'hex')
       WHEN asset."checksumAlgorithm" = ${ChecksumAlgorithm.sha1File} THEN (
@@ -46,19 +60,10 @@ export class IntegrityRepository {
           .onRef('integrity.expectedChecksum', '=', 'asset.checksum')
           .on(sql<boolean>`integrity."checksumAlgorithm" IS NOT DISTINCT FROM asset."checksumAlgorithm"::text`),
       )
-      .where('asset.ownerId', '=', auth.user.id)
+      .where('asset.ownerId', '=', ownerId)
       .where('asset.deletedAt', 'is', null)
       .where('asset.status', '=', AssetStatus.Active)
       .where('library.deletedAt', 'is', null)
-      .$if(!auth.session?.hasElevatedPermission, (qb) =>
-        qb.where(isNotLocked('asset')).where((eb) => eb.not(isMotionOfLockedStill(eb))),
-      )
-      .$call((qb) =>
-        withHiddenContentFilter(
-          qb,
-          typeof privacy === 'object' ? { hiddenContent: privacy } : privacy ? { excludeNsfw: true } : {},
-        ),
-      )
       .$if(hashes !== undefined, (qb) => qb.where(sha256, 'in', hashes!))
       .select([
         'asset.id',
