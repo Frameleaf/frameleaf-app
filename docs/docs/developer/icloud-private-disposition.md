@@ -28,6 +28,15 @@ all existing managed/buddy/protected/version references. It opens only the named
 with `NOFOLLOW` and checks the directory and opened/named identities before unlinking. These
 are managed-writer fences; they do not claim global filesystem atomicity against external writers.
 
+Claim creation/replacement and terminal cleanup share a transaction fence for owner plus
+uppercase CPLAsset name. Still and motion roles use the same whole-item name. The fence is
+taken after the fork phase and before claim-writer rows or cleanup owner/operation/resource
+locks; multi-item writers sort canonical names. Cleanup also locks the canonical claim row
+regardless of id or expiry before checking for a live replacement and holds both fences through
+unlink and byte settlement. The shared fence covers absent-row insertion, while the row lock
+also serializes renewal/release. Hosted concurrent contracts use PostgreSQL backend blocking
+locks as their witness, with cleanup paused after authority checks and before real unlink.
+
 Charge decreases only after actual unlink or same-generation `ENOENT`. The disposition receipt
 is server authenticated. A database rollback after unlink retains charge and the old generation,
 so a later retry can finish without fabricating freed bytes or deleting a replacement inode.
