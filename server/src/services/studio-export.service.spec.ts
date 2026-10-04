@@ -163,10 +163,13 @@ const liveSession = (
     engineDigest: 'engine-1',
     conformanceReportedAt: overrides.conformanceReportedAt ?? new Date(),
     codecs: overrides.codecs === undefined ? ['h264_nvenc', 'hevc_nvenc'] : overrides.codecs,
-    formats: overrides.formats === undefined ? ['mp4'] : overrides.formats,
     colorPrecision: overrides.colorPrecision ?? null,
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     revokedAt: null,
+  },
+  capabilities: {
+    codecs: overrides.codecs === undefined ? ['h264_nvenc', 'hevc_nvenc'] : (overrides.codecs ?? []),
+    formats: overrides.formats === undefined ? ['mp4'] : (overrides.formats ?? []),
   },
 });
 
@@ -241,12 +244,28 @@ describe(StudioExportService.name, () => {
   };
   let crypto: Record<string, ReturnType<typeof vi.fn>>;
   let jobs: Record<string, ReturnType<typeof vi.fn>>;
-  let renderWorkers: { listLiveSessions: ReturnType<typeof vi.fn> };
+  let renderWorkers: {
+    listLiveSessions: ReturnType<typeof vi.fn>;
+    getSessionCapabilities: ReturnType<typeof vi.fn>;
+  };
   let media: { probe: ReturnType<typeof vi.fn> };
   let restorations: { queueExportSmoothMotion: ReturnType<typeof vi.fn> };
   let events: { emit: ReturnType<typeof vi.fn> };
   let mlDestinations: { getById: ReturnType<typeof vi.fn> };
   let staged: string;
+
+  // Model the two production reads separately: official sessions and their fork-owned proof.
+  const mockRenderSessions = (fixtures: ReturnType<typeof liveSession>[]) => {
+    const sessions = fixtures.map(({ worker, session }, index) => ({
+      worker,
+      session: { ...session, id: `session-${index + 1}` },
+    }));
+    renderWorkers.listLiveSessions.mockResolvedValue(sessions);
+    renderWorkers.getSessionCapabilities.mockImplementation((id: string) => {
+      const index = sessions.findIndex(({ session }) => session.id === id);
+      return Promise.resolve(index < 0 ? undefined : fixtures[index].capabilities);
+    });
+  };
 
   beforeAll(() => StorageCore.setMediaLocation('/data'));
 
@@ -339,7 +358,8 @@ describe(StudioExportService.name, () => {
     };
     crypto = { hashFile: vi.fn().mockResolvedValue(Buffer.from('ab'.repeat(32), 'hex')) };
     jobs = { queue: vi.fn().mockResolvedValue(undefined) };
-    renderWorkers = { listLiveSessions: vi.fn().mockResolvedValue([liveSession()]) };
+    renderWorkers = { listLiveSessions: vi.fn(), getSessionCapabilities: vi.fn() };
+    mockRenderSessions([liveSession()]);
     media = { probe: vi.fn().mockResolvedValue(renderedOutput()) };
     restorations = { queueExportSmoothMotion: vi.fn().mockResolvedValue(null) };
     events = { emit: vi.fn().mockResolvedValue(undefined) };
@@ -403,7 +423,7 @@ describe(StudioExportService.name, () => {
       ['null container evidence', ['webcodecs-avc'], null],
     ])('refuses %s before creating an export or render job', async (_name, codecs, formats) => {
       studio.authorizeRevision.mockResolvedValue(authorized());
-      renderWorkers.listLiveSessions.mockResolvedValue([liveSession({ codecs, formats })]);
+      mockRenderSessions([liveSession({ codecs, formats })]);
       repository.createWithRender.mockResolvedValue({
         operation: operation({ status: MediaOperationStatus.Queued }),
         version: versionRow({ state: StudioExportVersionState.Rendering }),
@@ -417,7 +437,7 @@ describe(StudioExportService.name, () => {
 
     it('refuses split encoder and container evidence before creating any work', async () => {
       studio.authorizeRevision.mockResolvedValue(authorized());
-      renderWorkers.listLiveSessions.mockResolvedValue([
+      mockRenderSessions([
         liveSession({ codecs: ['webcodecs-avc'], formats: ['webm'] }),
         liveSession({ codecs: ['libaom-av1'], formats: ['mp4'] }),
       ]);
@@ -432,13 +452,36 @@ describe(StudioExportService.name, () => {
       expect(repository.createWithRender).not.toHaveBeenCalled();
     });
 
+    it('refuses a live session with no persisted output proof even when its codec list names an encoder', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      renderWorkers.getSessionCapabilities.mockResolvedValue(undefined);
+
+      await expect(sut.create(auth(), PROJECT, dto)).rejects.toMatchObject({
+        response: { code: 'studio_export_unsupported', reason: 'codec-unavailable' },
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it('never borrows output proof from a different session with insufficient memory', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      mockRenderSessions([
+        liveSession({ codecs: ['webcodecs-avc'], formats: ['webm'] }),
+        liveSession({ codecs: ['webcodecs-avc'], formats: ['mp4'], gpuMemoryBytes: String(2 * 1024 ** 3) }),
+      ]);
+
+      await expect(sut.create(auth(), PROJECT, dto)).rejects.toMatchObject({
+        response: { code: 'studio_export_unsupported', reason: 'codec-unavailable' },
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
     it.each([
       ['webcodecs-avc', 'mp4'],
       ['WEBCODECS-AVC', 'MP4'],
       ['LIBX264', 'MP4'],
     ])('queues an export when one session verified writer %s and container %s', async (codec, container) => {
       studio.authorizeRevision.mockResolvedValue(authorized());
-      renderWorkers.listLiveSessions.mockResolvedValue([liveSession({ codecs: [codec], formats: [container] })]);
+      mockRenderSessions([liveSession({ codecs: [codec], formats: [container] })]);
       repository.createWithRender.mockResolvedValue({
         operation: operation({ status: MediaOperationStatus.Queued }),
         version: versionRow({ state: StudioExportVersionState.Rendering }),
@@ -487,7 +530,7 @@ describe(StudioExportService.name, () => {
       'refuses an export no qualified render session verified, with an actionable reason (FL-42) %#',
       async (sessions, settings, reason) => {
         studio.authorizeRevision.mockResolvedValue(authorized());
-        renderWorkers.listLiveSessions.mockResolvedValue(sessions);
+        mockRenderSessions(sessions);
 
         const error = await sut
           .create(auth(), PROJECT, { ...(dto as object), ...settings } as never)
@@ -501,7 +544,7 @@ describe(StudioExportService.name, () => {
 
     it('queues an HDR10 export only on a session that verified 10-bit HDR10 and a HEVC encoder (FL-42)', async () => {
       studio.authorizeRevision.mockResolvedValue(authorized());
-      renderWorkers.listLiveSessions.mockResolvedValue([
+      mockRenderSessions([
         liveSession({
           codecs: ['hevc_nvenc', 'h264_nvenc'],
           colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false },
@@ -726,7 +769,7 @@ describe(StudioExportService.name, () => {
     it('promises the widest source layout, or a stereo downmix only when asked for', async () => {
       const surround = { codecName: 'eac3', channels: 6, channelLayout: '5.1(side)', sampleRate: 48_000 };
       repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP, { audio: surround })]);
-      renderWorkers.listLiveSessions.mockResolvedValue([
+      mockRenderSessions([
         liveSession({
           codecs: ['hevc_nvenc', 'h264_nvenc'],
           colorPrecision: { maxBitDepth: 10, hdr10: false, dolbyVision: false },
@@ -751,7 +794,7 @@ describe(StudioExportService.name, () => {
 
     it('promises no audio when every audio clip is muted, and 10-bit PQ for HDR10', async () => {
       repository.getSourceMediaFacts.mockResolvedValue([facts(CLIP)]);
-      renderWorkers.listLiveSessions.mockResolvedValue([
+      mockRenderSessions([
         liveSession({ codecs: ['hevc_nvenc'], colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false } }),
       ]);
       const graph = clipGraph({
