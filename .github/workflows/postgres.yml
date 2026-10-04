@@ -1,7 +1,7 @@
 # Builds Frameleaf's own PostgreSQL image (docker/postgres) so nothing pulls the upstream database image.
 # Pull requests and pushes build and test it natively on amd64 and arm64 without publishing.
 #
-# Publication is a manual dispatch with publish selected, on the exact current fork/main, and only when
+# Publication is a manual dispatch with publish selected, on an exact approved delivery branch head, and only when
 # the repository variable FRAMELEAF_ENABLE_POSTGRES_PUBLISH=true. It pushes the exact images the build
 # jobs tested (no rebuild), never moves an existing version tag, and records the published digest.
 # Release promotion (.github/frameleaf-release.cjs) refuses to promote until this image exists and pins
@@ -24,7 +24,7 @@ name: Postgres Image
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish the exact current fork/main Postgres image (requires FRAMELEAF_ENABLE_POSTGRES_PUBLISH)
+        description: Publish the exact current delivery branch Postgres image (requires FRAMELEAF_ENABLE_POSTGRES_PUBLISH)
         type: boolean
         required: true
         default: false
@@ -128,9 +128,10 @@ jobs:
   publish:
     name: Postgres image publish
     needs: build
-    if:
-      ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_POSTGRES_PUBLISH == 'true' &&
-      github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/fork/main' }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_POSTGRES_PUBLISH == 'true' &&
+      github.event_name == 'workflow_dispatch' && inputs.publish &&
+      (github.ref == 'refs/heads/fork/main' || github.ref == 'refs/heads/master/frameleaf-implementation' ||
+      github.ref == 'refs/heads/aj/FL-333-pg19') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -152,17 +153,22 @@ jobs:
       - name: Verify release commit is the current delivery branch
         env:
           CANDIDATE_SHA: ${{ github.sha }}
+          SOURCE_REF: ${{ github.ref }}
         run: |-
           set -euo pipefail
           if [[ ! "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::Invalid release commit SHA."
             exit 1
           fi
-          git fetch --no-tags origin refs/heads/fork/main
+          case "$SOURCE_REF" in
+            refs/heads/fork/main|refs/heads/master/frameleaf-implementation|refs/heads/aj/FL-333-pg19) ;;
+            *) echo "::error::Postgres publication requires an approved delivery branch."; exit 1 ;;
+          esac
+          git fetch --no-tags origin "$SOURCE_REF"
           branch_sha=$(git rev-parse FETCH_HEAD)
           head_sha=$(git rev-parse HEAD)
           if [[ "$branch_sha" != "$CANDIDATE_SHA" || "$head_sha" != "$CANDIDATE_SHA" ]]; then
-            echo "::error::Postgres publication requires the exact current fork/main commit."
+            echo "::error::Postgres publication requires the exact current delivery branch commit."
             exit 1
           fi
       - name: Download the tested images
