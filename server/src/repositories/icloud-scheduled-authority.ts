@@ -209,9 +209,9 @@ export async function guardScheduledAudit(
   if (!cohort) {
     return;
   }
-  const { rows: members } = await sql<Member>`SELECT * FROM immich_fork.icloud_weekly_member
+  const { rows: members } = await sql<Member>`SELECT m.*,m.ordinal::text AS ordinal FROM immich_fork.icloud_weekly_member m
     WHERE "cohortId"=${cohort.id}::uuid AND "ownerId"=${ownerId}::uuid AND "connectionId"=${connection.id}::uuid
-      AND selected AND "batchOrdinal"=${hint.batchOrdinal} ORDER BY ordinal FOR UPDATE`.execute(db);
+      AND selected AND "batchOrdinal"=${hint.batchOrdinal} ORDER BY m.ordinal FOR UPDATE`.execute(db);
   const member = members.find(({ ordinal }) => ordinal === String(hint.memberOrdinal));
   const auditIds = members.flatMap(({ auditRequestId }) => (auditRequestId ? [auditRequestId] : []));
   if (
@@ -539,7 +539,7 @@ export function scheduledAuditFinalFence(
       AND operation.snapshot->>'purpose'='scheduled-weekly' AND operation.snapshot->>'cohortId'=c.id::text
       AND operation.snapshot->>'connectionId'=connection.id::text AND operation.snapshot->>'grantId'=g.id::text
       AND operation.snapshot->>'grantGeneration'=g.generation::text AND operation.snapshot->>'batchOrdinal'=q."batchOrdinal"::text
-      AND operation.snapshot->'auditIds'=${JSON.stringify(guarded.auditIds)}::jsonb
+      AND operation.snapshot->'auditIds'=${JSON.stringify(guarded.auditIds)}::text::jsonb
       AND operation.snapshot->'auditIds'=(SELECT jsonb_agg(b."auditRequestId" ORDER BY b.ordinal)
         FROM immich_fork.icloud_weekly_member b WHERE b."cohortId"=c.id AND b.selected
           AND b."batchOrdinal"=q."batchOrdinal" AND b."auditRequestId" IS NOT NULL)
