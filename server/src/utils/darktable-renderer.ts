@@ -7,13 +7,13 @@ import { basename, dirname, extname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
-import { trackQueueChild } from 'src/queue/child-process.js';
 import {
   ASSET_DEVELOP_BITMAP_MASK_KINDS,
   AssetDevelopMaskKind,
   type DarktableDevelopRecipe,
   DarktableDevelopRecipeSchema,
 } from 'src/dtos/asset-develop.dto.js';
+import { trackQueueChild } from 'src/queue/child-process.js';
 import { NATIVE_RAW_ORDER, nativeBlendParams, nativeModuleParams } from 'src/utils/darktable-controls.js';
 import { type DevelopBitmap } from 'src/utils/develop-cleanup.js';
 import { maskWeight, originalMaskWeight } from 'src/utils/develop-recipe.js';

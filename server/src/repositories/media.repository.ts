@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ExifDateTime, exiftool, WriteTags } from 'exiftool-vendored';
+import { ExifDateTime, WriteTags, exiftool } from 'exiftool-vendored';
 import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
 import { camelCase, upperFirst } from 'lodash-es';
 import { Duration } from 'luxon';
@@ -8,6 +8,18 @@ import fs from 'node:fs/promises';
 import { Writable } from 'node:stream';
 import { parentPort } from 'node:worker_threads';
 import sharp, { Sharp } from 'sharp';
+import type {
+  DecodeToBufferOptions,
+  GenerateThumbhashOptions,
+  GenerateThumbnailOptions,
+  ImageDimensions,
+  ProbeOptions,
+  RawImageInfo,
+  TranscodeCommand,
+  VideoInfo,
+  VideoPacketInfo,
+} from 'src/types.js';
+import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
 import { ORIENTATION_TO_SHARP_ROTATION } from 'src/constants.js';
 import { Exif } from 'src/database.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
@@ -16,8 +28,8 @@ import {
   Av1Profile,
   ColorMatrix,
   ColorPrimaries,
-  Colorspace,
   ColorTransfer,
+  Colorspace,
   DvProfile,
   DvSignalCompatibility,
   H264Profile,
@@ -36,18 +48,6 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { tryParseRational } from 'src/utils/rational-time.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { createAffineMatrix } from 'src/utils/transform.js';
-import type {
-  DecodeToBufferOptions,
-  GenerateThumbhashOptions,
-  GenerateThumbnailOptions,
-  ImageDimensions,
-  ProbeOptions,
-  RawImageInfo,
-  TranscodeCommand,
-  VideoInfo,
-  VideoPacketInfo,
-} from 'src/types.js';
-import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> => {
   executionSignal()?.throwIfAborted();
@@ -726,10 +726,9 @@ export class MediaRepository {
         let lastFrames = 0;
         command
           .on('progress', (progress: ProgressEvent) => {
-            if (progress.frames > lastFrames) {
-              advanceJobProgress(progress.frames - lastFrames);
-              lastFrames = progress.frames;
-            }
+            if (!(progress.frames > lastFrames)) return;
+            advanceJobProgress(progress.frames - lastFrames);
+            lastFrames = progress.frames;
           })
           .on('error', (error) => {
             cleanup();

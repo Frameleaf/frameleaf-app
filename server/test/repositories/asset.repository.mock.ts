@@ -1,3 +1,4 @@
+import { Mocked, vitest } from 'vitest';
 import {
   AssetFileMove,
   AssetFileMoveOperations,
@@ -5,7 +6,6 @@ import {
   AssetRepository,
 } from 'src/repositories/asset.repository.js';
 import { RepositoryInterface } from 'src/types.js';
-import { Mocked, vitest } from 'vitest';
 
 export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetRepository>> => {
   return {

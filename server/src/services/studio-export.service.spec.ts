@@ -22,7 +22,7 @@ import {
   StudioExportVersion,
   StudioExportVersionSource,
 } from 'src/repositories/studio-export.repository.js';
-import { settleStudioExportPublication, StudioExportService } from 'src/services/studio-export.service.js';
+import { StudioExportService, settleStudioExportPublication } from 'src/services/studio-export.service.js';
 import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -299,7 +299,8 @@ describe(StudioExportService.name, () => {
       // the owner rule of StudioProjectService.requireOwnedProject, for a stranger: 404 as if missing
       requireOwnedProject: vi.fn(async (actor: AuthDto, id: string) => {
         const project = (await (projects.getById as (id: string) => Promise<{ ownerId: string } | undefined>)(id)) as
-          { ownerId: string } | undefined;
+          | { ownerId: string }
+          | undefined;
         if (!project || project.ownerId !== actor.user.id) {
           throw new NotFoundException('Studio project not found');
         }

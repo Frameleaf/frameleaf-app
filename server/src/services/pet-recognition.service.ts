@@ -274,7 +274,7 @@ export class PetRecognitionService {
     };
     if (references.length === 0) {
       return publish(async (allIds) => {
-        if (allIds.length) await this.petRepository.replaceDetections(asset.id, allIds, []);
+        if (allIds.length > 0) await this.petRepository.replaceDetections(asset.id, allIds, []);
         return 0;
       }, JobStatus.Skipped);
     }

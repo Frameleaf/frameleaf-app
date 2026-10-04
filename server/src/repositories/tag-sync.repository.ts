@@ -11,7 +11,6 @@ import { AlbumKind, AlbumUserRole, SyncEntityType } from 'src/enum.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
-
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
@@ -26,6 +25,7 @@ import { getHiddenContentQueryOptions, getRevealQueryOptions } from 'src/utils/h
 import { getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { getLockedOwnerId, notLockedOrOwnedBy } from 'src/utils/locked.js';
 import { toAck } from 'src/utils/sync.js';
+
 type Kind =
   | 'tag'
   | 'assetTag'

@@ -72,8 +72,9 @@ describe('JobRepository graceful stop', () => {
     const adopted = vi.fn();
     const job = await start(async () => {
       await sleep(30);
-      await publishJobResult(async () => {
+      await publishJobResult(() => {
         adopted();
+        return Promise.resolve();
       });
     });
     await job.repository.stopWorkers(1000);
@@ -104,8 +105,9 @@ describe('JobRepository graceful stop', () => {
     const adopted = vi.fn();
     const job = await start(async () => {
       await release.promise;
-      await publishJobResult(async () => {
+      await publishJobResult(() => {
         adopted();
+        return Promise.resolve();
       });
     });
     try {

@@ -1,4 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import type { AssetRestoration } from 'src/repositories/asset-restoration.repository.js';
+import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js';
 import { AuthSession } from 'src/database.js';
 import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -24,8 +26,6 @@ import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
-import type { AssetRestoration } from 'src/repositories/asset-restoration.repository.js';
-import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js';
 
 /**
  * FL-86: the reviewed rights table the resolver consults. It starts empty, so every resource is

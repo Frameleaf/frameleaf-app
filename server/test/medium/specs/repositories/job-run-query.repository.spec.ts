@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { listRunItems, listRuns, observeQueueRun, RUN_OUTCOMES } from 'src/queue/run-query.js';
+import { RUN_OUTCOMES, listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<any>;
@@ -62,8 +62,8 @@ it('counts 15,000 selected roots once despite multiple face subjects, stages and
     from generate_series(1,15000) a`.execute(db);
   await stage(id, null, 'Coordinator', 'completed');
   const [summary] = await listRuns(db, 25, 0);
-  expect(summary).toMatchObject({ total: 15000, completed: 15000, failed: 0, state: 'completed' });
-  expect(summary.stageTotals).toMatchObject({ total: 75001, completed: 75001 });
+  expect(summary).toMatchObject({ total: 15_000, completed: 15_000, failed: 0, state: 'completed' });
+  expect(summary.stageTotals).toMatchObject({ total: 75_001, completed: 75_001 });
   expect(RUN_OUTCOMES.reduce((sum, outcome) => sum + summary[outcome], 0)).toBe(summary.total);
   const first = await listRunItems(db, id, 25, 0);
   const next = await listRunItems(db, id, 25, 25);

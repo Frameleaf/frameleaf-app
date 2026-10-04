@@ -10,12 +10,12 @@ import { Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
-
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { ASSET_UPLOAD_LIMITS } from 'src/utils/asset-upload-resource.js';
+
 export type AssetUploadResource = Selectable<AssetUploadResourceTable>;
 @Injectable()
 export class AssetUploadResourceRepository {
@@ -660,7 +660,7 @@ export class AssetUploadResourceRepository {
           state: 'cancelled',
           ingestionToken: null,
           ingestionLeaseExpiresAt: null,
-          expiresAt: new Date(Date.now() + (row.state === 'cancelled' ? 86400 : 600) * 1000),
+          expiresAt: new Date(Date.now() + (row.state === 'cancelled' ? 86_400 : 600) * 1000),
         })
         .where('id', '=', id)
         .execute();

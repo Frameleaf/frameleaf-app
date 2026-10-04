@@ -11,6 +11,23 @@ import { basename, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type {
+  CloudBackupOwnerSetupResponseDto,
+  OwnerBackupHistoryDto,
+  OwnerBackupHistoryResponseDto,
+  OwnerBackupPageDto,
+  OwnerBackupsResponseDto,
+} from 'src/dtos/cloud-backup-owner.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { OwnerRestoreDetailsContext } from 'src/services/cloud-backup-details.service.js';
+import type {
+  CloudBackupKeyMode,
+  FrameleafCloudBackup,
+  FrameleafCloudBackupManaged,
+  FrameleafCloudBackupRestore,
+  FrameleafCloudBackupRun,
+} from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
@@ -103,13 +120,13 @@ import {
 } from 'src/services/cloud-backup-maintenance.js';
 import {
   CloudBackupRestoreFile,
-  CloudBackupRestorer,
   CloudBackupRestoreResult,
   CloudBackupRestoreScope,
   CloudBackupRestoreSnapshot,
-  emptyRestoreResult,
+  CloudBackupRestorer,
   IN_PLACE_SCOPES,
   RESTORE_REPLACED_FOLDER,
+  emptyRestoreResult,
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
@@ -124,8 +141,6 @@ import { checkOwnerRestoreItems, ownerRestoreHash } from 'src/utils/cloud-backup
 import { ownerBackupHistoryPage, ownerThumbnail } from 'src/utils/cloud-backup-owner.js';
 import { manifestTime, readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
 import {
-  backupKeyFile,
-  bucketRef,
   CLOUD_BACKUP_BATCH,
   CLOUD_BACKUP_DB_PREFIX,
   CLOUD_BACKUP_MANIFEST_FORMAT,
@@ -138,6 +153,8 @@ import {
   CloudBackupManifest,
   CloudBackupManifestFile,
   CloudBackupRunResult,
+  backupKeyFile,
+  bucketRef,
   compactIso,
   emptyRunResult,
   isSha256Hex,
@@ -162,9 +179,9 @@ import {
   reportExecutionProgress,
 } from 'src/utils/execution-signal.js';
 import {
-  backupGrantProblem,
   BackupGrantResponse,
   MANAGED_ENTITLEMENT_MISSING_REFUSAL,
+  backupGrantProblem,
   managedBackupRefusal,
   managedStorageRef,
 } from 'src/utils/frameleaf-cloud-backup.js';
@@ -174,31 +191,14 @@ import {
   loadInstanceIdentity,
   readCloudLink,
 } from 'src/utils/frameleaf-cloud-gateway.js';
-import { errorEnvelopeSchema, FrameleafCloudError, pausedException } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, errorEnvelopeSchema, pausedException } from 'src/utils/frameleaf-cloud.js';
 import {
-  activationLine,
   CloudBackupActivationProgress,
+  activationLine,
   cloudBackupActivationProgress,
 } from 'src/utils/frameleaf-push.js';
 import { handlePromiseError } from 'src/utils/misc.js';
 import { settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type {
-  CloudBackupOwnerSetupResponseDto,
-  OwnerBackupHistoryDto,
-  OwnerBackupHistoryResponseDto,
-  OwnerBackupPageDto,
-  OwnerBackupsResponseDto,
-} from 'src/dtos/cloud-backup-owner.dto.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { OwnerRestoreDetailsContext } from 'src/services/cloud-backup-details.service.js';
-import type {
-  CloudBackupKeyMode,
-  FrameleafCloudBackup,
-  FrameleafCloudBackupManaged,
-  FrameleafCloudBackupRestore,
-  FrameleafCloudBackupRun,
-} from 'src/types.js';
 
 const KIND = MediaOperationKind.CloudBackup;
 /** FL-164: a restore uses the bucket too, so it never runs beside a backup operation, nor they beside it. */

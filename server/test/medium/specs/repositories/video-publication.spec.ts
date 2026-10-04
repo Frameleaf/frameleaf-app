@@ -126,10 +126,10 @@ describe('retained video publication under queue and operation claims', () => {
       if (fault === 'expired operation')
         await sql`update media_operation set "claimExpiresAt" = now() - interval '1 second'
         where id = ${fixture.operation.id}::uuid`.execute(db);
-      if (fault === 'expired queue')
+      else if (fault === 'expired queue')
         await sql`update job set "leaseExpiresAt" = now() - interval '1 second'
         where id = ${fixture.claim.id}::uuid`.execute(db);
-      if (fault === 'superseded version') await fixture.edits.replaceAll(fixture.asset.id, []);
+      else if (fault === 'superseded version') await fixture.edits.replaceAll(fixture.asset.id, []);
       if (fault === 'expired queue') expect(await fixture.commit()).toBe(false);
       else
         await expect(fixture.commit()).rejects.toThrow(

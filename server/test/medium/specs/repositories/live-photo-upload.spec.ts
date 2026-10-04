@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
+import type { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetLockReason, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -9,7 +10,6 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
-import type { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
 
 let db: Kysely<DB>;
 let uploads: AssetUploadResourceRepository;
@@ -77,12 +77,10 @@ const setup = async (quota?: number, existingOwnerId?: string) => {
   });
   const commit = (locked = false) =>
     uploads.lockedMany([video.id, still.id], user.id, (tx, rows) =>
-      uploads.publishLivePhoto(
-        tx,
-        rows.find((row) => row.id === still.id)!,
-        rows.find((row) => row.id === video.id)!,
-        { still: prepared(still, AssetType.Image, locked), video: prepared(video, AssetType.Video, locked) },
-      ),
+      uploads.publishLivePhoto(tx, rows.find((row) => row.id === still.id)!, rows.find((row) => row.id === video.id)!, {
+        still: prepared(still, AssetType.Image, locked),
+        video: prepared(video, AssetType.Video, locked),
+      }),
     );
   const state = async () => ({
     assets: await db
@@ -239,12 +237,10 @@ describe('atomic Live Photo verified-resource publication', () => {
       .execute();
     await expect(
       uploads.lockedMany([h.still.id, h.video.id], h.user.id, (tx, rows) =>
-        uploads.publishLivePhoto(
-          tx,
-          rows.find((r) => r.id === h.still.id)!,
-          rows.find((r) => r.id === h.video.id)!,
-          { still: h.prepared(h.still, AssetType.Video), video: h.prepared(h.video, AssetType.Video) },
-        ),
+        uploads.publishLivePhoto(tx, rows.find((r) => r.id === h.still.id)!, rows.find((r) => r.id === h.video.id)!, {
+          still: h.prepared(h.still, AssetType.Video),
+          video: h.prepared(h.video, AssetType.Video),
+        }),
       ),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(await h.state()).toEqual(before);

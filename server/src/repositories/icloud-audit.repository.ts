@@ -7,7 +7,6 @@ import type { MediaIntegrityResult } from 'src/services/media-integrity.service.
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudVerifyDto, ICloudVerifyResponseDto } from 'src/dtos/icloud-identity.dto.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, UserMetadataKey } from 'src/enum.js';
-
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -17,6 +16,7 @@ import { identityRoleOf, parseCloudIdentifier } from 'src/utils/icloud-identity.
 import { resourcesForICloudAsset } from 'src/utils/icloud-records.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+
 export type AuditAuthority = {
   auditRequestId: string;
   operationId: string;

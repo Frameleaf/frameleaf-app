@@ -27,6 +27,7 @@ import { AlbumSourceRepository } from 'src/repositories/album-source.repository.
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetDevelopRepository } from 'src/repositories/asset-develop.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
@@ -42,7 +43,6 @@ import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
@@ -634,7 +634,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
   }
 };
 
-const newMockRepository = <T,>(key: ClassConstructor<T>) => {
+const newMockRepository = <T>(key: ClassConstructor<T>) => {
   switch (key) {
     case ActivityRepository:
     case AdminAuditRepository:

@@ -195,7 +195,7 @@ export class QueueService extends BaseService {
 
     const response = await this.getByName(name);
 
-    return { ...mapQueueLegacy(response), ...(runId ? { runId } : {}) };
+    return { ...mapQueueLegacy(response), ...(runId && { runId }) };
   }
 
   async getAll(_auth: AuthDto): Promise<QueueResponseDto[]> {

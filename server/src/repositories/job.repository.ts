@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { Kysely, type SelectQueryBuilder, sql, type Transaction } from 'kysely';
+import { Kysely, type SelectQueryBuilder, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
@@ -272,8 +272,8 @@ export class JobRepository {
       Promise.allSettled(
         this.active
           .values()
-          .toArray()
-          .map(({ finished }) => finished),
+          .map(({ finished }) => finished)
+          .toArray(),
       ),
       sleep(graceMs),
     ]);
@@ -443,7 +443,7 @@ export class JobRepository {
         coalesce(data->'_producerCheckpoints', '{}'::jsonb) || jsonb_build_object(${key}::text, ${JSON.stringify(value)}::jsonb))
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and "leaseExpiresAt" > clock_timestamp()
           and "cancelRequestedAt" is null returning id`.execute(tx);
-      if (!rows.length) throw new Error('Producer checkpoint lost its claim');
+      if (rows.length === 0) throw new Error('Producer checkpoint lost its claim');
       return value;
     });
   }

@@ -12,8 +12,8 @@ import {
   VideoMomentTable,
 } from 'src/schema/tables/video-moment.table.js';
 import { anyUuid, asUuid, withHiddenContentFilter, withVideoFormat, withVideoStream } from 'src/utils/database.js';
-import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { sourceFingerprint } from 'src/utils/enrichment-plan.js';
+import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 export type VideoMomentIndex = Selectable<VideoMomentIndexTable>;

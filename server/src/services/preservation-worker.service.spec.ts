@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { AssetVisibility, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
@@ -20,7 +21,6 @@ import {
 } from 'src/utils/preservation.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
-import type { Mock } from 'vitest';
 
 type Mocked = Record<string, Mock<(...args: any[]) => any>>;
 

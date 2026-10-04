@@ -1,12 +1,12 @@
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
+import type z from 'zod';
 import { BUDDY_BLOCK_BYTES, BUDDY_SEALED_OVERHEAD } from 'src/utils/buddy-backup-crypto.js';
 import { verifyBuddyResponse } from 'src/utils/buddy-backup-protocol.js';
 import { BuddyVault } from 'src/utils/buddy-backup-vault.js';
 import { advanceExecutionProgress, assertExecutionActive, executionTimeout } from 'src/utils/execution-signal.js';
 import { BuddyGrantResponse } from 'src/utils/frameleaf-buddy.js';
-import { createDpopProof, type FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
-import type z from 'zod';
+import { type FrameleafKeySigner, createDpopProof } from 'src/utils/frameleaf-dpop.js';
 
 export class BuddyPeerUnavailable extends Error {
   constructor(

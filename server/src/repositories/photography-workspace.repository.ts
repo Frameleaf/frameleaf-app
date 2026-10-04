@@ -4,8 +4,8 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { PhotographyBrand, StoredShoot } from 'src/dtos/photography-workspace.dto.js';
 import type { UserMetadata } from 'src/types.js';
 import { AlbumUserRole, UserMetadataKey } from 'src/enum.js';
-
 import { DB } from 'src/schema/index.js';
+
 @Injectable()
 export class PhotographyWorkspaceRepository {
   constructor(

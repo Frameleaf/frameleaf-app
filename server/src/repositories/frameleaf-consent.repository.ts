@@ -3,8 +3,8 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { CloudConsentFeatures } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-
 import { DB } from 'src/schema/index.js';
+
 export type FrameleafConsentRow = {
   id: string;
   destinationId: string;

@@ -3,6 +3,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
@@ -39,8 +41,6 @@ import { buddyLibraryForOwner, readBuddyMetadata, selectBuddyAlbumIds } from 'sr
 import { ownerRestoreHash } from 'src/utils/cloud-backup-owner-restore.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
 
 // Metadata-only API coverage still runs the real filesystem preflight. CI's temporary disk can be below its 1 GiB reserve.
 vi.mock('node:fs/promises', async (importOriginal) => {

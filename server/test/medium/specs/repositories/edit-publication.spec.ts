@@ -124,15 +124,15 @@ describe('queue and edit publication atomicity', () => {
       const fixture = await prepare();
       const { operations, operation, revisions, candidate, asset, previous, claim, user } = fixture;
       if (fault === 'cancel') await operations.requestCancel(operation.id, user.id);
-      if (fault === 'expired operation')
+      else if (fault === 'expired operation')
         await sql`update media_operation set "claimExpiresAt" = now() - interval '1 second' where id = ${operation.id}::uuid`.execute(
           db,
         );
-      if (fault === 'expired queue')
+      else if (fault === 'expired queue')
         await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(
           db,
         );
-      if (fault === 'expired queue') expect(await fixture.commit()).toBe(false);
+      else if (fault === 'expired queue') expect(await fixture.commit()).toBe(false);
       else await expect(fixture.commit()).rejects.toThrow('lost its claim');
       expect((await revisions.getCurrent(asset.id))?.id).toBe(previous.id);
       expect((await revisions.get(candidate.id))?.masterPath).toBeNull();

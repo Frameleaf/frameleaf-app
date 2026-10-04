@@ -2,8 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { open, readdir, readFile, realpath, rm, statfs } from 'node:fs/promises';
+import { open, readFile, readdir, realpath, rm, statfs } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import type { FrameleafCloudBackup } from 'src/types.js';
+import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
+import type { BuddyStudioSnapshot } from 'src/utils/buddy-backup-studio.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -44,9 +47,6 @@ import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
-import type { FrameleafCloudBackup } from 'src/types.js';
-import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
-import type { BuddyStudioSnapshot } from 'src/utils/buddy-backup-studio.js';
 
 export type BuddyContent = { blocks: string[]; keyVersion: number; bytes: number };
 export type BuddyManifest = {
@@ -517,10 +517,14 @@ export class BuddyBackupCaptureService {
                 manifest.library.profiles[profile.userId] = await captureFile(profile.path, 'profile');
               // Person groups can be shared across owners. Their thumbnails belong only to the
               // whole-server archive, never to an asset selected through that shared group.
-              for (const entry of derived.filter((entry) => entry.assetId === null))
+              for (const entry of [
+                ...derived.filter((entry) => entry.assetId === null),
+                ...[...new Set(dependencies.map((entry) => entry.path).filter(Boolean))].map((path) => ({
+                  path,
+                  role: 'project' as const,
+                })),
+              ])
                 manifest.dependencies.push(await captureFile(entry.path, entry.role));
-              for (const path of new Set(dependencies.map((entry) => entry.path).filter(Boolean)))
-                manifest.dependencies.push(await captureFile(path, 'project'));
               const inventory = new Map(
                 [
                   ...Object.values(manifest.library.assets).flatMap((asset) => asset.files),

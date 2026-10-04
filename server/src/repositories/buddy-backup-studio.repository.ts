@@ -6,7 +6,6 @@ import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js
 import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 import { AssetLockReason, MediaOperationKind, MediaOperationStatus, StudioExportScope } from 'src/enum.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
-
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import {
   type BuddyStudioProject,
@@ -30,6 +29,7 @@ import {
 } from 'src/utils/derivative-privacy.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
+
 type Row = Record<string, unknown>;
 type RetiredFile = {
   path: string;

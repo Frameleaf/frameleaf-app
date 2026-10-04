@@ -10,6 +10,7 @@ import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
+
 export type ICloudLibrary = {
   area: 'private' | 'shared';
   zoneID: {
@@ -848,7 +849,7 @@ export class ICloudSyncRepository {
       ORDER BY "libraryKey", "sourceId" LIMIT 10001`
       .execute(transaction ?? this.db)
       .then((result) => result.rows);
-    if (libraries.length > 100 || albums.length > 10000) {
+    if (libraries.length > 100 || albums.length > 10_000) {
       throw new Error('icloud_inventory_limit_exceeded');
     }
     return { libraries, albums };
