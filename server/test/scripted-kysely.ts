@@ -62,22 +62,3 @@ export const scriptedKysely = (answer: (query: ScriptedQuery) => ScriptedAnswer 
   });
   return { db, queries };
 };
-
-/**
- * Answers the fork-writer guard's statements as a server in `phase` would, with or without a running
- * handoff or return reconciliation; `schema: false` is a server without the fork schema.
- */
-export const forkGuardAnswer =
-  (options: { phase?: string; handoff?: boolean; schema?: boolean }) =>
-  (query: ScriptedQuery): ScriptedAnswer => {
-    if (query.sql.includes("to_regclass('immich_fork.state')")) {
-      return { rows: [{ table: options.schema === false ? null : 'immich_fork.state' }] };
-    }
-    if (query.sql.includes('FROM immich_fork.state WHERE id = 1 FOR SHARE')) {
-      return { rows: [{ phase: options.phase ?? 'active' }] };
-    }
-    if (query.sql.includes('FROM immich_fork.migration_audit') && query.sql.includes("status = 'running'")) {
-      return { rows: options.handoff ? [{ '?column?': 1 }] : [] };
-    }
-    return undefined;
-  };

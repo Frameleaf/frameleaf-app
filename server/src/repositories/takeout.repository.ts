@@ -17,8 +17,6 @@ import {
   TakeoutSourceKind,
   TakeoutWarning,
 } from 'src/utils/takeout.js';
-/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
-export const TAKEOUT_HANDOFF_REFUSAL = 'Google Photos imports are unavailable during database handoff';
 export type TakeoutImport = {
   id: string;
   ownerId: string;

@@ -67,6 +67,43 @@ it('is recorded against the original it was made from and served while that orig
   await expect(record()).resolves.toEqual({ recorded: false });
 });
 
+it('surfaces a missing canonical intermediate table instead of reporting no derived media', async () => {
+  const { asset, sut, path, record } = await setup();
+  await record();
+  await sql`ALTER TABLE public.studio_hdr_intermediate RENAME TO studio_hdr_intermediate_unavailable`.execute(db);
+  try {
+    await expect(sut.getStudioHdrIntermediateStates([asset.id])).rejects.toMatchObject({ code: '42P01' });
+    await expect(sut.getCurrentStudioHdrIntermediates([asset.id])).rejects.toMatchObject({ code: '42P01' });
+  } finally {
+    await sql`ALTER TABLE public.studio_hdr_intermediate_unavailable RENAME TO studio_hdr_intermediate`.execute(db);
+  }
+  await expect(sut.getCurrentStudioHdrIntermediates([asset.id])).resolves.toEqual(new Map([[asset.id, path]]));
+});
+
+it('refuses removal before enumerating or queuing files when the canonical intermediate table is missing', async () => {
+  const { asset, user, sut, path, record, rows } = await setup();
+  await record();
+  const files = vi.fn(() => [asset.originalPath, path]);
+  const queue = vi.fn(() => Promise.resolve());
+  await sql`ALTER TABLE public.studio_hdr_intermediate RENAME TO studio_hdr_intermediate_unavailable`.execute(db);
+  try {
+    await expect(sut.remove({ id: asset.id }, { files, queue })).rejects.toMatchObject({ code: '42P01' });
+    expect(files).not.toHaveBeenCalled();
+    expect(queue).not.toHaveBeenCalled();
+    await expect(
+      db.selectFrom('asset').selectAll().where('id', '=', asset.id).executeTakeFirstOrThrow(),
+    ).resolves.toMatchObject({
+      ownerId: user.id,
+      originalPath: asset.originalPath,
+      checksum: asset.checksum,
+    });
+  } finally {
+    await sql`ALTER TABLE public.studio_hdr_intermediate_unavailable RENAME TO studio_hdr_intermediate`.execute(db);
+  }
+  await expect(rows()).resolves.toEqual([{ status: 'ready' }]);
+  await expect(sut.getCurrentStudioHdrIntermediates([asset.id])).resolves.toEqual(new Map([[asset.id, path]]));
+});
+
 it('notices an external-library file rewritten in place (same path checksum, new modification time)', async () => {
   const { asset, sut, record } = await setup();
   await record();
