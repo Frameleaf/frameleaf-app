@@ -789,7 +789,7 @@ var Migrator = class {
 			})
 		});
 		if (this.#desiredSchema && !Array.isArray(source.sequences)) throw new Error("Canonical desired schema is not a complete captured catalog");
-		const target = await schemaFromDatabase({ connection: this.#connectionParams });
+		const target = await schemaFromDatabase({ connection: this.#connectionParams, ...(this.#desiredSchema ? { overrides: false, excludeMigrationTables: true } : {}) });
 		if (this.#desiredSchema && (source.warnings.length || target.warnings.length)) throw new Error(`Canonical schema comparison has reader warnings: ${[...source.warnings, ...target.warnings].join("; ")}`);
 		console.log(source.warnings.join("\n"));
 		return {
@@ -2585,6 +2585,7 @@ var readName = async (ctx, db) => {
 //#endregion
 //#region src/readers/override.reader.ts
 var readOverrides = async (ctx, db) => {
+	if (ctx.options.overrides === false) return;
 	try {
 		const result = await sql.raw(`SELECT name, value FROM "${ctx.overrideTableName}"`).execute(db);
 		for (const { name, value } of result.rows) ctx.overrides.push({
@@ -2747,7 +2748,9 @@ var schemaFromDatabase = async (options = {}) => {
 	const db = new Kysely({ dialect: new PostgresJSDialect({ postgres: createPostgres(options) }) });
 	try {
 		for (const reader of readers) await reader(ctx, db);
-		return ctx.build();
+		const schema = ctx.build();
+		if (options.excludeMigrationTables) schema.tables = schema.tables.filter(({ name }) => !["frameleaf_migrations", "frameleaf_migrations_lock"].includes(name));
+		return schema;
 	} finally {
 		await db.destroy();
 	}

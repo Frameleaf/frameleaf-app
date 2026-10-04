@@ -494,13 +494,6 @@ describe(PhysicalDeduplicationService.name, () => {
       expect(plan.items.map((item) => item.assetId)).toContain(COPY_2);
       expect(plan.hiddenCopies).toBe(1);
     });
-
-    it('is unavailable outside an active storage handoff', async () => {
-      const { sut, mocks } = setup();
-      mocks.forkSchema.getState.mockResolvedValue({ ...forkSchemaActive, active: false, phase: 'inactive' });
-
-      await expect(sut.preparePlan(authStub.admin, { fingerprint })).rejects.toBeInstanceOf(BadRequestException);
-    });
   });
 
   describe('recordPlanApplied (FL-73)', () => {

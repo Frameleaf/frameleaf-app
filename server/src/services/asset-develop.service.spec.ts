@@ -9,6 +9,8 @@ import {
   AssetDevelopRevisionStatus,
 } from 'src/dtos/asset-develop.dto.js';
 import { AssetType, AssetVisibility, ChecksumAlgorithm, JobName, JobStatus } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { QueueExecution } from 'src/queue/types.js';
 import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositories/asset-develop.repository.js';
 import { type DevelopExport, PhotoToolsRepository } from 'src/repositories/photo-tools.repository.js';
 import {
@@ -1021,14 +1023,46 @@ describe(AssetDevelopService.name, () => {
       });
     });
 
-    it('still queues the render when the job row cannot be written', async () => {
+    it('refuses untracked rendering when the durable job row cannot be written', async () => {
       const created = revisionStub({ assetId: asset.id });
       developRepository.create.mockResolvedValue(created);
       mocks.mediaOperation.create.mockRejectedValue(new Error('database busy'));
 
-      await sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: true });
+      await expect(
+        sut.save(authStub.user1, asset.id, { recipe: defaultDevelopRecipe(), render: true }),
+      ).rejects.toThrow('database busy');
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
 
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetDevelopRender, data: { id: created.id } });
+    it('does not adopt staged render paths when the operation is cancelled before final validation', async () => {
+      const revision = revisionStub({ assetId: asset.id, status: AssetDevelopRevisionStatus.Queued });
+      developRepository.get.mockResolvedValue(revision);
+      mocks.mediaOperation.beginValidation.mockResolvedValue(false);
+      mocks.mediaOperation.getForWorker.mockResolvedValue({
+        cancelRequestedAt: new Date(),
+        claimToken: 'token-1',
+      } as never);
+      mocks.mediaOperation.acknowledgeCancel.mockResolvedValue(true);
+      const context: QueueExecution = {
+        claim: { id: 'queue-job', token: 'queue-token' } as QueueExecution['claim'],
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        buffering: false,
+        adoptions: [],
+        followups: [],
+      };
+      await expect(
+        queueExecution.run(context, () => sut.handleRender({ id: revision.id, operationId: 'op-1' })),
+      ).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.storage.rename).toHaveBeenCalledTimes(2);
+      expect(context.adoptions).toEqual([]);
+      expect(developRepository.update).not.toHaveBeenCalledWith(
+        revision.id,
+        expect.objectContaining({ status: AssetDevelopRevisionStatus.Rendered }),
+      );
+      expect(developRepository.setCurrent).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.complete).not.toHaveBeenCalled();
     });
 
     it('reports each stage, validates, makes the version current and completes with the photo', async () => {

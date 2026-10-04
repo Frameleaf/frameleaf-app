@@ -14,6 +14,7 @@ var withMigrator = (fn) => async function(...args) {
 	if (command.name() === "generate") {
 		const provider = await import(pathToFileURL(resolve(options.schemaProvider)).href);
 		if (typeof provider.getFrameleafSchema !== "function") throw new Error("Schema provider must export getFrameleafSchema()");
+		if (typeof provider.verifyFrameleafSchemaSources === "function") await provider.verifyFrameleafSchemaSources();
 		desiredSchema = provider.getFrameleafSchema;
 	}
 	const migrator = new Migrator({

@@ -93,7 +93,12 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          pnpm --dir server migrations:run 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/schema.log"
+          if [[ -f server/src/schema/catalog/baseline.sql ]]; then
+            pnpm --dir server migrations:run 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/schema.log"
+          else
+            pnpm --dir server exec tsx scripts/bootstrap-frameleaf-schema.ts --empty-development-database \
+              2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/schema.log"
+          fi
       - name: Capture exact baseline SQL and raw metadata
         timeout-minutes: 5
         id: baseline_sql
@@ -110,10 +115,18 @@ jobs:
         if: ${{ always() && steps.schema.outcome == 'success' }}
         continue-on-error: true
         run: |
-          set -o pipefail
+          set -euo pipefail
           pnpm --dir server exec tsx scripts/snapshot-frameleaf-schema-catalog.ts \
             "$RUNNER_TEMP/frameleaf-development/generated/frameleaf-schema-catalog.json" \
             2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/catalog.log"
+          if [[ ! -f server/src/schema/catalog/baseline.sql ]]; then
+            pnpm --dir server exec tsx scripts/freeze-frameleaf-schema.ts \
+              "$RUNNER_TEMP/frameleaf-development/generated" "$RUNNER_TEMP/frameleaf-development/generated/catalog"
+            mkdir -p server/src/schema/catalog server/dist/schema/catalog
+            cp "$RUNNER_TEMP/frameleaf-development/generated/catalog/"* server/src/schema/catalog/
+            cp "$RUNNER_TEMP/frameleaf-development/generated/catalog/"* server/dist/schema/catalog/
+          fi
+          pnpm --dir server exec tsx scripts/verify-frameleaf-schema.ts
       - name: Generate OpenAPI
         timeout-minutes: 5
         id: openapi
@@ -153,7 +166,7 @@ jobs:
         if: ${{ always() && steps.lint.outcome == 'failure' }}
         continue-on-error: true
         run: |
-          pnpm --dir server exec eslint . --max-warnings 0 --fix > "$RUNNER_TEMP/frameleaf-development/reports/server-lint-fixes.log" 2>&1 || true
+          timeout 3m pnpm --dir server exec eslint 'src/**/*.ts' 'test/**/*.ts' --max-warnings 0 --fix > "$RUNNER_TEMP/frameleaf-development/reports/server-lint-fixes.log" 2>&1 || true
           git diff --binary -- server > "$RUNNER_TEMP/frameleaf-development/server-lint-fixes.patch"
       - name: Collect generated files and outcomes
         if: ${{ always() }}

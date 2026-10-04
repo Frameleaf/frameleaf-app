@@ -7,7 +7,6 @@ import type { ConfigHistory } from 'src/utils/config-history.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
 import type { Rational } from 'src/utils/rational-time.js';
-import type { StorageMigrationState } from 'src/utils/storage-migration.js';
 import { VECTOR_EXTENSIONS } from 'src/constants.js';
 import { AssetFile } from 'src/database.js';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
@@ -550,7 +549,6 @@ export type JobItem =
   | { name: JobName.StorageTemplateMigrationSingle; data: IEntityJob }
   | { name: JobName.PhysicalDeduplicationMigrationDryRun; data?: IPhysicalDeduplicationDryRunJob }
   | { name: JobName.PhysicalDeduplicationMigrationApply; data?: IBaseJob }
-  | { name: JobName.UniversalStorageMigration; data?: IDelayedJob }
 
   // Migration
   | { name: JobName.FileMigrationQueueAll; data?: IBaseJob }
@@ -1400,7 +1398,6 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.MaintenanceMode]: MaintenanceModeState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
   [SystemMetadataKey.PhysicalDeduplicationMigration]: PhysicalDeduplicationMigrationState;
-  [SystemMetadataKey.UniversalStorageMigration]: StorageMigrationState;
   [SystemMetadataKey.ReverseGeocodingState]: { lastUpdate?: string; lastImportFileName?: string };
   [SystemMetadataKey.SystemConfig]: DeepPartial<SystemConfig>;
   [SystemMetadataKey.SystemFlags]: DeepPartial<SystemFlags>;

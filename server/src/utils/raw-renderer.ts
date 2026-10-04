@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
+import { trackQueueChild } from 'src/queue/child-process.js';
+import { jobSignal } from 'src/queue/context.js';
 
 const RAW_RENDER_TIMEOUT_MS = 120_000;
 // ponytail: 256 MiB TIFF ceiling; raise with qualified high-resolution camera fixtures.
@@ -27,7 +29,10 @@ export class RawRenderError extends Error {
 }
 
 /** Sensor render, never an embedded preview. LibRaw applies orientation and embeds the sRGB output profile. */
-export async function renderRawWithLibRaw(input: string, signal?: AbortSignal): Promise<Buffer> {
+export async function renderRawWithLibRaw(
+  input: string,
+  signal: AbortSignal | undefined = jobSignal(),
+): Promise<Buffer> {
   try {
     if (signal?.aborted) {
       throw new RawRenderError('cancelled', 'ABORT_ERR', signal.reason);
@@ -55,6 +60,7 @@ export async function renderRawWithLibRaw(input: string, signal?: AbortSignal): 
           output = { stdout, stderr };
         },
       );
+      trackQueueChild(child);
       // Node's native AbortSignal can invoke the execFile callback before close and clear its deadline.
       // Own cancellation instead, and retain admission until the child and its streams have closed.
       const abort = () => {

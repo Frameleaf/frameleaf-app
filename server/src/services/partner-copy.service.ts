@@ -14,11 +14,9 @@ import {
   AssetLockReason,
   AssetStatus,
   AssetVisibility,
-  ImmichWorker,
   JobName,
   JobStatus,
   QueueName,
-  SystemMetadataKey,
 } from 'src/enum.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import {
@@ -657,47 +655,5 @@ export class PartnerCopyService extends BaseService {
         await queueAlbumCopies({ partner: this.partnerRepository, job: this.jobRepository }, sharedWithId, copyId);
       }
     }
-  }
-
-  /**
-   * Existing partnerships at upgrade (spec §4.7): each is backfilled once, after the universal-storage
-   * migration is done: when that migration reaches `done` (`StorageMigrationDone`), and at boot when it
-   * has nothing left to do.
-   */
-  async queueUpgradeBackfills(): Promise<number> {
-    const partnerships = await this.partnerOriginRepository.getPartnershipsWithoutBackfill();
-    for (const { sharedById, sharedWithId } of partnerships) {
-      await startPartnerBackfill(
-        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
-        sharedById,
-        sharedWithId,
-      );
-    }
-    return partnerships.length;
-  }
-
-  @OnEvent({ name: 'AppBootstrap', workers: [ImmichWorker.Microservices] })
-  async onBootstrap() {
-    if (!(await this.isStorageMigrationDone())) {
-      return;
-    }
-    const queued = await this.queueUpgradeBackfills();
-    if (queued > 0) {
-      this.logger.log(`Queued the partner sharing backfill of ${queued} existing partnership(s)`);
-    }
-  }
-
-  @OnEvent({ name: 'StorageMigrationDone', workers: [ImmichWorker.Microservices] })
-  async onStorageMigrationDone() {
-    const queued = await this.queueUpgradeBackfills();
-    if (queued > 0) {
-      this.logger.log(`Queued the partner sharing backfill of ${queued} existing partnership(s)`);
-    }
-  }
-
-  /** Whether the universal-storage migration is done (spec §3.6); until then existing partnerships wait. */
-  protected async isStorageMigrationDone(): Promise<boolean> {
-    const state = await this.systemMetadataRepository.get(SystemMetadataKey.UniversalStorageMigration);
-    return state?.stage === 'done';
   }
 }

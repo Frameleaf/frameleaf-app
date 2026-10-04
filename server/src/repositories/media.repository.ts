@@ -39,6 +39,7 @@ import {
   RawExtractedFormat,
 } from 'src/enum.js';
 import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
+import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
 import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
@@ -47,11 +48,49 @@ import { tryParseRational } from 'src/utils/rational-time.js';
 import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { createAffineMatrix } from 'src/utils/transform.js';
 
-const probe = (input: string, options: string[]): Promise<FfprobeData> =>
-  new Promise((resolve, reject) =>
-    // eslint-disable-next-line import-x/no-named-as-default-member
-    ffmpeg.ffprobe(input, options, (error, data) => (error ? reject(error) : resolve(data))),
-  );
+const probe = (input: string, options: string[]): Promise<FfprobeData> => {
+  jobSignal()?.throwIfAborted();
+  const child = spawn('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', ...options, input], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const lifetime = superviseMediaProcess(child);
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  let stderr = '';
+  let failure: Error | undefined;
+  child.stdout.on('data', (chunk: Buffer) => {
+    bytes += chunk.length;
+    if (bytes > 16 * 1024 * 1024) {
+      lifetime.stop(new Error('Media probe output exceeds its resource limit'));
+      return;
+    }
+    chunks.push(chunk);
+  });
+  child.stderr.on('data', (chunk: Buffer) => {
+    stderr = (stderr + chunk.toString()).slice(-65_536);
+  });
+  child.on('error', (error) => {
+    failure = error;
+  });
+  return new Promise((resolve, reject) => {
+    child.once('close', (code) => {
+      if (lifetime.error() || failure || code !== 0)
+        return reject(lifetime.error() ?? failure ?? new Error(`ffprobe exited with code ${code}: ${stderr}`));
+      try {
+        const data = JSON.parse(Buffer.concat(chunks).toString()) as FfprobeData;
+        if (!Array.isArray(data.streams) || !data.format) throw new Error('Media probe returned an invalid result');
+        // The previous parser flattened side-data fields, including rotation and Dolby Vision.
+        for (const stream of data.streams) {
+          const sideData = (stream as FfprobeStream & { side_data_list?: Record<string, unknown>[] }).side_data_list;
+          for (const entry of sideData ?? []) Object.assign(stream, entry);
+        }
+        resolve(data);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+};
 
 const pascalCase = (str: string) => upperFirst(camelCase(str.toLowerCase()));
 
@@ -542,6 +581,7 @@ export class MediaRepository {
    * Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
    */
   probePackets(input: string, streamIndex: number): Promise<VideoPacketInfo | null> {
+    jobSignal()?.throwIfAborted();
     const ffprobe = spawn(
       'ffprobe',
       [
@@ -557,6 +597,7 @@ export class MediaRepository {
       ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
+    const lifetime = superviseMediaProcess(ffprobe);
 
     let totalDuration = 0;
     const keyframePts: number[] = [];
@@ -581,6 +622,7 @@ export class MediaRepository {
       if (Number.isNaN(pts) || Number.isNaN(duration) || !flags) {
         return;
       }
+      lifetime.progress(1);
       if (startPts === null || pts < startPts) {
         startPts = pts;
       }
@@ -607,7 +649,9 @@ export class MediaRepository {
     let stderr = '';
     let remainder = '';
     ffprobe.stderr.setEncoding('utf8');
-    ffprobe.stderr.on('data', (chunk: string) => (stderr += chunk));
+    ffprobe.stderr.on('data', (chunk: string) => {
+      stderr = (stderr + chunk).slice(-65_536);
+    });
     ffprobe.stdout.setEncoding('utf8');
     ffprobe.stdout.on('data', (chunk: string) => {
       const lines = chunk.split('\n');
@@ -619,8 +663,12 @@ export class MediaRepository {
     });
 
     return new Promise<VideoPacketInfo | null>((resolve, reject) => {
-      ffprobe.on('error', reject);
+      let failure: Error | undefined;
+      ffprobe.on('error', (error) => {
+        failure = error;
+      });
       ffprobe.on('close', (code) => {
+        if (lifetime.error() || failure) return reject(lifetime.error() ?? failure);
         if (code !== 0) {
           return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
         }

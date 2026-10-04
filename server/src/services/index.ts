@@ -109,7 +109,6 @@ import { SharedSpaceService } from 'src/services/shared-space.service.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { SmartInfoService } from 'src/services/smart-info.service.js';
 import { StackService } from 'src/services/stack.service.js';
-import { StorageMigrationService } from 'src/services/storage-migration.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { StudioBundleService } from 'src/services/studio-bundle.service.js';
@@ -237,7 +236,6 @@ export const services = [
   PetRecognitionService,
   PetService,
   PhysicalDeduplicationPlanService,
-  StorageMigrationService,
   PhysicalDeduplicationService,
   PhysicalFileTrashService,
   PluginService,

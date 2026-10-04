@@ -109,9 +109,6 @@ export const Route = {
   editLibrary: ({ id }: { id: string }) =>
     commandCenterUrl('libraries', undefined, { selected: `library:${id}`, edit: 1 }),
 
-  // FL-295: the "Getting Ready…" screen of the first start on an existing library
-  gettingReady: (params?: { continue?: string }) => '/getting-ready' + asQueryString(params),
-
   // maintenance
   maintenanceMode: (params?: { continue?: string }) => '/maintenance' + asQueryString(params),
 

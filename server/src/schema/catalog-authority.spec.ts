@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-  CATALOG_HELPER_SOURCES,
+  CATALOG_FIXED_SOURCES,
   CatalogProvenance,
   validateFrameleafCatalog,
   verifyCatalogSources,
@@ -27,6 +27,7 @@ const catalog = (): DatabaseSchema => ({
     'icloud_weekly_grant',
     'job',
     'job_run_item',
+    'job_selection',
     'frameleaf_immich_import',
     'frameleaf_rate_limit',
     'socket_io_attachments',
@@ -55,11 +56,12 @@ it('detects a helper DDL edit even when its desired-schema catalog was not chang
     sourceHashes: {},
   };
   try {
-    for (const name of CATALOG_HELPER_SOURCES) {
+    for (const name of CATALOG_FIXED_SOURCES) {
       await mkdir(dirname(join(root, name)), { recursive: true });
       await writeFile(join(root, name), name);
       provenance.sourceHashes[name] = createHash('sha256').update(name).digest('hex');
     }
+    await mkdir(join(root, 'src/schema/tables'), { recursive: true });
     await verifyCatalogSources(root, provenance);
     await writeFile(join(root, 'src/queue/schema.ts'), 'a new CHECK constraint');
     await expect(verifyCatalogSources(root, provenance)).rejects.toThrow(

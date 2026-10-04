@@ -434,31 +434,6 @@ export class MediaHealthRepository {
       }
     });
   }
-  /**
-   * One run's Missing findings in these statuses, in id order after `afterId` (FL-326): the universal storage
-   * migration walks the Missing findings it recorded, checkpointing the last id it finished.
-   */
-  async getRunFindingPage(options: {
-    runId: string;
-    statuses: readonly MediaHealthStatus[];
-    afterId?: string | null;
-    limit: number;
-    /** Library-storage originals only: an external original is never relinked from library storage. */
-    managedOnly?: boolean;
-  }): Promise<Array<Pick<MediaHealthFinding, 'id' | 'assetId' | 'status' | 'resolution'>>> {
-    return (this.db as Kysely<any>)
-      .selectFrom('public.asset_health as asset_health')
-      .innerJoin('public.asset as asset', 'asset.id', 'asset_health.assetId')
-      .select(['asset_health.id', 'asset_health.assetId', 'asset_health.status', 'asset_health.resolution'])
-      .where('asset_health.runId', '=', asUuid(options.runId))
-      .where('asset_health.category', '=', MediaHealthCategory.Missing)
-      .where('asset_health.status', 'in', [...options.statuses])
-      .$if(!!options.managedOnly, (qb) => qb.where('asset.isExternal', '=', false).where('asset.libraryId', 'is', null))
-      .$if(!!options.afterId, (qb) => qb.where('asset_health.id', '>', asUuid(options.afterId!)))
-      .orderBy('asset_health.id', 'asc')
-      .limit(options.limit)
-      .execute() as Promise<Array<Pick<MediaHealthFinding, 'id' | 'assetId' | 'status' | 'resolution'>>>;
-  }
   async upsertFinding(input: UpsertMediaHealthFinding): Promise<MediaHealthFinding | undefined> {
     const { expectedUpdateId, ...finding } = input;
     return this.db.transaction().execute(async (trx) => {

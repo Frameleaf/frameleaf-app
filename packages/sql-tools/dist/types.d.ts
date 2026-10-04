@@ -62,7 +62,12 @@ export type SchemaFromCodeOptions = BaseContextOptions & {
     parameters?: boolean;
     overrides?: boolean;
 };
-export type SchemaFromDatabaseOptions = BaseContextOptions & DatabasePostgresOptions;
+export type SchemaFromDatabaseOptions = BaseContextOptions & DatabasePostgresOptions & {
+    /** Read legacy migration_overrides metadata. Canonical catalogs explicitly disable it. */
+    overrides?: boolean;
+    /** Exclude only the two Frameleaf migration-provider ledger tables. */
+    excludeMigrationTables?: boolean;
+};
 export type SchemaDiffToSqlOptions = BaseContextOptions & {
     comments?: boolean;
 };

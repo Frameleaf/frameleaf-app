@@ -417,11 +417,9 @@ export class AssetDevelopService {
     const tmp = { master: `${outputs.master}.tmp`, preview: `${outputs.preview}.tmp` };
     try {
       const sourceChecksum = await this.currentSourceChecksum(revision.assetId);
-      if (external) {
-        await this.renderExternal(revision, sourceChecksum, outputs.preview, tmp.preview, image);
-      } else {
-        await this.renderRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
-      }
+      const publication = external
+        ? await this.renderExternal(revision, sourceChecksum, outputs.preview, tmp.preview, image)
+        : await this.renderRecipeRevision(revision, source, sourceChecksum, outputs, tmp, image);
       // FL-43: the version becomes the working one only under its job's claim. A run that lost its
       // claim, or was cancelled at the last moment, leaves the previous working version current.
       if (run && !(await run.validate())) {
@@ -431,6 +429,7 @@ export class AssetDevelopService {
       await publishJobResult(async () => {
         await assertPublicationSource(source.id, source.checksum);
         if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
+        await this.assetDevelopRepository.update(revision.id, publication);
         await this.assetDevelopRepository.setCurrent(revision.assetId, id);
       });
       return JobStatus.Success;
@@ -1174,20 +1173,18 @@ export class AssetDevelopService {
     // Both outputs stay attempt-private until the accepted claim adopts their references.
     await this.storageRepository.rename(tmp.master, outputs.master);
     await this.storageRepository.rename(tmp.preview, outputs.preview);
-    await publishJobResult(async () => {
-      await this.assetDevelopRepository.update(revision.id, {
-        status: AssetDevelopRevisionStatus.Rendered,
-        progress: 100,
-        error: null,
-        masterPath: outputs.master,
-        previewPath: outputs.preview,
-        width: rendered.info.width,
-        height: rendered.info.height,
-        renderedAt: new Date(),
-        sourceChecksum,
-        renditionChecksum,
-      });
-    });
+    return {
+      status: AssetDevelopRevisionStatus.Rendered,
+      progress: 100,
+      error: null,
+      masterPath: outputs.master,
+      previewPath: outputs.preview,
+      width: rendered.info.width,
+      height: rendered.info.height,
+      renderedAt: new Date(),
+      sourceChecksum,
+      renditionChecksum,
+    };
   }
 
   private async encodeRecipeOutput(
@@ -1245,17 +1242,15 @@ export class AssetDevelopService {
     );
     await this.progress(revision.id, 95);
     await this.storageRepository.rename(tmpPreview, previewPath);
-    await publishJobResult(async () => {
-      await this.assetDevelopRepository.update(revision.id, {
-        status: AssetDevelopRevisionStatus.Rendered,
-        progress: 100,
-        error: null,
-        previewPath,
-        width: full.width,
-        height: full.height,
-        renderedAt: new Date(),
-      });
-    });
+    return {
+      status: AssetDevelopRevisionStatus.Rendered,
+      progress: 100,
+      error: null,
+      previewPath,
+      width: full.width,
+      height: full.height,
+      renderedAt: new Date(),
+    };
   }
 
   private toExportDto(item: DevelopExport, current: Buffer): DevelopExportResponseDto {

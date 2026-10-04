@@ -795,26 +795,4 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return new Map(rows.map(({ id, rootOwnerId, rootOwnerName }) => [id, { rootOwnerId, rootOwnerName }]));
   }
-  /** Partnerships that have never been backfilled (existing ones at upgrade, spec §4.7). */
-  async getPartnershipsWithoutBackfill(): Promise<
-    {
-      sharedById: string;
-      sharedWithId: string;
-    }[]
-  > {
-    const { rows } = await sql<{
-      sharedById: string;
-      sharedWithId: string;
-    }>`
-      SELECT partner."sharedById", partner."sharedWithId"
-      FROM partner
-      WHERE partner."sharedById" <> partner."sharedWithId"
-        AND NOT EXISTS (
-          SELECT 1 FROM public.partner_backfill backfill
-          WHERE backfill."sharedById" = partner."sharedById" AND backfill."sharedWithId" = partner."sharedWithId"
-        )
-      ORDER BY partner."sharedById", partner."sharedWithId"
-    `.execute(this.db);
-    return rows;
-  }
 }

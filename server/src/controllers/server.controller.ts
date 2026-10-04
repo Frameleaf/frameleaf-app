@@ -17,13 +17,11 @@ import {
   ServerVersionHistoryResponseDto,
   ServerVersionResponseDto,
 } from 'src/dtos/server.dto.js';
-import { StorageMigrationStatusResponseDto } from 'src/dtos/storage-migration.dto.js';
 import { VersionCheckStateResponseDto } from 'src/dtos/system-metadata.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Authenticated } from 'src/middleware/auth.guard.js';
 import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { ServerService } from 'src/services/server.service.js';
-import { StorageMigrationService } from 'src/services/storage-migration.service.js';
 import { SystemMetadataService } from 'src/services/system-metadata.service.js';
 import { VersionService } from 'src/services/version.service.js';
 
@@ -34,33 +32,7 @@ export class ServerController {
     private service: ServerService,
     private systemMetadataService: SystemMetadataService,
     private versionService: VersionService,
-    private storageMigrationService: StorageMigrationService,
   ) {}
-
-  @Get('storage-migration')
-  @Authenticated({ public: true })
-  @Endpoint({
-    summary: 'Get storage migration status',
-    description:
-      'The progress of the one-time universal storage migration that combines duplicate files, as counts only. Public, like the Getting Ready screen that shows it before anyone signs in.',
-    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
-  })
-  getStorageMigrationStatus(): Promise<StorageMigrationStatusResponseDto> {
-    return this.storageMigrationService.getStatus();
-  }
-
-  @Post('storage-migration/background')
-  @Authenticated({ permission: Permission.SystemMetadataUpdate, admin: true })
-  @HttpCode(HttpStatus.OK)
-  @Endpoint({
-    summary: 'Run the storage migration in the background',
-    description:
-      'Stop the Getting Ready screen waiting for the storage migration. It carries on in the background and its progress shows in Library Care; extra copies are not freed until it finishes.',
-    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
-  })
-  runStorageMigrationInBackground(): Promise<StorageMigrationStatusResponseDto> {
-    return this.storageMigrationService.runInBackground();
-  }
 
   @Get('about')
   @Authenticated({ permission: Permission.ServerAbout })
