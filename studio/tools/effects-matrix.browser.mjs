@@ -18,6 +18,8 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
+import { photometricCases, photometricInput, validatePhotometricResults } from './photometric-goldens.mjs';
 import { createHarness } from './lib/cross-browser-harness.mjs';
 import { createChromiumDriver, createWebDriverClassicDriver } from './lib/browser-driver.mjs';
 
@@ -75,6 +77,18 @@ export async function withEffectsMatrixPage({ origin, browser = 'chromium', endp
 }
 
 export async function runEffectsMatrix() {
+// Per-file hosted adapted-source evidence gate, independent of the whole source
+// digest (unrelated approved runtime policy changes may alter that digest).
+const photometricSource = {};
+for (const [file, expected] of Object.entries({
+  'effects/color.ts': '53e8a9b6c748a9c04bfa02edad3d068e14872c5ff9652912ec42e1d6e8e85d5c',
+  'common.ts': 'e8ae09970e48879996b7f64ee6daa9bdd822cb66233ca374adb9ad65a996a349',
+  'effects-pipeline.ts': 'edbaa7a91f8966ba942cfa7c10eeaf5342fd8d583066be2f2800bcc6431d7374',
+})) {
+  const observed = createHash('sha256').update(await readFile(new URL(`../engine/src/infrastructure/gpu-effects/${file}`, import.meta.url))).digest('hex');
+  assert.equal(observed, expected, `photometric source contract changed: ${file}; numerical qualification requires source review`);
+  photometricSource[file] = observed;
+}
 const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
 const browser = process.env.BROWSER || 'chromium';
 const semanticsPath = new URL('../effect-hdr-semantics.json', import.meta.url);
@@ -101,7 +115,7 @@ const floatInput = [...sdrRows, hdrRow, alphaRow].flat(2);
 const sdrInput = [...sdrRows, sdrRows[0], alphaRow].flat(2);
 
 const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.env.WEBDRIVER_ENDPOINT }, async (page) =>
-  page.evaluate(async ({ W, H, floatInput, sdrInput }) => {
+  page.evaluate(async ({ W, H, floatInput, sdrInput, photometricCases, photometricInput }) => {
     const { EffectsPipeline, GPU_EFFECT_REGISTRY, EFFECT_CLOCK_PARAM, getGpuEffectDefaultParams } =
       await import('/src/infrastructure/gpu-effects/index.ts');
     const { resolveAnimatedGpuEffects } =
@@ -288,12 +302,25 @@ const report = await withEffectsMatrixPage({ origin, browser, endpoint: process.
     // An unknown effect id is skipped: the input passes through unchanged.
     const unknownEffect = { ...(await render(sdrFloatInput, [instance('gpu-not-an-effect', {})])),
       input: Array.from(new Float16Array(sdrInput)) };
+    // Additional independent numerical qualification; existing registry cases,
+    // animation, SDR parity, stacks and invalid-parameter oracles stay intact.
+    const numericalInput = device.createTexture({ size: [W, H], format: 'rgba16float', usage });
+    device.queue.writeTexture({ texture: numericalInput }, new Float16Array(photometricInput),
+      { bytesPerRow: W * 8 }, [W, H]);
+    pipeline.setWorkingRange('hdr');
+    const photometric = [];
+    for (const entry of photometricCases) {
+      if (!GPU_EFFECT_REGISTRY.has(entry.id)) throw new Error(`missing numerical node ${entry.id}`);
+      photometric.push({ ...entry, ...await render(numericalInput, [instance(entry.id, entry.params)]) });
+    }
+    numericalInput.destroy();
     pipeline.destroy();
     for (const texture of [...Object.values(inputs), sdrFloatInput]) texture.destroy();
     device.destroy();
-    return { adapter: { vendor: adapter.vendor, architecture: adapter.architecture }, effects, unknownEffect };
-  }, { W, H, floatInput, sdrInput }),
+    return { adapter: { vendor: adapter.vendor, architecture: adapter.architecture }, effects, unknownEffect, photometric };
+  }, { W, H, floatInput, sdrInput, photometricCases, photometricInput }),
 );
+report.photometricSource = photometricSource;
 
 if (process.env.EFFECTS_MATRIX_REPORT) {
   await writeFile(process.env.EFFECTS_MATRIX_REPORT, JSON.stringify(report));
@@ -302,6 +329,7 @@ if (process.env.EFFECTS_MATRIX_EXPLORE) return;
 
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); };
+const photometric = validatePhotometricResults(report.photometric);
 const declared = new Map(Object.entries(semantics.effects));
 const ids = report.effects.map((effect) => effect.id);
 assert.deepEqual([...declared.keys()].sort(), [...ids].sort(),
@@ -399,6 +427,7 @@ if (failures.length) {
 }
 console.log(JSON.stringify({ check: 'every GPU effect: parameter extremes, determinism, SDR parity, HDR class, animation, stack order, invalid parameters',
   browser: report.browser, adapter: report.adapter, effects: report.effects.length, cases: caseCount,
+  photometric, photometricSource,
   invalid: report.effects.reduce((sum, effect) => sum + effect.invalid.length, 0) }));
 }
 
