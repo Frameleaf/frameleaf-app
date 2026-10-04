@@ -777,12 +777,117 @@ const SyncStreamSchema = z
   })
   .meta({ id: 'SyncStreamDto' });
 
+// Freeze the existing GET response contract. New sync families belong to the V2 ACK view.
+const LegacySyncAckEntityTypeSchema = z.enum([
+  SyncEntityType.AlbumAssetAccessV1,
+  SyncEntityType.AlbumAssetAccessDeleteV1,
+  SyncEntityType.PartnerAssetAccessV1,
+  SyncEntityType.PartnerAssetAccessDeleteV1,
+  SyncEntityType.PinnedCollectionV1,
+  SyncEntityType.PinnedCollectionDeleteV1,
+  SyncEntityType.AssetTrashStateV1,
+  SyncEntityType.AssetTrashStateDeleteV1,
+  SyncEntityType.DuplicateGroupV1,
+  SyncEntityType.DuplicateGroupDeleteV1,
+  SyncEntityType.SharedSpaceV1,
+  SyncEntityType.SharedSpaceDeleteV1,
+  SyncEntityType.SharedSpaceMemberV1,
+  SyncEntityType.SharedSpaceMemberDeleteV1,
+  SyncEntityType.SharedSpaceAlbumV1,
+  SyncEntityType.SharedSpaceAlbumDeleteV1,
+  SyncEntityType.SharedSpacePersonV1,
+  SyncEntityType.SharedSpacePersonDeleteV1,
+  SyncEntityType.PetV1,
+  SyncEntityType.PetDeleteV1,
+  SyncEntityType.PetObservationV1,
+  SyncEntityType.PetObservationDeleteV1,
+  SyncEntityType.TagV1,
+  SyncEntityType.TagDeleteV1,
+  SyncEntityType.AssetTagV1,
+  SyncEntityType.AssetTagDeleteV1,
+  SyncEntityType.AuthUserV1,
+  SyncEntityType.AuthUserV2,
+  SyncEntityType.UserV1,
+  SyncEntityType.UserDeleteV1,
+  SyncEntityType.AssetV1,
+  SyncEntityType.AssetV2,
+  SyncEntityType.AssetV3,
+  SyncEntityType.AssetBootstrapV1,
+  SyncEntityType.AssetDeleteV2,
+  SyncEntityType.AssetDeleteV1,
+  SyncEntityType.AssetExifV1,
+  SyncEntityType.AssetEditV1,
+  SyncEntityType.AssetEditDeleteV1,
+  SyncEntityType.AssetMetadataV1,
+  SyncEntityType.AssetMetadataDeleteV1,
+  SyncEntityType.AssetOcrV1,
+  SyncEntityType.AssetOcrDeleteV1,
+  SyncEntityType.PartnerV1,
+  SyncEntityType.PartnerDeleteV1,
+  SyncEntityType.PartnerAssetV1,
+  SyncEntityType.PartnerAssetV2,
+  SyncEntityType.PartnerAssetBackfillV1,
+  SyncEntityType.PartnerAssetBackfillV2,
+  SyncEntityType.PartnerAssetDeleteV1,
+  SyncEntityType.PartnerAssetExifV1,
+  SyncEntityType.PartnerAssetExifBackfillV1,
+  SyncEntityType.PartnerStackBackfillV1,
+  SyncEntityType.PartnerStackDeleteV1,
+  SyncEntityType.PartnerStackV1,
+  SyncEntityType.AlbumV1,
+  SyncEntityType.AlbumV2,
+  SyncEntityType.AlbumV3,
+  SyncEntityType.AlbumBootstrapV1,
+  SyncEntityType.AlbumDeleteV2,
+  SyncEntityType.AlbumDeleteV1,
+  SyncEntityType.AlbumUserV1,
+  SyncEntityType.AlbumUserBackfillV1,
+  SyncEntityType.AlbumUserDeleteV1,
+  SyncEntityType.AlbumAssetCreateV1,
+  SyncEntityType.AlbumAssetCreateV2,
+  SyncEntityType.AlbumAssetUpdateV1,
+  SyncEntityType.AlbumAssetUpdateV2,
+  SyncEntityType.AlbumAssetBackfillV1,
+  SyncEntityType.AlbumAssetBackfillV2,
+  SyncEntityType.AlbumAssetExifCreateV1,
+  SyncEntityType.AlbumAssetExifUpdateV1,
+  SyncEntityType.AlbumAssetExifBackfillV1,
+  SyncEntityType.AlbumToAssetV1,
+  SyncEntityType.AlbumToAssetDeleteV1,
+  SyncEntityType.AlbumToAssetBackfillV1,
+  SyncEntityType.MemoryV1,
+  SyncEntityType.MemoryDeleteV1,
+  SyncEntityType.MemoryToAssetV1,
+  SyncEntityType.MemoryToAssetDeleteV1,
+  SyncEntityType.StackV1,
+  SyncEntityType.StackDeleteV1,
+  SyncEntityType.PersonV1,
+  SyncEntityType.PersonDeleteV1,
+  SyncEntityType.AssetFaceV1,
+  SyncEntityType.AssetFaceV2,
+  SyncEntityType.AssetFaceV3,
+  SyncEntityType.AssetFaceDeleteV1,
+  SyncEntityType.UserMetadataV1,
+  SyncEntityType.PinnedCollectionsV1,
+  SyncEntityType.UserMetadataDeleteV1,
+  SyncEntityType.SyncAckV1,
+  SyncEntityType.SyncResetV1,
+  SyncEntityType.SyncCompleteV1,
+]);
+
 const SyncAckSchema = z
+  .object({
+    type: LegacySyncAckEntityTypeSchema,
+    ack: z.string().describe('Acknowledgment ID'),
+  })
+  .meta({ id: 'SyncAckDto' });
+
+const SyncAckV2Schema = z
   .object({
     type: SyncEntityTypeSchema,
     ack: z.string().describe('Acknowledgment ID'),
   })
-  .meta({ id: 'SyncAckDto' });
+  .meta({ id: 'SyncAckV2Dto' });
 
 const SyncAckSetSchema = z
   .object({
@@ -798,5 +903,6 @@ const SyncAckDeleteSchema = z
 
 export class SyncStreamDto extends createZodDto(SyncStreamSchema) {}
 export class SyncAckDto extends createZodDto(SyncAckSchema) {}
+export class SyncAckV2Dto extends createZodDto(SyncAckV2Schema) {}
 export class SyncAckSetDto extends createZodDto(SyncAckSetSchema) {}
 export class SyncAckDeleteDto extends createZodDto(SyncAckDeleteSchema) {}

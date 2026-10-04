@@ -43,9 +43,7 @@ describe(SyncRequestType.AlbumSourceLinksV1, () => {
 
     try {
       const legacy = events(await ctx.syncStream(auth, [SyncRequestType.AuthUsersV1]));
-      expect(legacy).toEqual([
-        expect.objectContaining({ type: SyncEntityType.AuthUserV1, ack: expect.any(String) }),
-      ]);
+      expect(legacy).toEqual([expect.objectContaining({ type: SyncEntityType.AuthUserV1, ack: expect.any(String) })]);
       const legacyAck = { type: SyncEntityType.AuthUserV1, ack: legacy[0].ack };
       await ctx.syncAckAll(auth, legacy);
 
@@ -54,7 +52,10 @@ describe(SyncRequestType.AlbumSourceLinksV1, () => {
         expect.objectContaining({ type: SyncEntityType.AlbumSourceLinkV1, data: expect.objectContaining({ id }) }),
       ]);
       expect(events(await ctx.syncStream(otherAuth, types))).toEqual([]);
-      await request(http.getHttpServer()).post('/sync/ack').send({ acks: [created[0].ack] }).expect(204);
+      await request(http.getHttpServer())
+        .post('/sync/ack')
+        .send({ acks: [created[0].ack] })
+        .expect(204);
       await ctx.assertSyncIsComplete(auth, types);
 
       await links.write((tx) => links.delete(tx, id));
@@ -62,7 +63,10 @@ describe(SyncRequestType.AlbumSourceLinksV1, () => {
       expect(deleted).toEqual([
         expect.objectContaining({ type: SyncEntityType.AlbumSourceLinkDeleteV1, data: { linkId: id } }),
       ]);
-      await request(http.getHttpServer()).post('/sync/ack').send({ acks: [deleted[0].ack] }).expect(204);
+      await request(http.getHttpServer())
+        .post('/sync/ack')
+        .send({ acks: [deleted[0].ack] })
+        .expect(204);
       await ctx.assertSyncIsComplete(auth, types);
 
       const stored = await db
@@ -81,6 +85,24 @@ describe(SyncRequestType.AlbumSourceLinksV1, () => {
       const { body } = await request(http.getHttpServer()).get('/sync/ack').expect(200);
       expect(body).toContainEqual(legacyAck);
       expect(body.filter(({ type }: { type: string }) => type.startsWith('AlbumSourceLink'))).toEqual([]);
+
+      const { body: fullView } = await request(http.getHttpServer()).get('/sync/ack/v2').expect(200);
+      expect(fullView).toHaveLength(stored.length);
+      expect(fullView).toEqual(expect.arrayContaining(stored));
+      expect(fullView).toContainEqual({ type: SyncEntityType.AlbumSourceLinkV1, ack: created[0].ack });
+      expect(fullView).toContainEqual({ type: SyncEntityType.AlbumSourceLinkDeleteV1, ack: deleted[0].ack });
+
+      // Neither another user nor another session belonging to this owner inherits these checkpoints.
+      http.authenticate.mockResolvedValue(otherAuth);
+      const { body: otherView } = await request(http.getHttpServer()).get('/sync/ack/v2').expect(200);
+      expect(otherView).toEqual([]);
+      const { session: otherSession } = await ctx.newSession({ userId: user.id });
+      http.authenticate.mockResolvedValue({ ...auth, session: otherSession });
+      const { body: otherSessionView } = await request(http.getHttpServer()).get('/sync/ack/v2').expect(200);
+      expect(otherSessionView).toEqual([]);
+
+      http.authenticate.mockResolvedValue({ ...auth, session: undefined });
+      await request(http.getHttpServer()).get('/sync/ack/v2').expect(403);
     } finally {
       await http.close();
     }
