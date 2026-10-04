@@ -27,8 +27,8 @@ import {
   ICloudIdentityAdoptionRepository,
   IdentityAdoptionAuthority,
 } from 'src/repositories/icloud-identity-adoption.repository.js';
-import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
-import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
+import { ICLOUD_SYNC_CLAIM_SEC, ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
+import { type ICloudResource, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -998,7 +998,19 @@ describe('iCloud exact identity adoption', () => {
     }
 
     async function population(size: number) {
-      const f = await arrange();
+      const started = performance.now();
+      const concurrency = size > 101 ? 4 : 1;
+      const progress = (phase: string, receipts: number) => {
+        if (size > 101) {
+          console.info('weekly-large-population-qualification', {
+            phase,
+            receipts,
+            elapsedMs: Math.round(performance.now() - started),
+          });
+        }
+      };
+      progress('fixture-started', 0);
+      const f = await arrange('original', { concurrency });
       const names = [NAME, ...Array.from({ length: Math.max(0, size - 1) }, () => randomUUID().toUpperCase())];
       if (size > 1) {
         for (let offset = 1; offset < names.length; offset += 256) {
@@ -1016,6 +1028,7 @@ describe('iCloud exact identity adoption', () => {
             true,
           );
         }
+        progress('inventory-saved', 0);
         await sql`DELETE FROM immich_fork.icloud_checkpoint WHERE "connectionId"=${f.connection.id}::uuid
           AND scope='materialize:library'`.execute(db);
         while (
@@ -1023,6 +1036,7 @@ describe('iCloud exact identity adoption', () => {
         ) {
           // Consume the actual bounded keyset materializer, never a fabricated resource population.
         }
+        progress('resources-materialized', 0);
         const device = randomUUID();
         const identities = names.slice(1).map((name) => ({ name, cloud: `${name}:001:${f.master}` }));
         await sql`INSERT INTO immich_fork.icloud_source_identity
@@ -1037,44 +1051,70 @@ describe('iCloud exact identity adoption', () => {
         const first = await service.adopt(f.authority);
         expect(first).toBe('adopted');
         expect(await sync.finalize(f.resource, async () => {})).toBe(true);
-        for (let index = 1; index < size; index++) {
-          const resource = (await sync.claim(f.connection.id, f.connection.config.stagingBytes))!;
-          expect(resource).toBeDefined();
-          await identities.claimForSync(f.user.id, resource.sourceAssetId, f.connection.id);
-          expect(
-            await repository.adopt(
-              { ...f.authority, resourceId: resource.id, resourceLeaseToken: resource.leaseToken! },
-              async (candidate) => {
-                const bytes = await readFile(candidate.originalPath);
-                const stat = await lstat(candidate.originalPath);
-                const identity = {
-                  dev: stat.dev,
-                  ino: stat.ino,
-                  size: stat.size,
-                  mtimeMs: stat.mtimeMs,
-                  ctimeMs: stat.ctimeMs,
-                };
-                const apple = appleFingerprintHash();
-                apple.update(bytes);
-                return {
-                  sha1: createHash('sha1').update(bytes).digest(),
-                  sha256: createHash('sha256').update(bytes).digest(),
-                  sizeInBytes: bytes.length,
-                  appleFingerprint: apple.digest(),
-                  identity,
-                  current: async () => {
-                    const current = await lstat(candidate.originalPath);
-                    return Object.entries(identity).every(
-                      ([key, value]) => current[key as keyof typeof identity] === value,
-                    );
+        const holder = `icloud-sync:${f.connection.id}`;
+        for (let offset = 1; offset < size; offset += 256) {
+          const requested = names.slice(offset, offset + 256);
+          const claims = await identities.claim(f.user.id, requested, holder, ICLOUD_SYNC_CLAIM_SEC);
+          expect(claims.map((claim) => claim.cplAssetRecordName).sort()).toEqual([...requested].sort());
+          expect(claims.every((claim) => claim.holder === holder)).toBe(true);
+        }
+        progress('actual-receipts', 1);
+        for (let index = 1; index < size; index += concurrency) {
+          const admitted: ICloudResource[] = [];
+          for (let slot = 0; slot < Math.min(concurrency, size - index); slot++) {
+            const resource = (await sync.claim(f.connection.id, f.connection.config.stagingBytes))!;
+            expect(resource).toBeDefined();
+            admitted.push(resource);
+          }
+          // Admission pauses until the whole wave finalizes: a new claim otherwise
+          // could take another adopter's committed resource before it releases its lease.
+          const settled = await Promise.allSettled(
+            admitted.map(async (resource) => {
+              expect(
+                await repository.adopt(
+                  { ...f.authority, resourceId: resource.id, resourceLeaseToken: resource.leaseToken! },
+                  async (candidate) => {
+                    const bytes = await readFile(candidate.originalPath);
+                    const stat = await lstat(candidate.originalPath);
+                    const identity = {
+                      dev: stat.dev,
+                      ino: stat.ino,
+                      size: stat.size,
+                      mtimeMs: stat.mtimeMs,
+                      ctimeMs: stat.ctimeMs,
+                    };
+                    const apple = appleFingerprintHash();
+                    apple.update(bytes);
+                    return {
+                      sha1: createHash('sha1').update(bytes).digest(),
+                      sha256: createHash('sha256').update(bytes).digest(),
+                      sizeInBytes: bytes.length,
+                      appleFingerprint: apple.digest(),
+                      identity,
+                      current: async () => {
+                        const current = await lstat(candidate.originalPath);
+                        return Object.entries(identity).every(
+                          ([key, value]) => current[key as keyof typeof identity] === value,
+                        );
+                      },
+                    };
                   },
-                };
-              },
-            ),
-          ).toBe('adopted');
-          expect(await sync.finalize(resource, async () => {})).toBe(true);
+                ),
+              ).toBe('adopted');
+              expect(await sync.finalize(resource, async () => {})).toBe(true);
+            }),
+          );
+          for (const result of settled) {
+            if (result.status === 'rejected') throw result.reason;
+          }
+          const receipts = index + admitted.length;
+          if (receipts % 1000 === 1 || receipts === size) progress('actual-receipts', receipts);
         }
       }
+      const published = await sql<{ count: number }>`SELECT count(*)::int AS count
+        FROM immich_fork.icloud_identity_reuse WHERE "connectionId"=${f.connection.id}::uuid`.execute(db);
+      expect(published.rows[0].count).toBe(size);
+      progress('receipt-population-complete', published.rows[0].count);
       return f;
     }
 
@@ -1181,7 +1221,14 @@ describe('iCloud exact identity adoption', () => {
     it('produces k>100 across bounded durable batches without truncating N=10001 or replacing members', async () => {
       const f = await population(10_001);
       await grant(f);
+      const freezeStarted = performance.now();
+      console.info('weekly-large-population-qualification', { phase: 'freeze-started', receipts: 10_001 });
       const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
+      console.info('weekly-large-population-qualification', {
+        phase: 'freeze-complete',
+        receipts: 10_001,
+        elapsedMs: Math.round(performance.now() - freezeStarted),
+      });
       expect(Number(cohort.populationCount)).toBe(10_001);
       expect(Number(cohort.selectedCount)).toBe(101);
       const before = await members(cohort.id);
@@ -1231,6 +1278,7 @@ describe('iCloud exact identity adoption', () => {
         );
       }
       expect(cohort.manifestDigest).toEqual(manifest.digest());
+      const batchesStarted = performance.now();
       const first = (await weekly().createNextBatch(cohort.id, operations()))!;
       const second = (await weekly().createNextBatch(cohort.id, operations()))!;
       expect(first.totalUnits).toBe(100);
@@ -1249,6 +1297,12 @@ describe('iCloud exact identity adoption', () => {
           )
         ).rows,
       ).toHaveLength(101);
+      console.info('weekly-large-population-qualification', {
+        phase: 'durable-batches-complete',
+        receipts: 10_001,
+        sampled: 101,
+        elapsedMs: Math.round(performance.now() - batchesStarted),
+      });
     }, 600_000);
 
     it.each(['original', 'motion', 'raw'] as const)(
