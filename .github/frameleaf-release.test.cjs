@@ -300,41 +300,83 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
   );
   try {
     await fs.mkdir(path.join(root, "docker"));
-    await fs.mkdir(path.join(root, "server/src/fork-schema"), {
-      recursive: true,
-    });
-    await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
-    for (const name of INSTALL_FILES) {
-      const text =
-        name === "docker-compose.yml"
-          ? `services:\n  server:\n    image: ghcr.io/frameleaf/frameleaf-server:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-release}}\n  database:\n    image: ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@${digest(2)}\nvolumes: [model-cache]\n`
-          : name.startsWith("docker-compose")
-            ? "image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}\nvolumes: [model-cache]\n"
-            : name === "example.env"
-              ? "FRAMELEAF_VERSION=v3\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres\n"
-              : "services: {}\n";
+    const installFiles = [
+      "docker-compose.yml",
+      "docker-compose.rootless.yml",
+      "example.env",
+      "hwaccel.ml.yml",
+      "hwaccel.transcoding.yml",
+    ];
+    assert.deepEqual(INSTALL_FILES, installFiles);
+    const databaseImage = `ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@${digest(2)}`;
+    const composeFixture = [
+      "services:",
+      "  immich-server:",
+      "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      "    volumes: ['${UPLOAD_LOCATION}:/data']",
+      "  immich-machine-learning:",
+      "    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      "    volumes: ['model-cache:/cache']",
+      "  database:",
+      `    image: ${databaseImage}`,
+      "    environment:",
+      "      POSTGRES_DB: ${DB_DATABASE_NAME}",
+      "      POSTGRES_USER: ${DB_USERNAME}",
+      "      POSTGRES_PASSWORD: ${DB_PASSWORD}",
+      "    volumes: ['${DB_DATA_LOCATION}:/var/lib/postgresql']",
+      "volumes: {model-cache: {}}",
+      "",
+    ].join("\n");
+    const originals = new Map();
+    for (const name of installFiles) {
+      const text = name.startsWith("docker-compose")
+        ? composeFixture
+        : name === "example.env"
+          ? "FRAMELEAF_VERSION=v3\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres19\nDB_USERNAME=postgres\nDB_DATABASE_NAME=frameleaf\nDB_PASSWORD=fixture-only\n"
+          : "services: {}\n";
+      originals.set(name, text);
       await fs.writeFile(path.join(root, "docker", name), text);
     }
     const dir = path.join(root, "bundle");
     const tag = "frameleaf-v3.1.0-12";
-    const files = await createBundle(dir, root, tag, {
+    const manifest = {
+      schemaVersion: 3,
+      repository: "Frameleaf/frameleaf-app",
+      tag,
       sourceCommit: sha,
+      buildRun: `${SOURCE}/actions/runs/123`,
+      provenance: "Fixture-only unsigned build evidence",
+      dependencies: [{ reference: databaseImage, digest: digest(2) }],
       images: [
         {
           image: "ghcr.io/frameleaf/frameleaf-server",
           suffix: "",
           digest: digest(3),
           platforms: ["linux/amd64", "linux/arm64"],
+          sourceCommit: sha,
         },
         {
           image: "ghcr.io/frameleaf/frameleaf-machine-learning",
           suffix: "",
           digest: digest(4),
           platforms: ["linux/amd64", "linux/arm64"],
+          sourceCommit: sha,
         },
       ],
-    });
-    assert.equal(files.length, 8);
+    };
+    const originalManifest = clone(manifest);
+    const files = await createBundle(dir, root, tag, manifest);
+    const checksummedFiles = [
+      ...installFiles,
+      "nas-manifest.json",
+      "release-manifest.json",
+    ];
+    const bundleFiles = [...checksummedFiles, "SHA256SUMS"];
+    assert.deepEqual(
+      files.map((file) => path.relative(dir, file)).sort(),
+      [...bundleFiles].sort(),
+    );
+    assert.deepEqual((await fs.readdir(dir)).sort(), [...bundleFiles].sort());
     const nas = JSON.parse(
       await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"),
     );
@@ -342,36 +384,90 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
       nas.images.server,
       `ghcr.io/frameleaf/frameleaf-server@${digest(3)}`,
     );
-    assert.equal(nas.migration, undefined);
-    const env = await fs.readFile(path.join(dir, "example.env"), "utf8");
-    assert(
-      env.includes(`FRAMELEAF_VERSION=${tag}\n`) &&
-        env.includes("DB_DATA_LOCATION=./postgres"),
+    assert.equal(
+      nas.images.machineLearning,
+      `ghcr.io/frameleaf/frameleaf-machine-learning@${digest(4)}`,
     );
-    const compose = await fs.readFile(
-      path.join(dir, "docker-compose.yml"),
-      "utf8",
+    assert.equal(nas.images.postgres, databaseImage);
+    assert.deepEqual(Object.keys(nas).sort(), [
+      "buildRun",
+      "images",
+      "minimumVersions",
+      "platforms",
+      "schemaVersion",
+      "sourceCommit",
+      "tag",
+    ]);
+    assert.deepEqual(Object.keys(nas.images).sort(), [
+      "machineLearning",
+      "machineLearningVariants",
+      "postgres",
+      "server",
+    ]);
+    assert.equal(nas.sourceCommit, sha);
+    assert.equal(nas.buildRun, originalManifest.buildRun);
+    assert.deepEqual(nas.platforms, ["linux/amd64", "linux/arm64"]);
+    for (const [name, original] of originals) {
+      const bundled = await fs.readFile(path.join(dir, name), "utf8");
+      const expected = name.startsWith("docker-compose")
+        ? original.replaceAll(
+            "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+            "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-" + tag + "}}",
+          )
+        : name === "example.env"
+          ? original.replace("FRAMELEAF_VERSION=v3", `FRAMELEAF_VERSION=${tag}`)
+          : original;
+      assert.equal(
+        bundled,
+        expected,
+        `${name}: only release version may change`,
+      );
+      assert.equal(
+        await fs.readFile(path.join(root, "docker", name), "utf8"),
+        original,
+        `${name}: source configuration changed`,
+      );
+    }
+    const release = JSON.parse(
+      await fs.readFile(path.join(dir, "release-manifest.json"), "utf8"),
     );
-    assert(
-      compose.includes(
-        "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-" + tag + "}}",
-      ) && compose.includes("model-cache"),
-    );
-    const original = await fs.readFile(
-      path.join(root, "docker/example.env"),
-      "utf8",
-    );
-    assert(original.includes("FRAMELEAF_VERSION=v3"));
+    const authenticatedAssets = {};
+    for (const name of [...installFiles, "nas-manifest.json"])
+      authenticatedAssets[name] = hash(await fs.readFile(path.join(dir, name)));
+    assert.deepEqual(release, {
+      ...originalManifest,
+      assets: authenticatedAssets,
+    });
     const sums = (await fs.readFile(path.join(dir, "SHA256SUMS"), "utf8"))
       .trim()
       .split("\n");
-    assert.equal(sums.length, 8);
+    // The checksum file covers the other seven assets; it cannot hash itself.
+    assert.deepEqual(
+      sums.map((line) => line.split("  ")[1]).sort(),
+      [...checksummedFiles].sort(),
+    );
     for (const line of sums) {
       const [expected, name] = line.split("  ");
+      assert.match(expected, /^[a-f0-9]{64}$/);
       assert.equal(
         hash(await fs.readFile(path.join(dir, name))).slice(7),
         expected,
       );
+    }
+    for (const name of installFiles) {
+      const source = path.join(root, "docker", name);
+      await fs.unlink(source);
+      await assert.rejects(
+        createBundle(
+          path.join(root, `missing-${name}`),
+          root,
+          tag,
+          clone(originalManifest),
+        ),
+        { code: "ENOENT" },
+        `${name}: missing required input must fail bundling`,
+      );
+      await fs.writeFile(source, originals.get(name));
     }
   } finally {
     await fs.rm(root, { recursive: true, force: true });
