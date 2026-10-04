@@ -132,7 +132,7 @@ jobs:
         working-directory: studio/engine
         run: npx --no-install playwright install --with-deps chromium
       - name: Cross-browser harness and driver tests (FL-112)
-        run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs
+        run: node --test studio/tools/lib/cross-browser-harness.test.mjs studio/tools/lib/browser-driver.test.mjs studio/tools/lib/browser-driver.chromium.test.mjs studio/tools/effects-matrix-dispatch.test.mjs studio/tools/photometric-goldens.test.mjs
       - name: Render-worker hardware probe refuses software GPU evidence
         env:
           STUDIO_WORKER_PROBE_BROWSER_TEST: '1'
