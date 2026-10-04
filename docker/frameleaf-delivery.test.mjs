@@ -290,6 +290,75 @@ test("pinned build dependencies, runtime identity and orphan adoption remain com
   assert.match(read("docker/example.env"), /^DB_DATABASE_NAME=frameleaf$/m);
 });
 
+test("the selective server build admits owned SQL-tools and retains its production runtime closure", () => {
+  const ignore = read(".dockerignore").split(/\r?\n/);
+  assert.ok(
+    ignore.includes("**/dist/"),
+    "Unrelated local build outputs must stay excluded",
+  );
+  assert.ok(ignore.includes("!packages/sql-tools/dist/"));
+  assert.ok(ignore.includes("!packages/sql-tools/dist/**"));
+  assert.deepEqual(
+    ignore.filter((line) => line.startsWith("!") && line.includes("dist")),
+    ["!packages/sql-tools/dist/", "!packages/sql-tools/dist/**"],
+    "No blanket exception for other generated dist directories",
+  );
+  const manifest = JSON.parse(read("packages/sql-tools/package.json"));
+  assert.equal(manifest.name, "@frameleaf/sql-tools");
+  for (const path of [
+    manifest.exports["."].types,
+    manifest.exports["."].default,
+    manifest.bin["sql-tools"],
+  ]) {
+    assert.ok(existsSync(resolve(root, "packages/sql-tools", path)), path);
+  }
+  const server = read("server/Dockerfile")
+    .split("FROM plugin-sdk AS server\n")[1]
+    .split("FROM base-server-prod AS native-raw-validation")[0];
+  const copy = server.indexOf(
+    "COPY ./packages/sql-tools ./packages/sql-tools/",
+  );
+  const install = server.indexOf(
+    "pnpm --filter 'immich...' install --frozen-lockfile",
+  );
+  const deploy = server.indexOf("deploy /output/server-pruned");
+  const sharp = server.indexOf(
+    "--dir /output/server-pruned/node_modules/sharp exec npm run build",
+  );
+  const verify = server.indexOf(
+    "RUN node /build/verify-server-package.mjs /output/server-pruned",
+  );
+  assert.ok(
+    copy >= 0 &&
+      install > copy &&
+      deploy > install &&
+      sharp > deploy &&
+      verify > sharp,
+  );
+  assert.match(
+    server,
+    /^COPY \.\/docker\/scripts\/verify-server-package\.mjs \/build\/verify-server-package\.mjs$/m,
+  );
+  const files = JSON.parse(read("server/package.json")).files;
+  assert.ok(
+    files.includes("dist"),
+    "Compiled Sharp child and canonical provider must be deployed",
+  );
+  const assets = JSON.parse(
+    read("server/nest-cli.json"),
+  ).compilerOptions.assets.map((asset) => asset.include);
+  for (const required of [
+    "schema/migrations/ORDER",
+    "schema/catalog/*.json",
+    "schema/catalog/*.sql",
+  ]) {
+    assert.ok(
+      assets.includes(required),
+      `Canonical production artifact rule missing: ${required}`,
+    );
+  }
+});
+
 test("installation points to Frameleaf release artifacts, not another application distribution", () => {
   for (const path of [
     "docker/README.md",
