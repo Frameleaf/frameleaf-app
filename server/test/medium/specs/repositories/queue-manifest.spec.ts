@@ -5,6 +5,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_HIGH_WATER, QUEUE_LOW_WATER, QUEUE_TIMING, QueueClaim } from 'src/queue/types.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('durable bounded selection manifests', () => {
@@ -124,6 +125,7 @@ describe('durable bounded selection manifests', () => {
     const originalRun = first.runId!;
     expect(await manifest(originalRun)).toMatchObject({ selected: 1250, unscheduled: 1250 });
     expect(await store.feedManifest(queue)).toBe(0); // unaccepted snapshot cannot execute
+    await recordStoppedAttempt(db, first.id, first.token);
     await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${first.id}::uuid`.execute(db);
     await store.recoverExpired();
     await available(first);
