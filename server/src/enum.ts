@@ -2485,6 +2485,8 @@ export enum DatabaseLock {
   BuddyBackup = 972,
   /** FL-326: one universal storage migration batch runs at a time across every worker. */
   UniversalStorageMigration = 973,
+  /** FL-218: Cloud authority replacement/revocation and account-link confirmation cannot overlap. */
+  FrameleafLinkAuthority = 974,
   /**
    * Universal storage: linking an upload to the server's one file for its content, or registering a new
    * one, happens one upload at a time per checksum (taken with the checksum as the second key), so two
