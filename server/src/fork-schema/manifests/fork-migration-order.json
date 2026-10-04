@@ -45,6 +45,13 @@
     "0000000000214-BuddyBackupReferences",
     "0000000000215-PhotographyWorkflow",
     "0000000000216-ICloudIdentityAudit",
-    "0000000000217-ICloudIdentityReuse"
+    "0000000000217-ICloudIdentityReuse",
+    "0000000000218-ICloudWeeklyAuthority",
+    "0000000000219-PhysicalFileTrash",
+    "0000000000220-PartnerOrigins",
+    "0000000000221-PartnerPeopleLinks",
+    "0000000000222-AlbumSourceLinks",
+    "0000000000223-AlbumSourceMembershipGeneration",
+    "0000000000224-ICloudClaimAccessPaths"
   ]
 }

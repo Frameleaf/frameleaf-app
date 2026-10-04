@@ -503,6 +503,8 @@ export class ICloudSyncRepository {
       ) {
         return;
       }
+      // Zero-byte rows without a lease contribute to none of these aggregates.
+      // Keep every charged row (including expired/noncurrent recovery) and every lease.
       const used = await sql<{
         bytes: number;
         active: number;
@@ -510,7 +512,8 @@ export class ICloudSyncRepository {
       }>`SELECT coalesce(sum("reservedBytes"),0)::float8 AS bytes,
         count(*) FILTER(WHERE "leaseExpiresAt">now())::int AS active,
         coalesce(sum("reservedBytes") FILTER(WHERE NOT coalesce((source->>'current')::boolean,true)),0)::float8 AS retained
-        FROM immich_fork.icloud_resource WHERE "connectionId"=${connectionId}::uuid AND status NOT IN ('finalized','removed')`
+        FROM immich_fork.icloud_resource WHERE "connectionId"=${connectionId}::uuid AND status NOT IN ('finalized','removed')
+        AND ("reservedBytes">0 OR "leaseExpiresAt" IS NOT NULL)`
         .execute(db)
         .then(({ rows }) => rows[0]);
       const global = await sql<{
@@ -520,7 +523,8 @@ export class ICloudSyncRepository {
       }>`SELECT coalesce(sum("reservedBytes"),0)::float8 AS bytes,
         count(*) FILTER(WHERE "leaseExpiresAt">now())::int AS active,
         coalesce(sum("reservedBytes") FILTER(WHERE NOT coalesce((source->>'current')::boolean,true)),0)::float8 AS retained
-        FROM immich_fork.icloud_resource WHERE status NOT IN ('finalized','removed')`
+        FROM immich_fork.icloud_resource WHERE status NOT IN ('finalized','removed')
+        AND ("reservedBytes">0 OR "leaseExpiresAt" IS NOT NULL)`
         .execute(db)
         .then(({ rows }) => rows[0]);
       if (used.active >= connection.config.concurrency || global.active >= maxConcurrency) {
