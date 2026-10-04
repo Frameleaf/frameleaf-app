@@ -1,7 +1,7 @@
-name: FL16 native A/V offset publication RED
+name: FL16 native A/V presentation qualification
 on:
   push:
-    branches: [aj/fl16-av-offset-publication-proof]
+    branches: [aj/fl16-av-alignment-qualified]
 permissions:
   contents: read
 jobs:
@@ -25,12 +25,14 @@ jobs:
         run: |
           mise run //:plugins
           mise run //packages/plugin-core:build
-      - name: Exercise actual native publication refusal
+      - name: Qualify pure presentation policy controls
+        working-directory: ./server
+        run: mise run test --run src/utils/media-policy.spec.ts
+      - name: Exercise all actual native publication controls
         working-directory: ./server
         run: |
           set -o pipefail
           mise run test-medium --run test/medium/specs/services/video-master-qualification.service.spec.ts \
-            --testNamePattern 'refuses a timestamp-only audio offset before replacing the current real master$' \
             2>&1 | tee "$RUNNER_TEMP/fl16-av-offset.log"
       - name: Retain actual native test evidence
         if: always()
