@@ -1,5 +1,6 @@
 import { Kysely } from 'kysely';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
@@ -15,16 +16,19 @@ import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
-// pgvector unit vector: 512 dims, 1.0 at `index`. Cosine similarity between
+// pgvector unit vector: 768 dims, 1.0 at `index`. Cosine similarity between
 // two of these is exactly 1 (same index) or 0 (different index).
-const unitVector = (index: number) => `[${Array.from({ length: 512 }, (_, i) => (i === index ? 1 : 0)).join(',')}]`;
+const unitVector = (index: number) => `[${Array.from({ length: 768 }, (_, i) => (i === index ? 1 : 0)).join(',')}]`;
 
 const setup = (db?: Kysely<DB>) => {
   const { sut, ctx } = newMediumService(SmartAlbumService, {
     database: db || defaultDatabase,
     real: [ConfigRepository, SearchRepository, SmartAlbumRepository, SystemMetadataRepository, UserRepository],
-    mock: [LoggingRepository, MachineLearningRepository, MlDestinationRepository],
+    mock: [LoggingRepository, MachineLearningRepository, MlDestinationRepository, JobRepository],
   });
+  ctx
+    .getMock(JobRepository)
+    .pinDestination.mockImplementation((_workload, destinationId) => Promise.resolve(destinationId));
   return { sut, ctx };
 };
 

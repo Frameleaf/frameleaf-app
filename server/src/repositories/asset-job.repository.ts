@@ -706,7 +706,7 @@ export class AssetJobRepository {
   }
 
   /**
-   * Stream image AND video assets that have a successfully completed description,
+   * Select image AND video assets that have a successfully completed description,
    * yielding the asset id, owner id, and the tag array from the description result.
    * Used by the smart-album bulk re-evaluate job.
    *
@@ -716,8 +716,7 @@ export class AssetJobRepository {
    * `type = Image` would mean the admin "Re-evaluate all" button could never
    * remove or refresh video memberships in smart albums.
    */
-  @GenerateSql({ params: [], stream: true })
-  streamForSmartAlbumReevaluation() {
+  selectionForSmartAlbumReevaluation() {
     return (
       this.db
         .selectFrom('asset')
@@ -744,8 +743,12 @@ export class AssetJobRepository {
         )
         .where(sql<string>`asset_metadata.value -> 'description' ->> 'status'`, '=', 'success')
         .orderBy('asset.fileCreatedAt', 'desc')
-        .stream()
     );
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getForSmartAlbumReevaluation(id: string) {
+    return this.selectionForSmartAlbumReevaluation().where('asset.id', '=', asUuid(id)).executeTakeFirst();
   }
 
   @GenerateSql({ params: [], stream: true })
