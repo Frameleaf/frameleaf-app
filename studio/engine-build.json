@@ -264,6 +264,11 @@
       "path": "patches/0052-microphone-finalization-authority.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "477781b250207c9083fcb9be06895b37e94989ea403647e211ad59c454f3a206"
+    },
+    {
+      "path": "patches/0053-expression-unary-depth.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "940f288a26bc0a3daee238fe15b38d51e34965dc0962a0c50b95a75120cb6205"
     }
   ],
   "sourceSha256": "7f8e1fee3117125038cbcd32a459d4ece5d930d5e281babf36a269bd7156ca22"
