@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-process.env.DB_URL = 'postgres://postgres:postgres@localhost:5432/immich';
+process.env.DB_URL ??= 'postgres://postgres:postgres@localhost:5432/frameleaf';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ApiModule } from 'src/app.module.js';
