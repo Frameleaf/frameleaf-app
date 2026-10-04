@@ -80,7 +80,7 @@ test('media rollback inventory detects lost bytes, extra paths and unsafe links'
   assert.throws(() => mediaInventory(directory), /links are forbidden/);
 });
 
-test('qualification workflow has trusted step names but cannot certify incomplete adapters', () => {
+test('qualification workflow has trusted step names and emits no certified receipts', () => {
   const workflow = load(fs.readFileSync(path.join(__dirname, '../../.github/workflows/nas-qualification.yml'), 'utf8'));
   assert.deepEqual(Object.keys(workflow.on), ['workflow_dispatch']);
   assert.equal(workflow.permissions.contents, 'read');
@@ -89,9 +89,14 @@ test('qualification workflow has trusted step names but cannot certify incomplet
   assert.equal(workflow.jobs.qualification.name, 'NAS qualification (${{ inputs.family }}, ${{ inputs.version }})');
   const steps = workflow.jobs.qualification.steps;
   for (const name of ['Preflight', 'Backup and restore', 'Migration', 'Rollback']) assert(steps.some((step) => step.name === name && !step['continue-on-error']));
-  assert(!steps.some((step) => /upload-artifact/.test(step.uses || '') || /cosign\s+(?:sign|attest)\b/.test(step.run || '')));
+  assert(!steps.some((step) => /cosign\s+(?:sign|attest)\b/.test(step.run || '')));
+  const retained = steps.filter((step) => /upload-artifact/.test(step.uses || ''));
+  assert.equal(retained.length, 1);
+  assert.match(retained[0].with.path, /migration-operation\.json/);
+  assert.match(retained[0].with.path, /rollback-operation\.json/);
+  assert.doesNotMatch(retained[0].with.path, /acceptance\.json|database\.dump|media\.tar|qualification\/.*\.json/);
   const source = fs.readFileSync(path.join(__dirname, 'qualification.cjs'), 'utf8');
-  assert.match(source, /reviewed source-specific migration and paired rollback adapters are not implemented/);
+  assert.match(source, /return runOfficialAdapter/);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(__dirname, 'certified-sources.json'), 'utf8')), { officialImmich: [], priorFrameleaf: [] });
 });
 
