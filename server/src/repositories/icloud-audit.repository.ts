@@ -8,9 +8,9 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudVerifyDto, ICloudVerifyResponseDto } from 'src/dtos/icloud-identity.dto.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, UserMetadataKey } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { AuditExecutionAuthority, guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
-import { AuditExecutionAuthority, guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
@@ -103,7 +103,9 @@ export async function guardAuditAuthority(
   requireClaim = true,
   resource?: { id: string; leaseToken: string },
 ) {
-  const { rows: [row] } = await sql<{ purpose: string }>`SELECT purpose FROM immich_fork.icloud_identity_audit
+  const {
+    rows: [row],
+  } = await sql<{ purpose: string }>`SELECT purpose FROM immich_fork.icloud_identity_audit
     WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(db);
   if (row?.purpose === 'scheduled-weekly') {
     if (authority.purpose !== 'scheduled-weekly' || !db.isTransaction) {
@@ -545,7 +547,7 @@ export class ICloudAuditRepository {
   async operationPurpose(operationId: string, ownerId: string) {
     const { rows } = await sql<{ purpose: string }>`SELECT DISTINCT purpose FROM immich_fork.icloud_identity_audit
       WHERE "operationId"=${operationId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(this.db);
-    return rows.length === 1 ? rows[0].purpose : rows.length ? 'invalid' : undefined;
+    return rows.length === 1 ? rows[0].purpose : rows.length > 0 ? 'invalid' : undefined;
   }
 
   async check(authority: AuditAuthority, ownerId: string, requireClaim = true) {
