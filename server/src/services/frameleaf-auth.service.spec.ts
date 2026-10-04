@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FrameleafCloudLink, FrameleafInstanceIdentity } from 'src/types.js';
 import { FrameleafTokenExchangeErrorCode } from 'src/dtos/frameleaf-auth.dto.js';
-import { AdminAuditAction, DatabaseLock, SystemMetadataKey } from 'src/enum.js';
+import { AdminAuditAction, DatabaseLock, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -1121,9 +1121,10 @@ describe(FrameleafAuthService.name, () => {
         mocks.frameleafAccount.deleteAllSessions.mockResolvedValue([]);
         const cloudAuthority = cloudService as unknown as {
           clearLink: (url: string, link: FrameleafCloudLink, status: 'unlinked' | 'revoked') => Promise<void>;
-          saveLink: (link: FrameleafCloudLink, topic: null) => Promise<void>;
+          saveLink: (link: FrameleafCloudLink, topic: null, options?: { replaceAuthority: boolean }) => Promise<boolean>;
+          checkIn: (url: string, link: FrameleafCloudLink) => Promise<JobStatus>;
         };
-        return { held, cloudAuthority };
+        return { held, cloudAuthority, cloudService };
       };
 
       it('makes the linked account an administrator at once and notifies the other administrators', async () => {
@@ -1329,6 +1330,7 @@ describe(FrameleafAuthService.name, () => {
         await cloudAuthority.saveLink(
           { ...linkRecord(), linkedAt: '2026-10-03T12:04:00.000Z' } as FrameleafCloudLink,
           null,
+          { replaceAuthority: true },
         );
         releaseLookup();
 
@@ -1338,6 +1340,101 @@ describe(FrameleafAuthService.name, () => {
         expect(mocks.adminAudit.create).not.toHaveBeenCalled();
         expect(mocks.notification.create).not.toHaveBeenCalled();
         expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+      });
+
+      it.each(['success', 'failure'] as const)(
+        'does not resurrect authority when a delayed heartbeat %s finishes after unlink',
+        async (outcome) => {
+          const { auth } = setup(false);
+          const { cloudAuthority, cloudService } = shareAuthorityFence();
+          idClaims.frameleaf_role = 'admin';
+          const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
+          const heartbeatService = cloudService as unknown as {
+            apiToken: () => Promise<unknown>;
+            removeRetiredKey: () => Promise<void>;
+            rotateAfterDamagedKey: (
+              url: string,
+              document: unknown,
+              link: FrameleafCloudLink,
+            ) => Promise<FrameleafCloudLink>;
+          };
+          vi.spyOn(heartbeatService, 'apiToken').mockResolvedValue({
+            document: cloudContractFixture('instance/discovery.json'),
+            token: { signer: { kid: 'test-heartbeat-key' } },
+          });
+          vi.spyOn(cloudService, 'buildHeartbeatPayload').mockResolvedValue({} as never);
+          vi.spyOn(heartbeatService, 'removeRetiredKey').mockResolvedValue();
+          vi.spyOn(heartbeatService, 'rotateAfterDamagedKey').mockImplementation(
+            async (_url, _document, link) => link,
+          );
+          let remoteEntered!: () => void;
+          const entered = new Promise<void>((resolve) => {
+            remoteEntered = resolve;
+          });
+          let releaseRemote!: () => void;
+          const remote = new Promise<void>((resolve) => {
+            releaseRemote = resolve;
+          });
+          mocks.frameleafCloud.requestJson.mockImplementationOnce(async () => {
+            remoteEntered();
+            await remote;
+            if (outcome === 'failure') {
+              throw new Error('Delayed heartbeat network failure');
+            }
+            return {
+              nextHeartbeatSec: 300,
+              cloneSuspected: false,
+              servicesChanged: false,
+              entitlementsChanged: false,
+              commands: [],
+              notices: [],
+            } as never;
+          });
+          const heartbeat = cloudAuthority.checkIn(cloud.url, linkRecord() as FrameleafCloudLink);
+          await entered;
+          await cloudAuthority.clearLink(cloud.url, linkRecord() as FrameleafCloudLink, 'unlinked');
+          expect(mocks.frameleafAccount.deleteAllLinks).toHaveBeenCalledOnce();
+          vi.clearAllMocks();
+          releaseRemote();
+
+          await expect(heartbeat).resolves.toBe(outcome === 'success' ? JobStatus.Skipped : JobStatus.Failed);
+          expect(metadata.get(SystemMetadataKey.FrameleafCloudLink)).toMatchObject({ status: 'unlinked' });
+          expect(mocks.systemMetadata.set).not.toHaveBeenCalledWith(
+            SystemMetadataKey.FrameleafCloudLink,
+            expect.anything(),
+          );
+          await expect(sut.confirmLink(auth, { confirmToken: confirmToken! })).rejects.toThrow('not available');
+          expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+          expect(mocks.user.update).not.toHaveBeenCalled();
+          expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+          expect(mocks.notification.create).not.toHaveBeenCalled();
+          expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+        },
+      );
+
+      it('accepts routine writes for the current generation and fresh approved authority replacement', async () => {
+        const { auth } = setup(false);
+        const { cloudAuthority } = shareAuthorityFence();
+        idClaims.frameleaf_role = 'admin';
+        const preview = await sut.link(auth, { ...callbackDto, preview: true }, {});
+        await expect(
+          cloudAuthority.saveLink(
+            { ...linkRecord(), lastContactAt: '2026-10-03T12:05:00.000Z' } as FrameleafCloudLink,
+            null,
+          ),
+        ).resolves.toBe(true);
+        await expect(sut.confirmLink(auth, { confirmToken: preview.confirmToken! })).resolves.toMatchObject({
+          linked: true,
+        });
+
+        const replacement = { ...linkRecord(), linkedAt: '2026-10-03T12:06:00.000Z' } as FrameleafCloudLink;
+        await expect(cloudAuthority.saveLink(replacement, null)).resolves.toBe(false);
+        metadata.delete(SystemMetadataKey.FrameleafCloudLink);
+        await expect(cloudAuthority.saveLink(replacement, null, { replaceAuthority: true })).resolves.toBe(true);
+        const renewed = await sut.link(auth, { ...callbackDto, preview: true }, {});
+        await expect(sut.confirmLink(auth, { confirmToken: renewed.confirmToken! })).resolves.toMatchObject({
+          linked: true,
+        });
       });
 
       it('holds the shared authority fence through linking, promotion, audit and notification writes', async () => {
