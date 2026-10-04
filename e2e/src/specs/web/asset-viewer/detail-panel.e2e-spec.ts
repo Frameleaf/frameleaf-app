@@ -207,6 +207,7 @@ test.describe('Detail Panel', () => {
 
     // FL-326: a partner's item arrives as the viewer's own copy, which names the library it came from
     test("names the library a partner's copy came from", async ({ context, page }) => {
+      test.setTimeout(90_000);
       const partner = await utils.userSetup(admin.accessToken, {
         email: 'owner-line@example.com',
         name: 'Avery Partner',

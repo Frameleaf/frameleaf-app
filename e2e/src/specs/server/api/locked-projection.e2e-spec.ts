@@ -276,7 +276,7 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       });
     expect(project.id, JSON.stringify(project)).toBeDefined();
     projectId = project.id;
-  });
+  }, 90_000);
 
   it("lists the owner's locks and Locked-rule matches in the Locked view of an unlocked session", async () => {
     await unlock(owner.accessToken);

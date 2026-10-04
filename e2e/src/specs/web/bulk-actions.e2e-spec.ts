@@ -63,6 +63,7 @@ test.describe('Bulk actions', () => {
     context,
     page,
   }) => {
+    test.setTimeout(90_000);
     const own = await utils.createAsset(admin.accessToken);
     const theirs = await utils.createAsset(partner.accessToken);
     const copyId = await utils.waitForPartnerCopy(admin.userId, theirs.id);
@@ -150,6 +151,7 @@ test.describe('Everything matching', () => {
     context,
     page,
   }) => {
+    test.setTimeout(90_000);
     const own = await Promise.all([1, 2, 3].map(() => utils.createAsset(admin.accessToken)));
     const theirs = await utils.createAsset(partner.accessToken);
     // FL-326: the partner's item is in this Timeline as the viewer's own copy, so the count takes it

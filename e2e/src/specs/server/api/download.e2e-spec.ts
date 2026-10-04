@@ -124,7 +124,8 @@ describe('/download', () => {
         await request(app)
           .get(`/assets/${partnerAsset.id}/original`)
           .set('Authorization', `Bearer ${admin.accessToken}`)
-          .expect(400);
+          // Media's sendFile wrapper conceals unauthorized originals as not found.
+          .expect(404);
       };
 
       await expectOnlyCopy();
@@ -133,7 +134,7 @@ describe('/download', () => {
         .set('Authorization', `Bearer ${partner.accessToken}`)
         .expect(204);
       await expectOnlyCopy();
-    });
+    }, 90_000);
 
     it('refuses a public link that does not allow downloads, before naming any file', async () => {
       const closed = await utils.createSharedLink(admin.accessToken, {

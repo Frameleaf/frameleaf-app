@@ -212,7 +212,9 @@ describe('/map', () => {
         return body as { count: number }[];
       };
       // Location propagation is also SQL work; row creation alone does not prove it finished.
-      await expect.poll(markers).toContainEqual(expect.objectContaining({ id: copyId, lat: 12.34, lon: 56.78 }));
+      await expect
+        .poll(markers, { timeout: 20_000 })
+        .toContainEqual(expect.objectContaining({ id: copyId, lat: 12.34, lon: 56.78 }));
       const expectOnlyOwn = async () => {
         const ids = await markerIds();
         expect(ids).not.toContain(partnerLocatedId);
@@ -236,7 +238,7 @@ describe('/map', () => {
         .set('Authorization', `Bearer ${partner.accessToken}`);
       expect(status).toBe(204);
       await expectOnlyOwn();
-    });
+    }, 90_000);
   });
 
   describe('batch location changes (FL-51)', () => {

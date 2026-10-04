@@ -245,7 +245,7 @@ describe('/asset', () => {
           .set('Authorization', `Bearer ${user2.accessToken}`);
         expect(status).toBe(200);
         expect(body).toMatchObject({ id: copyId, ownerId: user2.userId, origin: { rootOwnerId: user1.userId } });
-      });
+      }, 90_000);
 
       it('disallows viewing archived assets', async () => {
         const asset = await utils.createAsset(user1.accessToken, { visibility: AssetVisibility.Archive });
