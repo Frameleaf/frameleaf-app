@@ -2,7 +2,16 @@ import { Kysely } from 'kysely';
 import { DateTime } from 'luxon';
 import { AssetEditAction, MirrorAxis } from 'src/dtos/editing.dto.js';
 import { AssetFaceCreateDto } from 'src/dtos/person.dto.js';
-import { AssetFileType, AssetMetadataKey, AssetType, AssetVisibility, JobName, MlWorkload } from 'src/enum.js';
+import {
+  AssetFileType,
+  AssetMetadataKey,
+  AssetType,
+  AssetVisibility,
+  JobName,
+  JobStatus,
+  MlWorkload,
+  SourceType,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -20,7 +29,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { DB } from 'src/schema/index.js';
 import { PersonService } from 'src/services/person.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { factory } from 'test/small.factory.js';
+import { factory, newEmbedding } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
@@ -393,6 +402,65 @@ describe(PersonService.name, () => {
   });
 
   describe('handleDetectFaces', () => {
+    it.each([false, true])(
+      'repairs an imported ML face without face_search, preserving decisions (corrected=%s)',
+      async (corrected) => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const { person } = await ctx.newPerson({ ownerId: user.id });
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newExif({ assetId: asset.id, description: '' });
+        await ctx.newAssetFile({
+          assetId: asset.id,
+          type: AssetFileType.Preview,
+          isEdited: false,
+          path: 'imported-preview.jpg',
+        });
+        const { assetFace } = await ctx.newAssetFace({
+          assetId: asset.id,
+          personGroupId: person.personGroupId,
+          sourceType: SourceType.MachineLearning,
+          correctedAt: corrected ? new Date() : null,
+          deletedAt: null,
+        });
+        const readFace = () =>
+          ctx.database.selectFrom('asset_face').selectAll().where('id', '=', assetFace.id).executeTakeFirstOrThrow();
+        const readEmbedding = () =>
+          ctx.database.selectFrom('face_search').selectAll().where('faceId', '=', assetFace.id).execute();
+        const before = await readFace();
+        expect(await readEmbedding()).toEqual([]);
+        const embedding = newEmbedding();
+        ctx.getMock(MachineLearningRepository).detectFaces.mockResolvedValue({
+          imageHeight: assetFace.imageHeight,
+          imageWidth: assetFace.imageWidth,
+          faces: [
+            {
+              boundingBox: {
+                x1: assetFace.boundingBoxX1,
+                y1: assetFace.boundingBoxY1,
+                x2: assetFace.boundingBoxX2,
+                y2: assetFace.boundingBoxY2,
+              },
+              embedding,
+              score: 1,
+            },
+          ],
+        });
+
+        await expect(sut.handleDetectFaces({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        expect(await readEmbedding()).toEqual([{ faceId: assetFace.id, embedding: expect.any(String) }]);
+        expect(await readFace()).toEqual(before);
+        // Replaying the repair upserts the same derived row, without a new face or recognition assignment.
+        await expect(sut.handleDetectFaces({ id: asset.id })).resolves.toBe(JobStatus.Success);
+        expect(await readEmbedding()).toHaveLength(1);
+        expect(
+          await ctx.database.selectFrom('asset_face').select('id').where('assetId', '=', asset.id).execute(),
+        ).toEqual([{ id: assetFace.id }]);
+        expect(await readFace()).toEqual(before);
+        expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+      },
+    );
+
     it('should prefer an edited preview file', async () => {
       const { sut, ctx } = setup();
       const config = await ctx.getConfig();

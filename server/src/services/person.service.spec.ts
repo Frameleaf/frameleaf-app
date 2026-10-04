@@ -1592,6 +1592,41 @@ describe(PersonService.name, () => {
       expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
     });
 
+    it('repairs a matched imported ML face only at publication without replacing its identity', async () => {
+      const face = AssetFaceFactory.create({
+        sourceType: SourceType.MachineLearning,
+        correctedAt: null,
+        deletedAt: null,
+        personGroupId: newUuid(),
+      });
+      const asset = AssetFactory.from().face(face).file({ type: AssetFileType.Preview }).exif().build();
+      mocks.machineLearning.detectFaces.mockResolvedValue(getAsDetectedFace(face));
+      mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
+      const execution: QueueExecution = {
+        claim: {} as never,
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      };
+
+      await queueExecution.run(execution, () => sut.handleDetectFaces({ id: asset.id }));
+      expect(mocks.person.refreshFaces).not.toHaveBeenCalled();
+      await execution.adoptions[0]({} as never);
+
+      expect(mocks.person.refreshFaces).toHaveBeenCalledExactlyOnceWith(
+        [],
+        [],
+        [{ faceId: face.id, embedding: '[1, 2, 3, 4]' }],
+      );
+      expect(mocks.crypto.randomUUID).not.toHaveBeenCalled();
+      expect(mocks.person.reassignFace).not.toHaveBeenCalled();
+      expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
     it('should add embedding to matching metadata face', async () => {
       const face = AssetFaceFactory.create({ sourceType: SourceType.Exif });
       const asset = AssetFactory.from().face(face).file({ type: AssetFileType.Preview }).exif().build();

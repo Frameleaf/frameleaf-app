@@ -973,10 +973,12 @@ export class PersonService extends BaseService {
         };
         const match = currentAsset.faces.find((face) => this.iou(face, scaledBox) > 0.5);
 
-        // FL-57: a face kept for its explicit decision takes the new embedding too
-        if (match && (!mlFaceIds.delete(match.id) || decided.has(match.id))) {
+        if (match) {
+          // Keep the face identity and owner decisions while refreshing derived search data.
+          // Imported ML faces can have no face_search row even though detection still matches them.
+          mlFaceIds.delete(match.id);
           embeddings.push({ faceId: match.id, embedding });
-        } else if (!match) {
+        } else {
           const faceId = this.cryptoRepository.randomUUID();
           facesToAdd.push({
             id: faceId,
