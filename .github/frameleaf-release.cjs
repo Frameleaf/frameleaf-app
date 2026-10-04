@@ -112,7 +112,7 @@ function installImageReferences(text) {
 }
 // Every image an installation pulls must exist before its bundle is promoted. Returns the verified
 // digest of each owned dependency reference, keyed by the reference as written.
-async function verifyDependencyImages(registry, root) {
+async function verifyDependencyImages(registry, root, cliQualification) {
   const references = new Set(REQUIRED_TOOL_IMAGES);
   for (const name of INSTALL_FILES.filter((file) => file.endsWith(".yml")))
     for (const reference of installImageReferences(
@@ -145,12 +145,30 @@ async function verifyDependencyImages(registry, root) {
       `${reference}: not a known Frameleaf dependency image`,
     );
     assert(tag || pinned, `${reference}: needs a tag or digest`);
+    let qualifiedCliDigest;
+    if (image === "frameleaf-cli") {
+      const {
+        validateCliQualification,
+      } = require("./frameleaf-cli-qualification.cjs");
+      validateCliQualification(
+        cliQualification,
+        cliQualification?.publication?.sourceCommit,
+      );
+      qualifiedCliDigest = cliQualification.publication.digest;
+      assert(
+        !pinned || pinned === qualifiedCliDigest,
+        "CLI dependency differs from qualification",
+      );
+    }
     let found;
     try {
       // Anonymous, as an installation pulls it: the job token could also read a private package.
-      found = await registry.read(image, tag ?? pinned, "manifests", {
-        anonymous: true,
-      });
+      found = await registry.read(
+        image,
+        qualifiedCliDigest ?? tag ?? pinned,
+        "manifests",
+        { anonymous: true },
+      );
     } catch (error) {
       if ([401, 403].includes(error.status))
         throw new Error(
@@ -166,6 +184,12 @@ async function verifyDependencyImages(registry, root) {
         `Transient registry failure reading ${reference} (${error.status ? `status ${error.status}` : error.message}); promotion stopped, retry the release job.`,
       );
     }
+    if (qualifiedCliDigest)
+      assert.equal(
+        found.digest,
+        qualifiedCliDigest,
+        "CLI dependency immutable digest differs",
+      );
     if (pinned)
       assert.equal(
         found.digest,
@@ -1088,6 +1112,8 @@ async function resolveCandidate(
 // both are verified against the committed public key before anything is promoted.
 const COSIGN_PUBLIC_KEY = "cosign.pub";
 const ATTESTATION_TYPE =
+  "https://frameleaf.app/attestations/release-manifest/v3";
+const LEGACY_ATTESTATION_TYPE =
   "https://frameleaf.app/attestations/release-manifest/v2";
 function cosign(args, run = execFileSync) {
   return run("cosign", args, {
@@ -1285,12 +1311,34 @@ async function createBundle(
   manifest,
   dependencies = new Map(),
 ) {
+  assert.equal(
+    manifest.schemaVersion,
+    3,
+    "New release bundles require the CLI-qualified v3 contract",
+  );
   assert(
     /^frameleaf-v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-\d+$/.test(tag),
     "Invalid release tag",
   );
   await fs.mkdir(directory, { recursive: true });
   const files = [];
+  const {
+    validateCliQualification,
+  } = require("./frameleaf-cli-qualification.cjs");
+  const cliReference = validateCliQualification(
+    manifest.cliQualification,
+    manifest.sourceCommit,
+  );
+  assert.equal(
+    dependencies.get("ghcr.io/frameleaf/frameleaf-cli:latest"),
+    manifest.cliQualification.publication.digest,
+    "CLI dependency differs from bundle qualification",
+  );
+  await fs.writeFile(
+    path.join(directory, "cli-image.txt"),
+    cliReference + "\n",
+  );
+  files.push("cli-image.txt");
   for (const name of INSTALL_FILES) {
     let body = await fs.readFile(path.join(root, "docker", name), "utf8");
     if (name === "example.env") {
@@ -1491,13 +1539,24 @@ async function release(env = process.env) {
   assert(await currentMainline(env.SOURCE_SHA), "Stale release candidate");
   const testQualification = await requireTestQualification(env.SOURCE_SHA);
   const registry = new Registry(env);
+  const {
+    requireCliQualification,
+  } = require("./frameleaf-cli-qualification.cjs");
+  const cliQualification = await requireCliQualification(
+    registry,
+    env.SOURCE_SHA,
+  );
   const images = [];
   // Verify every source before creating any release or floating image alias.
   for (const spec of VARIANTS)
     images.push(await candidateImage(registry, spec, env.SOURCE_SHA));
   // The database and CLI images are published separately; a bundle that names a missing image is
   // never reserved, tagged or promoted.
-  const dependencies = await verifyDependencyImages(registry, process.cwd());
+  const dependencies = await verifyDependencyImages(
+    registry,
+    process.cwd(),
+    cliQualification,
+  );
   const version = JSON.parse(await fs.readFile("server/package.json")).version;
   const releases = await listAll("releases");
   const refs = await github("git/matching-refs/tags/frameleaf-v");
@@ -1512,13 +1571,14 @@ async function release(env = process.env) {
       "Release tag targets another commit",
     );
   const manifest = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     repository: REPOSITORY,
     sourceCommit: env.SOURCE_SHA,
     tag,
     certifiedBuildRun: `${SOURCE}/actions/runs/${env.CERTIFIED_RUN_ID}`,
     certifiedTestRun: `${SOURCE}/actions/runs/${testQualification.runId}/attempts/${testQualification.attempt}`,
     testQualification,
+    cliQualification,
     images,
     dependencies: [...dependencies].map(([reference, digest]) => ({
       reference,
@@ -1593,6 +1653,7 @@ async function release(env = process.env) {
     console.log(`Signed and verified ${signed.length} image digests.`);
   }
   await requireTestQualification(env.SOURCE_SHA, github, testQualification);
+  await requireCliQualification(registry, env.SOURCE_SHA, {}, cliQualification);
   assert(
     await currentMainline(env.SOURCE_SHA),
     "Mainline changed before promotion; draft/version tags retained for inspection",
@@ -1652,6 +1713,7 @@ module.exports = {
   COSIGN_PUBLIC_KEY,
   parsePercent,
   ATTESTATION_TYPE,
+  LEGACY_ATTESTATION_TYPE,
 };
 if (require.main === module) {
   (async () => {

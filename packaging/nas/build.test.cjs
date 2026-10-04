@@ -7,6 +7,7 @@ const { execFileSync } = require('node:child_process');
 const { build } = require('./build.cjs');
 const { NAS_ATTESTATION_TYPE } = require('../../.github/verify-release-bundle.cjs');
 const { createBundle, hash, INSTALL_FILES, VARIANTS, REPOSITORY, SOURCE, ATTESTATION_TYPE } = require('../../.github/frameleaf-release.cjs');
+const { syntheticCliQualification, syntheticCliRegistry, syntheticCliProvenance } = require('../../.github/fixtures/cli-qualification.cjs');
 
 const digest = (n) => `sha256:${String(n).repeat(64)}`;
 test('TrueNAS rendering rejects missing, empty, changed and symlinked libraries before import', {
@@ -65,14 +66,17 @@ test('authenticated release packaging, negative trust cases, and Synology worker
       write(path.join(sourceRoot, 'docker', name), fs.readFileSync(path.join(__dirname, '../../docker', name)));
     write(path.join(sourceRoot, 'server/src/fork-schema/supported-versions.json'), '{}');
     const release = {
-      schemaVersion: 2, repository: REPOSITORY, tag, sourceCommit: sha,
+      schemaVersion: 3, repository: REPOSITORY, tag, sourceCommit: sha,
       certifiedBuildRun: `${SOURCE}/actions/runs/123`,
+      cliQualification: syntheticCliQualification(sha),
       images: VARIANTS.map((spec, i) => ({
         image: `ghcr.io/frameleaf/${spec.image}`, suffix: spec.suffix,
         digest: digest(i + 1), sourceCommit: sha, platforms: spec.platforms,
       })),
-      dependencies: [{ reference: database, digest: digest(8) }],
+      dependencies: [{ reference: database, digest: digest(8) }, { reference: 'ghcr.io/frameleaf/frameleaf-cli:latest', digest: digest(2) }],
     };
+    const registry = syntheticCliRegistry(release.cliQualification);
+    const dependencies = new Map([[database, digest(8)], ['ghcr.io/frameleaf/frameleaf-cli:latest', digest(2)]]);
     const reports = {};
     const receipts = Object.fromEntries([['officialImmich', 'v3.1.0'], ['priorFrameleaf', 'frameleaf-v3.1.0-0']].map(([family, version]) => {
       const file = `packaging/nas/qualification/${family.toLowerCase()}.json`;
@@ -88,11 +92,12 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     const migration = Object.fromEntries(Object.entries(receipts).map(([family, entries]) => [family, entries.map((entry) => entry.version)]));
     const signedReports = Object.values(reports).map((report) => JSON.parse(Buffer.from(report.content, 'base64')));
     write(path.join(sourceRoot, 'packaging/nas/certified-sources.json'), JSON.stringify(migration));
-    await createBundle(bundle, sourceRoot, tag, release, new Map([[database, digest(8)]]));
+    await createBundle(bundle, sourceRoot, tag, release, dependencies);
     const nas = JSON.parse(fs.readFileSync(path.join(bundle, 'nas-manifest.json')));
     assert.equal(nas.images.postgres, `${database}@${digest(8)}`);
     const calls = [];
     const run = (command, args) => {
+      if (command === 'gh') return args[0] === '--version' ? 'gh version 2.102.0 (synthetic)\n' : JSON.stringify(syntheticCliProvenance(release.cliQualification));
       assert.equal(command, 'cosign');
       assert.equal(args[2], path.resolve(__dirname, '../../cosign.pub'));
       calls.push(args);
@@ -122,7 +127,7 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     let rejected = 0;
     const reject = async (pattern, verification = {}) => {
       const out = path.join(root, `rejected-${rejected++}`);
-      await assert.rejects(build(bundle, tag, out, receipts, { run, request, ...verification }), pattern);
+      await assert.rejects(build(bundle, tag, out, receipts, { run, request, registry, ...verification }), pattern);
       assert(!fs.existsSync(out), 'An unverified bundle must produce no package');
     };
     await reject(/signature rejected/, { run: () => { throw new Error('signature rejected'); } });
@@ -164,15 +169,15 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     write(path.join(bundle, 'SHA256SUMS'), sums);
     for (const invalid of [{ officialImmich: [], priorFrameleaf: [] }, { officialImmich: ['v3.0.0'], priorFrameleaf: ['frameleaf-v3.1.0-0'] }]) {
       write(path.join(sourceRoot, 'packaging/nas/certified-sources.json'), JSON.stringify(invalid));
-      await createBundle(bundle, sourceRoot, tag, release, new Map([[database, digest(8)]]));
+      await createBundle(bundle, sourceRoot, tag, release, dependencies);
       await reject(/migration version allowlist is required|Migration receipts differ/);
     }
     write(path.join(sourceRoot, 'packaging/nas/certified-sources.json'), JSON.stringify(migration));
-    await createBundle(bundle, sourceRoot, tag, release, new Map([[database, digest(8)]]));
-    await assert.rejects(build(bundle, tag, path.join(root, 'missing-receipts'), undefined, { run, request }), /receipts are required/);
+    await createBundle(bundle, sourceRoot, tag, release, dependencies);
+    await assert.rejects(build(bundle, tag, path.join(root, 'missing-receipts'), undefined, { run, request, registry }), /receipts are required/);
     assert(!fs.existsSync(path.join(root, 'missing-receipts')));
     // The release SHA, qualification workflow SHA and report commit intentionally differ.
-    await build(bundle, tag, output, receipts, { run, request });
+    await build(bundle, tag, output, receipts, { run, request, registry });
     assert(calls.some((args) => args[0] === 'verify-attestation' && args.at(-1) === nas.images.server));
     const read = (name) => fs.readFileSync(path.join(output, name), 'utf8');
     const unraidServer = read('unraid/templates/frameleaf-server.xml');
