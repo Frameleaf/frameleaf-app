@@ -101,6 +101,12 @@ export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {
       }
       value.metadata = JSON.stringify(value.metadata);
     }
+    // FL-218: Asset-Metadata is JSON, so `isFavorite` is naturally a boolean (the OpenAPI type). The shared
+    // multipart schema reads form strings, so pass a JSON boolean on as its 'true' / 'false' form; the
+    // strings stay accepted for existing clients, and anything else is still refused by the schema.
+    if (typeof value.isFavorite === 'boolean') {
+      value.isFavorite = String(value.isFavorite);
+    }
     if (value.publication !== undefined && value.publication !== 'live-photo') {
       throw new Error('Unsupported publication');
     }

@@ -38,6 +38,24 @@ export const changesLockedRules = (dto: UserPreferencesUpdateDto): boolean => {
 };
 
 /**
+ * FL-218: whether a saved preferences change alters what the account's sync stream may contain. Only the
+ * Locked rules (`privacy.suppression`: people, pets, tags and their scope) filter the stream, so only a
+ * real change to them needs every session to re-sync from scratch. The order of the ids is irrelevant.
+ */
+export const changesSyncVisibility = (
+  previous: Pick<UserPreferences, 'privacy'>,
+  updated: Pick<UserPreferences, 'privacy'>,
+): boolean => {
+  const rules = ({ privacy: { suppression } }: Pick<UserPreferences, 'privacy'>) => ({
+    scope: suppression.scope,
+    tagIds: [...suppression.tagIds].sort(),
+    personIds: [...suppression.personIds].sort(),
+    petIds: [...suppression.petIds].sort(),
+  });
+  return !isEqual(rules(previous), rules(updated));
+};
+
+/**
  * FL-67: a stored preferences value (the partial kept in `user_metadata`) without the Locked
  * people, pets and tags, for a reader whose session is not unlocked, such as the sync stream. The
  * scope and every other preference are kept.
