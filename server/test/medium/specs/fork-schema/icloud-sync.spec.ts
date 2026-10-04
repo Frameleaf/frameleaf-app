@@ -9,6 +9,7 @@ import * as identity from 'src/fork-schema/migrations/0000000000213-ICloudSource
 import * as audit from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
 import * as reuse from 'src/fork-schema/migrations/0000000000217-ICloudIdentityReuse.js';
 import * as weekly from 'src/fork-schema/migrations/0000000000218-ICloudWeeklyAuthority.js';
+import * as claimAccessPaths from 'src/fork-schema/migrations/0000000000224-ICloudClaimAccessPaths.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -60,6 +61,7 @@ describe('fork-owned iCloud state', () => {
             '0000000000216-ICloudIdentityAudit': audit,
             '0000000000217-ICloudIdentityReuse': reuse,
             '0000000000218-ICloudWeeklyAuthority': weekly,
+            '0000000000224-ICloudClaimAccessPaths': claimAccessPaths,
           }),
       },
     });
@@ -127,7 +129,7 @@ describe('fork-owned iCloud state', () => {
         AND source.relnamespace <> target.relnamespace
     `.execute(db);
     expect(crossSchema.rows).toEqual([]);
-    for (let step = 0; step < 5; step++) {
+    for (let step = 0; step < 6; step++) {
       const result4 = await migrator.migrateDown();
       expect(result4.error).toBeUndefined();
     }

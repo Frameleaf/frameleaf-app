@@ -108,6 +108,7 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000221-PartnerPeopleLinks' },
       { name: '0000000000222-AlbumSourceLinks' },
       { name: '0000000000223-AlbumSourceMembershipGeneration' },
+      { name: '0000000000224-ICloudClaimAccessPaths' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',

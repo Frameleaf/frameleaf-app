@@ -124,7 +124,7 @@ export class ICloudWeeklyRepository {
         date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date::text AS "weekStart"`.execute(db);
         const {
           rows: [existing],
-        } = await sql<ICloudWeeklyCohort>`SELECT * FROM immich_fork.icloud_weekly_cohort
+        } = await sql<ICloudWeeklyCohort>`SELECT *,"weekStart"::text AS "weekStart" FROM immich_fork.icloud_weekly_cohort
         WHERE "ownerId"=${ownerId}::uuid AND "connectionId"=${connectionId}::uuid
           AND "weekStart"=${clock.weekStart}::date FOR UPDATE`.execute(db);
         if (existing) {
@@ -295,7 +295,7 @@ export class ICloudWeeklyRepository {
         VALUES (${ownerId}::uuid,${connectionId}::uuid,${clock.weekStart}::date,${context.grant?.id ?? null}::uuid,
           ${context.grant?.generation ?? null},${context.configFingerprint},${context.privacyFingerprint},${seed},
           ${manifest.digest()},${population},${count - population},${selectedCount},${unavailableCount},
-          ${selectedCount === unavailableCount ? 'settled' : 'frozen'}) RETURNING *`.execute(db);
+          ${selectedCount === unavailableCount ? 'settled' : 'frozen'}) RETURNING *,"weekStart"::text AS "weekStart"`.execute(db);
         await sql`WITH chosen AS (SELECT "receiptId",(row_number() OVER (ORDER BY rank,"receiptId")-1)/100 AS batch
           FROM pg_temp.icloud_weekly_freeze WHERE current ORDER BY rank,"receiptId" LIMIT ${selectedCount})
         INSERT INTO immich_fork.icloud_weekly_member
@@ -467,7 +467,7 @@ export class ICloudWeeklyRepository {
     const context = await this.lockContext(db, hint.ownerId, hint.connectionId, true);
     const {
       rows: [cohort],
-    } = await sql<ICloudWeeklyCohort>`SELECT * FROM immich_fork.icloud_weekly_cohort
+    } = await sql<ICloudWeeklyCohort>`SELECT *,"weekStart"::text AS "weekStart" FROM immich_fork.icloud_weekly_cohort
       WHERE id=${cohortId}::uuid AND "ownerId"=${hint.ownerId}::uuid AND "connectionId"=${hint.connectionId}::uuid
       FOR UPDATE`.execute(db);
     if (!cohort) {
