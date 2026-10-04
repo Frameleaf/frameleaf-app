@@ -106,6 +106,7 @@ export const buddyBackupCommand = async (args: string[]) => {
         typeof file.path !== 'string' ||
         !BUDDY_ID.test(file.sha256) ||
         !Number.isSafeInteger(file.size) ||
+        // eslint-disable-next-line unicorn/no-impossible-length-comparison -- This is untrusted JSON, not a Map or Set.
         file.size < 0
       )
         throw new Error('Invalid offline recovery file');
