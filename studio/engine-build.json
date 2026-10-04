@@ -269,6 +269,11 @@
       "path": "patches/0053-expression-unary-depth.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "940f288a26bc0a3daee238fe15b38d51e34965dc0962a0c50b95a75120cb6205"
+    },
+    {
+      "path": "patches/0054-channel-preservation-tests.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2659a78ebe3deae8e260a53b586533937f4f90f796457a53e4e6deb2189e67ca"
     }
   ],
   "sourceSha256": "a80fb142410f26d853c8d6f5aaa3a3d06586f5f96d1f8dd44a8ee1cce1d1c603"

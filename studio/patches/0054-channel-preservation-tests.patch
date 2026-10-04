@@ -1,0 +1,189 @@
+Subject: Test channel preservation after clip gain edits in both audio mixers
+
+Upstream Freecut source remains MIT licensed; this test-only adaptation retains that license.
+The immutable vendor snapshot and all existing tests are unchanged.
+
+diff --git a/src/features/export/utils/canvas-audio-channel-preservation.test.ts b/src/features/export/utils/canvas-audio-channel-preservation.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/canvas-audio-channel-preservation.test.ts
+@@ -0,0 +1,179 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { CompositionInputProps } from '@/types/export'
++import type { AudioItem, TimelineTrack } from '@/types/timeline'
++
++// FL-103: real mixer behavior at the decoded-PCM boundary. Decode/demux alone is
++// replaced because this unit runner has no native browser codec. No mixer,
++// downmixer, segment extraction, gain, timeline or window code is mocked.
++// The production API exposes plane count/order, not semantic speaker labels.
++// These fixture names document intended source order; passing does NOT qualify
++// encoded channel-layout tags, codec decode/mux, SoundTouch, resampling or latency.
++const { decodedFixtures } = vi.hoisted(() => ({
++  decodedFixtures: new Map<string, { channels: number; companion: boolean }>(),
++}))
++
++vi.mock('mediabunny', () => {
++  class UrlSource {
++    constructor(public readonly url: string) {}
++  }
++
++  class Input {
++    private disposed = false
++    constructor(private readonly params: { source: UrlSource }) {}
++    async getPrimaryAudioTrack() {
++      if (!decodedFixtures.has(this.params.source.url)) throw new Error('Unknown impulse source')
++      return { src: this.params.source.url, isDisposed: () => this.disposed }
++    }
++    async computeDuration() { return 31 }
++    dispose() { this.disposed = true }
++  }
++
++  class AudioSampleSink {
++    constructor(private readonly track: { src: string; isDisposed: () => boolean }) {}
++    async *samples(startTime = 0, endTime = 31) {
++      if (this.track.isDisposed()) throw new Error('Decoded source was disposed')
++      const fixture = decodedFixtures.get(this.track.src)
++      if (!fixture) throw new Error('Unknown impulse source')
++      const sampleRate = 48_000
++      const startSample = Math.round(startTime * sampleRate)
++      const endSample = Math.round(endTime * sampleRate)
++      const numberOfFrames = endSample - startSample
++      if (numberOfFrames <= 0) throw new Error('Empty decoded range')
++      yield {
++        numberOfFrames,
++        numberOfChannels: fixture.channels,
++        sampleRate,
++        copyTo(destination: Float32Array, options: { planeIndex: number; format: string }) {
++          if (options.format !== 'f32-planar') throw new Error('Expected planar PCM decode')
++          const channel = options.planeIndex
++          if (channel < 0 || channel >= fixture.channels) throw new Error('Invalid source plane')
++          // All amplitudes are binary-exact and stay below the limiter. Unique
++          // sample positions identify each channel and each separate track.
++          const pulses = fixture.companion
++            ? [320 + channel * 19, 1_439_950 + channel, 1_440_320 + channel * 19]
++            : [32 + channel * 17, 1_439_900 + channel, 1_440_032 + channel * 17]
++          destination.fill(0)
++          for (const pulse of pulses) {
++            if (pulse >= startSample && pulse < endSample)
++              destination[pulse - startSample] = fixture.companion ? -0.125 : 0.25
++          }
++        },
++        close() {},
++      }
++    }
++  }
++
++  return { ALL_FORMATS: [], Input, UrlSource, AudioSampleSink }
++})
++
++import { clearAudioDecodeCache, processAudio, processAudioWindows } from './canvas-audio'
++
++const layouts = [
++  { layout: 'mono', channels: ['M'] },
++  { layout: 'stereo', channels: ['FL', 'FR'] },
++  { layout: '5.1(side)', channels: ['FL', 'FR', 'FC', 'LFE', 'SL', 'SR'] },
++  { layout: '7.1(wide)', channels: ['FL', 'FR', 'FC', 'LFE', 'BL', 'BR', 'FLC', 'FRC'] },
++] as const
++
++function channelImpulseComposition(layout: string, channelCount: number): CompositionInputProps {
++  const tracks = [false, true].map((companion, order): TimelineTrack => {
++    const id = companion ? 'untouched-companion' : 'edited'
++    const src = `blob:fl103-${layout}-${id}`
++    decodedFixtures.set(src, { channels: channelCount, companion })
++    const item: AudioItem = {
++      id, type: 'audio', trackId: id, src, label: id,
++      from: 0, durationInFrames: 930, sourceStart: 0, sourceEnd: 930,
++      sourceDuration: 930, sourceFps: 30,
++      // -20 log10(2) dB: the edited track's .25 impulse becomes .125.
++      // Companion clip and track remain at unity; no source is replaced.
++      volume: companion ? 0 : -6.020599913279624,
++    } as AudioItem
++    return {
++      id, name: id, kind: 'audio', order, height: 80, locked: false,
++      visible: true, muted: false, solo: false, volume: 0, items: [item],
++    }
++  })
++  return {
++    fps: 30, durationInFrames: 930, width: 1920, height: 1080,
++    tracks, masterBusDb: 0, masterBusMuted: false, transitions: [], keyframes: [],
++  }
++}
++
++function assertPreservedChannelImpulses(
++  samples: Float32Array[],
++  channelNames: readonly string[],
++  startSample: number,
++  length: number,
++): void {
++  expect(samples).toHaveLength(channelNames.length)
++  for (const [channel, name] of channelNames.entries()) {
++    const plane = samples[channel]!
++    expect(plane, name).toHaveLength(length)
++    // Reference values come from the fixture contract and gain arithmetic,
++    // never from production downmix, timing, gain or window helpers.
++    const expected = [
++      { sample: 32 + channel * 17, value: 0.125 },
++      { sample: 320 + channel * 19, value: -0.125 },
++      { sample: 1_439_900 + channel, value: 0.125 },
++      { sample: 1_439_950 + channel, value: -0.125 },
++      { sample: 1_440_032 + channel * 17, value: 0.125 },
++      { sample: 1_440_320 + channel * 19, value: -0.125 },
++    ].filter((pulse) => pulse.sample >= startSample && pulse.sample < startSample + length)
++    const actual: { sample: number; value: number }[] = []
++    for (let index = 0; index < plane.length; index++) {
++      const value = plane[index]!
++      if (!Number.isFinite(value) || Math.abs(value) > 1e-7)
++        actual.push({ sample: startSample + index, value })
++    }
++    // Exact sample locations and count reject leakage, reorder, duplicates,
++    // missing channels/companion impulses and one-sample boundary offsets.
++    expect(actual.map((pulse) => pulse.sample), name).toEqual(expected.map((pulse) => pulse.sample))
++    for (let index = 0; index < expected.length; index++)
++      expect(actual[index]!.value, `${name} impulse ${expected[index]!.sample}`)
++        .toBeCloseTo(expected[index]!.value, 7)
++  }
++}
++
++describe('FL-103 channel preservation through an edited real audio mix', () => {
++  beforeEach(() => {
++    clearAudioDecodeCache()
++    decodedFixtures.clear()
++  })
++  afterEach(() => {
++    clearAudioDecodeCache()
++    decodedFixtures.clear()
++  })
++
++  for (const { layout, channels } of layouts) {
++    it(`full mix retains ${layout} planes and untouched companion impulses after a clip gain edit`, async () => {
++      const composition = channelImpulseComposition(layout, channels.length)
++      const before = structuredClone(composition)
++      const mixed = await processAudio(composition)
++      expect(mixed).not.toBeNull()
++      expect(mixed!.sampleRate).toBe(48_000)
++      expect(mixed!.channels).toBe(channels.length)
++      assertPreservedChannelImpulses(mixed!.samples, channels, 0, 1_488_000)
++      expect(composition).toEqual(before)
++    })
++
++    it(`windowed mix retains ${layout} planes and untouched companion impulses across 30 seconds`, async () => {
++      const composition = channelImpulseComposition(layout, channels.length)
++      const before = structuredClone(composition)
++      const windows = []
++      for await (const window of processAudioWindows(composition)) windows.push(window)
++      expect(windows).toHaveLength(2)
++      // Independent 31-second / 48-kHz reference, with the 30-second seam
++      // measured directly rather than reconstructed from another mixer's output.
++      const reference = [
++        { start: 0, length: 1_440_000 },
++        { start: 1_440_000, length: 48_000 },
++      ]
++      for (const [index, window] of windows.entries()) {
++        expect(window.sampleRate).toBe(48_000)
++        expect(window.channels).toBe(channels.length)
++        assertPreservedChannelImpulses(window.samples, channels, reference[index]!.start, reference[index]!.length)
++      }
++      expect(composition).toEqual(before)
++    })
++  }
++})
