@@ -3,6 +3,7 @@ import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { AssetVisibility, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
 import { publishJobResult } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { OCR } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getDimensions } from 'src/utils/asset.util.js';
@@ -16,6 +17,7 @@ export class OcrService extends BaseService {
   async handleQueueOcr({ force }: JobOf<JobName.OcrQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isOcrEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -32,11 +34,13 @@ export class OcrService extends BaseService {
   async handleOcr({ id }: JobOf<JobName.Ocr>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isOcrEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForOcr(id);
+    if (asset && !asset.previewFile) deferJobUntilDependency('source-unavailable');
     if (!asset || !asset.previewFile) {
       return JobStatus.Failed;
     }

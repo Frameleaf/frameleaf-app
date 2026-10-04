@@ -63,6 +63,7 @@ import {
   VectorIndex,
 } from 'src/enum.js';
 import { deferJobAdoption, publishJobResult } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -890,6 +891,7 @@ export class PersonService extends BaseService {
   async handleQueueDetectFaces({ force }: JobOf<JobName.AssetDetectFacesQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isFacialRecognitionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -910,11 +912,13 @@ export class PersonService extends BaseService {
   async handleDetectFaces({ id }: JobOf<JobName.AssetDetectFaces>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isFacialRecognitionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
     const asset = await this.assetJobRepository.getForDetectFacesJob(id);
     const previewFile = asset?.files.find((file) => file.isEdited) ?? asset?.files[0];
+    if (asset && !previewFile) deferJobUntilDependency('source-unavailable');
     if (!asset || !previewFile) {
       return JobStatus.Failed;
     }
@@ -1112,6 +1116,7 @@ export class PersonService extends BaseService {
   }: JobOf<JobName.FacialRecognitionQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isFacialRecognitionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -1154,6 +1159,7 @@ export class PersonService extends BaseService {
   async handleRecognizeFaces({ id, deferred, force }: JobOf<JobName.FacialRecognition>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: true });
     if (!isFacialRecognitionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 

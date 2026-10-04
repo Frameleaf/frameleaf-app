@@ -18,7 +18,7 @@ export async function createQueueSchema(db: Kysely<any>) {
       "createdAt" timestamptz not null default now(), "finishedAt" timestamptz
     );
     create table job_run_item (
-      "runId" uuid not null references job_run(id), "itemKey" text not null, "rootItemKey" text, stage text not null,
+      "runId" uuid not null references job_run(id), "itemKey" text not null, "rootItemKey" text, stage text not null, queue text not null references job_queue(name),
       selection jsonb not null, "jobId" uuid, state text not null default 'pending',
       primary key ("runId", "itemKey", stage),
       check (state in ('pending','waiting','active','completed','failed','needs_attention','cancelled','blocked'))
@@ -35,7 +35,7 @@ export async function createQueueSchema(db: Kysely<any>) {
       "availableAt" timestamptz not null default now(), "createdAt" timestamptz not null default now(),
       "startedAt" timestamptz, "finishedAt" timestamptz, "leaseExpiresAt" timestamptz,
       "progressAt" timestamptz, "progressUnits" bigint not null default 0,
-      "cancelRequestedAt" timestamptz, error text,
+      "cancelRequestedAt" timestamptz, "dependencyReason" text, error text,
       check (state in ('pending','waiting','active','completed','failed','needs_attention','cancelled','blocked')),
       check ((state = 'active') = (token is not null)),
       foreign key ("runId", "itemKey", name) references job_run_item("runId", "itemKey", stage)
@@ -53,7 +53,13 @@ export async function createQueueSchema(db: Kysely<any>) {
       outcome text, error text, primary key ("jobId", attempt)
     );
   `;
-  for (const statement of statements.split(';').filter((value) => value.trim())) {
+  for (const statement of statements.split(';')) {
+    if (!statement.trim()) continue;
     await sql.raw(statement).execute(db);
+  }
+  for (const table of ['job', 'job_attempt', 'job_worker', 'job_run_item']) {
+    await sql`alter table ${sql.id(table)} set (autovacuum_vacuum_scale_factor = 0.02,
+      autovacuum_analyze_scale_factor = 0.05, autovacuum_vacuum_threshold = 50,
+      autovacuum_analyze_threshold = 50)`.execute(db);
   }
 }

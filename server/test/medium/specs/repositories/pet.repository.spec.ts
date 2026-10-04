@@ -1,8 +1,5 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { AssetVisibility, PetObservationSource, PetObservationState, PetRecognitionRunStatus } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as migration from 'src/fork-schema/migrations/0000000000176-PetObservationSourceAndRecognitionRuns.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -27,30 +24,15 @@ beforeAll(async () => {
 });
 
 describe(PetRepository.name, () => {
-  describe('fork migration 0000000000176 (FL-58)', () => {
-    const isOwn = (entry: { identity: string }) =>
-      entry.identity.startsWith('immich_fork.pet_recognition_run') ||
-      entry.identity === 'public.pet_observation.sourceChecksum' ||
-      entry.identity === 'public.pet_observation.staleAt';
-
-    it('matches the certified catalog and rolls back to it', async () => {
-      const before = await getCatalogEvidence(defaultDatabase);
-      for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-        expect(before[kind].filter((entry) => isOwn(entry))).toEqual(
-          (manifest as unknown as Record<string, Array<{ identity: string }>>)[kind].filter((entry) => isOwn(entry)),
-        );
-      }
-      expect(before.columns.filter((entry) => isOwn(entry))).toHaveLength(13);
-
-      await migration.down(defaultDatabase);
-      const down = await getCatalogEvidence(defaultDatabase);
-      expect(down.columns.filter((entry) => isOwn(entry))).toEqual([]);
-      await migration.up(defaultDatabase);
-      const after = await getCatalogEvidence(defaultDatabase);
-      for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-        expect(after[kind]).toEqual(before[kind]);
-      }
-    });
+  it('stores recognition runs and source revisions in the canonical schema', async () => {
+    const { rows } = await sql<{
+      name: string | null;
+    }>`SELECT to_regclass('public.pet_recognition_run')::text AS name`.execute(defaultDatabase);
+    expect(rows[0].name).toBe('pet_recognition_run');
+    const columns = await sql<{ column_name: string }>`SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'pet_observation'
+      AND column_name IN ('sourceChecksum', 'staleAt') ORDER BY column_name`.execute(defaultDatabase);
+    expect(columns.rows.map(({ column_name }) => column_name)).toEqual(['sourceChecksum', 'staleAt']);
   });
 
   describe('Locked media (FL-34)', () => {
@@ -282,7 +264,6 @@ describe(PetRepository.name, () => {
         .returning('id' as never)
         .executeTakeFirstOrThrow()) as { id: string };
       try {
-        const refused = { name: 'ConflictException' };
         await expect(sut.startRun(user.id, 'lan')).rejects.toMatchObject(refused);
         await expect(sut.setRunAssets(run.id, 9)).rejects.toMatchObject(refused);
         await expect(sut.recordRunProgress(run.id, 1)).rejects.toMatchObject(refused);

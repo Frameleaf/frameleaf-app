@@ -1,8 +1,4 @@
 import { Kysely, sql } from 'kysely';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as migration from 'src/fork-schema/migrations/0000000000175-FaceCorrectionHistory.js';
-import * as partnerPeople from 'src/fork-schema/migrations/0000000000221-PartnerPeopleLinks.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -10,39 +6,13 @@ import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
-/** FL-57: the face correction history (fork migration 0000000000175) and the extended merge verdicts. */
+/** FL-57: canonical face correction history and extended merge verdicts. */
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
 });
 
-const isOurs = (entry: { identity: string }) =>
-  entry.identity.startsWith('immich_fork.face_correction') ||
-  entry.identity.startsWith('immich_fork.person_merge_verdict');
-
-it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    expect(before[kind].filter((entry) => isOurs(entry))).toEqual(
-      (manifest as unknown as Record<string, Array<{ identity: string }>>)[kind].filter((entry) => isOurs(entry)),
-    );
-  }
-
-  // FL-326: 0000000000221 widens the action checks for partner merges; roll it back and forward around 175
-  await partnerPeople.down(db);
-  await migration.down(db);
-  await migration.up(db);
-  await partnerPeople.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-    expect(after[kind].filter((entry) => isOurs(entry))).toEqual(before[kind].filter((entry) => isOurs(entry)));
-  }
-});
-
-it('records the decisions made before the history existed', async () => {
+it('records explicit decisions with their source face and normalized box', async () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   const people = ctx.get(PersonRepository);
   const { user } = await ctx.newUser();
@@ -66,19 +36,13 @@ it('records the decisions made before the history existed', async () => {
   await people.reassignFace(moved.id, person.personGroupId);
   await people.softDeleteAssetFaces(removed.id);
 
-  // FL-326: 0000000000221 widens the action checks for partner merges; roll it back and forward around 175
-  await partnerPeople.down(db);
-  await migration.down(db);
-  await migration.up(db);
-  await partnerPeople.up(db);
-
   const { rows } = await sql<{
     faceId: string;
     action: string;
     toPersonId: string | null;
     fromPersonId: string | null;
   }>`
-    SELECT "faceId", action, "toPersonId", "fromPersonId", "boxX1", "boxY2" FROM immich_fork.face_correction
+    SELECT "faceId", action, "toPersonId", "fromPersonId", "boxX1", "boxY2" FROM public.face_correction
     WHERE "assetId" = ${asset.id}::uuid ORDER BY action
   `.execute(db);
   expect(rows).toEqual([
@@ -99,15 +63,15 @@ it('records the decisions made before the history existed', async () => {
 it('refuses an unknown action and a face decision without its photo', async () => {
   const owner = '00000000-0000-4000-8000-000000000001';
   await expect(
-    sql`INSERT INTO immich_fork.face_correction ("ownerId", "actorId", action, "assetId")
+    sql`INSERT INTO public.face_correction ("ownerId", "actorId", action, "assetId")
         VALUES (${owner}::uuid, ${owner}::uuid, 'rename', ${owner}::uuid)`.execute(db),
   ).rejects.toThrow();
   await expect(
-    sql`INSERT INTO immich_fork.face_correction ("ownerId", "actorId", action)
+    sql`INSERT INTO public.face_correction ("ownerId", "actorId", action)
         VALUES (${owner}::uuid, ${owner}::uuid, 'reassign')`.execute(db),
   ).rejects.toThrow();
   await expect(
-    sql`INSERT INTO immich_fork.face_correction ("ownerId", "actorId", action, "assetId", "boxX1")
+    sql`INSERT INTO public.face_correction ("ownerId", "actorId", action, "assetId", "boxX1")
         VALUES (${owner}::uuid, ${owner}::uuid, 'remove', ${owner}::uuid, 0.5)`.execute(db),
   ).rejects.toThrow();
 });

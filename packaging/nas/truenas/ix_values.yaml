@@ -28,6 +28,6 @@ consts:
   perms_container_name: permissions
   ml_port: 32002
   ml_cache_path: /mlcache
-  db_user: immich
+  db_user: frameleaf
   db_name: frameleaf
   base_path: /data

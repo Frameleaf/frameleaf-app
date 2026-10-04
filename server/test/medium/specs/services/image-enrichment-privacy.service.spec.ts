@@ -1,14 +1,12 @@
 import { Kysely, sql } from 'kysely';
 import { AssetImageEnrichmentAction } from 'src/dtos/asset.dto.js';
-import { AssetLockReason, AssetStatus, AssetType, AssetVisibility, JobStatus } from 'src/enum.js';
+import { AssetLockReason, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, JobStatus } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
@@ -23,18 +21,31 @@ import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js
 import { withoutHiddenContent, withoutNsfwAssets } from 'src/utils/database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
-import { getActiveForkKyselyDB, getKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
 
 /**
  * FL-34 (ported from PR127 f77249be16, adapted to per-asset `asset_lock`): a sensitive review, its
- * privacy projection and the lock it implies commit together inside the enrichment metadata
- * transaction, and an explicit owner mark or safe decision repairs a missing projection row.
+ * canonical asset verdict and lock commit with enrichment metadata, and an explicit owner
+ * decision repairs an inconsistent stored verdict.
  */
 let database: Kysely<DB>;
 beforeAll(async () => {
-  database = await getActiveForkKyselyDB();
+  database = await getKyselyDB();
 });
 afterAll(async () => database?.destroy());
+
+const readEnrichment = (assetId: string) =>
+  new AssetRepository(database).getMetadataByKey(assetId, AssetMetadataKey.MlEnrichment);
+const readPrivacy = async (assetId: string) => {
+  const asset = await database
+    .selectFrom('asset')
+    .select('is_nsfw')
+    .where('id', '=', assetId)
+    .executeTakeFirstOrThrow();
+  const row = await readEnrichment(assetId);
+  const metadata = row?.value as { nsfwDetection?: { review?: unknown } } | undefined;
+  return { isNsfw: asset.is_nsfw, suppression: metadata?.nsfwDetection?.review ?? null };
+};
 
 const setup = async (visibility = AssetVisibility.Timeline) => {
   const { sut, ctx } = newMediumService(ImageEnrichmentService, {
@@ -126,14 +137,17 @@ it('keeps an item from the upstream Locked folder Locked when it is marked safe'
   await expect(lockRow()).resolves.toMatchObject({ assetId: asset.id, reason: AssetLockReason.ImmichLockedFolder });
 });
 
-// FL-34: after the cutover a missing privacy row is "no classification yet" (not sensitive, no review);
-// reading it returns the defaults and every enrichment write creates it
-describe('an asset without a privacy row after the cutover', () => {
-  const privacyRow = (assetId: string) => new ForkPrivacyRepository(database).get(assetId);
+// Missing enrichment metadata reads as unclassified; reads must not create metadata.
+describe('an asset without enrichment metadata', () => {
+  const privacyRow = readPrivacy;
   const withoutRow = async () => {
     const context = await setup();
-    await new ForkPrivacyRepository(database).delete([context.asset.id]);
-    await expect(privacyRow(context.asset.id)).resolves.toBeUndefined();
+    await database
+      .deleteFrom('asset_metadata')
+      .where('assetId', '=', context.asset.id)
+      .where('key', '=', AssetMetadataKey.MlEnrichment)
+      .execute();
+    await expect(readEnrichment(context.asset.id)).resolves.toBeUndefined();
     return context;
   };
 
@@ -141,7 +155,7 @@ describe('an asset without a privacy row after the cutover', () => {
     const { sut, auth, asset } = await withoutRow();
     const response = await sut.getAssetEnrichment(auth, asset.id);
     expect(response.nsfwDetection?.effectiveIsNsfw ?? false).toBe(false);
-    await expect(privacyRow(asset.id)).resolves.toBeUndefined();
+    await expect(readEnrichment(asset.id)).resolves.toBeUndefined();
   });
 
   it('creates the row, unclassified, when a description is saved', async () => {
@@ -204,15 +218,14 @@ describe('an asset without a privacy row after the cutover', () => {
 
 it('rolls back the review and its lock when the privacy projection fails', async () => {
   const { asset, mark, lockRow } = await setup();
-  const enrichment = new ForkEnrichmentRepository(database);
-  const before = await enrichment.get(asset.id);
+  const before = await readEnrichment(asset.id);
   const save = vi
-    .spyOn(ForkPrivacyRepository.prototype, 'saveClassification')
+    .spyOn(AssetRepository.prototype, 'updateIsNsfw')
     .mockRejectedValueOnce(new Error('projection unavailable'));
   try {
     await expect(mark(AssetImageEnrichmentAction.MarkNsfw)).rejects.toThrow('projection unavailable');
-    await expect(enrichment.get(asset.id)).resolves.toEqual(before);
-    await expect(new ForkPrivacyRepository(database).get(asset.id)).resolves.toMatchObject({
+    await expect(readEnrichment(asset.id)).resolves.toEqual(before);
+    await expect(readPrivacy(asset.id)).resolves.toMatchObject({
       isNsfw: false,
       suppression: null,
     });
@@ -224,13 +237,12 @@ it('rolls back the review and its lock when the privacy projection fails', async
 
 it('rolls back the review and its projection when the lock fails', async () => {
   const { asset, mark, lockRow } = await setup();
-  const enrichment = new ForkEnrichmentRepository(database);
-  const before = await enrichment.get(asset.id);
+  const before = await readEnrichment(asset.id);
   const lock = vi.spyOn(AssetRepository.prototype, 'lock').mockRejectedValueOnce(new Error('lock unavailable'));
   try {
     await expect(mark(AssetImageEnrichmentAction.MarkNsfw)).rejects.toThrow('lock unavailable');
-    await expect(enrichment.get(asset.id)).resolves.toEqual(before);
-    await expect(new ForkPrivacyRepository(database).get(asset.id)).resolves.toMatchObject({
+    await expect(readEnrichment(asset.id)).resolves.toEqual(before);
+    await expect(readPrivacy(asset.id)).resolves.toMatchObject({
       isNsfw: false,
       suppression: null,
     });
@@ -277,7 +289,7 @@ it.each([true, false])(
     await expect(pending).resolves.toBe(JobStatus.Success);
     detector.mockRejectedValueOnce(new Error('model unavailable'));
     await expect(sut.handleNsfwDetection({ id: asset.id })).resolves.toBe(JobStatus.Failed);
-    await expect(new ForkPrivacyRepository(database).get(asset.id)).resolves.toMatchObject({
+    await expect(readPrivacy(asset.id)).resolves.toMatchObject({
       isNsfw,
       suppression: { isNsfw, reviewedBy: user.id },
     });
@@ -337,16 +349,18 @@ it('retains independent tag and person hiding after marking safe', async () => {
     database.selectFrom('tag_asset').select('tagId').where('assetId', '=', asset.id).execute(),
   ).resolves.toContainEqual({ tagId: tag.id });
   await expect(
-    sql`SELECT suppression FROM immich_fork.asset_privacy WHERE "assetId" = ${asset.id}::uuid`.execute(database),
+    sql`SELECT value->'nsfwDetection'->'review' AS suppression FROM asset_metadata WHERE "assetId" = ${asset.id}::uuid AND key = ${AssetMetadataKey.MlEnrichment}`.execute(
+      database,
+    ),
   ).resolves.toMatchObject({ rows: [{ suppression: { action: 'marked-safe' } }] });
 });
 
-it('marks two members of one stack in parallel before the cutover without a deadlock', async () => {
-  const legacy = await getKyselyDB();
+it('marks two members of one stack in parallel without a deadlock', async () => {
+  const isolatedDatabase = await getKyselyDB();
   try {
     const { sut, ctx } = newMediumService(ImageEnrichmentService, {
-      database: legacy,
-      // before the cutover the review also writes its tags
+      database: isolatedDatabase,
+      // the review also writes its tags
       real: [
         AccessRepository,
         AssetRepository,
@@ -366,7 +380,7 @@ it('marks two members of one stack in parallel before the cutover without a dead
         WebsocketRepository,
       ],
     });
-    Object.assign(sut, { db: legacy });
+    Object.assign(sut, { db: isolatedDatabase });
     ctx.getMock(EventRepository).emit.mockResolvedValue();
     ctx.getMock(JobRepository).queue.mockResolvedValue();
     ctx.getMock(JobRepository).queueAll.mockResolvedValue();
@@ -394,7 +408,7 @@ it('marks two members of one stack in parallel before the cutover without a dead
       sut.updateAssetEnrichment(auth, second.id, { action }),
     ]);
     await expect(
-      legacy
+      isolatedDatabase
         .selectFrom('asset_lock')
         .select('assetId')
         .where('assetId', 'in', [first.id, second.id])
@@ -402,7 +416,7 @@ it('marks two members of one stack in parallel before the cutover without a dead
         .execute(),
     ).resolves.toHaveLength(2);
   } finally {
-    await legacy.destroy();
+    await isolatedDatabase.destroy();
   }
 });
 
@@ -464,7 +478,7 @@ describe('Mark Safe on a stack', () => {
 
     await expect(lockRows()).resolves.toEqual([]);
     for (const id of [asset.id, sibling.id]) {
-      await expect(new ForkPrivacyRepository(database).get(id)).resolves.toMatchObject({
+      await expect(readPrivacy(id)).resolves.toMatchObject({
         isNsfw: false,
         suppression: { action: 'marked-safe', reviewedBy: user.id },
       });
@@ -487,7 +501,7 @@ describe('Mark Safe on a stack', () => {
     await expect(sut.handleNsfwDetection({ id: sibling.id })).resolves.toBe(JobStatus.Success);
 
     await expect(lockRows()).resolves.toEqual([]);
-    await expect(new ForkPrivacyRepository(database).get(sibling.id)).resolves.toMatchObject({
+    await expect(readPrivacy(sibling.id)).resolves.toMatchObject({
       isNsfw: false,
       suppression: { action: 'marked-safe' },
     });
@@ -507,16 +521,16 @@ describe('Mark Safe on a stack', () => {
     ).rejects.toThrow('Elevated permission is required');
 
     await expect(lockRows()).resolves.toEqual([{ assetId: sibling.id }]);
-    await expect(new ForkPrivacyRepository(database).get(asset.id)).resolves.toMatchObject({ suppression: null });
+    await expect(readPrivacy(asset.id)).resolves.toMatchObject({ suppression: null });
   });
 
   it('rolls back the unlock and every review when a sibling review cannot be saved', async () => {
     const { asset, sibling, mark, lockRows } = await setupStack();
     await mark(AssetImageEnrichmentAction.MarkNsfw);
-    const original = ForkPrivacyRepository.prototype.saveClassification;
-    const save = vi.spyOn(ForkPrivacyRepository.prototype, 'saveClassification').mockImplementation(function (
-      this: ForkPrivacyRepository,
-      ...args
+    const original = AssetRepository.prototype.upsertMetadata;
+    const save = vi.spyOn(AssetRepository.prototype, 'upsertMetadata').mockImplementation(function (
+      this: AssetRepository,
+      ...args: Parameters<AssetRepository['upsertMetadata']>
     ) {
       return args[0] === sibling.id ? Promise.reject(new Error('sibling review failed')) : original.apply(this, args);
     });
@@ -527,28 +541,27 @@ describe('Mark Safe on a stack', () => {
     }
 
     await expect(lockRows()).resolves.toHaveLength(2);
-    await expect(new ForkPrivacyRepository(database).get(asset.id)).resolves.toMatchObject({
+    await expect(readPrivacy(asset.id)).resolves.toMatchObject({
       isNsfw: true,
       suppression: { action: 'marked-nsfw' },
     });
   });
 
-  it('repairs a missing projection of an asset already reviewed safe, keeping its review', async () => {
+  it('repairs a stale canonical verdict of an asset already reviewed safe, keeping its review', async () => {
     const { asset, sibling, mark } = await setupStack();
     await mark(AssetImageEnrichmentAction.MarkNsfw);
     await mark(AssetImageEnrichmentAction.MarkSafe);
-    const privacy = new ForkPrivacyRepository(database);
-    const safe = await privacy.get(asset.id);
-    await privacy.delete([asset.id]);
+    const safe = await readPrivacy(asset.id);
+    await database.updateTable('asset').set({ is_nsfw: true }).where('id', '=', asset.id).execute();
 
     await expect(mark(AssetImageEnrichmentAction.MarkSafe)).resolves.toMatchObject({
       nsfwDetection: { effectiveIsNsfw: false },
     });
 
-    await expect(privacy.get(asset.id)).resolves.toEqual(
+    await expect(readPrivacy(asset.id)).resolves.toEqual(
       expect.objectContaining({ isNsfw: false, suppression: safe!.suppression }),
     );
-    await expect(privacy.get(sibling.id)).resolves.toMatchObject({ isNsfw: false });
+    await expect(readPrivacy(sibling.id)).resolves.toMatchObject({ isNsfw: false });
   });
 
   it('leaves a detected but unlocked sibling with its detector verdict', async () => {
@@ -573,11 +586,11 @@ describe('Mark Safe on a stack', () => {
 
     await mark(AssetImageEnrichmentAction.MarkSafe);
 
-    await expect(new ForkPrivacyRepository(database).get(asset.id)).resolves.toMatchObject({
+    await expect(readPrivacy(asset.id)).resolves.toMatchObject({
       isNsfw: false,
       suppression: { action: 'marked-safe', reviewedBy: user.id },
     });
-    await expect(new ForkPrivacyRepository(database).get(sibling.id)).resolves.toMatchObject({
+    await expect(readPrivacy(sibling.id)).resolves.toMatchObject({
       isNsfw: true,
       suppression: null,
     });
@@ -608,10 +621,10 @@ describe('unlocking assets', () => {
     await mark(AssetImageEnrichmentAction.MarkNsfw);
     const { asset: other } = await ctx.newAsset({ ownerId: user.id });
     await sut.updateAssetEnrichment(auth, other.id, { action: AssetImageEnrichmentAction.MarkNsfw });
-    const original = ForkPrivacyRepository.prototype.saveClassification;
-    const save = vi.spyOn(ForkPrivacyRepository.prototype, 'saveClassification').mockImplementation(function (
-      this: ForkPrivacyRepository,
-      ...args
+    const original = AssetRepository.prototype.upsertMetadata;
+    const save = vi.spyOn(AssetRepository.prototype, 'upsertMetadata').mockImplementation(function (
+      this: AssetRepository,
+      ...args: Parameters<AssetRepository['upsertMetadata']>
     ) {
       return args[0] === other.id ? Promise.reject(new Error('review failed')) : original.apply(this, args);
     });
@@ -625,7 +638,7 @@ describe('unlocking assets', () => {
     await expect(
       database.selectFrom('asset_lock').select('assetId').where('assetId', '=', other.id).execute(),
     ).resolves.toHaveLength(1);
-    await expect(new ForkPrivacyRepository(database).get(asset.id)).resolves.toMatchObject({ isNsfw: true });
+    await expect(readPrivacy(asset.id)).resolves.toMatchObject({ isNsfw: true });
   });
 
   it('accepts repeated unlocks of overlapping stack members and reviews each once', async () => {
@@ -635,14 +648,14 @@ describe('unlocking assets', () => {
     await mark(AssetImageEnrichmentAction.MarkNsfw);
 
     await expect(sut.unlockAssets(auth, { ids: [asset.id, sibling.id] })).resolves.toBeUndefined();
-    const reviewed = await new ForkPrivacyRepository(database).get(sibling.id);
+    const reviewed = await readPrivacy(sibling.id);
     await expect(sut.unlockAssets(auth, { ids: [asset.id, sibling.id] })).resolves.toBeUndefined();
 
     await expect(
       database.selectFrom('asset_lock').select('assetId').where('assetId', 'in', [asset.id, sibling.id]).execute(),
     ).resolves.toEqual([]);
     expect(reviewed).toMatchObject({ isNsfw: false, suppression: { action: 'marked-safe', reviewedBy: user.id } });
-    await expect(new ForkPrivacyRepository(database).get(sibling.id)).resolves.toEqual(reviewed);
+    await expect(readPrivacy(sibling.id)).resolves.toEqual(reviewed);
   });
 });
 

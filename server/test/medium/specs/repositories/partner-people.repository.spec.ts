@@ -1,9 +1,6 @@
 import { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { SourceType } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as migration from 'src/fork-schema/migrations/0000000000221-PartnerPeopleLinks.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
@@ -13,7 +10,7 @@ import { newMediumService } from 'test/medium.factory.js';
 import { newEmbedding } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
-/** FL-326: universal people for partner copies (fork migration 0000000000221 and PersonRepository). */
+/** FL-326: universal people for partner copies (PersonRepository). */
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
@@ -26,31 +23,6 @@ const setup = () => {
   const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
   return { ctx, sut: ctx.get(PersonRepository), origins: ctx.get(PartnerOriginRepository) };
 };
-
-const isMine = (entry: { identity: string }) =>
-  entry.identity.startsWith('immich_fork.partner_person_link') ||
-  entry.identity === 'immich_fork.face_correction.face_correction_action_check' ||
-  entry.identity === 'immich_fork.face_correction.face_correction_anchor_check';
-
-it('matches the private catalog and rolls back without touching the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    const expected = manifest[kind].filter((entry) => isMine(entry));
-    expect(expected.length).toBeGreaterThan(0);
-    expect(before[kind].filter((entry) => isMine(entry))).toEqual(expected);
-  }
-  await migration.down(db);
-  const dropped = await getCatalogEvidence(db);
-  expect(dropped.tables.filter((entry) => entry.identity.startsWith('immich_fork.partner_person_link'))).toEqual([]);
-  await migration.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-    expect(after[kind].filter((entry) => isMine(entry))).toEqual(before[kind].filter((entry) => isMine(entry)));
-  }
-});
 
 describe('PartnerOriginRepository.getOriginLabels', () => {
   it("labels only the owner's own copies with the original uploader's name", async () => {

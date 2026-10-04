@@ -13,6 +13,7 @@ import {
   BestPhotosResponseDto,
 } from 'src/dtos/best-photos.dto.js';
 import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus, QueueName, TranscodeTarget } from 'src/enum.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BestPhotoScoreUpsert, BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -111,6 +112,7 @@ export class BestPhotosService {
     }
 
     if (!asset.previewFile) {
+      deferJobUntilDependency('source-unavailable');
       this.logger.warn(`Skipping Best Photos scoring for asset ${id}: preview file is missing`);
       return JobStatus.Skipped;
     }
