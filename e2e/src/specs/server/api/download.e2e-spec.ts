@@ -121,7 +121,7 @@ describe('/download', () => {
         expect(copy.id).not.toBe(partnerAsset.id);
         expect(copy).toMatchObject({ ownerId: recipient.userId, sourceAssetId: partnerAsset.id, following: true });
         const plan = await request(app)
-   .post('/download/info')
+          .post('/download/info')
           .set('Authorization', `Bearer ${recipient.accessToken}`)
           .send({ assetIds: [copy.id] })
           .expect(201);
@@ -138,16 +138,16 @@ describe('/download', () => {
         sharing = false;
         await utils.waitForAllQueuesFinish(admin.accessToken);
         const retained = await request(app)
-   .post('/download/info')
+          .post('/download/info')
           .set('Authorization', `Bearer ${recipient.accessToken}`)
           .send({ assetIds: [copy.id] })
           .expect(201);
         expect(retained.body.archives.flatMap((archive: { assetIds: string[] }) => archive.assetIds)).toEqual([
           copy.id,
         ]);
-        const retainedOrigin = await db.query(
-          'SELECT following FROM immich_fork.asset_origin WHERE "assetId" = $1', [copy.id],
-        );
+        const retainedOrigin = await db.query('SELECT following FROM immich_fork.asset_origin WHERE "assetId" = $1', [
+          copy.id,
+        ]);
         expect(retainedOrigin.rows).toEqual([{ following: false }]);
         const later = await utils.createAsset(partner.accessToken);
         await utils.waitForAllQueuesFinish(admin.accessToken);
@@ -181,14 +181,12 @@ describe('/download', () => {
         for (const user of users) {
           expect((await db.query('SELECT id FROM "user" WHERE id = $1', [user.userId])).rows).toEqual([]);
           // Fork provenance has no official-schema foreign keys; remove the drained fixture's orphan rows.
-          await db.query(
-            'DELETE FROM immich_fork.asset_origin WHERE "ownerId" = $1 OR "partnerSharedById" = $1',
-            [user.userId],
-          );
-          await db.query(
-            'DELETE FROM immich_fork.partner_backfill WHERE "sharedById" = $1 OR "sharedWithId" = $1',
-            [user.userId],
-          );
+          await db.query('DELETE FROM immich_fork.asset_origin WHERE "ownerId" = $1 OR "partnerSharedById" = $1', [
+            user.userId,
+          ]);
+          await db.query('DELETE FROM immich_fork.partner_backfill WHERE "sharedById" = $1 OR "sharedWithId" = $1', [
+            user.userId,
+          ]);
         }
       }
     }, 90_000);

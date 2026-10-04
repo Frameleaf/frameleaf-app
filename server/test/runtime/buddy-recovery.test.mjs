@@ -158,15 +158,18 @@ test('offline recovery stages a database-backed replacement without publishing h
       { role: 'original', path: join(mediaRoot, 'photo.jpg'), bytes: Buffer.from('replacement original') },
       { role: 'profile', path: join(mediaRoot, 'profile.jpg'), bytes: Buffer.from('replacement profile') },
       {
-        role: 'configuration', path: join(configurationRoot, 'frameleaf.json'),
+        role: 'configuration',
+        path: join(configurationRoot, 'frameleaf.json'),
         bytes: Buffer.from(JSON.stringify({ syntheticSecret: environmentSecret })),
       },
       {
-        role: 'project', path: join(mediaRoot, 'project-dependency.svg'),
+        role: 'project',
+        path: join(mediaRoot, 'project-dependency.svg'),
         bytes: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L1 1"/></svg>'),
       },
     ];
-    const databaseText = '-- PostgreSQL database dump\nCREATE TABLE recovery_fixture (id integer PRIMARY KEY);\nINSERT INTO recovery_fixture VALUES (42);\n';
+    const databaseText =
+      '-- PostgreSQL database dump\nCREATE TABLE recovery_fixture (id integer PRIMARY KEY);\nINSERT INTO recovery_fixture VALUES (42);\n';
     const database = gzipSync(Buffer.from(databaseText));
     const databaseSha256 = createHash('sha256').update(database).digest('hex');
     const contents = {};
@@ -199,14 +202,22 @@ test('offline recovery stages a database-backed replacement without publishing h
         fork: [{ key: 'recovery-fixture', value: { enabled: true } }],
         users: [{ userId: ownerId, key: 'preferences', value: { download: { archive: true } } }],
       },
-      cloudBackupKeys: [{
-        fingerprint: storedKeyFingerprint,
-        content: JSON.stringify({
-          format: 'frameleaf-backup-key', version: 1, algorithm: 'AES256 (SSE-C)',
-          instanceId, bucket: 'fixture', mode: 'server', fingerprint: storedKeyFingerprint,
-          key: storedKey.toString('base64'), createdAt: '2026-10-03T00:00:00.000Z',
-        }),
-      }],
+      cloudBackupKeys: [
+        {
+          fingerprint: storedKeyFingerprint,
+          content: JSON.stringify({
+            format: 'frameleaf-backup-key',
+            version: 1,
+            algorithm: 'AES256 (SSE-C)',
+            instanceId,
+            bucket: 'fixture',
+            mode: 'server',
+            fingerprint: storedKeyFingerprint,
+            key: storedKey.toString('base64'),
+            createdAt: '2026-10-03T00:00:00.000Z',
+          }),
+        },
+      ],
       assetLinks: { [assetId]: { livePhotoVideoId: null, libraryId: null, isExternal: false } },
       assetFiles: {},
       dependencies: [inventory[3]],
@@ -217,11 +228,18 @@ test('offline recovery stages a database-backed replacement without publishing h
         instanceId,
         createdAt: '2026-10-03T00:00:00.000Z',
         database: { key: 'frameleaf-db-backup-fixture.sql.gz', sha256: databaseSha256, size: database.length },
-        assets: { [assetId]: {
-          owner: ownerId, files: [inventory[0]], type: 'IMAGE', originalFileName: 'photo.jpg',
-          fileCreatedAt: '2026-10-03T00:00:00.000Z', fileModifiedAt: '2026-10-03T00:00:00.000Z',
-          localDateTime: '2026-10-03T00:00:00.000Z', duration: null,
-        } },
+        assets: {
+          [assetId]: {
+            owner: ownerId,
+            files: [inventory[0]],
+            type: 'IMAGE',
+            originalFileName: 'photo.jpg',
+            fileCreatedAt: '2026-10-03T00:00:00.000Z',
+            fileModifiedAt: '2026-10-03T00:00:00.000Z',
+            localDateTime: '2026-10-03T00:00:00.000Z',
+            duration: null,
+          },
+        },
         profiles: { [ownerId]: inventory[1] },
         albums: {},
         people: {},
@@ -244,13 +262,22 @@ test('offline recovery stages a database-backed replacement without publishing h
     const now = Date.now();
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');
     const snapshot = {
-      version: 1, vaultId, id: snapshotId, sequence: 1, previous: null, keyVersion: 1,
-      createdAt: new Date(now).toISOString(), retainUntil: new Date(now + 31 * 86400_000).toISOString(),
-      objects: receipts, manifest: [manifestId],
+      version: 1,
+      vaultId,
+      id: snapshotId,
+      sequence: 1,
+      previous: null,
+      keyVersion: 1,
+      createdAt: new Date(now).toISOString(),
+      retainUntil: new Date(now + 31 * 86400_000).toISOString(),
+      objects: receipts,
+      manifest: [manifestId],
     };
     await vault.commit(
       { snapshot, signature: sign(null, buddySnapshotBytes(snapshot), privateKey).toString('base64url') },
-      publicKey.export({ format: 'jwk' }), now, capacity,
+      publicKey.export({ format: 'jwk' }),
+      now,
+      capacity,
     );
     const kit = join(root, 'independent-kit.json');
     await writeFile(kit, JSON.stringify({ version: 1, vaultId, current: 1, keys: { 1: key.toString('base64url') } }));
@@ -278,8 +305,14 @@ test('offline recovery stages a database-backed replacement without publishing h
     const stagedDatabase = await readFile(join(output, 'recovery', snapshotId, 'database.sql.gz'));
     assert.equal(createHash('sha256').update(stagedDatabase).digest('hex'), databaseSha256);
     assert.equal(gunzipSync(stagedDatabase).toString(), databaseText);
-    assert.ok(plan.manifest.environment.FRAMELEAF_TEST_SECRET === environmentSecret, 'environment reference must survive privately');
-    assert.ok(plan.manifest.cloudBackupKeys[0].content === manifest.cloudBackupKeys[0].content, 'stored recovery key must survive privately');
+    assert.ok(
+      plan.manifest.environment.FRAMELEAF_TEST_SECRET === environmentSecret,
+      'environment reference must survive privately',
+    );
+    assert.ok(
+      plan.manifest.cloudBackupKeys[0].content === manifest.cloudBackupKeys[0].content,
+      'stored recovery key must survive privately',
+    );
     assert.deepEqual(plan.manifest.settings, manifest.settings);
     const configuration = [files[2].path];
     const publisher = new BuddyRecoveryFiles(output, snapshotId);
@@ -288,7 +321,11 @@ test('offline recovery stages a database-backed replacement without publishing h
     assert.ok((await readFile(identityPath)).equals(identity), 'foreign identity destination must remain unchanged');
     await symlink(replacementIdentity, join(mediaRoot, 'alias'));
     await assert.rejects(
-      publisher.publish({ ...plan, files: [{ ...inventory[0], path: join(mediaRoot, 'alias', 'instance-key.pem') }] }, [mediaRoot], configuration),
+      publisher.publish(
+        { ...plan, files: [{ ...inventory[0], path: join(mediaRoot, 'alias', 'instance-key.pem') }] },
+        [mediaRoot],
+        configuration,
+      ),
       /Unsafe/,
     );
     const stagedObject = join(output, 'recovery', snapshotId, 'objects', inventory[3].sha256);
@@ -297,7 +334,9 @@ test('offline recovery stages a database-backed replacement without publishing h
     for (const file of files) await assert.rejects(readFile(file.path), { code: 'ENOENT' });
     await writeFile(stagedObject, files[3].bytes);
     await assert.rejects(
-      new BuddyRecoveryFiles(output, snapshotId, async () => { throw new Error('lost maintenance fence'); }).publish(plan, [mediaRoot], configuration),
+      new BuddyRecoveryFiles(output, snapshotId, async () => {
+        throw new Error('lost maintenance fence');
+      }).publish(plan, [mediaRoot], configuration),
       /lost maintenance fence/,
     );
     await writeFile(files[0].path, 'replacement has newer media');
@@ -307,9 +346,16 @@ test('offline recovery stages a database-backed replacement without publishing h
     await rm(files[0].path);
     await publisher.publish(plan, [mediaRoot], configuration);
     await new BuddyRecoveryFiles(output, snapshotId).verify(plan, [mediaRoot], configuration);
-    for (const file of files) assert.ok((await readFile(file.path)).equals(file.bytes), 'published file must match verified backup bytes');
-    assert.ok((await readFile(identityPath)).equals(identity), 'explicit publication must preserve replacement identity');
-    assert.ok(process.env.FRAMELEAF_TEST_SECRET !== environmentSecret, 'historical environment must not be applied by offline recovery');
+    for (const file of files)
+      assert.ok((await readFile(file.path)).equals(file.bytes), 'published file must match verified backup bytes');
+    assert.ok(
+      (await readFile(identityPath)).equals(identity),
+      'explicit publication must preserve replacement identity',
+    );
+    assert.ok(
+      process.env.FRAMELEAF_TEST_SECRET !== environmentSecret,
+      'historical environment must not be applied by offline recovery',
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

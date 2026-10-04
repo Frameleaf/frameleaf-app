@@ -698,20 +698,27 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
        WHERE asset."deletedAt" IS NULL AND asset.type = 'IMAGE'
          AND asset.visibility NOT IN ('hidden', 'locked') AND lock."assetId" IS NULL ORDER BY asset.id`,
     );
-    expect(counted).toEqual([
-      { id: plain.id, ownerId: owner.userId },
-      { id: ruleMatch.id, ownerId: owner.userId },
-      { id: plainCopy.id, ownerId: partner.userId },
-    ].toSorted((a, b) => a.id.localeCompare(b.id)));
+    expect(counted).toEqual(
+      [
+        { id: plain.id, ownerId: owner.userId },
+        { id: ruleMatch.id, ownerId: owner.userId },
+        { id: plainCopy.id, ownerId: partner.userId },
+      ].toSorted((a, b) => a.id.localeCompare(b.id)),
+    );
     const protectedCopies = copies.filter(({ sourceAssetId }) => sourceAssetId !== plain.id);
-    const copyAnswers = await readAll(protectedCopies.flatMap(({ id }) => oneItemReads(id)), bearer(admin.accessToken));
-    expectNoTrace(copyAnswers, protectedCopies.map(({ id }) => id));
+    const copyAnswers = await readAll(
+      protectedCopies.flatMap(({ id }) => oneItemReads(id)),
+      bearer(admin.accessToken),
+    );
+    expectNoTrace(
+      copyAnswers,
+      protectedCopies.map(({ id }) => id),
+    );
     for (const { status } of copyAnswers) {
       expect(status).toBeGreaterThanOrEqual(400);
     }
     const { body: server } = await request(app).get('/server/statistics').set(bearer(admin.accessToken)).expect(200);
     expect(server.photos).toBe(counted.length);
-
   }, 90_000);
 });
 
