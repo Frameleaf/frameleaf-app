@@ -35,10 +35,12 @@ import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetLockReason,
   AssetPathType,
+  AssetStatus,
   AssetType,
   AssetVisibility,
   ChecksumAlgorithm,
   MediaOperationKind,
+  PhysicalFileType,
   UserMetadataKey,
 } from 'src/enum.js';
 import * as auditMigration from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
@@ -63,6 +65,7 @@ import {
   guardScheduledAudit,
   scheduledAuditFinalFence,
 } from 'src/repositories/icloud-scheduled-authority.js';
+import { publishScheduledAudit } from 'src/repositories/icloud-scheduled-publication.js';
 import {
   ICloudScheduledStagingRepository,
   ScheduledFreshPayload,
@@ -3286,7 +3289,7 @@ describe('iCloud exact identity adoption', () => {
           expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
         });
 
-        it('rolls back a forced match-as-mismatch reservation after real destination decode; protection precedes outbox visibility', async () => {
+        it('rolls back a duplicate reservation at the real owner/checksum constraint after actual destination decode', async () => {
           // Negative reservation test only. This is not a genuine same-descriptor weekly mismatch.
           const fixture = await createStageFixture(true);
           const fresh = await fixture.staging.download(fixture.input);
@@ -3317,19 +3320,12 @@ describe('iCloud exact identity adoption', () => {
           await sql`UPDATE immich_fork.icloud_resource SET "expectedTarget"=${target}::jsonb,"promotedPath"=${promotedPath}
             WHERE id=${fixture.resource.id}::uuid`.execute(db);
           const privacy = new ForkPrivacyRepository(db);
-          const originalMirror = privacy.mirrorFromLegacy.bind(privacy);
-          const protectedBeforeJobs = vi.spyOn(privacy, 'mirrorFromLegacy').mockImplementation(async (id, tx) => {
-            expect(
-              (await sql`SELECT 1 FROM public.asset_lock WHERE "assetId"=${id}::uuid`.execute(tx!)).rows,
-            ).toHaveLength(1);
-            expect(
-              (
-                await sql<{ pendingJobs: unknown[] }>`SELECT "pendingJobs" FROM immich_fork.icloud_resource
-              WHERE id=${fixture.resource.id}::uuid`.execute(tx!)
-              ).rows[0].pendingJobs,
-            ).toEqual([]);
-            return originalMirror(id, tx);
-          });
+          const privacyMirror = vi.spyOn(privacy, 'mirrorFromLegacy');
+          const quotaBefore = await db
+            .selectFrom('user')
+            .select('quotaUsageInBytes')
+            .where('id', '=', fixture.f.user.id)
+            .executeTakeFirstOrThrow();
           const repository = new MediaRecoveryRepository(
             db,
             privacy,
@@ -3375,16 +3371,16 @@ describe('iCloud exact identity adoption', () => {
             // The real original necessarily still owns these matching bytes.
             // Keep the production duplicate guard as a positive control first.
             expect(await commit()).toEqual({ outcome: 'retry', reason: 'matching_asset_created' });
-            expect(protectedBeforeJobs).not.toHaveBeenCalled();
+            expect(privacyMirror).not.toHaveBeenCalled();
             await files?.release();
             files = undefined;
-            // Isolated writer negative only: bypass this earlier duplicate
+            // Isolated uniqueness rollback only: bypass this earlier duplicate
             // short-circuit, not frozen identity, live authority, actual decode
             // or authenticated proof. This does not qualify a worker mismatch.
             duplicateGate = vi
               .spyOn(repository as unknown as { hasManagedMatch: () => Promise<boolean> }, 'hasManagedMatch')
               .mockResolvedValue(false);
-            await expect(commit()).rejects.toThrow('scheduled_audit_result_invalid');
+            await expect(commit()).rejects.toMatchObject({ code: '23505', constraint_name: 'UQ_assets_owner_checksum' });
           } finally {
             try {
               await files?.release();
@@ -3392,10 +3388,24 @@ describe('iCloud exact identity adoption', () => {
               duplicateGate?.mockRestore();
             }
           }
-          expect(protectedBeforeJobs).toHaveBeenCalledTimes(1);
+          expect(privacyMirror).not.toHaveBeenCalled();
+          expect(
+            await db
+              .selectFrom('user')
+              .select('quotaUsageInBytes')
+              .where('id', '=', fixture.f.user.id)
+              .executeTakeFirstOrThrow(),
+          ).toEqual(quotaBefore);
           expect(await db.selectFrom('asset').select('id').where('id', '=', assetId).execute()).toEqual([]);
           expect(
+            await db.selectFrom('physical_file').select('id').where('canonicalAssetId', '=', assetId).execute(),
+          ).toEqual([]);
+          expect(
             (await sql`SELECT 1 FROM immich_fork.asset_physical_file WHERE "assetId"=${assetId}::uuid`.execute(db))
+              .rows,
+          ).toEqual([]);
+          expect(
+            (await sql`SELECT 1 FROM immich_fork.physical_file WHERE "canonicalAssetId"=${assetId}::uuid`.execute(db))
               .rows,
           ).toEqual([]);
           expect((await fixture.repository.read(fixture.input))!.resource.pendingJobs).toEqual([]);
@@ -3403,6 +3413,138 @@ describe('iCloud exact identity adoption', () => {
           // Hosted phase proof measured 2157 ms for one actual destination
           // decode/publication. This case now deliberately runs that path twice.
         }, 10_000);
+
+        it('rejects a matching receipt published as mismatch and rolls back test-only privacy sentinel writes', async () => {
+          const fixture = await createStageFixture(true);
+          const fresh = await fixture.staging.download(fixture.input);
+          const validation = await fixture.staging.validate(fixture.input);
+          const staged = await validation.result;
+          await validation.settled;
+          expect(staged.status).toBe('validated');
+          if (staged.status !== 'validated') {
+            throw new Error('actual_validation_required');
+          }
+          expect(await fixture.repository.authenticateReceipt(fixture.input, fresh)).toBe(true);
+          expect(await fixture.repository.authenticateDeepValidation(fixture.input, staged.validation)).toBe(true);
+          const sentinelId = randomUUID();
+          const physicalId = randomUUID();
+          // Metadata-only transaction sentinel: not a decoded recovery destination,
+          // authored proof, production commit privacy path or genuine worker mismatch.
+          const sentinelChecksum = createHash('sha256').update(`writer-sentinel:${sentinelId}`).digest();
+          const sentinelPath = join(dirname(fixture.f.originalPath), `writer-sentinel-${sentinelId}.jpg`);
+          const privacy = new ForkPrivacyRepository(db);
+          const before = await sql<{ state: unknown }>`SELECT jsonb_build_object(
+            'original', (SELECT to_jsonb(a) FROM public.asset a WHERE id=${fixture.f.asset.id}::uuid),
+            'identity', (SELECT to_jsonb(i) FROM immich_fork.icloud_source_identity i WHERE id=${fixture.f.identityId}::uuid),
+            'cohort', (SELECT to_jsonb(c) FROM immich_fork.icloud_weekly_cohort c WHERE id=${fixture.cohort.id}::uuid),
+            'request', (SELECT to_jsonb(r) FROM immich_fork.icloud_identity_audit r WHERE id=${fixture.authority.auditRequestId}::uuid),
+            'quota', (SELECT "quotaUsageInBytes" FROM public."user" WHERE id=${fixture.f.user.id}::uuid)
+          ) AS state`.execute(db);
+          const files = await fixture.staging.holdPublicationFiles(fixture.input);
+          try {
+            expect(files.receipt).toEqual(fresh);
+            expect(files.validation).toEqual(staged.validation);
+            expect(await files.current()).toBe(true);
+            await expect(
+              db.transaction().execute(async (tx) => {
+                const guarded = await guardScheduledAudit(tx, fixture.authority, fixture.f.user.id, {
+                  resource: fixture.resource,
+                });
+                expect(guarded?.private).toBe(true);
+                if (!guarded) {
+                  throw new Error('actual_authority_required');
+                }
+                expect(fresh.payload.sha256).toBe(guarded.request.expectedSha256.toString('hex'));
+                expect(sentinelChecksum.equals(guarded.request.expectedSha256)).toBe(false);
+                const createdAt = new Date();
+                await tx
+                  .insertInto('asset')
+                  .values({
+                    id: sentinelId,
+                    ownerId: fixture.f.user.id,
+                    originalPath: sentinelPath,
+                    originalFileName: 'writer-sentinel.jpg',
+                    type: AssetType.Image,
+                    checksum: sentinelChecksum,
+                    checksumAlgorithm: ChecksumAlgorithm.sha256File,
+                    fileCreatedAt: createdAt,
+                    fileModifiedAt: createdAt,
+                    localDateTime: createdAt,
+                    visibility: AssetVisibility.Timeline,
+                    status: AssetStatus.Active,
+                  })
+                  .execute();
+                await tx
+                  .insertInto('asset_lock')
+                  .values({ assetId: sentinelId, reason: AssetLockReason.Marked, lockedBy: null })
+                  .execute();
+                expect(
+                  await tx.selectFrom('asset_lock').select('assetId').where('assetId', '=', sentinelId).execute(),
+                ).toHaveLength(1);
+                await privacy.mirrorFromLegacy(sentinelId, tx);
+                expect(await privacy.get(sentinelId, tx)).toBeDefined();
+                expect(
+                  (
+                    await sql<{ pendingJobs: unknown[] }>`SELECT "pendingJobs" FROM immich_fork.icloud_resource
+                    WHERE id=${fixture.resource.id}::uuid`.execute(tx)
+                  ).rows[0].pendingJobs,
+                ).toEqual([]);
+                await tx
+                  .insertInto('physical_file')
+                  .values({
+                    id: physicalId,
+                    canonicalAssetId: sentinelId,
+                    checksum: sentinelChecksum,
+                    path: sentinelPath,
+                    sizeInBytes: 1,
+                    type: PhysicalFileType.Original,
+                  })
+                  .execute();
+                await tx
+                  .updateTable('user')
+                  .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + 1` })
+                  .where('id', '=', fixture.f.user.id)
+                  .execute();
+                // Call the actual transaction-only writer with genuine authenticated
+                // match evidence and deliberately false result; no worker/commit seam.
+                await publishScheduledAudit(
+                  tx,
+                  fixture.authority,
+                  guarded,
+                  fixture.resource,
+                  files,
+                  'mismatch',
+                  sentinelId,
+                );
+              }),
+            ).rejects.toThrow('scheduled_audit_result_invalid');
+          } finally {
+            await files.release();
+          }
+          expect(await db.selectFrom('asset').select('id').where('id', '=', sentinelId).execute()).toEqual([]);
+          expect(
+            await db.selectFrom('asset_lock').select('assetId').where('assetId', '=', sentinelId).execute(),
+          ).toEqual([]);
+          expect(await privacy.get(sentinelId)).toBeUndefined();
+          expect(await db.selectFrom('physical_file').select('id').where('id', '=', physicalId).execute()).toEqual([]);
+          expect(
+            (await sql`SELECT 1 FROM immich_fork.asset_physical_file WHERE "assetId"=${sentinelId}::uuid`.execute(db)).rows,
+          ).toEqual([]);
+          expect(
+            (await sql`SELECT 1 FROM immich_fork.physical_file WHERE "canonicalAssetId"=${sentinelId}::uuid`.execute(db))
+              .rows,
+          ).toEqual([]);
+          const after = await sql<{ state: unknown }>`SELECT jsonb_build_object(
+            'original', (SELECT to_jsonb(a) FROM public.asset a WHERE id=${fixture.f.asset.id}::uuid),
+            'identity', (SELECT to_jsonb(i) FROM immich_fork.icloud_source_identity i WHERE id=${fixture.f.identityId}::uuid),
+            'cohort', (SELECT to_jsonb(c) FROM immich_fork.icloud_weekly_cohort c WHERE id=${fixture.cohort.id}::uuid),
+            'request', (SELECT to_jsonb(r) FROM immich_fork.icloud_identity_audit r WHERE id=${fixture.authority.auditRequestId}::uuid),
+            'quota', (SELECT "quotaUsageInBytes" FROM public."user" WHERE id=${fixture.f.user.id}::uuid)
+          ) AS state`.execute(db);
+          expect(after.rows).toEqual(before.rows);
+          expect((await fixture.repository.read(fixture.input))!.resource.pendingJobs).toEqual([]);
+          expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
+        });
 
         it('keeps execution unavailable by default without transport or a successful counter', async () => {
           const fixture = await createWorkerFixture();
@@ -3639,7 +3781,8 @@ describe('iCloud exact identity adoption', () => {
                 }
                 expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
                 expect(
-                  (await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result,
+                  (await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))
+                    ?.result,
                 ).toBe('queued');
               } finally {
                 release.resolve();
