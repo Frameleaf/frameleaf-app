@@ -209,7 +209,8 @@ export async function guardScheduledAudit(
   if (!cohort) {
     return;
   }
-  const { rows: members } = await sql<Member>`SELECT m.*,m.ordinal::text AS ordinal FROM immich_fork.icloud_weekly_member m
+  const { rows: members } =
+    await sql<Member>`SELECT m.*,m.ordinal::text AS ordinal FROM immich_fork.icloud_weekly_member m
     WHERE "cohortId"=${cohort.id}::uuid AND "ownerId"=${ownerId}::uuid AND "connectionId"=${connection.id}::uuid
       AND selected AND "batchOrdinal"=${hint.batchOrdinal} ORDER BY m.ordinal FOR UPDATE`.execute(db);
   const member = members.find(({ ordinal }) => ordinal === String(hint.memberOrdinal));
