@@ -1,4 +1,5 @@
 import { ActivityController } from 'src/controllers/activity.controller.js';
+import { AlbumSourceController } from 'src/controllers/album-source.controller.js';
 import { AlbumController } from 'src/controllers/album.controller.js';
 import { AnalyticsController } from 'src/controllers/analytics.controller.js';
 import { ApiKeyController } from 'src/controllers/api-key.controller.js';
@@ -174,6 +175,7 @@ export const controllers = [
   SessionController,
   SharedLinkController,
   ItemShareController,
+  AlbumSourceController,
   SharedSpaceController,
   StackController,
   StudioBundleController,

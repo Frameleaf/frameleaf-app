@@ -23,6 +23,7 @@ import {
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -569,6 +570,7 @@ const newRealRepository = <T extends MediumRepositoryKey>(key: T, db: Kysely<DB>
     case SharedLinkRepository:
     case SharedLinkAssetRepository:
     case ItemShareRepository:
+    case AlbumSourceRepository:
     case SmartAlbumRepository:
     case StackRepository:
     case StudioProjectRepository:
