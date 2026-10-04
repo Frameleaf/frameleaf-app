@@ -1,5 +1,6 @@
-import type { Kysely } from 'kysely';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Kysely } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -11,7 +12,6 @@ import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
-import type { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { automock, getMocks } from 'test/utils.js';
