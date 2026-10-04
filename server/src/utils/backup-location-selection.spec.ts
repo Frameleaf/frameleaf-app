@@ -205,76 +205,79 @@ describe('unauthenticated HTTPS origin probe', () => {
     await expect(probeBackupLocation(location('loc-01'), new AbortController().signal)).resolves.toBeNull();
   });
 
-  it.each(['DNS', 'response'])('cancels the real probe during stalled %s and ignores late settlement', async (phase) => {
-    vi.useFakeTimers();
-    const signals: AbortSignal[] = [];
-    const pending: Promise<number | null>[] = [];
-    const lateDns: (() => void)[] = [];
-    const lateResponses: (() => void)[] = [];
-    const drained = vi.fn();
-    vi.mocked(lookup).mockImplementation(((
-      _host: string,
-      _options: unknown,
-      callback: (error: Error | null, addresses: LookupAddress[]) => void,
-    ) => {
-      const release = () => callback(null, [{ address: '8.8.8.8', family: 4 }]);
-      if (phase === 'DNS') {
-        lateDns.push(release);
-      } else {
+  it.each(['DNS', 'response'])(
+    'cancels the real probe during stalled %s and ignores late settlement',
+    async (phase) => {
+      vi.useFakeTimers();
+      const signals: AbortSignal[] = [];
+      const pending: Promise<number | null>[] = [];
+      const lateDns: (() => void)[] = [];
+      const lateResponses: (() => void)[] = [];
+      const drained = vi.fn();
+      vi.mocked(lookup).mockImplementation(((
+        _host: string,
+        _options: unknown,
+        callback: (error: Error | null, addresses: LookupAddress[]) => void,
+      ) => {
+        const release = () => callback(null, [{ address: '8.8.8.8', family: 4 }]);
+        if (phase === 'DNS') {
+          lateDns.push(release);
+        } else {
+          release();
+        }
+      }) as never);
+      vi.mocked(request).mockImplementation(((
+        url: URL,
+        options: RequestOptions,
+        respond: (response: unknown) => void,
+      ) => {
+        expect(options).toMatchObject({ method: 'HEAD', agent: false, autoSelectFamily: false });
+        expect(options).not.toHaveProperty('headers');
+        const signal = options.signal!;
+        signals.push(signal);
+        const req = new EventEmitter() as EventEmitter & { end: () => void };
+        // Model Node's request boundary abort notification; actual socket closure remains a hosted-network gate.
+        signal.addEventListener('abort', () => req.emit('error', new Error('Request aborted')), { once: true });
+        req.end = () => {
+          (options.lookup as LookupFunction)(url.hostname, {}, (error, address) => {
+            expect(error).toBeNull();
+            expect(address).toBe('8.8.8.8');
+            lateResponses.push(() => respond({ statusCode: 200, resume: drained }));
+          });
+        };
+        return req;
+      }) as never);
+      // Observe the real probe promises without substituting the production probe or selection algorithm.
+      const result = selectBackupLocation([location('loc-01')], (candidate, signal) => {
+        const probe = probeBackupLocation(candidate, signal);
+        pending.push(probe);
+        return probe;
+      }).catch((error: Error) => error);
+      await vi.advanceTimersByTimeAsync(1499);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(signals[0].aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signals[0].aborted).toBe(true);
+      expect(await pending[0]).toBeNull();
+      expect(request).toHaveBeenCalledTimes(2);
+      await vi.runAllTimersAsync();
+      const refusal = await result;
+      expect(refusal).toBeInstanceOf(Error);
+      expect(String(refusal)).toContain('Try setup again');
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+      expect(await Promise.all(pending)).toEqual([null, null, null]);
+      for (const release of lateDns) {
         release();
       }
-    }) as never);
-    vi.mocked(request).mockImplementation(((
-      url: URL,
-      options: RequestOptions,
-      respond: (response: unknown) => void,
-    ) => {
-      expect(options).toMatchObject({ method: 'HEAD', agent: false, autoSelectFamily: false });
-      expect(options).not.toHaveProperty('headers');
-      const signal = options.signal!;
-      signals.push(signal);
-      const req = new EventEmitter() as EventEmitter & { end: () => void };
-      // Model Node's request boundary abort notification; actual socket closure remains a hosted-network gate.
-      signal.addEventListener('abort', () => req.emit('error', new Error('Request aborted')), { once: true });
-      req.end = () => {
-        (options.lookup as LookupFunction)(url.hostname, {}, (error, address) => {
-          expect(error).toBeNull();
-          expect(address).toBe('8.8.8.8');
-          lateResponses.push(() => respond({ statusCode: 200, resume: drained }));
-        });
-      };
-      return req;
-    }) as never);
-    // Observe the real probe promises without substituting the production probe or selection algorithm.
-    const result = selectBackupLocation([location('loc-01')], (candidate, signal) => {
-      const probe = probeBackupLocation(candidate, signal);
-      pending.push(probe);
-      return probe;
-    }).catch((error: Error) => error);
-    await vi.advanceTimersByTimeAsync(1499);
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(signals[0].aborted).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(signals[0].aborted).toBe(true);
-    expect(await pending[0]).toBeNull();
-    expect(request).toHaveBeenCalledTimes(2);
-    await vi.runAllTimersAsync();
-    const refusal = await result;
-    expect(refusal).toBeInstanceOf(Error);
-    expect(String(refusal)).toContain('Try setup again');
-    expect(request).toHaveBeenCalledTimes(3);
-    expect(signals.every((signal) => signal.aborted)).toBe(true);
-    expect(await Promise.all(pending)).toEqual([null, null, null]);
-    for (const release of lateDns) {
-      release();
-    }
-    for (const respond of lateResponses) {
-      respond();
-    }
-    expect(drained).toHaveBeenCalledTimes(3);
-    expect(await Promise.all(pending)).toEqual([null, null, null]);
-    expect(await result).toBe(refusal);
-    expect(request).toHaveBeenCalledTimes(3);
-    expect(vi.getTimerCount()).toBe(0);
-  });
+      for (const respond of lateResponses) {
+        respond();
+      }
+      expect(drained).toHaveBeenCalledTimes(3);
+      expect(await Promise.all(pending)).toEqual([null, null, null]);
+      expect(await result).toBe(refusal);
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 });
