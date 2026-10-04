@@ -1,0 +1,36 @@
+name: FL177 cohort contract forward proof
+on:
+  push:
+    branches: [aj/fl177-cohort-forward-proof]
+permissions:
+  contents: read
+jobs:
+  cohort-contracts:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - run: mise run //server:install
+      - run: mise run //:plugins
+      - run: mise run //packages/plugin-core:build
+      - name: Verify exact schema fixtures and complete rollback
+        working-directory: server
+        run: >-
+          pnpm exec vitest --config test/vitest.config.medium.mjs --run
+          test/medium/specs/fork-schema/icloud-sync.spec.ts
+          test/medium/specs/fork-schema/migration-ledgers.spec.ts
+      - name: Verify cohort date contract and real complete 10001 receipt population
+        working-directory: server
+        run: >-
+          pnpm exec vitest --config test/vitest.config.medium.mjs --run
+          test/medium/specs/repositories/icloud-identity-adoption.repository.spec.ts
+          -t 'freezes the entire actual resource population|produces k>100 across bounded durable batches'
