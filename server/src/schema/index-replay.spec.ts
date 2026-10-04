@@ -41,11 +41,21 @@ it.each([
   (value: string) => `'${value.replaceAll("'", "''")}'`,
   (value: string) => `E'${value.replaceAll("'", String.raw`\'`)}'`,
   (value: string) => `$value$${value}$value$`,
+  (value: string) => `$é$${value}$é$`,
+  (value: string) => `$💾$${value}$💾$`,
   (value: string) => `"${value}"`,
 ])('never normalizes SQL text inside a quoted value or identifier', (quote) => {
   const { source, target, index } = replayPair();
   const original = source.tables.flatMap(({ indexes }) => indexes).find(({ name }) => name === index.name)!;
   original.definition = `CREATE INDEX example ON example ((value = ${quote(wholeArray)}))`;
   index.definition = `CREATE INDEX example ON example ((value = ${quote(elementArray)}))`;
+  expect(schemaDiff(source, target).asSql()).toHaveLength(2);
+});
+
+it('retains a real drift inside a lowercase escape string after an escaped quote', () => {
+  const { source, target, index } = replayPair();
+  const original = source.tables.flatMap(({ indexes }) => indexes).find(({ name }) => name === index.name)!;
+  original.definition = String.raw`CREATE INDEX example ON example ((value = e'prefix\' (ARRAY[''::character varying])::text[]'))`;
+  index.definition = String.raw`CREATE INDEX example ON example ((value = e'prefix\' ARRAY[(''::character varying)::text]'))`;
   expect(schemaDiff(source, target).asSql()).toHaveLength(2);
 });
