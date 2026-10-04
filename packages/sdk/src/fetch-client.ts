@@ -13389,6 +13389,8 @@ export type ImageDescriptionRequeueResponseDto = {
     cloudBatches: boolean;
     /** Whether the queue-all job was newly enqueued (false = already in-flight) */
     queued: boolean;
+    /** Canonical run accepted by this request; absent when no local work was accepted */
+    runId?: string;
 };
 export type ImageDescriptionRequeueEstimateDto = {
     /** Configured hardware acceleration backend (e.g. "auto", "cuda") */
@@ -13425,6 +13427,8 @@ export type SmartAlbumReevaluateRequestDto = {
 export type SmartAlbumReevaluateResponseDto = {
     /** Whether the re-evaluate job was newly enqueued (false = already in-flight) */
     queued: boolean;
+    /** Canonical run accepted by this request; absent when no local work was accepted */
+    runId?: string;
 };
 export type SmartAlbumReevaluateEstimateDto = {
     /** Total image assets that will be evaluated (currently equals withDescription) */
@@ -28786,7 +28790,8 @@ export enum Reasons {
     DestinationConfiguration = "destination-configuration",
     DestinationConsent = "destination-consent",
     DestinationBudget = "destination-budget",
-    SourceUnavailable = "source-unavailable"
+    SourceUnavailable = "source-unavailable",
+    LocalCapacity = "local-capacity"
 }
 export enum State4 {
     Running = "running",
@@ -29842,6 +29847,7 @@ export enum JobName {
     PetRecognition = "PetRecognition",
     PetRecognitionNearest = "PetRecognitionNearest",
     SmartAlbumReevaluateAll = "SmartAlbumReevaluateAll",
+    SmartAlbumReevaluate = "SmartAlbumReevaluate",
     WorkflowAssetTrigger = "WorkflowAssetTrigger",
     IntegrityUntrackedFilesQueueAll = "IntegrityUntrackedFilesQueueAll",
     IntegrityUntrackedFiles = "IntegrityUntrackedFiles",
