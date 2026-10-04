@@ -14,6 +14,7 @@ import {
   QueueName,
 } from 'src/enum.js';
 import { publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -203,6 +204,7 @@ export class PetRecognitionService {
   async handleQueueAll({ userId }: JobOf<JobName.PetRecognitionQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.config(false);
     if (!isSmartSearchEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -269,6 +271,7 @@ export class PetRecognitionService {
     const done = (status: JobStatus, proposals = 0) => ({ status, proposals });
     const { machineLearning } = await this.config();
     if (!isSmartSearchEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return done(JobStatus.Skipped);
     }
 

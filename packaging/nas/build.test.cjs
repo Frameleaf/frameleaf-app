@@ -5,43 +5,62 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { build } = require('./build.cjs');
-const { createBundle, hash, INSTALL_FILES, VARIANTS, REPOSITORY, SOURCE, ATTESTATION_TYPE } = require('../../.github/frameleaf-release.cjs');
+const {
+  createBundle,
+  hash,
+  INSTALL_FILES,
+  VARIANTS,
+  REPOSITORY,
+  SOURCE,
+  ATTESTATION_TYPE,
+} = require('../../.github/frameleaf-release.cjs');
 
 const digest = (n) => `sha256:${String(n).repeat(64)}`;
-test('TrueNAS rendering rejects missing, empty, changed and symlinked libraries before import', {
-  skip: process.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER !== 'true',
-}, () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameleaf-truenas-trust-'));
-  const app = path.join(root, 'app');
-  const library = path.join(root, 'base_v2_3_4');
-  const sentinel = path.join(root, 'imported');
-  const reject = (message) => {
-    for (const flags of [[], ['-O']]) {
-      assert.throws(() => execFileSync('python3', [
-        ...flags, path.join(__dirname, 'check-truenas.py'), app, library,
-      ], { stdio: 'pipe' }), message);
+test(
+  'TrueNAS rendering rejects missing, empty, changed and symlinked libraries before import',
+  {
+    skip: process.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER !== 'true',
+  },
+  () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameleaf-truenas-trust-'));
+    const app = path.join(root, 'app');
+    const library = path.join(root, 'base_v2_3_4');
+    const sentinel = path.join(root, 'imported');
+    const reject = (message) => {
+      for (const flags of [[], ['-O']]) {
+        assert.throws(
+          () =>
+            execFileSync('python3', [...flags, path.join(__dirname, 'check-truenas.py'), app, library], {
+              stdio: 'pipe',
+            }),
+          message,
+        );
+      }
+    };
+    try {
+      fs.mkdirSync(app);
+      fs.copyFileSync(path.join(__dirname, 'truenas/app.yaml'), path.join(app, 'app.yaml'));
+      reject(/Missing or symlinked TrueNAS library/);
+      fs.mkdirSync(library);
+      reject(/Empty TrueNAS library/);
+      fs.writeFileSync(
+        path.join(library, 'render.py'),
+        `from pathlib import Path\nPath(${JSON.stringify(sentinel)}).touch()\n`,
+      );
+      reject(/TrueNAS library hash mismatch/);
+      assert(!fs.existsSync(sentinel), 'Unverified code must not be imported');
+      fs.symlinkSync(path.join(library, 'render.py'), path.join(library, 'linked.py'));
+      reject(/Symlink in TrueNAS library/);
+      fs.unlinkSync(path.join(library, 'linked.py'));
+      fs.renameSync(library, path.join(root, 'actual-library'));
+      fs.symlinkSync(path.join(root, 'actual-library'), library);
+      reject(/Missing or symlinked TrueNAS library/);
+      assert(!fs.existsSync(sentinel));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
-  };
-  try {
-    fs.mkdirSync(app);
-    fs.copyFileSync(path.join(__dirname, 'truenas/app.yaml'), path.join(app, 'app.yaml'));
-    reject(/Missing or symlinked TrueNAS library/);
-    fs.mkdirSync(library);
-    reject(/Empty TrueNAS library/);
-    fs.writeFileSync(path.join(library, 'render.py'), `from pathlib import Path\nPath(${JSON.stringify(sentinel)}).touch()\n`);
-    reject(/TrueNAS library hash mismatch/);
-    assert(!fs.existsSync(sentinel), 'Unverified code must not be imported');
-    fs.symlinkSync(path.join(library, 'render.py'), path.join(library, 'linked.py'));
-    reject(/Symlink in TrueNAS library/);
-    fs.unlinkSync(path.join(library, 'linked.py'));
-    fs.renameSync(library, path.join(root, 'actual-library'));
-    fs.symlinkSync(path.join(root, 'actual-library'), library);
-    reject(/Missing or symlinked TrueNAS library/);
-    assert(!fs.existsSync(sentinel));
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
-});
+  },
+);
 test('authenticated release packaging, negative trust cases, and Synology worker timing', async () => {
   if (process.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER === 'true') {
     assert(process.env.TRUENAS_LIBRARY, 'Mandatory hosted TrueNAS rendering requires TRUENAS_LIBRARY');
@@ -61,11 +80,17 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     for (const name of INSTALL_FILES)
       write(path.join(sourceRoot, 'docker', name), fs.readFileSync(path.join(__dirname, '../../docker', name)));
     const release = {
-      schemaVersion: 3, repository: REPOSITORY, tag, sourceCommit: sha,
+      schemaVersion: 3,
+      repository: REPOSITORY,
+      tag,
+      sourceCommit: sha,
       buildRun: `${SOURCE}/actions/runs/123`,
       images: VARIANTS.map((spec, i) => ({
-        image: `ghcr.io/frameleaf/${spec.image}`, suffix: spec.suffix,
-        digest: digest(i + 1), sourceCommit: sha, platforms: spec.platforms,
+        image: `ghcr.io/frameleaf/${spec.image}`,
+        suffix: spec.suffix,
+        digest: digest(i + 1),
+        sourceCommit: sha,
+        platforms: spec.platforms,
       })),
       dependencies: [{ reference: database, digest: digest(8) }],
     };
@@ -80,14 +105,30 @@ test('authenticated release packaging, negative trust cases, and Synology worker
       if (args[0] === 'verify') return '[]';
       const [name, value] = args.at(-1).split('@');
       const type = args[4];
-      return [release].map((predicate) => JSON.stringify({ payload: Buffer.from(JSON.stringify({
-        predicateType: type, predicate,
-        subject: [{ name, digest: { sha256: value.slice(7) } }],
-      })).toString('base64') })).join('\n') + '\n';
+      return (
+        [release]
+          .map((predicate) =>
+            JSON.stringify({
+              payload: Buffer.from(
+                JSON.stringify({
+                  predicateType: type,
+                  predicate,
+                  subject: [{ name, digest: { sha256: value.slice(7) } }],
+                }),
+              ).toString('base64'),
+            }),
+          )
+          .join('\n') + '\n'
+      );
     };
     const trusted = {
-      head_sha: sha, head_branch: 'fork/main', head_repository: { full_name: REPOSITORY },
-      event: 'push', status: 'completed', conclusion: 'success', path: '.github/workflows/docker.yml',
+      head_sha: sha,
+      head_branch: 'fork/main',
+      head_repository: { full_name: REPOSITORY },
+      event: 'push',
+      status: 'completed',
+      conclusion: 'success',
+      path: '.github/workflows/docker.yml',
     };
     const request = async (endpoint) => {
       if (endpoint === 'actions/runs/123') return trusted;
@@ -99,11 +140,25 @@ test('authenticated release packaging, negative trust cases, and Synology worker
       await assert.rejects(build(bundle, tag, out, { run, request, ...verification }), pattern);
       assert(!fs.existsSync(out), 'An unverified bundle must produce no package');
     };
-    await reject(/signature rejected/, { run: () => { throw new Error('signature rejected'); } });
-    await reject(/Signed attestation differs/, { run: (command, args) => args[0] === 'verify' ? '[]' : JSON.stringify({
-      payload: Buffer.from(JSON.stringify({ predicateType: ATTESTATION_TYPE, predicate: {}, subject: [] })).toString('base64'),
-    }) });
-    await reject(/Build provenance is not trusted/, { request: async (endpoint) => endpoint === 'actions/runs/123' ? { ...trusted, head_sha: 'b'.repeat(40) } : request(endpoint) });
+    await reject(/signature rejected/, {
+      run: () => {
+        throw new Error('signature rejected');
+      },
+    });
+    await reject(/Signed attestation differs/, {
+      run: (command, args) =>
+        args[0] === 'verify'
+          ? '[]'
+          : JSON.stringify({
+              payload: Buffer.from(
+                JSON.stringify({ predicateType: ATTESTATION_TYPE, predicate: {}, subject: [] }),
+              ).toString('base64'),
+            }),
+    });
+    await reject(/Build provenance is not trusted/, {
+      request: async (endpoint) =>
+        endpoint === 'actions/runs/123' ? { ...trusted, head_sha: 'b'.repeat(40) } : request(endpoint),
+    });
     const originalNas = fs.readFileSync(path.join(bundle, 'nas-manifest.json'));
     write(path.join(bundle, 'nas-manifest.json'), '{}');
     await reject(/checksum differs/);
@@ -127,21 +182,35 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     assert(unraidServer.includes(nas.images.server));
     // FL-291: the stop timeout must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default)
     assert(unraidServer.includes('<ExtraParams>--stop-timeout=10</ExtraParams>'));
-    assert(read('truenas/ix-dev/community/frameleaf/templates/docker-compose.yaml').includes('server_container.set_grace_period(10)'));
+    assert(
+      read('truenas/ix-dev/community/frameleaf/templates/docker-compose.yaml').includes(
+        'server_container.set_grace_period(10)',
+      ),
+    );
     // FL-300: Frameleaf serves no metrics, so the app neither asks for metrics ports nor sets their variables
     for (const name of ['questions.yaml', 'templates/docker-compose.yaml', 'templates/test_values/basic-values.yaml']) {
       assert(!/metrics/i.test(read(`truenas/ix-dev/community/frameleaf/${name}`)), `${name} still mentions metrics`);
     }
-    assert.match(unraidServer, /<Config Name="Machine learning" Target="FRAMELEAF_MACHINE_LEARNING_ENABLED" Default=""[^>]*><\/Config>/);
+    assert.match(
+      unraidServer,
+      /<Config Name="Machine learning" Target="FRAMELEAF_MACHINE_LEARNING_ENABLED" Default=""[^>]*><\/Config>/,
+    );
     assert(read('unraid/templates/frameleaf-ml.xml').includes(nas.images.machineLearning));
     const values = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');
     assert(values.includes('repository: "ghcr.io/frameleaf/frameleaf-postgres"'));
     assert(values.includes(`19beta4-pgvector0.8.7@${digest(8)}`));
     assert(!values.includes('immich-app'));
     if (process.env.TRUENAS_LIBRARY) {
-      const rendered = execFileSync('python3', [path.join(__dirname, 'check-truenas.py'), path.join(output, 'truenas/ix-dev/community/frameleaf'), process.env.TRUENAS_LIBRARY]).toString();
+      const rendered = execFileSync('python3', [
+        path.join(__dirname, 'check-truenas.py'),
+        path.join(output, 'truenas/ix-dev/community/frameleaf'),
+        process.env.TRUENAS_LIBRARY,
+      ]).toString();
       assert.match(rendered, /TrueNAS library render passed with ML disabled and enabled/);
-      assert(!fs.existsSync(path.join(process.env.TRUENAS_LIBRARY, '__pycache__')), 'Rendering must not mutate the verified library');
+      assert(
+        !fs.existsSync(path.join(process.env.TRUENAS_LIBRARY, '__pycache__')),
+        'Rendering must not mutate the verified library',
+      );
     }
     const unpack = path.join(root, 'unpack');
     fs.mkdirSync(unpack);
@@ -152,34 +221,60 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     fs.mkdirSync(staging);
     execFileSync('tar', ['-xzf', path.join(unpack, 'package.tgz'), '-C', staging]);
     const env = {
-      ...process.env, SYNOPKG_PKGDEST: target, SYNOPKG_PKGVAR: state, SYNOPKG_PKGINST_TEMP_DIR: staging,
-      wizard_media_path: '/volume1/frameleaf/library', wizard_database_path: '/volume1/frameleaf/postgres',
-      wizard_database_password: 'FixtureOnly123456', wizard_web_port: '3456', wizard_enable_ml: 'false',
+      ...process.env,
+      SYNOPKG_PKGDEST: target,
+      SYNOPKG_PKGVAR: state,
+      SYNOPKG_PKGINST_TEMP_DIR: staging,
+      wizard_media_path: '/volume1/frameleaf/library',
+      wizard_database_path: '/volume1/frameleaf/postgres',
+      wizard_database_password: 'FixtureOnly123456',
+      wizard_web_port: '3456',
+      wizard_enable_ml: 'false',
     };
     assert(!fs.existsSync(target) && !fs.existsSync(state));
-    assert.throws(() => execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
-      env: { ...env, SYNOPKG_PKGINST_TEMP_DIR: '' }, stdio: 'pipe',
-    }), /Missing DSM installer staging directory/);
-    assert.throws(() => execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
-      env: { ...env, SYNOPKG_PKGINST_TEMP_DIR: unpack }, stdio: 'pipe',
-    }), /Unsupported DSM installer staging layout/);
+    assert.throws(
+      () =>
+        execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
+          env: { ...env, SYNOPKG_PKGINST_TEMP_DIR: '' },
+          stdio: 'pipe',
+        }),
+      /Missing DSM installer staging directory/,
+    );
+    assert.throws(
+      () =>
+        execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
+          env: { ...env, SYNOPKG_PKGINST_TEMP_DIR: unpack },
+          stdio: 'pipe',
+        }),
+      /Unsupported DSM installer staging layout/,
+    );
     for (const [wizard_media_path, wizard_database_path] of [
       ['/volume1/frameleaf/library', '/volume1/frameleaf/library'],
       ['/volume1/frameleaf', '/volume1/frameleaf/postgres'],
       ['/volume1/frameleaf/library', '/volume1/frameleaf'],
     ]) {
-      assert.throws(() => execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
-        env: { ...env, wizard_media_path, wizard_database_path }, stdio: 'pipe',
-      }), /Media and database directories must not overlap/);
+      assert.throws(
+        () =>
+          execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
+            env: { ...env, wizard_media_path, wizard_database_path },
+            stdio: 'pipe',
+          }),
+        /Media and database directories must not overlap/,
+      );
       assert(!fs.existsSync(path.join(staging, 'project/.env')));
     }
     for (const [wizard_media_path, wizard_database_path] of [
       ['/volume1/frameleaf/', '/volume1/frameleaf/postgres'],
       ['/volume1/frameleaf/library', '/volume1/frameleaf/'],
     ]) {
-      assert.throws(() => execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
-        env: { ...env, wizard_media_path, wizard_database_path }, stdio: 'pipe',
-      }), /without spaces, symlinks or traversal/);
+      assert.throws(
+        () =>
+          execFileSync('sh', [path.join(unpack, 'scripts/preinst')], {
+            env: { ...env, wizard_media_path, wizard_database_path },
+            stdio: 'pipe',
+          }),
+        /without spaces, symlinks or traversal/,
+      );
       assert(!fs.existsSync(path.join(staging, 'project/.env')));
     }
     const localVolume = path.join(fs.realpathSync(root), 'volume1');
@@ -194,8 +289,10 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     const localStaging = path.join(root, 'local-staging');
     fs.cpSync(path.join(staging, 'project'), path.join(localStaging, 'project'), { recursive: true });
     const localEnv = {
-      ...env, SYNOPKG_PKGINST_TEMP_DIR: localStaging,
-      wizard_media_path: path.join(localVolume, 'library'), wizard_database_path: path.join(localVolume, 'postgres'),
+      ...env,
+      SYNOPKG_PKGINST_TEMP_DIR: localStaging,
+      wizard_media_path: path.join(localVolume, 'library'),
+      wizard_database_path: path.join(localVolume, 'postgres'),
     };
     execFileSync('sh', [localScript], { env: localEnv });
     fs.unlinkSync(path.join(localStaging, 'project/.env'));
@@ -203,15 +300,25 @@ test('authenticated release packaging, negative trust cases, and Synology worker
       [path.join(localVolume, 'media-link'), path.join(localVolume, 'library/postgres')],
       [path.join(localVolume, 'library/postgres'), path.join(localVolume, 'media-link')],
     ]) {
-      assert.throws(() => execFileSync('sh', [localScript], {
-        env: { ...localEnv, wizard_media_path, wizard_database_path }, stdio: 'pipe',
-      }), /without spaces, symlinks or traversal/);
+      assert.throws(
+        () =>
+          execFileSync('sh', [localScript], {
+            env: { ...localEnv, wizard_media_path, wizard_database_path },
+            stdio: 'pipe',
+          }),
+        /without spaces, symlinks or traversal/,
+      );
       assert(!fs.existsSync(path.join(localStaging, 'project/.env')));
     }
     const installEnv = { ...localEnv, SYNOPKG_PKGINST_TEMP_DIR: staging };
-    assert.throws(() => execFileSync('sh', [localScript], {
-      env: { ...installEnv, wizard_database_path: path.join(localVolume, 'missing') }, stdio: 'pipe',
-    }), /directories must already exist/);
+    assert.throws(
+      () =>
+        execFileSync('sh', [localScript], {
+          env: { ...installEnv, wizard_database_path: path.join(localVolume, 'missing') },
+          stdio: 'pipe',
+        }),
+      /directories must already exist/,
+    );
     const databasePath = path.join(localVolume, 'postgres');
     const rootUser = process.getuid?.() === 0;
     if (rootUser) {
@@ -221,16 +328,28 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     }
     fs.chmodSync(databasePath, 0o000);
     try {
-      assert.throws(() => execFileSync('sh', [localScript], {
-        env: installEnv, stdio: 'pipe', ...(rootUser ? { uid: 65534, gid: 65534 } : {}),
-      }), /Cannot inspect database directory/);
+      assert.throws(
+        () =>
+          execFileSync('sh', [localScript], {
+            env: installEnv,
+            stdio: 'pipe',
+            ...(rootUser ? { uid: 65534, gid: 65534 } : {}),
+          }),
+        /Cannot inspect database directory/,
+      );
       assert(!fs.existsSync(path.join(staging, 'project/.env')));
-    } finally { fs.chmodSync(databasePath, 0o755); }
-    write(path.join(localVolume, 'postgres/PG_VERSION'), '18\n');
-    assert.throws(() => execFileSync('sh', [localScript], { env: installEnv, stdio: 'pipe' }),
-      /not a PostgreSQL 14 cluster/);
-    assert(!fs.existsSync(path.join(staging, 'project/.env')));
-    write(path.join(localVolume, 'postgres/PG_VERSION'), '14\n');
+    } finally {
+      fs.chmodSync(databasePath, 0o755);
+    }
+    for (const version of ['14', '18', '19']) {
+      write(path.join(localVolume, 'postgres/PG_VERSION'), `${version}\n`);
+      assert.throws(
+        () => execFileSync('sh', [localScript], { env: installEnv, stdio: 'pipe' }),
+        /requires an empty database directory/,
+      );
+      assert(!fs.existsSync(path.join(staging, 'project/.env')));
+    }
+    fs.unlinkSync(path.join(localVolume, 'postgres/PG_VERSION'));
     execFileSync('sh', [localScript], { env: installEnv });
     const configured = fs.readFileSync(path.join(staging, 'project/.env'), 'utf8');
     assert(configured.includes('WEB_PORT=3456\n') && configured.includes('ENABLE_ML=false\n'));
@@ -239,7 +358,13 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     // The installer transfers payload after preinst, before Docker Project Acquire and postinst.
     fs.renameSync(staging, target);
     fs.mkdirSync(state);
-    const effective = JSON.parse(execFileSync('docker', ['compose', '-f', path.join(target, 'project/compose.yaml'), 'config', '--format', 'json'], { env }).toString());
+    const effective = JSON.parse(
+      execFileSync(
+        'docker',
+        ['compose', '-f', path.join(target, 'project/compose.yaml'), 'config', '--format', 'json'],
+        { env },
+      ).toString(),
+    );
     assert.equal(effective.services.server.ports[0].published, '3456');
     assert.equal(effective.services.server.stop_grace_period, '10s');
     assert.equal(effective.services.server.environment.FRAMELEAF_MACHINE_LEARNING_ENABLED, 'false');
@@ -252,6 +377,10 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     execFileSync('sh', [path.join(unpack, 'scripts/preinst')], { env: { ...env, SYNOPKG_PKG_STATUS: 'UPGRADE' } });
     assert.equal(fs.readFileSync(path.join(staging, 'project/.env'), 'utf8'), configured);
     assert.equal(fs.readFileSync(path.join(target, 'project/.env'), 'utf8'), configured);
-    assert.throws(() => execFileSync('sh', [localScript], { env: { ...installEnv, wizard_web_port: '1' }, stdio: 'pipe' }));
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+    assert.throws(() =>
+      execFileSync('sh', [localScript], { env: { ...installEnv, wizard_web_port: '1' }, stdio: 'pipe' }),
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

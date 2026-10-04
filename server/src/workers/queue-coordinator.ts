@@ -4,6 +4,8 @@ import { performance } from 'node:perf_hooks';
 import { type MessagePort, parentPort, workerData } from 'node:worker_threads';
 import postgres from 'postgres';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
+import { queueNotifications } from 'src/queue/notifications.js';
+import { pruneQueueHistory } from 'src/queue/retention.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
 import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
@@ -17,11 +19,15 @@ type CoordinatorData = {
 
 /** This thread owns no media execution. Even a synchronous handler hang cannot stop its watchdog. */
 export async function coordinate({ workerId, queues, connection, supervisor }: CoordinatorData) {
-  const options = { max: 2, connect_timeout: 5, connection: { statement_timeout: 5000, lock_timeout: 3000 } };
-  const client =
-    connection.connectionType === 'url'
+  const createClient = (max: number) => {
+    const options = { max, connect_timeout: 5, connection: { statement_timeout: 5000, lock_timeout: 3000 } };
+    return connection.connectionType === 'url'
       ? postgres(connection.url, options)
       : postgres({ ...connection, ssl: connection.ssl === 'disable' ? false : connection.ssl, ...options });
+  };
+  const client = createClient(2);
+  // LISTEN owns its own bounded one-connection pool; it can never reserve a dispatch connection.
+  const listener = createClient(1);
   const db = new Kysely<any>({ dialect: new PostgresJSDialect({ postgres: client }) });
   const store = new SqlQueueStore(db);
   const watchdog = new QueueWatchdog();
@@ -80,6 +86,7 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
       }
       if (now - lastSweep >= QUEUE_TIMING.sweep) {
         await store.recoverExpired();
+        await pruneQueueHistory(db);
         lastSweep = now;
       }
       if (!progressBusy) {
@@ -117,10 +124,16 @@ export async function coordinate({ workerId, queues, connection, supervisor }: C
       busy = false;
     }
   };
-  const scan = setInterval(() => void tick(), QUEUE_TIMING.scan);
+  const notifications = queueNotifications(listener, () => void tick());
+  notifications.connect();
+  const scan = setInterval(() => {
+    notifications.connect();
+    void tick();
+  }, QUEUE_TIMING.scan);
   parentPort!.on('close', () => {
     stopWatchdog();
     clearInterval(scan);
+    void notifications.close();
     void client.end({ timeout: 1 });
   });
   await tick();

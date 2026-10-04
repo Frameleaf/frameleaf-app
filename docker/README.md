@@ -33,7 +33,7 @@ Cloud processing is Frameleaf Cloud, added and consented to by an administrator 
 
 ## Local builds
 
-`docker-compose.prod.yml` and `docker-compose.dev.yml` build local `frameleaf-*:local` images, including the database from `docker/postgres`. They retain their existing project names, development volumes and storage paths and are not interchangeable with the release installation file. The server image builds its own media libraries from the sources in `server/base-image`, so a first build takes longer. ML builds explicitly use the `prod` stage. Neither a local image name nor successful compilation establishes release, hardware or model qualification.
+`docker-compose.prod.yml` and `docker-compose.dev.yml` build local `frameleaf-*:local` images, including the database from `docker/postgres`. They use a fresh `postgres19` directory beneath the upload location for the database and are not interchangeable with the release installation file. The server image builds its own media libraries from the sources in `server/base-image`, so a first build takes longer. ML builds explicitly use the `prod` stage. Neither a local image name nor successful compilation establishes release, hardware or model qualification.
 
 ## Restoration worker
 

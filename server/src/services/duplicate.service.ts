@@ -20,6 +20,7 @@ import {
   TranscodeTarget,
 } from 'src/enum.js';
 import { attemptOutputPath, deferJobAdoption, jobSignal, publishJobResult } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { AssetDuplicateResult } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -387,6 +388,7 @@ export class DuplicateService extends BaseService {
     const { machineLearning, libraryCare } = await this.getConfig({ withCache: false });
     // Library care → "Group near-duplicates for review" (FL-69, settings-catalog.mjs:951-956).
     if (!isDuplicateDetectionEnabled(machineLearning) || !libraryCare.duplicateReview) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -404,6 +406,7 @@ export class DuplicateService extends BaseService {
   }: JobOf<JobName.AssetGenerateVideoDuplicateFramesQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isDuplicateDetectionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -427,6 +430,7 @@ export class DuplicateService extends BaseService {
     const config = await this.getConfig({ withCache: true });
     const { machineLearning } = config;
     if (!isDuplicateDetectionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -530,6 +534,7 @@ export class DuplicateService extends BaseService {
   async handleSearchDuplicates({ id }: JobOf<JobName.AssetDetectDuplicates>): Promise<JobStatus> {
     const { machineLearning, libraryCare } = await this.getConfig({ withCache: true });
     if (!isDuplicateDetectionEnabled(machineLearning) || !libraryCare.duplicateReview) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 

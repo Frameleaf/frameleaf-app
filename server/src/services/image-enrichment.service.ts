@@ -45,6 +45,7 @@ import {
   publishJobResult,
   queueExecution,
 } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
@@ -699,6 +700,7 @@ export class ImageEnrichmentService extends BaseService {
   async handleQueueImageDescription({ force }: JobOf<JobName.ImageDescriptionQueueAll>): Promise<JobStatus> {
     const { machineLearning, libraryCare, frameleafCloud } = await this.getConfig({ withCache: false });
     if (!isImageDescriptionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
     // FL-163: describing the whole library on Frameleaf Cloud is a backfill, which shows its estimate
@@ -726,6 +728,7 @@ export class ImageEnrichmentService extends BaseService {
   async handleQueueNsfwDetection({ force }: JobOf<JobName.NsfwDetectionQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isNsfwDetectionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
 
@@ -747,6 +750,7 @@ export class ImageEnrichmentService extends BaseService {
     const config = await this.getConfig({ withCache: true });
     const machineLearning = withPinnedConfig(config.machineLearning, options);
     if (!isNsfwDetectionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return { status: JobStatus.Skipped, reasonKey: 'disabled' };
     }
     const asset = await this.assetJobRepository.getForImageEnrichment(id);
@@ -757,6 +761,7 @@ export class ImageEnrichmentService extends BaseService {
       };
     }
     if (!asset.previewFile) {
+      deferJobUntilDependency('source-unavailable');
       return { status: JobStatus.Skipped, reasonKey: 'no-preview' };
     }
     // ML inference runs outside the per-asset lock — it can take hundreds of
@@ -998,6 +1003,7 @@ export class ImageEnrichmentService extends BaseService {
     const config = await this.getConfig({ withCache: true });
     const machineLearning = withPinnedConfig(config.machineLearning, options);
     if (!isImageDescriptionEnabled(machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return { status: JobStatus.Skipped, reasonKey: 'disabled' };
     }
     const asset = await this.assetJobRepository.getForImageEnrichment(id);
@@ -1005,6 +1011,7 @@ export class ImageEnrichmentService extends BaseService {
       return { status: JobStatus.Skipped, reasonKey: 'not-eligible' };
     }
     if (!asset.previewFile) {
+      deferJobUntilDependency('source-unavailable');
       return { status: JobStatus.Skipped, reasonKey: 'no-preview' };
     }
     // FL-163: the description stage routed (or pinned) to Frameleaf Cloud runs in batches, never one

@@ -1,9 +1,6 @@
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { JobName, MlDestinationKind, MlWorkload } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as jobIndexMigration from 'src/fork-schema/migrations/0000000000170-MlWorkloadAccountingJobIndex.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -36,19 +33,11 @@ beforeAll(async () => {
 });
 
 describe('Job manager context', () => {
-  it('certifies the Worker lookup index against the catalog and rolls it back cleanly', async () => {
-    const isJobIndex = (entry: { identity: string }) =>
-      entry.identity === 'public.ml_workload_accounting.ml_workload_accounting_jobId_jobName_startedAt_idx';
-    const before = await getCatalogEvidence(defaultDatabase);
-    expect(before.indexes.filter((entry) => isJobIndex(entry))).toEqual(
-      manifest.indexes.filter((entry) => isJobIndex(entry)),
-    );
-    expect(before.indexes.filter((entry) => isJobIndex(entry))).toHaveLength(1);
-
-    await jobIndexMigration.down(defaultDatabase);
-    expect((await getCatalogEvidence(defaultDatabase)).indexes.filter((entry) => isJobIndex(entry))).toEqual([]);
-    await jobIndexMigration.up(defaultDatabase);
-    expect((await getCatalogEvidence(defaultDatabase)).indexes).toEqual(before.indexes);
+  it('indexes durable worker lookups by job identity and start time', async () => {
+    const { rows } = await sql<{ indexdef: string }>`SELECT indexdef FROM pg_indexes WHERE schemaname = 'public'
+      AND indexname = 'ml_workload_accounting_jobId_jobName_startedAt_idx'`.execute(defaultDatabase);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].indexdef).toContain('"jobId", "jobName", "startedAt"');
   });
 
   describe(UserRepository.prototype.getJobSubjectOwners.name, () => {

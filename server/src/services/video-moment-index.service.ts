@@ -32,6 +32,7 @@ import {
   VideoMomentSource,
 } from 'src/enum.js';
 import { deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -172,6 +173,7 @@ export class VideoMomentIndexService {
   async runIndexStage(assetId: string, options: IndexOptions = {}): Promise<MomentStageOutcome> {
     const config = await this.config();
     if (!isSmartSearchEnabled(config.machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return { state: EnrichmentItemState.Skipped, reasonKey: 'disabled' };
     }
 
@@ -231,6 +233,7 @@ export class VideoMomentIndexService {
   async runCaptionStage(assetId: string, options: CaptionOptions): Promise<MomentStageOutcome> {
     const config = await this.config();
     if (!isImageDescriptionEnabled(config.machineLearning)) {
+      deferJobUntilDependency('workload-disabled');
       return { state: EnrichmentItemState.Skipped, reasonKey: 'disabled' };
     }
 

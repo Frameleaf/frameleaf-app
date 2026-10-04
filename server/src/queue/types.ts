@@ -34,6 +34,13 @@ export type QueueIntent = {
   rootItemKey?: string | null;
   parentId?: string;
 };
+export type JobDependencyReason =
+  | 'workload-disabled'
+  | 'destination-unavailable'
+  | 'destination-configuration'
+  | 'destination-consent'
+  | 'destination-budget'
+  | 'source-unavailable';
 export type QueueClaim = {
   id: string;
   queue: string;
@@ -47,6 +54,7 @@ export type QueueClaim = {
   rootItemKey?: string | null;
   deadlineMs: number;
   startedAt: Date;
+  safeToRetry?: boolean;
 };
 export type QueueExecution = {
   claim: QueueClaim;
@@ -60,6 +68,7 @@ export type QueueExecution = {
   buffering: boolean;
   progressUnits: number;
   outcome?: 'completed' | 'failed';
+  dependencyReason?: JobDependencyReason;
 };
 export type QueueDispatch = { type: 'execute'; claim: QueueClaim } | { type: 'cancel'; id: string };
 export type QueueWorkerMessage =

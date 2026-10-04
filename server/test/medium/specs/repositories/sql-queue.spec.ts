@@ -8,9 +8,12 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { MessageChannel } from 'node:worker_threads';
 import { Worker } from 'node:worker_threads';
+import postgres from 'postgres';
 import type { JobItem } from 'src/types.js';
+import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
 import { publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
+import { queueNotifications } from 'src/queue/notifications.js';
 import { SqlQueueStore, resetQueueAfterRestore } from 'src/queue/store.js';
 import { superviseQueueWorker } from 'src/queue/supervisor.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
@@ -19,6 +22,7 @@ import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -302,6 +306,125 @@ describe('PostgreSQL queue', () => {
     } = await sql<{ items: number; stages: number }>`select count(distinct "rootItemKey")::int items,
       count(*)::int stages from job_run_item where "runId" = ${runId}::uuid`.execute(db);
     expect(counts).toEqual({ items: 1, stages: 3 });
+  });
+
+  it('wakes through a real dedicated LISTEN session while durable admission still works without it', async () => {
+    const {
+      rows: [database],
+    } = await sql<{ name: string }>`select current_database() name`.execute(db);
+    const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
+    url.pathname = `/${database.name}`;
+    const listener = postgres(url.toString(), { max: 1, connect_timeout: 5 });
+    let wake!: () => void;
+    let awakened = new Promise<void>((resolve) => {
+      wake = resolve;
+    });
+    const notifications = queueNotifications(listener, () => wake());
+    notifications.connect();
+    try {
+      await awakened; // initial LISTEN acknowledgement
+      awakened = new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+      await store.enqueue([intent()]);
+      await awakened; // transaction's real pg_notify
+      const [claim] = await store.claim(queue, workerA);
+      expect(await store.complete(claim, [])).toBe(true);
+      await notifications.close();
+      await store.enqueue([intent()]);
+      expect(await store.claim(queue, workerB)).toHaveLength(1); // no listener required for the scan
+    } finally {
+      await notifications.close();
+    }
+  }, 15000);
+
+  it('defers caught ML admission failures without spending retries or completing selected items', async () => {
+    const runId = await store.createRun('unavailable-fixture', {});
+    const id = randomUUID();
+    await store.enqueue([intent({ name: JobName.SmartSearch, runId, itemKey: id, rootItemKey: id })]);
+    let unavailable = true;
+    let genuineFailures = 0;
+    let executor: JobRepository;
+    const adopted = vi.fn();
+    const diagnosed = vi.fn();
+    executor = new JobRepository(
+      {} as never,
+      {} as never,
+      { emit: async (_event: string, _queue: string, item: JobItem) => executor.run(item) } as never,
+      { setContext: vi.fn(), error: vi.fn() } as never,
+      db,
+    );
+    executor['handlers'][JobName.SmartSearch] = {
+      queueName: queue as QueueName,
+      handler: async () => {
+        await publishJobResult(async () => {
+          adopted();
+        });
+        if (unavailable) {
+          try {
+            throw new MlDestinationRefusedError(
+              MlAdmissionRefusal.DestinationUnhealthy,
+              MlWorkload.Clip,
+              id,
+              'fixture',
+            );
+          } catch {
+            await publishJobDiagnostic(async () => {
+              diagnosed();
+            });
+            return JobStatus.Failed;
+          }
+        }
+        if (genuineFailures++ === 0) throw new Error('actual inference failed');
+        return JobStatus.Success;
+      },
+    } as never;
+    for (let index = 0; index < 3; index++) {
+      const [claim] = await store.claim(queue, workerA);
+      await executor['execute'](claim, new AbortController());
+      const {
+        rows: [job],
+      } = await sql<{ state: string; attempt: number; base: number; reason: string }>`select state, attempt,
+        "retryBaseAttempt" base, "dependencyReason" reason from job where id = ${claim.id}::uuid`.execute(db);
+      expect(job).toEqual({ state: 'pending', attempt: index + 1, base: index + 1, reason: 'destination-unavailable' });
+      expect(await store.defer(claim, 'destination-unavailable')).toBe(false); // stale credit cannot be refunded twice
+      await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
+    }
+    expect(adopted).not.toHaveBeenCalled();
+    expect(diagnosed).not.toHaveBeenCalled();
+    expect((await sql`select state from job_run_item where "runId" = ${runId}::uuid`.execute(db)).rows).toEqual([
+      { state: 'pending' },
+    ]);
+    unavailable = false;
+    const [failed] = await store.claim(queue, workerA);
+    await executor['execute'](failed, new AbortController());
+    expect(adopted).not.toHaveBeenCalled();
+    await sql`update job set "availableAt" = now() where id = ${failed.id}::uuid`.execute(db);
+    const [retry] = await store.claim(queue, workerB);
+    await executor['execute'](retry, new AbortController());
+    expect(adopted).toHaveBeenCalledOnce();
+    expect(await store.claim(queue, workerA)).toEqual([]);
+    expect(
+      (await sql`select outcome from job_attempt where "jobId" = ${retry.id}::uuid order by attempt`.execute(db)).rows,
+    ).toEqual([
+      { outcome: 'deferred' },
+      { outcome: 'deferred' },
+      { outcome: 'deferred' },
+      { outcome: 'pending' },
+      { outcome: 'completed' },
+    ]);
+  });
+
+  it('uses the configured idle deadline while accepting long work with recent advancing progress', async () => {
+    await store.setConcurrency(queue, 2);
+    await store.enqueue([intent(), intent()]);
+    const [stalled, healthy] = await store.claim(queue, workerA);
+    await sql`update job set "progressUnits" = 1, "startedAt" = now() - interval '2 hours',
+      "progressAt" = now() - (${QUEUE_TIMING.noProgressDeadline}+1000) * interval '1 millisecond'
+      where id = ${stalled.id}::uuid`.execute(db);
+    await sql`update job set "progressUnits" = 1, "startedAt" = now() - interval '2 hours', "progressAt" = now()
+      where id = ${healthy.id}::uuid`.execute(db);
+    expect((await store.deadlines(workerA)).map(({ id }) => id)).toEqual([stalled.id]);
   });
 
   it('claims at most concurrency one across competing workers, without holding the connection during work', async () => {

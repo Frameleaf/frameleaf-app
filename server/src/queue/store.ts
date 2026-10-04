@@ -1,9 +1,11 @@
 import { Kysely, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  JobDependencyReason,
   QUEUE_BATCH,
   QUEUE_HIGH_WATER,
   QUEUE_LOW_WATER,
+  QUEUE_TIMING,
   QueueClaim,
   QueueIntent,
   QueueState,
@@ -125,8 +127,8 @@ export class SqlQueueStore {
   }
 
   private async insertRunItem(intent: QueueIntent, db: Executor, state: QueueState = 'pending') {
-    await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, selection, state)
-      values (${intent.runId}::uuid, ${intent.itemKey}, ${intent.rootItemKey ?? null}, ${intent.name}, ${JSON.stringify(intent.sensitive ? {} : intent.data)}::jsonb, ${state})
+    await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, state)
+      values (${intent.runId}::uuid, ${intent.itemKey}, ${intent.rootItemKey ?? null}, ${intent.name}, ${intent.queue}, ${JSON.stringify(intent.sensitive ? {} : intent.data)}::jsonb, ${state})
       on conflict do nothing`.execute(db);
   }
 
@@ -181,11 +183,11 @@ export class SqlQueueStore {
       const { rows } = await sql<QueueClaim>`
         update job set state = 'active', token = gen_random_uuid(), "workerId" = ${workerId}::uuid,
           attempt = attempt + 1, "startedAt" = now(), "progressAt" = now(), "progressUnits" = 0,
-          "leaseExpiresAt" = now() + interval '60 seconds', "cancelRequestedAt" = null
+          "leaseExpiresAt" = now() + interval '60 seconds', "cancelRequestedAt" = null, "dependencyReason" = null
         where id in (
           select id from job where queue = ${queue} and state = 'waiting' and "availableAt" <= now()
           order by "createdAt", id limit ${capacity} for update skip locked
-        ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "rootItemKey", "deadlineMs", "startedAt"
+        ) returning id, queue, name, data, token, "workerId", attempt, "runId", "itemKey", "rootItemKey", "deadlineMs", "startedAt", "safeToRetry"
       `.execute(tx);
       for (const claim of rows) {
         await sql`insert into job_attempt("jobId", attempt, token, "workerId")
@@ -235,7 +237,7 @@ export class SqlQueueStore {
       await adopt?.(tx);
       const { rows: accepted } =
         await sql`update job set state = 'completed', "finishedAt" = clock_timestamp(), token = null,
-        "leaseExpiresAt" = null, "latestPending" = null,
+        "leaseExpiresAt" = null, "latestPending" = null, "dependencyReason" = null,
         data = case when sensitive then '{}'::jsonb else data end
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and "leaseExpiresAt" > clock_timestamp()
         and "cancelRequestedAt" is null returning id`.execute(tx);
@@ -282,6 +284,24 @@ export class SqlQueueStore {
     });
   }
 
+  /** A dependency refusal is not an execution failure. Keep the item and audit, refund its retry credit. */
+  async defer(claim: QueueClaim, reason: JobDependencyReason) {
+    return this.db.transaction().execute(async (tx) => {
+      await sql`select name from job_queue where name = ${claim.queue} for update`.execute(tx);
+      const { rows } = await sql`update job set state = 'pending', token = null, "leaseExpiresAt" = null,
+        "workerId" = null, "cancelRequestedAt" = null, "finishedAt" = null, error = null,
+        "retryBaseAttempt" = "retryBaseAttempt" + 1, "dependencyReason" = ${reason},
+        "availableAt" = clock_timestamp() + interval '30 seconds'
+        where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
+          and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null returning id`.execute(tx);
+      if (!rows.length) return false;
+      await sql`update job_attempt set outcome = 'deferred', "finishedAt" = clock_timestamp(), error = ${reason}
+        where token = ${claim.token}::uuid`.execute(tx);
+      await this.syncItem(claim.id, tx);
+      return true;
+    });
+  }
+
   async fail(claim: QueueClaim, reason: string, diagnostic?: (tx: Transaction<any>) => Promise<void>) {
     return this.db.transaction().execute(async (tx) => {
       await sql`select name from job_queue where name = ${claim.queue} for update`.execute(tx);
@@ -299,7 +319,7 @@ export class SqlQueueStore {
       }
       const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
         state = case when not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
-        "availableAt" = now() + interval '30 seconds', token = null, "leaseExpiresAt" = null,
+        "availableAt" = now() + interval '30 seconds', "dependencyReason" = null, token = null, "leaseExpiresAt" = null,
         "finishedAt" = case when not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
         error = case when sensitive then 'Job failed; sensitive details omitted' else ${reason.slice(0, 500)} end,
         data = case when sensitive then '{}'::jsonb else data end
@@ -368,7 +388,7 @@ export class SqlQueueStore {
       where state = 'active' and "workerId" = ${workerId}::uuid and (
         "cancelRequestedAt" is not null or "leaseExpiresAt" <= now() or
         ("progressUnits" = 0 and "startedAt" + "deadlineMs" * interval '1 millisecond' <= now()) or
-        ("progressUnits" > 0 and "progressAt" + interval '10 minutes' <= now())
+        ("progressUnits" > 0 and "progressAt" + ${QUEUE_TIMING.noProgressDeadline} * interval '1 millisecond' <= now())
       ) returning id, token, "cancelRequestedAt"
     `.execute(this.db);
     return rows;
