@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, sql } from 'kysely';
+import { Insertable, Kysely, Selectable, sql, Transaction } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import {
@@ -150,6 +150,18 @@ export type StudioExportPublication = {
   assetType: AssetType;
   originalFileName: string;
 };
+/** Durable acceptance record. External dispatch has no safe replay without an acknowledgement. */
+export type StudioPublicationFollowups = {
+  revision: 1;
+  metadataAssetId: string | null;
+  metadataAccepted: boolean;
+  notification: 'pending' | 'dispatching' | 'accepted' | 'needs_attention';
+  smoothMotion: 'pending' | 'dispatching' | 'accepted' | 'needs_attention';
+  smoothMotionReceipt?: { restorationId: string; operationId: string };
+};
+type ScheduleStudioNotification = (tx: Transaction<DB>, version: StudioExportVersion, label: string) => Promise<void>;
+type ScheduleStudioMetadata = (tx: Transaction<DB>, assetId: string) => Promise<void>;
+
 /** A `project` result the owner saves to their library (FL-194). */
 export type StudioExportLibrarySave = Pick<
   StudioExportPublication,
@@ -564,7 +576,11 @@ export class StudioExportRepository {
    * Any refusal throws {@link StudioExportRefusal} and rolls everything back. Publishing a version
    * this job already published answers with it again, so a retry after an uncertain commit is safe.
    */
-  async publish(input: StudioExportPublication): Promise<StudioExportPublished> {
+  async publish(
+    input: StudioExportPublication,
+    scheduleMetadata?: ScheduleStudioMetadata,
+    scheduleNotification?: ScheduleStudioNotification,
+  ): Promise<StudioExportPublished> {
     return this.db.transaction().execute(async (tx) => {
       if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) {
         throw new StudioExportRefusal('claim-lost', 'The publication claim is no longer validating');
@@ -647,6 +663,31 @@ export class StudioExportRepository {
         .where('id', '=', version.id)
         .returningAll()
         .executeTakeFirstOrThrow();
+      const operation = await tx
+        .selectFrom('media_operation')
+        .select(['snapshot', 'result', 'label'])
+        .where('id', '=', input.operationId)
+        .executeTakeFirstOrThrow();
+      if (createdAssetId && scheduleMetadata) await scheduleMetadata(tx, createdAssetId);
+      if (scheduleNotification) await scheduleNotification(tx, published as StudioExportVersion, operation.label);
+      if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) {
+        throw new StudioExportRefusal('claim-lost', 'The publication claim expired during queue admission');
+      }
+      const followups: StudioPublicationFollowups = {
+        revision: 1,
+        metadataAssetId: createdAssetId,
+        metadataAccepted: !createdAssetId || !!scheduleMetadata,
+        notification: scheduleNotification ? 'accepted' : 'pending',
+        smoothMotion: operation.snapshot.smoothMotion ? 'pending' : 'accepted',
+      };
+      await tx
+        .updateTable('media_operation')
+        .set({
+          resultAssetId: createdAssetId ?? reusedAssetId,
+          result: { ...operation.result, studioPublication: followups },
+        })
+        .where('id', '=', input.operationId)
+        .execute();
       return {
         status: 'published',
         version: published as unknown as StudioExportVersion,
@@ -656,6 +697,98 @@ export class StudioExportRepository {
       };
     });
   }
+  /** Replay database-only scheduling under the same claim; never re-publish an accepted version. */
+  async publicationFollowups(
+    operationId: string,
+    claimToken: string,
+    scheduleMetadata: ScheduleStudioMetadata,
+    scheduleNotification: ScheduleStudioNotification,
+  ) {
+    return this.db.transaction().execute(async (tx) => {
+      if (!(await this.lockClaim(tx, operationId, claimToken, true))) {
+        throw new StudioExportRefusal('claim-lost', 'The publication follow-up claim expired');
+      }
+      const operation = await tx
+        .selectFrom('media_operation')
+        .select(['result', 'label'])
+        .where('id', '=', operationId)
+        .executeTakeFirstOrThrow();
+      const followups = operation.result?.studioPublication as StudioPublicationFollowups | undefined;
+      // Old publications have no evidence that external effects were delivered. Never invent it.
+      if (followups?.revision !== 1) return null;
+      if (!followups.metadataAccepted && followups.metadataAssetId) {
+        await scheduleMetadata(tx, followups.metadataAssetId);
+        followups.metadataAccepted = true;
+        await tx
+          .updateTable('media_operation')
+          .set({ result: { ...operation.result, studioPublication: followups } })
+          .where('id', '=', operationId)
+          .execute();
+      }
+      if (followups.notification === 'pending') {
+        const version = await tx
+          .selectFrom('studio_export_version')
+          .selectAll()
+          .where('publishOperationId', '=', operationId)
+          .where('state', '=', StudioExportVersionState.Published)
+          .executeTakeFirstOrThrow();
+        await scheduleNotification(tx, version as StudioExportVersion, operation.label);
+        followups.notification = 'accepted';
+        await tx
+          .updateTable('media_operation')
+          .set({ result: { ...operation.result, studioPublication: followups } })
+          .where('id', '=', operationId)
+          .execute();
+      }
+      if (!(await this.lockClaim(tx, operationId, claimToken, true))) {
+        throw new StudioExportRefusal('claim-lost', 'The publication follow-up claim expired during queue admission');
+      }
+      return followups;
+    });
+  }
+
+  /** A committed dispatch marker fences non-idempotent effects across crashes and lease replacement. */
+  async transitionPublicationFollowup(
+    operationId: string,
+    claimToken: string,
+    effect: 'notification' | 'smoothMotion',
+    expected: StudioPublicationFollowups['notification'],
+    next: StudioPublicationFollowups['notification'],
+    receipt?: StudioPublicationFollowups['smoothMotionReceipt'],
+  ): Promise<boolean> {
+    const updated = await this.db
+      .updateTable('media_operation')
+      .set({
+        result: sql<
+          Record<string, unknown>
+        >`jsonb_set(result, '{studioPublication}', (result->'studioPublication') || ${JSON.stringify({ [effect]: next, ...(receipt ? { smoothMotionReceipt: receipt } : {}) })}::jsonb)`,
+      })
+      .where('id', '=', operationId)
+      .where('claimToken', '=', claimToken)
+      .where('status', '=', MediaOperationStatus.Validating)
+      .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where('cancelRequestedAt', 'is', null)
+      .where('pauseRequestedAt', 'is', null)
+      .where(sql<string>`result->'studioPublication'->>${effect}`, '=', expected)
+      .returning('id')
+      .executeTakeFirst();
+    return !!updated;
+  }
+
+  /** Failed operation, successful publication: never turn uncertainty into automatic duplicate effects. */
+  async publicationNeedsAttention(operationId: string, claimToken: string): Promise<void> {
+    await this.db
+      .updateTable('media_operation')
+      .set({
+        result: sql<Record<string, unknown>>`coalesce(result, '{}'::jsonb) || '{"status":"needs_attention"}'::jsonb`,
+      })
+      .where('id', '=', operationId)
+      .where('claimToken', '=', claimToken)
+      .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where('status', '=', MediaOperationStatus.Validating)
+      .execute();
+  }
+
   /**
    * Save a published `project` result to its owner's library (FL-194), atomically: the version is
    * locked, the database must not be handed over, every library source is re-checked under locks
