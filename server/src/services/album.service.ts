@@ -1,9 +1,15 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Kysely } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
-import type { DB } from 'src/schema/index.js';
 import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
+import type { DB } from 'src/schema/index.js';
 import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 'src/constants/album-icons.js';
 import {
   AddUsersDto,
@@ -28,8 +34,8 @@ import {
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumMapMarkerDto, MapMarkerResponseDto } from 'src/dtos/map.dto.js';
 import { AlbumKind, AlbumUserRole, Permission, PushEventType, SharedSpaceEventType } from 'src/enum.js';
-import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { ALBUM_SOURCE_WRITE_REFUSAL } from 'src/repositories/album-source.repository.js';
+import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAlbumEditFields, queueAlbumCopies, recordAlbumEdit } from 'src/services/partner-copy.service.js';
@@ -728,7 +734,9 @@ export class AlbumService extends BaseService {
           await this.albumSourceRepository.record(
             tx,
             sourceLinkId,
-            results.filter(({ success, error }) => !success && error === BulkIdErrorReason.NO_PERMISSION).map(({ id }) => id),
+            results
+              .filter(({ success, error }) => !success && error === BulkIdErrorReason.NO_PERMISSION)
+              .map(({ id }) => id),
           );
         }
         const failures = new Map(results.filter(({ success }) => !success).map((result) => [result.id, result]));

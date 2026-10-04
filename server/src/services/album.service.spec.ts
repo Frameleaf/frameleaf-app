@@ -23,7 +23,8 @@ describe(AlbumService.name, () => {
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.album.getPositions.mockResolvedValue(new Map());
     mocks.album.withMembershipWrite.mockImplementation(async (_ids, write) =>
-      write(undefined!, mocks.album as unknown as AlbumRepository));
+      write(undefined!, mocks.album as unknown as AlbumRepository),
+    );
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
   });
 

@@ -57,12 +57,12 @@ Owner decision, 2026-10-03: a Frameleaf Cloud admin share keeps granting server 
   redeems. Apps can show "Linking this Frameleaf account makes you an administrator of this server." before
   confirming.
 - Every promotion from Frameleaf Cloud (link or sign-in) notifies the other administrators with a `SystemMessage`
-  notification ("<name> became an administrator through Frameleaf Cloud"), besides the `admin-granted` audit row.
+  notification (`"<name> became an administrator through Frameleaf Cloud"`), besides the `admin-granted` audit row.
 - Demotions are unchanged: applied at sign-in, never to the last administrator.
 
 ## Gaps
 
-Server changes land on branch `aj/native-api-gaps` through [Frameleaf/frameleaf-app#176](https://github.com/Frameleaf/frameleaf-app/pull/176); cloud changes through [Frameleaf/frameleaf-cloud#291](https://github.com/Frameleaf/frameleaf-cloud/pull/291).
+Server changes land on branch `aj/native-api-gaps` through [Frameleaf/frameleaf-app#176](https://github.com/Frameleaf/frameleaf-app/pull/176) (draft) and, for album source links, [Frameleaf/frameleaf-app#178](https://github.com/Frameleaf/frameleaf-app/pull/178) (draft). Cloud changes, all merged: [#291](https://github.com/Frameleaf/frameleaf-cloud/pull/291) (SigLIP mirror entry), [#292](https://github.com/Frameleaf/frameleaf-cloud/pull/292) (runbook link), [#293](https://github.com/Frameleaf/frameleaf-cloud/pull/293) (remote-access gating, `remoteAccess.entitled`); [#295](https://github.com/Frameleaf/frameleaf-cloud/pull/295) (first-party apps skip the separate consent step) merges when its checks pass.
 
 | Reported by                                         | Journey                                                                                                                                                                                                        | Decision                                                                                              | operationIds                                                                                                                                                                                                                  | Change                                                                                                                                                                                                                                                                                                        |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -81,8 +81,9 @@ Server changes land on branch `aj/native-api-gaps` through [Frameleaf/frameleaf-
   2026-05-18. The Frameleaf model mirror (`https://models.frameleaf.cloud`) was set up later and only carried
   `ViT-B-32__openai`, so the ML service could not download the default model.
 - **Decision:** keep the default and publish the model on the mirror. The owner approved Apache-2.0 redistribution on
-  2026-10-03. The catalogue change is in frameleaf-cloud (`infra/models/models.json`, Frameleaf/frameleaf-cloud#291); publishing is an operator action
-  (`models-mirror` workflow).
+  2026-10-03. The catalogue change is in frameleaf-cloud (`infra/models/models.json`, Frameleaf/frameleaf-cloud#291, merged) and
+  the operator reports that the mirror now serves the model. The operator's 2026-10-03 live-stack report records 263 of 263 items
+  re-embedded on the default model at 768 dimensions with no failures; this qualification branch has not independently verified that run.
 - **Guard:** `server/test/model-mirror/default-models.spec.ts` (`pnpm test:model-mirror` in `server/`, workflow
   `model-mirror-defaults.yml`) checks that every default CLIP, facial-recognition and OCR model answers 200 on the mirror.
   It runs on pull requests that touch the ML defaults or model source, and weekly.

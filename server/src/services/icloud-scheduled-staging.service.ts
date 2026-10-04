@@ -26,8 +26,8 @@ import {
 } from 'src/services/media-integrity.service.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { appleFingerprintHash, isAppleFingerprint } from 'src/utils/icloud-identity.js';
-import { canonicalJson } from 'src/utils/studio-project.js';
 import { privateCopyIdentity, privateCopyScope, validPrivateCopy } from 'src/utils/icloud-private-copy.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
 
 export type ScheduledValidationOutcome =
   | {
@@ -107,11 +107,11 @@ export class ICloudScheduledStagingService {
     const finished = () => {
       owned.delete(work);
       this.cleanups.delete(work);
-      if (!owned.size) {
+      if (owned.size === 0) {
         this.ownedWork.delete(resourceId);
       }
     };
-    void work.then(finished, finished);
+    void work.catch(() => {}).then(finished);
   }
 
   /** Refused private bytes are cleaned only after decoder AND delayed final readonly guards settle. */
@@ -132,19 +132,33 @@ export class ICloudScheduledStagingService {
     for (const resource of await this.repository.retiredPrivateCopies()) {
       const record = resource.verification?.auditPrivateCopy;
       if (!validPrivateCopy(record) || !record.payload.identity) {
-        await this.repository.retainPrivateCopy(resource, 'unproven'); continue;
+        await this.repository.retainPrivateCopy(resource, 'unproven');
+        continue;
       }
-      if (!record.payload.settled || record.pending.length) {
-        await this.repository.retainPrivateCopy(resource, 'pending-settlement'); continue;
+      if (!record.payload.settled || record.pending.length > 0) {
+        await this.repository.retainPrivateCopy(resource, 'pending-settlement');
+        continue;
       }
-      if (!record.seal) { await this.repository.retainPrivateCopy(resource, 'unproven'); continue; }
-      const input: ScheduledStagingInput = { ownerId: resource.ownerId, resource: { id: resource.id, leaseToken: record.payload.resourceLeaseToken },
-        authority: { purpose: 'scheduled-weekly', auditRequestId: record.payload.auditRequestId,
-          operationId: record.payload.operationId, operationClaimToken: record.payload.operationClaimToken } };
+      if (!record.seal) {
+        await this.repository.retainPrivateCopy(resource, 'unproven');
+        continue;
+      }
+      const input: ScheduledStagingInput = {
+        ownerId: resource.ownerId,
+        resource: { id: resource.id, leaseToken: record.payload.resourceLeaseToken },
+        authority: {
+          purpose: 'scheduled-weekly',
+          auditRequestId: record.payload.auditRequestId,
+          operationId: record.payload.operationId,
+          operationClaimToken: record.payload.operationClaimToken,
+        },
+      };
       try {
         await this.cleanupRetired(input);
         await this.repository.retainPrivateCopy(resource, 'fence-or-unlink');
-      } catch { await this.repository.retainPrivateCopy(resource, 'fence-or-unlink'); }
+      } catch {
+        await this.repository.retainPrivateCopy(resource, 'fence-or-unlink');
+      }
     }
   }
 
@@ -163,21 +177,46 @@ export class ICloudScheduledStagingService {
         throw new Error('scheduled_private_copy_unavailable');
       }
       const parent = join(promotedPath, '..');
-      if (await realpath(parent) !== parent) { throw new Error('scheduled_private_copy_parent_changed'); }
+      if ((await realpath(parent)) !== parent) {
+        throw new Error('scheduled_private_copy_parent_changed');
+      }
       const directory = await lstat(parent);
-      if (!directory.isDirectory() || (directory.mode & 0o077) !== 0 || (process.getuid && directory.uid !== process.getuid())) {
+      if (
+        !directory.isDirectory() ||
+        (directory.mode & 0o077) !== 0 ||
+        (process.getuid && directory.uid !== process.getuid())
+      ) {
         throw new Error('scheduled_private_copy_parent_unowned');
       }
-      file = await open(initial.payload.temporaryPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+      file = await open(
+        initial.payload.temporaryPath,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        0o600,
+      );
       const persist = async () => {
         const record = await this.repository.privateCopy(input);
-        if (!record || !file) { throw new Error('scheduled_private_copy_changed'); }
-        const immutable = (payload: typeof initial.payload) => ({ ...payload, identity: null, promoted: false, settled: false });
-        if (canonicalJson(immutable(record.payload)) !== canonicalJson(immutable(initial.payload))) { throw new Error('scheduled_private_copy_changed'); }
+        if (!record || !file) {
+          throw new Error('scheduled_private_copy_changed');
+        }
+        const immutable = (payload: typeof initial.payload) => ({
+          ...payload,
+          identity: null,
+          promoted: false,
+          settled: false,
+        });
+        if (canonicalJson(immutable(record.payload)) !== canonicalJson(immutable(initial.payload))) {
+          throw new Error('scheduled_private_copy_changed');
+        }
         const stat = await file.stat();
-        if (!ownedFile(stat)) { throw new Error('scheduled_private_copy_unowned'); }
+        if (!ownedFile(stat)) {
+          throw new Error('scheduled_private_copy_unowned');
+        }
         const payload = { ...record.payload, identity: privateCopyIdentity(stat), promoted, settled: false };
-        const next = { ...record, payload, seal: await this.transport.encodeSession(privateCopyScope(payload), payload) };
+        const next = {
+          ...record,
+          payload,
+          seal: await this.transport.encodeSession(privateCopyScope(payload), payload),
+        };
         if (!validPrivateCopy(next) || !(await this.repository.storePrivateCopy(input, record, next))) {
           throw new Error('scheduled_private_copy_changed');
         }
@@ -190,22 +229,41 @@ export class ICloudScheduledStagingService {
         if (observed.sha1 !== receipt.payload.sha1 || observed.sha256 !== receipt.payload.sha256) {
           throw new Error('scheduled_private_copy_source_changed');
         }
-        await file.sync(); await persist();
+        await file.sync();
+        await persist();
         // EEXIST never makes the destination ours. No existing original is replaced or borrowed.
-        await this.step(input, async () => { await link(initial.payload.temporaryPath, promotedPath); promoted = true; });
+        await this.step(input, async () => {
+          await link(initial.payload.temporaryPath, promotedPath);
+          promoted = true;
+        });
         await persist();
         const directory = await open(parent, 'r');
         directoryOpen = true;
-        try { await directory.sync(); } finally { await directory.close(); directoryOpen = false; }
+        try {
+          await directory.sync();
+        } finally {
+          await directory.close();
+          directoryOpen = false;
+        }
         await this.repository.unlinkPrivateTemporary(input);
       } finally {
         // On failure preserve actual partial inode evidence and conservative charge, never fake free.
         // A failed final ownership write cannot prove the final inode size or promotion state.
         // Keep its pending generation charged even after the actual handle closes.
-        try { await persist(); ownershipPersisted = true; } catch { ownershipPersisted = false; }
-        await file.close(); file = undefined;
+        try {
+          await persist();
+          ownershipPersisted = true;
+        } catch {
+          ownershipPersisted = false;
+        }
+        await file.close();
+        file = undefined;
       }
-    })().finally(async () => { if (!file && !directoryOpen && readonlySettled && ownershipPersisted) { await this.repository.finishPrivateWork(input, token); } });
+    })().finally(() => {
+      if (!file && !directoryOpen && readonlySettled && ownershipPersisted) {
+        return this.repository.finishPrivateWork(input, token);
+      }
+    });
     this.trackOwnedWork(input.resource.id, work);
     await work;
   }
@@ -645,7 +703,9 @@ export class ICloudScheduledStagingService {
       return { receipt, validation, current, release, paths: files.map(({ path }) => path) };
     } catch {
       const closed = await Promise.allSettled(files.map(({ handle }) => handle.close()));
-      if (closed.every(({ status }) => status === 'fulfilled')) { await this.repository.finishPrivateWork(input, privateWork); }
+      if (closed.every(({ status }) => status === 'fulfilled')) {
+        await this.repository.finishPrivateWork(input, privateWork);
+      }
       throw new Error('scheduled_audit_unavailable');
     }
   }
@@ -805,9 +865,12 @@ export class ICloudScheduledStagingService {
         })();
         // Result refusal/timeout is not settlement. Include late hashing/readonly/receipt work,
         // actual decoder termination and removal of its unique input before issuing the seal.
-        const settled = Promise.all([decoderCleanup, work]).then(async () => {
-          await this.repository.finishPrivateWork(input, privateWork);
-        }).catch(() => {}).finally(() => this.cleanups.delete(settled));
+        const settled = Promise.all([decoderCleanup, work])
+          .then(async () => {
+            await this.repository.finishPrivateWork(input, privateWork);
+          })
+          .catch(() => {})
+          .finally(() => this.cleanups.delete(settled));
         this.cleanups.add(settled);
         this.trackOwnedWork(input.resource.id, settled);
         const result = Promise.race([work, refusal.promise]).finally(() => {

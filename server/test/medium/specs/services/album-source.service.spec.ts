@@ -1,6 +1,10 @@
 import { NotFoundException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { AlbumSourceKind } from 'src/dtos/album-source.dto.js';
+import {
+  down as removeMembershipGeneration,
+  up as addMembershipGeneration,
+} from 'src/fork-schema/migrations/0000000000223-AlbumSourceMembershipGeneration.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
@@ -15,13 +19,9 @@ import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
+import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
-import {
-  up as addMembershipGeneration,
-  down as removeMembershipGeneration,
-} from 'src/fork-schema/migrations/0000000000223-AlbumSourceMembershipGeneration.js';
-import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
@@ -73,10 +73,7 @@ const membersOf = async (db: Kysely<DB>, albumId: string) =>
     .toSorted();
 
 const barrier = () => {
-  let open!: () => void;
-  const reached = new Promise<void>((resolve) => {
-    open = resolve;
-  });
+  const { promise: reached, resolve: open } = Promise.withResolvers<void>();
   return { reached, open };
 };
 
@@ -224,15 +221,17 @@ describe(AlbumSourceService.name, () => {
       const read = barrier();
       const release = barrier();
       const getAssetIds = AlbumRepository.prototype.getAssetIds;
-      const paused = vi
-        .spyOn(AlbumRepository.prototype, 'getAssetIds')
-        .mockImplementationOnce(async function (this: AlbumRepository, albumId, ids) {
-          const existing = await getAssetIds.call(this, albumId, ids);
-          expect(existing.has(copied.id)).toBe(false);
-          read.open();
-          await release.reached;
-          return existing;
-        });
+      const paused = vi.spyOn(AlbumRepository.prototype, 'getAssetIds').mockImplementationOnce(async function (
+        this: AlbumRepository,
+        albumId,
+        ids,
+      ) {
+        const existing = await getAssetIds.call(this, albumId, ids);
+        expect(existing.has(copied.id)).toBe(false);
+        read.open();
+        await release.reached;
+        return existing;
+      });
       ctx.getMock(EventRepository).emit.mockClear();
       ctx.getMock(JobRepository).queue.mockClear();
       ctx.getMock(JobRepository).queueAll.mockClear();
@@ -473,10 +472,10 @@ describe(AlbumSourceService.name, () => {
         replacement = defaultDatabase.transaction().execute(async (tx) => {
           replacing.open();
           await tx
-          .deleteFrom('album_asset')
-          .where('albumId', '=', link.albumId)
-          .where('assetId', '=', asset.id)
-          .execute();
+            .deleteFrom('album_asset')
+            .where('albumId', '=', link.albumId)
+            .where('assetId', '=', asset.id)
+            .execute();
           await tx.insertInto('album_asset').values({ albumId: link.albumId, assetId: asset.id }).execute();
           replaced = true;
         });
@@ -484,9 +483,7 @@ describe(AlbumSourceService.name, () => {
         expect(await membersOf(defaultDatabase, link.albumId)).toEqual([asset.id]);
         expect(replaced).toBe(false);
         release.open();
-        await expect(removing).resolves.toEqual([
-          { id: asset.id, success: true },
-        ]);
+        await expect(removing).resolves.toEqual([{ id: asset.id, success: true }]);
         await replacement;
         expect(await membersOf(defaultDatabase, link.albumId)).toEqual([asset.id]);
         expect(await claimsOf(defaultDatabase, link.id)).toEqual([]);
@@ -506,12 +503,14 @@ describe(AlbumSourceService.name, () => {
       await sut.addAssets(auth, link.id, { ids: [asset.id] });
       const before = await claimsOf(defaultDatabase, link.id);
       const remove = AlbumRepository.prototype.removeAssetIds;
-      const injected = vi
-        .spyOn(AlbumRepository.prototype, 'removeAssetIds')
-        .mockImplementationOnce(async function (this: AlbumRepository, albumId, ids) {
-          await remove.call(this, albumId, ids);
-          throw new Error('injected membership deletion failure');
-        });
+      const injected = vi.spyOn(AlbumRepository.prototype, 'removeAssetIds').mockImplementationOnce(async function (
+        this: AlbumRepository,
+        albumId,
+        ids,
+      ) {
+        await remove.call(this, albumId, ids);
+        throw new Error('injected membership deletion failure');
+      });
       ctx.getMock(EventRepository).emit.mockClear();
       try {
         await expect(sut.removeAssets(auth, link.id, { ids: [asset.id] })).rejects.toThrow(

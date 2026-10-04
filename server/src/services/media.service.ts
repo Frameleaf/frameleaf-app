@@ -1547,7 +1547,7 @@ export class MediaService extends BaseService {
         muted: edits.some((edit) => edit.action === AssetEditAction.Audio && !!edit.parameters.muted),
       });
       // Only full-clip timing-preserving recipes: trim/speed retain their separate semantics.
-      if (!edits.some((edit) => edit.action === AssetEditAction.Trim || edit.action === AssetEditAction.Speed)) {
+      if (edits.every((edit) => !(edit.action === AssetEditAction.Trim || edit.action === AssetEditAction.Speed))) {
         const sourcePackets = await this.mediaRepository.probePackets(version.sourcePath, videoStream.index);
         const masterPackets = await this.mediaRepository.probePackets(master, masterVideo.index);
         validateFullClipMasterTiming(videoStream, masterVideo, sourcePackets, masterPackets);

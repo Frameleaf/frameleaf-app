@@ -16,9 +16,9 @@ import { Permission } from 'src/enum.js';
 import { ALBUM_SOURCE_WRITE_REFUSAL } from 'src/repositories/album-source.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
-import { recordAlbumEdit } from 'src/services/partner-copy.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { recordAlbumEdit } from 'src/services/partner-copy.service.js';
 
 const sourceLock = (userId: string, source: { kind: string; sourceId: string; deviceKey: string | null }) =>
   `album-source:${userId}:${source.kind}:${source.deviceKey ?? ''}:${source.sourceId}`;
