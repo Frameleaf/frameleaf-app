@@ -63,11 +63,7 @@ export class ImportImmichCommand extends CommandRunner {
           break;
         }
         case 'verify': {
-          await importer.verify(async () => {
-            while (await this.jobs.dispatchImportedWork()) {
-              // Each batch inserts jobs and acknowledges the journal in one PostgreSQL transaction.
-            }
-          });
+          await importer.verify(() => this.jobs.dispatchImportedWork());
           break;
         }
         case 'abandon': {
