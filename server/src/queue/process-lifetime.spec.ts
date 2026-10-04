@@ -14,6 +14,7 @@ describe('native process lifetime', () => {
     const lifetime = superviseMediaProcess(child, { signal: abort.signal, deadlineMs: 3000, graceMs: 50 });
     try {
       abort.abort(new Error('cancelled by test'));
+      lifetime.release(); // A late successful result cannot revoke cancellation escalation.
       expect((await closed)[1]).toBe('SIGKILL');
       expect(lifetime.error()?.message).toBe('cancelled by test');
     } finally {
@@ -38,6 +39,30 @@ describe('native process lifetime', () => {
       expect(lifetime.error()?.message).toBe('Media process stopped making progress');
     } finally {
       child.kill('SIGKILL');
+    }
+  });
+});
+
+describe('reusable process task lifetime', () => {
+  it('releases only task timers/listeners and leaves a pooled process alive for its next task', async () => {
+    const child = spawn(process.execPath, ['-e', 'process.stdout.write("ready"); setInterval(()=>{},1000)']);
+    const closed = once(child, 'close');
+    await once(child.stdout, 'data');
+    const abort = new AbortController();
+    const lifetime = superviseMediaProcess(child, { signal: abort.signal, deadlineMs: 20, trackChild: false });
+    try {
+      lifetime.release();
+      abort.abort(new Error('previous task cancelled'));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(child.exitCode).toBeNull();
+      expect(child.signalCode).toBeNull();
+      expect(lifetime.error()).toBeUndefined();
+      const replacement = superviseMediaProcess(child, { deadlineMs: 20, graceMs: 10, trackChild: false });
+      await closed;
+      expect(replacement.error()?.message).toBe('Media process execution deadline exceeded');
+    } finally {
+      child.kill('SIGKILL');
+      await closed;
     }
   });
 });

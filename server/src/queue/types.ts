@@ -40,7 +40,8 @@ export type JobDependencyReason =
   | 'destination-configuration'
   | 'destination-consent'
   | 'destination-budget'
-  | 'source-unavailable';
+  | 'source-unavailable'
+  | 'local-capacity';
 export type QueueClaim = {
   id: string;
   queue: string;
