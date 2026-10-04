@@ -56,6 +56,7 @@ export type RecoveryResource = {
   expectedTarget: RecoveryTarget | null;
   sha1: Buffer | null;
   sha256: Buffer | null;
+  verification: Record<string, unknown> | null;
 };
 export type RecoveryCandidate = {
   id: string;
