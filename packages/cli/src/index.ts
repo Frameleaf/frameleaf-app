@@ -111,7 +111,7 @@ program
 
 program
   .command('migrate')
-  .description("Migrate a user's entire library from one server to another (server-to-server)")
+  .description("Migrate a user's entire library between Frameleaf servers (server-to-server)")
   .addOption(new Option('--from-url <url>', 'Source server URL (SERVER A)').env('FRAMELEAF_FROM_URL'))
   .addOption(
     new Option('--from-key <key>', "Source server API key (the migrated user's own key)").env('FRAMELEAF_FROM_KEY'),
