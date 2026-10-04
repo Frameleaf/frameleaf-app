@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
-
 import { DB } from 'src/schema/index.js';
+
 export type AlbumSyncState = {
   sourceName?: string;
   sourceParentId?: string | null;

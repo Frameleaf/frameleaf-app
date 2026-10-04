@@ -52,7 +52,7 @@ describe(RateLimitRepository.name, () => {
   });
 
   it('rejects invalid window lengths before issuing SQL', async () => {
-    for (const seconds of [0, -1, 1.5, Number.NaN]) {
+    for (const seconds of [0, -1, 1.5, NaN]) {
       await expect(sut.hit('key', seconds)).rejects.toThrow('positive integer');
     }
     expect(fixture.query).not.toHaveBeenCalled();

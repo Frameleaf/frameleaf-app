@@ -487,7 +487,7 @@ export class AlbumRepository {
     });
   }
   private async deleteIn(tx: Transaction<DB>, id: string): Promise<void> {
-    const subtree = await tx
+    const _subtree = await tx
       .selectFrom('album_closure')
       .select('id_descendant')
       .where('id_ancestor', '=', id)
@@ -615,7 +615,7 @@ export class AlbumRepository {
         throw new ConflictException('The album was moved since the directory was loaded');
       }
     }
-    const subtree = await tx
+    const _subtree = await tx
       .selectFrom('album_closure')
       .select('id_descendant')
       .where('id_ancestor', '=', id)
@@ -705,7 +705,7 @@ export class AlbumRepository {
       `.execute(tx);
     });
   }
-  @Chunked({ chunkSize: 30000 })
+  @Chunked({ chunkSize: 30_000 })
   async addAssetIdsToAlbums(
     values: {
       albumId: string;

@@ -6,17 +6,17 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { Duplex, PassThrough, Readable } from 'node:stream';
 import { createGunzip, createGzip, gzipSync } from 'node:zlib';
+import type { Stats } from 'node:fs';
+import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { defaults, SystemConfig } from 'src/dtos/config.dto.js';
+import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { queueExecution } from 'src/queue/context.js';
 import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
-import { automock, AutoMocked, getMocks, mockDuplex, mockSpawn, ServiceMocks } from 'test/utils.js';
-import type { Stats } from 'node:fs';
-import type { QueueExecution } from 'src/queue/types.js';
+import { AutoMocked, ServiceMocks, automock, getMocks, mockDuplex, mockSpawn } from 'test/utils.js';
 
 describe(DatabaseBackupService.name, () => {
   let sut: DatabaseBackupService;
@@ -200,18 +200,9 @@ describe(DatabaseBackupService.name, () => {
     });
 
     it('waits for a cancelled dump to close before cleanup or returning a retryable failure', async () => {
-      let readStarted!: () => void;
-      const reading = new Promise<void>((resolve) => {
-        readStarted = resolve;
-      });
-      let destroyStarted!: () => void;
-      const destroying = new Promise<void>((resolve) => {
-        destroyStarted = resolve;
-      });
-      let close!: () => void;
-      const canClose = new Promise<void>((resolve) => {
-        close = resolve;
-      });
+      const { promise: reading, resolve: readStarted } = Promise.withResolvers<void>();
+      const { promise: destroying, resolve: destroyStarted } = Promise.withResolvers<void>();
+      const { promise: canClose, resolve: close } = Promise.withResolvers<void>();
       const dump = new Duplex({
         read() {
           readStarted();

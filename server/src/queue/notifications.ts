@@ -18,7 +18,7 @@ export function queueNotifications(
     connect() {
       if (closed || subscribed || pending || performance.now() < nextConnect) return;
       pending = true;
-      nextConnect = performance.now() + 30000;
+      nextConnect = performance.now() + 30_000;
       // postgres.js reconnects a successful listener and re-LISTENs automatically.
       void client
         .listen(QUEUE_CHANNEL, wake, wake)

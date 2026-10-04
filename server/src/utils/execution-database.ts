@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { parentPort } from 'node:worker_threads';
-import { executionSignal } from 'src/utils/execution-signal.js';
 import type { createPostgres } from '@frameleaf/sql-tools';
+import { executionSignal } from 'src/utils/execution-signal.js';
 
 type Client = ReturnType<typeof createPostgres>;
 export const DATABASE_ACQUIRE_TIMEOUT_MS = 5000;

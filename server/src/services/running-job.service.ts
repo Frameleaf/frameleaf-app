@@ -108,11 +108,11 @@ export class RunningJobService {
                   ? 'blocked'
                   : run.delayed > 0 && run.delayed === run.waiting
                     ? 'delayed'
-                    : !run.workerAvailable
-                      ? 'unavailable'
-                      : run.retrying > 0
+                    : run.workerAvailable
+                      ? run.retrying > 0
                         ? 'retrying'
-                        : 'waiting',
+                        : 'waiting'
+                      : 'unavailable',
             noDispatchBacklog: run.noDispatchBacklog,
             lastProgressAt: run.lastProgressAt?.toISOString() ?? null,
           };

@@ -3,8 +3,8 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { FrameleafAccess } from 'src/utils/frameleaf-sign-in.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-
 import { DB } from 'src/schema/index.js';
+
 export type FrameleafAccountLinkRow = {
   userId: string;
   sub: string;

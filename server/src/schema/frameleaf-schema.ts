@@ -13,7 +13,7 @@ export const verifyFrameleafSchemaSources = async (): Promise<void> => {
   const { fileURLToPath } = await import('node:url');
   const { verifyCatalogSources } = await import('src/schema/catalog-authority.js');
   const provenance = JSON.parse(
-    await readFile(new URL('./catalog/desired-schema.provenance.json', import.meta.url), 'utf8'),
+    await readFile(new URL('catalog/desired-schema.provenance.json', import.meta.url), 'utf8'),
   );
   await verifyCatalogSources(fileURLToPath(new URL('../../', import.meta.url)), provenance);
 };

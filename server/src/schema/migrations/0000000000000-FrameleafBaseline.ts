@@ -7,7 +7,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   if (!db.isTransaction) return db.transaction().execute(up);
   const { rows } = await sql<{ name: string }>`select tablename as name from pg_tables where schemaname = 'public'
     and tablename not in ('frameleaf_migrations', 'frameleaf_migrations_lock')`.execute(db);
-  if (rows.length) throw new Error('Frameleaf baseline requires a fresh destination database.');
+  if (rows.length > 0) throw new Error('Frameleaf baseline requires a fresh destination database.');
   const statements = splitPostgresStatements(readPinnedArtifact('baseline.sql'));
   for (const [index, statement] of statements.entries()) {
     try {
@@ -19,6 +19,8 @@ export async function up(db: Kysely<any>): Promise<void> {
   }
 }
 
-export async function down(): Promise<never> {
-  throw new Error('Frameleaf baseline cannot be reversed. Restore a Frameleaf backup into a fresh database.');
+export function down(): Promise<never> {
+  return Promise.reject(
+    new Error('Frameleaf baseline cannot be reversed. Restore a Frameleaf backup into a fresh database.'),
+  );
 }

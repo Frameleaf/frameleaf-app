@@ -4,6 +4,7 @@ import { createWriteStream } from 'node:fs';
 import { type FileHandle, open, rename, rm } from 'node:fs/promises';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   CLOUD_BACKUP_MARKER,
@@ -23,7 +24,6 @@ import {
   executionTimeout,
   withExecutionCleanup,
 } from 'src/utils/execution-signal.js';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 /**
  * Cloud backup storage (FL-160): the S3 API calls the backup agent makes, signed with AWS Signature
@@ -61,7 +61,11 @@ export type CloudBackupConnection = {
 export type CloudBackupObjectInfo = { key: string; size: number; etag: string | null };
 
 export type CloudBackupClaimRefusal =
-  'claimed-by-another-server' | 'other-key' | 'not-empty' | 'sse-c-unsupported' | 'claim-missing';
+  | 'claimed-by-another-server'
+  | 'other-key'
+  | 'not-empty'
+  | 'sse-c-unsupported'
+  | 'claim-missing';
 
 /** A provider answered with an error, or could not be reached. The message never holds a secret. */
 export class CloudBackupStoreError extends Error {

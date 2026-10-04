@@ -1,9 +1,9 @@
 import type { createPostgres } from '@frameleaf/sql-tools';
-import { queueExecution } from 'src/queue/context.js';
 import type { QueueExecution } from 'src/queue/types.js';
+import { queueExecution } from 'src/queue/context.js';
 import {
-  boundExecutionReservations,
   DATABASE_ACQUIRE_TIMEOUT_MS,
+  boundExecutionReservations,
   withDatabaseCleanup,
 } from 'src/utils/execution-database.js';
 

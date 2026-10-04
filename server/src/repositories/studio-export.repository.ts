@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, sql, Transaction } from 'kysely';
+import { Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import type { VideoPacketInfo } from 'src/types.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import {
   AssetType,
   AssetVisibility,
@@ -28,8 +30,7 @@ import {
   satisfiesDerivativePrivacy,
   unionDerivativePrivacy,
 } from 'src/utils/derivative-privacy.js';
-import type { VideoPacketInfo } from 'src/types.js';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+
 /**
  * FL-195 follow-up (owner decision, September 27, 2026): which sessions a version is hidden from. A
  * result carries the lock its sources had when it was published, and any source lock added later
@@ -876,12 +877,14 @@ export class StudioExportRepository {
     }
     const union = unionDerivativePrivacy(
       input.ownerId,
-      evidence.map((row): DerivativeSourceEvidence => ({
-        assetId: row.assetId,
-        ownerId: row.ownerId,
-        lockReason: row.lockReason,
-        sensitive: row.sensitive,
-      })),
+      evidence.map(
+        (row): DerivativeSourceEvidence => ({
+          assetId: row.assetId,
+          ownerId: row.ownerId,
+          lockReason: row.lockReason,
+          sensitive: row.sensitive,
+        }),
+      ),
       { nsfwHiding: input.nsfwHiding },
     );
     return { union, evidence };

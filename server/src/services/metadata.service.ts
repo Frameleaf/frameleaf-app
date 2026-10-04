@@ -86,7 +86,7 @@ export function firstDateTime(tags: ImmichTags) {
   }
 }
 
-const validate = <T,>(value: T): NonNullable<T> | null => {
+const validate = <T>(value: T): NonNullable<T> | null => {
   // handle lists of numbers
   if (Array.isArray(value)) {
     value = value[0];

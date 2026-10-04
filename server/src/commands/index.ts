@@ -1,6 +1,6 @@
-import { ImportImmichCommand } from 'src/commands/import-immich.command.js';
 import { cloudBackupCommands } from 'src/commands/cloud-backup.command.js';
 import { GrantAdminCommand, PromptEmailQuestion, RevokeAdminCommand } from 'src/commands/grant-admin.js';
+import { ImportImmichCommand } from 'src/commands/import-immich.command.js';
 import { ListUsersCommand } from 'src/commands/list-users.command.js';
 import { DisableMaintenanceModeCommand, EnableMaintenanceModeCommand } from 'src/commands/maintenance-mode.js';
 import {

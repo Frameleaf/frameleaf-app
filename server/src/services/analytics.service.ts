@@ -31,8 +31,8 @@ import {
   AnalyticsRepository,
   AnalyticsScopeTargets,
 } from 'src/repositories/analytics.repository.js';
-import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';

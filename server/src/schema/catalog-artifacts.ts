@@ -1,6 +1,6 @@
-import type { DatabaseSchema } from '@frameleaf/sql-tools';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import type { DatabaseSchema } from '@frameleaf/sql-tools';
 import { validateFrameleafCatalog } from 'src/schema/catalog-authority.js';
 
 export type ArtifactManifest = {
@@ -11,7 +11,7 @@ export const artifactDigest = (contents: string): string => createHash('sha256')
 
 /** Missing or mismatched artifacts are fatal; never fall back to mutable model/helper DDL. */
 export const readPinnedArtifact = (name: string): string => {
-  const root = new URL('./catalog/', import.meta.url);
+  const root = new URL('catalog/', import.meta.url);
   const manifest = JSON.parse(readFileSync(new URL(`${name}.manifest.json`, root), 'utf8')) as ArtifactManifest;
   const contents = readFileSync(new URL(name, root), 'utf8');
   if (!/^[a-f\d]{40}$/u.test(manifest.sourceCommit) || artifactDigest(contents) !== manifest.sha256) {

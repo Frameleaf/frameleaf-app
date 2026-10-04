@@ -1,4 +1,3 @@
-import { boundExecutionReservations } from 'src/utils/execution-database.js';
 import { DatabaseConnectionParams, createPostgres } from '@frameleaf/sql-tools';
 import {
   AliasedRawBuilder,
@@ -16,8 +15,8 @@ import {
   SqlBool,
   sql,
 } from 'kysely';
-import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { PostgresJSDialect } from 'kysely-postgres-js';
+import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { Notice, PostgresError } from 'postgres';
 import type { AudioStreamInfo, VectorExtension, VideoFormat, VideoPacketInfo, VideoStreamInfo } from 'src/types.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -52,6 +51,7 @@ import {
 } from 'src/repositories/search.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { boundExecutionReservations } from 'src/utils/execution-database.js';
 import {
   isDefaultVisible,
   isLocked,
@@ -64,6 +64,7 @@ import {
 } from 'src/utils/locked.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { DATABASE_CLOSE_TIMEOUT_SECONDS } from 'src/utils/shutdown.js';
+
 /**
  * FL-299: closing the pool (`Kysely.destroy()`, which the driver turns into `end()` with no timeout)
  * waits for every query in flight, however long it runs. A stop reaches this after its running jobs and
@@ -502,11 +503,11 @@ export function withTagId<O>(qb: SelectQueryBuilder<DB, 'asset', O>, tagId: stri
   );
 }
 const isCJK = (c: number): boolean =>
-  (c >= 19968 && c <= 40959) ||
-  (c >= 44032 && c <= 55215) ||
-  (c >= 12352 && c <= 12447) ||
-  (c >= 12448 && c <= 12543) ||
-  (c >= 13312 && c <= 19903);
+  (c >= 19_968 && c <= 40_959) ||
+  (c >= 44_032 && c <= 55_215) ||
+  (c >= 12_352 && c <= 12_447) ||
+  (c >= 12_448 && c <= 12_543) ||
+  (c >= 13_312 && c <= 19_903);
 export const tokenizeForSearch = (text: string): string[] => {
   /* eslint-disable unicorn/prefer-code-point */
   const tokens: string[] = [];

@@ -14,7 +14,7 @@ const execution = (): QueueExecution => ({
     attempt: 1,
     runId: null,
     itemKey: null,
-    deadlineMs: 600000,
+    deadlineMs: 600_000,
     startedAt: new Date(),
     safeToRetry: true,
   },
@@ -50,7 +50,7 @@ describe('queue dependency outcomes', () => {
     for (const kind of ['invalid', 'operation', 'unsafe']) {
       const context = execution();
       if (kind === 'operation') context.claim.data.operationId = 'operation';
-      if (kind === 'unsafe') context.claim.safeToRetry = false;
+      else if (kind === 'unsafe') context.claim.safeToRetry = false;
       queueExecution.run(context, () =>
         noteAdmissionDependency(
           kind === 'invalid' ? MlAdmissionRefusal.RequestInvalid : MlAdmissionRefusal.CloudUnavailable,

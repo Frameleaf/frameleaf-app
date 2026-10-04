@@ -3,8 +3,17 @@ import { CronTime } from 'cron';
 import { sql } from 'kysely';
 import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, readdir, readFile, realpath, rm, stat, statfs } from 'node:fs/promises';
+import { access, readFile, readdir, realpath, rm, stat, statfs } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type {
+  BuddyControlDto,
+  BuddyKitDto,
+  BuddyPreflightRequestDto,
+  BuddySettingsDto,
+  BuddyStatusDto,
+} from 'src/dtos/buddy-backup.dto.js';
+import type z from 'zod';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -38,8 +47,8 @@ import { buddyInside } from 'src/utils/buddy-backup-recovery.js';
 import {
   type BuddyReceipt,
   type BuddySignedSnapshot,
-  buddySnapshotBytes,
   BuddyVault,
+  buddySnapshotBytes,
   createBuddyDirectory,
   writeBuddyFile,
 } from 'src/utils/buddy-backup-vault.js';
@@ -60,15 +69,6 @@ import {
 } from 'src/utils/frameleaf-buddy.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { OperationDeadlineError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type {
-  BuddyControlDto,
-  BuddyKitDto,
-  BuddyPreflightRequestDto,
-  BuddySettingsDto,
-  BuddyStatusDto,
-} from 'src/dtos/buddy-backup.dto.js';
-import type z from 'zod';
 
 const KINDS = [MediaOperationKind.BuddyBackup, MediaOperationKind.BuddyRestore];
 const LEASE_MS = 300_000;
@@ -811,8 +811,8 @@ export class BuddyBackupService {
         run: current.run && { ...current.run, state: 'complete', error: null, finishedAt: new Date().toISOString() },
       }));
       await this.capture.release(id);
-    } catch (error) {
-      error = executionSignal()?.aborted ? executionSignal()!.reason : error;
+    } catch (caughtError) {
+      const error = executionSignal()?.aborted ? executionSignal()!.reason : caughtError;
       if (await settleOperationStop(this.operations, operation, token)) return;
       if (error instanceof BuddyStopped) {
         if (cancelled) {

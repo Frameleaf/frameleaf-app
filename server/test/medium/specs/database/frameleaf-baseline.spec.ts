@@ -7,8 +7,8 @@ it('boots one canonical PG19 database with one Frameleaf ledger and HNSW', async
     const version = await sql<{
       version: number;
     }>`SELECT current_setting('server_version_num')::integer AS version`.execute(db);
-    expect(version.rows[0].version).toBeGreaterThanOrEqual(190000);
-    expect(version.rows[0].version).toBeLessThan(200000);
+    expect(version.rows[0].version).toBeGreaterThanOrEqual(190_000);
+    expect(version.rows[0].version).toBeLessThan(200_000);
     const schemas = await sql<{
       name: string;
     }>`SELECT nspname AS name FROM pg_namespace WHERE nspname = 'immich_fork'`.execute(db);

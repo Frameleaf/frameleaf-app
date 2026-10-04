@@ -5,9 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Transaction } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
+import type { Transaction } from 'kysely';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { DB } from 'src/schema/index.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -45,7 +47,6 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import {
-  isLibrarySource,
   PENDING_STUDIO_EXPORT_STATES,
   StudioExportPublished,
   StudioExportRefusal,
@@ -57,11 +58,11 @@ import {
   StudioExportVisibility,
   StudioPublicationFollowups,
   StudioSourceMediaFacts,
+  isLibrarySource,
 } from 'src/repositories/studio-export.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
-import type { DB } from 'src/schema/index.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
@@ -80,41 +81,40 @@ import { isNsfwHidingEnabled } from 'src/utils/misc.js';
 import { settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import { evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 import {
+  StudioExportContract,
   buildStudioExportContract,
   declareStudioTiming,
   findStudioExportOutputMismatch,
   parseStudioExportContract,
   resolveStudioExportTiming,
-  StudioExportContract,
   studioMediaSources,
 } from 'src/utils/studio-export-contract.js';
 import {
-  isInsideFolder,
-  isStudioExportContentType,
-  parseStudioExportPublishSnapshot,
-  parseStudioExportSmoothMotion,
   STUDIO_EXPORT_CONTENT_TYPES,
   STUDIO_EXPORT_LEASE_MS,
   STUDIO_EXPORT_PUBLISH_MAX_ATTEMPTS,
   STUDIO_EXPORT_SWEEP_MS,
   STUDIO_EXPORT_TICK_MS,
+  StudioExportPublishSnapshot,
+  StudioExportSmoothMotion,
+  isInsideFolder,
+  isStudioExportContentType,
+  parseStudioExportPublishSnapshot,
+  parseStudioExportSmoothMotion,
   studioExportFileName,
   studioExportLibraryPath,
   studioExportProjectPath,
-  StudioExportPublishSnapshot,
-  StudioExportSmoothMotion,
   studioExportStagingFolder,
 } from 'src/utils/studio-export.js';
 import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
-import { isStudioUuid, StudioDestination, StudioRefusalReason } from 'src/utils/studio-resources.js';
+import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
 import {
-  checkStudioRights,
   STUDIO_DOLBY_TOOLS_ID,
   STUDIO_DOLBY_TOOLS_QUALIFIED,
+  checkStudioRights,
   studioRightsUseFor,
 } from 'src/utils/studio-rights.js';
 import { StudioTimingError } from 'src/utils/studio-timing.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 
 type RunningJob = { operation: MediaOperation; claimToken: string };
 

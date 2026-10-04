@@ -1,5 +1,5 @@
-import type { QueueDatabase } from 'src/queue/table-types.js';
 import { Database, Extensions, Generated, Int8 } from '@frameleaf/sql-tools';
+import type { QueueDatabase } from 'src/queue/table-types.js';
 import {
   album_user_role_enum,
   asset_face_source_type,

@@ -1,4 +1,5 @@
 import { Insertable, Kysely, sql } from 'kysely';
+import { expect } from 'vitest';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
@@ -6,7 +7,6 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { expect } from 'vitest';
 
 /** Every medium clone comes from the real canonical baseline, never a reduced test schema. */
 export const expectCanonicalTables = async (db: Kysely<DB>, tables: string[]): Promise<void> => {
@@ -65,5 +65,5 @@ export const seedCanonicalAlbum = async (
 export const canonicalDatabaseUrl = (url: string, database: string): string => {
   const target = new URL(url);
   target.pathname = '/' + database;
-  return target.toString();
+  return target.href;
 };

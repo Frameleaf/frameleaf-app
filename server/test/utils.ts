@@ -12,6 +12,7 @@ import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
 import { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { Duplex, Readable, Writable } from 'node:stream';
 import { PNG } from 'pngjs';
+import { Mock, Mocked, assert, vitest } from 'vitest';
 import { UploadFieldName } from 'src/dtos/asset-media.dto.js';
 import { AssetUploadInterceptor } from 'src/middleware/asset-upload.interceptor.js';
 import { AuthGuard } from 'src/middleware/auth.guard.js';
@@ -109,7 +110,6 @@ import { newMediaRepositoryMock } from 'test/repositories/media.repository.mock.
 import { newMetadataRepositoryMock } from 'test/repositories/metadata.repository.mock.js';
 import { newStorageRepositoryMock } from 'test/repositories/storage.repository.mock.js';
 import { newSystemMetadataRepositoryMock } from 'test/repositories/system-metadata.repository.mock.js';
-import { Mock, Mocked, assert, vitest } from 'vitest';
 
 export type ControllerContext = {
   authenticate: Mock;
@@ -204,7 +204,7 @@ export const mockBaseService = <T extends BaseService>(service: new (...args: an
   return automock(service, { args: [{ setContext: () => {} }], strict: false });
 };
 
-export const automock = <T,>(
+export const automock = <T>(
   Dependency: new (...args: any[]) => T,
   options?: {
     args?: ConstructorParameters<new (...args: any[]) => T>;
@@ -607,7 +607,7 @@ const templateName = 'frameleaf';
 const withDatabase = (url: string, name: string) => {
   const target = new URL(url);
   target.pathname = `/${name}`;
-  return target.toString();
+  return target.href;
 };
 
 export const getKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {

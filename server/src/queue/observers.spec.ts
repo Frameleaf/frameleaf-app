@@ -3,10 +3,7 @@ import { createObserverDelivery } from 'src/queue/observers.js';
 describe('bounded observer delivery', () => {
   it('releases the executor budget while a hung observer retains the separate allowance', async () => {
     const deliver = createObserverDelivery({ maxInFlight: 1, budgetMs: 5, warningIntervalMs: 0 });
-    let release!: () => void;
-    const hung = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: hung, resolve: release } = Promise.withResolvers<void>();
     const skipped = vi.fn().mockResolvedValue(undefined);
     const warn = vi.fn();
     await deliver([() => hung], warn);
@@ -24,17 +21,7 @@ describe('bounded observer delivery', () => {
     const deliver = createObserverDelivery({ budgetMs: 50 });
     const healthy = vi.fn().mockResolvedValue(undefined);
     const warn = vi.fn();
-    await expect(
-      deliver(
-        [
-          async () => {
-            throw new Error('offline');
-          },
-          healthy,
-        ],
-        warn,
-      ),
-    ).resolves.toBeUndefined();
+    await expect(deliver([() => Promise.reject(new Error('offline')), healthy], warn)).resolves.toBeUndefined();
     expect(healthy).toHaveBeenCalledOnce();
     expect(warn).toHaveBeenCalledOnce();
   });

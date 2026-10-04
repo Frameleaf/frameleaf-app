@@ -5,7 +5,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
-import { seedCanonicalAsset, seedCanonicalUser, seedCanonicalAlbum } from 'test/fixtures/canonical-database.js';
+import { seedCanonicalAlbum, seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)', () => {
@@ -23,8 +23,8 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
   beforeEach(() => {
     emit.mockClear();
   });
-  const rows = <T,>(query: RawBuilder<T>) => query.execute(db).then((result) => result.rows);
-  const first = <T,>(query: RawBuilder<T>) => rows(query).then((result) => result[0]);
+  const rows = <T>(query: RawBuilder<T>) => query.execute(db).then((result) => result.rows);
+  const first = <T>(query: RawBuilder<T>) => rows(query).then((result) => result[0]);
   async function context() {
     const connectionId = randomUUID(),
       ownerId = randomUUID();

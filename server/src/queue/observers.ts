@@ -7,10 +7,9 @@ export function createObserverDelivery({ maxInFlight = 16, budgetMs = 5000, warn
   return async (observers: Array<() => Promise<void>>, warn: () => void) => {
     const deadline = performance.now() + budgetMs;
     const unavailable = () => {
-      if (performance.now() - lastWarning >= warningIntervalMs) {
-        lastWarning = performance.now();
-        warn();
-      }
+      if (!(performance.now() - lastWarning >= warningIntervalMs)) return;
+      lastWarning = performance.now();
+      warn();
     };
     for (const observe of observers) {
       const remaining = deadline - performance.now();
@@ -20,15 +19,12 @@ export function createObserverDelivery({ maxInFlight = 16, budgetMs = 5000, warn
       }
       inFlight++;
       const timer = new AbortController();
-      const delivery = Promise.resolve()
-        .then(observe)
-        .then(
-          () => true,
-          () => {
-            unavailable();
-            return true;
-          },
-        )
+      const delivery = Promise.try(observe)
+        .then(() => true)
+        .catch(() => {
+          unavailable();
+          return true;
+        })
         .finally(() => {
           inFlight--;
         });

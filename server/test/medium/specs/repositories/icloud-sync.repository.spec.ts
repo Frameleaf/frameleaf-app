@@ -4,7 +4,7 @@ import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
-import { seedCanonicalUser, canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
+import { canonicalDatabaseUrl, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 const field = (value: unknown) => ({ value });
