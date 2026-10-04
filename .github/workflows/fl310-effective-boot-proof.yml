@@ -25,13 +25,14 @@ jobs:
       - name: Build the existing replacement distribution
         run: mise run //server:build
       - name: Check the actual entrypoint's first cached configuration in fresh processes
-        run: node --test --test-timeout=90000 server/test/runtime/buddy-boot-binding.test.mjs
+        run: node --test --test-timeout=90000 server/test/runtime/buddy-boot-binding.test.mjs server/test/runtime/buddy-recovery.test.mjs
       - name: Check readiness finalization in the existing recovery service suite
         if: ${{ !cancelled() }}
         working-directory: server
         run: >-
           pnpm exec vitest --config test/vitest.config.mjs --run
-          src/services/buddy-backup-recovery.service.spec.ts
+          src/main.spec.ts src/services/buddy-backup-recovery.service.spec.ts
+          src/maintenance/maintenance-worker.service.spec.ts
       - name: Check actual encrypted capture and recovery compatibility
         if: ${{ !cancelled() }}
         working-directory: server
