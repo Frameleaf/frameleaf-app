@@ -15,7 +15,10 @@ export const verifyRawCatalog = (catalog: DatabaseSchema, raw: RawCatalog): void
     );
     const expected = new Map<string, string>(
       catalog.tables.flatMap((table) =>
-        table[kind].map((item) => [`${table.name}.${item.name}`, item.definition] as const),
+        table[kind].map((item) => {
+          if (!item.definition) throw new Error(`Catalog lacks exact definition for ${table.name}.${item.name}`);
+          return [`${table.name}.${item.name}`, item.definition] as const;
+        }),
       ),
     );
     for (const item of raw[kind]) {
