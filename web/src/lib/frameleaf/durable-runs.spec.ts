@@ -7,8 +7,8 @@ import { buildRunningJobRows, durableRunRow, queueRow } from '$lib/frameleaf/run
 describe('durable run views', () => {
   it('uses selected items rather than multiple stages for progress', () => {
     const run = durableRun();
-    expect(settledItems(run)).toBe(14992);
-    expect(durableRunRow(run)).toMatchObject({ total: 15000, done: 14992, percent: 99, live: true });
+    expect(settledItems(run)).toBe(14_992);
+    expect(durableRunRow(run)).toMatchObject({ total: 15_000, done: 14_992, percent: 99, live: true });
     expect(durableRunRow(durableRun({ enumerationDone: false })).percent).toBeNull();
   });
   it('shows partial failures on the failed filter without treating active work as settled', () => {

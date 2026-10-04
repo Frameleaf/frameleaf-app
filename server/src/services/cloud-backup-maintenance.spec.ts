@@ -218,7 +218,7 @@ describe(CloudBackupMaintenance.name, () => {
       await sut.prune(bucket, retention, false, carryOn);
 
       const forgotten = index.forget.mock.invocationCallOrder[0];
-      const deletedObject = store.delete.mock.calls.findIndex(([, key]) => String(key).startsWith('o/'));
+      const deletedObject = store.delete.mock.calls.findIndex(([, key]) => key.startsWith('o/'));
       expect(index.forget).toHaveBeenCalledWith(bucket.bucketRef, [hex('night-3')]);
       expect(forgotten).toBeLessThan(store.delete.mock.invocationCallOrder[deletedObject]);
     });

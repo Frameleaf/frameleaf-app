@@ -135,7 +135,7 @@
         {/if}
         {#if !run.enumerationDone}<p>{$t('frameleaf_job_runs_enumerating')}</p>{/if}
         <dl>
-          {#each DURABLE_OUTCOMES as outcome}
+          {#each DURABLE_OUTCOMES as outcome (outcome)}
             {#if run[outcome] > 0}<dt>{$t(runOutcomeKey(outcome))}</dt>
               <dd>{number(run[outcome])}</dd>{/if}
           {/each}
@@ -147,7 +147,7 @@
               values: { time: new Date(run.lastProgressAt).toLocaleString($locale ?? undefined) },
             })}</time
           >{/if}
-        {#each run.reasons as reason}<p>{$t(runReasonKey(reason))}</p>{/each}
+        {#each run.reasons as reason (reason)}<p>{$t(runReasonKey(reason))}</p>{/each}
         <button type="button" onclick={() => inspect(run.id)}>{$t('frameleaf_job_runs_inspect')}</button>
         {#if selectedId === run.id}
           <section aria-label={$t('frameleaf_job_runs_items')}>
@@ -158,7 +158,7 @@
                   <strong>{$t(runOutcomeKey(item.outcome))}</strong>
                   <span>{$t('frameleaf_job_runs_stages', { values: { count: number(item.stageTotals.total) } })}</span>
                   <dl>
-                    {#each DURABLE_OUTCOMES as outcome}{#if item.stageTotals[outcome] > 0}<dt>
+                    {#each DURABLE_OUTCOMES as outcome (outcome)}{#if item.stageTotals[outcome] > 0}<dt>
                           {$t(runOutcomeKey(outcome))}
                         </dt>
                         <dd>{number(item.stageTotals[outcome])}</dd>{/if}{/each}
@@ -171,7 +171,7 @@
                         values: { time: new Date(item.lastProgressAt).toLocaleString($locale ?? undefined) },
                       })}</time
                     >{/if}
-                  {#each item.reasons as reason}<p>{$t(runReasonKey(reason))}</p>{/each}
+                  {#each item.reasons as reason (reason)}<p>{$t(runReasonKey(reason))}</p>{/each}
                 </li>
               {/each}
             </ol>

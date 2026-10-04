@@ -44,7 +44,7 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     pets.startRun(ownerId, 'local', (tx, runId) =>
       jobs.queueInTransaction(tx, { name: JobName.PetRecognitionQueueAll, data: { userId: ownerId } }, runId),
     );
-  const inClaim = <T,>(claim: QueueClaim, action: () => Promise<T>) =>
+  const inClaim = <T>(claim: QueueClaim, action: () => Promise<T>) =>
     queueExecution.run(
       {
         claim,
