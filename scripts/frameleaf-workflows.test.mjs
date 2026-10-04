@@ -361,7 +361,8 @@ test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer
   assert.equal(fixtures.env.PYTHONDONTWRITEBYTECODE, "1");
   assert.equal(fixtures.env.TRUENAS_LIBRARY,
     "${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4");
-  assert.equal(fixtures.run, "node --test --test-concurrency=1 packaging/nas/build.test.cjs");
+  assert.equal(fixtures.run,
+    "node --test --test-concurrency=1 packaging/nas/build.test.cjs packaging/nas/qualification.test.cjs");
   const requirements = readFileSync(path.join(root, "packaging/nas/requirements-render.lock"), "utf8")
     .split("\n").filter((line) => line && !line.startsWith("#"));
   assert.equal(requirements.length, 10);
