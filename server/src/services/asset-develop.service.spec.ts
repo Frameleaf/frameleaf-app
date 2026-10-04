@@ -919,9 +919,9 @@ describe(AssetDevelopService.name, () => {
 
     it('fails, keeping the revisions for the nightly sweep, when the cleanup cannot be queued (FL-179)', async () => {
       releasing(['/m1']);
-      mocks.job.queue.mockRejectedValue(new Error('redis unavailable'));
+      mocks.job.queue.mockRejectedValue(new Error('queue database unavailable'));
       await expect(sut.onAssetDelete({ assetId: asset.id, userId: asset.ownerId })).rejects.toThrow(
-        'redis unavailable',
+        'queue database unavailable',
       );
     });
   });

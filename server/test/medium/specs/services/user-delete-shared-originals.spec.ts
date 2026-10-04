@@ -1,11 +1,10 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { defaults } from 'src/dtos/config.dto.js';
 import { AssetFileType, JobName, StorageFolder, UserStatus } from 'src/enum.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -35,13 +34,6 @@ let previousMediaLocation: string | undefined;
 
 beforeAll(async () => {
   database = await getKyselyDB();
-  await sql`
-    INSERT INTO immich_fork.config (key, value)
-    VALUES
-      ('frameleafCloud', ${JSON.stringify(defaults.frameleafCloud)}::jsonb),
-      ('smartAlbums', ${JSON.stringify(defaults.smartAlbums)}::jsonb)
-    ON CONFLICT (key) DO NOTHING
-  `.execute(database);
   try {
     previousMediaLocation = StorageCore.getMediaLocation();
   } catch {

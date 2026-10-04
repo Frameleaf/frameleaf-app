@@ -629,7 +629,7 @@ describe(PersonRepository.name, () => {
       await expect(pairsOf()).resolves.toEqual([`${b}:${c}`]);
 
       await sql`
-        UPDATE immich_fork.person_merge_verdict SET "createdAt" = now() - interval '31 days'
+        UPDATE public.person_merge_verdict SET "createdAt" = now() - interval '31 days'
         WHERE "personId" = ${a}::uuid AND "suggestionId" = ${c}::uuid
       `.execute(ctx.database);
       await expect(pairsOf()).resolves.toEqual([`${a}:${c}`, `${b}:${c}`]);
@@ -660,7 +660,7 @@ describe(PersonRepository.name, () => {
 
       await expect(sut.reanchorMergeVerdicts(user.id)).resolves.toBe(1);
       const remaining = await sql<{ personId: string }>`
-        SELECT "personId" FROM immich_fork.person_merge_verdict WHERE "ownerId" IN (${user.id}::uuid, ${other.id}::uuid)
+        SELECT "personId" FROM public.person_merge_verdict WHERE "ownerId" IN (${user.id}::uuid, ${other.id}::uuid)
         ORDER BY "personId"
       `.execute(ctx.database);
       expect(remaining.rows.map(({ personId }) => personId).toSorted()).toEqual([b, x].toSorted());
@@ -692,7 +692,7 @@ describe(PersonRepository.name, () => {
       const count = async () =>
         (
           await sql<{ count: number }>`
-            SELECT count(*)::int AS count FROM immich_fork.person_merge_verdict WHERE "ownerId" = ${user.id}::uuid
+            SELECT count(*)::int AS count FROM public.person_merge_verdict WHERE "ownerId" = ${user.id}::uuid
           `.execute(ctx.database)
         ).rows[0].count;
       await expect(count()).resolves.toBe(2);
@@ -706,7 +706,7 @@ describe(PersonRepository.name, () => {
       const [p, q] = [await rebuilt(first), await rebuilt(second)];
       await expect(sut.reanchorMergeVerdicts(user.id)).resolves.toBe(0);
       const rows = await sql<{ personId: string; suggestionId: string; verdict: string }>`
-        SELECT "personId", "suggestionId", verdict FROM immich_fork.person_merge_verdict WHERE "ownerId" = ${user.id}::uuid
+        SELECT "personId", "suggestionId", verdict FROM public.person_merge_verdict WHERE "ownerId" = ${user.id}::uuid
         ORDER BY verdict
       `.execute(ctx.database);
       expect(rows.rows).toEqual([
@@ -746,7 +746,7 @@ describe(PersonRepository.name, () => {
       await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.5 })).resolves.toHaveLength(2);
 
       await expect(
-        sql`INSERT INTO immich_fork.person_merge_verdict ("ownerId", "personId", "suggestionId", verdict)
+        sql`INSERT INTO public.person_merge_verdict ("ownerId", "personId", "suggestionId", verdict)
             VALUES (${user.id}::uuid, ${a}::uuid, ${b}::uuid, 'ignore')`.execute(ctx.database),
       ).rejects.toThrow();
     });

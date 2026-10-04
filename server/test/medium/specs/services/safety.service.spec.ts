@@ -434,7 +434,7 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
       .set({ checksum: sha1, checksumAlgorithm: ChecksumAlgorithm.sha1File })
       .where('id', '=', asset.id)
       .execute();
-    await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt") VALUES (${asset.id}::uuid, ${sha1}, ${checksum}, 10, ARRAY['/replacement']::text[], 1, '{}'::jsonb, now(), now())`.execute(
+    await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt") VALUES (${asset.id}::uuid, ${sha1}, ${checksum}, 10, ARRAY['/replacement']::text[], 1, '{}'::jsonb, now(), now())`.execute(
       db,
     );
     expect((await lookup()).id).toBe(asset.id);
@@ -448,13 +448,11 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
       })
       .where('id', '=', asset.id)
       .execute();
-    await sql`UPDATE immich_fork.asset_checksum SET "verifiedPaths" = ARRAY['/unverified']::text[], evidence = jsonb_build_object('source', ${EXTERNAL_SCAN_CHECKSUM}::text) WHERE "assetId" = ${asset.id}::uuid`.execute(
+    await sql`UPDATE public.asset_checksum SET "verifiedPaths" = ARRAY['/unverified']::text[], evidence = jsonb_build_object('source', ${EXTERNAL_SCAN_CHECKSUM}::text) WHERE "assetId" = ${asset.id}::uuid`.execute(
       db,
     );
     expect((await lookup()).id).toBe(asset.id);
-    await sql`UPDATE immich_fork.asset_checksum SET evidence = '{}'::jsonb WHERE "assetId" = ${asset.id}::uuid`.execute(
-      db,
-    );
+    await sql`UPDATE public.asset_checksum SET evidence = '{}'::jsonb WHERE "assetId" = ${asset.id}::uuid`.execute(db);
     expect((await sut.lookup(auth, { hashes: [sha] })).assets).toEqual([]);
   });
 });

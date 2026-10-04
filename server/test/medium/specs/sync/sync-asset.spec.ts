@@ -88,7 +88,7 @@ describe(SyncEntityType.AssetV2, () => {
       originalPath: '/external/photos/lake.png',
     });
     // what a Library Care relink of an external original records: bytes on an external mount, not a managed copy
-    await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+    await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
       VALUES (${asset.id}::uuid, ${randomBytes(20)}, ${randomBytes(32)}, 5, ARRAY[${asset.originalPath}]::text[], 1,
         '{"source":"recovery"}'::jsonb, now(), now())`.execute(defaultDatabase);
 

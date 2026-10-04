@@ -738,7 +738,7 @@ describe(TrashService.name, () => {
       const repository = new TrashRepository(ctx.database);
       const item = { assetId: randomUUID(), fileName: 'a.mov', bytes: 1 };
       await sql`
-        INSERT INTO immich_fork.utility_activity ("userId", tool, action, "itemCount", bytes, items, "createdAt")
+        INSERT INTO public.utility_activity ("userId", tool, action, "itemCount", bytes, items, "createdAt")
         VALUES (${user.id}::uuid, 'large-files', 'trash', 1, 1, ${JSON.stringify([item])}::text::jsonb,
           clock_timestamp() - interval '400 days')
       `.execute(ctx.database);
@@ -752,7 +752,7 @@ describe(TrashService.name, () => {
       }
 
       const count = await sql<{ count: string }>`
-        SELECT count(*)::text AS count FROM immich_fork.utility_activity WHERE "userId" = ${user.id}::uuid
+        SELECT count(*)::text AS count FROM public.utility_activity WHERE "userId" = ${user.id}::uuid
       `.execute(ctx.database);
       expect(count.rows[0].count).toBe('500');
     }, 60_000);
@@ -775,7 +775,7 @@ describe(TrashService.name, () => {
       }
       // an expired entry of the kept account
       await sql`
-        INSERT INTO immich_fork.utility_activity ("userId", tool, action, "itemCount", bytes, items, "createdAt")
+        INSERT INTO public.utility_activity ("userId", tool, action, "itemCount", bytes, items, "createdAt")
         VALUES (${kept.id}::uuid, 'large-files', 'trash', 1, 1, ${JSON.stringify([item])}::text::jsonb,
           clock_timestamp() - interval '400 days')
       `.execute(ctx.database);
@@ -785,7 +785,7 @@ describe(TrashService.name, () => {
       expect(swept?.utilityActivity).toBeGreaterThanOrEqual(2);
 
       const rows = await sql<{ userId: string }>`
-        SELECT "userId"::text AS "userId" FROM immich_fork.utility_activity
+        SELECT "userId"::text AS "userId" FROM public.utility_activity
         WHERE "userId" IN (${user.id}::uuid, ${kept.id}::uuid, ${removed}::uuid)
       `.execute(ctx.database);
       expect(rows.rows).toEqual([{ userId: kept.id }]);

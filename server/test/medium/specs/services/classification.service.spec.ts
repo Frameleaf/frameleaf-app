@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import {
   AssetType,
   AssetVisibility,
@@ -191,8 +191,7 @@ beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
 
-beforeEach(async () => {
-  await sql`UPDATE immich_fork.state SET phase = 'legacy', active = true WHERE id = 1`.execute(defaultDatabase);
+beforeEach(() => {
   clearConfigCache();
 });
 
