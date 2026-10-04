@@ -325,7 +325,40 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     const nestedMedia = path.join(databasePath, 'media');
     fs.mkdirSync(nestedMedia);
     const clusterVersion = fs.readFileSync(path.join(databasePath, 'PG_VERSION'));
-    for (const [name, changes] of [
+    await t.test('Synology upgrade preserves valid literal quoted retained dotenv and password bytes', () => {
+      const quoted = '# Retained fixture with literal quotes and CRLF\r\n' + configured.trimEnd().split('\n').map((line, index) => {
+        const equal = line.indexOf('=');
+        const quote = index % 2 ? '"' : "'";
+        return `export ${line.slice(0, equal)} = ${quote}${line.slice(equal + 1)}${quote} # literal fixture`;
+      }).join('\r\n') + '\r\n';
+      const bytes = Buffer.from(quoted);
+      fs.writeFileSync(retainedConfig, bytes);
+      fs.unlinkSync(stagedConfig);
+      try {
+        execFileSync('sh', [localScript], { env: { ...installEnv, SYNOPKG_PKG_STATUS: 'UPGRADE' }, stdio: 'pipe' });
+        const rendered = JSON.parse(execFileSync('docker', [
+          'compose', '--env-file', stagedConfig, '-f', path.join(target, 'project/compose.yaml'), 'config', '--format', 'json',
+        ], { env, stdio: 'pipe' }).toString());
+        assert.deepEqual({
+          retainedUnchanged: fs.readFileSync(retainedConfig).equals(bytes),
+          stagedUnchanged: fs.readFileSync(stagedConfig).equals(bytes),
+          installedUnchanged: fs.readFileSync(path.join(target, 'project/.env')).equals(installedConfig),
+          mediaUnchanged: fs.readFileSync(mediaSentinel).equals(sentinelBytes),
+          databaseUnchanged: fs.readFileSync(databaseSentinel).equals(sentinelBytes),
+          portMatches: rendered.services.server.ports[0].published === '3456',
+          mlMatches: rendered.services.server.environment.FRAMELEAF_MACHINE_LEARNING_ENABLED === 'false',
+          passwordMatches: rendered.services.server.environment.DB_PASSWORD === env.wizard_database_password,
+        }, {
+          retainedUnchanged: true, stagedUnchanged: true, installedUnchanged: true,
+          mediaUnchanged: true, databaseUnchanged: true, portMatches: true, mlMatches: true, passwordMatches: true,
+        });
+      } finally {
+        fs.writeFileSync(retainedConfig, configured);
+        fs.writeFileSync(stagedConfig, configured, { mode: 0o600 });
+      }
+    });
+    const commandSentinel = path.join(root, 'retained-command-executed');
+    for (const [name, changes, alter] of [
       ['port below allowed range', { WEB_PORT: '1' }],
       ['port above allowed range', { WEB_PORT: '65536' }],
       ['nonnumeric port', { WEB_PORT: 'not-a-port' }],
@@ -336,14 +369,21 @@ test('authenticated release packaging, negative trust cases, and Synology worker
       ['equal media and database paths', { DB_DATA_LOCATION: path.join(localVolume, 'library') }],
       ['database nested in media', { DB_DATA_LOCATION: path.join(localVolume, 'library/postgres') }],
       ['media nested in database', { UPLOAD_LOCATION: nestedMedia }],
+      ['duplicate port assignment', { WEB_PORT: '3456\nWEB_PORT=4567' }],
+      ['unterminated quoted value', { WEB_PORT: '"3456' }],
+      ['password outside installer grammar', { DB_PASSWORD: 'Fixture!Only123456' }],
+      ['missing required port', {}, (value) => value.replace(/^WEB_PORT=.*\n/m, '')],
+      ['command substitution in media path', { UPLOAD_LOCATION: `$(touch ${commandSentinel})` }],
+      ['inconsistent ML profile', { COMPOSE_PROFILES: 'ml' }],
     ]) {
       await t.test(`Synology upgrade refuses retained ${name} before staging`, () => {
-        let invalid = configured;
+        let invalid = alter ? alter(configured) : configured;
         for (const [key, value] of Object.entries(changes)) {
           const original = invalid;
           invalid = invalid.replace(new RegExp(`^${key}=.*$`, 'm'), `${key}=${value}`);
           assert.notEqual(invalid, original, 'Fixture must change a declared retained field');
         }
+        assert.notEqual(invalid, configured, 'Fixture must change retained configuration');
         const retainedBytes = Buffer.from(invalid);
         fs.writeFileSync(retainedConfig, retainedBytes);
         fs.unlinkSync(stagedConfig);
@@ -362,10 +402,12 @@ test('authenticated release packaging, negative trust cases, and Synology worker
             mediaUnchanged: fs.readFileSync(mediaSentinel).equals(sentinelBytes),
             databaseUnchanged: fs.readFileSync(databaseSentinel).equals(sentinelBytes),
             clusterVersionUnchanged: fs.readFileSync(path.join(databasePath, 'PG_VERSION')).equals(clusterVersion),
+            shellCommandExecuted: fs.existsSync(commandSentinel),
           }, {
             refused: true, staged: false, stagedTemporary: false,
             retainedUnchanged: true, installedUnchanged: true, mediaUnchanged: true,
             databaseUnchanged: true, clusterVersionUnchanged: true,
+            shellCommandExecuted: false,
           });
         } finally {
           fs.writeFileSync(retainedConfig, configured);
@@ -373,6 +415,7 @@ test('authenticated release packaging, negative trust cases, and Synology worker
           fs.rmSync(stagedConfig, { force: true });
           fs.rmSync(`${stagedConfig}.tmp`, { force: true });
           fs.writeFileSync(stagedConfig, configured, { mode: 0o600 });
+          fs.rmSync(commandSentinel, { force: true });
         }
       });
     }
