@@ -57,7 +57,7 @@ describe('AssetDevelopService sensor source', () => {
         info,
         colorspace: Colorspace.Srgb,
       });
-      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(source.originalPath);
+      expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(source.originalPath, undefined);
       expect(mocks.media.extract).not.toHaveBeenCalled();
       expect(mocks.media.decodeImage).toHaveBeenCalledExactlyOnceWith(sensor, {
         colorspace: Colorspace.Srgb,

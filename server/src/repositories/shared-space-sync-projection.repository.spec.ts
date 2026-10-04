@@ -9,7 +9,7 @@ it('adds current strict cover and publisher checks only for the sync projection'
   expect(queries[0].sql).toContain('"album_asset"."albumId" = "link"."albumId"');
   expect(queries[0].sql).toContain('"publisher"."deletedAt" is null');
   expect(queries[0].sql).toContain('asset_lock');
-  expect(queries[0].sql).toContain('isNsfw');
+  expect(queries[0].sql).toContain('nsfw_asset.is_nsfw = true');
   await repository.getLinkedPeople('space-id');
   expect(queries[1].sql).not.toContain('publisher');
   expect(queries[1].sql).not.toContain('album_asset');

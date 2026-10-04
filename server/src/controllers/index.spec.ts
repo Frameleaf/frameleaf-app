@@ -56,6 +56,8 @@ const ADMIN_ROUTES = new Set([
   'POST system-config/smart-albums/reevaluate',
   'DELETE queues/:name/jobs',
   'GET jobs',
+  'GET jobs/runs',
+  'GET jobs/runs/:id/items',
   'GET libraries',
   'GET libraries/:id',
   'GET libraries/:id/statistics',

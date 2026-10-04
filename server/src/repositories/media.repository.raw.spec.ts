@@ -47,7 +47,7 @@ describe('MediaRepository RAW fallback', () => {
     // This is the normal media repository, with no entitlement, mode or enhanced-RAW setting.
     const result = await sut.decodeImage(input, { ...options, orientation: 6, size: 4 });
     expect(result.info).toMatchObject({ width: 8, height: 4 });
-    expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(input);
+    expect(renderRawWithLibRaw).toHaveBeenCalledExactlyOnceWith(input, undefined);
     expect(await readFile(input, 'utf8')).toBe('original RAW bytes');
   });
 
