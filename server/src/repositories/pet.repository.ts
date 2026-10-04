@@ -738,7 +738,7 @@ export class PetRepository {
         sql<{
           ownerId: string;
           id: string;
-        }>`(select * from jsonb_to_recordset(${JSON.stringify(runs)}::jsonb) as selected_runs("ownerId" uuid, id uuid))`.as(
+        }>`(select * from jsonb_to_recordset(${JSON.stringify(runs)}::text::jsonb) as selected_runs("ownerId" uuid, id uuid))`.as(
           'r',
         ),
         (join) => join.onRef('r.ownerId', '=', 'asset.ownerId'),
@@ -859,7 +859,7 @@ export class PetRepository {
       await sql`delete from system_metadata where key = ${'frameleaf-pet-run:' + ownerId}`.execute(tx);
       if (enqueue) {
         await sql`insert into job_run(id, kind, selection)
-          values (${run.id}::uuid, ${JobName.PetRecognitionQueueAll}, ${JSON.stringify({ ownerId, petRunId: run.id })}::jsonb)`.execute(
+          values (${run.id}::uuid, ${JobName.PetRecognitionQueueAll}, ${JSON.stringify({ ownerId, petRunId: run.id })}::text::jsonb)`.execute(
           tx,
         );
         await this.linkRun(run.id, run.id, tx);

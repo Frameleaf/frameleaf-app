@@ -98,7 +98,7 @@ export class PostgresImportFixture {
       }
       await writer.db.query(
         `INSERT INTO public.kysely_migrations(name,"timestamp")
-        SELECT value, '2026-01-01T00:00:00Z' FROM jsonb_array_elements_text($1::jsonb)`,
+        SELECT value, '2026-01-01T00:00:00Z' FROM jsonb_array_elements_text($1::text::jsonb)`,
         [JSON.stringify(frozenSource(this.version).migrations)],
       );
       await this.seed(writer.db);

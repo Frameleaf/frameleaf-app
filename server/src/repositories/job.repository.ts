@@ -478,7 +478,7 @@ export class JobRepository {
       if (job.checkpoints && Object.hasOwn(job.checkpoints, key)) return job.checkpoints[key];
       const value = await publicationTransaction.run(tx, prepare);
       const { rows } = await sql`update job set data = jsonb_set(data, '{_producerCheckpoints}',
-        coalesce(data->'_producerCheckpoints', '{}'::jsonb) || jsonb_build_object(${key}::text, ${JSON.stringify(value)}::jsonb))
+        coalesce(data->'_producerCheckpoints', '{}'::jsonb) || jsonb_build_object(${key}::text, ${JSON.stringify(value)}::text::jsonb))
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and "leaseExpiresAt" > clock_timestamp()
           and "cancelRequestedAt" is null returning id`.execute(tx);
       if (rows.length === 0) throw new Error('Producer checkpoint lost its claim');

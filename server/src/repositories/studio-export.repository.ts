@@ -761,7 +761,7 @@ export class StudioExportRepository {
       .set({
         result: sql<
           Record<string, unknown>
-        >`jsonb_set(result, '{studioPublication}', (result->'studioPublication') || ${JSON.stringify({ [effect]: next, ...(receipt && { smoothMotionReceipt: receipt }) })}::jsonb)`,
+        >`jsonb_set(result, '{studioPublication}', (result->'studioPublication') || ${JSON.stringify({ [effect]: next, ...(receipt && { smoothMotionReceipt: receipt }) })}::text::jsonb)`,
       })
       .where('id', '=', operationId)
       .where('claimToken', '=', claimToken)
