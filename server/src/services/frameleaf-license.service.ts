@@ -173,7 +173,7 @@ const ACTIVATION_PROOF_TTL_SECONDS = 120;
  * - The supporter key and the Frameleaf Cloud plan are held separately, so each can be removed alone.
  * - A daily refresh keeps them current; while it fails they stay on in grace, then the cloud flags
  *   turn off. Local data and self-hosted features never depend on any of this.
- * - Personal supporter keys (`FL-I…`) live in `immich_fork.frameleaf_user_license`.
+ * - Personal supporter keys (`FL-I…`) live in `public.frameleaf_user_license`.
  */
 @Injectable()
 export class FrameleafLicenseService extends BaseService {

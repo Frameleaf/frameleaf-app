@@ -1346,10 +1346,10 @@ describe(AssetService.name, () => {
           .build();
         mocks.assetJob.getForAssetDeletion.mockResolvedValue(getForAssetDeletion(asset));
         // the repository runs the queue inside its transaction and rolls the removal back when it throws
-        mocks.job.queue.mockRejectedValue(new Error('redis unavailable'));
+        mocks.job.queue.mockRejectedValue(new Error('queue database unavailable'));
 
         await expect(sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).rejects.toThrow(
-          'redis unavailable',
+          'queue database unavailable',
         );
 
         expect(mocks.job.queue).toHaveBeenCalledWith({

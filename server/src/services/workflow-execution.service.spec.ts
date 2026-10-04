@@ -789,7 +789,7 @@ describe(WorkflowExecutionService.name, () => {
       it('reports a failed step without throwing when its automatic retry cannot be queued', async () => {
         setup();
         mocks.plugin.callMethod.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('webhook failed'));
-        mocks.job.queue.mockRejectedValue(new Error('redis unavailable'));
+        mocks.job.queue.mockRejectedValue(new Error('queue database unavailable'));
 
         await expect(sut.handleAssetTrigger({ workflowId, assetId })).resolves.toBe(JobStatus.Failed);
 

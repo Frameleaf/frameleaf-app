@@ -312,7 +312,7 @@ export class WorkflowRepository {
   }
 
   /**
-   * Fork privacy gate for workflow execution. Fail-closed: returns false unless
+   * Privacy gate for workflow execution. Fail-closed: returns false unless
    * the asset is provably safe to expose to plugins.
    *
    * @param requireEnrichment When true, also requires that image enrichment
@@ -325,8 +325,7 @@ export class WorkflowRepository {
       .select((eb) => [
         // `locked` for a locked asset (FL-34): plugins never see locked media
         effectiveVisibility('asset').as('visibility'),
-        // The shared phase-aware predicate uses legacy state during legacy and
-        // dual-write, then switches exclusively to the fork privacy sidecar.
+        // The shared predicate reads sensitive evidence from `public.asset.is_nsfw`.
         nsfwAssetIdExists(sql.ref('asset.id')).as('isNsfw'),
         eb
           .exists(

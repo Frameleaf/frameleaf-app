@@ -353,8 +353,8 @@ export class SystemConfigService extends BaseService {
    * 2. Under the settings lock, which every writer of the configuration holds, the saved settings
    *    are read again straight from storage. If they changed since step 1 a revisioned save is
    *    refused (409, nothing written); an unconditional save (older clients) is prepared and
-   *    validated again against them. The write itself is one database transaction
-   *    (ForkSchemaRepository.persistConfig). Two saves can never both pass the check.
+   *    validated again against them. The settings are persisted to `public.system_metadata`
+   *    while the lock is held. Two revisioned saves cannot both pass with the same stale revision.
    * 3. Resources that follow from settings (local machine learning destinations, smart album
    *    backfill, queue concurrency) are reconciled afterwards by
    *    the ConfigUpdate listeners through their own services; a failure there never rolls the
@@ -625,11 +625,9 @@ export class SystemConfigService extends BaseService {
     const { machineLearning } = await this.getConfig({ withCache: false });
     const stats = await this.assetRepository.getDescriptionStats();
 
-    // Real per-job rolling-average duration, populated by the BullMQ Worker
-    // `completed` listener in JobRepository. Resets on process restart; falls
-    // back to the conservative default when the buffer is empty (cold start
-    // or no completions yet). This reflects the user's actual hardware/model,
-    // unlike the prior hardcoded 1.5s.
+    // JobRepository records durations after the PostgreSQL queue accepts completion.
+    // Its rolling buffer resets on process restart; use the conservative default
+    // until this process has an accepted completion for the job type.
     const avgMs = this.jobRepository.getRollingAvgMs(JobName.ImageDescription);
     const rollingAvgSeconds = avgMs === null ? DEFAULT_SECONDS_PER_ASSET : avgMs / 1000;
     const estimatedTotalSeconds = stats.totalAssets * rollingAvgSeconds;
@@ -659,7 +657,7 @@ export class SystemConfigService extends BaseService {
       return { queued: false, cloudBatches: true };
     }
 
-    // BullMQ deduplication (set up in job.repository.ts) prevents double-enqueueing
+    // PostgreSQL queue deduplication (configured in job.repository.ts) prevents double-enqueueing
     // the queue-all job. We surface the result to the caller so the UI can react.
     const counts = await this.jobRepository.getJobCounts(QueueName.ImageDescription);
     const alreadyInFlight = (counts.active ?? 0) + (counts.waiting ?? 0) > 0;
@@ -738,7 +736,7 @@ export class SystemConfigService extends BaseService {
     }
 
     // The re-evaluate-all job runs on the shared BackgroundTask queue, so
-    // getJobCounts would over-report. Instead, look up the BullMQ dedup id
+    // getJobCounts would over-report. Instead, look up the PostgreSQL queue dedup key
     // directly to detect an in-flight job. Matching dedup id is set in
     // job.repository.ts getJobOptions() — kind-scoped dispatches have their
     // own namespace so they don't collide with each other or with all-kinds.

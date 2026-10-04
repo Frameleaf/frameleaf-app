@@ -284,9 +284,9 @@ export class QueueService extends BaseService {
   }
 
   /**
-   * FL-71 (J-1): how many of a queue's jobs, per state, work on one account's items. BullMQ keeps no
-   * owner, so up to QUEUE_OWNER_SCAN_LIMIT jobs of each state are read and attributed through the
-   * items they name (as the Account column is); `truncated` marks counts that are lower bounds.
+   * FL-71 (J-1): how many of a queue's jobs, per state, work on one account's items. This view reads
+   * up to QUEUE_OWNER_SCAN_LIMIT PostgreSQL jobs of each state and attributes them through the
+   * items they name (as the Account column does); `truncated` marks counts that are lower bounds.
    */
   async getOwnerStatistics(auth: AuthDto, name: QueueName, ownerId: string): Promise<QueueOwnerStatisticsResponseDto> {
     const totals = await this.jobRepository.getJobCounts(name);

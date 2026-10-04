@@ -281,7 +281,7 @@ export class JobRepository {
   }
 
   teardown() {}
-  watchWorkers() {} // Worker availability comes from durable heartbeat rows, not a Redis client list.
+  watchWorkers() {} // Worker availability comes from durable PostgreSQL heartbeat rows.
 
   async run({ name, data }: JobItem) {
     const handler = this.handlers[name];
@@ -637,8 +637,6 @@ export class JobRepository {
         // The automatic retry of a failed render waits before it is claimed (FL-64).
         return item.data.delay ? { delay: item.data.delay } : null;
       }
-      // ponytail: no priority for PersonGenerateThumbnail; a BullMQ priority parks jobs in the prioritized set,
-      // behind every unprioritized job and outside the waiting counts (FL-71 review).
       case JobName.FacialRecognitionQueueAll: {
         return { deduplication: { id: JobName.FacialRecognitionQueueAll } };
       }
@@ -649,7 +647,7 @@ export class JobRepository {
         // Kind-scoped dispatches get their own dedup namespace so they don't
         // collide with each other OR with the all-kinds dispatch. This lets
         // an admin queue (e.g.) "food" and "pets" simultaneously without
-        // BullMQ silently dropping the second one as a duplicate of the first.
+        // PostgreSQL queue deduplication coalescing the second request with the first.
         const kind = (item.data as { kind?: string } | undefined)?.kind;
         const dedupId = kind ? `${JobName.SmartAlbumReevaluateAll}:${kind}` : JobName.SmartAlbumReevaluateAll;
         return { deduplication: { id: dedupId } };
