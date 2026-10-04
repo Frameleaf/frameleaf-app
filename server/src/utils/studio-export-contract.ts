@@ -17,7 +17,7 @@
  */
 import type { StudioSourceMediaFacts } from 'src/repositories/studio-export.repository.js';
 import type { AudioStreamInfo, VideoStreamInfo } from 'src/types.js';
-import { ColorTransfer } from 'src/enum.js';
+import { ColorMatrix, ColorPrimaries, ColorTransfer } from 'src/enum.js';
 import {
   AudioChannelPolicy,
   findAudioLayoutMismatch,
@@ -341,6 +341,14 @@ export const findStudioExportOutputMismatch = (
     (!isHdrTransfer(video) || HDR_TRANSFERS[video.colorTransfer] !== contract.video.transfer)
   ) {
     return `The result is not tagged with the ${contract.video.transfer} transfer this export promises`;
+  }
+  if (contract.video.transfer) {
+    if (video.colorPrimaries !== ColorPrimaries.Bt2020) {
+      return 'The result is not tagged with the BT.2020 primaries this HDR export promises';
+    }
+    if (video.colorMatrix !== ColorMatrix.Bt2020Nc) {
+      return 'The result is not tagged with the BT.2020 non-constant-luminance matrix this HDR export promises';
+    }
   }
   const [audio] = probe.audioStreams;
   if (contract.audio) {
