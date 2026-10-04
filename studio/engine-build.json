@@ -269,7 +269,17 @@
       "path": "patches/0053-expression-unary-depth.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "940f288a26bc0a3daee238fe15b38d51e34965dc0962a0c50b95a75120cb6205"
+    },
+    {
+      "path": "patches/0054-channel-preservation-tests.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2659a78ebe3deae8e260a53b586533937f4f90f796457a53e4e6deb2189e67ca"
+    },
+    {
+      "path": "patches/0055-channel-preserving-gain-mix.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8c177c21b6e3cb41aa2420e39988ea71ff914ce042a597226838eb90b5146143"
     }
   ],
-  "sourceSha256": "a80fb142410f26d853c8d6f5aaa3a3d06586f5f96d1f8dd44a8ee1cce1d1c603"
+  "sourceSha256": "aaf508828b8881a3314e5b364da5326c6706dffe191fa6a63abe2dff67e4468c"
 }
