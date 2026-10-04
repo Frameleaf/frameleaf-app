@@ -1,6 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
-import { forkGuardAnswer, scriptedKysely } from 'test/scripted-kysely.js';
+import { scriptedKysely } from 'test/scripted-kysely.js';
 
 describe('native upload physical alias fence', () => {
   const physical = { id: 'physical-id', path: '/data/master.jpg' };
@@ -14,10 +14,6 @@ describe('native upload physical alias fence', () => {
     'refuses %s before completing an alias',
     async (failure) => {
       const { db, queries } = scriptedKysely((query) => {
-        const guard = forkGuardAnswer({ phase: 'active' })(query);
-        if (guard) {
-          return guard;
-        }
         if (query.sql.includes('from "asset_upload_resource"')) {
           return { rows: failure === 'expired claim' ? [] : [{ id: 'resource' }] };
         }
@@ -38,10 +34,6 @@ describe('native upload physical alias fence', () => {
 
   it('commits only one currently owned matching destination after the live claim and target checks', async () => {
     const { db, queries } = scriptedKysely((query) => {
-      const guard = forkGuardAnswer({ phase: 'active' })(query);
-      if (guard) {
-        return guard;
-      }
       if (query.sql.includes('from "asset_upload_resource"')) {
         return { rows: [{ id: 'resource' }] };
       }
@@ -61,7 +53,7 @@ describe('native upload physical alias fence', () => {
   });
 
   it('preserves the legacy two argument path without requiring a native resource', async () => {
-    const { db, queries } = scriptedKysely(forkGuardAnswer({ phase: 'active' }));
+    const { db, queries } = scriptedKysely();
     await new PhysicalFileRepository(db).linkAssetToOriginalPhysicalFile('destination', physical);
     expect(queries.some((query) => query.sql.includes('asset_upload_resource'))).toBe(false);
     expect(queries.at(-1)?.sql).toBe('commit');

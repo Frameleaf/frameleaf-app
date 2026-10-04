@@ -39,7 +39,6 @@ export type StudioProjectImportCreate = Omit<StudioProjectImport, 'createdAt'>;
 const studioImportColumns =
   sql.raw(`item."projectId", item.id, item."ownerId", item."contentType", item.checksum, item."sizeBytes"::float8 AS "sizeBytes",
    item.path, item."fileName", item."externalReferences", item."createdAt"`);
-export const STUDIO_PROJECT_HANDOFF_REFUSAL = 'Studio projects are unavailable during database handoff';
 export type StudioProject = Selectable<StudioProjectTable>;
 export type StudioProjectRevision = Selectable<StudioProjectRevisionTable>;
 /** A history row: everything about a revision except the document itself. */

@@ -114,15 +114,6 @@ export type StudioHdrIntermediateState = {
  * modification time (which a rescan re-reads).
  */
 const studioHdrSourceFingerprint = sql<Buffer>`sha256(a.checksum || convert_to(extract(epoch FROM a."fileModifiedAt")::text, 'UTF8'))`;
-/** Check whether the public Studio HDR intermediate table exists. */
-const hasStudioHdrTable = async (db: Kysely<DB>): Promise<boolean> => {
-  const { rows } = await sql<{
-    table: string | null;
-  }>`
-    SELECT to_regclass('public.studio_hdr_intermediate')::text AS table
-  `.execute(db);
-  return !!rows[0]?.table;
-};
 /** The files a removed asset held, read under its row lock in the removal's transaction (FL-169). */
 export type RemovedAsset = {
   originalPath: string;
@@ -2722,7 +2713,7 @@ export class AssetRepository {
    * but the owner's quick editor the edited master, so the original's intermediate is never used.
    */
   async getStudioHdrIntermediateStates(ids: string[]): Promise<StudioHdrIntermediateState[]> {
-    if (ids.length === 0 || !(await hasStudioHdrTable(this.db))) {
+    if (ids.length === 0) {
       return [];
     }
     const { rows } = await sql<StudioHdrIntermediateState>`
@@ -2843,9 +2834,6 @@ export class AssetRepository {
   }
   /** FL-97: the persisted intermediate paths of these assets. */
   private async getStudioHdrIntermediatePaths(ids: string[], db: Kysely<DB>): Promise<string[]> {
-    if (!(await hasStudioHdrTable(db))) {
-      return [];
-    }
     const { rows } = await sql<{
       path: string | null;
     }>`
