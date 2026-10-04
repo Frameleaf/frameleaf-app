@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
-import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -33,10 +33,12 @@ originalOn.call(process, 'unhandledRejection', async (error) => {
     await finish({
       observed: true,
       portMatches: first.port === expected.port,
+      helpMatches: first.buildMetadata.thirdPartyDocumentationUrl === expected.docs,
       cacheStable: config.getEnv() === first,
       identityPreserved: first.frameleafCloud.identityDir === expected.identityDir,
       replacementSecretPreserved: process.env.FRAMELEAF_EDGE_SECRET === expected.edgeSecret,
       dependencyPreserved: process.env.REDIS_PASSWORD === expected.redisPassword,
+      sourceFilesPreserved: process.env.DB_PASSWORD_FILE === expected.dbPasswordFile && process.env.REDIS_PASSWORD_FILE === expected.redisPasswordFile,
       undeclaredPreserved: process.env.FRAMELEAF_BOOT_TEST_UNDECLARED === expected.undeclared,
       linkNotActivated: process.env.FRAMELEAF_LINK_TOKEN === undefined,
       entitlementNotActivated: process.env.FRAMELEAF_LICENSE_EXTRA_JWKS_FILE === undefined,
@@ -51,11 +53,13 @@ process.on = function (event, ...args) {
 };
 `;
 
-const runStartup = async (root, identityDir, binding, port) => {
+const runStartup = async (root, identityDir, binding, port, options = {}) => {
   const resultFile = join(root, randomUUID() + '.json');
   const edgeSecret = randomBytes(24).toString('base64url');
   const redisPassword = randomBytes(24).toString('base64url');
   const undeclared = randomBytes(24).toString('base64url');
+  const dbPasswordFile = join(root, 'replacement-db-secret-source');
+  const redisPasswordFile = join(root, 'replacement-cache-secret-source');
   const env = {
     PATH: dirname(process.execPath),
     FRAMELEAF_ENV: 'production',
@@ -64,11 +68,14 @@ const runStartup = async (root, identityDir, binding, port) => {
     FRAMELEAF_MEDIA_LOCATION: join(root, 'media'),
     FRAMELEAF_EDGE_SECRET: edgeSecret,
     REDIS_PASSWORD: redisPassword,
+    DB_PASSWORD_FILE: dbPasswordFile,
+    REDIS_PASSWORD_FILE: redisPasswordFile,
     FRAMELEAF_BOOT_TEST_UNDECLARED: undeclared,
     FRAMELEAF_BOOT_TEST_RESULT_FILE: resultFile,
     FRAMELEAF_BOOT_TEST_CONFIG_URL: pathToFileURL(join(server, 'dist/repositories/config.repository.js')).href,
-    FRAMELEAF_BOOT_TEST_EXPECTED: JSON.stringify({ port, identityDir, edgeSecret, redisPassword, undeclared }),
+    FRAMELEAF_BOOT_TEST_EXPECTED: JSON.stringify({ port, identityDir, edgeSecret, redisPassword, undeclared, dbPasswordFile, redisPasswordFile, docs: options.docs }),
     ...(binding ? { FRAMELEAF_BUDDY_BOOT_BINDING_FILE: binding } : {}),
+    ...options.env,
   };
   const child = spawn(
     process.execPath,
@@ -83,18 +90,24 @@ const runStartup = async (root, identityDir, binding, port) => {
   const outcome = await new Promise((resolve) => {
     const timeout = setTimeout(() => {
       child.kill('SIGKILL');
-      resolve(false);
+      resolve({ timedOut: true });
     }, 30_000);
     child.once('error', () => {
       clearTimeout(timeout);
-      resolve(false);
+      resolve({ error: true });
     });
     child.once('exit', (code) => {
       clearTimeout(timeout);
-      resolve(code === 0);
+      resolve({ code });
     });
   });
-  assert(outcome, 'Compiled startup did not reach the bounded observer');
+  assert(!outcome.timedOut && !outcome.error, 'Compiled startup did not terminate at the bounded observer');
+  if (options.refuse) {
+    assert.equal(outcome.code, 1, 'Invalid local authority must stop startup before the application graph');
+    await assert.rejects(readFile(resultFile), { code: 'ENOENT' });
+    return;
+  }
+  assert.equal(outcome.code, 0, 'Compiled startup did not reach the bounded observer');
   let result;
   try {
     result = JSON.parse(await readFile(resultFile, 'utf8'));
@@ -103,10 +116,12 @@ const runStartup = async (root, identityDir, binding, port) => {
   }
   assert.equal(result.observed, true, 'Existing compiled startup/config graph must load before behavioral RED');
   for (const key of [
+    'helpMatches',
     'cacheStable',
     'identityPreserved',
     'replacementSecretPreserved',
     'dependencyPreserved',
+    'sourceFilesPreserved',
     'undeclaredPreserved',
     'linkNotActivated',
     'entitlementNotActivated',
@@ -228,6 +243,137 @@ test('fresh compiled startup consumes only a completed replacement-local selecte
     await writeFile(join(root, 'observer.mjs'), observer, { mode: 0o600 });
     await runStartup(root, identityDir, undefined, 2283);
     await runStartup(root, identityDir, binding, 2391);
+    // Repeat a genuinely fresh process; never clear a live application's cache.
+    await runStartup(root, identityDir, binding, 2391);
+    const originalBinding = await readFile(binding);
+    const originalArtifact = await readFile(join(recoveryDirectory, 'boot-configuration.json'));
+    const writeBinding = async (changes) => writeFile(binding, JSON.stringify({ ...JSON.parse(originalBinding), ...changes }), { mode: 0o600 });
+    for (const changes of [
+      { replacementIdentity: 'A'.repeat(43) },
+      { snapshotId: randomUUID() },
+      { vaultId: randomUUID() },
+      { recoveryId: randomUUID() },
+      { scope: 'server' },
+      { state: 'request' },
+      { mode: 'keep' }, // A grant must match the published plan mode.
+      { environmentKeys: ['FRAMELEAF_EDGE_SECRET'] },
+      { environmentKeys: ['REDIS_PASSWORD'] },
+      { environmentKeys: ['FRAMELEAF_IDENTITY_DIR'] },
+      { environmentKeys: ['FRAMELEAF_LINK_TOKEN'] },
+      { environmentKeys: ['FRAMELEAF_LICENSE_EXTRA_JWKS_FILE'] },
+      { preparedDigest: '0'.repeat(64) },
+      { environmentKeys: ['FRAMELEAF_PORT', 'FRAMELEAF_PORT'] },
+      { environmentKeys: ['NODE_OPTIONS'] },
+      { environmentKeys: ['IMMICH_PORT'] },
+      { environmentKeys: ['FRAMELEAF_SHUTDOWN_GRACE_SECONDS'] },
+      { unrecognized: true },
+    ]) {
+      await writeBinding(changes);
+      await runStartup(root, identityDir, binding, 2391, { refuse: true });
+    }
+    await writeFile(binding, originalBinding);
+    for (const state of ['publishing', 'files-ready', 'database-ready', 'rolled-back']) {
+      await files.state(state);
+      await runStartup(root, identityDir, binding, 2391, { refuse: true });
+    }
+    await files.state('complete');
+    await chmod(binding, 0o644);
+    await runStartup(root, identityDir, binding, 2391, { refuse: true });
+    await chmod(binding, 0o600);
+    await writeFile(join(recoveryDirectory, 'boot-configuration.json'), Buffer.concat([originalArtifact, Buffer.from(' ')]));
+    await runStartup(root, identityDir, binding, 2391, { refuse: true });
+    await rm(join(recoveryDirectory, 'boot-configuration.json'));
+    const foreignArtifact = join(root, 'foreign-artifact.json');
+    await writeFile(foreignArtifact, originalArtifact, { mode: 0o600 });
+    await symlink(foreignArtifact, join(recoveryDirectory, 'boot-configuration.json'));
+    await runStartup(root, identityDir, binding, 2391, { refuse: true });
+    await rm(join(recoveryDirectory, 'boot-configuration.json'));
+    await writeFile(join(recoveryDirectory, 'boot-configuration.json'), originalArtifact, { mode: 0o600 });
+
+    const markerDirectory = join(identityDir, 'buddy');
+    await mkdir(markerDirectory, { mode: 0o700 });
+    const marker = join(markerDirectory, 'recovery-active.json');
+    await writeFile(marker, JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: recoveryId } }), { mode: 0o600 });
+    await runStartup(root, identityDir, binding, 2283);
+    await writeFile(marker, JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: randomUUID() } }));
+    await runStartup(root, identityDir, binding, 2391, { refuse: true });
+    await writeFile(marker, '{');
+    await runStartup(root, identityDir, binding, 2391, { refuse: true });
+    await writeFile(marker, JSON.stringify({ isMaintenanceMode: true, secret: randomUUID(), action: { buddyRecoveryId: recoveryId } }));
+
+    // Real durable request finalization, including complete retry and lost fence.
+    const { finalizeBuddyBootBinding } = await import('../../dist/utils/buddy-boot-binding.js');
+    const previousBinding = process.env.FRAMELEAF_BUDDY_BOOT_BINDING_FILE;
+    const previousIdentity = process.env.FRAMELEAF_IDENTITY_DIR;
+    try {
+      process.env.FRAMELEAF_BUDDY_BOOT_BINDING_FILE = binding;
+      process.env.FRAMELEAF_IDENTITY_DIR = identityDir;
+      await writeBinding({ state: 'request' });
+      await files.state('files-ready');
+      await runStartup(root, identityDir, binding, 2283);
+      await assert.rejects(finalizeBuddyBootBinding(root, recoveryId, async () => {}));
+      assert.equal(JSON.parse(await readFile(binding)).state, 'request');
+      await files.state('complete');
+      await assert.rejects(finalizeBuddyBootBinding(root, recoveryId, async () => { throw new Error('synthetic fence lost'); }));
+      assert.equal(JSON.parse(await readFile(binding)).state, 'request');
+      let beforeRename = 0;
+      await assert.rejects(finalizeBuddyBootBinding(root, recoveryId, async () => {
+        if (++beforeRename === 3) throw new Error('synthetic fence lost before durable readiness');
+      }));
+      assert.equal(JSON.parse(await readFile(binding)).state, 'request');
+      let finalizationFences = 0;
+      await finalizeBuddyBootBinding(root, recoveryId, async () => { finalizationFences++; });
+      assert(finalizationFences >= 3, 'Durable readiness must assert its live maintenance fence');
+      await writeBinding({ state: 'request' });
+      let afterRename = 0;
+      await assert.rejects(finalizeBuddyBootBinding(root, recoveryId, async () => {
+        if (++afterRename === 4) throw new Error('synthetic fence lost after durable readiness');
+      }));
+      assert.equal(JSON.parse(await readFile(binding)).state, 'ready');
+      await runStartup(root, identityDir, binding, 2283);
+      const ready = await readFile(binding);
+      await finalizeBuddyBootBinding(root, recoveryId, async () => {});
+      assert((await readFile(binding)).equals(ready), 'Complete retry must be idempotent');
+    } finally {
+      if (previousBinding === undefined) delete process.env.FRAMELEAF_BUDDY_BOOT_BINDING_FILE;
+      else process.env.FRAMELEAF_BUDDY_BOOT_BINDING_FILE = previousBinding;
+      if (previousIdentity === undefined) delete process.env.FRAMELEAF_IDENTITY_DIR;
+      else process.env.FRAMELEAF_IDENTITY_DIR = previousIdentity;
+    }
+    await rm(marker);
+    await runStartup(root, identityDir, binding, 2391);
+
+    // Keep/replace are bound to a corresponding publication plan, not a loose switch.
+    const updateBootFixture = async (mode, entries, environmentKeys = ['FRAMELEAF_PORT']) => {
+      plan.mode = mode;
+      plan.manifest.bootConfiguration = { version: 1, entries };
+      await stageBuddyBootConfiguration(recoveryDirectory, snapshotId, plan.manifest.bootConfiguration);
+      const bytes = Buffer.from(JSON.stringify(plan));
+      await writeFile(join(recoveryDirectory, 'prepared.json'), bytes);
+      await files.state('publishing');
+      await files.publish(await readBuddyRecovery(root, recoveryId), [], [file.path]);
+      await files.verify(plan, [], [file.path]);
+      await files.state('complete');
+      await writeBinding({ mode, environmentKeys, artifactDigest: digest(await readFile(join(recoveryDirectory, 'boot-configuration.json'))), preparedDigest: digest(bytes) });
+    };
+    await updateBootFixture('keep', configuration.entries);
+    await runStartup(root, identityDir, binding, 2283);
+    await runStartup(root, identityDir, binding, 2284, { env: { FRAMELEAF_PORT: undefined, IMMICH_PORT: '2284' } });
+    await runStartup(root, identityDir, binding, 2391, { env: { FRAMELEAF_PORT: undefined } });
+    await updateBootFixture('replace', configuration.entries);
+    await runStartup(root, identityDir, binding, 2391, { env: { FRAMELEAF_PORT: undefined, IMMICH_PORT: '2284' } });
+    await runStartup(root, identityDir, binding, 2391, { refuse: true, env: { FRAMELEAF_PORT: '2283', IMMICH_PORT: '2284' } });
+    await updateBootFixture('replace', [{ key: 'FRAMELEAF_PORT', state: 'unset' }, ...configuration.entries.filter((entry) => entry.key !== 'FRAMELEAF_PORT')]);
+    await runStartup(root, identityDir, binding, 2283, { env: { FRAMELEAF_PORT: undefined, IMMICH_PORT: '2284' } });
+    const restoredDocs = 'https://restored.example.test/docs';
+    const localDocs = 'https://replacement.example.test/docs';
+    const helpEntries = [...configuration.entries, { key: 'FRAMELEAF_DOCS_URL', state: 'value', value: restoredDocs }];
+    await updateBootFixture('keep', helpEntries, ['FRAMELEAF_PORT', 'FRAMELEAF_DOCS_URL']);
+    await runStartup(root, identityDir, binding, 2283, { docs: localDocs, env: { IMMICH_THIRD_PARTY_DOCUMENTATION_URL: localDocs } });
+    await runStartup(root, identityDir, binding, 2283, { docs: restoredDocs, env: { IMMICH_THIRD_PARTY_DOCUMENTATION_URL: 'invalid-legacy-url' } });
+    await runStartup(root, identityDir, binding, 2283, { docs: localDocs, env: { FRAMELEAF_DOCS_URL: localDocs, IMMICH_THIRD_PARTY_DOCUMENTATION_URL: restoredDocs } });
+    await updateBootFixture('replace', helpEntries, ['FRAMELEAF_PORT', 'FRAMELEAF_DOCS_URL']);
+    await runStartup(root, identityDir, binding, 2391, { docs: restoredDocs, env: { IMMICH_THIRD_PARTY_DOCUMENTATION_URL: localDocs } });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
