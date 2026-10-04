@@ -21,14 +21,8 @@ describe('queue execution supervisor', () => {
       parentPort.postMessage({type:'ready'}); setInterval(()=>{},1000);`,
       { eval: true, workerData: { workerId, pid: child.pid } },
     );
-    let persisted!: () => void;
-    const write = new Promise<void>((resolve) => {
-      persisted = resolve;
-    });
-    let called!: () => void;
-    const writing = new Promise<void>((resolve) => {
-      called = resolve;
-    });
+    const { promise: write, resolve: persisted } = Promise.withResolvers<void>();
+    const { promise: writing, resolve: called } = Promise.withResolvers<void>();
     const recordStopped = vi.fn(async (proof: WorkerStoppedProof) => {
       expect(proof.workerId).toBe(workerId);
       expect(proof.stoppedAt).toEqual(expect.any(Number));
@@ -89,8 +83,8 @@ describe('queue execution supervisor', () => {
         stopWaitMs: 20,
         childScanMs: 5,
       });
-      worker.emit('message', { type: 'queue-child', pid: 99999999, active: true });
-      worker.emit('message', { type: 'queue-child', pid: 99999999, active: false });
+      worker.emit('message', { type: 'queue-child', pid: 99_999_999, active: true });
+      worker.emit('message', { type: 'queue-child', pid: 99_999_999, active: false });
       worker.emit('exit', 1);
       await stopped;
       expect(recordStopped).not.toHaveBeenCalled();
@@ -112,10 +106,9 @@ describe('queue execution supervisor', () => {
     superviseQueueWorker(worker);
     const exit = once(worker, 'exit');
     worker.on('message', (message) => {
-      if (message.type === 'fixture-port') {
-        message.port.postMessage({ type: 'terminate' });
-        message.port.close();
-      }
+      if (message.type !== 'fixture-port') return;
+      message.port.postMessage({ type: 'terminate' });
+      message.port.close();
     });
     try {
       expect((await exit)[0]).toBe(1);

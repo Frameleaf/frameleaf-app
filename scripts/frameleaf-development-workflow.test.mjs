@@ -82,7 +82,7 @@ test("failed checks preserve diagnostics but cannot produce a successful develop
     "queries",
   ]) {
     assert.match(steps.find((step) => step.id === id).if, /always\(\)/);
-    assert.match(steps.find((step) => step.id === id).run, /set -o pipefail/);
+    assert.match(steps.find((step) => step.id === id).run, /set -(?:euo|o) pipefail/);
   }
   const upload = steps.find(({ uses }) =>
     uses?.startsWith("actions/upload-artifact@"),
@@ -96,6 +96,7 @@ test("failed checks preserve diagnostics but cannot produce a successful develop
   assert.match(finalize.run, /process\.exit\(1\)/);
   const catalog = steps.find(({ id }) => id === "catalog");
   assert.match(catalog.run, /snapshot-frameleaf-schema-catalog\.ts/);
+  assert.match(catalog.run, /freeze-frameleaf-schema\.ts[\s\S]*--desired-only/);
   const schema = steps.find(({ id }) => id === "schema");
   assert.match(schema.run, /pnpm --dir server migrations:run/);
   const collect = steps.find(
