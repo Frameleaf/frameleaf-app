@@ -352,6 +352,10 @@ export class MediaRecoveryRepository {
     },
   ): Promise<RecoveryReservation | undefined> {
     return this.db.transaction().execute(async (trx) => {
+      if (input.audit?.purpose === 'scheduled-weekly' && input.outcome !== 'reused') {
+        await lockPublicForkWrites(trx);
+        await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(trx);
+      }
       if (
         input.audit?.purpose === 'scheduled-weekly' &&
         !(await guardScheduledAudit(trx as Transaction<DB>, input.audit, input.ownerId, {
@@ -420,6 +424,10 @@ export class MediaRecoveryRepository {
       await sql`UPDATE immich_fork.icloud_resource SET "expectedTarget" = ${target}::jsonb,
         "promotedPath" = ${promotedPath}, sha1 = ${input.verified.sha1}, sha256 = ${input.verified.sha256},
         "updatedAt" = now() WHERE id = ${input.resourceId}::uuid`.execute(trx);
+      if (input.audit?.purpose === 'scheduled-weekly' && target.outcome !== 'reused' &&
+        (!this.scheduledStaging || !(await this.scheduledStaging.planPrivateCopy(trx as Transaction<DB>, {
+          authority: input.audit, ownerId: input.ownerId, resource: { id: input.resourceId, leaseToken: input.leaseToken },
+        }, promotedPath)))) { throw new Error('scheduled_private_copy_reservation_unavailable'); }
       return { target, promotedPath };
     });
   }
