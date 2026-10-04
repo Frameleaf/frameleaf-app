@@ -181,7 +181,9 @@ describe('PostgreSQL queue', () => {
     const supervised = superviseQueueWorker(worker, undefined, undefined, {
       recordStopped: async (proof) => {
         await sql`insert into system_metadata(key,value)
-            values (${'frameleaf-worker-stopped:' + proof.workerId}, ${JSON.stringify(proof)}::jsonb)`.execute(db);
+            values (${'frameleaf-worker-stopped:' + proof.workerId}, ${JSON.stringify(proof)}::text::jsonb)`.execute(
+          db,
+        );
       },
     });
     const workerExit = once(worker, 'exit');
@@ -228,6 +230,10 @@ describe('PostgreSQL queue', () => {
       expect((await childExit)[1]).toBe('SIGKILL');
       await supervised.stopped;
       expect(cancelled).toBe(true);
+      expect(
+        (await sql`select value from system_metadata where key = ${'frameleaf-worker-stopped:' + workerA}`.execute(db))
+          .rows,
+      ).toEqual([{ value: { workerId: workerA, stoppedAt: expect.any(Number) } }]);
       // Advance only database lease/retry time after real process death. No terminal states are injected.
       await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(db);
       await store.recoverExpired();
@@ -513,7 +519,7 @@ describe('PostgreSQL queue', () => {
     // An unrelated worker/attempt proof must not authorize this attempt's replay.
     await recordStoppedAttempt(db, old.id, randomUUID());
     await sql`insert into system_metadata(key,value) values (${'frameleaf-worker-stopped:' + workerB},
-      ${JSON.stringify({ workerId: workerB, stoppedAt: Date.now() })}::jsonb)`.execute(db);
+      ${JSON.stringify({ workerId: workerB, stoppedAt: Date.now() })}::text::jsonb)`.execute(db);
     await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '1 second' where id=${old.id}::uuid`.execute(
       db,
     );
