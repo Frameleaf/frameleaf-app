@@ -11492,7 +11492,8 @@
     "0000000000220-PartnerOrigins",
     "0000000000221-PartnerPeopleLinks",
     "0000000000222-AlbumSourceLinks",
-    "0000000000223-AlbumSourceMembershipGeneration"
+    "0000000000223-AlbumSourceMembershipGeneration",
+    "0000000000224-ICloudClaimAccessPaths"
   ],
   "functions": [
     {
@@ -13074,6 +13075,10 @@
       "identity": "immich_fork.icloud_resource.icloud_resource_audit_request_key"
     },
     {
+      "definition": "CREATE INDEX icloud_resource_claim_order_idx ON immich_fork.icloud_resource USING btree (\"connectionId\", (\nCASE\n    WHEN (status = 'committed'::text) THEN 0\n    ELSE 1\nEND), \"createdAt\", id) WHERE ((\"auditRequestId\" IS NULL) AND (status = ANY (ARRAY['pending'::text, 'retry'::text, 'staging'::text, 'validated'::text, 'promoted'::text, 'committed'::text])))",
+      "identity": "immich_fork.icloud_resource.icloud_resource_claim_order_idx"
+    },
+    {
       "definition": "CREATE INDEX icloud_resource_jobs_idx ON immich_fork.icloud_resource USING btree (\"connectionId\", id) WHERE (\"pendingJobs\" <> '[]'::jsonb)",
       "identity": "immich_fork.icloud_resource.icloud_resource_jobs_idx"
     },
@@ -13096,6 +13101,10 @@
     {
       "definition": "CREATE UNIQUE INDEX icloud_resource_pkey ON immich_fork.icloud_resource USING btree (id)",
       "identity": "immich_fork.icloud_resource.icloud_resource_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_resource_reservation_contributors_idx ON immich_fork.icloud_resource USING btree (\"connectionId\") WHERE ((status <> ALL (ARRAY['finalized'::text, 'removed'::text])) AND ((\"reservedBytes\" > 0) OR (\"leaseExpiresAt\" IS NOT NULL)))",
+      "identity": "immich_fork.icloud_resource.icloud_resource_reservation_contributors_idx"
     },
     {
       "definition": "CREATE INDEX icloud_run_connection_started_idx ON immich_fork.icloud_run USING btree (\"connectionId\", \"startedAt\" DESC)",
