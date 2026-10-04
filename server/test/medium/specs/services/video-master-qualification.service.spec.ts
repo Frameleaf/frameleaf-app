@@ -425,6 +425,77 @@ const assertPresentationExtent = (file: string, intervals: EditClockInterval[]) 
   ).toBeLessThanOrEqual(aacTailTolerance);
 };
 
+type ClockDiagnostic = {
+  streams: Array<{ start_time?: string; duration?: string; time_base?: string }>;
+  packets: Array<{
+    pts?: number;
+    duration?: number;
+    side_data_list?: Array<{ skip_samples?: number; discard_padding?: number }>;
+  }>;
+  frames: Array<{ best_effort_timestamp?: number; duration?: number; nb_samples?: number }>;
+};
+const numericClockDiagnostic = (file: string, phase: 'source' | 'candidate', caseIndex: number) => {
+  const number = (value: unknown) => {
+    const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  try {
+    const streams = ['v:0', 'a:0'].map((selector) => {
+      const packets = inspect<ClockDiagnostic>(file, '-select_streams', selector, '-show_streams', '-show_packets');
+      const frames = inspect<ClockDiagnostic>(file, '-select_streams', selector, '-show_frames').frames;
+      const stream = packets.streams[0];
+      const base = stream.time_base?.split('/').map(number) ?? [];
+      const packetTimes = packets.packets.map((packet) => number(packet.pts)).filter((value) => value !== null);
+      const ends = packets.packets.map((packet) =>
+        typeof packet.pts === 'number' && typeof packet.duration === 'number' ? packet.pts + packet.duration : NaN,
+      ).filter(Number.isFinite);
+      return {
+        start: number(stream.start_time), duration: number(stream.duration), timeBase: base,
+        packetCount: packets.packets.length,
+        packetStart: packetTimes.length > 0 ? Math.min(...packetTimes) : null,
+        packetEnd: ends.length > 0 ? Math.max(...ends) : null,
+        leadingSkip: number(packets.packets[0]?.side_data_list?.[0]?.skip_samples),
+        trailingDiscard: number(packets.packets.at(-1)?.side_data_list?.[0]?.discard_padding),
+        decodedCount: frames.length,
+        firstPts: number(frames[0]?.best_effort_timestamp),
+        lastPts: number(frames.at(-1)?.best_effort_timestamp),
+        lastDuration: number(frames.at(-1)?.duration),
+        lastSamples: number(frames.at(-1)?.nb_samples),
+        // These fixtures have at most 60 video frames. Keep every boundary
+        // timestamp/duration, bounded independently of any production result.
+        videoClock: selector === 'v:0' ? frames.slice(0, 64).map((frame) => ({
+          pts: number(frame.best_effort_timestamp), duration: number(frame.duration),
+        })) : undefined,
+      };
+    });
+    // Only authored event channels and numeric support; never emit paths, ffprobe
+    // metadata, packet hashes, raw production messages or fixture identities.
+    let events: ReturnType<typeof audioEvents> | undefined;
+    try {
+      events = audioEvents(file);
+    } catch {
+      // Event-reader prerequisites must not suppress the independently captured
+      // packet/decoded timing; the original test still enforces those prerequisites.
+    }
+    console.info('FL16 numeric clock diagnostic', {
+      phase, caseIndex, streams, events: events?.map((event) => event ?? null) ?? null,
+    });
+  } catch {
+    console.info('FL16 numeric clock diagnostic', { phase, caseIndex, unavailable: true });
+  }
+};
+const productionRefusalCategory = (message: unknown) => {
+  const categories = [
+    ['source-start-offset', 'audio/video presentation start offset changed from the source'],
+    ['source-end-offset', 'audio/video presentation end offset changed from the source'],
+    ['unmeasured-av-timing', 'source and result audio/video presentation timing could not be measured'],
+    ['full-clip-unavailable', 'Full-clip master packet count or presentation timing is unavailable or changed'],
+    ['full-clip-span', 'Full-clip master presentation span changed'],
+    ['render-failed', 'Edited master render failed'],
+  ];
+  return typeof message === 'string' ? categories.find(([, text]) => message.includes(text))?.[0] ?? 'other' : 'other';
+};
+
 describe.sequential('VID-100 production master qualification (FL-16)', () => {
   let db: Kysely<DB>;
   let folder: string;
@@ -613,6 +684,8 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     'characterizes authored event/frame clock through $name with source delay $delay',
     async ({ speed, intervals, delay }) => {
       const source = eventFixture(folder, delay);
+      const caseIndex = temporalRecipes.findIndex((recipe) => recipe.intervals === intervals) * 2 + Number(delay > 0);
+      numericClockDiagnostic(source, 'source', caseIndex);
       const before = digest(source);
       const sourceTimes = frameTimes(source);
       expect(sourceTimes).toHaveLength(60);
@@ -630,6 +703,7 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
         ...speed,
         fullCrop(320, 240),
       ], 'event-clock');
+      numericClockDiagnostic(output, 'candidate', caseIndex);
       const times = frameTimes(output);
       expect(frameIds(output), 'Precise trim must retain source frames 6 through 53 in order').toEqual(
         Array.from({ length: 48 }, (_, index) => (index + 6) % 12),
@@ -685,6 +759,8 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     assertEventClock(source, 0, identity);
     assertPresentationExtent(source, identity);
     const output = await master(source, [fullCrop(320, 240)], 'extent-baseline');
+    numericClockDiagnostic(source, 'source', 6);
+    numericClockDiagnostic(output, 'candidate', 6);
     assertEventClock(output, 0, identity);
     assertPresentationExtent(output, identity);
     const padded = join(folder, 'event-silent-tail.mp4');
@@ -1055,7 +1131,26 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
       const sourceTimes = frameTimes(source);
       const asset = await seed(source);
       const version = await requested(asset.id, [fullCrop(320, 240)]);
-      expect(await render(asset.id, version.id)).toBe(JobStatus.Success);
+      numericClockDiagnostic(source, 'source', mode === 'aligned' ? 7 : 8);
+      const media = setup.ctx.get(MediaRepository);
+      const actualProbe = media.probe.bind(media);
+      let captured = false;
+      vi.spyOn(media, 'probe').mockImplementation(async (...args) => {
+        const result = await actualProbe(...args);
+        if (args[0] !== source && !captured) {
+          captured = true;
+          numericClockDiagnostic(args[0], 'candidate', mode === 'aligned' ? 7 : 8);
+        }
+        return result;
+      });
+      const status = await render(asset.id, version.id);
+      const refusal = vi.mocked(setup.ctx.get(LoggingRepository).error).mock.calls
+        .map(([message]) => productionRefusalCategory(message));
+      console.info('FL16 production refusal diagnostic', {
+        caseIndex: mode === 'aligned' ? 7 : 8,
+        categories: refusal.slice(-3),
+      });
+      expect(status).toBe(JobStatus.Success);
       const current = (await setup.ctx.get(AssetEditRepository).getVideoVersion(asset.id, version.id))!;
       expect((await selection(asset.id)).currentVersionId).toBe(version.id);
       const actual = presentation(current.masterPath!);
