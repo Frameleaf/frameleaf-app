@@ -255,8 +255,41 @@ pinned packages and served from the engine's origin (`src/shared/utils/local-ort
 digests of the files served. The owner approved the `runtime:onnx-cdn` row again on 2026-09-29
 (recorded per row in `rights-approval.json`, which may carry its own `approvedOn` and `source` for
 a re-approval), and the Whisper row again on 2026-09-29 at transformers.js 3.8.1, so Whisper,
-Parakeet, RIFE and Supertonic run. The engine policy records no per-file byte digests yet, so
-`verifyResourceBytes` still fails closed. `tools/engine.test.mjs` covers approval, withheld uses,
+Parakeet, RIFE and Supertonic use those bundled runtimes. File-byte admission is a separate gate:
+`tools/resource-policy.mjs` validates the existing schema-1 resource `files` inventory as exact
+`{path, sha256}` records. Paths are literal relative identities without traversal, URL syntax,
+queries, fragments or percent escapes; hashes are lowercase SHA256 hex or null. Duplicate paths
+are rejected. A repository locator plus its exact lowercase commit revision and file path defines
+one Hugging Face resolve URL. A reviewed full-file URL can bind only itself when its literal
+suffix matches the file path and its revision matches. No directory prefixes are guessed:
+Supertonic repository paths need their actual `assets/` prefix reviewed and re-approved before
+those transport URLs can match. Bundled npm paths do not become network identities.
+
+The generator emits URL-specific hashes only when the owner approved that exact row for local
+runtime and did not withhold the use. `approvalRowDigest` already includes `files`, locator and
+revision: adding or changing a file invalidates the existing approval until the owner re-approves
+the changed row. Root `sha256` remains null. `verifyResourceBytes` first resolves the URL through
+the existing overlapping-row admission rule, then checks that file's URL, row digest, revision and
+byte hash; a model ID, unknown filename, branch, URL alias or blocked voice cannot borrow a hash.
+It copies bytes before awaiting the digest and returns that verified copy. The current Whisper
+model row still has `files: []`, so its production byte acceptance remains blocked. This source
+capability does not activate loader transport or fetch production model bytes.
+
+`qualification-evidence/whisper-37164769288-diagnostic.json` retains the genuine hosted isolated
+fixture-inference report from commit `1b8a544824d533f3a5eef5105c1f1c21bf194114`, run
+`37164769288`, SHA256 `63cc58638218ec4c4cb9807a015cd44e0537fa0c190899457ded0ccb67277153`.
+The accompanying `whisper-37164769288-candidates.json` records seven distinct payloads from eight
+observations, with exact origin/revision/size and observed hashes. Both are unsigned diagnostic
+evidence, and all candidate hashes remain **UNAPPROVED**. Neither file is consumed as policy or
+owner authority. The next approval gate is owner review of the candidate bytes/provenance and
+exact file inventory, followed by explicit re-approval of the changed manifest row. Transport
+integration with approved bytes, real browser-worker inference, all other pinned/supplemental
+models, progress/cancellation, artifact/relink/bundle and privacy workflows remain separate gates.
+
+`tools/engine.test.mjs` exercises the actual generator and runtime with explicitly synthetic
+approval fixtures for file hashes, malformed inventories, withheld uses, equal-locator overlap,
+revision/row mutations and byte-mutation races. These are contracts, not inference evidence.
+It also covers approval, withheld uses,
 changed rows, URL lookalikes, voice precedence and revision pinning;
 `tools/resource-admission.browser.mjs` checks every entrypoint's refusal path under an
 all-blocked substitute policy.
