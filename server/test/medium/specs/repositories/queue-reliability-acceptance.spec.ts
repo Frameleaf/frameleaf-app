@@ -92,10 +92,8 @@ describe('queue connection recovery and repeated database pressure', () => {
           entered.resolve(rows[0].pid);
           await sql`select pg_sleep(30)`.execute(tx);
         })
-        .then(
-          () => ({ failed: false }),
-          () => ({ failed: true }),
-        );
+        .then(() => ({ failed: false }))
+        .catch(() => ({ failed: true }));
       const oldPid = await Promise.race([
         entered.promise,
         interrupted.then(() => {

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { DatabaseSchema } from '@frameleaf/sql-tools';
-import { validateFrameleafCatalog } from 'src/schema/catalog-authority.js';
+import { validateFrameleafCatalog } from './catalog-authority.js';
 
 export type ArtifactManifest = {
   sourceCommit: string;
