@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getKeysDeep, globToPostgresRegex, unsetDeep } from 'src/utils/misc.js';
+import { getKeysDeep, globToPostgresRegex, removeOpenApi30IncompatibleKeys, unsetDeep } from 'src/utils/misc.js';
 
 describe('getKeysDeep', () => {
   it('should handle an empty object', () => {
@@ -73,5 +73,14 @@ describe('globToPostgresRegex', () => {
 
   it.each(testCases)('should match %s against %s as %s', (glob, value, expected) => {
     expect(matches(glob, value)).toEqual(expected);
+  });
+});
+
+describe('removeOpenApi30IncompatibleKeys', () => {
+  it('describes a tuple as a fixed-length array, which OpenAPI 3.0 generators accept', () => {
+    const point = { type: 'number', minimum: 0, maximum: 1 };
+    const schema = { type: 'array', items: { type: 'array', prefixItems: [point, point] }, propertyNames: {} };
+    removeOpenApi30IncompatibleKeys(schema);
+    expect(schema).toEqual({ type: 'array', items: { type: 'array', items: point, minItems: 2, maxItems: 2 } });
   });
 });

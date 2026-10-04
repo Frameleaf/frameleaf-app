@@ -5497,10 +5497,7 @@ export type DarktableDevelopRecipe = {
         strokes?: {
             /** Erase from the mask instead of painting it (brush masks only) */
             erase?: boolean;
-            points: [
-                number,
-                number
-            ][];
+            points: number[][];
             /** Stroke radius as a fraction of the original image's shorter side */
             radius: number;
         }[];
@@ -14244,10 +14241,7 @@ export type AssetDevelopRegion = {
 export type AssetDevelopStroke = {
     /** Erase from the mask instead of painting it (brush masks only) */
     erase?: boolean;
-    points: [
-        number,
-        number
-    ][];
+    points: number[][];
     /** Stroke radius as a fraction of the original image's shorter side */
     radius: number;
 };

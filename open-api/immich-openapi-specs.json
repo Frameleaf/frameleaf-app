@@ -56872,20 +56872,14 @@
           "points": {
             "items": {
               "description": "A point as [x, y] fractions of the original image (before rotation, flips and crop)",
-              "prefixItems": [
-                {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1,
-                  "format": "double"
-                },
-                {
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1,
-                  "format": "double"
-                }
-              ],
+              "items": {
+                "format": "double",
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
               "type": "array"
             },
             "maxItems": 512,
@@ -65784,20 +65778,14 @@
                       "points": {
                         "items": {
                           "description": "A point as [x, y] fractions of the original image (before rotation, flips and crop)",
-                          "prefixItems": [
-                            {
-                              "type": "number",
-                              "minimum": 0,
-                              "maximum": 1,
-                              "format": "double"
-                            },
-                            {
-                              "type": "number",
-                              "minimum": 0,
-                              "maximum": 1,
-                              "format": "double"
-                            }
-                          ],
+                          "items": {
+                            "format": "double",
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 2,
+                          "minItems": 2,
                           "type": "array"
                         },
                         "maxItems": 512,
