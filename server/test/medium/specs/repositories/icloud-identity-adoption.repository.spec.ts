@@ -18,6 +18,7 @@ import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { encryptICloudSession, decryptICloudSession } from 'src/utils/icloud-sync.js';
 import * as privateCopyFiles from 'src/utils/icloud-private-copy.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { iCloudItemClaimLockKey } from 'src/repositories/icloud-item-claim-lock.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetLockReason,
@@ -2133,6 +2134,60 @@ describe('iCloud exact identity adoption', () => {
           expect(await fixture.state()).toMatchObject({ status: 'failed', reservedBytes: 2 * fixture.f.bytes.length });
           expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
           expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
+        });
+
+        it.each([
+          { disposition: 'copy', absent: false }, { disposition: 'copy', absent: true },
+          { disposition: 'staging', absent: false }, { disposition: 'staging', absent: true },
+        ] as const)('fences whole-item reclaim through actual $disposition unlink/settlement; absent=$absent', async ({ disposition, absent }) => {
+          const fixture = await createDispositionFixture();
+          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath); await fixture.retire();
+          if (disposition === 'staging') { expect(await fixture.repository.disposePrivateCopy(fixture.input)).toBe(true); }
+          await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
+            WHERE id=${fixture.claim.id}::uuid`.execute(db);
+          if (absent) { expect(await identities.release(fixture.f.user.id, [fixture.claim.id], fixture.claim.holder)).toEqual([fixture.claim.id]); }
+
+          const path = disposition === 'copy' ? fixture.promotedPath : fixture.fresh.payload.path;
+          const entered = Promise.withResolvers<void>(); const resume = Promise.withResolvers<void>();
+          const unlink = privateCopyFiles.unlinkOwnedPrivateCopy;
+          let paused = false;
+          const barrier = vi.spyOn(privateCopyFiles, 'unlinkOwnedPrivateCopy').mockImplementation(async (named, identity) => {
+            if (named === path && !paused) { paused = true; entered.resolve(); await resume.promise; }
+            await unlink(named, identity); // Real NOFOLLOW inode checks and unlink, never a fake freed-byte result.
+          });
+          const disposing = disposition === 'copy' ? fixture.repository.disposePrivateCopy(fixture.input) : fixture.repository.disposeRefusedStaging(fixture.input);
+          void disposing.catch(() => {});
+          let reclaimed = false;
+          let reclaiming: ReturnType<typeof identities.claim> | undefined;
+          try {
+            await entered.promise; // Paused after the real claim/refcount authority checks, before actual unlink.
+            const key = iCloudItemClaimLockKey(fixture.f.user.id, fixture.f.resource.sourceAssetId);
+            const holder = (await sql<{ pid: number }>`WITH fence AS (SELECT hashtextextended(${key},0) AS key)
+              SELECT l.pid FROM pg_locks l,fence WHERE l.locktype='advisory' AND l.granted AND l.objsubid=1
+                AND l.classid::bigint=((fence.key>>32)&4294967295::bigint)
+                AND l.objid::bigint=(fence.key&4294967295::bigint)`.execute(db)).rows;
+            expect(holder).toHaveLength(1);
+            reclaiming = identities.claim(fixture.f.user.id, [fixture.f.resource.sourceAssetId.toLowerCase()], `device:${randomUUID()}`, 1800)
+              .then((claims) => { reclaimed = true; return claims; });
+            void reclaiming.catch(() => {});
+            // Backend lock ownership is the witness. Elapsed time or a still-pending JS promise is not proof.
+            await expect.poll(async () => (await sql`SELECT waiting.pid FROM pg_stat_activity waiting
+              WHERE waiting.wait_event_type='Lock' AND ${holder[0].pid}::int=ANY(pg_blocking_pids(waiting.pid))
+                AND waiting.query LIKE '%pg_advisory_xact_lock%'`.execute(db)).rows.length, { timeout: 1000 }).toBe(1);
+            expect(reclaimed).toBe(false);
+            expect(await readFile(path)).toEqual(fixture.f.bytes);
+            expect((await fixture.state()).reservedBytes).toBe((disposition === 'copy' ? 2 : 1) * fixture.f.bytes.length);
+          } finally {
+            resume.resolve(); await Promise.allSettled([disposing, ...(reclaiming ? [reclaiming] : [])]); barrier.mockRestore();
+          }
+          expect(await disposing).toBe(true);
+          expect(await access(path).then(() => true, () => false)).toBe(false);
+          const [replacement] = await reclaiming!;
+          expect(replacement.cplAssetRecordName).toBe(fixture.f.resource.sourceAssetId.toUpperCase());
+          expect(replacement.id).not.toBe(fixture.claim.id);
+          expect(await fixture.state()).toMatchObject({ reservedBytes: disposition === 'copy' ? fixture.f.bytes.length : 0,
+            status: disposition === 'copy' ? 'failed' : 'removed', pendingJobs: [] });
+          expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
         });
 
         it('does not authenticate authored work-generation JSON when a late decoder finally settles', async () => {
