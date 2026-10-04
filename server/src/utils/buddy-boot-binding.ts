@@ -4,13 +4,13 @@ import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import z from 'zod';
-import { BuddyBootDeclarationSchema, readBuddyBootConfiguration } from './buddy-boot-configuration.ts';
+import { parseHelpLinks } from './app-releases.ts';
 import { BUDDY_UUID } from './buddy-backup-crypto.ts';
 import { readBuddyRecovery } from './buddy-backup-recovery.ts';
 import { writeBuddyFile } from './buddy-backup-vault.ts';
+import { BuddyBootDeclarationSchema, readBuddyBootConfiguration } from './buddy-boot-configuration.ts';
 import { ENV_ALIASES, resolveEnvAliases } from './env-aliases.ts';
 import { EnvSchema } from './environment-schema.ts';
-import { parseHelpLinks } from './app-releases.ts';
 
 // Local application-setting authority only. Capture remains all-canonical; security,
 // identity/link/entitlement, mounts, feature enabling and dependency service inputs
@@ -152,7 +152,7 @@ const bindingEvidence = async (binding: BootBinding, requireComplete: boolean) =
   const configuration = readBuddyBootConfiguration(input);
   if (JSON.stringify(configuration) !== JSON.stringify(readBuddyBootConfiguration(plan.manifest.bootConfiguration)))
     throw refusal();
-  if (binding.environmentKeys.some((key) => !configuration.entries.some((entry) => entry.key === key))) throw refusal();
+  if (binding.environmentKeys.some((key) => configuration.entries.every((entry) => entry.key !== key))) throw refusal();
   if (requireComplete) {
     const journal = JSON.parse(
       (await readPrivateBootFile(join(binding.recoveryDirectory, 'publication.json'))).toString(),

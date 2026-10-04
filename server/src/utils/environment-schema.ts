@@ -1,7 +1,7 @@
 import z from 'zod';
 import { ImmichEnvironmentSchema, LogFormatSchema, LogLevelSchema } from './environment-values.ts';
-import { DEFAULT_SHUTDOWN_DEADLINE_SECONDS, DEFAULT_SHUTDOWN_GRACE_SECONDS } from './shutdown.ts';
 import { IsIPRange } from './ip-range.ts';
+import { DEFAULT_SHUTDOWN_DEADLINE_SECONDS, DEFAULT_SHUTDOWN_GRACE_SECONDS } from './shutdown.ts';
 
 // TODO import from sql-tools once the swagger plugin supports external enums
 enum DatabaseSslMode {
