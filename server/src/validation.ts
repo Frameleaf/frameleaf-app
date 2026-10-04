@@ -4,6 +4,7 @@ import { createZodDto } from 'nestjs-zod';
 import sanitize from 'sanitize-filename';
 import z from 'zod';
 
+// eslint-disable-next-line no-restricted-imports -- Re-export the pure validator shared with the native Node pre-import schema.
 export { IsIPRange, type IsIPRangeOptions } from './utils/ip-range.ts';
 
 /**
