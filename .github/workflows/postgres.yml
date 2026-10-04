@@ -128,7 +128,8 @@ jobs:
   publish:
     name: Postgres image publish
     needs: build
-    if: ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_POSTGRES_PUBLISH == 'true' &&
+    if:
+      ${{ github.repository == 'Frameleaf/frameleaf-app' && vars.FRAMELEAF_ENABLE_POSTGRES_PUBLISH == 'true' &&
       github.event_name == 'workflow_dispatch' && inputs.publish &&
       (github.ref == 'refs/heads/fork/main' || github.ref == 'refs/heads/master/frameleaf-implementation' ||
       github.ref == 'refs/heads/aj/FL-333-pg19') }}

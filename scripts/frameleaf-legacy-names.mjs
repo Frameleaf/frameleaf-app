@@ -106,10 +106,22 @@ export const LEGACY_ALLOWLIST = [
   },
   {
     reason:
-      "A released migration is never edited; it ran long before the rename and only checks whether a custom media location was set",
-    files:
-      /^server\/src\/schema\/migrations\/1752759108283-ConvertToAbsolutePaths\.ts$/,
-    allow: /process\.env\.IMMICH_MEDIA_LOCATION/g,
+      "Internal identifier for Frameleaf's canonical offline-import journal SQL; never a source schema restore or operator environment variable",
+    files: /^server\/src\/immich-import\/state\.ts$/,
+    allow: /\bIMMICH_IMPORT_SCHEMA_SQL\b/g,
+  },
+  {
+    reason:
+      "The offline source-import runbook documents the existing admin alias only for its five import-immich operations",
+    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    allow:
+      /^immich-admin import-immich (?:status|(?:preflight|run|resume|verify) --config \/path\/config\.json)$/g,
+  },
+  {
+    reason:
+      "The canonical admin reference names the current compatibility alias beside frameleaf-admin import-immich",
+    files: /^docs\/docs\/administration\/server-commands\.md$/,
+    allow: /\(also available through the current `immich-admin` alias\)/g,
   },
   {
     reason:

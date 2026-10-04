@@ -1,5 +1,5 @@
 name: Test
-"on":
+'on':
   workflow_dispatch:
     inputs:
       development_validation:
@@ -378,7 +378,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: "**/pnpm-lock.yaml"
+          cache-dependency-path: '**/pnpm-lock.yaml'
       - name: Setup packages
         run:
           pnpm --filter @immich/sdk --filter @immich/cli --filter @immich/plugin-sdk install --frozen-lockfile && pnpm
@@ -547,7 +547,7 @@ jobs:
         working-directory: ./server
         env:
           BUDDY_FIXTURE_OUTCOME: ${{ steps.buddy-fixture.outcome }}
-          FRAMELEAF_BUDDY_BACKUP: "true"
+          FRAMELEAF_BUDDY_BACKUP: 'true'
         run: |
           # Setup failure is a failed required lane, never a skipped or green acceptance test.
           if [ "$BUDDY_FIXTURE_OUTCOME" != success ]; then
@@ -660,7 +660,7 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-          cache-dependency-path: "**/pnpm-lock.yaml"
+          cache-dependency-path: '**/pnpm-lock.yaml'
       - name: Run setup @immich/sdk
         run: pnpm --filter @immich/sdk install --frozen-lockfile && pnpm --filter @immich/sdk build
         if: ${{ !cancelled() }}
@@ -685,7 +685,7 @@ jobs:
       - name: Run e2e tests (web)
         env:
           PLAYWRIGHT_DISABLE_WEBSERVER: true
-          FL144_ML_FIXTURE: "true"
+          FL144_ML_FIXTURE: 'true'
         run: pnpm test:web
         if: ${{ !cancelled() && steps.docker.outcome == 'success' }}
       - name: Archive e2e test (web) results
@@ -835,7 +835,7 @@ jobs:
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38
         with:
-          ignore_paths: "**/open-api/** **/openapi** **/node_modules/**"
+          ignore_paths: '**/open-api/** **/openapi** **/node_modules/**'
     timeout-minutes: 60
   generated-api-up-to-date:
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || !inputs.development_validation) }}

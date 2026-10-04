@@ -1,5 +1,5 @@
 name: Frameleaf Cloud integration tests
-"on":
+'on':
   workflow_call:
 permissions: {}
 concurrency:
@@ -16,7 +16,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          node-version: "24.21.0"
+          node-version: '24.21.0'
       - name: Retrieve and verify immutable registry archive
         id: fetch
         env:

@@ -285,8 +285,7 @@ jobs:
 
   success-check-server:
     name: Docker Build & Push Server Success
-    needs:
-      [integration, deploy-test, server-publish, retag-server]
+    needs: [integration, deploy-test, server-publish, retag-server]
     if: always()
     runs-on: ubuntu-24.04
     steps:

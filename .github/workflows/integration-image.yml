@@ -194,7 +194,7 @@ jobs:
       # The machine-learning image of the latest published release, from its verified manifest.
       - name: Resolve the images under test
         env:
-          SERVER_BUILT: "true"
+          SERVER_BUILT: 'true'
           ML_BUILT: released
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs deploy-test-images
