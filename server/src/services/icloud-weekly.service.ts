@@ -5,7 +5,10 @@ import { MediaOperationRepository } from 'src/repositories/media-operation.repos
 /** Explicit internal producer only. No bootstrap/tick registration and no provider/byte access. */
 @Injectable()
 export class ICloudWeeklyService {
-  constructor(private weekly: ICloudWeeklyRepository, private operations: MediaOperationRepository) {}
+  constructor(
+    private weekly: ICloudWeeklyRepository,
+    private operations: MediaOperationRepository,
+  ) {}
 
   async freeze(ownerId: string, connectionId: string) {
     return this.weekly.freezeCohort(ownerId, connectionId);

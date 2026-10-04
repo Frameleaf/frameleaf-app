@@ -16,8 +16,8 @@ import {
   UserMetadataKey,
 } from 'src/enum.js';
 import * as auditMigration from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
-import * as weeklyMigration from 'src/fork-schema/migrations/0000000000218-ICloudWeeklyAuthority.js';
 import * as reuseMigration from 'src/fork-schema/migrations/0000000000217-ICloudIdentityReuse.js';
+import * as weeklyMigration from 'src/fork-schema/migrations/0000000000218-ICloudWeeklyAuthority.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -30,8 +30,8 @@ import {
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
-import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -68,11 +68,15 @@ describe('iCloud exact identity adoption', () => {
     if (!table.rows[0].present) {
       await reuseMigration.up(db);
     }
-    const audit = await sql<{ present: string | null }>`SELECT to_regclass('immich_fork.icloud_identity_audit')::text AS present`.execute(db);
+    const audit = await sql<{
+      present: string | null;
+    }>`SELECT to_regclass('immich_fork.icloud_identity_audit')::text AS present`.execute(db);
     if (!audit.rows[0].present) {
       await auditMigration.up(db);
     }
-    const weekly = await sql<{ present: string | null }>`SELECT to_regclass('immich_fork.icloud_weekly_grant')::text AS present`.execute(db);
+    const weekly = await sql<{
+      present: string | null;
+    }>`SELECT to_regclass('immich_fork.icloud_weekly_grant')::text AS present`.execute(db);
     if (!weekly.rows[0].present) {
       await weeklyMigration.up(db);
     }
@@ -998,14 +1002,25 @@ describe('iCloud exact identity adoption', () => {
       const names = [NAME, ...Array.from({ length: Math.max(0, size - 1) }, () => randomUUID().toUpperCase())];
       if (size > 1) {
         for (let offset = 1; offset < names.length; offset += 256) {
-          await sync.savePage(f.connection.id, `weekly-additions:${offset}`, 'library', names.slice(offset, offset + 256).map((recordName) => ({
-            recordName, recordType: 'CPLAsset', recordChangeTag: 'asset-1',
-            fields: { masterRef: { value: { recordName: f.master } } },
-          })), null, true);
+          await sync.savePage(
+            f.connection.id,
+            `weekly-additions:${offset}`,
+            'library',
+            names.slice(offset, offset + 256).map((recordName) => ({
+              recordName,
+              recordType: 'CPLAsset',
+              recordChangeTag: 'asset-1',
+              fields: { masterRef: { value: { recordName: f.master } } },
+            })),
+            null,
+            true,
+          );
         }
         await sql`DELETE FROM immich_fork.icloud_checkpoint WHERE "connectionId"=${f.connection.id}::uuid
           AND scope='materialize:library'`.execute(db);
-        while (!(await sync.materialize(f.connection, 'library', { area: 'private', zoneID: { zoneName: 'PrimarySync' } }))) {
+        while (
+          !(await sync.materialize(f.connection, 'library', { area: 'private', zoneID: { zoneName: 'PrimarySync' } }))
+        ) {
           // Consume the actual bounded keyset materializer, never a fabricated resource population.
         }
         const device = randomUUID();
@@ -1026,19 +1041,37 @@ describe('iCloud exact identity adoption', () => {
           const resource = (await sync.claim(f.connection.id, f.connection.config.stagingBytes))!;
           expect(resource).toBeDefined();
           await identities.claimForSync(f.user.id, resource.sourceAssetId, f.connection.id);
-          expect(await repository.adopt({ ...f.authority, resourceId: resource.id, resourceLeaseToken: resource.leaseToken! }, async (candidate) => {
-            const bytes = await readFile(candidate.originalPath);
-            const stat = await lstat(candidate.originalPath);
-            const identity = { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs };
-            const apple = appleFingerprintHash();
-            apple.update(bytes);
-            return { sha1: createHash('sha1').update(bytes).digest(), sha256: createHash('sha256').update(bytes).digest(),
-              sizeInBytes: bytes.length, appleFingerprint: apple.digest(), identity,
-              current: async () => {
-                const current = await lstat(candidate.originalPath);
-                return Object.entries(identity).every(([key, value]) => current[key as keyof typeof identity] === value);
-              } };
-          })).toBe('adopted');
+          expect(
+            await repository.adopt(
+              { ...f.authority, resourceId: resource.id, resourceLeaseToken: resource.leaseToken! },
+              async (candidate) => {
+                const bytes = await readFile(candidate.originalPath);
+                const stat = await lstat(candidate.originalPath);
+                const identity = {
+                  dev: stat.dev,
+                  ino: stat.ino,
+                  size: stat.size,
+                  mtimeMs: stat.mtimeMs,
+                  ctimeMs: stat.ctimeMs,
+                };
+                const apple = appleFingerprintHash();
+                apple.update(bytes);
+                return {
+                  sha1: createHash('sha1').update(bytes).digest(),
+                  sha256: createHash('sha256').update(bytes).digest(),
+                  sizeInBytes: bytes.length,
+                  appleFingerprint: apple.digest(),
+                  identity,
+                  current: async () => {
+                    const current = await lstat(candidate.originalPath);
+                    return Object.entries(identity).every(
+                      ([key, value]) => current[key as keyof typeof identity] === value,
+                    );
+                  },
+                };
+              },
+            ),
+          ).toBe('adopted');
           expect(await sync.finalize(resource, async () => {})).toBe(true);
         }
       }
@@ -1046,47 +1079,104 @@ describe('iCloud exact identity adoption', () => {
     }
 
     async function members(cohortId: string) {
-      return (await sql<{
-        ordinal: string; receiptId: string; resourceRoleKey: string; selected: boolean; rank: Buffer;
-        technicalEligibility: string; batchOrdinal: number | null; outcome: string; auditRequestId: string | null;
-        bindings: { receipt: { sourceResourceId: string; role: string }; [key: string]: unknown };
-      }>`SELECT * FROM immich_fork.icloud_weekly_member WHERE "cohortId"=${cohortId}::uuid ORDER BY ordinal`.execute(db)).rows;
+      return (
+        await sql<{
+          ordinal: string;
+          receiptId: string;
+          resourceRoleKey: string;
+          selected: boolean;
+          rank: Buffer;
+          technicalEligibility: string;
+          batchOrdinal: number | null;
+          outcome: string;
+          auditRequestId: string | null;
+          bindings: { receipt: { sourceResourceId: string; role: string }; [key: string]: unknown };
+        }>`SELECT * FROM immich_fork.icloud_weekly_member WHERE "cohortId"=${cohortId}::uuid ORDER BY ordinal`.execute(
+          db,
+        )
+      ).rows;
     }
 
-    it.each([0, 1, 99, 100, 101])('freezes the entire actual resource population N=%i and independently verifies the manifest/sample', async (size) => {
-      const f = await population(size);
-      await grant(f);
-      const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
-      const frozen = await members(cohort.id);
-      expect(Number(cohort.populationCount)).toBe(size);
-      expect(Number(cohort.staleCount)).toBe(0);
-      expect(Number(cohort.selectedCount)).toBe(Math.ceil(size / 100));
-      expect(frozen).toHaveLength(size);
-      const clock = (await sql<{ week: string }>`SELECT date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date::text AS week`.execute(db)).rows[0];
-      const week = (cohort.weekStart as unknown) instanceof Date ? (cohort.weekStart as unknown as Date).toISOString().slice(0, 10) : String(cohort.weekStart).slice(0, 10);
-      expect(week).toBe(clock.week);
-      const ranked = frozen.map((member) => ({ member, rank: createHmac('sha256', cohort.seed).update(canonicalJson([
-        'icloud-weekly-resource-v1', f.user.id, f.connection.id, week, member.receiptId,
-        member.bindings.receipt.sourceResourceId, member.bindings.receipt.role,
-      ])).digest() })).sort((a, b) => Buffer.compare(a.rank, b.rank) || a.member.receiptId.localeCompare(b.member.receiptId));
-      expect(frozen.filter((member) => member.selected).map((member) => member.receiptId).sort())
-        .toEqual(ranked.slice(0, Math.ceil(size / 100)).map(({ member }) => member.receiptId).sort());
-      for (const { member, rank } of ranked) {
-        expect(member.rank).toEqual(rank);
-      }
-      const manifest = createHash('sha256').update(canonicalJson(['icloud-weekly-manifest-v1', f.user.id, f.connection.id, week]) + '\n');
-      for (const member of frozen) {
-        manifest.update(canonicalJson([Number(member.ordinal), member.receiptId, member.resourceRoleKey,
-          member.technicalEligibility === 'current', member.bindings]) + '\n');
-      }
-      expect(cohort.manifestDigest).toEqual(manifest.digest());
-      expect(await weekly().freezeCohort(f.user.id, f.connection.id)).toEqual(cohort);
-      if (size === 0) {
-        expect(cohort.status).toBe('settled');
-        expect(await weekly().createNextBatch(cohort.id, operations())).toBeNull();
-        expect((await sql`SELECT 1 FROM immich_fork.icloud_identity_audit WHERE "cohortId"=${cohort.id}::uuid`.execute(db)).rows).toEqual([]);
-      }
-    }, 120_000);
+    it.each([0, 1, 99, 100, 101])(
+      'freezes the entire actual resource population N=%i and independently verifies the manifest/sample',
+      async (size) => {
+        const f = await population(size);
+        await grant(f);
+        const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
+        const frozen = await members(cohort.id);
+        expect(Number(cohort.populationCount)).toBe(size);
+        expect(Number(cohort.staleCount)).toBe(0);
+        expect(Number(cohort.selectedCount)).toBe(Math.ceil(size / 100));
+        expect(frozen).toHaveLength(size);
+        const clock = (
+          await sql<{
+            week: string;
+          }>`SELECT date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date::text AS week`.execute(db)
+        ).rows[0];
+        const week =
+          (cohort.weekStart as unknown) instanceof Date
+            ? (cohort.weekStart as unknown as Date).toISOString().slice(0, 10)
+            : cohort.weekStart.slice(0, 10);
+        expect(week).toBe(clock.week);
+        const ranked = frozen
+          .map((member) => ({
+            member,
+            rank: createHmac('sha256', cohort.seed)
+              .update(
+                canonicalJson([
+                  'icloud-weekly-resource-v1',
+                  f.user.id,
+                  f.connection.id,
+                  week,
+                  member.receiptId,
+                  member.bindings.receipt.sourceResourceId,
+                  member.bindings.receipt.role,
+                ]),
+              )
+              .digest(),
+          }))
+          .sort((a, b) => Buffer.compare(a.rank, b.rank) || a.member.receiptId.localeCompare(b.member.receiptId));
+        expect(
+          frozen
+            .filter((member) => member.selected)
+            .map((member) => member.receiptId)
+            .sort(),
+        ).toEqual(
+          ranked
+            .slice(0, Math.ceil(size / 100))
+            .map(({ member }) => member.receiptId)
+            .sort(),
+        );
+        for (const { member, rank } of ranked) {
+          expect(member.rank).toEqual(rank);
+        }
+        const manifest = createHash('sha256').update(
+          canonicalJson(['icloud-weekly-manifest-v1', f.user.id, f.connection.id, week]) + '\n',
+        );
+        for (const member of frozen) {
+          manifest.update(
+            canonicalJson([
+              Number(member.ordinal),
+              member.receiptId,
+              member.resourceRoleKey,
+              member.technicalEligibility === 'current',
+              member.bindings,
+            ]) + '\n',
+          );
+        }
+        expect(cohort.manifestDigest).toEqual(manifest.digest());
+        expect(await weekly().freezeCohort(f.user.id, f.connection.id)).toEqual(cohort);
+        if (size === 0) {
+          expect(cohort.status).toBe('settled');
+          expect(await weekly().createNextBatch(cohort.id, operations())).toBeNull();
+          expect(
+            (await sql`SELECT 1 FROM immich_fork.icloud_identity_audit WHERE "cohortId"=${cohort.id}::uuid`.execute(db))
+              .rows,
+          ).toEqual([]);
+        }
+      },
+      120_000,
+    );
 
     it('produces k>100 across bounded durable batches without truncating N=10001 or replacing members', async () => {
       const f = await population(10_001);
@@ -1096,17 +1186,49 @@ describe('iCloud exact identity adoption', () => {
       expect(Number(cohort.selectedCount)).toBe(101);
       const before = await members(cohort.id);
       expect(before).toHaveLength(10_001);
-      const week = String(cohort.weekStart).slice(0, 10);
-      const ranked = before.map((member) => ({ member, rank: createHmac('sha256', cohort.seed).update(canonicalJson([
-        'icloud-weekly-resource-v1', f.user.id, f.connection.id, week, member.receiptId,
-        member.bindings.receipt.sourceResourceId, member.bindings.receipt.role,
-      ])).digest() })).sort((a, b) => Buffer.compare(a.rank, b.rank) || a.member.receiptId.localeCompare(b.member.receiptId));
-      expect(before.filter((member) => member.selected).map((member) => member.receiptId).sort())
-        .toEqual(ranked.slice(0, 101).map(({ member }) => member.receiptId).sort());
-      const manifest = createHash('sha256').update(canonicalJson(['icloud-weekly-manifest-v1', f.user.id, f.connection.id, week]) + '\n');
+      const week = cohort.weekStart.slice(0, 10);
+      const ranked = before
+        .map((member) => ({
+          member,
+          rank: createHmac('sha256', cohort.seed)
+            .update(
+              canonicalJson([
+                'icloud-weekly-resource-v1',
+                f.user.id,
+                f.connection.id,
+                week,
+                member.receiptId,
+                member.bindings.receipt.sourceResourceId,
+                member.bindings.receipt.role,
+              ]),
+            )
+            .digest(),
+        }))
+        .sort((a, b) => Buffer.compare(a.rank, b.rank) || a.member.receiptId.localeCompare(b.member.receiptId));
+      expect(
+        before
+          .filter((member) => member.selected)
+          .map((member) => member.receiptId)
+          .sort(),
+      ).toEqual(
+        ranked
+          .slice(0, 101)
+          .map(({ member }) => member.receiptId)
+          .sort(),
+      );
+      const manifest = createHash('sha256').update(
+        canonicalJson(['icloud-weekly-manifest-v1', f.user.id, f.connection.id, week]) + '\n',
+      );
       for (const member of before) {
-        manifest.update(canonicalJson([Number(member.ordinal), member.receiptId, member.resourceRoleKey,
-          member.technicalEligibility === 'current', member.bindings]) + '\n');
+        manifest.update(
+          canonicalJson([
+            Number(member.ordinal),
+            member.receiptId,
+            member.resourceRoleKey,
+            member.technicalEligibility === 'current',
+            member.bindings,
+          ]) + '\n',
+        );
       }
       expect(cohort.manifestDigest).toEqual(manifest.digest());
       const first = (await weekly().createNextBatch(cohort.id, operations()))!;
@@ -1116,85 +1238,95 @@ describe('iCloud exact identity adoption', () => {
       expect(first.snapshot.batchOrdinal).toBe(0);
       expect(second.snapshot.batchOrdinal).toBe(1);
       expect(await weekly().createNextBatch(cohort.id, operations())).toBeNull();
-      expect((await members(cohort.id)).map(({ auditRequestId, ...member }) => member))
-        .toEqual(before.map(({ auditRequestId, ...member }) => member));
-      expect((await sql`SELECT 1 FROM immich_fork.icloud_identity_audit WHERE "cohortId"=${cohort.id}::uuid
-        AND "operationId"=ANY(${[first.id, second.id]}::uuid[]) AND purpose='scheduled-weekly' AND "sessionId" IS NULL`.execute(db)).rows).toHaveLength(101);
+      expect((await members(cohort.id)).map(({ auditRequestId: _auditRequestId, ...member }) => member)).toEqual(
+        before.map(({ auditRequestId: _auditRequestId, ...member }) => member),
+      );
+      expect(
+        (
+          await sql`SELECT 1 FROM immich_fork.icloud_identity_audit WHERE "cohortId"=${cohort.id}::uuid
+        AND "operationId"=ANY(${[first.id, second.id]}::uuid[]) AND purpose='scheduled-weekly' AND "sessionId" IS NULL`.execute(
+            db,
+          )
+        ).rows,
+      ).toHaveLength(101);
     }, 600_000);
 
-    it.each(['original', 'motion', 'raw'] as const)('counts each actually adopted %s resource role once', async (role) => {
-      const f = await arrange(role);
-      expect(await service.adopt(f.authority)).toBe('adopted');
-      await grant(f);
-      const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
-      expect(Number(cohort.populationCount)).toBe(1);
-      const frozen = await members(cohort.id);
-      expect(frozen).toHaveLength(1);
-      expect(frozen[0].bindings.receipt.role).toBe(identityRoleOf[role]);
-      expect(frozen[0].selected).toBe(true);
-    });
+    it.each(['original', 'motion', 'raw'] as const)(
+      'counts each actually adopted %s resource role once',
+      async (role) => {
+        const f = await arrange(role);
+        expect(await service.adopt(f.authority)).toBe('adopted');
+        await grant(f);
+        const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
+        expect(Number(cohort.populationCount)).toBe(1);
+        const frozen = await members(cohort.id);
+        expect(frozen).toHaveLength(1);
+        expect(frozen[0].bindings.receipt.role).toBe(identityRoleOf[role]);
+        expect(frozen[0].selected).toBe(true);
+      },
+    );
 
     it('counts still and motion of one logical item as two frozen resource members', async () => {
-    const fixture = await arrange('motion', { concurrency: 2 });
-    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: 'green' } })
-      .jpeg()
-      .toBuffer();
-    const originalPath = join(dirname(fixture.originalPath), 'still.jpg');
-    await writeFile(originalPath, bytes);
-    const sha256 = createHash('sha256').update(bytes).digest();
-    const hash = appleFingerprintHash();
-    hash.update(bytes);
-    const fingerprint = hash.digest();
-    const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
-    const { asset } = await ctx.newAsset({
-      ownerId: fixture.user.id,
-      originalPath,
-      originalFileName: 'still.jpg',
-      type: AssetType.Image,
-      checksum: sha256,
-      checksumAlgorithm: ChecksumAlgorithm.sha256File,
-      livePhotoVideoId: fixture.asset.id,
-    });
-    const field = (value: unknown) => ({ value });
-    await sync.savePage(
-      fixture.connection.id,
-      'assets:library',
-      'library',
-      [
-        {
-          recordName: fixture.master,
-          recordType: 'CPLMaster',
-          recordChangeTag: 'master-2',
-          fields: {
-            filenameEnc: { value: 'still.jpg', type: 'STRING' },
-            itemType: field('public.jpeg'),
-            resOriginalRes: field({ size: bytes.length, fileChecksum: fingerprint }),
-            resOriginalVidComplRes: field({ size: fixture.bytes.length, fileChecksum: fixture.resourceFingerprint }),
+      const fixture = await arrange('motion', { concurrency: 2 });
+      const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: 'green' } })
+        .jpeg()
+        .toBuffer();
+      const originalPath = join(dirname(fixture.originalPath), 'still.jpg');
+      await writeFile(originalPath, bytes);
+      const sha256 = createHash('sha256').update(bytes).digest();
+      const hash = appleFingerprintHash();
+      hash.update(bytes);
+      const fingerprint = hash.digest();
+      const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
+      const { asset } = await ctx.newAsset({
+        ownerId: fixture.user.id,
+        originalPath,
+        originalFileName: 'still.jpg',
+        type: AssetType.Image,
+        checksum: sha256,
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        livePhotoVideoId: fixture.asset.id,
+      });
+      const field = (value: unknown) => ({ value });
+      await sync.savePage(
+        fixture.connection.id,
+        'assets:library',
+        'library',
+        [
+          {
+            recordName: fixture.master,
+            recordType: 'CPLMaster',
+            recordChangeTag: 'master-2',
+            fields: {
+              filenameEnc: { value: 'still.jpg', type: 'STRING' },
+              itemType: field('public.jpeg'),
+              resOriginalRes: field({ size: bytes.length, fileChecksum: fingerprint }),
+              resOriginalVidComplRes: field({ size: fixture.bytes.length, fileChecksum: fixture.resourceFingerprint }),
+            },
           },
-        },
-      ],
-      null,
-      true,
-    );
-    await sql`DELETE FROM immich_fork.icloud_checkpoint WHERE "connectionId"=${fixture.connection.id}::uuid AND scope='materialize:library'`.execute(
-      db,
-    );
-    await sync.materialize(fixture.connection, 'library', { area: 'private', zoneID: { zoneName: 'PrimarySync' } });
-    const resource = (await sync.claim(fixture.connection.id, fixture.connection.config.stagingBytes))!;
-    expect(resource).toBeDefined();
-    expect(resource.role).toBe('original');
-    await sql`INSERT INTO immich_fork.icloud_source_identity
+        ],
+        null,
+        true,
+      );
+      await sql`DELETE FROM immich_fork.icloud_checkpoint WHERE "connectionId"=${fixture.connection.id}::uuid AND scope='materialize:library'`.execute(
+        db,
+      );
+      await sync.materialize(fixture.connection, 'library', { area: 'private', zoneID: { zoneName: 'PrimarySync' } });
+      const resource = (await sync.claim(fixture.connection.id, fixture.connection.config.stagingBytes))!;
+      expect(resource).toBeDefined();
+      expect(resource.role).toBe('original');
+      await sql`INSERT INTO immich_fork.icloud_source_identity
       ("ownerId","assetId","libraryKey","cplAssetRecordName","cplMasterRecordName",role,sha256,"deliveredBy","cloudIdentifier")
       VALUES (${fixture.user.id}::uuid,${asset.id}::uuid,'library',${NAME},${fixture.master},'original',${sha256},
         ${`device:${randomUUID()}`},${`${NAME}:001:${fixture.master}`})`.execute(db);
-    const claim = await identities.claims(fixture.user.id, [NAME]);
-    expect(claim).toHaveLength(1);
-    expect(
-      await Promise.all([
-        service.adopt(fixture.authority),
-        service.adopt({ ...fixture.authority, resourceId: resource.id, resourceLeaseToken: resource.leaseToken! }),
-      ]),
-    ).toEqual(['adopted', 'adopted']);
+      const claim = await identities.claims(fixture.user.id, [NAME]);
+      expect(claim).toHaveLength(1);
+      expect(
+        await Promise.all([
+          service.adopt(fixture.authority),
+          service.adopt({ ...fixture.authority, resourceId: resource.id, resourceLeaseToken: resource.leaseToken! }),
+        ]),
+      ).toEqual(['adopted', 'adopted']);
       await grant(fixture);
       const cohort = await weekly().freezeCohort(fixture.user.id, fixture.connection.id);
       expect(Number(cohort.populationCount)).toBe(2);
@@ -1209,7 +1341,8 @@ describe('iCloud exact identity adoption', () => {
       const f = await population(1);
       await grant(f);
       const attempted = await Promise.allSettled([
-        weekly().freezeCohort(f.user.id, f.connection.id), weekly().freezeCohort(f.user.id, f.connection.id),
+        weekly().freezeCohort(f.user.id, f.connection.id),
+        weekly().freezeCohort(f.user.id, f.connection.id),
       ]);
       const successful = attempted.filter((result) => result.status === 'fulfilled');
       expect(successful.length).toBeGreaterThan(0);
@@ -1220,13 +1353,19 @@ describe('iCloud exact identity adoption', () => {
       }
       const reconciled = await weekly().freezeCohort(f.user.id, f.connection.id);
       for (const result of successful) {
-        if (result.status === 'fulfilled') {
-          expect(result.value.id).toBe(reconciled.id);
-          expect(result.value.seed).toEqual(reconciled.seed);
+        if (result.status !== 'fulfilled') {
+          continue;
         }
+
+        expect(result.value.id).toBe(reconciled.id);
+        expect(result.value.seed).toEqual(reconciled.seed);
       }
-      expect((await sql`SELECT id FROM immich_fork.icloud_weekly_cohort
-        WHERE "ownerId"=${f.user.id}::uuid AND "connectionId"=${f.connection.id}::uuid`.execute(db)).rows).toHaveLength(1);
+      expect(
+        (
+          await sql`SELECT id FROM immich_fork.icloud_weekly_cohort
+        WHERE "ownerId"=${f.user.id}::uuid AND "connectionId"=${f.connection.id}::uuid`.execute(db)
+        ).rows,
+      ).toHaveLength(1);
       expect(await members(reconciled.id)).toHaveLength(1);
     });
 
@@ -1239,24 +1378,44 @@ describe('iCloud exact identity adoption', () => {
       expect((await sync.resource(f.resource.id))?.assetId).toBeNull();
     });
 
-    it.each(['resource', 'identity', 'original', 'master'] as const)('retains a technically replaced %s binding as stale without substituting a resource', async (target) => {
-      const f = await population(1);
-      if (target === 'resource') {
-        await sql`DELETE FROM immich_fork.icloud_resource WHERE id=${f.resource.id}::uuid`.execute(db);
-      } else if (target === 'identity') {
-        await sql`DELETE FROM immich_fork.icloud_source_identity WHERE id=${f.identityId}::uuid`.execute(db);
-      } else if (target === 'original') {
-        await db.updateTable('asset').set({ originalPath: f.originalPath + '.replaced' }).where('id', '=', f.asset.id).execute();
-      } else {
-        await sql`UPDATE immich_fork.icloud_record SET revision='master-replaced'
+    it.each(['resource', 'identity', 'original', 'master'] as const)(
+      'retains a technically replaced %s binding as stale without substituting a resource',
+      async (target) => {
+        const f = await population(1);
+        switch (target) {
+          case 'resource': {
+            await sql`DELETE FROM immich_fork.icloud_resource WHERE id=${f.resource.id}::uuid`.execute(db);
+
+            break;
+          }
+          case 'identity': {
+            await sql`DELETE FROM immich_fork.icloud_source_identity WHERE id=${f.identityId}::uuid`.execute(db);
+
+            break;
+          }
+          case 'original': {
+            await db
+              .updateTable('asset')
+              .set({ originalPath: f.originalPath + '.replaced' })
+              .where('id', '=', f.asset.id)
+              .execute();
+
+            break;
+          }
+          default: {
+            await sql`UPDATE immich_fork.icloud_record SET revision='master-replaced'
           WHERE "connectionId"=${f.connection.id}::uuid AND "recordId"=${f.master}`.execute(db);
-      }
-      await grant(f);
-      const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
-      expect(Number(cohort.populationCount)).toBe(0);
-      expect(Number(cohort.staleCount)).toBe(1);
-      expect(await members(cohort.id)).toMatchObject([{ technicalEligibility: 'stale', selected: false, auditRequestId: null }]);
-    });
+          }
+        }
+        await grant(f);
+        const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
+        expect(Number(cohort.populationCount)).toBe(0);
+        expect(Number(cohort.staleCount)).toBe(1);
+        expect(await members(cohort.id)).toMatchObject([
+          { technicalEligibility: 'stale', selected: false, auditRequestId: null },
+        ]);
+      },
+    );
 
     it('keeps N/k and immutable selected membership without a grant, and cannot revive under regrant', async () => {
       const f = await population(1);
@@ -1292,8 +1451,11 @@ describe('iCloud exact identity adoption', () => {
       const { session } = await ctx.newSession({ userId: f.user.id });
       await sql`UPDATE public.session SET "pinExpiresAt"=clock_timestamp()+interval '1 hour'
         WHERE id=${session.id}::uuid`.execute(db);
-      await weekly().setAuthority(factory.auth({ user: f.user, session }), f.connection.id,
-        { enabled: true, includeProtected: true, requestKey: randomUUID() });
+      await weekly().setAuthority(factory.auth({ user: f.user, session }), f.connection.id, {
+        enabled: true,
+        includeProtected: true,
+        requestKey: randomUUID(),
+      });
       const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
       expect(Number(cohort.populationCount)).toBe(1);
       expect(Number(cohort.selectedCount)).toBe(1);
@@ -1310,7 +1472,9 @@ describe('iCloud exact identity adoption', () => {
       await db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', f.user.id).execute();
       expect(await weekly().createNextBatch(cohort.id, operations())).toBeNull();
       expect(await members(cohort.id)).toMatchObject([{ outcome: 'unavailable', auditRequestId: null }]);
-      const { rows: [current] } = await sql<{ status: string; performedCount: string; unavailableCount: string }>`SELECT *
+      const {
+        rows: [current],
+      } = await sql<{ status: string; performedCount: string; unavailableCount: string }>`SELECT *
         FROM immich_fork.icloud_weekly_cohort WHERE id=${cohort.id}::uuid`.execute(db);
       expect(current.status).toBe('settled');
       expect(Number(current.performedCount)).toBe(0);
@@ -1319,13 +1483,17 @@ describe('iCloud exact identity adoption', () => {
 
     it('keeps config-excluded receipt resources in N after ordinary scope invalidation', async () => {
       const f = await population(1);
-      await sync.update(f.connection.id, f.user.id, { config: { ...f.connection.config, libraries: ['other-library'] } });
+      await sync.update(f.connection.id, f.user.id, {
+        config: { ...f.connection.config, libraries: ['other-library'] },
+      });
       await grant(f);
       const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
       expect(Number(cohort.populationCount)).toBe(1);
       expect(Number(cohort.selectedCount)).toBe(1);
       expect(Number(cohort.unavailableCount)).toBe(1);
-      expect(await members(cohort.id)).toMatchObject([{ technicalEligibility: 'current', selected: true, outcome: 'unavailable' }]);
+      expect(await members(cohort.id)).toMatchObject([
+        { technicalEligibility: 'current', selected: true, outcome: 'unavailable' },
+      ]);
       expect(await weekly().createNextBatch(cohort.id, operations())).toBeNull();
     });
 
@@ -1337,28 +1505,43 @@ describe('iCloud exact identity adoption', () => {
       const outbox = operations();
       const unsubscribe = outbox.onChange(emitted);
       try {
-        const created = await Promise.all([weekly().createNextBatch(cohort.id, outbox), weekly().createNextBatch(cohort.id, outbox)]);
+        const created = await Promise.all([
+          weekly().createNextBatch(cohort.id, outbox),
+          weekly().createNextBatch(cohort.id, outbox),
+        ]);
         const only = created.filter((operation) => operation !== null);
         expect(only).toHaveLength(1);
         expect(emitted).toHaveBeenCalledOnce();
         expect(emitted).toHaveBeenCalledWith([{ id: only[0]!.id, ownerId: f.user.id }]);
         expect(await weekly().createNextBatch(cohort.id, operations())).toBeNull();
-        const audits = (await sql`SELECT * FROM immich_fork.icloud_identity_audit WHERE "cohortId"=${cohort.id}::uuid`.execute(db)).rows;
+        const audits = (
+          await sql`SELECT * FROM immich_fork.icloud_identity_audit WHERE "cohortId"=${cohort.id}::uuid`.execute(db)
+        ).rows;
         expect(audits).toHaveLength(1);
-        expect(audits[0]).toMatchObject({ operationId: only[0]!.id, sessionId: null, purpose: 'scheduled-weekly', batchOrdinal: 0 });
-      } finally { unsubscribe(); }
+        expect(audits[0]).toMatchObject({
+          operationId: only[0]!.id,
+          sessionId: null,
+          purpose: 'scheduled-weekly',
+          batchOrdinal: 0,
+        });
+      } finally {
+        unsubscribe();
+      }
     });
 
-    it.each(['outbox', 'cursor'] as const)('rolls back audits/member binding/cursor/outbox and emits no event if %s insertion fails', async (target) => {
-      const f = await population(1);
-      await grant(f);
-      const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
-      const before = await members(cohort.id);
-      const emitted = vi.fn();
-      const outbox = operations();
-      const unsubscribe = outbox.onChange(emitted);
-      const triggerTable = target === 'outbox' ? sql.table('public.media_operation') : sql.table('immich_fork.icloud_weekly_cohort');
-      await sql`CREATE FUNCTION public.weekly_producer_test_rollback() RETURNS trigger LANGUAGE plpgsql AS $$
+    it.each(['outbox', 'cursor'] as const)(
+      'rolls back audits/member binding/cursor/outbox and emits no event if %s insertion fails',
+      async (target) => {
+        const f = await population(1);
+        await grant(f);
+        const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
+        const before = await members(cohort.id);
+        const emitted = vi.fn();
+        const outbox = operations();
+        const unsubscribe = outbox.onChange(emitted);
+        const triggerTable =
+          target === 'outbox' ? sql.table('public.media_operation') : sql.table('immich_fork.icloud_weekly_cohort');
+        await sql`CREATE FUNCTION public.weekly_producer_test_rollback() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
           IF TG_TABLE_NAME='media_operation' THEN
             IF NEW.snapshot->>'task'='identity-audit-weekly' THEN RAISE EXCEPTION 'weekly_producer_test_rollback'; END IF;
@@ -1367,22 +1550,32 @@ describe('iCloud exact identity adoption', () => {
           END IF;
           RETURN NEW;
         END $$`.execute(db);
-      try {
-        await sql`CREATE TRIGGER weekly_producer_test_rollback BEFORE INSERT OR UPDATE ON ${triggerTable}
+        try {
+          await sql`CREATE TRIGGER weekly_producer_test_rollback BEFORE INSERT OR UPDATE ON ${triggerTable}
           FOR EACH ROW EXECUTE FUNCTION public.weekly_producer_test_rollback()`.execute(db);
-        await expect(weekly().createNextBatch(cohort.id, outbox)).rejects.toThrow('weekly_producer_test_rollback');
-        expect(emitted).not.toHaveBeenCalled();
-        expect(await members(cohort.id)).toEqual(before);
-        expect((await sql`SELECT id FROM immich_fork.icloud_identity_audit WHERE "cohortId"=${cohort.id}::uuid`.execute(db)).rows).toEqual([]);
-        expect((await sql`SELECT id FROM public.media_operation WHERE snapshot->>'cohortId'=${cohort.id}`.execute(db)).rows).toEqual([]);
-        expect(await weekly().freezeCohort(f.user.id, f.connection.id)).toEqual(cohort);
-      } finally {
-        await sql`DROP TRIGGER IF EXISTS weekly_producer_test_rollback ON ${triggerTable}`.execute(db);
-        await sql`DROP FUNCTION public.weekly_producer_test_rollback()`.execute(db);
-        unsubscribe();
-      }
-      expect(await weekly().createNextBatch(cohort.id, operations())).not.toBeNull();
-    });
+          await expect(weekly().createNextBatch(cohort.id, outbox)).rejects.toThrow('weekly_producer_test_rollback');
+          expect(emitted).not.toHaveBeenCalled();
+          expect(await members(cohort.id)).toEqual(before);
+          expect(
+            (
+              await sql`SELECT id FROM immich_fork.icloud_identity_audit WHERE "cohortId"=${cohort.id}::uuid`.execute(
+                db,
+              )
+            ).rows,
+          ).toEqual([]);
+          expect(
+            (await sql`SELECT id FROM public.media_operation WHERE snapshot->>'cohortId'=${cohort.id}`.execute(db))
+              .rows,
+          ).toEqual([]);
+          expect(await weekly().freezeCohort(f.user.id, f.connection.id)).toEqual(cohort);
+        } finally {
+          await sql`DROP TRIGGER IF EXISTS weekly_producer_test_rollback ON ${triggerTable}`.execute(db);
+          await sql`DROP FUNCTION public.weekly_producer_test_rollback()`.execute(db);
+          unsubscribe();
+        }
+        expect(await weekly().createNextBatch(cohort.id, operations())).not.toBeNull();
+      },
+    );
 
     it('retires already-bound queued audits without erasing operation bindings or publishing a proof', async () => {
       const f = await population(1);
@@ -1395,11 +1588,17 @@ describe('iCloud exact identity adoption', () => {
       const after = await members(cohort.id);
       expect(after[0].outcome).toBe('unavailable');
       expect(after[0].auditRequestId).toBe(before[0].auditRequestId);
-      const { rows: [audit] } = await sql`SELECT * FROM immich_fork.icloud_identity_audit
+      const {
+        rows: [audit],
+      } = await sql`SELECT * FROM immich_fork.icloud_identity_audit
         WHERE id=${after[0].auditRequestId}::uuid`.execute(db);
       expect(audit).toMatchObject({ result: 'stale', verifiedAt: null, operationId: operation.id });
-      expect((await sql`SELECT "lastVerifiedAt" FROM immich_fork.icloud_source_identity
-        WHERE id=${f.identityId}::uuid`.execute(db)).rows).toEqual([{ lastVerifiedAt: null }]);
+      expect(
+        (
+          await sql`SELECT "lastVerifiedAt" FROM immich_fork.icloud_source_identity
+        WHERE id=${f.identityId}::uuid`.execute(db)
+        ).rows,
+      ).toEqual([{ lastVerifiedAt: null }]);
       expect(await weekly().createNextBatch(cohort.id, operations())).toBeNull();
     });
 
@@ -1412,7 +1611,9 @@ describe('iCloud exact identity adoption', () => {
       await weekly().setAuthority(auth, f.connection.id, { ...input, requestKey: randomUUID() });
       expect(await weekly().createNextBatch(cohort.id, operations())).toBeNull();
       const after = await members(cohort.id);
-      expect(after.map(({ outcome, ...member }) => member)).toEqual(before.map(({ outcome, ...member }) => member));
+      expect(after.map(({ outcome: _outcome, ...member }) => member)).toEqual(
+        before.map(({ outcome: _outcome, ...member }) => member),
+      );
       expect(after).toMatchObject([{ outcome: 'unavailable', auditRequestId: null }]);
       const current = await weekly().freezeCohort(f.user.id, f.connection.id);
       expect(current.seed).toEqual(cohort.seed);
@@ -1422,5 +1623,4 @@ describe('iCloud exact identity adoption', () => {
       expect(current.status).toBe('settled');
     });
   });
-
 });
