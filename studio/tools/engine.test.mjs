@@ -7,7 +7,7 @@ import test from 'node:test';
 import { admitAdaptedSource, inventory, licenses, sourceRecoveryContext, verifySnapshot } from './engine.mjs';
 import { assertPinnedSource } from '../../scripts/frameleaf-studio-contracts.mjs';
 import { writeResourcePolicy } from './resource-policy.mjs';
-import { approvalRowDigest } from '../../scripts/frameleaf-studio-rights.mjs';
+import { approvalRowDigest, ownerApproval } from '../../scripts/frameleaf-studio-rights.mjs';
 
 test('engine source pin rejects a changed archive without local planning files', async () => {
   const provenance = JSON.parse(await readFile(new URL('../freecut-provenance.json', import.meta.url), 'utf8'));
@@ -320,10 +320,35 @@ test('file byte admission uses actual generated owner-bound policy; synthetic ap
     }
     const missing = row(); missing.files[0].sha256 = null;
     await assert.rejects((await prepare([missing])).verifyResourceBytes(`${base}/weights.bin`, bytes), /FRAMELEAF_RESOURCE_BLOCKED/);
-    // Current real Whisper row and rights authority remain unchanged: no approved file bytes.
-    const productionManifest = JSON.parse(await readFile(new URL('../dependency-attribution.json', import.meta.url), 'utf8'));
-    assert.deepEqual(productionManifest.resources.find(({ id }) => id === 'model:onnx-community/whisper-tiny_timestamped').files, []);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('current Whisper file inventory is exact and bound to the renewed owner approval', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../dependency-attribution.json', import.meta.url), 'utf8'));
+  const record = JSON.parse(await readFile(new URL('../rights-approval.json', import.meta.url), 'utf8'));
+  const inventory = JSON.parse(await readFile(new URL('../qualification-evidence/whisper-37164769288-candidates.json', import.meta.url), 'utf8'));
+  const id = 'model:onnx-community/whisper-tiny_timestamped';
+  const resource = manifest.resources.find((row) => row.id === id);
+  const entry = record.resources.find((row) => row.id === id);
+  assert.equal(resource.locator, inventory.locator);
+  assert.equal(resource.revision, '517244293732ee2d58139af5814231b7e6830a0d');
+  assert.deepEqual(resource.files.map(({ path }) => path), [
+    'config.json', 'tokenizer_config.json', 'preprocessor_config.json', 'generation_config.json',
+    'tokenizer.json', 'onnx/encoder_model.onnx', 'onnx/decoder_model_merged_q4.onnx',
+  ]);
+  assert.deepEqual(resource.files, inventory.candidates.map(({ path, observedSha256 }) => ({ path, sha256: observedSha256 })));
+  assert.equal(entry.sha256, approvalRowDigest(resource));
+  assert.equal(entry.sha256, '80e61764717ea2f274fa12ab2e9a9b0bb4fc0e8cb1f41ba9a32ef67279cfc3f5');
+  assert.equal(entry.approvedOn, '2026-10-03');
+  assert.match(entry.source, /Approve this exact seven-file inventory/);
+  assert.match(entry.source, /37164769288/);
+  const approval = ownerApproval(record, manifest);
+  assert.equal(approval.approved.get(id), true);
+  assert(approval.uses.includes('localRuntime'));
+  assert(!Object.hasOwn(approval.excluded.get(id) ?? {}, 'localRuntime'));
+  const changed = structuredClone(manifest);
+  changed.resources.find((row) => row.id === id).files[0].sha256 = '0'.repeat(64);
+  assert.equal(ownerApproval(record, changed).approved.get(id), false);
 });
 
 test('retained Whisper payload candidates match genuine diagnostic provenance and remain unsigned/unapproved', async () => {
