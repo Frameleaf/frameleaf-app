@@ -3756,7 +3756,20 @@ describe('iCloud exact identity adoption', () => {
               void publishing.catch(() => {});
               let cleanup: Promise<void> | undefined;
               try {
-                await entered.promise;
+                // The shortened lease can expire during authenticated reads or
+                // guarded SQL before current() reaches stat. Never strand this
+                // entry barrier when actual publication has already settled.
+                await Promise.race([
+                  entered.promise,
+                  publishing.then(
+                    () => {
+                      throw new Error('publication_settled_before_readonly_guard');
+                    },
+                    (cause: unknown) => {
+                      throw new Error('publication_rejected_before_readonly_guard', { cause });
+                    },
+                  ),
+                ]);
                 let revoked: Promise<unknown> | undefined;
                 if (kind === 'revoke') {
                   revoked = weekly().setAuthority(fixture.auth, fixture.f.connection.id, {
