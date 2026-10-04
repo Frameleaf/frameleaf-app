@@ -22,6 +22,10 @@ An expired lease immediately prevents the old attempt from publishing. Automatic
 
 ### Execution deadlines
 
+Each microservices worker admits up to eight jobs across all queues, derived from its ten-session execution database pool with two sessions of headroom. A queue's configured concurrency remains an upper limit; the shared worker limit may make its effective concurrency lower. The worker logs this capacity at startup and visits queues in rotation when capacity becomes available. Excess work remains queued and visible in run accounting without starting an attempt or spending a processing retry. The coordinator's heartbeat and cancellation queries use an independent pool.
+
+Database publication is serialized locally before acquiring a connection. Waiting for local capacity does not count as processing progress. If a claimed job cannot enter the bounded local admission queue, it is deferred as `local-capacity` before its handler runs; cancellation removes queued admission immediately. Work cancelled after its claim fence is no longer valid stays under lease recovery, with stopped-attempt evidence retained.
+
 The coordinator runs separately from media handlers. Claims last 60 seconds and renew every 15 seconds; reconciliation scans every 5 seconds and recovery sweeps every 30 seconds. Executor heartbeats prove responsiveness but do not count as media progress. Actual advancing bytes, frames or committed checkpoints extend the progress deadline. Repeated status messages do not.
 
 | Environment setting | Default | Accepted milliseconds |

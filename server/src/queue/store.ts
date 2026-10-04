@@ -221,7 +221,8 @@ export class SqlQueueStore {
     return feedManifest(this.db, queue, (intents, tx) => this.enqueue(intents, tx));
   }
 
-  async claim(queue: string, workerId: string): Promise<QueueClaim[]> {
+  async claim(queue: string, workerId: string, maxClaims = QUEUE_BATCH): Promise<QueueClaim[]> {
+    if (!Number.isSafeInteger(maxClaims) || maxClaims <= 0) return [];
     return this.db.transaction().execute(async (tx) => {
       const {
         rows: [config],
@@ -249,7 +250,7 @@ export class SqlQueueStore {
         )`.execute(tx);
         }
       }
-      const capacity = Math.min(QUEUE_BATCH, config.concurrency - counts.active);
+      const capacity = Math.min(QUEUE_BATCH, maxClaims, config.concurrency - counts.active);
       if (capacity <= 0) {
         return [];
       }

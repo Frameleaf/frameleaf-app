@@ -51,7 +51,7 @@ import {
 } from 'src/repositories/search.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
-import { boundExecutionReservations } from 'src/utils/execution-database.js';
+import { DATABASE_POOL_SIZE, boundExecutionReservations } from 'src/utils/execution-database.js';
 import {
   isDefaultVisible,
   isLocked,
@@ -91,6 +91,7 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams): KyselyCon
         boundExecutionReservations(
           createPostgres({
             connection,
+            maxConnections: DATABASE_POOL_SIZE,
             onNotice: (notice: Notice) => {
               if (notice['severity'] !== 'NOTICE') {
                 console.warn('Postgres notice:', notice);
