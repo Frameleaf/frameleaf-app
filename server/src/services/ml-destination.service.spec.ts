@@ -556,9 +556,7 @@ describe(MlDestinationService.name, () => {
 
     it('propagates a local consent conflict before contacting Frameleaf Cloud (FL-159)', async () => {
       linkCloud();
-      mocks.frameleafConsent.revoke.mockRejectedValue(
-        new ConflictException('Local consent update conflict'),
-      );
+      mocks.frameleafConsent.revoke.mockRejectedValue(new ConflictException('Local consent update conflict'));
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
       await expect(sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id)).rejects.toBeInstanceOf(
         ConflictException,

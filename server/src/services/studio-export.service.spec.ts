@@ -19,6 +19,7 @@ import { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import {
   StudioExportPublished,
   StudioExportRefusal,
+  StudioExportRepository,
   StudioExportVersion,
   StudioExportVersionSource,
 } from 'src/repositories/studio-export.repository.js';
@@ -224,7 +225,9 @@ const renderedOutput = (overrides: { video?: Record<string, unknown>; audio?: Re
 
 describe(StudioExportService.name, () => {
   let sut: StudioExportService;
-  let repository: Record<string, ReturnType<typeof vi.fn>>;
+  let repository: Record<string, ReturnType<typeof vi.fn>> & {
+    publish: ReturnType<typeof vi.fn<StudioExportRepository['publish']>>;
+  };
   let operations: Record<string, ReturnType<typeof vi.fn>>;
   let projects: Record<string, ReturnType<typeof vi.fn>>;
   let studio: Record<string, ReturnType<typeof vi.fn>>;
@@ -942,7 +945,7 @@ describe(StudioExportService.name, () => {
     it('admits the render-finished notification inside the publication transaction', async () => {
       const tx = { isTransaction: true };
       repository.publish.mockImplementation((_input, _metadata, notification) =>
-        Promise.try(() => notification(tx, published().version, 'Lake trip')).then(() => published()),
+        Promise.try(() => notification!(tx as never, published().version, 'Lake trip')).then(() => published()),
       );
       await sut.run(job());
       expect(jobs.queueInTransaction).toHaveBeenCalledWith(tx, {
@@ -1029,7 +1032,7 @@ describe(StudioExportService.name, () => {
 
     it('verifies the file, moves it into the library and publishes it with the sources re-checked', async () => {
       repository.publish.mockImplementation((_input, metadata) =>
-        Promise.try(() => metadata({ isTransaction: true }, 'asset-new')).then(() => published()),
+        Promise.try(() => metadata!({ isTransaction: true } as never, 'asset-new')).then(() => published()),
       );
 
       await sut.run(job());

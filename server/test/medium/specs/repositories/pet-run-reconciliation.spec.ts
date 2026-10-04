@@ -44,7 +44,7 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     pets.startRun(ownerId, 'local', (tx, runId) =>
       jobs.queueInTransaction(tx, { name: JobName.PetRecognitionQueueAll, data: { userId: ownerId } }, runId),
     );
-  const inClaim = <T>(claim: QueueClaim, action: () => Promise<T>) =>
+  const inClaim = <T,>(claim: QueueClaim, action: () => Promise<T>) =>
     queueExecution.run(
       {
         claim,
@@ -98,9 +98,7 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     await inClaim(first, async () => {
       expect(await jobs.ensureProducerRun()).toBe(run.id);
       await expect(
-        jobs.prepareCheckpoint('pet-runs', async () => {
-          throw new Error('checkpoint setup interrupted');
-        }),
+        jobs.prepareCheckpoint('pet-runs', () => Promise.reject(new Error('checkpoint setup interrupted'))),
       ).rejects.toThrow('checkpoint setup interrupted');
     });
     await fail(first);
@@ -146,9 +144,9 @@ describe('pet run reconciliation with canonical queue outcomes', () => {
     const second = await retry(first);
     await inClaim(second, async () => {
       expect(await jobs.ensureProducerRun()).toBe(first.runId);
-      const resumed = await jobs.prepareCheckpoint('pet-runs', async () => {
-        throw new Error('must not repeat committed domain setup');
-      });
+      const resumed = await jobs.prepareCheckpoint('pet-runs', () =>
+        Promise.reject(new Error('must not repeat committed domain setup')),
+      );
       expect(resumed).toEqual(JSON.parse(JSON.stringify(prepared)));
     });
     await fail(second);
