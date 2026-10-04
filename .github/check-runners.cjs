@@ -66,6 +66,25 @@ for (const [file, workflow] of Object.entries(workflows)) {
           job.strategy.matrix.include,
           "${{ fromJSON(needs.matrix.outputs.matrix) }}",
         );
+      else if (file === "cli.yml" && id === "build")
+        assert.deepEqual(
+          job.strategy?.matrix,
+          {
+            include: [
+              {
+                runner: "ubuntu-24.04",
+                architecture: "amd64",
+                "node-architecture": "x64",
+              },
+              {
+                runner: "ubuntu-24.04-arm",
+                architecture: "arm64",
+                "node-architecture": "arm64",
+              },
+            ],
+          },
+          `${label}: uncontrolled native CLI runner matrix`,
+        );
       else {
         const runners = job.strategy?.matrix?.runner;
         assert(

@@ -3,7 +3,7 @@ const test = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const { build } = require('./build.cjs');
 const {
   createBundle,
@@ -381,12 +381,218 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     assert.equal(fs.readFileSync(path.join(state, 'frameleaf.env'), 'utf8'), configured);
     fs.mkdirSync(staging);
     execFileSync('tar', ['-xzf', path.join(unpack, 'package.tgz'), '-C', staging]);
-    execFileSync('sh', [path.join(unpack, 'scripts/preinst')], { env: { ...env, SYNOPKG_PKG_STATUS: 'UPGRADE' } });
+    fs.writeFileSync(path.join(databasePath, 'PG_VERSION'), '19\n');
+    execFileSync('sh', [localScript], { env: { ...installEnv, SYNOPKG_PKG_STATUS: 'UPGRADE' } });
     assert.equal(fs.readFileSync(path.join(staging, 'project/.env'), 'utf8'), configured);
     assert.equal(fs.readFileSync(path.join(target, 'project/.env'), 'utf8'), configured);
+    // Hosted Compose rendering complements the shell-only retained-admission controls below.
+    const retainedConfig = path.join(state, 'frameleaf.env');
+    const stagedConfig = path.join(staging, 'project/.env');
+    const quoted =
+      '# Retained fixture with literal quotes and CRLF\r\n' +
+      configured
+        .trimEnd()
+        .split('\n')
+        .map((line, index) => {
+          const equal = line.indexOf('=');
+          const quote = index % 2 ? '"' : "'";
+          return `export ${line.slice(0, equal)} = ${quote}${line.slice(equal + 1)}${quote} # literal fixture`;
+        })
+        .join('\r\n') +
+      '\r\n';
+    const quotedBytes = Buffer.from(quoted);
+    fs.writeFileSync(retainedConfig, quotedBytes);
+    fs.unlinkSync(stagedConfig);
+    try {
+      execFileSync('sh', [localScript], { env: { ...installEnv, SYNOPKG_PKG_STATUS: 'UPGRADE' }, stdio: 'pipe' });
+      const rendered = JSON.parse(
+        execFileSync(
+          'docker',
+          [
+            'compose',
+            '--env-file',
+            stagedConfig,
+            '-f',
+            path.join(target, 'project/compose.yaml'),
+            'config',
+            '--format',
+            'json',
+          ],
+          { env, stdio: 'pipe' },
+        ).toString(),
+      );
+      assert.deepEqual(
+        {
+          retainedUnchanged: fs.readFileSync(retainedConfig).equals(quotedBytes),
+          stagedUnchanged: fs.readFileSync(stagedConfig).equals(quotedBytes),
+          installedUnchanged: fs.readFileSync(path.join(target, 'project/.env'), 'utf8') === configured,
+          portMatches: rendered.services.server.ports[0].published === '3456',
+          mlMatches: rendered.services.server.environment.FRAMELEAF_MACHINE_LEARNING_ENABLED === 'false',
+          passwordMatches: rendered.services.server.environment.DB_PASSWORD === env.wizard_database_password,
+        },
+        {
+          retainedUnchanged: true,
+          stagedUnchanged: true,
+          installedUnchanged: true,
+          portMatches: true,
+          mlMatches: true,
+          passwordMatches: true,
+        },
+      );
+    } finally {
+      fs.writeFileSync(retainedConfig, configured);
+      fs.writeFileSync(stagedConfig, configured, { mode: 0o600 });
+    }
     assert.throws(() =>
       execFileSync('sh', [localScript], { env: { ...installEnv, wizard_web_port: '1' }, stdio: 'pipe' }),
     );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Synology retained settings admission preserves bytes and refuses invalid upgrade staging', async (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'frameleaf-synology-retained-')));
+  const volume = path.join(root, 'volume1');
+  const media = path.join(volume, 'library');
+  const database = path.join(volume, 'postgres');
+  const state = path.join(root, 'state');
+  const staging = path.join(root, 'staging/project');
+  const installed = path.join(root, 'installed/project');
+  const retained = path.join(state, 'frameleaf.env');
+  const staged = path.join(staging, '.env');
+  const localScript = path.join(root, 'preinst');
+  const commandSentinel = path.join(root, 'retained-command-executed');
+  try {
+    for (const directory of [
+      media,
+      database,
+      state,
+      staging,
+      installed,
+      path.join(media, 'postgres'),
+      path.join(database, 'media'),
+    ]) {
+      fs.mkdirSync(directory, { recursive: true });
+    }
+    const preinst = fs.readFileSync(path.join(__dirname, 'synology/scripts/preinst'), 'utf8');
+    // Adapt only the DSM /volumeN prefix to a disposable local fixture; platform admission remains unqualified.
+    const adapted = preinst.replace('/volume[0-9]/*', `${root}/volume[0-9]/*`);
+    assert.notEqual(adapted, preinst);
+    fs.writeFileSync(localScript, adapted);
+    fs.writeFileSync(path.join(staging, 'compose.yaml'), 'services: {}\n');
+    fs.symlinkSync(media, path.join(volume, 'media-link'));
+    const configured = [
+      `UPLOAD_LOCATION=${media}`,
+      `DB_DATA_LOCATION=${database}`,
+      'DB_PASSWORD=FixtureOnly123456',
+      'WEB_PORT=3456',
+      'COMPOSE_PROFILES=',
+      'ENABLE_ML=false',
+      '',
+    ].join('\n');
+    const installedConfig = path.join(installed, '.env');
+    fs.writeFileSync(installedConfig, configured);
+    const sentinelBytes = Buffer.from([0, 255, 7, 19, 83]);
+    const mediaSentinel = path.join(media, 'retained-media.bin');
+    const databaseSentinel = path.join(database, 'retained-database.bin');
+    fs.writeFileSync(mediaSentinel, sentinelBytes);
+    fs.writeFileSync(databaseSentinel, sentinelBytes);
+    fs.writeFileSync(path.join(database, 'PG_VERSION'), '19\n');
+    const env = {
+      ...process.env,
+      SYNOPKG_PKGINST_TEMP_DIR: path.dirname(staging),
+      SYNOPKG_PKGVAR: state,
+      SYNOPKG_PKG_STATUS: 'UPGRADE',
+    };
+    const unchanged = (bytes) => ({
+      retained: fs.readFileSync(retained).equals(bytes),
+      installed: fs.readFileSync(installedConfig, 'utf8') === configured,
+      media: fs.readFileSync(mediaSentinel).equals(sentinelBytes),
+      database: fs.readFileSync(databaseSentinel).equals(sentinelBytes),
+      version: fs.readFileSync(path.join(database, 'PG_VERSION'), 'utf8') === '19\n',
+      commandExecuted: fs.existsSync(commandSentinel),
+    });
+    const expectedUnchanged = {
+      retained: true,
+      installed: true,
+      media: true,
+      database: true,
+      version: true,
+      commandExecuted: false,
+    };
+    const quoted =
+      '# Literal retained values\r\n' +
+      configured
+        .trimEnd()
+        .split('\n')
+        .map((line, index) => {
+          const equal = line.indexOf('=');
+          const quote = index % 2 ? '"' : "'";
+          return `export ${line.slice(0, equal)} = ${quote}${line.slice(equal + 1)}${quote} # fixture`;
+        })
+        .join('\r\n') +
+      '\r\n';
+    for (const [name, value] of [
+      ['plain', configured],
+      ['literal quoted CRLF', quoted],
+    ]) {
+      await t.test(`accepts ${name} retained settings`, () => {
+        const bytes = Buffer.from(value);
+        fs.writeFileSync(retained, bytes);
+        fs.rmSync(staged, { force: true });
+        const result = spawnSync('sh', [localScript], { env, stdio: 'pipe' });
+        assert.ifError(result.error);
+        assert.equal(result.status, 0);
+        assert(fs.readFileSync(staged).equals(bytes));
+        assert.equal(fs.statSync(staged).mode & 0o777, 0o600);
+        assert.deepEqual(unchanged(bytes), expectedUnchanged);
+      });
+    }
+    for (const [name, changes, alter] of [
+      ['port below allowed range', { WEB_PORT: '1' }],
+      ['port above allowed range', { WEB_PORT: '65536' }],
+      ['nonnumeric port', { WEB_PORT: 'not-a-port' }],
+      ['invalid ML boolean', { ENABLE_ML: 'perhaps' }],
+      ['media traversal', { UPLOAD_LOCATION: `${media}/../library` }],
+      ['database path containing spaces', { DB_DATA_LOCATION: `${volume}/unsafe database` }],
+      ['symlinked media path', { UPLOAD_LOCATION: path.join(volume, 'media-link') }],
+      ['equal media and database paths', { DB_DATA_LOCATION: media }],
+      ['database nested in media', { DB_DATA_LOCATION: path.join(media, 'postgres') }],
+      ['media nested in database', { UPLOAD_LOCATION: path.join(database, 'media') }],
+      ['duplicate port assignment', { WEB_PORT: '3456\nWEB_PORT=4567' }],
+      ['unterminated quoted value', { WEB_PORT: '"3456' }],
+      ['password outside installer grammar', { DB_PASSWORD: 'Fixture!Only123456' }],
+      ['missing required port', {}, (value) => value.replace(/^WEB_PORT=.*\n/m, '')],
+      ['command substitution in media path', { UPLOAD_LOCATION: `$(touch ${commandSentinel})` }],
+      ['inconsistent ML profile', { COMPOSE_PROFILES: 'ml' }],
+    ]) {
+      await t.test(`refuses retained ${name} before staging`, () => {
+        let invalid = alter ? alter(configured) : configured;
+        for (const [key, value] of Object.entries(changes)) {
+          const original = invalid;
+          invalid = invalid.replace(new RegExp(`^${key}=.*$`, 'm'), `${key}=${value}`);
+          assert.notEqual(invalid, original, 'Fixture must change a declared retained field');
+        }
+        assert.notEqual(invalid, configured, 'Fixture must change retained configuration');
+        const bytes = Buffer.from(invalid);
+        fs.writeFileSync(retained, bytes);
+        fs.rmSync(staged, { force: true });
+        fs.rmSync(`${staged}.tmp`, { force: true });
+        const result = spawnSync('sh', [localScript], { env, stdio: 'pipe' });
+        assert.ifError(result.error);
+        // Only outcome flags are reported; retained configuration and passwords never enter diagnostics.
+        assert.deepEqual(
+          {
+            refused: result.status !== null && result.status !== 0 && result.signal === null,
+            staged: fs.existsSync(staged),
+            stagedTemporary: fs.existsSync(`${staged}.tmp`),
+            ...unchanged(bytes),
+          },
+          { refused: true, staged: false, stagedTemporary: false, ...expectedUnchanged },
+        );
+      });
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
