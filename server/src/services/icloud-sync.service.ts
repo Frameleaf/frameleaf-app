@@ -631,6 +631,7 @@ export class ICloudSyncService {
    * device approval, a password) fails the run with that reason; the connection has told its owner.
    */
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
+    if (await this.audits.isAuditOperation(operation)) { await this.audits.run(operation, claimToken); return; }
     if (
       operation.snapshot.task === 'identity-audit' &&
       !hasWeeklyAuthorityInput(operation.snapshot) &&

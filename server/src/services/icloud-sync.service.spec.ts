@@ -167,7 +167,7 @@ describe(ICloudSyncService.name, () => {
       operations as never,
       logger as never,
       identities as never,
-      { housekeeping: vi.fn(), run: vi.fn() } as never,
+      { housekeeping: vi.fn(), run: vi.fn(), isAuditOperation: vi.fn() } as never,
       adoption as never,
       {
         status: vi.fn().mockResolvedValue({
