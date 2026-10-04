@@ -624,7 +624,7 @@ export const getKyselyDB = async (suffix?: string, log?: KyselyConfig['log']): P
 
   return new Kysely<DB>({
     ...getKyselyConfig({ connectionType: 'url', url: withDatabase(testUrl, dbName) }),
-    ...(log === undefined ? {} : { log }),
+    ...(log !== undefined && { log }),
   });
 };
 
