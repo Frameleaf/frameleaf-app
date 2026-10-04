@@ -50,7 +50,14 @@ import {
   VideoCodec,
   VideoContainer,
 } from 'src/enum.js';
-import { attemptOutputPath, deferJobAdoption, publishJobResult, queueExecution } from 'src/queue/context.js';
+import {
+  attemptOutputPath,
+  deferJobAdoption,
+  jobSignal,
+  publishJobDiagnostic,
+  publishJobResult,
+  queueExecution,
+} from 'src/queue/context.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -1249,6 +1256,7 @@ export class MediaService extends BaseService {
   }
 
   private async renderVideoEdit(id: string, versionId: string | undefined, run?: EditOperationRun): Promise<JobStatus> {
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForVideoConversion(id);
     if (!asset) {
       return JobStatus.Failed;
@@ -1270,7 +1278,7 @@ export class MediaService extends BaseService {
     };
     const config = await this.getConfig({ withCache: true });
 
-    // FL-39: with fork writes enabled every save, revert and export is a retained version. The
+    // Every save, revert and export is a retained version. The
     // job renders the requested (or the named export) version into its own master and proxy, and
     // publication decides — transactionally — whether it is still the one to show.
     let version: VideoEditVersion | undefined;
@@ -1294,6 +1302,16 @@ export class MediaService extends BaseService {
 
     const edits = (await this.assetEditRepository.getAll(id)) as AssetEditActionItem[];
     const editedFiles = this.toExistingAssetFiles(asset.files.filter((file) => file.isEdited));
+    deferJobAdoption(async () => {
+      await assertPublicationSource(asset.id, asset.checksum);
+      const current = await this.assetEditRepository.getAll(id);
+      if (
+        JSON.stringify(current) !== JSON.stringify(edits) ||
+        (await this.assetEditRepository.getRequestedVideoVersion(id))
+      ) {
+        throw new Error('Video edit changed before publication');
+      }
+    });
 
     if (edits.length === 0) {
       if (run && !(await run.validate())) {
@@ -1305,16 +1323,20 @@ export class MediaService extends BaseService {
         this.toExistingAssetFiles(asset.files.filter((file) => !file.isEdited && this.isVideoThumbnailFile(file.type))),
         generated.files,
       );
-      await this.assetRepository.update({
-        id: asset.id,
-        thumbhash: generated.thumbhash,
-        duration: Math.round(format.duration * 1000),
-        ...generated.fullsizeDimensions,
-      });
+      await publishJobResult(() =>
+        this.assetRepository
+          .update({
+            id: asset.id,
+            thumbhash: generated.thumbhash,
+            duration: Math.round(format.duration * 1000),
+            ...generated.fullsizeDimensions,
+          })
+          .then(() => undefined),
+      );
       return JobStatus.Success;
     }
 
-    const output = this.getEditedEncodedVideoPath(thumbnailAsset);
+    const output = attemptOutputPath(this.getEditedEncodedVideoPath(thumbnailAsset));
 
     // FL-39: an edit never overwrites the original, and a new master is always rendered from the
     // original plus its recipe — never from a playback proxy or from an earlier, already lossy,
@@ -1374,14 +1396,14 @@ export class MediaService extends BaseService {
       decode: qualifySourceDecode(videoStream, config.ffmpeg),
     });
 
-    await this.assetRepository.upsertFile({
+    const encodedFile: UpsertFileOptions = {
       assetId: asset.id,
       type: AssetFileType.EncodedVideo,
       path: output,
       isEdited: true,
       isProgressive: false,
       isTransparent: false,
-    });
+    };
 
     const fullsizeDimensions = this.getVideoEditDimensions(edits, videoStream);
     const generated = await this.generateVideoThumbnails(thumbnailAsset, config, {
@@ -1389,17 +1411,19 @@ export class MediaService extends BaseService {
       isEdited: true,
       fullsizeDimensions,
     });
-    await this.syncFiles(
-      editedFiles.filter((file) => file.type !== AssetFileType.EncodedVideo),
-      generated.files,
-    );
+    await this.syncFiles(editedFiles, [encodedFile, ...generated.files]);
 
-    await this.assetRepository.update({
-      id: asset.id,
-      thumbhash: generated.thumbhash,
-      duration: await this.getRenderedVideoDurationMs(edits, { videoStream, audioStream, format }, output),
-      ...fullsizeDimensions,
-    });
+    const duration = await this.getRenderedVideoDurationMs(edits, { videoStream, audioStream, format }, output);
+    await publishJobResult(() =>
+      this.assetRepository
+        .update({
+          id: asset.id,
+          thumbhash: generated.thumbhash,
+          duration,
+          ...fullsizeDimensions,
+        })
+        .then(() => undefined),
+    );
 
     return JobStatus.Success;
   }
@@ -1481,6 +1505,7 @@ export class MediaService extends BaseService {
       await this.mediaRepository.transcode(input, output, plan.command);
       return true;
     } catch (error: any) {
+      jobSignal()?.throwIfAborted();
       const message = error?.message ?? error;
       this.logger.error(`Error occurred during video edit generation: ${message}`);
 
@@ -1528,8 +1553,8 @@ export class MediaService extends BaseService {
     // is current stays current.
     const mayPublish = async () => !run || (await run.validate());
     const { dir, name } = path.parse(this.getEditedEncodedVideoPath(asset));
-    const master = path.join(dir, `${name}.${suffix}.master.mp4`);
-    const proxy = path.join(dir, `${name}.${suffix}.proxy.mp4`);
+    const master = attemptOutputPath(path.join(dir, `${name}.${suffix}.master.mp4`));
+    const proxy = attemptOutputPath(path.join(dir, `${name}.${suffix}.proxy.mp4`));
     const candidates: string[] = [];
     let published = false;
     try {
@@ -1687,8 +1712,9 @@ export class MediaService extends BaseService {
       });
       return published ? JobStatus.Success : JobStatus.Skipped;
     } catch (error: any) {
+      jobSignal()?.throwIfAborted();
       this.logger.error(`Video version ${version.id} render failed for asset ${asset.id}: ${error?.message ?? error}`);
-      await this.assetEditRepository.failVideoVersion(version.assetId, version.id);
+      await publishJobDiagnostic(() => this.assetEditRepository.failVideoVersion(version.assetId, version.id));
       run?.noteError(error);
       return JobStatus.Failed;
     } finally {
@@ -1706,6 +1732,19 @@ export class MediaService extends BaseService {
     version: VideoEditVersion,
     result: Parameters<AssetEditRepository['publishVideoVersion']>[1],
   ): Promise<boolean> {
+    if (
+      deferJobAdoption(async () => {
+        const { published, releasedPaths } = await this.assetEditRepository.publishVideoVersion(version, result);
+        if (!published) throw new Error('Video version changed before publication');
+        if (releasedPaths.length > 0) {
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: releasedPaths } });
+        }
+      })
+    ) {
+      // Keep private candidates until the enclosing queue and operation claims accept them.
+      // A rejected transaction leaves no canonical references and cannot delete prior output.
+      return true;
+    }
     const { published, releasedPaths } = await this.assetEditRepository.publishVideoVersion(version, result);
     if (releasedPaths.length > 0) {
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: releasedPaths } });
@@ -1725,6 +1764,7 @@ export class MediaService extends BaseService {
     try {
       await this.mediaRepository.transcode(input, output, command);
     } catch (error: any) {
+      jobSignal()?.throwIfAborted();
       if (proxyConfig.accel === TranscodeHardwareAcceleration.Disabled) {
         throw error;
       }
@@ -2669,9 +2709,11 @@ export class MediaService extends BaseService {
 
   private async syncFiles(oldFiles: ExistingAssetFile[], newFiles: UpsertFileOptions[]) {
     if (
-      [JobName.AssetGenerateThumbnails, JobName.AssetEditThumbnailGeneration].includes(
-        queueExecution.getStore()?.claim.name as JobName,
-      )
+      [
+        JobName.AssetGenerateThumbnails,
+        JobName.AssetEditThumbnailGeneration,
+        JobName.AssetVideoEditGeneration,
+      ].includes(queueExecution.getStore()?.claim.name as JobName)
     ) {
       await this.stageGeneratedFiles(oldFiles, newFiles);
       return;
@@ -2922,9 +2964,11 @@ export class MediaService extends BaseService {
     options: ImagePathOptions & { isProgressive: boolean; isTransparent: boolean },
   ) {
     const originalPath = StorageCore.getImagePath(asset, options);
-    const path = [JobName.AssetGenerateThumbnails, JobName.AssetEditThumbnailGeneration].includes(
-      queueExecution.getStore()?.claim.name as JobName,
-    )
+    const path = [
+      JobName.AssetGenerateThumbnails,
+      JobName.AssetEditThumbnailGeneration,
+      JobName.AssetVideoEditGeneration,
+    ].includes(queueExecution.getStore()?.claim.name as JobName)
       ? attemptOutputPath(originalPath)
       : originalPath;
     return {
