@@ -16,17 +16,18 @@ export default defineConfig([
     ignores: ['eslint.config.mjs'],
   },
   {
+    files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       globals: {
         ...globals.node,
       },
 
       parser: typescriptEslint.parser,
-      ecmaVersion: 5,
+      ecmaVersion: 'latest',
       sourceType: 'module',
 
       parserOptions: {
-        project: 'tsconfig.json',
+        project: 'tsconfig.eslint.json',
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -109,6 +110,15 @@ export default defineConfig([
         },
       ],
     },
+  },
+  {
+    files: ['**/*.mjs'],
+    languageOptions: { globals: globals.node, ecmaVersion: 'latest', sourceType: 'module' },
+  },
+  {
+    // These Node runtime tests exercise the built entry point; dist is intentionally absent before build.
+    files: ['test/runtime/emails.test.mjs'],
+    rules: { 'import-x/no-unresolved': 'off' },
   },
   eslintPluginPrettierRecommended,
 ]);

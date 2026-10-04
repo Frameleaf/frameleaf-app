@@ -121,9 +121,9 @@ it('releases global session locks after cancellation, visible from a distinct re
   try {
     await db.connection().execute(async (observer) => {
       const attempt = queueExecution.run({ signal: abort.signal } as QueueExecution, () =>
-        repository.withLock(DatabaseLock.Migrations, async () => {
+        repository.withLock(DatabaseLock.Migrations, () => {
           abort.abort(new Error('Attempt stopped'));
-          abort.signal.throwIfAborted();
+          return Promise.reject(abort.signal.reason);
         }),
       );
       await expect(attempt).rejects.toThrow('Attempt stopped');

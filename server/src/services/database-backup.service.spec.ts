@@ -11,6 +11,8 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
 import { ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
+import { queueExecution } from 'src/queue/context.js';
+import type { QueueExecution } from 'src/queue/types.js';
 import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
@@ -1137,6 +1139,28 @@ describe(DatabaseBackupService.name, () => {
       // The one read is the completed preflight. SQL did not reopen or consume the file.
       expect(mocks.storage.createPlainReadStream).toHaveBeenCalledTimes(1);
       expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
+    it.each(['candidate.sql', 'candidate.sql.gz'])('cancels a stalled inner read of %s', async (filename) => {
+      const started = Promise.withResolvers<void>();
+      const file = new Readable({
+        read() {
+          started.resolve();
+        },
+      });
+      mocks.storage.createPlainReadStream.mockReturnValue(file);
+      mocks.storage.createGunzip.mockImplementation(() => createGunzip());
+      const abort = new AbortController();
+      const result = queueExecution.run({ signal: abort.signal } as QueueExecution, () =>
+        sut.restoreDatabaseBackup(filename),
+      );
+      const rejected = expect(result).rejects.toThrow('Cancelled stalled backup input');
+      await started.promise;
+      abort.abort(new Error('Cancelled stalled backup input'));
+      await rejected;
+      expect(file.destroyed).toBe(true);
+      expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalled();
+      expect(mocks.database.resetTransientExecutionState).not.toHaveBeenCalled();
     });
 
     it('fails before mutating the destination when a compressed dump is corrupt', async () => {

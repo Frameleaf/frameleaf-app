@@ -688,7 +688,11 @@ export class MediaRepository {
           })
           .on('end', () => {
             cleanup();
-            signal?.aborted ? reject(signal.reason) : resolve();
+            if (signal?.aborted) {
+              reject(signal.reason);
+            } else {
+              resolve();
+            }
           });
         signal?.addEventListener('abort', abort, { once: true });
         command.run();
