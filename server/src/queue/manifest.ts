@@ -1,5 +1,6 @@
 import { Kysely, SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import { JobName } from 'src/enum.js';
 import {
   QUEUE_BATCH,
   QUEUE_HIGH_WATER,
@@ -7,9 +8,18 @@ import {
   QueueClaim,
   QueueExecution,
   QueueIntent,
+  QueueOptions,
 } from 'src/queue/types.js';
 
 type Executor = Kysely<any> | Transaction<any>;
+
+/** Resolve selected-asset identity after the frozen row has supplied its ID. */
+export function getManifestJobOptions(name: string, data: Record<string, unknown>): QueueOptions | undefined {
+  if (name === JobName.SmartAlbumReevaluate) {
+    return { deduplication: { id: `${name}:${data.id}:${data.kind ?? 'all'}` } };
+  }
+  return undefined;
+}
 
 /** Caller holds the queue catalogue lock; this is the single producer-to-run attachment protocol. */
 export async function attachProducerRun(tx: Transaction<any>, claim: QueueClaim, submittedRunId?: string) {
@@ -137,7 +147,11 @@ export async function resumeSelections(tx: Executor, producerId: string) {
 }
 
 /** One coordinator visit admits at most 250 executions and releases its connection immediately. */
-export async function feedManifest(db: Kysely<any>, queue: string) {
+export async function feedManifest(
+  db: Kysely<any>,
+  queue: string,
+  enqueue: (intents: QueueIntent[], tx: Transaction<any>) => Promise<void>,
+) {
   return db.transaction().execute(async (tx) => {
     const {
       rows: [config],
@@ -154,22 +168,53 @@ export async function feedManifest(db: Kysely<any>, queue: string) {
       await sql`update job_queue set "manifestFilling" = false where name = ${queue}`.execute(tx);
       return 0;
     }
-    const { rows } = await sql<{ id: string }>`with selected as materialized (
+    const { rows } = await sql<{
+      runId: string;
+      itemKey: string;
+      rootItemKey: string | null;
+      stage: string;
+      queue: string;
+      selection: Record<string, unknown>;
+      selectionId: string;
+      safeToRetry: boolean;
+      sensitive: boolean;
+      deadlineMs: number;
+    }>`
       select i.*, s."safeToRetry", s.sensitive, s."deadlineMs" from job_run_item i
       join job_selection s on s.id = i."selectionId" and s."runId" = i."runId"
       where s.queue = ${queue} and s.state = 'ready' and i."jobId" is null and i.state = 'pending'
-      order by s."createdAt", s.id, i."itemKey" limit ${capacity} for update of i skip locked
-    ), added as (
-      insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", "runId", "itemKey", "rootItemKey")
-      select gen_random_uuid(), queue, stage, selection, "safeToRetry", sensitive, "deadlineMs", "runId", "itemKey", "rootItemKey"
-      from selected returning id, "runId", "itemKey", name
-    ) update job_run_item i set "jobId" = a.id from added a, selected chosen
-      where a."runId" = chosen."runId" and a."itemKey" = chosen."itemKey" and a.name = chosen.stage
-        and i."selectionId" = chosen."selectionId" and i."itemKey" = chosen."itemKey" and i.stage = chosen.stage
-      returning a.id`.execute(tx);
-    // Multiple run memberships share one execution slot.
-    const scheduled = new Set(rows.map(({ id }) => id)).size;
-    await sql`update job_queue set "manifestFilling" = ${scheduled === capacity && counts.count + scheduled < QUEUE_HIGH_WATER}
+      order by s."createdAt", s.id, i."itemKey" limit ${capacity} for update of i skip locked`.execute(tx);
+    await enqueue(
+      rows.map((row) => ({
+        queue: row.queue,
+        name: row.stage,
+        data: row.selection,
+        options: getManifestJobOptions(row.stage, row.selection),
+        safeToRetry: row.safeToRetry,
+        sensitive: row.sensitive,
+        deadlineMs: row.deadlineMs,
+        runId: row.runId,
+        itemKey: row.itemKey,
+        rootItemKey: row.rootItemKey,
+      })),
+      tx,
+    );
+    // Admission owns deduplication and links each source membership. Mirror that
+    // linkage to shared producer runs, including an already-active execution.
+    await sql`update job_run_item i set "jobId" = source."jobId", state = j.state
+      from job_run_item source join job j on j.id = source."jobId"
+      where (source."runId", source."itemKey", source.stage) in (
+        select * from unnest(${rows.map((row) => row.runId)}::uuid[], ${rows.map((row) => row.itemKey)}::text[], ${rows.map((row) => row.stage)}::text[])
+      ) and source.state != 'cancelled'
+        and i."selectionId" = source."selectionId" and i."itemKey" = source."itemKey" and i.stage = source.stage
+        and i.state != 'cancelled'`.execute(tx);
+    const {
+      rows: [after],
+    } = await sql<{ count: number }>`select count(*)::int count from job
+      where queue = ${queue} and state in ('pending','waiting','active')`.execute(tx);
+    // Deduplicated rows advance their manifests without consuming execution slots.
+    const scheduled = after.count - counts.count;
+    await sql`update job_queue set "manifestFilling" = ${rows.length === capacity && after.count < QUEUE_HIGH_WATER}
       where name = ${queue}`.execute(tx);
     return scheduled;
   });

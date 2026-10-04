@@ -687,6 +687,7 @@ export type JobItem =
       name: JobName.SmartAlbumReevaluateAll;
       data?: IBaseJob & { kind?: keyof SystemConfig['smartAlbums']['builtIn'] };
     }
+  | { name: JobName.SmartAlbumReevaluate; data: IEntityJob & { kind?: keyof SystemConfig['smartAlbums']['builtIn'] } }
 
   // Workflow
   | {
