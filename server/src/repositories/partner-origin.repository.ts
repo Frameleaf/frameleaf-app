@@ -84,7 +84,6 @@ const GENERATED_FILE_TYPES = [
 ];
 /** Copies form chains (A→B→C…); lineage walks stop here, far beyond any real chain, as a guard. */
 const MAX_LINEAGE_DEPTH = 64;
-const COPY_REFUSAL = 'Partner sharing is unavailable during database handoff';
 /**
  * Whether `sharedById` still shares with `sharedWithId`, holding the partner row FOR SHARE until the
  * caller's transaction ends: `PartnerService.remove` deletes that row before it stops following, so a copy
