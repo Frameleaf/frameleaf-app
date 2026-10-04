@@ -25,7 +25,7 @@ The Unraid Community Apps templates use community images of other software, not 
 
 :::
 
-Use the Compose files and images from a [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases). Keep an existing stack name, `.env`, database directory and media paths when updating. The container display names are `frameleaf_*`; the Compose service names remain compatible, and the old `IMMICH_*` variable names keep working as [deprecated aliases](/install/environment-variables#deprecated-names).
+Use the Compose files and images from a [Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases), with a fresh canonical PostgreSQL 19 database and data volume. A supported source library enters through the [one-time offline importer](/administration/import-immich.md), using independent verified media copies. When updating an existing canonical Frameleaf installation, retain its stack name, `.env`, database directory and media paths. Container display names are `frameleaf_*`; service identifiers and the [deprecated environment aliases](/install/environment-variables#deprecated-names) remain available.
 
 ## Installation Steps
 
@@ -35,7 +35,8 @@ Use the Compose files and images from a [Frameleaf release](https://github.com/F
 4. Click "**Compose File**" and then paste the entire contents of the [Frameleaf Docker Compose](https://github.com/Frameleaf/frameleaf-app/releases/latest/download/docker-compose.yml) file into the Unraid editor. Remove any text that may be in the text area by default. Note that Unraid v6.12.10 uses version 24.0.9 of the Docker Engine, which does not support healthcheck `start_interval` as defined in the `database` service of the Docker compose file (version 25 or higher is needed). This parameter defines an initial waiting period before starting health checks, to give the container time to start up. Commenting out the `start_interval` and `start_period` parameters will allow the containers to start up normally. The only downside to this is that the database container will not receive an initial health check until `interval` time has passed.
 
    <details >
-       <summary>Using an existing Postgres container? Click me! Otherwise proceed to step 5.</summary>
+       <summary>Using a separate PostgreSQL 19 server? Otherwise proceed to step 5.</summary>
+       <p>Follow the <a href="/administration/postgres-standalone">standalone PostgreSQL requirements</a>, including pgvector and a fresh dedicated Frameleaf database. A source application database or older PostgreSQL cluster cannot be reused as this destination.</p>
        <ul>
            <li>Comment out the whole <code>database</code> service, from the <code>database:</code> line to its <code>restart:</code> line</li>
            <li>Comment out the <code>- database</code> entry under <code>depends_on:</code> for <b>each service</b> that lists it. If <code>database</code> is the only entry, comment out the <code>depends_on:</code> line as well</li>
@@ -55,8 +56,8 @@ Use the Compose files and images from a [Frameleaf release](https://github.com/F
    - `DB_DATA_LOCATION`: Change this to use an Unraid share (preferably a cache pool, e.g. `/mnt/user/appdata/postgresql/data`). This uses the `appdata` share. Do also create the `postgresql` folder, by running `mkdir /mnt/user/{share_location}/postgresql/data`. If left at default it will try to use Unraid's `/boot/config/plugins/compose.manager/projects/[stack_name]/postgres` folder which it doesn't have permissions to, resulting in this container continuously restarting.
 
    <details >
-       <summary>Using an existing Postgres container? Click me! Otherwise proceed to step 8.</summary>
-       <p>Update the following database variables as relevant to your Postgres container:</p>
+       <summary>Using a separate PostgreSQL 19 server? Otherwise proceed to step 8.</summary>
+       <p>Update these variables to reach the dedicated canonical database configured under the <a href="/administration/postgres-standalone">standalone PostgreSQL requirements</a>:</p>
        <ul>
            <li><code>DB_HOSTNAME</code></li>
            <li><code>DB_USERNAME</code></li>

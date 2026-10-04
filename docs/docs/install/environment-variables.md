@@ -227,7 +227,7 @@ activate the removed OpenTelemetry SDK.
 
 ## Deprecated names
 
-Every `IMMICH_` variable in the table below still works as a deprecated alias of its `FRAMELEAF_` name, so an `.env` written for the upstream server keeps working unchanged after you switch the image.
+Every `IMMICH_` variable in the table below still works as a deprecated alias of its `FRAMELEAF_` name. Use the Frameleaf release's example configuration for a fresh installation and point it at the canonical PostgreSQL 19 destination. Alias support does not make a source database or data volume a Frameleaf installation; use the [one-time offline importer](/administration/import-immich.md) for supported source libraries.
 
 - If both names of a pair are set to different values, the server (and the machine learning service, and the CLI) refuses to start and names the pair.
 - At startup, a single warning lists the old names in use together with their new names.

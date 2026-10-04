@@ -193,6 +193,6 @@ migrated. Thumbnails, faces, smart search and places are rebuilt by the
 destination's own jobs.
 
 :::caution Recovery evidence
-The report proves what reached the destination for this run. It does not
-certify a server version or compatibility release; those gates are separate.
+The report proves what reached the destination for this run. Application,
+deployment and backup-recovery validation still require their own evidence.
 :::
