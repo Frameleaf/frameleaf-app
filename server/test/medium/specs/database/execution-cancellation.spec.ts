@@ -8,6 +8,7 @@ import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
 import { getKyselyDB } from 'test/utils.js';
+import { boundExecutionReservations, withDatabaseCleanup, DATABASE_MAX_WAITERS } from 'src/utils/execution-database.js';
 
 it('cancels underlying PostgreSQL work and rolls back before reusing its connection', async () => {
   const db = await getKyselyDB();
@@ -31,6 +32,85 @@ it('cancels underlying PostgreSQL work and rolls back before reusing its connect
   } finally {
     clearTimeout(timer);
     await db.destroy();
+  }
+}, 10_000);
+
+it('terminates a real PostgreSQL session when cleanup hangs, releasing its advisory lock before restart', async () => {
+  const connection = { connectionType: 'url' as const, url: process.env.IMMICH_TEST_POSTGRES_URL! };
+  const restarted = Promise.withResolvers<void>();
+  const restart = vi.fn(() => restarted.resolve());
+  const client = boundExecutionReservations(createPostgres({ maxConnections: 1, connection }), restart);
+  const observer = createPostgres({ maxConnections: 1, connection });
+  const key = Math.floor(Math.random() * 2_000_000_000);
+  try {
+    const reserved = await client.reserve();
+    const [{ pid }] = await reserved.unsafe<{ pid: number }[]>('SELECT pg_backend_pid() AS pid');
+    await reserved.unsafe('SELECT pg_advisory_lock(-333, $1)', [key]);
+    const before = await observer.unsafe<{ acquired: boolean }[]>('SELECT pg_try_advisory_lock(-333, $1) AS acquired', [
+      key,
+    ]);
+    expect(before[0].acquired).toBe(false);
+    await expect(
+      withDatabaseCleanup(async () => {
+        await reserved.unsafe('SELECT pg_sleep(20)');
+      }),
+    ).rejects.toThrow();
+    await restarted.promise;
+    reserved.release();
+    await expect(client.reserve()).rejects.toThrow('requires worker restart');
+    const [{ count }] = await observer.unsafe<{ count: number }[]>(
+      'SELECT count(*)::int AS count FROM pg_stat_activity WHERE pid = $1',
+      [pid],
+    );
+    expect(count).toBe(0);
+    const after = await observer.unsafe<{ acquired: boolean }[]>('SELECT pg_try_advisory_lock(-333, $1) AS acquired', [
+      key,
+    ]);
+    expect(after[0].acquired).toBe(true);
+    await observer.unsafe('SELECT pg_advisory_unlock(-333, $1)', [key]);
+    expect(restart).toHaveBeenCalledOnce();
+  } finally {
+    await client.end({ timeout: 0 });
+    await observer.end({ timeout: 0 });
+  }
+}, 10_000);
+
+it('bounds real exhausted-pool waiters and releases late grants without executing cancelled work', async () => {
+  const connection = { connectionType: 'url' as const, url: process.env.IMMICH_TEST_POSTGRES_URL! };
+  const client = boundExecutionReservations(createPostgres({ maxConnections: 1, connection }), vi.fn());
+  const controller = new AbortController();
+  try {
+    const held = await client.reserve();
+    const outcomes = queueExecution.run({ signal: controller.signal } as QueueExecution, () =>
+      Array.from({ length: DATABASE_MAX_WAITERS }, () =>
+        client.reserve().then(
+          (grant) => {
+            grant.release();
+            return 'unexpected grant';
+          },
+          (error: unknown) => (error instanceof Error ? error.message : 'unknown error'),
+        ),
+      ),
+    );
+    await expect(client.reserve()).rejects.toThrow('Database acquisition capacity exhausted');
+    controller.abort(new Error('Attempt cancelled while waiting'));
+    expect(await Promise.all(outcomes)).toEqual(
+      Array.from({ length: DATABASE_MAX_WAITERS }, () => 'Attempt cancelled while waiting'),
+    );
+    held.release();
+    // The driver's remaining waiters are bounded and each late grant is released automatically.
+    // Wait until they drain, without adding another reservation to that queue.
+    await vi.waitFor(
+      async () => {
+        const available = await client.reserve();
+        const [{ ok }] = await available.unsafe<{ ok: number }[]>('SELECT 1 AS ok');
+        available.release();
+        expect(ok).toBe(1);
+      },
+      { timeout: 5000, interval: 50 },
+    );
+  } finally {
+    await client.end({ timeout: 0 });
   }
 }, 10_000);
 
@@ -83,3 +163,4 @@ it('releases video frame locks after cancellation without permitting further ord
     await db.destroy();
   }
 }, 10_000);
+import { createPostgres } from '@frameleaf/sql-tools';
