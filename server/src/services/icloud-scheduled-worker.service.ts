@@ -19,6 +19,8 @@ export class ICloudScheduledWorkerService {
     private staging: ICloudScheduledStagingService, private recovery: MediaRecoveryService,
     private operations: MediaOperationRepository, private transport: ICloudTransportRepository) {}
 
+  housekeeping() { return this.staging.housekeeping(); }
+
   async run(operation: MediaOperation, claimToken: string) {
     const requests = await this.repository.dispatch(operation, claimToken);
     if (!requests) {
