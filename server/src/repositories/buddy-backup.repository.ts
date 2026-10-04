@@ -8,6 +8,7 @@ import type { BuddyPairing } from 'src/utils/frameleaf-buddy.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DB } from 'src/schema/index.js';
 import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import type { BuddyBootDeclaration } from 'src/utils/buddy-boot-configuration.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 
 export type BuddySettings = {
@@ -23,6 +24,7 @@ export type BuddySettings = {
   pausedReceiving: boolean;
   includeDerived: boolean;
   configurationFiles: string[];
+  bootConfiguration?: BuddyBootDeclaration;
 };
 export type BuddyRun = {
   id: string;
