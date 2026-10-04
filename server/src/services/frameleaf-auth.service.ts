@@ -556,12 +556,17 @@ export class FrameleafAuthService extends BaseService {
     if (!claims || claims.userId !== auth.user.id || claims.sessionId !== (auth.session?.id ?? null)) {
       throw new BadRequestException('This link confirmation is not valid any more. Sign in with Frameleaf again.');
     }
-    const config = await this.requireConfig();
-    if (claims.authority !== (await this.pendingLinkAuthority(config))) {
-      throw new BadRequestException('This link confirmation is not valid any more. Sign in with Frameleaf again.');
-    }
+    // Resolve account conflicts before taking the authority fence. A revoke may finish while this
+    // lookup waits; the current authority is then checked again under the fence before any write.
     await this.checkLinkable(auth, claims);
-    return this.applyLink(auth, claims);
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      const config = await this.requireConfig();
+      if (claims.authority !== (await this.pendingLinkAuthority(config))) {
+        throw new BadRequestException('This link confirmation is not valid any more. Sign in with Frameleaf again.');
+      }
+      await this.checkLinkable(auth, claims);
+      return this.applyLink(auth, claims);
+    });
   }
 
   private async checkLinkable(auth: AuthDto, claims: Pick<PendingLink, 'sub'>) {
