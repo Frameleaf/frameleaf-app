@@ -272,9 +272,10 @@ describe('getEnv', () => {
           database: 'frameleaf',
           username: 'postgres',
           password: 'postgres',
+          ssl: undefined,
         },
         skipMigrations: false,
-        vectorExtension: undefined,
+        vectorExtension: 'vector',
       });
     });
 
