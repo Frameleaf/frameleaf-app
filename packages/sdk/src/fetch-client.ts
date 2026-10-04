@@ -5497,10 +5497,7 @@ export type DarktableDevelopRecipe = {
         strokes?: {
             /** Erase from the mask instead of painting it (brush masks only) */
             erase?: boolean;
-            points: [
-                number,
-                number
-            ][];
+            points: number[][];
             /** Stroke radius as a fraction of the original image's shorter side */
             radius: number;
         }[];
@@ -7775,6 +7772,64 @@ export type FrameleafAccountLinkResponseDto = {
     lastSignInAt: string | null;
     linked: boolean;
     linkedAt: string | null;
+};
+export type FrameleafLinkDto = {
+    /** OAuth code verifier (PKCE) */
+    codeVerifier?: string;
+    /** Report what linking would change (for example becoming an administrator) without linking yet */
+    preview?: boolean;
+    /** Persist authentication cookies across browser sessions (default true) */
+    rememberMe?: boolean;
+    /** OAuth state parameter */
+    state?: string;
+    /** OAuth callback URL */
+    url: string;
+};
+export type FrameleafLinkResponseDto = {
+    avatarColor: UserAvatarColor;
+    /** Cluster group the user is a member of */
+    clusterGroupId: string;
+    /** For a preview: when the confirm token expires */
+    confirmExpiresAt: string | null;
+    /** For a preview: confirms the link through link/confirm */
+    confirmToken: string | null;
+    /** Creation date */
+    createdAt: string;
+    /** Deletion date */
+    deletedAt: string | null;
+    /** User email */
+    email: string;
+    /** User ID */
+    id: string;
+    /** Is admin user */
+    isAdmin: boolean;
+    license: (UserLicense) | null;
+    /** Whether the Frameleaf account is now linked (false for a preview) */
+    linked: boolean;
+    /** User name */
+    name: string;
+    /** OAuth ID */
+    oauthId: string;
+    /** Profile change date */
+    profileChangedAt: string;
+    /** Profile image path */
+    profileImagePath: string;
+    /** Storage quota in bytes */
+    quotaSizeInBytes: number | null;
+    /** Storage usage in bytes */
+    quotaUsageInBytes: number | null;
+    roleChange: FrameleafLinkRoleChange;
+    /** Require password change on next login */
+    shouldChangePassword: boolean;
+    status: UserStatus;
+    /** Storage label */
+    storageLabel: string | null;
+    /** Last update date */
+    updatedAt: string;
+};
+export type FrameleafLinkConfirmDto = {
+    /** The token a preview returned */
+    confirmToken: string;
 };
 export type PartnerBackfillDto = {
     /** Items copied so far */
@@ -14186,10 +14241,7 @@ export type AssetDevelopRegion = {
 export type AssetDevelopStroke = {
     /** Erase from the mask instead of painting it (brush masks only) */
     erase?: boolean;
-    points: [
-        number,
-        number
-    ][];
+    points: number[][];
     /** Stroke radius as a fraction of the original image's shorter side */
     radius: number;
 };
@@ -21221,16 +21273,31 @@ export function getFrameleafAccountLink(opts?: Oazapfts.RequestOpts) {
 /**
  * Link your Frameleaf account
  */
-export function linkFrameleafAccount({ oAuthCallbackDto }: {
-    oAuthCallbackDto: OAuthCallbackDto;
+export function linkFrameleafAccount({ frameleafLinkDto }: {
+    frameleafLinkDto: FrameleafLinkDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: UserAdminResponseDto;
+        data: FrameleafLinkResponseDto;
     }>("/oauth/frameleaf/link", oazapfts.json({
         ...opts,
         method: "POST",
-        body: oAuthCallbackDto
+        body: frameleafLinkDto
+    })));
+}
+/**
+ * Confirm linking your Frameleaf account
+ */
+export function confirmFrameleafAccountLink({ frameleafLinkConfirmDto }: {
+    frameleafLinkConfirmDto: FrameleafLinkConfirmDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafLinkResponseDto;
+    }>("/oauth/frameleaf/link/confirm", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: frameleafLinkConfirmDto
     })));
 }
 /**
@@ -28676,6 +28743,10 @@ export enum FrameleafTokenExchangeErrorCode {
     FrameleafExchangeEmailUnverified = "frameleaf_exchange_email_unverified",
     FrameleafExchangeAccountRemoved = "frameleaf_exchange_account_removed",
     FrameleafExchangeAccountConflict = "frameleaf_exchange_account_conflict"
+}
+export enum FrameleafLinkRoleChange {
+    None = "none",
+    GrantedAdmin = "granted-admin"
 }
 export enum PartnerDirection {
     SharedBy = "shared-by",
