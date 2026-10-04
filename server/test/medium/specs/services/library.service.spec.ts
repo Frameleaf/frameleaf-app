@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import type { QueueExecution } from 'src/queue/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
   AdminAuditAction,
@@ -14,6 +15,7 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -393,6 +395,104 @@ describe(LibraryService.name, () => {
   });
 
   describe('scan', () => {
+    it.each([false, true])(
+      'settles queue interruption in PostgreSQL without changing a replacement claim (replacement=%s)',
+      async (replaceClaim) => {
+        const { ctx } = setup();
+        const latePath = await createFile(join(importPath, 'late.jpg'));
+        const library = await ctx.createLibrary({ importPaths: [importPath] });
+        const scans = ctx.scans();
+        const { operation } = await scans.queue(library, { ownerId: library.ownerId, trigger: 'manual' });
+        const operations = new MediaOperationRepository(defaultDatabase);
+        const token = newUuid();
+        await defaultDatabase
+          .updateTable('media_operation')
+          .set({
+            status: MediaOperationStatus.Rendering,
+            claimToken: token,
+            claimExpiresAt: new Date(Date.now() + 300_000),
+          })
+          .where('id', '=', operation.id)
+          .execute();
+        const claimed = (await operations.getForWorker(operation.id))!;
+        const controller = new AbortController();
+        const stopped = new Error('Stopped queue attempt');
+        const progress = vi.fn();
+        const context = { signal: controller.signal, progressUnits: 0, progress } as unknown as QueueExecution;
+        const waiting = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let closed = false;
+        const source = vi.spyOn(ctx.get(StorageRepository), 'walkLibrary').mockImplementationOnce(async function* () {
+          try {
+            waiting.resolve();
+            await release.promise;
+            yield [latePath];
+          } finally {
+            closed = true;
+          }
+        });
+        const replacementToken = newUuid();
+        const run = queueExecution.run(context, () => scans.run(claimed, token));
+        try {
+          await waiting.promise;
+          controller.abort(stopped);
+          // Real Kysely/driver negative control: ordinary fail cannot reserve SQL in the aborted context.
+          await queueExecution.run(context, async () => {
+            await expect(
+              operations.fail(
+                operation.id,
+                token,
+                {
+                  error: 'old direct interruption path',
+                  errorCode: 'library_scan_interrupted',
+                },
+                { retry: false },
+              ),
+            ).rejects.toThrow(stopped);
+          });
+          const active = await operations.getForWorker(operation.id);
+          expect(active).toMatchObject({ status: MediaOperationStatus.Rendering, claimToken: token });
+          if (replaceClaim) {
+            await defaultDatabase
+              .updateTable('media_operation')
+              .set({ claimToken: replacementToken })
+              .where('id', '=', operation.id)
+              .execute();
+          }
+          release.resolve();
+          await run;
+          expect(closed).toBe(true);
+          const row = await operations.getForWorker(operation.id);
+          expect(row).toMatchObject(
+            replaceClaim
+              ? {
+                  status: MediaOperationStatus.Rendering,
+                  claimToken: replacementToken,
+                  errorCode: null,
+                }
+              : {
+                  status: MediaOperationStatus.Failed,
+                  errorCode: 'library_scan_interrupted',
+                  claimToken: null,
+                  claimExpiresAt: null,
+                  retryAt: null,
+                  autoRetries: 0,
+                },
+          );
+          await expect(ctx.getAssetPaths(library.id)).resolves.toEqual([]);
+          expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+          expect(progress).not.toHaveBeenCalled();
+          await queueExecution.run(context, async () => {
+            await expect(defaultDatabase.selectFrom('media_operation').select('id').execute()).rejects.toThrow(stopped);
+          });
+        } finally {
+          release.resolve();
+          await run;
+          source.mockRestore();
+        }
+      },
+    );
+
     it('should import a new asset', async () => {
       const { ctx } = setup();
 

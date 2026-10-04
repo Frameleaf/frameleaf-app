@@ -18,6 +18,7 @@ import { PassThrough, Readable, Writable } from 'node:stream';
 import { createGunzip, createGzip } from 'node:zlib';
 import { CrawlOptionsDto, WalkOptionsDto } from 'src/dtos/library.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { LibraryWalkOptions, walkLibraryPaths } from 'src/utils/library-walk.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 export interface WatchEvents {
@@ -444,6 +445,11 @@ export class StorageRepository {
     if (batch.length > 0) {
       yield batch;
     }
+  }
+
+  /** External-library-only pull traversal; generic glob contracts remain unchanged. */
+  walkLibrary(options: LibraryWalkOptions) {
+    return walkLibraryPaths(options);
   }
 
   /** Resume a sorted depth-first traversal. The caller persists the mutated cursor between batches. */
