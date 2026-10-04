@@ -3380,7 +3380,10 @@ describe('iCloud exact identity adoption', () => {
             duplicateGate = vi
               .spyOn(repository as unknown as { hasManagedMatch: () => Promise<boolean> }, 'hasManagedMatch')
               .mockResolvedValue(false);
-            await expect(commit()).rejects.toMatchObject({ code: '23505', constraint_name: 'UQ_assets_owner_checksum' });
+            await expect(commit()).rejects.toMatchObject({
+              code: '23505',
+              constraint_name: 'UQ_assets_owner_checksum',
+            });
           } finally {
             try {
               await files?.release();
@@ -3528,11 +3531,15 @@ describe('iCloud exact identity adoption', () => {
           expect(await privacy.get(sentinelId)).toBeUndefined();
           expect(await db.selectFrom('physical_file').select('id').where('id', '=', physicalId).execute()).toEqual([]);
           expect(
-            (await sql`SELECT 1 FROM immich_fork.asset_physical_file WHERE "assetId"=${sentinelId}::uuid`.execute(db)).rows,
+            (await sql`SELECT 1 FROM immich_fork.asset_physical_file WHERE "assetId"=${sentinelId}::uuid`.execute(db))
+              .rows,
           ).toEqual([]);
           expect(
-            (await sql`SELECT 1 FROM immich_fork.physical_file WHERE "canonicalAssetId"=${sentinelId}::uuid`.execute(db))
-              .rows,
+            (
+              await sql`SELECT 1 FROM immich_fork.physical_file WHERE "canonicalAssetId"=${sentinelId}::uuid`.execute(
+                db,
+              )
+            ).rows,
           ).toEqual([]);
           const after = await sql<{ state: unknown }>`SELECT jsonb_build_object(
             'original', (SELECT to_jsonb(a) FROM public.asset a WHERE id=${fixture.f.asset.id}::uuid),
