@@ -55,6 +55,7 @@ export class EditOperationRun {
   private timer?: ReturnType<typeof setInterval>;
   private errorNote?: { error: string; errorCode: string };
   private progressUnits = 0;
+  private publicationQueued = false;
 
   constructor(
     private operations: Operations,
@@ -149,6 +150,11 @@ export class EditOperationRun {
    * asset of the owner's, or the row fails instead: lineage never names media the owner cannot see.
    */
   async complete(resultAssetId: string | null): Promise<boolean> {
+    // An executor may explicitly complete an already-rendered version before finish() handles
+    // its return value. Register exactly one operation transition in the publication transaction.
+    if (this.publicationQueued) {
+      return true;
+    }
     if (!(await this.validate())) {
       return false;
     }
@@ -165,6 +171,7 @@ export class EditOperationRun {
         this.settle();
       })
     ) {
+      this.publicationQueued = true;
       return true;
     }
     const completed = await this.operations.complete(this.id, this.claimToken, {

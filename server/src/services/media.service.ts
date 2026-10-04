@@ -327,7 +327,7 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
-    const generated = await this.generateEditedThumbnails(asset, config);
+    const generated = await this.generateEditedThumbnails(asset, config, run);
     // FL-43: the asset's files change only under the job's claim; a stale or cancelled run stops here.
     if (run && !(await run.validate())) {
       return JobStatus.Skipped;
@@ -2853,7 +2853,7 @@ export class MediaService extends BaseService {
     }
   }
 
-  private async generateEditedThumbnails(asset: ThumbnailAsset, config: SystemConfig) {
+  private async generateEditedThumbnails(asset: ThumbnailAsset, config: SystemConfig, run?: EditOperationRun) {
     if (asset.type !== AssetType.Image || (asset.files.length === 0 && asset.edits.length === 0)) {
       return;
     }
@@ -2889,6 +2889,11 @@ export class MediaService extends BaseService {
         }
       : undefined;
 
+    // A cancelled/lost edit returns Skipped. It must not leave visibility changes queued for
+    // the enclosing job's successful completion after the operation itself refused publication.
+    if (run && !(await run.validate())) {
+      return;
+    }
     await publishJobResult(async () => {
       const originalDimensions = getDimensions(asset.exifInfo!);
       const assetFaces = await this.personRepository.getFaces(asset.id, { viewingUserId: asset.ownerId });

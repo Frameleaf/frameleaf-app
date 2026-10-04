@@ -78,6 +78,31 @@ describe(EditOperationTracker.name, () => {
   });
 
   describe('execute', () => {
+    it('registers one deferred operation completion when the executor completes before returning Skipped', async () => {
+      const adoptions: Array<(tx: never) => Promise<void>> = [];
+      await queueExecution.run(
+        { signal: new AbortController().signal, progress: vi.fn(), progressUnits: 0, adoptions } as never,
+        () =>
+          sut.execute('op-1', async (run) => {
+            await run!.complete(null);
+            return JobStatus.Skipped;
+          }),
+      );
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(adoptions).toHaveLength(1);
+      const transaction = {} as never;
+      await adoptions[0](transaction);
+      expect(operations.complete).toHaveBeenCalledExactlyOnceWith(
+        'op-1',
+        'token-1',
+        {
+          resultAssetId: null,
+          result: EDIT_NOTHING_PUBLISHED,
+        },
+        transaction,
+        true,
+      );
+    });
     it('runs the executor exactly as before when the job names no row', async () => {
       const work = vi.fn().mockResolvedValue(JobStatus.Success);
 
