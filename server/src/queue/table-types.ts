@@ -30,6 +30,7 @@ export interface JobRunItemTable {
   selection: Record<string, unknown>;
   state: Generated<QueueState>;
   jobId: string | null;
+  selectionVersion: Generated<number>;
 }
 export interface JobTable {
   id: string;
@@ -79,4 +80,5 @@ export interface QueueDatabase {
   job_worker: JobWorkerTable;
   job_run: JobRunTable;
   job_run_item: JobRunItemTable;
+  job_selection_run: { runId: string; selectionId: string; copyAfter: string | null; copyComplete: Generated<boolean> };
 }
