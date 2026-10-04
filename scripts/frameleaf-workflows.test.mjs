@@ -48,7 +48,9 @@ test("Studio graph recovery preserves the failed gate and generates only genuine
   assert.equal(recovery.env.GRAPH_CONFORMANCE_WRITE, "1");
   assert.equal(recovery["timeout-minutes"], 8);
   assert.equal(recovery["continue-on-error"], undefined);
-  assert.ok(recovery.run.includes("test -f studio/engine/frameleaf-source.json"));
+  assert.ok(
+    recovery.run.includes("test -f studio/engine/frameleaf-source.json"),
+  );
   assert.ok(recovery.run.includes("cd studio/engine"));
   assert.ok(recovery.run.includes("./node_modules/.bin/vp test run"));
   assert.ok(recovery.run.includes("graph-conformance.test.ts"));
@@ -66,7 +68,9 @@ test("Studio graph recovery preserves the failed gate and generates only genuine
   );
   assert.ok(recovery.run.includes("fixtureInputSha256="));
   assert.ok(recovery.run.includes("sha256sum"));
-  assert.ok(!/git (?:commit|push)|continue-on-error|\|\| true/.test(recovery.run));
+  assert.ok(
+    !/git (?:commit|push)|continue-on-error|\|\| true/.test(recovery.run),
+  );
   assert.equal(
     upload.if,
     "${{ always() && steps.graph_fixture_recovery.outcome == 'success' }}",
@@ -93,7 +97,9 @@ test("Studio source recovery retains evidence without bypassing normal preparati
   assert.equal(prepare.env.STUDIO_SOURCE_RECOVERY, "1");
   assert.equal(prepare["continue-on-error"], undefined);
   assert.ok(probe.if.includes("always()"));
-  assert.ok(probe.run.includes('$RUNNER_TEMP/frameleaf-studio-source-recovery.json'));
+  assert.ok(
+    probe.run.includes("$RUNNER_TEMP/frameleaf-studio-source-recovery.json"),
+  );
   assert.equal(
     upload.if,
     "${{ always() && steps.source_recovery_receipt.outputs.produced == 'true' }}",
@@ -113,13 +119,19 @@ test("Studio source recovery retains evidence without bypassing normal preparati
     assert.equal(step.if, undefined);
     assert.equal(step["continue-on-error"], undefined);
   }
-  const source = readFileSync(path.join(root, "studio/tools/engine.mjs"), "utf8");
-  assert.ok(
-    source.indexOf("await admitAdaptedSource(source, configuration.sourceSha256") <
-      source.indexOf("await rename(generated, engine)"),
+  const source = readFileSync(
+    path.join(root, "studio/tools/engine.mjs"),
+    "utf8",
   );
   assert.ok(
-    source.includes("finally { await rm(scratch, { recursive: true, force: true }); }"),
+    source.indexOf(
+      "await admitAdaptedSource(source, configuration.sourceSha256",
+    ) < source.indexOf("await rename(generated, engine)"),
+  );
+  assert.ok(
+    source.includes(
+      "finally { await rm(scratch, { recursive: true, force: true }); }",
+    ),
   );
   assert.ok(source.includes("'Adapted source digest mismatch'"));
 });
@@ -169,10 +181,7 @@ const admission = (
 const assertPrimaryWebLint = (job) => {
   const lint = job.steps.find((step) => step.name === "Run linter");
   assert.ok(lint, "Lint Web requires its primary linter step");
-  assert.equal(
-    lint.run,
-    "pnpm exec eslint . --max-warnings 0 --concurrency 2",
-  );
+  assert.equal(lint.run, "pnpm exec eslint . --max-warnings 0 --concurrency 2");
   assert.equal(lint.if, "${{ !cancelled() }}");
   assert.equal(lint["continue-on-error"], undefined);
   assert.equal(job["continue-on-error"], undefined);
@@ -182,12 +191,15 @@ const assertPrimaryWebLint = (job) => {
   );
 };
 
-test("all nine protected check contexts execute real commands on external fork/main PRs", () => {
+test("all nine protected checks execute on Frameleaf default and implementation PRs", () => {
   for (const [name, [file, id, command]] of Object.entries(required)) {
     const w = workflow(file);
     const j = w.jobs[id];
     assert.equal(j.name, name);
     assert.ok(w.on.pull_request.branches.includes("fork/main"));
+    assert.ok(
+      w.on.pull_request.branches.includes("master/frameleaf-implementation"),
+    );
     assert.equal(
       w.on.pull_request.paths,
       undefined,
@@ -200,6 +212,22 @@ test("all nine protected check contexts execute real commands on external fork/m
     );
     assert.equal(admission(j.if, "Frameleaf/frameleaf-app"), true);
     assert.equal(admission(j.if, "immich-app/immich"), false);
+    if (file === "test.yml") {
+      for (const development_validation of [false, true]) {
+        assert.equal(
+          admission(j.if, "Frameleaf/frameleaf-app", "", "pull_request", {
+            inputs: { development_validation },
+          }),
+          true,
+        );
+        assert.equal(
+          admission(j.if, "Frameleaf/frameleaf-app", "", "workflow_dispatch", {
+            inputs: { development_validation },
+          }),
+          !development_validation,
+        );
+      }
+    }
     assert.deepEqual(j.permissions, { contents: "read" });
     assert.match(j.steps.map((s) => s.run ?? s.uses ?? "").join("\n"), command);
     assert.equal(
@@ -240,8 +268,19 @@ test("the primary web lint gate cannot be replaced by diagnostics or weakened", 
   );
 });
 
-test("standalone script tests install their locked JavaScript dependencies first", () => {
-  const scripts = workflow("test.yml").jobs["script-unit-tests"].steps;
+const assertScriptTestWiring = (job) => {
+  const scripts = job.steps;
+  assert.equal(job["continue-on-error"], undefined);
+  assert.equal(admission(job.if, "Frameleaf/frameleaf-app"), true);
+  assert.equal(admission(job.if, "immich-app/immich"), false);
+  for (const development_validation of [false, true]) {
+    assert.equal(
+      admission(job.if, "Frameleaf/frameleaf-app", "", "workflow_dispatch", {
+        inputs: { development_validation },
+      }),
+      !development_validation,
+    );
+  }
   const install = scripts.findIndex(
     (step) =>
       step.run ===
@@ -250,18 +289,90 @@ test("standalone script tests install their locked JavaScript dependencies first
   assert.ok(install >= 0);
   for (const command of [
     "pnpm --filter @immich/scripts test",
-    "node --test scripts/frameleaf-workflows.test.mjs",
+    "node --test scripts/frameleaf-workflows.test.mjs scripts/frameleaf-development-workflow.test.mjs scripts/frameleaf-cloud-consumer-workflow.test.mjs",
     "node --test scripts/frameleaf-branding.test.mjs",
     "node --test scripts/frameleaf-legacy-names.test.mjs",
   ]) {
-    assert.ok(scripts.findIndex((step) => step.run === command) > install);
+    const index = scripts.findIndex((step) => step.run === command);
+    assert.ok(
+      index > install,
+      `Required script command must follow locked install: ${command}`,
+    );
+    assert.equal(scripts[index].if, undefined);
+    assert.equal(scripts[index]["continue-on-error"], undefined);
   }
+  assert.equal(scripts[install].if, undefined);
+  assert.equal(scripts[install]["continue-on-error"], undefined);
+};
+
+test("standalone script tests install locked dependencies and run every workflow contract together", () => {
+  assertScriptTestWiring(workflow("test.yml").jobs["script-unit-tests"]);
+});
+
+test("script wiring rejects missing contracts, skipped coverage and suppressed failures", () => {
+  const job = workflow("test.yml").jobs["script-unit-tests"];
+  const command = job.steps.find(
+    (step) => step.name === "Validate Frameleaf workflow contracts",
+  ).run;
+  for (const file of [
+    "scripts/frameleaf-workflows.test.mjs",
+    "scripts/frameleaf-development-workflow.test.mjs",
+    "scripts/frameleaf-cloud-consumer-workflow.test.mjs",
+  ]) {
+    const changed = structuredClone(job);
+    changed.steps.find(
+      (step) => step.name === "Validate Frameleaf workflow contracts",
+    ).run = command
+      .split(" ")
+      .filter((part) => part !== file)
+      .join(" ");
+    assert.throws(() => assertScriptTestWiring(changed), file);
+  }
+  for (const change of [
+    { run: `${command} || true` },
+    { if: "false" },
+    { "continue-on-error": true },
+  ]) {
+    const changed = structuredClone(job);
+    Object.assign(
+      changed.steps.find(
+        (step) => step.name === "Validate Frameleaf workflow contracts",
+      ),
+      change,
+    );
+    assert.throws(() => assertScriptTestWiring(changed));
+  }
+  const reordered = structuredClone(job);
+  const install = reordered.steps.findIndex(
+    (step) => step.name === "Install script test dependencies",
+  );
+  reordered.steps.push(...reordered.steps.splice(install, 1));
+  assert.throws(() => assertScriptTestWiring(reordered));
+  assert.throws(() =>
+    assertScriptTestWiring({ ...job, "continue-on-error": true }),
+  );
+  assert.throws(() => assertScriptTestWiring({ ...job, if: "false" }));
 });
 
 test("delivery has no official-container compatibility lanes", () => {
-  assert.equal(existsSync(path.resolve(root, ".github/workflows/fork-roundtrip.yml")), false);
-  assert.equal(workflow("fork-integration.yml").jobs["cli-fork-to-official"], undefined);
+  assert.equal(
+    existsSync(path.resolve(root, ".github/workflows/fork-roundtrip.yml")),
+    false,
+  );
+  assert.equal(
+    workflow("fork-integration.yml").jobs["cli-fork-to-official"],
+    undefined,
+  );
   assert.equal(workflow("docker.yml").jobs.certification, undefined);
+  const entry = workflow("test.yml");
+  assert.equal(entry.jobs["cloud-consumer-qualification"], undefined);
+  assert.equal(entry.on.workflow_dispatch.inputs.candidate_sha, undefined);
+  for (const file of ["test.yml", "docker.yml", "fork-integration.yml"]) {
+    assert.doesNotMatch(
+      JSON.stringify(workflow(file)),
+      /fork-roundtrip|cli-fork-to-official|cloud-consumer-qualification|inputs\.candidate_sha/,
+    );
+  }
 });
 
 test("server E2E diagnostics preserve the failure state before maintenance", () => {
@@ -322,9 +433,15 @@ test("server E2E diagnostics preserve the failure state before maintenance", () 
 
 test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer dependencies", () => {
   const steps = workflow("fork-integration.yml").jobs.integration.steps;
-  const python = steps.find((step) => step.name === "Set up the pinned NAS renderer Python");
-  const prepare = steps.find((step) => step.name === "Prepare the pinned TrueNAS rendering library");
-  const fixtures = steps.find((step) => step.name === "Validate NAS package fixtures");
+  const python = steps.find(
+    (step) => step.name === "Set up the pinned NAS renderer Python",
+  );
+  const prepare = steps.find(
+    (step) => step.name === "Prepare the pinned TrueNAS rendering library",
+  );
+  const fixtures = steps.find(
+    (step) => step.name === "Validate NAS package fixtures",
+  );
   assert.ok(python && prepare && fixtures);
   assert.equal(python.with["python-version"], "3.11.15");
   assert.match(python.uses, /^actions\/setup-python@[a-f0-9]{40}$/);
@@ -335,22 +452,43 @@ test("hosted NAS fixtures require the pinned TrueNAS library and hashed renderer
     assert.equal(step.if, undefined);
   }
   assert.match(prepare.run, /https:\/\/github\.com\/truenas\/apps\.git/);
-  assert.match(prepare.run, /fetch --depth=1 origin db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/);
-  assert.match(prepare.run, /test "\$\(git -C "\$catalog" rev-parse HEAD\)" = db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/);
+  assert.match(
+    prepare.run,
+    /fetch --depth=1 origin db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/,
+  );
+  assert.match(
+    prepare.run,
+    /test "\$\(git -C "\$catalog" rev-parse HEAD\)" = db019217d73fc8c4e1d1b9c3e89be5dcc705c95a/,
+  );
   assert.match(prepare.run, /python3 -m venv "\$RUNNER_TEMP\/nas-render-venv"/);
-  assert.match(prepare.run, /python3 -m pip install --index-url https:\/\/pypi\.org\/simple --require-hashes --only-binary=:all: -r packaging\/nas\/requirements-render\.lock/);
+  assert.match(
+    prepare.run,
+    /python3 -m pip install --index-url https:\/\/pypi\.org\/simple --require-hashes --only-binary=:all: -r packaging\/nas\/requirements-render\.lock/,
+  );
   assert.match(prepare.run, /python3 -m pip check/);
   assert.doesNotMatch(prepare.run, /\|\| true|--no-deps|--trusted-host/);
   assert.equal(fixtures.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER, "true");
   assert.equal(fixtures.env.PYTHONDONTWRITEBYTECODE, "1");
-  assert.equal(fixtures.env.TRUENAS_LIBRARY,
-    "${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4");
-  assert.equal(fixtures.run, "node --test --test-concurrency=1 packaging/nas/build.test.cjs");
-  const requirements = readFileSync(path.join(root, "packaging/nas/requirements-render.lock"), "utf8")
-    .split("\n").filter((line) => line && !line.startsWith("#"));
+  assert.equal(
+    fixtures.env.TRUENAS_LIBRARY,
+    "${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4",
+  );
+  assert.equal(
+    fixtures.run,
+    "node --test --test-concurrency=1 packaging/nas/build.test.cjs",
+  );
+  const requirements = readFileSync(
+    path.join(root, "packaging/nas/requirements-render.lock"),
+    "utf8",
+  )
+    .split("\n")
+    .filter((line) => line && !line.startsWith("#"));
   assert.equal(requirements.length, 10);
   for (const requirement of requirements) {
-    assert.match(requirement, /^[A-Za-z0-9_-]+==[0-9.]+(?: --hash=sha256:[a-f0-9]{64})+$/);
+    assert.match(
+      requirement,
+      /^[A-Za-z0-9_-]+==[0-9.]+(?: --hash=sha256:[a-f0-9]{64})+$/,
+    );
   }
 });
 
@@ -374,11 +512,20 @@ test("Buddy acceptance runs only on x64 and refuses unsuccessful fixture prerequ
     }
   }
   assert.equal(prepare.run, "bash buddy-fixture-tls.sh");
-  assert.equal(start.env.BUDDY_PREPARE_OUTCOME, "${{ steps.buddy-prepare.outcome }}");
-  assert.equal(acceptance.env.BUDDY_FIXTURE_OUTCOME, "${{ steps.buddy-fixture.outcome }}");
+  assert.equal(
+    start.env.BUDDY_PREPARE_OUTCOME,
+    "${{ steps.buddy-prepare.outcome }}",
+  );
+  assert.equal(
+    acceptance.env.BUDDY_FIXTURE_OUTCOME,
+    "${{ steps.buddy-fixture.outcome }}",
+  );
   assert.equal(acceptance.env.FRAMELEAF_BUDDY_BACKUP, "true");
   assert.equal(acceptance["working-directory"], "./server");
-  assert.match(acceptance.run, /pnpm exec vitest run --config test\/vitest\.config\.buddy\.mjs/);
+  assert.match(
+    acceptance.run,
+    /pnpm exec vitest run --config test\/vitest\.config\.buddy\.mjs/,
+  );
   assert.equal(job["continue-on-error"], undefined);
   for (const [step, key] of [
     [start, "BUDDY_PREPARE_OUTCOME"],
@@ -391,29 +538,41 @@ test("Buddy acceptance runs only on x64 and refuses unsuccessful fixture prerequ
       });
       assert.equal(result.status, 1, `${step.id}:${outcome}`);
       assert.match(result.stdout, /::error::Two-server Buddy/);
-      assert.equal(result.stderr, "", "must refuse before Docker or test execution");
+      assert.equal(
+        result.stderr,
+        "",
+        "must refuse before Docker or test execution",
+      );
     }
   }
 });
 
 test("Buddy cleanup is always admitted on x64 and refuses an unowned directory", () => {
   const steps = workflow("test.yml").jobs["e2e-tests-server-cli"].steps;
-  const capture = steps.find((step) => step.name === "Capture redacted Buddy diagnostics");
-  const cleanup = steps.find((step) => step.name === "Remove the owned Buddy fixture");
+  const capture = steps.find(
+    (step) => step.name === "Capture redacted Buddy diagnostics",
+  );
+  const cleanup = steps.find(
+    (step) => step.name === "Remove the owned Buddy fixture",
+  );
   for (const step of [capture, cleanup]) {
     assert.ok(step);
     assert.equal(step["continue-on-error"], undefined);
     for (const runner of ["ubuntu-24.04", "ubuntu-24.04-arm"]) {
       assert.equal(
         runInNewContext(step.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""), {
-          matrix: { runner }, always: () => true,
+          matrix: { runner },
+          always: () => true,
         }),
         runner === "ubuntu-24.04",
       );
     }
   }
   assert.match(cleanup.run, /test -f "\$BUDDY_ROOT\/\.fl310-buddy-fixture"/);
-  assert.match(cleanup.run, /docker compose -f docker-compose\.buddy\.yml down --volumes --remove-orphans/);
+  assert.match(
+    cleanup.run,
+    /docker compose -f docker-compose\.buddy\.yml down --volumes --remove-orphans/,
+  );
   const dir = mkdtempSync(path.join(tmpdir(), "frameleaf-unowned-buddy-"));
   try {
     // Even a marker cannot authorize deleting a path outside the owned prefix.
@@ -432,17 +591,34 @@ test("Buddy cleanup is always admitted on x64 and refuses an unowned directory",
 
 test("Buddy artifacts retain sanitized state and evidence rather than raw logs or credentials", () => {
   const steps = workflow("test.yml").jobs["e2e-tests-server-cli"].steps;
-  const capture = steps.find((step) => step.name === "Capture redacted Buddy diagnostics");
-  assert.match(capture.run, /status=\{\{\.State\.Status\}\} exit=\{\{\.State\.ExitCode\}\} restarts=\{\{\.RestartCount\}\} image=\{\{\.Image\}\}/);
-  assert.match(capture.run, /\{\{index \.Config\.Labels "com\.docker\.compose\.service"\}\}/);
-  assert.doesNotMatch(capture.run, /docker (?:compose[^\n]* logs|logs|inspect(?! --format))|\.Config\.(?:Env|Cmd)|printenv|\benv\b|cat |tar /);
+  const capture = steps.find(
+    (step) => step.name === "Capture redacted Buddy diagnostics",
+  );
+  assert.match(
+    capture.run,
+    /status=\{\{\.State\.Status\}\} exit=\{\{\.State\.ExitCode\}\} restarts=\{\{\.RestartCount\}\} image=\{\{\.Image\}\}/,
+  );
+  assert.match(
+    capture.run,
+    /\{\{index \.Config\.Labels "com\.docker\.compose\.service"\}\}/,
+  );
+  assert.doesNotMatch(
+    capture.run,
+    /docker (?:compose[^\n]* logs|logs|inspect(?! --format))|\.Config\.(?:Env|Cmd)|printenv|\benv\b|cat |tar /,
+  );
   assert.match(capture.run, /> docker-buddy-diagnostics\.txt 2>&1/);
-  assert.match(capture.run, /cp "\$BUDDY_ROOT\/evidence\/buddy\.json" buddy-evidence\.json/);
-  const paths = steps.find((step) => step.name === "Archive Docker logs").with.path.trim().split("\n");
-  assert.deepEqual(paths.filter((entry) => entry.includes("buddy")), [
-    "e2e/docker-buddy-diagnostics.txt",
-    "e2e/buddy-evidence.json",
-  ]);
+  assert.match(
+    capture.run,
+    /cp "\$BUDDY_ROOT\/evidence\/buddy\.json" buddy-evidence\.json/,
+  );
+  const paths = steps
+    .find((step) => step.name === "Archive Docker logs")
+    .with.path.trim()
+    .split("\n");
+  assert.deepEqual(
+    paths.filter((entry) => entry.includes("buddy")),
+    ["e2e/docker-buddy-diagnostics.txt", "e2e/buddy-evidence.json"],
+  );
 });
 
 test("API generation refuses artifacts recreated outside Git tracking", () => {
@@ -481,12 +657,14 @@ test("API generation refuses artifacts recreated outside Git tracking", () => {
         execFileSync("git", ["rm", "--cached", "--", artifact], { cwd: dir });
         // A regenerated untracked file is invisible to the existing freshness diff.
         assert.equal(
-          spawnSync("git", ["diff", "--exit-code", "--", artifact], { cwd: dir })
-            .status,
+          spawnSync("git", ["diff", "--exit-code", "--", artifact], {
+            cwd: dir,
+          }).status,
           0,
         );
         assert.notEqual(
-          spawnSync("bash", ["-e", "-c", steps[guard].run], { cwd: dir }).status,
+          spawnSync("bash", ["-e", "-c", steps[guard].run], { cwd: dir })
+            .status,
           0,
         );
         execFileSync("git", ["add", "--", artifact], { cwd: dir });
@@ -613,7 +791,10 @@ test("legacy publishing and upstream mutations are inert and cannot inherit secr
 
 test("OpenAPI compares immutable same-repository base commits, not the moving target branch", () => {
   const w = workflow("check-openapi.yml");
-  assert.deepEqual(w.on.pull_request.branches, ["fork/main", "master/frameleaf-implementation"]);
+  assert.deepEqual(w.on.pull_request.branches, [
+    "fork/main",
+    "master/frameleaf-implementation",
+  ]);
   assert.ok(w.on.pull_request.types.includes("edited"));
   const steps = w.jobs["check-openapi"].steps;
   const baseline = steps.find((s) => s.name === "Checkout exact PR base");
@@ -1129,15 +1310,70 @@ test("only the integration image compiles the integration build channel (extra l
   }
 });
 
-
 test("media fixture source is immutable and the owned archive cannot publish", () => {
-  const bootstrap = readFileSync(path.join(root, "scripts/checkout-test-assets.sh"), "utf8");
-  assert.match(bootstrap, /fixture_commit=6742055402de1aa48f93d12ded7d18f4057f9d1f/);
+  const bootstrap = readFileSync(
+    path.join(root, "scripts/checkout-test-assets.sh"),
+    "utf8",
+  );
+  assert.match(
+    bootstrap,
+    /fixture_commit=6742055402de1aa48f93d12ded7d18f4057f9d1f/,
+  );
+  assert.match(
+    bootstrap,
+    /fixture_source=https:\/\/github\.com\/Frameleaf\/frameleaf-test-assets\.git/,
+  );
   assert.match(bootstrap, /fetch --no-tags --depth=1/);
+  assert.match(
+    bootstrap,
+    /fetch --no-tags --depth=1 "\$fixture_source" "\$fixture_commit"/,
+  );
+  assert.match(bootstrap, /checkout --detach FETCH_HEAD/);
+  assert.match(bootstrap, /rev-parse HEAD\)" == "\$fixture_commit"/);
+  assert.match(
+    bootstrap,
+    /Original source: https:\/\/github\.com\/immich-app\/test-assets/,
+  );
+  assert.match(
+    bootstrap,
+    /Fixtures retain their original licenses and author attribution/,
+  );
   assert.doesNotMatch(bootstrap, /git (?:pull|submodule)/);
   assert.equal(existsSync(path.join(root, ".gitmodules")), false);
   const fixtures = workflow("test-fixtures.yml");
   assert.deepEqual(Object.keys(fixtures.on), ["workflow_dispatch"]);
   assert.deepEqual(fixtures.permissions, { contents: "read" });
-  assert.match(fixtures.jobs.archive.steps.find((step) => step.name === "Archive the owned fixture input with checksums").run, /sha256sum/);
+  assert.match(
+    fixtures.jobs.archive.steps.find(
+      (step) => step.name === "Archive the owned fixture input with checksums",
+    ).run,
+    /sha256sum/,
+  );
+  for (const [file, id] of [
+    ["test.yml", "server-medium-tests"],
+    ["test.yml", "e2e-tests-server-cli"],
+    ["test.yml", "e2e-tests-web"],
+    ["fork-integration.yml", "integration"],
+    ["fork-integration.yml", "native-raw"],
+  ]) {
+    const steps = workflow(file).jobs[id].steps;
+    const retrieve = steps.findIndex(
+      (step) => step.name === "Retrieve frozen media fixtures",
+    );
+    assert.ok(retrieve > 0, `${file}:${id} must retrieve the frozen source`);
+    assert.equal(steps[retrieve].run, "bash scripts/checkout-test-assets.sh");
+    assert.equal(steps[retrieve]["working-directory"], ".");
+    assert.equal(steps[retrieve].if, undefined);
+    assert.equal(steps[retrieve]["continue-on-error"], undefined);
+    assert.ok(
+      steps
+        .slice(0, retrieve)
+        .some((step) => step.uses?.startsWith("actions/checkout@")),
+    );
+    for (const step of steps.filter((step) =>
+      step.uses?.startsWith("actions/checkout@"),
+    )) {
+      assert.doesNotMatch(JSON.stringify(step.with), /submodules/);
+    }
+  }
 });
