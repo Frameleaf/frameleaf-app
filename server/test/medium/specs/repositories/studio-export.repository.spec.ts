@@ -1,4 +1,4 @@
-import { Kysely, sql, Transaction } from 'kysely';
+import { Kysely, Transaction, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   AssetLockReason,
@@ -334,9 +334,7 @@ describe(StudioExportRepository.name, () => {
           smoothMotion: 'accepted',
         },
       });
-      const forbidden = vi.fn(async () => {
-        throw new Error('must not re-admit');
-      });
+      const forbidden = vi.fn(() => Promise.reject(new Error('must not re-admit')));
       await context.sut.publish(publication(staged, [source]), forbidden, forbidden);
       await context.sut.publicationFollowups(staged.publishId, staged.claimToken, forbidden, forbidden);
       expect(forbidden).not.toHaveBeenCalled();

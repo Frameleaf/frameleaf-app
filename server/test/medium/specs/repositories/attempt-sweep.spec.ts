@@ -131,14 +131,8 @@ describe('attempt output retention and cleanup', () => {
     const { user } = await ctx.newUser();
     const settled = await claim();
     const path = await file(settled, 'publishing.jpeg');
-    let locked!: () => void;
-    const ready = new Promise<void>((resolve) => {
-      locked = resolve;
-    });
-    let release!: () => void;
-    const wait = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: ready, resolve: locked } = Promise.withResolvers<void>();
+    const { promise: wait, resolve: release } = Promise.withResolvers<void>();
     const publication = db.transaction().execute(async (tx) => {
       await sql`SELECT id FROM job WHERE id=${settled.id}::uuid FOR UPDATE`.execute(tx);
       await lockFilePath(tx, path);
@@ -181,7 +175,7 @@ describe('attempt output retention and cleanup', () => {
     expect((await evidence()).rows).toHaveLength(1);
     // Empty claim directories also keep their proof until their own grace period ends.
     await utimes(dirname(path), old, old);
-    for (let slice = 0; slice < 8 && (await evidence()).rows.length; slice++) await files.sweepAttempts([root]);
+    for (let slice = 0; slice < 8 && (await evidence()).rows.length > 0; slice++) await files.sweepAttempts([root]);
     expect((await evidence()).rows).toHaveLength(0);
   });
 
@@ -236,7 +230,9 @@ describe('attempt output retention and cleanup', () => {
     );
     const { person } = await ctx.newPerson({ ownerId: user.id, thumbnailPath: paths.person });
     await sql`INSERT INTO asset_video_duplicate_frame ("assetId","frameIndex","timestampMs",path,embedding)
-      VALUES (${asset.id}::uuid,0,0,${paths.duplicate},${`[${Array(512).fill(0).join(',')}]`}::vector)`.execute(db);
+      VALUES (${asset.id}::uuid,0,0,${paths.duplicate},${`[${Array.from({ length: 512 }, () => 0).join(',')}]`}::vector)`.execute(
+      db,
+    );
     await sql`INSERT INTO video_moment_frame ("assetId","frameIndex","timestampMs",path,score,rank)
       VALUES (${asset.id}::uuid,0,0,${paths.moment},1,1)`.execute(db);
     await sql`INSERT INTO video_edit_version ("assetId","ownerId","sourcePath","sourceChecksum",recipe,purpose,status,"masterPath","proxyPath",files)

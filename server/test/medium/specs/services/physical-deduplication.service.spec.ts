@@ -1,4 +1,3 @@
-import { sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Stats } from 'node:fs';
 import { StorageCore } from 'src/cores/storage.core.js';

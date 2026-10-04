@@ -873,10 +873,11 @@ export class StudioExportService {
       try {
         await this.resumePublished(version, operation, claimToken, snapshot);
       } catch (error) {
-        if (!(await settleOperationStop(this.operations, operation, claimToken))) {
-          if (!(error instanceof StudioExportRefusal && error.code === 'claim-lost')) {
-            await this.failJob(operation, claimToken, error);
-          }
+        if (
+          !(await settleOperationStop(this.operations, operation, claimToken)) &&
+          !(error instanceof StudioExportRefusal && error.code === 'claim-lost')
+        ) {
+          await this.failJob(operation, claimToken, error);
         }
       }
       return;

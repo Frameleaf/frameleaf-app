@@ -762,7 +762,7 @@ export class StudioExportRepository {
       .set({
         result: sql<
           Record<string, unknown>
-        >`jsonb_set(result, '{studioPublication}', (result->'studioPublication') || ${JSON.stringify({ [effect]: next, ...(receipt ? { smoothMotionReceipt: receipt } : {}) })}::jsonb)`,
+        >`jsonb_set(result, '{studioPublication}', (result->'studioPublication') || ${JSON.stringify({ [effect]: next, ...(receipt && { smoothMotionReceipt: receipt }) })}::jsonb)`,
       })
       .where('id', '=', operationId)
       .where('claimToken', '=', claimToken)
@@ -877,14 +877,12 @@ export class StudioExportRepository {
     }
     const union = unionDerivativePrivacy(
       input.ownerId,
-      evidence.map(
-        (row): DerivativeSourceEvidence => ({
-          assetId: row.assetId,
-          ownerId: row.ownerId,
-          lockReason: row.lockReason,
-          sensitive: row.sensitive,
-        }),
-      ),
+      evidence.map((row): DerivativeSourceEvidence => ({
+        assetId: row.assetId,
+        ownerId: row.ownerId,
+        lockReason: row.lockReason,
+        sensitive: row.sensitive,
+      })),
       { nsfwHiding: input.nsfwHiding },
     );
     return { union, evidence };

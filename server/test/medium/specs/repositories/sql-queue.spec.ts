@@ -551,8 +551,8 @@ describe('PostgreSQL queue', () => {
   });
 
   it('fences the linked operation without giving its dispatcher an independent retry after an unconfirmed stop', async () => {
-    const { ctx } = newMediumService(BaseService, { database: db, mock: [LoggingRepository] });
-    const operations = ctx.get(MediaOperationRepository as never) as MediaOperationRepository;
+    const { ctx } = newMediumService(BaseService, { database: db, mock: [LoggingRepository], real: [] });
+    const operations = ctx.get(MediaOperationRepository);
     const { user } = await ctx.newUser();
     const operation = await operations.create({
       ownerId: user.id,

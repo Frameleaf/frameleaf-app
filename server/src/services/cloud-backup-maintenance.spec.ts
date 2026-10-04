@@ -114,10 +114,9 @@ describe(CloudBackupMaintenance.name, () => {
       for (const key of objects.keys()) {
         if (key.startsWith('o/')) objects.set(key, Buffer.alloc(10));
       }
-      store.head.mockImplementation(async (_connection, key: string) => {
-        await executionDelay(60);
-        return { key, size: objects.get(key)!.length, etag: null };
-      });
+      store.head.mockImplementation((_connection, key: string) =>
+        executionDelay(60).then(() => ({ key, size: objects.get(key)!.length, etag: null })),
+      );
       const checkpoint = vi.fn().mockResolvedValue(true);
       const renew = vi.fn().mockResolvedValue(true);
       const task = withOperationExecution({ renew, pollMs: 10, deadlineMs: 100, idleMs: 100 }, () =>
@@ -141,13 +140,15 @@ describe(CloudBackupMaintenance.name, () => {
       for (let day = 10; day <= 13; day++) {
         objects.set(`db/dump-202609${day}.sql.gz`, Buffer.from('old unreferenced dump'));
       }
-      store.delete.mockImplementation(async (_connection, key: string) => {
-        await executionDelay(60);
-        objects.delete(key);
-      });
+      store.delete.mockImplementation((_connection, key: string) =>
+        executionDelay(60).then(() => {
+          objects.delete(key);
+        }),
+      );
       const checkpoint = vi.fn().mockResolvedValue(true);
-      const task = withOperationExecution({ renew: async () => true, pollMs: 10, deadlineMs: 100, idleMs: 100 }, () =>
-        sut.prune(bucket, { keepDaily: 3, keepWeekly: 0, keepMonthly: 0 }, false, checkpoint),
+      const task = withOperationExecution(
+        { renew: () => Promise.resolve(true), pollMs: 10, deadlineMs: 100, idleMs: 100 },
+        () => sut.prune(bucket, { keepDaily: 3, keepWeekly: 0, keepMonthly: 0 }, false, checkpoint),
       );
       const completion = expect(task).resolves.toMatchObject({ done: true, deleted: 2, dumpsRemoved: 2 });
       await vi.advanceTimersByTimeAsync(361);
@@ -161,13 +162,11 @@ describe(CloudBackupMaintenance.name, () => {
     it('times out a HEAD that completes no item despite successful heartbeats', async () => {
       objects = nightlyBucket(1);
       let stopped = false;
-      store.head.mockImplementation(async () => {
-        try {
-          await executionDelay(1000);
-        } finally {
+      store.head.mockImplementation(() =>
+        executionDelay(1000).finally(() => {
           stopped = true;
-        }
-      });
+        }),
+      );
       const renew = vi.fn().mockResolvedValue(true);
       const task = withOperationExecution({ renew, pollMs: 10, deadlineMs: 100, idleMs: 100 }, () =>
         sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {

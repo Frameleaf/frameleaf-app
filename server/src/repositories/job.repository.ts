@@ -268,15 +268,7 @@ export class JobRepository {
 
   private async stopOnce(graceMs: number) {
     this.coordinator?.postMessage({ type: 'stop' });
-    await Promise.race([
-      Promise.allSettled(
-        this.active
-          .values()
-          .map(({ finished }) => finished)
-          .toArray(),
-      ),
-      sleep(graceMs),
-    ]);
+    await Promise.race([Promise.allSettled(this.active.values().map(({ finished }) => finished)), sleep(graceMs)]);
     for (const { abort } of this.active.values()) {
       abort.abort(new Error('Worker stopped'));
     }

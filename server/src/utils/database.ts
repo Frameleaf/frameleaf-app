@@ -15,8 +15,8 @@ import {
   SqlBool,
   sql,
 } from 'kysely';
-import { PostgresJSDialect } from 'kysely-postgres-js';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
+import { PostgresJSDialect } from 'kysely-postgres-js';
 import { Notice, PostgresError } from 'postgres';
 import type { AudioStreamInfo, VectorExtension, VideoFormat, VideoPacketInfo, VideoStreamInfo } from 'src/types.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';

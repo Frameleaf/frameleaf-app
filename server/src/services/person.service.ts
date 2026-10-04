@@ -104,12 +104,7 @@ const UNDOABLE_CORRECTIONS = new Set<FaceCorrectionAction>([
 ]);
 
 type CorrectionConflictReason =
-  | 'already-undone'
-  | 'not-undoable'
-  | 'source-changed'
-  | 'face-gone'
-  | 'face-changed'
-  | 'person-gone';
+  'already-undone' | 'not-undoable' | 'source-changed' | 'face-gone' | 'face-changed' | 'person-gone';
 
 /** A 409 whose body names why a correction could not be undone (FL-57). */
 const correctionConflict = (reason: CorrectionConflictReason, message: string) =>

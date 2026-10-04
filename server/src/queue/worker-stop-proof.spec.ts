@@ -1,12 +1,12 @@
 import { Pool } from 'pg';
-import { WorkerStopProofRecorder, WORKER_PROOF_TIMEOUT_MS } from 'src/queue/worker-stop-proof.js';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
+import { WORKER_PROOF_TIMEOUT_MS, WorkerStopProofRecorder } from 'src/queue/worker-stop-proof.js';
 
 vi.mock('pg', () => ({ Pool: vi.fn() }));
 const config = {
   getEnv: () => ({ database: { config: { connectionType: 'url', url: 'postgres://localhost/frameleaf' } } }),
 } as unknown as ConfigRepository;
-const proof = { workerId: '9278736b-d61f-4b66-8de9-41d17a5e59ca', stoppedAt: 12345 };
+const proof = { workerId: '9278736b-d61f-4b66-8de9-41d17a5e59ca', stoppedAt: 12_345 };
 
 describe('supervisor stop proof recorder', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -51,17 +51,14 @@ describe('supervisor stop proof recorder', () => {
   });
 
   it('does not return a concurrently arriving proof before its first write attempt', async () => {
-    let finish!: () => void;
-    const first = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
+    const { promise: first, resolve: finish } = Promise.withResolvers<void>();
     const query = vi.fn().mockReturnValueOnce(first).mockResolvedValue({});
     const connect = vi.fn().mockResolvedValue({ query, release: vi.fn() });
     vi.mocked(Pool).mockImplementation(function () {
       return { connect, on: vi.fn(), end: vi.fn().mockResolvedValue(undefined) } as unknown as Pool;
     });
     const recorder = new WorkerStopProofRecorder(config);
-    const other = { workerId: '05781a21-0a8f-428d-be97-08fc7f219146', stoppedAt: 12346 };
+    const other = { workerId: '05781a21-0a8f-428d-be97-08fc7f219146', stoppedAt: 12_346 };
     try {
       const initial = recorder.record(proof);
       await Promise.resolve();
