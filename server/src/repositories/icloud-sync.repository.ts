@@ -631,7 +631,9 @@ export class ICloudSyncRepository {
       .where('kind', '=', MediaOperationKind.ICloudSync)
       .where(sql<string>`snapshot->>'connectionId'`, '=', connectionId);
     if (!options.includeAudits) {
-      query = query.where(sql<boolean>`snapshot->>'task' IS DISTINCT FROM 'identity-audit' AND snapshot->>'task' IS DISTINCT FROM 'identity-audit-weekly'`);
+      query = query.where(
+        sql<boolean>`snapshot->>'task' IS DISTINCT FROM 'identity-audit' AND snapshot->>'task' IS DISTINCT FROM 'identity-audit-weekly'`,
+      );
     }
     if (options.activeOnly) {
       query = query.where('status', 'in', [...ACTIVE_MEDIA_OPERATION_STATUSES]);

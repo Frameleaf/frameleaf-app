@@ -89,7 +89,10 @@ export class MediaRecoveryService {
   }
 
   async reconcile(input: MediaRecoveryInput): Promise<RecoveryResult> {
-    if (input.audit?.purpose === 'scheduled-weekly' && (!input.scheduled || !input.scheduledValidate || !input.scheduledVerified)) {
+    if (
+      input.audit?.purpose === 'scheduled-weekly' &&
+      (!input.scheduled || !input.scheduledValidate || !input.scheduledVerified)
+    ) {
       return { outcome: 'retry', reason: 'scheduled_worker_evidence_required' };
     }
     if (input.sourceHidden && !input.includeHidden) {
@@ -110,13 +113,15 @@ export class MediaRecoveryService {
       if (!resource.stagingPath || normalize(resource.stagingPath) !== normalize(input.stagedPath)) {
         return { outcome: 'failed', reason: 'staging_path_mismatch' };
       }
-      const staged = input.scheduledVerified ?? await this.integrity.validate({
-        path: input.stagedPath,
-        originalFileName: input.originalFileName,
-        type: input.type,
-        expected: { sizeInBytes: resource.expectedSize ?? undefined },
-        deep: true,
-      });
+      const staged =
+        input.scheduledVerified ??
+        (await this.integrity.validate({
+          path: input.stagedPath,
+          originalFileName: input.originalFileName,
+          type: input.type,
+          expected: { sizeInBytes: resource.expectedSize ?? undefined },
+          deep: true,
+        }));
       if (staged.status !== 'healthy') {
         return {
           outcome: staged.status === 'corrupt' ? 'failed' : staged.status === 'unsupported' ? 'needs-review' : 'retry',
@@ -167,13 +172,15 @@ export class MediaRecoveryService {
       }
       let outcome: RecoveryTarget['outcome'] = 'imported';
       if (candidate) {
-        const current = input.scheduledValidate ? await input.scheduledValidate(candidate.originalPath) : await this.integrity.validate({
-          path: candidate.originalPath,
-          originalFileName: candidate.originalFileName,
-          type: candidate.type,
-          expected: staged,
-          deep: true,
-        });
+        const current = input.scheduledValidate
+          ? await input.scheduledValidate(candidate.originalPath)
+          : await this.integrity.validate({
+              path: candidate.originalPath,
+              originalFileName: candidate.originalFileName,
+              type: candidate.type,
+              expected: staged,
+              deep: true,
+            });
         if (['timeout', 'transient', 'unsupported'].includes(current.status)) {
           return { outcome: current.status === 'unsupported' ? 'needs-review' : 'retry', reason: current.reason };
         }
@@ -244,14 +251,16 @@ export class MediaRecoveryService {
         originalFileName: basename(input.originalFileName),
         reservation,
         verified: staged,
-        verifyFinal: () => input.scheduledValidate ? input.scheduledValidate(reservation.promotedPath) :
-          this.integrity.validate({
-            path: reservation.promotedPath,
-            originalFileName: input.originalFileName,
-            type: input.type,
-            expected: staged,
-            deep: true,
-          }),
+        verifyFinal: () =>
+          input.scheduledValidate
+            ? input.scheduledValidate(reservation.promotedPath)
+            : this.integrity.validate({
+                path: reservation.promotedPath,
+                originalFileName: input.originalFileName,
+                type: input.type,
+                expected: staged,
+                deep: true,
+              }),
       });
     } catch (error) {
       const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
