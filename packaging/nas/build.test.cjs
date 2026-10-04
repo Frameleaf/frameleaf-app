@@ -3,7 +3,7 @@ const test = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const { build } = require('./build.cjs');
 const { NAS_ATTESTATION_TYPE } = require('../../.github/verify-release-bundle.cjs');
 const { createBundle, hash, INSTALL_FILES, VARIANTS, REPOSITORY, SOURCE, ATTESTATION_TYPE } = require('../../.github/frameleaf-release.cjs');
@@ -44,7 +44,7 @@ test('TrueNAS rendering rejects missing, empty, changed and symlinked libraries 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
-test('authenticated release packaging, negative trust cases, and Synology worker timing', async () => {
+test('authenticated release packaging, negative trust cases, and Synology worker timing', async (t) => {
   if (process.env.FRAMELEAF_REQUIRE_TRUENAS_RENDER === 'true') {
     assert(process.env.TRUENAS_LIBRARY, 'Mandatory hosted TrueNAS rendering requires TRUENAS_LIBRARY');
   }
@@ -306,9 +306,76 @@ test('authenticated release packaging, negative trust cases, and Synology worker
     assert.equal(fs.readFileSync(path.join(state, 'frameleaf.env'), 'utf8'), configured);
     fs.mkdirSync(staging);
     execFileSync('tar', ['-xzf', path.join(unpack, 'package.tgz'), '-C', staging]);
-    execFileSync('sh', [path.join(unpack, 'scripts/preinst')], { env: { ...env, SYNOPKG_PKG_STATUS: 'UPGRADE' } });
+    execFileSync('sh', [localScript], { env: { ...installEnv, SYNOPKG_PKG_STATUS: 'UPGRADE' } });
     assert.equal(fs.readFileSync(path.join(staging, 'project/.env'), 'utf8'), configured);
     assert.equal(fs.readFileSync(path.join(target, 'project/.env'), 'utf8'), configured);
+    // FL-199: upgrade must validate retained configuration before staging it.
+    // Use the same production-hook fixture adapter as the successful install:
+    // only its /volumeN prefix policy is mapped to this temporary fixture root.
+    // Native DSM path policy/platform behavior remain unqualified. Never source
+    // or evaluate retained dotenv. The successful upgrade is the readable control.
+    const retainedConfig = path.join(state, 'frameleaf.env');
+    const stagedConfig = path.join(staging, 'project/.env');
+    const installedConfig = fs.readFileSync(path.join(target, 'project/.env'));
+    const mediaSentinel = path.join(localVolume, 'library/retained-media.bin');
+    const databaseSentinel = path.join(databasePath, 'retained-database.bin');
+    const sentinelBytes = Buffer.from([0, 255, 7, 19, 83]);
+    fs.writeFileSync(mediaSentinel, sentinelBytes);
+    fs.writeFileSync(databaseSentinel, sentinelBytes);
+    const nestedMedia = path.join(databasePath, 'media');
+    fs.mkdirSync(nestedMedia);
+    const clusterVersion = fs.readFileSync(path.join(databasePath, 'PG_VERSION'));
+    for (const [name, changes] of [
+      ['port below allowed range', { WEB_PORT: '1' }],
+      ['port above allowed range', { WEB_PORT: '65536' }],
+      ['nonnumeric port', { WEB_PORT: 'not-a-port' }],
+      ['invalid ML boolean', { ENABLE_ML: 'perhaps' }],
+      ['media traversal', { UPLOAD_LOCATION: `${localVolume}/library/../library` }],
+      ['database path containing spaces', { DB_DATA_LOCATION: `${localVolume}/unsafe database` }],
+      ['symlinked media path', { UPLOAD_LOCATION: path.join(localVolume, 'media-link') }],
+      ['equal media and database paths', { DB_DATA_LOCATION: path.join(localVolume, 'library') }],
+      ['database nested in media', { DB_DATA_LOCATION: path.join(localVolume, 'library/postgres') }],
+      ['media nested in database', { UPLOAD_LOCATION: nestedMedia }],
+    ]) {
+      await t.test(`Synology upgrade refuses retained ${name} before staging`, () => {
+        let invalid = configured;
+        for (const [key, value] of Object.entries(changes)) {
+          const original = invalid;
+          invalid = invalid.replace(new RegExp(`^${key}=.*$`, 'm'), `${key}=${value}`);
+          assert.notEqual(invalid, original, 'Fixture must change a declared retained field');
+        }
+        const retainedBytes = Buffer.from(invalid);
+        fs.writeFileSync(retainedConfig, retainedBytes);
+        fs.unlinkSync(stagedConfig);
+        try {
+          const result = spawnSync('sh', [localScript], {
+            env: { ...installEnv, SYNOPKG_PKG_STATUS: 'UPGRADE' }, stdio: 'pipe',
+          });
+          assert.ifError(result.error);
+          // Report only outcome flags, never retained configuration/passwords.
+          assert.deepEqual({
+            refused: result.status !== null && result.status !== 0 && result.signal === null,
+            staged: fs.existsSync(stagedConfig),
+            stagedTemporary: fs.existsSync(`${stagedConfig}.tmp`),
+            retainedUnchanged: fs.readFileSync(retainedConfig).equals(retainedBytes),
+            installedUnchanged: fs.readFileSync(path.join(target, 'project/.env')).equals(installedConfig),
+            mediaUnchanged: fs.readFileSync(mediaSentinel).equals(sentinelBytes),
+            databaseUnchanged: fs.readFileSync(databaseSentinel).equals(sentinelBytes),
+            clusterVersionUnchanged: fs.readFileSync(path.join(databasePath, 'PG_VERSION')).equals(clusterVersion),
+          }, {
+            refused: true, staged: false, stagedTemporary: false,
+            retainedUnchanged: true, installedUnchanged: true, mediaUnchanged: true,
+            databaseUnchanged: true, clusterVersionUnchanged: true,
+          });
+        } finally {
+          fs.writeFileSync(retainedConfig, configured);
+          // Restore only disposable fixture staging so independent cases run.
+          fs.rmSync(stagedConfig, { force: true });
+          fs.rmSync(`${stagedConfig}.tmp`, { force: true });
+          fs.writeFileSync(stagedConfig, configured, { mode: 0o600 });
+        }
+      });
+    }
     assert.throws(() => execFileSync('sh', [localScript], { env: { ...installEnv, wizard_web_port: '1' }, stdio: 'pipe' }));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
