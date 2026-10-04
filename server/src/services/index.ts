@@ -1,3 +1,5 @@
+import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
+import { ICloudScheduledWorkerService } from 'src/services/icloud-scheduled-worker.service.js';
 import { ActivityService } from 'src/services/activity.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AnalyticsService } from 'src/services/analytics.service.js';
@@ -148,6 +150,8 @@ import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.j
 
 export const services = [
   ICloudAuditService,
+  ICloudScheduledStagingService,
+  ICloudScheduledWorkerService,
   ICloudIdentityAdoptionService,
   PhotographyWorkspaceService,
   PhotographyWorkflowService,
