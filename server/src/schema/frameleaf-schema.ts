@@ -1,4 +1,6 @@
 import type { DatabaseSchema } from '@frameleaf/sql-tools';
+// Standalone migration tooling loads this module with native ESM, without application aliases.
+// eslint-disable-next-line no-restricted-imports
 import { readCatalogArtifact } from './catalog-artifacts.js';
 
 /** The complete captured catalog is the single evolving desired-schema authority. */
