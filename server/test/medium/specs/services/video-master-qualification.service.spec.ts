@@ -755,6 +755,99 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     expect(digest(source)).toBe(before);
   }, 120_000);
 
+  it.each(['aligned', 'delayed'] as const)(
+    'publishes an original-derived %s audio presentation with nonzero origin and reordered video packets',
+    async (mode) => {
+      const input = fixture(folder, 320, 240, 36, 1);
+      const reordered = join(folder, 'nonzero-audio-bframes.mp4');
+      ffmpeg(
+        '-i',
+        input,
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a:0',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '10',
+        '-bf',
+        '2',
+        '-c:a',
+        'copy',
+        '-video_track_timescale',
+        '90000',
+        '-output_ts_offset',
+        '5',
+        reordered,
+      );
+      let source = reordered;
+      if (mode === 'delayed') {
+        source = join(folder, 'intentional-source-delay.mp4');
+        ffmpeg(
+          '-copyts',
+          '-i',
+          reordered,
+          '-itsoffset',
+          '0.25',
+          '-i',
+          reordered,
+          '-map',
+          '0:v:0',
+          '-map',
+          '1:a:0',
+          '-c',
+          'copy',
+          '-avoid_negative_ts',
+          'disabled',
+          '-video_track_timescale',
+          '90000',
+          source,
+        );
+      }
+      const sourcePresentation = presentation(source);
+      expect(sourcePresentation.videoStart).toBeGreaterThan(4);
+      const sourceOffset = sourcePresentation.audioStart - sourcePresentation.videoStart;
+      if (mode === 'delayed') {
+        expect(sourceOffset).toBeGreaterThan(0.2);
+      } else {
+        assertAVPresentation(sourcePresentation);
+      }
+      const packetPts = inspect<{ packets: Array<{ pts: number }> }>(
+        source,
+        '-select_streams',
+        'v:0',
+        '-show_packets',
+        '-show_entries',
+        'packet=pts',
+      ).packets.map((packet) => packet.pts);
+      expect(packetPts.some((pts, index) => index > 0 && pts < packetPts[index - 1])).toBe(true);
+      const originalHash = digest(source);
+      const sourceIds = frameIds(source);
+      const sourceTimes = frameTimes(source);
+      const asset = await seed(source);
+      const version = await requested(asset.id, [fullCrop(320, 240)]);
+      expect(await render(asset.id, version.id)).toBe(JobStatus.Success);
+      const current = (await setup.ctx.get(AssetEditRepository).getVideoVersion(asset.id, version.id))!;
+      expect((await selection(asset.id)).currentVersionId).toBe(version.id);
+      const actual = presentation(current.masterPath!);
+      expect(Math.abs(actual.audioStart - actual.videoStart - sourceOffset)).toBeLessThanOrEqual(clockTolerance);
+      const sourceEndOffset = sourcePresentation.audioEnd - sourcePresentation.videoEnd;
+      expect(Math.abs(actual.audioEnd - actual.videoEnd - sourceEndOffset)).toBeLessThanOrEqual(aacTailTolerance);
+      expect(audioPackets(current.masterPath!)).toEqual(audioPackets(source));
+      expect(frameIds(current.masterPath!)).toEqual(sourceIds);
+      const actualTimes = frameTimes(current.masterPath!);
+      expect(actualTimes).toHaveLength(sourceTimes.length);
+      for (const [index, pts] of actualTimes.entries()) {
+        expect(Math.abs(pts - actualTimes[0] - (sourceTimes[index] - sourceTimes[0]))).toBeLessThanOrEqual(2 / 90_000);
+      }
+      expect(digest(source)).toBe(originalHash);
+    },
+    120_000,
+  );
+
   it('refuses a timestamp-only audio offset before replacing the current real master', async () => {
     // Existing pre-cutover production admission: this does not qualify the final PG19 graph or lossless encoding.
     const source = fixture(folder, 320, 240, 36, 1);

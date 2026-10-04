@@ -993,10 +993,16 @@ export const findAudioLayoutMismatch = (
  * The two streams quantise independently, so they may differ by at most one audio frame plus one
  * video frame. A duration the container does not state cannot be checked, and an unchecked
  * alignment is not accepted as a good one.
+ * With a measured source, a clock-preserving recipe must retain its relative presentation starts
+ * and ends instead. Common origin normalization and intentional source offsets are allowed.
  */
 export const findAvAlignmentMismatch = (
-  video: Pick<VideoStreamInfo, 'duration' | 'frameRate' | 'frameRateRational'> | undefined,
-  audio: Pick<AudioStreamInfo, 'duration' | 'codecName' | 'sampleRate'> | undefined,
+  video: Pick<VideoStreamInfo, 'duration' | 'startTime' | 'frameRate' | 'frameRateRational'> | undefined,
+  audio: Pick<AudioStreamInfo, 'duration' | 'startTime' | 'codecName' | 'sampleRate'> | undefined,
+  source?: {
+    video: Pick<VideoStreamInfo, 'startTime' | 'duration'>;
+    audio: Pick<AudioStreamInfo, 'startTime' | 'duration'>;
+  },
 ): string | null => {
   if (!video || !audio) {
     return null;
@@ -1007,6 +1013,29 @@ export const findAvAlignmentMismatch = (
     return 'the durations of its audio and video streams could not be measured';
   }
   const tolerance = (videoFrameSeconds(video) ?? 0) + (audioFrameSeconds(audio) ?? 0);
+  if (source) {
+    const starts = [source.video.startTime, source.audio.startTime, video.startTime, audio.startTime];
+    const durations = [source.video.duration, source.audio.duration, videoDuration, audioDuration];
+    if (
+      starts.some((value) => typeof value !== 'number' || !Number.isFinite(value)) ||
+      durations.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+    ) {
+      return 'the source and result audio/video presentation timing could not be measured';
+    }
+    // Compare relative presentation, not absolute origins. Muxing may normalize both streams;
+    // an intentional source delay and source priming are not a newly introduced offset.
+    const expectedStart = source.audio.startTime! - source.video.startTime!;
+    const actualStart = audio.startTime! - video.startTime!;
+    const expectedEnd = expectedStart + source.audio.duration! - source.video.duration!;
+    const actualEnd = actualStart + audioDuration - videoDuration;
+    if (Math.abs(actualStart - expectedStart) > tolerance + 1e-6) {
+      return 'its audio/video presentation start offset changed from the source';
+    }
+    if (Math.abs(actualEnd - expectedEnd) > tolerance + 1e-6) {
+      return 'its audio/video presentation end offset changed from the source';
+    }
+    return null;
+  }
   const drift = Math.abs(audioDuration - videoDuration);
   if (drift > tolerance + 1e-6) {
     return (
@@ -1023,18 +1052,22 @@ export const findAvAlignmentMismatch = (
  * - A source with audio, not muted by the recipe, must still have an audio track.
  * - The channel count, layout and sample rate the source stated survive, unless a stereo downmix
  *   was explicitly chosen.
- * - The master's audio and video end together, within one audio frame and one video frame.
+ * - A clock-preserving recipe retains source-relative presentation within one audio and video frame.
+ * - Temporal recipes retain the existing duration check until their presentation mappings are qualified.
  */
 export const validateAudioMaster = ({
   source,
+  sourceVideo,
   output,
   outputVideo,
   muted = false,
   policy = AudioChannelPolicy.Preserve,
 }: {
-  source?: Pick<AudioStreamInfo, 'channels' | 'channelLayout' | 'sampleRate'>;
-  output?: Pick<AudioStreamInfo, 'channels' | 'channelLayout' | 'sampleRate' | 'duration' | 'codecName'>;
-  outputVideo?: Pick<VideoStreamInfo, 'duration' | 'frameRate' | 'frameRateRational'>;
+  source?: Pick<AudioStreamInfo, 'channels' | 'channelLayout' | 'sampleRate' | 'duration' | 'startTime'>;
+  /** Actual source timing for recipes that preserve the clip clock; temporal recipes have separate admission. */
+  sourceVideo?: Pick<VideoStreamInfo, 'duration' | 'startTime'>;
+  output?: Pick<AudioStreamInfo, 'channels' | 'channelLayout' | 'sampleRate' | 'duration' | 'startTime' | 'codecName'>;
+  outputVideo?: Pick<VideoStreamInfo, 'duration' | 'startTime' | 'frameRate' | 'frameRateRational'>;
   muted?: boolean;
   policy?: AudioChannelPolicy;
 }): void => {
@@ -1050,7 +1083,7 @@ export const validateAudioMaster = ({
         sampleRate: source.sampleRate ?? null,
       },
       output,
-    ) ?? findAvAlignmentMismatch(outputVideo, output);
+    ) ?? findAvAlignmentMismatch(outputVideo, output, sourceVideo ? { video: sourceVideo, audio: source } : undefined);
   if (mismatch) {
     throw new MediaPolicyError(MediaPolicyViolation.MasterValidationFailed, `Edited-master audio: ${mismatch}`);
   }

@@ -1539,15 +1539,20 @@ export class MediaService extends BaseService {
         colorDecision,
         packetCopy: !!metadataRotation,
       });
-      // FL-102: the audio survives too — present, same layout and rate, and ending with the picture.
+      const preservesClipClock = edits.every(
+        (edit) => !(edit.action === AssetEditAction.Trim || edit.action === AssetEditAction.Speed),
+      );
+      // Preserve the source's relative audio presentation, including intentional offsets. Trim/speed
+      // graphs transform their clocks separately; retain their existing duration admission here.
       validateAudioMaster({
         source: audioStream,
+        sourceVideo: preservesClipClock ? videoStream : undefined,
         output: masterInfo.audioStreams[0],
         outputVideo: masterVideo,
         muted: edits.some((edit) => edit.action === AssetEditAction.Audio && !!edit.parameters.muted),
       });
       // Only full-clip timing-preserving recipes: trim/speed retain their separate semantics.
-      if (edits.every((edit) => !(edit.action === AssetEditAction.Trim || edit.action === AssetEditAction.Speed))) {
+      if (preservesClipClock) {
         const sourcePackets = await this.mediaRepository.probePackets(version.sourcePath, videoStream.index);
         const masterPackets = await this.mediaRepository.probePackets(master, masterVideo.index);
         validateFullClipMasterTiming(videoStream, masterVideo, sourcePackets, masterPackets);
