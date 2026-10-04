@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Prerequisite execution only. No migration adapter, certification report or signing path.
+// Admission and disposable execution only. No certification report or signing path.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -7,6 +7,8 @@ const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { verifyBundle } = require('../../.github/verify-release-bundle.cjs');
 const { cosign, COSIGN_PUBLIC_KEY } = require('../../.github/frameleaf-release.cjs');
+const { verifyDatabaseCheckpoint } = require('./checkpoint-database.cjs');
+const { validateOfficialPlan, runOfficialAdapter } = require('./official-adapter.cjs');
 
 const digest = /^sha256:[a-f0-9]{64}$/;
 const image = /^ghcr\.io\/frameleaf\/frameleaf-postgres(?::[^@\s]+)?@sha256:[a-f0-9]{64}$/;
@@ -101,6 +103,8 @@ async function preflight(plan, releaseDirectory, releaseTag) {
   assert(release.dependencies?.some((row) => `${row.reference.split('@')[0]}@${row.digest}` === nas.images.postgres), 'PostgreSQL was not verified for this release');
   validateQualificationPlan(plan, nas, JSON.parse(fs.readFileSync(path.join(__dirname, 'certified-sources.json'), 'utf8')));
   cosign(['verify', '--key', path.resolve(__dirname, '../..', COSIGN_PUBLIC_KEY), plan.targetPostgres]);
+  await validateOfficialPlan(plan, nas);
+  return nas;
 }
 
 function backupRestore(plan, directory) {
@@ -123,29 +127,7 @@ function backupRestore(plan, directory) {
   const volumes = [];
   const docker = (args, options = {}) => execFileSync('docker', args, { encoding: 'utf8', timeout: 120000, maxBuffer: 1024 * 1024 * 1024, ...options });
   const sql = (name, query) => docker(['exec', name, 'psql', '-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'qualification', '-c', query]).trim();
-  const fingerprint = (name) => {
-    const extensions = JSON.parse(sql(name, `SELECT json_agg(x ORDER BY x.name COLLATE "C") FROM (SELECT extname AS name, extversion AS version FROM pg_extension) x`));
-    assert.deepEqual(extensions, [...plan.extensions].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0), 'Restored extension inventory differs');
-    const schema = docker(['exec', name, 'pg_dump', '-U', 'postgres', '-d', 'qualification', '--schema-only', '--no-owner', '--no-privileges']);
-    // PG14 pg_dump includes its tool/server version in comments; both clones use the exact same image.
-    const normalized = schema.replace(/^\\(?:un)?restrict .*\n/gm, '');
-    assert.equal(hash(normalized), plan.checkpoint.databaseSchemaDigest, 'Restored database schema differs');
-    const inventory = JSON.parse(sql(name, `SELECT coalesce(json_agg(x ORDER BY x.schema COLLATE "C", x."table" COLLATE "C"), '[]'::json) FROM (SELECT schemaname AS schema, tablename AS "table" FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')) x`));
-    const tableInventory = plan.checkpoint.tableCounts.map(({ schema, table }) => ({ schema, table })).sort((a, b) => a.schema < b.schema ? -1 : a.schema > b.schema ? 1 : a.table < b.table ? -1 : a.table > b.table ? 1 : 0);
-    assert.deepEqual(inventory, tableInventory, 'Database table inventory differs');
-    for (const row of plan.checkpoint.tableCounts) {
-      assert.equal(Number(sql(name, `SELECT count(*) FROM "${row.schema}"."${row.table}"`)), row.count, 'Restored database row count differs');
-      const rows = docker(['exec', name, 'psql', '-X', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'qualification', '-c', `COPY (SELECT row_to_json(t)::text FROM "${row.schema}"."${row.table}" t ORDER BY row_to_json(t)::text COLLATE "C") TO STDOUT`]);
-      assert.equal(hash(rows), row.dataDigest, 'Restored database table content differs');
-    }
-    const sequenceInventory = JSON.parse(sql(name, `SELECT coalesce(json_agg(x ORDER BY x.schema COLLATE "C", x.name COLLATE "C"), '[]'::json) FROM (SELECT schemaname AS schema, sequencename AS name FROM pg_sequences WHERE schemaname NOT IN ('pg_catalog', 'information_schema')) x`));
-    const expectedSequences = plan.checkpoint.sequences.map(({ schema, name }) => ({ schema, name })).sort((a, b) => a.schema < b.schema ? -1 : a.schema > b.schema ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-    assert.deepEqual(sequenceInventory, expectedSequences, 'Restored sequence inventory differs');
-    for (const row of plan.checkpoint.sequences) {
-      const state = JSON.parse(sql(name, `SELECT row_to_json(x) FROM (SELECT last_value::text AS "lastValue", is_called AS "isCalled" FROM "${row.schema}"."${row.name}") x`));
-      assert.deepEqual(state, { lastValue: row.lastValue, isCalled: row.isCalled }, 'Restored sequence state differs');
-    }
-  };
+  const fingerprint = (name) => verifyDatabaseCheckpoint(plan, name, docker);
   try {
     docker(['pull', plan.targetPostgres], { stdio: 'inherit' });
     for (const suffix of ['source-clone', 'restore-clone']) {
@@ -182,10 +164,10 @@ if (require.main === module) (async () => {
   assert(['preflight', 'backup-restore', 'migration', 'rollback'].includes(phase), 'Unsupported qualification phase');
   // Every phase independently reauthenticates inputs; no unsigned passed-status file can advance it.
   const plan = JSON.parse(fs.readFileSync(planFile, 'utf8'));
-  await preflight(plan, path.join(directory, 'release'), tag);
+  const nas = await preflight(plan, path.join(directory, 'release'), tag);
   if (phase === 'preflight') return;
   if (phase === 'backup-restore') return backupRestore(plan, path.join(directory, 'checkpoint'));
-  throw new Error(`${phase}: reviewed source-specific migration and paired rollback adapters are not implemented; no qualification receipt can be emitted`);
+  return runOfficialAdapter(plan, path.join(directory, 'checkpoint'), nas, phase, { verifyCheckpointPair, mediaInventory });
 })().catch((error) => { console.error(error.message); process.exitCode = 1; });
 
 module.exports = { validateQualificationPlan, verifyCheckpointPair, mediaInventory, preflight, backupRestore };
