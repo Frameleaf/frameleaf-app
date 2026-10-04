@@ -103,9 +103,12 @@ import {
   storeAddress,
 } from 'src/utils/frameleaf-cloud.js';
 import { BoundTokenRefusedError, USE_DPOP_NONCE } from 'src/utils/frameleaf-dpop.js';
+import { localConnectionCandidates } from 'src/utils/frameleaf-lan-discovery.js';
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import {
+  MAX_CANDIDATES,
   type RemoteHostname,
+  detectHostAddresses,
   edgeStateCurrent,
   heartbeatEndpoints,
   hostnameProblem,
@@ -772,7 +775,9 @@ export class FrameleafCloudService extends BaseService {
       usedLinkTokens: previous?.usedLinkTokens,
     };
     this.frameleafCloudRepository.forget();
-    await this.saveLink(link, 'link');
+    // Only fresh approved registration may replace the Cloud authority; background writes must
+    // still belong to the currently linked generation.
+    await this.saveLink(link, 'link', { replaceAuthority: true });
     await this.clearKeyRecovery();
     // FL-185: a new link starts without a cloud processing suspension; the cloud says again if it holds one
     await this.forgetMlSuspension();
@@ -914,7 +919,13 @@ export class FrameleafCloudService extends BaseService {
         revoked: { at: new Date().toISOString(), reason: reason ?? '' },
       }),
     };
-    await this.saveLink(next, 'link');
+    // Fence authority removal together with account/session cleanup. Confirmation uses this same
+    // lock through link, role, audit and notification writes, so none can arrive after cleanup.
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, next);
+      await this.endFrameleafSignIns();
+    });
+    await this.broadcast('link');
     await this.systemMetadataRepository.delete(SystemMetadataKey.FrameleafMlWallet);
     // FL-185: an ML suspension belongs to the link that ended
     await this.forgetMlSuspension();
@@ -940,7 +951,6 @@ export class FrameleafCloudService extends BaseService {
     if (!isEqual(oldConfig.frameleafCloud, newConfig.frameleafCloud)) {
       await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
     }
-    await this.endFrameleafSignIns();
   }
 
   /**
@@ -1194,14 +1204,35 @@ export class FrameleafCloudService extends BaseService {
         ? await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess)
         : null;
     const current = edgeStateCurrent(state) && state?.names?.instanceId === link.instanceId;
+    const edge = current && state ? heartbeatEndpoints(state.candidates) : [];
     return {
-      endpoints: current && state ? heartbeatEndpoints(state.candidates) : [],
+      endpoints: link.status === 'linked' ? this.withHomeFallback(edge, config.server.lanDiscovery) : edge,
       remoteAccess: {
         enabled,
         relayConnected: current && !!state?.relay.connected,
         direct: current && settings.mode === 'relay-and-direct' && !!state?.direct.listening,
       },
     };
+  }
+
+  /**
+   * FL-218 (owner decision 2026-10-03): home-network access is every user's; only relay and remote access
+   * need a Frameleaf Cloud subscription. So a linked server whose edge worker reports no `local` candidate
+   * (remote access off, or not enrolled) still publishes its plain-HTTP LAN fallback (the FL-229 candidate
+   * `GET /server/connections` returns), so the apps can reach it at home. The admin's LAN discovery switch
+   * (`server.lanDiscovery`) turns this off together with the DNS-SD broadcast. The cloud's resources API
+   * decides which remote-access candidates an account sees.
+   */
+  private withHomeFallback(edge: Array<{ kind: string; url: string }>, lanDiscovery: boolean) {
+    if (!lanDiscovery || edge.some(({ kind }) => kind === 'local')) {
+      return edge;
+    }
+    const { port, frameleafCloud } = this.configRepository.getEnv();
+    const { lanAddresses } = detectHostAddresses(frameleafCloud.localUrl);
+    const local = heartbeatEndpoints(
+      localConnectionCandidates({ port, addresses: lanAddresses, localUrl: frameleafCloud.localUrl }),
+    );
+    return [...local.slice(0, Math.max(0, MAX_CANDIDATES - edge.length)), ...edge];
   }
 
   /** The exact payload of one check-in. */
@@ -1398,8 +1429,7 @@ export class FrameleafCloudService extends BaseService {
       await this.jobRepository.queue({ name: JobName.FrameleafLicenseRefresh, data: { force: true } });
     }
     await this.removeRetiredKey();
-    await this.saveLink(next, 'link');
-    return JobStatus.Success;
+    return (await this.saveLink(next, 'link')) ? JobStatus.Success : JobStatus.Skipped;
   }
 
   /**
@@ -1635,7 +1665,7 @@ export class FrameleafCloudService extends BaseService {
     const message = error instanceof Error ? error.message : String(error);
     const failures = (link.heartbeat?.failures ?? 0) + 1;
     this.logger.warn(`Frameleaf Cloud check-in failed (${failures} in a row): ${message}`);
-    await this.saveLink(
+    const saved = await this.saveLink(
       {
         ...link,
         lastError: message,
@@ -1655,6 +1685,9 @@ export class FrameleafCloudService extends BaseService {
       },
       'link',
     );
+    if (!saved) {
+      return;
+    }
     if (failures >= HEARTBEAT_FAILURE_NOTICE_THRESHOLD) {
       this.notify({
         level: NotificationLevel.Warning,
@@ -2201,11 +2234,32 @@ export class FrameleafCloudService extends BaseService {
     return link && link.cloudUrl === cloudUrl ? link : null;
   }
 
-  private async saveLink(link: FrameleafCloudLink, topic: FrameleafCloudTopic | null) {
-    await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, link);
-    if (topic) {
+  private async saveLink(
+    link: FrameleafCloudLink,
+    topic: FrameleafCloudTopic | null,
+    { replaceAuthority = false } = {},
+  ): Promise<boolean> {
+    const saved = await this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      if (link.status === 'linked' && !replaceAuthority) {
+        const current = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudLink);
+        if (
+          current?.status !== 'linked' ||
+          current.cloudUrl !== link.cloudUrl ||
+          current.instanceId !== link.instanceId ||
+          current.accountId !== link.accountId ||
+          current.linkedAt !== link.linkedAt ||
+          !isEqual(current.oidc, link.oidc)
+        ) {
+          return false;
+        }
+      }
+      await this.systemMetadataRepository.set(SystemMetadataKey.FrameleafCloudLink, link);
+      return true;
+    });
+    if (saved && topic) {
       await this.broadcast(topic);
     }
+    return saved;
   }
 
   /** Tell open admin pages that something changed; only the topic travels. */

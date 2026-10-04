@@ -13,18 +13,42 @@ import type { FrameleafRemoteConnection } from 'src/types.js';
 export const localConnectionCandidates = (options: {
   port: number;
   addresses: string[];
+  /** `FRAMELEAF_LOCAL_URL`: the operator's own address for this server on the home network. */
+  localUrl?: string | null;
 }): FrameleafRemoteConnection[] =>
-  options.addresses.map((address) => ({
-    kind: 'local',
-    uri: `http://${address}:${options.port}`,
-    protocol: 'http',
-    address,
-    port: options.port,
-    local: true,
-    relay: false,
-    ipv6: false,
-    custom: false,
-    dnsRebindingProtection: false,
-    httpsRequired: false,
-    verified: false,
-  }));
+  options.addresses.map((address) => {
+    const { protocol, port } = localAddressFor(address, options);
+    return {
+      kind: 'local',
+      uri: `${protocol}://${address}:${port}`,
+      protocol,
+      address,
+      port,
+      local: true,
+      relay: false,
+      ipv6: false,
+      custom: false,
+      dnsRebindingProtection: false,
+      httpsRequired: protocol === 'https',
+      verified: false,
+    };
+  });
+
+/**
+ * The scheme and port an app reaches `address` on. When `FRAMELEAF_LOCAL_URL` names that address, its
+ * scheme and port win over the process's bind port: in a container with a port mapping (host 2290 to
+ * container 2283) only the operator's URL names a port that answers on the network.
+ */
+export const localAddressFor = (
+  address: string,
+  options: { port: number; localUrl?: string | null },
+): { protocol: 'http' | 'https'; port: number } => {
+  if (options.localUrl) {
+    const url = new URL(options.localUrl);
+    if (url.hostname === address) {
+      const protocol = url.protocol === 'https:' ? 'https' : 'http';
+      return { protocol, port: url.port ? Number(url.port) : protocol === 'https' ? 443 : 80 };
+    }
+  }
+  return { protocol: 'http', port: options.port };
+};

@@ -570,6 +570,7 @@ export class MediaRepository {
     let startPts: number | null = null;
     let firstDuration: number | null = null;
     let variableFrameRate = false;
+    let presentationValid = true;
     const parseLine = (line: string) => {
       if (!line) {
         return;
@@ -577,6 +578,18 @@ export class MediaRepository {
       const [ptsStr, durationStr, flags] = line.split(',', 3);
       const pts = Number.parseInt(ptsStr);
       const duration = Number.parseInt(durationStr);
+      if (
+        flags?.[1] !== 'D' &&
+        (!/^-?\d+$/.test(ptsStr) ||
+          !/^\d+$/.test(durationStr) ||
+          !flags ||
+          !Number.isSafeInteger(pts) ||
+          !Number.isSafeInteger(duration) ||
+          duration <= 0 ||
+          !Number.isSafeInteger(pts + duration))
+      ) {
+        presentationValid = false;
+      }
       if (Number.isNaN(pts) || Number.isNaN(duration) || !flags) {
         return;
       }
@@ -628,7 +641,17 @@ export class MediaRepository {
           return resolve(null);
         }
 
+        let presentation: VideoPacketInfo['presentation'] = null;
+        if (presentationValid) {
+          presentation = { startPts: Infinity, endPts: -Infinity };
+          for (const packet of postDiscard) {
+            presentation.startPts = Math.min(presentation.startPts, packet.pts);
+            presentation.endPts = Math.max(presentation.endPts, packet.pts + packet.duration);
+          }
+        }
+
         resolve({
+          presentation,
           totalDuration,
           packetCount: postDiscard.length,
           outputFrames: this.cfrOutputFrames(postDiscard, postDiscard.length / totalDuration),

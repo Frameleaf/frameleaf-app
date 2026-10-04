@@ -14,6 +14,9 @@ import {
   MediaHealthStatus,
 } from 'src/enum.js';
 import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
+import * as identityMigration from 'src/fork-schema/migrations/0000000000213-ICloudSourceIdentity.js';
+import * as auditMigration from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
+import * as reuseMigration from 'src/fork-schema/migrations/0000000000217-ICloudIdentityReuse.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
@@ -92,7 +95,9 @@ describe(MediaRecoveryRepository.name, () => {
       await sql.raw(statement).execute(db);
     }
     await migration.up(db);
-    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
+    await identityMigration.up(db);
+    await auditMigration.up(db);
+    await reuseMigration.up(db);
     sut = new MediaRecoveryRepository(db, new ForkPrivacyRepository(db), new ForkEnrichmentRepository(db));
     health = new MediaHealthRepository(db);
   });

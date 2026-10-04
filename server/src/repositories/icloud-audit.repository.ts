@@ -8,6 +8,7 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudVerifyDto, ICloudVerifyResponseDto } from 'src/dtos/icloud-identity.dto.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, UserMetadataKey } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { AuditExecutionAuthority, guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -91,6 +92,29 @@ export async function lockAuditOwner(db: Transaction<DB>, ownerId: string, diges
   const row = await owner.executeTakeFirst();
   if (!row && !receiptCleanup) {
     throw new Error('audit_owner_unavailable');
+  }
+}
+
+/** Persisted purpose selects admission. Scheduled admission is transaction-only and never executes bytes. */
+export async function guardAuditAuthority(
+  db: Kysely<DB>,
+  authority: AuditExecutionAuthority,
+  ownerId: string,
+  requireClaim = true,
+  resource?: { id: string; leaseToken: string },
+) {
+  const {
+    rows: [row],
+  } = await sql<{ purpose: string }>`SELECT purpose FROM immich_fork.icloud_identity_audit
+    WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(db);
+  if (row?.purpose === 'scheduled-weekly') {
+    if (authority.purpose !== 'scheduled-weekly' || !db.isTransaction) {
+      return;
+    }
+    return guardScheduledAudit(db as Transaction<DB>, authority, ownerId, { requireClaim, resource });
+  }
+  if (row?.purpose === 'manual-session' && authority.purpose !== 'scheduled-weekly') {
+    return guardAudit(db, authority, ownerId, db.isTransaction, requireClaim);
   }
 }
 
@@ -520,6 +544,12 @@ export class ICloudAuditRepository {
       .then(({ rows }) => rows[0]);
   }
 
+  async operationPurpose(operationId: string, ownerId: string) {
+    const { rows } = await sql<{ purpose: string }>`SELECT DISTINCT purpose FROM immich_fork.icloud_identity_audit
+      WHERE "operationId"=${operationId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(this.db);
+    return rows.length === 1 ? rows[0].purpose : rows.length > 0 ? 'invalid' : undefined;
+  }
+
   async check(authority: AuditAuthority, ownerId: string, requireClaim = true) {
     return guardAudit(this.db, authority, ownerId, false, requireClaim);
   }
@@ -758,12 +788,16 @@ export class ICloudAuditRepository {
 /** Called only inside guarded publication, never by housekeeping. */
 export async function publishAudit(
   db: Kysely<DB>,
-  authority: AuditAuthority,
+  authority: AuditExecutionAuthority,
   ownerId: string,
   result: 'match' | 'mismatch',
   resource: { id: string; leaseToken: string },
   assetId?: string,
 ) {
+  // A DB admission/final fence cannot replace independently verified fresh-stream evidence.
+  if (authority.purpose === 'scheduled-weekly') {
+    throw new Error('scheduled_audit_execution_unavailable');
+  }
   const guarded = await guardAudit(db, authority, ownerId, true);
   if (!guarded) {
     throw new Error('audit_authority_changed');

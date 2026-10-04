@@ -23,7 +23,7 @@
 
   const finishAccountLink = async (url: string) => {
     try {
-      await linkFrameleafAccount({ oAuthCallbackDto: { url } });
+      await linkFrameleafAccount({ frameleafLinkDto: { url } });
       toastManager.primary($t('frameleaf_personal_linked_toast'));
     } catch (error) {
       toastManager.danger(getServerErrorMessage(error) ?? $t('frameleaf_personal_link_failed'));

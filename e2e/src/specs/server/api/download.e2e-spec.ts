@@ -89,30 +89,108 @@ describe('/download', () => {
       expect(archive.status).toBe(400);
     });
 
-    it("refuses a partner's items once the partner stops sharing", async () => {
-      const partner = await utils.userSetup(admin.accessToken, {
-        email: 'download-partner@example.com',
-        name: 'Download Partner',
-        password: 'password',
-      });
-      const partnerAsset = await utils.createAsset(partner.accessToken);
-      await utils.createPartner(partner.accessToken, admin.userId);
-
-      const shared = await request(app)
-        .post('/download/info')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ assetIds: [partnerAsset.id] });
-      expect(shared.status).toBe(201);
-
-      await request(app).delete(`/partners/${admin.userId}`).set('Authorization', `Bearer ${partner.accessToken}`);
-
-      const revoked = await request(app)
-        .post('/download/info')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ assetIds: [partnerAsset.id] });
-      expect(revoked.status).toBe(400);
-      expect(JSON.stringify(revoked.body)).not.toContain('example.png');
-    });
+    it('keeps received copies after sharing stops and refuses source IDs or new delivery', async () => {
+      const users: LoginResponseDto[] = [];
+      let sharing = false;
+      try {
+        const partner = await utils.userSetup(admin.accessToken, {
+          email: 'download-partner@example.com',
+          name: 'Download Partner',
+          password: 'password',
+        });
+        users.push(partner);
+        const recipient = await utils.userSetup(admin.accessToken, {
+          email: 'download-recipient@example.com',
+          name: 'Download Recipient',
+          password: 'password',
+        });
+        users.push(recipient);
+        const partnerAsset = await utils.createAsset(partner.accessToken);
+        await utils.createPartner(partner.accessToken, recipient.userId);
+        sharing = true;
+        await utils.waitForAllQueuesFinish(admin.accessToken);
+        const db = await utils.connectDatabase();
+        const { rows } = await db.query<{ id: string; ownerId: string; sourceAssetId: string; following: boolean }>(
+          `SELECT copy.id, copy."ownerId", origin."sourceAssetId", origin.following
+           FROM immich_fork.asset_origin origin JOIN asset copy ON copy.id = origin."assetId"
+           WHERE origin."sourceAssetId" = $1 AND origin."ownerId" = $2`,
+          [partnerAsset.id, recipient.userId],
+        );
+        expect(rows).toHaveLength(1);
+        const [copy] = rows;
+        expect(copy.id).not.toBe(partnerAsset.id);
+        expect(copy).toMatchObject({ ownerId: recipient.userId, sourceAssetId: partnerAsset.id, following: true });
+        const plan = await request(app)
+          .post('/download/info')
+          .set('Authorization', `Bearer ${recipient.accessToken}`)
+          .send({ assetIds: [copy.id] })
+          .expect(201);
+        expect(plan.body.archives.flatMap((archive: { assetIds: string[] }) => archive.assetIds)).toEqual([copy.id]);
+        await request(app)
+          .post('/download/info')
+          .set('Authorization', `Bearer ${recipient.accessToken}`)
+          .send({ assetIds: [partnerAsset.id] })
+          .expect(400);
+        await request(app)
+          .delete(`/partners/${recipient.userId}`)
+          .set('Authorization', `Bearer ${partner.accessToken}`)
+          .expect(204);
+        sharing = false;
+        await utils.waitForAllQueuesFinish(admin.accessToken);
+        const retained = await request(app)
+          .post('/download/info')
+          .set('Authorization', `Bearer ${recipient.accessToken}`)
+          .send({ assetIds: [copy.id] })
+          .expect(201);
+        expect(retained.body.archives.flatMap((archive: { assetIds: string[] }) => archive.assetIds)).toEqual([
+          copy.id,
+        ]);
+        const retainedOrigin = await db.query('SELECT following FROM immich_fork.asset_origin WHERE "assetId" = $1', [
+          copy.id,
+        ]);
+        expect(retainedOrigin.rows).toEqual([{ following: false }]);
+        const later = await utils.createAsset(partner.accessToken);
+        await utils.waitForAllQueuesFinish(admin.accessToken);
+        const laterOrigin = await db.query(
+          'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
+          [later.id, recipient.userId],
+        );
+        expect(laterOrigin.rows).toEqual([]);
+        await request(app)
+          .post('/download/info')
+          .set('Authorization', `Bearer ${recipient.accessToken}`)
+          .send({ assetIds: [later.id] })
+          .expect(400);
+      } finally {
+        if (sharing && users.length === 2) {
+          await request(app)
+            .delete(`/partners/${users[1].userId}`)
+            .set('Authorization', `Bearer ${users[0].accessToken}`)
+            .expect(204);
+        }
+        await utils.waitForAllQueuesFinish(admin.accessToken);
+        for (const user of users) {
+          await request(app)
+            .delete(`/admin/users/${user.userId}`)
+            .set('Authorization', `Bearer ${admin.accessToken}`)
+            .send({ force: true })
+            .expect(200);
+        }
+        await utils.waitForAllQueuesFinish(admin.accessToken);
+        const db = await utils.connectDatabase();
+        for (const user of users) {
+          const deletedUser = await db.query('SELECT id FROM "user" WHERE id = $1', [user.userId]);
+          expect(deletedUser.rows).toEqual([]);
+          // Fork provenance has no official-schema foreign keys; remove the drained fixture's orphan rows.
+          await db.query('DELETE FROM immich_fork.asset_origin WHERE "ownerId" = $1 OR "partnerSharedById" = $1', [
+            user.userId,
+          ]);
+          await db.query('DELETE FROM immich_fork.partner_backfill WHERE "sharedById" = $1 OR "sharedWithId" = $1', [
+            user.userId,
+          ]);
+        }
+      }
+    }, 90_000);
 
     it('refuses a public link that does not allow downloads, before naming any file', async () => {
       const closed = await utils.createSharedLink(admin.accessToken, {

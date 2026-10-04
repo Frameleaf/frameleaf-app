@@ -89,6 +89,58 @@
       "identity": "immich_fork.album_position.userId"
     },
     {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.album_source_asset.addedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_source_asset.assetId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_source_asset.linkId"
+    },
+    {
+      "definition": "uuid|nullable|||",
+      "identity": "immich_fork.album_source_asset.membershipUpdateId"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_source_link.albumId"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.album_source_link.createdAt"
+    },
+    {
+      "definition": "text|nullable|||",
+      "identity": "immich_fork.album_source_link.deviceKey"
+    },
+    {
+      "definition": "uuid|not null|gen_random_uuid()||",
+      "identity": "immich_fork.album_source_link.id"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.album_source_link.lastSourceName"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.album_source_link.sourceId"
+    },
+    {
+      "definition": "text|not null|||",
+      "identity": "immich_fork.album_source_link.sourceKind"
+    },
+    {
+      "definition": "timestamp with time zone|not null|clock_timestamp()||",
+      "identity": "immich_fork.album_source_link.updatedAt"
+    },
+    {
+      "definition": "uuid|not null|||",
+      "identity": "immich_fork.album_source_link.userId"
+    },
+    {
       "definition": "uuid|not null|||",
       "identity": "immich_fork.archive_operation_item.assetId"
     },
@@ -8547,6 +8599,30 @@
       "identity": "immich_fork.album_position.album_position_position_check"
     },
     {
+      "definition": "FOREIGN KEY (\"linkId\") REFERENCES immich_fork.album_source_link(id) ON DELETE CASCADE",
+      "identity": "immich_fork.album_source_asset.album_source_asset_link_fkey"
+    },
+    {
+      "definition": "PRIMARY KEY (\"linkId\", \"assetId\")",
+      "identity": "immich_fork.album_source_asset.album_source_asset_pkey"
+    },
+    {
+      "definition": "CHECK (\"deviceKey\" IS NULL OR length(\"deviceKey\") >= 1 AND length(\"deviceKey\") <= 256)",
+      "identity": "immich_fork.album_source_link.album_source_link_device_check"
+    },
+    {
+      "definition": "CHECK (\"sourceKind\" = ANY (ARRAY['ios-photos'::text, 'android-folder'::text]))",
+      "identity": "immich_fork.album_source_link.album_source_link_kind_check"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "identity": "immich_fork.album_source_link.album_source_link_pkey"
+    },
+    {
+      "definition": "CHECK (length(\"sourceId\") >= 1 AND length(\"sourceId\") <= 1024)",
+      "identity": "immich_fork.album_source_link.album_source_link_source_check"
+    },
+    {
       "definition": "FOREIGN KEY (\"operationId\") REFERENCES immich_fork.archive_operation(id) ON DELETE CASCADE",
       "identity": "immich_fork.archive_operation_item.archive_operation_item_operationId_fkey"
     },
@@ -11414,7 +11490,10 @@
     "0000000000218-ICloudWeeklyAuthority",
     "0000000000219-PhysicalFileTrash",
     "0000000000220-PartnerOrigins",
-    "0000000000221-PartnerPeopleLinks"
+    "0000000000221-PartnerPeopleLinks",
+    "0000000000222-AlbumSourceLinks",
+    "0000000000223-AlbumSourceMembershipGeneration",
+    "0000000000224-ICloudClaimAccessPaths"
   ],
   "functions": [
     {
@@ -12580,6 +12659,26 @@
       "identity": "immich_fork.album_position.album_position_pkey"
     },
     {
+      "definition": "CREATE INDEX album_source_asset_asset_idx ON immich_fork.album_source_asset USING btree (\"assetId\")",
+      "identity": "immich_fork.album_source_asset.album_source_asset_asset_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX album_source_asset_pkey ON immich_fork.album_source_asset USING btree (\"linkId\", \"assetId\")",
+      "identity": "immich_fork.album_source_asset.album_source_asset_pkey"
+    },
+    {
+      "definition": "CREATE INDEX album_source_link_album_idx ON immich_fork.album_source_link USING btree (\"albumId\")",
+      "identity": "immich_fork.album_source_link.album_source_link_album_idx"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX album_source_link_pkey ON immich_fork.album_source_link USING btree (id)",
+      "identity": "immich_fork.album_source_link.album_source_link_pkey"
+    },
+    {
+      "definition": "CREATE UNIQUE INDEX album_source_link_source_idx ON immich_fork.album_source_link USING btree (\"userId\", \"sourceKind\", \"sourceId\", COALESCE(\"deviceKey\", ''::text))",
+      "identity": "immich_fork.album_source_link.album_source_link_source_idx"
+    },
+    {
       "definition": "CREATE UNIQUE INDEX archive_operation_item_pkey ON immich_fork.archive_operation_item USING btree (\"operationId\", \"assetId\")",
       "identity": "immich_fork.archive_operation_item.archive_operation_item_pkey"
     },
@@ -12976,6 +13075,10 @@
       "identity": "immich_fork.icloud_resource.icloud_resource_audit_request_key"
     },
     {
+      "definition": "CREATE INDEX icloud_resource_claim_order_idx ON immich_fork.icloud_resource USING btree (\"connectionId\", (\nCASE\n    WHEN (status = 'committed'::text) THEN 0\n    ELSE 1\nEND), \"createdAt\", id) WHERE ((\"auditRequestId\" IS NULL) AND (status = ANY (ARRAY['pending'::text, 'retry'::text, 'staging'::text, 'validated'::text, 'promoted'::text, 'committed'::text])))",
+      "identity": "immich_fork.icloud_resource.icloud_resource_claim_order_idx"
+    },
+    {
       "definition": "CREATE INDEX icloud_resource_jobs_idx ON immich_fork.icloud_resource USING btree (\"connectionId\", id) WHERE (\"pendingJobs\" <> '[]'::jsonb)",
       "identity": "immich_fork.icloud_resource.icloud_resource_jobs_idx"
     },
@@ -12998,6 +13101,10 @@
     {
       "definition": "CREATE UNIQUE INDEX icloud_resource_pkey ON immich_fork.icloud_resource USING btree (id)",
       "identity": "immich_fork.icloud_resource.icloud_resource_pkey"
+    },
+    {
+      "definition": "CREATE INDEX icloud_resource_reservation_contributors_idx ON immich_fork.icloud_resource USING btree (\"connectionId\") WHERE ((status <> ALL (ARRAY['finalized'::text, 'removed'::text])) AND ((\"reservedBytes\" > 0) OR (\"leaseExpiresAt\" IS NOT NULL)))",
+      "identity": "immich_fork.icloud_resource.icloud_resource_reservation_contributors_idx"
     },
     {
       "definition": "CREATE INDEX icloud_run_connection_started_idx ON immich_fork.icloud_run USING btree (\"connectionId\", \"startedAt\" DESC)",
@@ -15797,6 +15904,14 @@
     {
       "definition": "table",
       "identity": "immich_fork.album_position"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.album_source_asset"
+    },
+    {
+      "definition": "table",
+      "identity": "immich_fork.album_source_link"
     },
     {
       "definition": "table",

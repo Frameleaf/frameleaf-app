@@ -5,7 +5,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { transformException } from '@nestjs/platform-express/multer/multer/multer.utils';
 import { Test } from '@nestjs/testing';
 import { NextFunction } from 'express';
-import { Kysely, sql as kyselySql } from 'kysely';
+import { Kysely, type KyselyConfig, sql as kyselySql } from 'kysely';
 import multer, { memoryStorage } from 'multer';
 import { ClsService } from 'nestjs-cls';
 import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
@@ -21,6 +21,7 @@ import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -316,6 +317,7 @@ export type ServiceOverrides = {
   sharedLink: SharedLinkRepository;
   sharedLinkAsset: SharedLinkAssetRepository;
   itemShare: ItemShareRepository;
+  albumSource: AlbumSourceRepository;
   stack: StackRepository;
   storage: StorageRepository;
   sync: SyncRepository;
@@ -428,6 +430,7 @@ export const getMocks = () => {
     sharedLink: automock(SharedLinkRepository),
     sharedLinkAsset: automock(SharedLinkAssetRepository),
     itemShare: automock(ItemShareRepository, { strict: false }),
+    albumSource: automock(AlbumSourceRepository, { strict: false }),
     stack: automock(StackRepository),
     storage: newStorageRepositoryMock(),
     sync: automock(SyncRepository),
@@ -557,6 +560,7 @@ export const newTestService = <T extends BaseService>(
     overrides.sharedLink || (mocks.sharedLink as As<SharedLinkRepository>),
     overrides.sharedLinkAsset || (mocks.sharedLinkAsset as As<SharedLinkAssetRepository>),
     overrides.itemShare || (mocks.itemShare as As<ItemShareRepository>),
+    overrides.albumSource || (mocks.albumSource as As<AlbumSourceRepository>),
     overrides.stack || (mocks.stack as As<StackRepository>),
     overrides.storage || (mocks.storage as As<StorageRepository>),
     overrides.sync || (mocks.sync as As<SyncRepository>),
@@ -603,7 +607,7 @@ const templateName = 'mich';
 
 const withDatabase = (url: string, name: string) => url.replace(`/${templateName}`, () => `/${name}`);
 
-export const getKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
+export const getKyselyDB = async (suffix?: string, log?: KyselyConfig['log']): Promise<Kysely<DB>> => {
   const testUrl = process.env.IMMICH_TEST_POSTGRES_URL!;
   const connection = { connectionType: 'url', url: withDatabase(testUrl, 'postgres') } as DatabaseConnectionParams;
   const sql = createPostgres({ maxConnections: 1, connection });
@@ -618,11 +622,14 @@ export const getKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
     await sql.end();
   }
 
-  return new Kysely<DB>(getKyselyConfig({ connectionType: 'url', url: withDatabase(testUrl, dbName) }));
+  return new Kysely<DB>({
+    ...getKyselyConfig({ connectionType: 'url', url: withDatabase(testUrl, dbName) }),
+    ...(log !== undefined && { log }),
+  });
 };
 
-export const getActiveForkKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
-  const db = await getKyselyDB(suffix);
+export const getActiveForkKyselyDB = async (suffix?: string, log?: KyselyConfig['log']): Promise<Kysely<DB>> => {
+  const db = await getKyselyDB(suffix, log);
   await kyselySql`UPDATE immich_fork.state SET phase = 'active', active = true WHERE id = 1`.execute(db);
   return db;
 };

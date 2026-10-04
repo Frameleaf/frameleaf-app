@@ -1,0 +1,123 @@
+name: NAS qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      family:
+        description: Reviewed source family
+        type: choice
+        options: [officialImmich, priorFrameleaf]
+        required: true
+      version:
+        description: Exact reviewed source version
+        type: string
+        required: true
+      release:
+        description: Exact signed target Frameleaf release tag
+        type: string
+        required: true
+      plan:
+        description: Committed packaging/nas/qualification-plans/name.json
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: nas-qualification-${{ inputs.family }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  qualification:
+    name: NAS qualification (${{ inputs.family }}, ${{ inputs.version }})
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/fork/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FAMILY: ${{ inputs.family }}
+      VERSION: ${{ inputs.version }}
+      RELEASE: ${{ inputs.release }}
+      PLAN: ${{ inputs.plan }}
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Initialize qualification workspace
+        id: qualification-workspace
+        shell: bash
+        run: |
+          qualification_root="${RUNNER_TEMP:?}/nas-qualification"
+          test -d "$RUNNER_TEMP"
+          test ! -e "$qualification_root"
+          test ! -L "$qualification_root"
+          printf 'QUALIFICATION_ROOT=%s\n' "$qualification_root" >> "$GITHUB_ENV"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: '.nvmrc'
+          cache: pnpm
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548
+        with:
+          python-version: '3.11.15'
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.1.3
+      - run: pnpm install --frozen-lockfile
+      - name: Admit committed plan and fetch exact artifacts
+        shell: bash
+        run: |
+          node <<'JS'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const { PLAN, FAMILY, VERSION, RELEASE, QUALIFICATION_ROOT } = process.env;
+          assert.match(PLAN, /^packaging\/nas\/qualification-plans\/[a-z0-9-]+\.json$/);
+          assert.match(RELEASE, /^frameleaf-v\d+\.\d+\.\d+-\d+$/);
+          execFileSync('git', ['ls-files', '--error-unmatch', '--', PLAN]);
+          assert(fs.lstatSync(PLAN).isFile(), 'Plan must be a committed regular file');
+          const plan = JSON.parse(fs.readFileSync(PLAN, 'utf8'));
+          assert.equal(plan.family, FAMILY);
+          assert.equal(plan.sourceVersion, VERSION);
+          const approved = JSON.parse(fs.readFileSync('packaging/nas/certified-sources.json', 'utf8'));
+          assert(approved[FAMILY]?.includes(VERSION), 'Source version has not been reviewed for qualification');
+          assert.match(plan.fixtureRelease, /^nas-fixture-[a-z0-9-]+$/);
+          assert(!fs.existsSync(QUALIFICATION_ROOT), 'Qualification root must be fresh');
+          for (const part of ['release', 'checkpoint']) fs.mkdirSync(`${QUALIFICATION_ROOT}/${part}`, { recursive: true, mode: 0o700 });
+          execFileSync('gh', ['release', 'download', RELEASE, '--repo', 'Frameleaf/frameleaf-app', '--dir', `${QUALIFICATION_ROOT}/release`], { stdio: 'inherit' });
+          JS
+      - name: Preflight
+        run: node packaging/nas/qualification.cjs preflight "$PLAN" "$QUALIFICATION_ROOT" "$RELEASE"
+      - name: Backup and restore
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const plan = JSON.parse(fs.readFileSync(process.env.PLAN, 'utf8'));
+          for (const asset of ['database.dump', 'media.tar', 'acceptance.json']) execFileSync('gh', ['release', 'download', plan.fixtureRelease, '--repo', 'Frameleaf/frameleaf-app', '--pattern', asset, '--dir', `${process.env.QUALIFICATION_ROOT}/checkpoint`], { stdio: 'inherit' });
+          JS
+          node packaging/nas/qualification.cjs backup-restore "$PLAN" "$QUALIFICATION_ROOT" "$RELEASE"
+      - name: Migration
+        run: node packaging/nas/qualification.cjs migration "$PLAN" "$QUALIFICATION_ROOT" "$RELEASE"
+      - name: Rollback
+        run: node packaging/nas/qualification.cjs rollback "$PLAN" "$QUALIFICATION_ROOT" "$RELEASE"
+      - name: Retain unsigned adapter operation diagnostics
+        if: always() && steps.qualification-workspace.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: nas-adapter-operations-${{ github.run_id }}
+          path: |
+            ${{ env.QUALIFICATION_ROOT }}/checkpoint/migration-operation.json
+            ${{ env.QUALIFICATION_ROOT }}/checkpoint/rollback-operation.json
+          if-no-files-found: warn
+      # Unsigned redacted operation diagnostics cannot satisfy build.cjs certification/attestation gates.
+      - name: Remove disposable checkpoint files
+        if: always() && steps.qualification-workspace.outcome == 'success'
+        shell: bash
+        run: |
+          expected_root="${RUNNER_TEMP:?}/nas-qualification"
+          test "${QUALIFICATION_ROOT:-}" = "$expected_root"
+          rm -rf -- "$expected_root"

@@ -366,9 +366,43 @@ order by
   "album"."createdAt" desc
 
 -- AlbumRepository.removeAssetsFromAll
+begin
+select
+  "albumId"
+from
+  "album_asset"
+where
+  "assetId" in ($1)
+SELECT
+  to_regclass('immich_fork.state')::text AS table
+SELECT
+  to_regclass('immich_fork.state')::text AS table
+SELECT
+  phase
+FROM
+  immich_fork.state
+WHERE
+  id = 1
+FOR SHARE
+SELECT
+  1
+FROM
+  immich_fork.migration_audit
+WHERE
+  status = 'running'
+  AND name IN (
+    'official-handoff-preparation',
+    'fork-return-reconciliation'
+  )
+LIMIT
+  1
 delete from "album_asset"
 where
-  "album_asset"."assetId" in ($1)
+  "assetId" in ($1)
+returning
+  "albumId",
+  "assetId"
+commit
 
 -- AlbumRepository.getAssetIds
 select
@@ -380,6 +414,39 @@ where
   and "album_asset"."assetId" in ($2)
 
 -- AlbumRepository.addAssetIds
+begin
+SELECT
+  to_regclass('immich_fork.state')::text AS table
+SELECT
+  to_regclass('immich_fork.state')::text AS table
+SELECT
+  phase
+FROM
+  immich_fork.state
+WHERE
+  id = 1
+FOR SHARE
+SELECT
+  1
+FROM
+  immich_fork.migration_audit
+WHERE
+  status = 'running'
+  AND name IN (
+    'official-handoff-preparation',
+    'fork-return-reconciliation'
+  )
+LIMIT
+  1
+select
+  "id"
+from
+  "album"
+where
+  "id" in ($1)
+order by
+  "id"
+for no key update
 insert into
   "album_asset"
 select
@@ -391,6 +458,10 @@ from
       1
   ) as "dummy"
 on conflict do nothing
+returning
+  "assetId",
+  "updateId"
+rollback
 
 -- AlbumRepository.create
 begin

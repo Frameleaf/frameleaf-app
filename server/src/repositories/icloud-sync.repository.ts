@@ -503,6 +503,8 @@ export class ICloudSyncRepository {
       ) {
         return;
       }
+      // Zero-byte rows without a lease contribute to none of these aggregates.
+      // Keep every charged row (including expired/noncurrent recovery) and every lease.
       const used = await sql<{
         bytes: number;
         active: number;
@@ -510,7 +512,8 @@ export class ICloudSyncRepository {
       }>`SELECT coalesce(sum("reservedBytes"),0)::float8 AS bytes,
         count(*) FILTER(WHERE "leaseExpiresAt">now())::int AS active,
         coalesce(sum("reservedBytes") FILTER(WHERE NOT coalesce((source->>'current')::boolean,true)),0)::float8 AS retained
-        FROM immich_fork.icloud_resource WHERE "connectionId"=${connectionId}::uuid AND status NOT IN ('finalized','removed')`
+        FROM immich_fork.icloud_resource WHERE "connectionId"=${connectionId}::uuid AND status NOT IN ('finalized','removed')
+        AND ("reservedBytes">0 OR "leaseExpiresAt" IS NOT NULL)`
         .execute(db)
         .then(({ rows }) => rows[0]);
       const global = await sql<{
@@ -520,7 +523,8 @@ export class ICloudSyncRepository {
       }>`SELECT coalesce(sum("reservedBytes"),0)::float8 AS bytes,
         count(*) FILTER(WHERE "leaseExpiresAt">now())::int AS active,
         coalesce(sum("reservedBytes") FILTER(WHERE NOT coalesce((source->>'current')::boolean,true)),0)::float8 AS retained
-        FROM immich_fork.icloud_resource WHERE status NOT IN ('finalized','removed')`
+        FROM immich_fork.icloud_resource WHERE status NOT IN ('finalized','removed')
+        AND ("reservedBytes">0 OR "leaseExpiresAt" IS NOT NULL)`
         .execute(db)
         .then(({ rows }) => rows[0]);
       if (used.active >= connection.config.concurrency || global.active >= maxConcurrency) {
@@ -609,7 +613,7 @@ export class ICloudSyncRepository {
       WHERE c.state = 'connected' AND c."encryptedSession" IS NOT NULL AND c."lastError" IS DISTINCT FROM 'owner_removed'
         AND (c."nextRunAt" IS NULL OR c."nextRunAt" <= now())
         AND NOT EXISTS (SELECT 1 FROM media_operation o WHERE o."ownerId" = c."ownerId"
-          AND o.kind = ${MediaOperationKind.ICloudSync} AND o.snapshot->>'connectionId' = c.id::text AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit'
+          AND o.kind = ${MediaOperationKind.ICloudSync} AND o.snapshot->>'connectionId' = c.id::text AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit' AND o.snapshot->>'task' IS DISTINCT FROM 'identity-audit-weekly'
           AND (o.status = ANY(${[...ACTIVE_MEDIA_OPERATION_STATUSES]}::text[])
             OR coalesce(o."finishedAt", o."createdAt") > now() - make_interval(hours => coalesce((c.config->>'intervalHours')::int, 24))))
       ORDER BY c."nextRunAt" NULLS FIRST, c.id LIMIT 100`
@@ -631,7 +635,9 @@ export class ICloudSyncRepository {
       .where('kind', '=', MediaOperationKind.ICloudSync)
       .where(sql<string>`snapshot->>'connectionId'`, '=', connectionId);
     if (!options.includeAudits) {
-      query = query.where(sql<boolean>`snapshot->>'task' IS DISTINCT FROM 'identity-audit'`);
+      query = query.where(
+        sql<boolean>`snapshot->>'task' IS DISTINCT FROM 'identity-audit' AND snapshot->>'task' IS DISTINCT FROM 'identity-audit-weekly'`,
+      );
     }
     if (options.activeOnly) {
       query = query.where('status', 'in', [...ACTIVE_MEDIA_OPERATION_STATUSES]);
@@ -678,7 +684,7 @@ export class ICloudSyncRepository {
       switch (options.trigger) {
         case 'schedule': {
           const recent = await sql`SELECT 1 FROM media_operation WHERE "ownerId" = ${ownerId}::uuid
-          AND kind = ${MediaOperationKind.ICloudSync} AND snapshot->>'connectionId' = ${connectionId} AND snapshot->>'task' IS DISTINCT FROM 'identity-audit'
+          AND kind = ${MediaOperationKind.ICloudSync} AND snapshot->>'connectionId' = ${connectionId} AND snapshot->>'task' IS DISTINCT FROM 'identity-audit' AND snapshot->>'task' IS DISTINCT FROM 'identity-audit-weekly'
           AND coalesce("finishedAt", "createdAt") > now() - make_interval(hours => ${connection.config.intervalHours}::int)
           LIMIT 1`.execute(db);
           if (

@@ -73,7 +73,7 @@ jobs:
           TRUENAS_LIBRARY: ${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4
           FRAMELEAF_REQUIRE_TRUENAS_RENDER: 'true'
           PYTHONDONTWRITEBYTECODE: '1'
-        run: node --test --test-concurrency=1 packaging/nas/build.test.cjs
+        run: node --test --test-concurrency=1 packaging/nas/build.test.cjs packaging/nas/qualification.test.cjs packaging/nas/official-adapter.test.cjs
       - name: Install plugin WASM, API generation and ffmpeg tools
         env:
           GITHUB_TOKEN: ${{ github.token }}

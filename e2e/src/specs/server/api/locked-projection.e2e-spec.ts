@@ -225,13 +225,6 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     const link = await utils.createSharedLink(owner.accessToken, { type: SharedLinkType.Album, albumId });
     sharedKey = link.key;
 
-    await utils.createPartner(owner.accessToken, partner.userId);
-    await request(app)
-      .put(`/partners/${owner.userId}`)
-      .set(bearer(partner.accessToken))
-      .send({ inTimeline: true })
-      .expect(200);
-
     for (const user of [owner, admin]) {
       await request(app).post('/auth/pin-code').set(bearer(user.accessToken)).send({ pinCode }).expect(204);
     }
@@ -249,6 +242,15 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     // a detection and an item from the old Locked folder, as the detector and the upgrade write them
     await utils.setAssetLock(detected.id, 'detected');
     await utils.setAssetLock(legacy.id, 'immich-locked-folder');
+    // Seed all source locks/rules before backfill: the direct detector/upgrade fixture writes emit no API events.
+    await utils.createPartner(owner.accessToken, partner.userId);
+    await request(app)
+      .put(`/partners/${owner.userId}`)
+      .set(bearer(partner.accessToken))
+      .send({ inTimeline: true })
+      .expect(200);
+
+    await utils.waitForAllQueuesFinish(admin.accessToken);
 
     // FL-195: an unlocked owner places a mark and a detection in a Studio project like any other item
     const { body: project } = await request(app)
@@ -659,9 +661,65 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
         expect(status, name).toBeGreaterThanOrEqual(400);
       }
     }
+    await utils.waitForAllQueuesFinish(admin.accessToken);
+    const db = await utils.connectDatabase();
+    const sources = [plain.id, locked.id, detected.id, legacy.id, ruleMatch.id];
+    const { rows: copies } = await db.query<{
+      id: string;
+      ownerId: string;
+      sourceAssetId: string;
+      rootOwnerId: string;
+      reason: string | null;
+    }>(
+      `SELECT copy.id, copy."ownerId", origin."sourceAssetId", origin."rootOwnerId", lock.reason
+       FROM immich_fork.asset_origin origin JOIN asset copy ON copy.id = origin."assetId"
+       LEFT JOIN asset_lock lock ON lock."assetId" = copy.id
+       WHERE origin."ownerId" = $1 AND origin."sourceAssetId" = ANY($2::uuid[])`,
+      [partner.userId, sources],
+    );
+    expect(copies).toHaveLength(5);
+    expect(copies.map(({ sourceAssetId }) => sourceAssetId).toSorted(byId)).toEqual(sources.toSorted(byId));
+    for (const copy of copies) {
+      expect(copy.ownerId).toBe(partner.userId);
+      expect(copy.rootOwnerId).toBe(owner.userId);
+      expect(sources).not.toContain(copy.id);
+      if (copy.sourceAssetId === plain.id) {
+        expect(copy.reason).toBeNull();
+      } else {
+        expect(copy.reason).not.toBeNull();
+      }
+    }
+    // The exact visible inventory includes the source's plain/rule-match rows and only the plain copy.
+    // Suppression-rule copies carry an explicit lock; administrators still cannot open either owner's locks.
+    const plainCopy = copies.find(({ sourceAssetId }) => sourceAssetId === plain.id)!;
+    const { rows: counted } = await db.query<{ id: string; ownerId: string }>(
+      `SELECT asset.id, asset."ownerId" FROM asset
+       LEFT JOIN asset_lock lock ON lock."assetId" = asset.id
+       WHERE asset."deletedAt" IS NULL AND asset.type = 'IMAGE'
+         AND asset.visibility NOT IN ('hidden', 'locked') AND lock."assetId" IS NULL ORDER BY asset.id`,
+    );
+    expect(counted).toEqual(
+      [
+        { id: plain.id, ownerId: owner.userId },
+        { id: ruleMatch.id, ownerId: owner.userId },
+        { id: plainCopy.id, ownerId: partner.userId },
+      ].toSorted((a, b) => a.id.localeCompare(b.id)),
+    );
+    const protectedCopies = copies.filter(({ sourceAssetId }) => sourceAssetId !== plain.id);
+    const copyAnswers = await readAll(
+      protectedCopies.flatMap(({ id }) => oneItemReads(id)),
+      bearer(admin.accessToken),
+    );
+    expectNoTrace(
+      copyAnswers,
+      protectedCopies.map(({ id }) => id),
+    );
+    for (const { status } of copyAnswers) {
+      expect(status).toBeGreaterThanOrEqual(400);
+    }
     const { body: server } = await request(app).get('/server/statistics').set(bearer(admin.accessToken)).expect(200);
-    expect(server.photos).toBe(2);
-  });
+    expect(server.photos).toBe(counted.length);
+  }, 90_000);
 });
 
 /**

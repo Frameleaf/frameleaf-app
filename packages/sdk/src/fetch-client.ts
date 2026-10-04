@@ -3099,6 +3099,101 @@ export type WorkerInventoryResponseDto = {
     /** Server processes running restorations now */
     runners: WorkerRunnerDto[];
 };
+export type AlbumSourceLinkResponseDto = {
+    /** The server album the source is linked to */
+    albumId: string;
+    /** The server album name */
+    albumName: string;
+    /** When the link was made */
+    createdAt: string;
+    /** The device the source id belongs to, when it is device-local */
+    deviceKey: string | null;
+    /** Link ID */
+    id: string;
+    kind: AlbumSourceKind;
+    /** The phone name the server album last followed (the rename guard) */
+    lastSourceName: string;
+    /** The source on the phone */
+    sourceId: string;
+    /** When the link last changed */
+    updatedAt: string;
+};
+export type AlbumSourceDto = {
+    /** Set only when sourceId is device-local (an iOS localIdentifier, an Android bucket); null otherwise */
+    deviceKey?: string | null;
+    kind: AlbumSourceKind;
+    /** The name of the album or folder on the phone */
+    name: string;
+    /** The source on the phone: the iOS album PHCloudIdentifier when available, else its localIdentifier; on Android "<bucketId>:<relativePath>" */
+    sourceId: string;
+};
+export type AlbumSourceResolveDto = {
+    /** The phone albums or folders to resolve */
+    sources: AlbumSourceDto[];
+};
+export type AlbumSourceResolvedDto = {
+    /** The server album the source is linked to */
+    albumId: string;
+    /** The server album name */
+    albumName: string;
+    /** When the link was made */
+    createdAt: string;
+    /** The device the source id belongs to, when it is device-local */
+    deviceKey: string | null;
+    /** Link ID */
+    id: string;
+    kind: AlbumSourceKind;
+    /** The phone name the server album last followed (the rename guard) */
+    lastSourceName: string;
+    outcome: AlbumSourceOutcome;
+    /** The source on the phone */
+    sourceId: string;
+    /** When the link last changed */
+    updatedAt: string;
+};
+export type AlbumSourceResolveResponseDto = {
+    /** One link per requested source, in request order */
+    links: AlbumSourceResolvedDto[];
+};
+export type AlbumSourceUpdateDto = {
+    /** The new name of the album or folder on the phone */
+    name: string;
+    /** Re-key the link to a new source id with the same kind and device (an Android folder rename changes its bucket) */
+    sourceId?: string;
+};
+export type AlbumSourceUpdateResponseDto = {
+    /** The server album the source is linked to */
+    albumId: string;
+    /** The server album name */
+    albumName: string;
+    /** When the link was made */
+    createdAt: string;
+    /** The device the source id belongs to, when it is device-local */
+    deviceKey: string | null;
+    /** Link ID */
+    id: string;
+    kind: AlbumSourceKind;
+    /** The phone name the server album last followed (the rename guard) */
+    lastSourceName: string;
+    /** Whether the server album was renamed (only while its name still equalled lastSourceName) */
+    renamed: boolean;
+    /** The source on the phone */
+    sourceId: string;
+    /** When the link last changed */
+    updatedAt: string;
+};
+export type BulkIdsDto = {
+    /** IDs to process */
+    ids: string[];
+};
+export type BulkIdResponseDto = {
+    error?: BulkIdErrorReason;
+    errorMessage?: string;
+    /** ID */
+    id: string;
+    /** Whether operation succeeded */
+    success: boolean;
+};
 export type AlbumUserResponseDto = {
     role: AlbumUserRole;
     user: UserResponseDto;
@@ -3265,18 +3360,6 @@ export type UpdateAlbumDto = {
     parentId?: string | null;
     /** Sibling display position. Lower values appear first. Computed by the client as a midpoint. */
     sortOrder?: number;
-};
-export type BulkIdsDto = {
-    /** IDs to process */
-    ids: string[];
-};
-export type BulkIdResponseDto = {
-    error?: BulkIdErrorReason;
-    errorMessage?: string;
-    /** ID */
-    id: string;
-    /** Whether operation succeeded */
-    success: boolean;
 };
 export type MoveAlbumDto = {
     /** Collection to move the album into, or null to take it out so it stands on its own */
@@ -7775,6 +7858,64 @@ export type FrameleafAccountLinkResponseDto = {
     lastSignInAt: string | null;
     linked: boolean;
     linkedAt: string | null;
+};
+export type FrameleafLinkDto = {
+    /** OAuth code verifier (PKCE) */
+    codeVerifier?: string;
+    /** Report what linking would change (for example becoming an administrator) without linking yet */
+    preview?: boolean;
+    /** Persist authentication cookies across browser sessions (default true) */
+    rememberMe?: boolean;
+    /** OAuth state parameter */
+    state?: string;
+    /** OAuth callback URL */
+    url: string;
+};
+export type FrameleafLinkResponseDto = {
+    avatarColor: UserAvatarColor;
+    /** Cluster group the user is a member of */
+    clusterGroupId: string;
+    /** For a preview: when the confirm token expires */
+    confirmExpiresAt: string | null;
+    /** For a preview: confirms the link through link/confirm */
+    confirmToken: string | null;
+    /** Creation date */
+    createdAt: string;
+    /** Deletion date */
+    deletedAt: string | null;
+    /** User email */
+    email: string;
+    /** User ID */
+    id: string;
+    /** Is admin user */
+    isAdmin: boolean;
+    license: (UserLicense) | null;
+    /** Whether the Frameleaf account is now linked (false for a preview) */
+    linked: boolean;
+    /** User name */
+    name: string;
+    /** OAuth ID */
+    oauthId: string;
+    /** Profile change date */
+    profileChangedAt: string;
+    /** Profile image path */
+    profileImagePath: string;
+    /** Storage quota in bytes */
+    quotaSizeInBytes: number | null;
+    /** Storage usage in bytes */
+    quotaUsageInBytes: number | null;
+    roleChange: FrameleafLinkRoleChange;
+    /** Require password change on next login */
+    shouldChangePassword: boolean;
+    status: UserStatus;
+    /** Storage label */
+    storageLabel: string | null;
+    /** Last update date */
+    updatedAt: string;
+};
+export type FrameleafLinkConfirmDto = {
+    /** The token a preview returned */
+    confirmToken: string;
 };
 export type PartnerBackfillDto = {
     /** Items copied so far */
@@ -13195,11 +13336,16 @@ export type SyncAckDeleteDto = {
 export type SyncAckDto = {
     /** Acknowledgment ID */
     ack: string;
-    "type": SyncEntityType;
+    "type": Type23;
 };
 export type SyncAckSetDto = {
     /** Acknowledgment IDs (max 1000) */
     acks: string[];
+};
+export type SyncAckV2Dto = {
+    /** Acknowledgment ID */
+    ack: string;
+    "type": SyncEntityType;
 };
 export type SyncStreamDto = {
     /** Reset sync state */
@@ -14368,6 +14514,26 @@ export type SyncAlbumAssetAccessV1 = {
 export type SyncAlbumDeleteV1 = {
     /** Album ID */
     albumId: string;
+};
+export type SyncAlbumSourceLinkDeleteV1 = {
+    linkId: string;
+};
+export type SyncAlbumSourceLinkV1 = {
+    /** The server album the source is linked to */
+    albumId: string;
+    /** When the link was made */
+    createdAt: string;
+    /** The device the source id belongs to, when it is device-local */
+    deviceKey: string | null;
+    /** Link ID */
+    id: string;
+    kind: AlbumSourceKind;
+    /** The phone name the server album last followed (the rename guard) */
+    lastSourceName: string;
+    /** The source on the phone */
+    sourceId: string;
+    /** When the link last changed */
+    updatedAt: string;
 };
 export type SyncAlbumToAssetDeleteV1 = {
     /** Album ID */
@@ -16993,6 +17159,91 @@ export function getWorkerInventory(opts?: Oazapfts.RequestOpts) {
     }>("/admin/workers", {
         ...opts
     }));
+}
+/**
+ * List album source links
+ */
+export function getAlbumSourceLinks(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumSourceLinkResponseDto[];
+    }>("/album-sources", {
+        ...opts
+    }));
+}
+/**
+ * Resolve album sources
+ */
+export function resolveAlbumSources({ albumSourceResolveDto }: {
+    albumSourceResolveDto: AlbumSourceResolveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumSourceResolveResponseDto;
+    }>("/album-sources/resolve", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumSourceResolveDto
+    })));
+}
+/**
+ * Delete an album source link
+ */
+export function deleteAlbumSourceLink({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/album-sources/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Update an album source link
+ */
+export function updateAlbumSourceLink({ id, albumSourceUpdateDto }: {
+    id: string;
+    albumSourceUpdateDto: AlbumSourceUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumSourceUpdateResponseDto;
+    }>(`/album-sources/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: albumSourceUpdateDto
+    })));
+}
+/**
+ * Remove assets through an album source link
+ */
+export function removeAlbumSourceAssets({ id, bulkIdsDto }: {
+    id: string;
+    bulkIdsDto: BulkIdsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BulkIdResponseDto[];
+    }>(`/album-sources/${encodeURIComponent(id)}/assets`, oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: bulkIdsDto
+    })));
+}
+/**
+ * Add assets through an album source link
+ */
+export function addAlbumSourceAssets({ id, bulkIdsDto }: {
+    id: string;
+    bulkIdsDto: BulkIdsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: BulkIdResponseDto[];
+    }>(`/album-sources/${encodeURIComponent(id)}/assets`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: bulkIdsDto
+    })));
 }
 /**
  * List all albums
@@ -21221,16 +21472,31 @@ export function getFrameleafAccountLink(opts?: Oazapfts.RequestOpts) {
 /**
  * Link your Frameleaf account
  */
-export function linkFrameleafAccount({ oAuthCallbackDto }: {
-    oAuthCallbackDto: OAuthCallbackDto;
+export function linkFrameleafAccount({ frameleafLinkDto }: {
+    frameleafLinkDto: FrameleafLinkDto;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
-        data: UserAdminResponseDto;
+        data: FrameleafLinkResponseDto;
     }>("/oauth/frameleaf/link", oazapfts.json({
         ...opts,
         method: "POST",
-        body: oAuthCallbackDto
+        body: frameleafLinkDto
+    })));
+}
+/**
+ * Confirm linking your Frameleaf account
+ */
+export function confirmFrameleafAccountLink({ frameleafLinkConfirmDto }: {
+    frameleafLinkConfirmDto: FrameleafLinkConfirmDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FrameleafLinkResponseDto;
+    }>("/oauth/frameleaf/link/confirm", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: frameleafLinkConfirmDto
     })));
 }
 /**
@@ -25258,6 +25524,17 @@ export function sendSyncAck({ syncAckSetDto }: {
     })));
 }
 /**
+ * Retrieve all acknowledgements
+ */
+export function getSyncAckV2(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SyncAckV2Dto[];
+    }>("/sync/ack/v2", {
+        ...opts
+    }));
+}
+/**
  * Stream sync changes
  */
 export function getSyncStream({ syncStreamDto }: {
@@ -27678,6 +27955,22 @@ export enum QueueName {
     Editor = "editor",
     PetRecognition = "petRecognition"
 }
+export enum AlbumSourceKind {
+    IosPhotos = "ios-photos",
+    AndroidFolder = "android-folder"
+}
+export enum AlbumSourceOutcome {
+    Existing = "existing",
+    Merged = "merged",
+    Created = "created"
+}
+export enum BulkIdErrorReason {
+    Duplicate = "duplicate",
+    NoPermission = "no_permission",
+    NotFound = "not_found",
+    Unknown = "unknown",
+    Validation = "validation"
+}
 export enum AlbumUserRole {
     Editor = "editor",
     Owner = "owner",
@@ -27695,13 +27988,6 @@ export enum SmartAlbumBuiltInKind {
     Food = "food",
     Pets = "pets",
     Nature = "nature"
-}
-export enum BulkIdErrorReason {
-    Duplicate = "duplicate",
-    NoPermission = "no_permission",
-    NotFound = "not_found",
-    Unknown = "unknown",
-    Validation = "validation"
 }
 export enum AnalyticsRange {
     $90Days = "90days",
@@ -28676,6 +28962,10 @@ export enum FrameleafTokenExchangeErrorCode {
     FrameleafExchangeEmailUnverified = "frameleaf_exchange_email_unverified",
     FrameleafExchangeAccountRemoved = "frameleaf_exchange_account_removed",
     FrameleafExchangeAccountConflict = "frameleaf_exchange_account_conflict"
+}
+export enum FrameleafLinkRoleChange {
+    None = "none",
+    GrantedAdmin = "granted-admin"
 }
 export enum PartnerDirection {
     SharedBy = "shared-by",
@@ -29739,6 +30029,104 @@ export enum SyncEntityType {
     SharedSpacePersonDeleteV1 = "SharedSpacePersonDeleteV1",
     PetV1 = "PetV1",
     PetDeleteV1 = "PetDeleteV1",
+    AlbumSourceLinkV1 = "AlbumSourceLinkV1",
+    AlbumSourceLinkDeleteV1 = "AlbumSourceLinkDeleteV1",
+    PetObservationV1 = "PetObservationV1",
+    PetObservationDeleteV1 = "PetObservationDeleteV1",
+    TagV1 = "TagV1",
+    TagDeleteV1 = "TagDeleteV1",
+    AssetTagV1 = "AssetTagV1",
+    AssetTagDeleteV1 = "AssetTagDeleteV1",
+    AuthUserV1 = "AuthUserV1",
+    AuthUserV2 = "AuthUserV2",
+    UserV1 = "UserV1",
+    UserDeleteV1 = "UserDeleteV1",
+    AssetV1 = "AssetV1",
+    AssetV2 = "AssetV2",
+    AssetV3 = "AssetV3",
+    AssetBootstrapV1 = "AssetBootstrapV1",
+    AssetDeleteV2 = "AssetDeleteV2",
+    AssetDeleteV1 = "AssetDeleteV1",
+    AssetExifV1 = "AssetExifV1",
+    AssetEditV1 = "AssetEditV1",
+    AssetEditDeleteV1 = "AssetEditDeleteV1",
+    AssetMetadataV1 = "AssetMetadataV1",
+    AssetMetadataDeleteV1 = "AssetMetadataDeleteV1",
+    AssetOcrV1 = "AssetOcrV1",
+    AssetOcrDeleteV1 = "AssetOcrDeleteV1",
+    PartnerV1 = "PartnerV1",
+    PartnerDeleteV1 = "PartnerDeleteV1",
+    PartnerAssetV1 = "PartnerAssetV1",
+    PartnerAssetV2 = "PartnerAssetV2",
+    PartnerAssetBackfillV1 = "PartnerAssetBackfillV1",
+    PartnerAssetBackfillV2 = "PartnerAssetBackfillV2",
+    PartnerAssetDeleteV1 = "PartnerAssetDeleteV1",
+    PartnerAssetExifV1 = "PartnerAssetExifV1",
+    PartnerAssetExifBackfillV1 = "PartnerAssetExifBackfillV1",
+    PartnerStackBackfillV1 = "PartnerStackBackfillV1",
+    PartnerStackDeleteV1 = "PartnerStackDeleteV1",
+    PartnerStackV1 = "PartnerStackV1",
+    AlbumV1 = "AlbumV1",
+    AlbumV2 = "AlbumV2",
+    AlbumV3 = "AlbumV3",
+    AlbumBootstrapV1 = "AlbumBootstrapV1",
+    AlbumDeleteV2 = "AlbumDeleteV2",
+    AlbumDeleteV1 = "AlbumDeleteV1",
+    AlbumUserV1 = "AlbumUserV1",
+    AlbumUserBackfillV1 = "AlbumUserBackfillV1",
+    AlbumUserDeleteV1 = "AlbumUserDeleteV1",
+    AlbumAssetCreateV1 = "AlbumAssetCreateV1",
+    AlbumAssetCreateV2 = "AlbumAssetCreateV2",
+    AlbumAssetUpdateV1 = "AlbumAssetUpdateV1",
+    AlbumAssetUpdateV2 = "AlbumAssetUpdateV2",
+    AlbumAssetBackfillV1 = "AlbumAssetBackfillV1",
+    AlbumAssetBackfillV2 = "AlbumAssetBackfillV2",
+    AlbumAssetExifCreateV1 = "AlbumAssetExifCreateV1",
+    AlbumAssetExifUpdateV1 = "AlbumAssetExifUpdateV1",
+    AlbumAssetExifBackfillV1 = "AlbumAssetExifBackfillV1",
+    AlbumToAssetV1 = "AlbumToAssetV1",
+    AlbumToAssetDeleteV1 = "AlbumToAssetDeleteV1",
+    AlbumToAssetBackfillV1 = "AlbumToAssetBackfillV1",
+    MemoryV1 = "MemoryV1",
+    MemoryDeleteV1 = "MemoryDeleteV1",
+    MemoryToAssetV1 = "MemoryToAssetV1",
+    MemoryToAssetDeleteV1 = "MemoryToAssetDeleteV1",
+    StackV1 = "StackV1",
+    StackDeleteV1 = "StackDeleteV1",
+    PersonV1 = "PersonV1",
+    PersonDeleteV1 = "PersonDeleteV1",
+    AssetFaceV1 = "AssetFaceV1",
+    AssetFaceV2 = "AssetFaceV2",
+    AssetFaceV3 = "AssetFaceV3",
+    AssetFaceDeleteV1 = "AssetFaceDeleteV1",
+    UserMetadataV1 = "UserMetadataV1",
+    PinnedCollectionsV1 = "PinnedCollectionsV1",
+    UserMetadataDeleteV1 = "UserMetadataDeleteV1",
+    SyncAckV1 = "SyncAckV1",
+    SyncResetV1 = "SyncResetV1",
+    SyncCompleteV1 = "SyncCompleteV1"
+}
+export enum Type23 {
+    AlbumAssetAccessV1 = "AlbumAssetAccessV1",
+    AlbumAssetAccessDeleteV1 = "AlbumAssetAccessDeleteV1",
+    PartnerAssetAccessV1 = "PartnerAssetAccessV1",
+    PartnerAssetAccessDeleteV1 = "PartnerAssetAccessDeleteV1",
+    PinnedCollectionV1 = "PinnedCollectionV1",
+    PinnedCollectionDeleteV1 = "PinnedCollectionDeleteV1",
+    AssetTrashStateV1 = "AssetTrashStateV1",
+    AssetTrashStateDeleteV1 = "AssetTrashStateDeleteV1",
+    DuplicateGroupV1 = "DuplicateGroupV1",
+    DuplicateGroupDeleteV1 = "DuplicateGroupDeleteV1",
+    SharedSpaceV1 = "SharedSpaceV1",
+    SharedSpaceDeleteV1 = "SharedSpaceDeleteV1",
+    SharedSpaceMemberV1 = "SharedSpaceMemberV1",
+    SharedSpaceMemberDeleteV1 = "SharedSpaceMemberDeleteV1",
+    SharedSpaceAlbumV1 = "SharedSpaceAlbumV1",
+    SharedSpaceAlbumDeleteV1 = "SharedSpaceAlbumDeleteV1",
+    SharedSpacePersonV1 = "SharedSpacePersonV1",
+    SharedSpacePersonDeleteV1 = "SharedSpacePersonDeleteV1",
+    PetV1 = "PetV1",
+    PetDeleteV1 = "PetDeleteV1",
     PetObservationV1 = "PetObservationV1",
     PetObservationDeleteV1 = "PetObservationDeleteV1",
     TagV1 = "TagV1",
@@ -29859,7 +30247,8 @@ export enum SyncRequestType {
     AssetFacesV2 = "AssetFacesV2",
     AssetFacesV3 = "AssetFacesV3",
     UserMetadataV1 = "UserMetadataV1",
-    PinnedCollectionsV1 = "PinnedCollectionsV1"
+    PinnedCollectionsV1 = "PinnedCollectionsV1",
+    AlbumSourceLinksV1 = "AlbumSourceLinksV1"
 }
 export enum FrameleafSetupFlow {
     New = "new",

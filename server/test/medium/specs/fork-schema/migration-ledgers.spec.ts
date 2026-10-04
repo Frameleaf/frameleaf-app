@@ -106,6 +106,8 @@ describe('fork schema migration ledgers', () => {
       { name: '0000000000219-PhysicalFileTrash' },
       { name: '0000000000220-PartnerOrigins' },
       { name: '0000000000221-PartnerPeopleLinks' },
+      { name: '0000000000222-AlbumSourceLinks' },
+      { name: '0000000000223-AlbumSourceMembershipGeneration' },
     ]);
     expect(controlTables.rows.map(({ tableName }) => tableName)).toEqual([
       'backfill_progress',

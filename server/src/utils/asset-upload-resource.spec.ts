@@ -100,6 +100,24 @@ describe('native upload headers', () => {
     ).toString('base64url');
     expect(() => parseAssetUploadHeaders({ ...headers, 'asset-metadata': unknown })).toThrow();
   });
+  it('accepts JSON booleans and the legacy strings for isFavorite, and a numeric duration (FL-218)', () => {
+    const encode = (extra: Record<string, unknown>) =>
+      Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(metadata, 'base64url').toString()), ...extra })).toString(
+        'base64url',
+      );
+    const parse = (extra: Record<string, unknown>) =>
+      parseAssetUploadHeaders({ ...headers, 'asset-metadata': encode(extra) }).metadata;
+
+    expect(parse({ isFavorite: true }).isFavorite).toBe(true);
+    expect(parse({ isFavorite: false }).isFavorite).toBe(false);
+    expect(parse({ isFavorite: 'true' }).isFavorite).toBe(true);
+    expect(parse({ isFavorite: 'false' }).isFavorite).toBe(false);
+    expect(parse({}).isFavorite).toBeUndefined();
+    expect(parse({ duration: 4250, isFavorite: true })).toMatchObject({ duration: 4250, isFavorite: true });
+    for (const isFavorite of [1, 0, null, 'yes', 'TRUE', {}]) {
+      expect(() => parse({ isFavorite })).toThrow();
+    }
+  });
   it('carries an iCloud source identity, strictly typed (FL-296)', () => {
     const encode = (sourceIdentity: unknown) =>
       Buffer.from(
