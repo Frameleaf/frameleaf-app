@@ -22,12 +22,12 @@ jobs:
       - run: mise run //server:install
       - run: mise run //:plugins
       - run: mise run //packages/plugin-core:build
-      - name: Observe the six actual late decoder and cleanup cases
+      - name: Check the seven actual decoder, cleanup and publication refusal cases
         working-directory: server
         run: >-
           pnpm exec vitest --config test/vitest.config.medium.mjs --run
           test/medium/specs/repositories/icloud-identity-adoption.repository.spec.ts
-          -t 'keeps actual late decoder work|refuses a replacement JSON generation|does not authenticate authored work-generation|rolls back a forced match-as-mismatch|refuses late readonly guard settlement'
+          -t 'keeps actual late decoder work|refuses a replacement JSON generation|does not authenticate authored work-generation|rolls back a duplicate reservation|rejects a matching receipt published as mismatch|refuses late readonly guard settlement'
       - name: Collect genuine diagnostic formatting output
         if: ${{ !cancelled() }}
         working-directory: server
