@@ -44,9 +44,10 @@ export type DurableRunningJobs = Omit<
 export const listDurableJobRuns = (
   { take = 25, skip = 0 }: Parameters<typeof getJobRuns>[0] = {},
   opts?: RequestOpts,
-) => getJobRuns({ take, skip }, opts);
+): Promise<DurableJobPage<DurableJobRun>> => getJobRuns({ take, skip }, opts);
 
 export const listDurableJobRunItems = (
   { id, take = 25, skip = 0 }: Parameters<typeof getJobRunItems>[0],
   opts?: RequestOpts,
-) => getJobRunItems({ id, take, skip }, opts);
+): Promise<DurableJobPage<DurableJobItem>> =>
+  getJobRunItems({ id, take, skip }, opts);

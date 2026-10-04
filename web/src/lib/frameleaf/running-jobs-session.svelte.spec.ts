@@ -3,9 +3,9 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
   QueueName,
+  State4,
   type MediaOperationDto,
   type RunningJobsResponseDto,
-  type DurableRunningJobs,
 } from '@immich/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { durableRun } from '$lib/__mocks__/durable-runs.mock';
@@ -211,7 +211,7 @@ describe('RunningJobsSession', () => {
     expect(session.rows[0]).toMatchObject({ paused: true, control: { kind: 'resume' } });
   });
   it('retains last durable progress on a partial status failure and clears it when authority is removed', async () => {
-    const previous: DurableRunningJobs = { ...summary(), canReadJobRuns: true, durableRuns: [durableRun()] };
+    const previous: RunningJobsResponseDto = { ...summary(), canReadJobRuns: true, durableRuns: [durableRun()] };
     sdkMock.getRunningJobs.mockResolvedValueOnce(previous);
     const session = new RunningJobsSession();
     await session.refresh();
@@ -226,9 +226,9 @@ describe('RunningJobsSession', () => {
   });
 
   it('does not restore administrator run data from a request that finishes after logout', async () => {
-    let resolve!: (value: DurableRunningJobs) => void;
+    let resolve!: (value: RunningJobsResponseDto) => void;
     sdkMock.getRunningJobs.mockReturnValue(
-      new Promise<DurableRunningJobs>((done) => {
+      new Promise<RunningJobsResponseDto>((done) => {
         resolve = done;
       }),
     );
@@ -266,11 +266,11 @@ describe('RunningJobsSession', () => {
           processed: 0,
           total: 0,
           unavailable: true,
-          state: 'unavailable',
+          state: State4.Unavailable,
           canPause: false,
         },
       ],
-    } as DurableRunningJobs);
+    });
     await session.refresh();
     expect(session.summary.queues[0]).toMatchObject({ total: 20, processed: 10, unavailable: true });
     expect(session.rows[0]).toMatchObject({ percent: null, statusKey: 'frameleaf_job_runs_state_unavailable' });
