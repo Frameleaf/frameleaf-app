@@ -399,12 +399,32 @@ test("delivery has no official-container compatibility lanes", () => {
   const entry = workflow("test.yml");
   assert.equal(entry.jobs["cloud-consumer-qualification"], undefined);
   assert.equal(entry.on.workflow_dispatch.inputs.candidate_sha, undefined);
-  for (const file of ["test.yml", "docker.yml", "fork-integration.yml"]) {
+  for (const file of readdirSync(path.join(root, ".github/workflows")).filter(
+    (name) => /\.ya?ml$/.test(name),
+  )) {
     assert.doesNotMatch(
       JSON.stringify(workflow(file)),
-      /fork-roundtrip|cli-fork-to-official|cloud-consumer-qualification|inputs\.candidate_sha/,
+      /fork-roundtrip|cli-fork-to-official|cloud-consumer-qualification|inputs\.candidate_sha|fork-schema-(?:certification|origin-upgrade|current-fork-cutover)|test-fork-roundtrip|OFFICIAL_IMMICH_TAG|upstream-migration-manifest/,
+      `${file} must not schedule unsupported compatibility or upstream tracking`,
     );
   }
+  for (const file of [
+    "e2e/docker-compose.fork-roundtrip.yml",
+    "scripts/test-fork-roundtrip.sh",
+    "scripts/test-fork-roundtrip.test.mjs",
+    "e2e/src/specs/server/fork-schema-certification.e2e-spec.ts",
+    "e2e/src/specs/server/fork-schema-origin-upgrade.e2e-spec.ts",
+    "e2e/src/specs/server/fork-schema-current-fork-cutover.e2e-spec.ts",
+  ]) {
+    assert.equal(existsSync(path.join(root, file)), false, file);
+  }
+  const scripts = JSON.parse(
+    readFileSync(path.join(root, "e2e/package.json"), "utf8"),
+  ).scripts;
+  assert.doesNotMatch(
+    JSON.stringify(scripts),
+    /fork-roundtrip|fork-schema-(?:certification|origin-upgrade|current-fork-cutover)/,
+  );
 });
 
 test("server E2E diagnostics preserve the failure state before maintenance", () => {
