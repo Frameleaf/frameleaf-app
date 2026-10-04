@@ -7,6 +7,7 @@ import test from 'node:test';
 import { admitAdaptedSource, inventory, licenses, sourceRecoveryContext, verifySnapshot } from './engine.mjs';
 import { assertPinnedSource } from '../../scripts/frameleaf-studio-contracts.mjs';
 import { writeResourcePolicy } from './resource-policy.mjs';
+import { approvalRowDigest } from '../../scripts/frameleaf-studio-rights.mjs';
 
 test('engine source pin rejects a changed archive without local planning files', async () => {
   const provenance = JSON.parse(await readFile(new URL('../freecut-provenance.json', import.meta.url), 'utf8'));
@@ -149,13 +150,15 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
     assert.equal(pinned.length, 65);
     assert.ok(pinned.every(({ revision, files }) => /^[a-f0-9]{40}$/.test(revision) && files.every(({ sha256 }) => /^[a-f0-9]{64}$/.test(sha256))));
     assert.ok(Object.values(actual).every((entry) => entry.sha256 === null));
-    assert.deepEqual(actual['model:walterlow/RIFE_fp32_timestep'], {
+    const { files: rifeFiles, ...rifePolicy } = actual['model:walterlow/RIFE_fp32_timestep'];
+    assert.deepEqual(rifePolicy, {
       localRuntime: 'allowed',
       approvalSha256: approval.resources.find(({ id }) => id === 'model:walterlow/RIFE_fp32_timestep').sha256,
       sha256: null,
       locator: 'walterlow/RIFE_fp32_timestep',
       revision: 'ee09066f9822f8b28b8477a1b4cc30f19d607590',
     });
+    assert.deepEqual(rifeFiles, {}, 'RIFE has a null payload hash, so no file bytes are admitted');
     assert.deepEqual(await readFile(path.join(engine, 'src/shared/utils/resource-policy.json')), await readFile(path.join(engine, 'public/moss-tts/resource-policy.json')));
 
     // The runtime module admits ids and URLs only inside approved rows and pinned revisions.
@@ -210,7 +213,7 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
     ]) assert.equal(runtime.pinnedHuggingFaceUrl(unchanged), unchanged);
     assert.equal(runtime.approvedRevision('model:Xenova/musicgen-small'), '6a8096dabfff72909ef5eae41461408e29ae20fd');
     assert.throws(() => runtime.approvedRevision('font:Inter'), /FRAMELEAF_RESOURCE_BLOCKED/);
-    // No per-file byte digest is recorded, so byte verification still fails closed.
+    // The font row has no per-file byte digest, so byte verification still fails closed.
     await assert.rejects(runtime.verifyResourceBytes('font:Inter', new Uint8Array([1])), /FRAMELEAF_RESOURCE_BLOCKED/);
 
     // A re-approval must say where it is recorded.
@@ -251,6 +254,121 @@ test('runtime policy admits exactly the owner-approved rows and keeps everything
     manifest.resources[0].decisions.localRuntime = 'allowed';
     await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(manifest));
     await assert.rejects(writeResourcePolicy(root, engine), /Unreviewed runtime approval/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('file byte admission uses actual generated owner-bound policy; synthetic approvals are not production authority', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-file-policy-contract-'));
+  const revision = 'a'.repeat(40);
+  const bytes = new Uint8Array([1, 2, 3]);
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  const base = `https://huggingface.co/synthetic-contract/model/resolve/${revision}`;
+  const row = () => ({ id: 'model:synthetic-contract/model', kind: 'model', locator: 'synthetic-contract/model', revision, licenseDeclared: 'Synthetic contract only', decisions: { redistribution: 'blocked', localRuntime: 'blocked', hostedUse: 'blocked' }, files: [{ path: 'weights.bin', sha256: digest }, { path: 'config.json', sha256: null }] });
+  let sequence = 0;
+  try {
+    await cp(path.resolve(import.meta.dirname, '../runtime'), path.join(root, 'runtime'), { recursive: true });
+    const prepare = async (rows, mutateApproval = () => {}, mutateRows = () => {}) => {
+      const manifest = { schemaVersion: 1, resources: rows };
+      const approval = { schemaVersion: 1, approvedBy: 'Synthetic test fixture', approvedOn: '2026-10-03', source: 'Authored rejection contract; no production approval', uses: ['localRuntime'], resources: rows.map((resource) => ({ id: resource.id, sha256: approvalRowDigest(resource) })) };
+      mutateApproval(approval); mutateRows(rows);
+      await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(manifest));
+      await writeFile(path.join(root, 'rights-approval.json'), JSON.stringify(approval));
+      const engine = path.join(root, `engine-${sequence++}`);
+      await writeResourcePolicy(root, engine);
+      return import(path.join(engine, 'src/shared/utils/resource-admission.mjs'));
+    };
+    const runtime = await prepare([row()]);
+    assert.equal(runtime.requireResource(row().id).sha256, null);
+    assert.deepEqual(await runtime.verifyResourceBytes(`${base}/weights.bin`, bytes), bytes);
+    for (const id of [row().id, base, `${base}/`, `${base}/config.json`, `${base}/unknown.bin`, `${base}/WEIGHTS.bin`, `${base}/weights.bin?download=1`, `${base}/weights.bin#fragment`, `${base}/%77eights.bin`, `${base}/a%2fweights.bin`, `${base}/a%5cweights.bin`, `${base}/a%252fweights.bin`, `${base}/../weights.bin`, `${base}/a/../weights.bin`, `${base}/%2e%2e/weights.bin`, base.replace(revision, revision.toUpperCase()) + '/weights.bin', base.replace(revision, 'main') + '/weights.bin', base.replace('huggingface.co', 'huggingface.co.evil.test') + '/weights.bin']) {
+      await assert.rejects(runtime.verifyResourceBytes(id, bytes), /FRAMELEAF_RESOURCE_BLOCKED/, id);
+    }
+    await assert.rejects(runtime.verifyResourceBytes(`${base}/weights.bin`, new Uint8Array([1, 2, 4])), /FRAMELEAF_RESOURCE_BLOCKED/);
+    const mutable = bytes.slice();
+    const pending = runtime.verifyResourceBytes(`${base}/weights.bin`, mutable);
+    mutable.fill(0);
+    assert.deepEqual(await pending, bytes, 'Caller mutation after digest begins must not alter admitted bytes');
+    const buffer = bytes.slice().buffer;
+    const pendingBuffer = runtime.verifyResourceBytes(`${base}/weights.bin`, buffer);
+    new Uint8Array(buffer).fill(0);
+    assert.deepEqual(await pendingBuffer, bytes);
+
+    // An exact voice row controls its file even inside an admitted model repository.
+    const voice = { ...row(), id: 'voice:synthetic-specific-file', kind: 'voice', locator: `${base}/weights.bin`, files: [{ path: 'weights.bin', sha256: digest }] };
+    const specific = await prepare([row(), voice]);
+    assert.equal(specific.requireResource(`${base}/weights.bin`).approvalSha256, approvalRowDigest(voice));
+    assert.deepEqual(await specific.verifyResourceBytes(`${base}/weights.bin`, bytes), bytes);
+    const blocked = await prepare([row(), voice], (approval) => { approval.resources[1].excludedUses = { localRuntime: 'Synthetic explicit refusal' }; });
+    await assert.rejects(blocked.verifyResourceBytes(`${base}/weights.bin`, bytes), /FRAMELEAF_RESOURCE_BLOCKED/);
+    for (const mutate of [
+      (rows) => { rows[0].revision = 'b'.repeat(40); },
+      (rows) => { rows[0].files[0].sha256 = '0'.repeat(64); },
+      (rows) => { rows[0].files[0].path = 'other.bin'; },
+      (rows) => { rows[0].locator = 'synthetic-contract/other'; },
+    ]) {
+      const changed = await prepare([row()], undefined, mutate);
+      await assert.rejects(changed.verifyResourceBytes(`${base}/weights.bin`, bytes), /FRAMELEAF_RESOURCE_BLOCKED/);
+    }
+    for (const mutate of [
+      (approval) => { approval.resources = []; },
+      (approval) => { approval.uses = ['hostedUse']; },
+      (approval) => { approval.resources[0].excludedUses = { localRuntime: 'Synthetic refusal' }; },
+      (approval) => { approval.resources[0].sha256 = '0'.repeat(64); },
+    ]) {
+      const refused = await prepare([row()], mutate);
+      await assert.rejects(refused.verifyResourceBytes(`${base}/weights.bin`, bytes), /FRAMELEAF_RESOURCE_BLOCKED/);
+    }
+    const missing = row(); missing.files[0].sha256 = null;
+    await assert.rejects((await prepare([missing])).verifyResourceBytes(`${base}/weights.bin`, bytes), /FRAMELEAF_RESOURCE_BLOCKED/);
+    // Current real Whisper row and rights authority remain unchanged: no approved file bytes.
+    const productionManifest = JSON.parse(await readFile(new URL('../dependency-attribution.json', import.meta.url), 'utf8'));
+    assert.deepEqual(productionManifest.resources.find(({ id }) => id === 'model:onnx-community/whisper-tiny_timestamped').files, []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('retained Whisper payload candidates match genuine diagnostic provenance and remain unsigned/unapproved', async () => {
+  const reportBytes = await readFile(new URL('../qualification-evidence/whisper-37164769288-diagnostic.json', import.meta.url));
+  const report = JSON.parse(reportBytes.toString('utf8'));
+  const inventory = JSON.parse(await readFile(new URL('../qualification-evidence/whisper-37164769288-candidates.json', import.meta.url), 'utf8'));
+  assert.equal(createHash('sha256').update(reportBytes).digest('hex'), inventory.source.reportSha256);
+  assert.equal(inventory.source.reportSha256, '63cc58638218ec4c4cb9807a015cd44e0537fa0c190899457ded0ccb67277153');
+  assert.equal(inventory.approval, 'UNAPPROVED'); assert.equal(inventory.signature, null);
+  assert.equal(inventory.source.run, report.run); assert.equal(inventory.source.sourceCommit, report.sourceCommit);
+  assert.equal(inventory.revision, report.revision); assert.equal(inventory.source.observationCount, report.payloads.length);
+  assert.equal(inventory.source.distinctPayloadCount, new Set(report.payloads.map(({ origin }) => origin)).size);
+  assert.equal(inventory.candidates.length, inventory.source.distinctPayloadCount);
+  assert(report.payloads.every(({ approvedPayloadDigest }) => approvedPayloadDigest === null));
+  for (const candidate of inventory.candidates) {
+    const observations = report.payloads.filter(({ origin }) => origin === candidate.origin);
+    assert.equal(candidate.observations, observations.length); assert.equal(candidate.approvedPayloadDigest, null);
+    assert.equal(candidate.origin, `https://huggingface.co/${inventory.locator}/resolve/${inventory.revision}/${candidate.path}`);
+    for (const observation of observations) {
+      for (const key of ['responseOrigin', 'bytes', 'observedSha256']) assert.equal(candidate[key], observation[key]);
+      assert.equal(observation.revision, inventory.revision);
+    }
+  }
+});
+
+test('file policy generator rejects malformed schema, duplicate identities and nonliteral paths before output', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'frameleaf-file-schema-contract-'));
+  try {
+    const resource = { id: 'model:synthetic-contract/model', kind: 'model', locator: 'synthetic-contract/model', revision: 'a'.repeat(40), files: [{ path: 'weights.bin', sha256: 'b'.repeat(64) }], decisions: { redistribution: 'blocked', localRuntime: 'blocked', hostedUse: 'blocked' } };
+    for (const mutate of [
+      (manifest) => { manifest.schemaVersion = 2; },
+      (manifest) => { manifest.resources.push(structuredClone(resource)); },
+      ...['../weights.bin', 'a/../weights.bin', './weights.bin', '/weights.bin', 'a//weights.bin', 'weights.bin?download=1', 'weights.bin#fragment', 'a%2fweights.bin', 'a%5cweights.bin', 'a\\weights.bin', 'https://example.test/weights.bin'].map((name) => (manifest) => { manifest.resources[0].files[0].path = name; }),
+      (manifest) => { manifest.resources[0].files.push({ ...resource.files[0] }); },
+      (manifest) => { delete manifest.resources[0].files[0].sha256; },
+      (manifest) => { manifest.resources[0].files[0].sha256 = 'B'.repeat(64); },
+      (manifest) => { manifest.resources[0].files[0].sha256 = 'not-a-hash'; },
+      (manifest) => { manifest.resources[0].files[0].url = 'https://unapproved.test/weights.bin'; },
+      (manifest) => { manifest.resources[0].files = null; },
+    ]) {
+      const manifest = { schemaVersion: 1, resources: [structuredClone(resource)] }; mutate(manifest);
+      await writeFile(path.join(root, 'dependency-attribution.json'), JSON.stringify(manifest));
+      await assert.rejects(writeResourcePolicy(root, path.join(root, 'must-not-generate')));
+      await assert.rejects(readFile(path.join(root, 'must-not-generate/src/shared/utils/resource-policy.json')), { code: 'ENOENT' });
+    }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

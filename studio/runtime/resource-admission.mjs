@@ -129,13 +129,18 @@ export function approvedRevision(id) {
 
 export async function verifyResourceBytes(id, bytes) {
   const resource = requireResource(id);
-  // No per-file byte digest is recorded yet, so byte verification fails closed.
-  if (!/^[a-f0-9]{64}$/.test(resource.sha256 ?? '')) throw new ResourceBlockedError(id);
+  // Model IDs and locator roots cannot borrow a file's hash. Resolve exactly one URL through
+  // the most-specific admitted row; blocked overlapping rows still refuse it in requireResource.
+  const file = typeof id === 'string' && Object.hasOwn(resource.files ?? {}, id) ? resource.files[id] : undefined;
+  if (!file || file.url !== id || file.approvalSha256 !== resource.approvalSha256
+    || file.revision !== resource.revision || !/^[a-f0-9]{40}$/.test(file.revision ?? '')
+    || !/^[a-f0-9]{64}$/.test(file.sha256 ?? '')) throw new ResourceBlockedError(id);
+  const expectedSha256 = file.sha256;
   // Copy before awaiting so caller mutation cannot race the digest check.
   const copy = new Uint8Array(bytes).slice();
   const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', copy))]
     .map((value) => value.toString(16).padStart(2, '0')).join('');
-  if (hash !== resource.sha256) throw new ResourceBlockedError(id);
+  if (hash !== expectedSha256) throw new ResourceBlockedError(id);
   return copy;
 }
 

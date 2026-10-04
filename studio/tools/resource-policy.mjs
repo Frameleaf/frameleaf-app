@@ -13,6 +13,41 @@ const readApproval = async (studio) => {
   }
 };
 
+// Paths are literal repository-relative identities, never a URL, query, or encoded alias.
+// Existing bundled npm files are validated too, but do not become network identities.
+function fileBindings(resource, admitted) {
+  assert.ok(Array.isArray(resource.files), `Missing resource file inventory: ${resource.id}`);
+  const files = Object.create(null);
+  const seen = new Set();
+  for (const file of resource.files) {
+    assert.ok(file && typeof file === 'object' && !Array.isArray(file)
+      && Object.keys(file).length === 2 && Object.hasOwn(file, 'path') && Object.hasOwn(file, 'sha256'), `Invalid resource file schema: ${resource.id}`);
+    assert.ok(typeof file.path === 'string' && /^[A-Za-z0-9_@+.-]+(?:\/[A-Za-z0-9_@+.-]+)*$/.test(file.path)
+      && !file.path.split('/').some((part) => part === '.' || part === '..'), `Invalid resource file path: ${resource.id}`);
+    assert.ok(!seen.has(file.path), `Duplicate resource file: ${resource.id}`);
+    seen.add(file.path);
+    assert.ok(file.sha256 === null || /^[a-f0-9]{64}$/.test(file.sha256 ?? ''), `Invalid resource file hash: ${resource.id}`);
+    if (!admitted || file.sha256 === null || !/^[a-f0-9]{40}$/.test(resource.revision ?? '')) continue;
+    let url;
+    if (/^(?:spaces\/)?[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(resource.locator ?? '')) {
+      const segments = resource.locator.split('/');
+      assert.ok(!segments.some((part) => part === '.' || part === '..'), `Invalid repository locator: ${resource.id}`);
+      url = `https://huggingface.co/${resource.locator}/resolve/${resource.revision}/${file.path}`;
+    } else if (typeof resource.locator === 'string' && resource.locator.startsWith('https://')) {
+      // A reviewed full-file locator binds only itself. No directory-prefix guessing.
+      const locator = new URL(resource.locator);
+      if (locator.origin !== 'https://huggingface.co' || locator.href !== resource.locator
+        || locator.username || locator.password || locator.search || locator.hash || locator.pathname.includes('%')
+        || !locator.pathname.includes(`/resolve/${resource.revision}/`) || !locator.pathname.endsWith(`/${file.path}`)) continue;
+      url = locator.href;
+    }
+    if (!url) continue;
+    assert.ok(!Object.hasOwn(files, url), `Duplicate resource file URL: ${resource.id}`);
+    files[url] = { url, path: file.path, sha256: file.sha256, revision: resource.revision, approvalSha256: approvalRowDigest(resource) };
+  }
+  return files;
+}
+
 /**
  * The engine's runtime resource policy (FL-84/FL-86 follow-up): which resources the isolated
  * editor and headless engine may load in the browser, generated from the reviewed bill of
@@ -28,11 +63,13 @@ const readApproval = async (studio) => {
  * - The pinned `locator` and `revision` travel with each entry, so a model fetched by URL is
  *   admitted only from the exact revision the owner approved (see `runtime/resource-admission.mjs`).
  *
- * `sha256` is reserved for a per-file byte digest; none is recorded yet, so byte verification
- * (`verifyResourceBytes`) still fails closed.
+ * Root `sha256` stays null. Per-file digests are emitted only for exact URLs in an owner-approved
+ * row; absent/null hashes never admit bytes. This does not activate any loader transport.
  */
 export async function writeResourcePolicy(studio, engine) {
   const manifest = parseJsonRejectingDuplicateKeys(await readFile(path.join(studio, 'dependency-attribution.json'), 'utf8'));
+  assert.equal(manifest.schemaVersion, 1, 'Unsupported resource manifest schema');
+  assert.ok(Array.isArray(manifest.resources) && manifest.resources.length, 'Missing resource rows');
   const approval = ownerApproval(await readApproval(studio), manifest);
   const policy = Object.create(null);
   for (const resource of manifest.resources) {
@@ -46,6 +83,7 @@ export async function writeResourcePolicy(studio, engine) {
       localRuntime: admitted ? 'allowed' : 'blocked',
       approvalSha256: admitted ? approvalRowDigest(resource) : null,
       sha256: null,
+      files: fileBindings(resource, admitted),
       locator: typeof resource.locator === 'string' ? resource.locator : null,
       revision: typeof resource.revision === 'string' ? resource.revision : null,
     };
