@@ -47,6 +47,7 @@ describe(FrameleafAuthService.name, () => {
     status: 'linked',
     cloudUrl: cloud.url,
     instanceId: INSTANCE,
+    linkedAt: '2026-10-03T12:00:00.000Z',
     oidc: {
       issuer: issuer(),
       clientId: INSTANCE,
@@ -1133,6 +1134,89 @@ describe(FrameleafAuthService.name, () => {
         expect(mocks.frameleafAccount.upsertLink).toHaveBeenCalledWith(
           expect.objectContaining({ userId: user.id, sub: 'fl-sub', role: 'admin' }),
         );
+      });
+
+      it.each(['unlinked', 'revoked', 'removed'])('refuses confirmation after the Cloud link is %s', async (status) => {
+        const { auth } = setup(false);
+        idClaims.frameleaf_role = 'admin';
+        const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
+
+        if (status === 'removed') {
+          metadata.delete(SystemMetadataKey.FrameleafCloudLink);
+        } else {
+          metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), status });
+        }
+
+        await expect(sut.confirmLink(auth, { confirmToken: confirmToken! })).rejects.toThrow('not available');
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+        expect(mocks.notification.create).not.toHaveBeenCalled();
+        expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+      });
+
+      it.each(['issuer', 'client', 'generation', 'owner', 'instance', 'scope'])(
+        'refuses confirmation after the Cloud %s authority is replaced',
+        async (authority) => {
+          const { auth } = setup(false);
+          idClaims.frameleaf_role = 'admin';
+          const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
+          const link = linkRecord();
+          metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+            ...link,
+            ...(authority === 'generation' && { linkedAt: '2026-10-03T12:01:00.000Z' }),
+            ...(authority === 'owner' && { accountId: 'replacement-owner' }),
+            ...(authority === 'instance' && { instanceId: 'replacement-instance' }),
+            oidc: {
+              ...link.oidc,
+              ...(authority === 'issuer' && { issuer: `${cloud.url}/replacement-issuer` }),
+              ...(authority === 'client' && { clientId: 'replacement-client' }),
+              ...(authority === 'scope' && { scope: 'openid email' }),
+            },
+          });
+
+          await expect(sut.confirmLink(auth, { confirmToken: confirmToken! })).rejects.toThrow('not valid any more');
+          expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+          expect(mocks.user.update).not.toHaveBeenCalled();
+          expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+          expect(mocks.notification.create).not.toHaveBeenCalled();
+          expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+        },
+      );
+
+      it('refuses an old preview after unlinking and relinking the same issuer and client', async () => {
+        const { auth } = setup(false);
+        idClaims.frameleaf_role = 'admin';
+        const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, { ...linkRecord(), status: 'unlinked' });
+        await expect(sut.confirmLink(auth, { confirmToken: confirmToken! })).rejects.toThrow('not available');
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+          ...linkRecord(),
+          linkedAt: '2026-10-03T12:02:00.000Z',
+        });
+
+        await expect(sut.confirmLink(auth, { confirmToken: confirmToken! })).rejects.toThrow('not valid any more');
+        expect(mocks.frameleafAccount.upsertLink).not.toHaveBeenCalled();
+        expect(mocks.user.update).not.toHaveBeenCalled();
+        expect(mocks.adminAudit.create).not.toHaveBeenCalled();
+        expect(mocks.notification.create).not.toHaveBeenCalled();
+      });
+
+      it('allows confirmation after routine link contact metadata changes', async () => {
+        const { auth } = setup(false);
+        idClaims.frameleaf_role = 'admin';
+        const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+          ...linkRecord(),
+          lastContactAt: '2026-10-03T12:03:00.000Z',
+          accountLabel: 'Updated display label',
+        });
+
+        await expect(sut.confirmLink(auth, { confirmToken: confirmToken! })).resolves.toMatchObject({
+          linked: true,
+          roleChange: 'granted-admin',
+          isAdmin: true,
+        });
       });
 
       it('refuses a tampered confirm token, or one from another session or person', async () => {
