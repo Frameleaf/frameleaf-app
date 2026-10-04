@@ -34,7 +34,7 @@ describe('local Sharp capacity deferral', () => {
     let occupying: Promise<unknown> | undefined;
     try {
       await pool.run('getImageMetadata', ['warm']);
-      occupying = pool.run('getImageMetadata', ['hang'], abort.signal).catch(() => undefined);
+      occupying = pool.run('getImageMetadata', ['hang'], abort.signal).catch(() => {});
       const runId = await store.createRun('sharp-capacity-fixture', {});
       const id = randomUUID();
       await store.enqueue([

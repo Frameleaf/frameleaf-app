@@ -183,7 +183,7 @@ describe('atomic initial run admission', () => {
   it('waits for durable unadmitted descendant stages after a producer is superseded', async () => {
     await store.setConcurrency(queue, 2);
     const originalId = await jobs.createRun(queue, {}, () =>
-      jobs.queueAll([{ name: JobName.LibraryScanRun }, { name: JobName.AssetEncodeVideoQueueAll }]),
+      jobs.queueAll([{ name: JobName.LibraryScanRun }, { name: JobName.AssetEncodeVideoQueueAll, data: {} }]),
     );
     const claims = await store.claim(queue, workerId);
     expect(claims).toHaveLength(2);
@@ -318,7 +318,7 @@ describe('atomic initial run admission', () => {
         followups: [],
         buffering: false,
       },
-      () => jobs.prepareCheckpoint('setup', async () => checkpoint),
+      () => jobs.prepareCheckpoint('setup', () => Promise.resolve(checkpoint)),
     );
     await store.defer(producer, 'source-unavailable');
     const latestId = await start();
@@ -349,7 +349,7 @@ describe('atomic initial run admission', () => {
       buffering: true,
     };
     const childId = await queueExecution.run(context, () =>
-      jobs.createRun(queue, {}, () => jobs.queue({ name: JobName.AssetEncodeVideoQueueAll })),
+      jobs.createRun(queue, {}, () => jobs.queue({ name: JobName.AssetEncodeVideoQueueAll, data: {} })),
     );
     expect(await runs()).toEqual([]);
     await expect(
@@ -412,16 +412,16 @@ describe('atomic initial run admission', () => {
         if (reason === 'expired')
           await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second'
             where id = ${parent.id}::uuid`.execute(tx);
-        if (reason === 'cancelled')
+        else if (reason === 'cancelled')
           await sql`update job set "cancelRequestedAt" = clock_timestamp() where id = ${parent.id}::uuid`.execute(tx);
-        if (reason === 'token-replaced')
+        else if (reason === 'token-replaced')
           await sql`update job set token = gen_random_uuid() where id = ${parent.id}::uuid`.execute(tx);
-        if (reason === 'aborted') abort.abort(new Error('parent stopped during admission'));
+        else if (reason === 'aborted') abort.abort(new Error('parent stopped during admission'));
       });
       try {
         await expect(
           queueExecution.run(context, () =>
-            jobs.createRun(queue, {}, () => jobs.queue({ name: JobName.AssetEncodeVideoQueueAll })),
+            jobs.createRun(queue, {}, () => jobs.queue({ name: JobName.AssetEncodeVideoQueueAll, data: {} })),
           ),
         ).rejects.toThrow(
           reason === 'aborted' ? 'parent stopped during admission' : 'Producer lost its claim during admission',
@@ -453,7 +453,7 @@ describe('atomic initial run admission', () => {
         buffering: false,
       };
       await queueExecution.run(context, async () => {
-        if (kind === 'checkpoint') await jobs.prepareCheckpoint('setup', async () => ({ accepted: true }));
+        if (kind === 'checkpoint') await jobs.prepareCheckpoint('setup', () => Promise.resolve({ accepted: true }));
         else
           await jobs.queueSelection(
             JobName.ImageDescriptionQueueAll,

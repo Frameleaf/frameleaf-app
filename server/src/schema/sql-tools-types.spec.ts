@@ -10,7 +10,9 @@ it('preserves Kysely column types across the SQL-tools workspace boundary', () =
   expectTypeOf<InsertType<Generated<Timestamp>>>().toEqualTypeOf<Date | string | undefined>();
   expectTypeOf<SelectType<Generated<Timestamp>>>().toEqualTypeOf<Date>();
   expectTypeOf<SelectType<Int8>>().toEqualTypeOf<number>();
-  expectTypeOf<Insertable<{ id: Generated<string>; createdAt: Generated<Timestamp>; name: string }>>().toEqualTypeOf<{
+  type Insert = Insertable<{ id: Generated<string>; createdAt: Generated<Timestamp>; name: string }>;
+  // Compare the row shape rather than Kysely's internal intersection aliases.
+  expectTypeOf<{ [Key in keyof Insert]: Insert[Key] }>().toEqualTypeOf<{
     id?: string;
     createdAt?: Date | string;
     name: string;

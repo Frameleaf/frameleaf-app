@@ -1,8 +1,8 @@
 import { vi } from 'vitest';
+import type { QueueClaim, QueueExecution } from 'src/queue/types.js';
 import { defaults } from 'src/config.js';
 import { JobName, JobStatus } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import type { QueueClaim, QueueExecution } from 'src/queue/types.js';
 import { SmartAlbumService } from 'src/services/smart-album.service.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';

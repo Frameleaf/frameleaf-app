@@ -1,5 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import type { QueueClaim, QueueExecution } from 'src/queue/types.js';
 import type { JobItem } from 'src/types.js';
 import {
   AssetFileType,
@@ -15,7 +16,6 @@ import { queueExecution } from 'src/queue/context.js';
 import { freezeSelection } from 'src/queue/manifest.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
-import type { QueueClaim, QueueExecution } from 'src/queue/types.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -392,11 +392,11 @@ describe('durable smart-album reevaluation', () => {
       expect(await f.memberships()).toEqual([]);
       if (reason === 'cancelled')
         await sql`update job set "cancelRequestedAt" = now() where id = ${claim.id}::uuid`.execute(db);
-      if (reason === 'expired')
+      else if (reason === 'expired')
         await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(
           db,
         );
-      if (reason === 'tags-changed')
+      else if (reason === 'tags-changed')
         await f.ctx.newMetadata({
           assetId: asset.id,
           key: AssetMetadataKey.MlEnrichment,

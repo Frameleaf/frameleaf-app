@@ -3,7 +3,7 @@ import sharp from 'sharp';
 // eslint-disable-next-line no-restricted-imports
 import { SharpOperations } from './sharp-operations.js';
 // eslint-disable-next-line no-restricted-imports
-import { assertSharpPixels, SHARP_OPERATIONS, sharpPayloadBytes, SharpResourceLimitError } from './sharp-protocol.js';
+import { SHARP_OPERATIONS, SharpResourceLimitError, assertSharpPixels, sharpPayloadBytes } from './sharp-protocol.js';
 import type { SharpRequest, SharpResponse } from 'src/queue/sharp-protocol.js';
 
 // Bound native threads per child; the parent owns process concurrency and admission.
@@ -55,10 +55,9 @@ async function execute(request: SharpRequest) {
           maxPixels * 2,
         );
       }
-    }
-    if (operation === 'composeImageGrid') {
+    } else if (operation === 'composeImageGrid') {
       const { cols, rows, cellSize } = args[1] as { cols: number; rows: number; cellSize: number };
-      if (![cols, rows, cellSize].every((value) => Number.isSafeInteger(value) && value > 0)) {
+      if ([cols, rows, cellSize].some((value) => !(Number.isSafeInteger(value) && value > 0))) {
         throw new SharpResourceLimitError('invalid grid dimensions');
       }
       assertSharpPixels(cols * cellSize, rows * cellSize, maxPixels);
