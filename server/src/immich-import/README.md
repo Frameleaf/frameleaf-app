@@ -24,8 +24,9 @@ canonical public schema and pgvector HNSW indexes.
    ledger, seeded queue configuration, import journal and documented reference
    tables may already exist. Start neither the API nor workers during import.
 4. Make original files available read-only at the source roots. Independently copy
-   the corresponding files into separate Frameleaf media roots. Writable bind
-   mounts, identical resolved paths, overlapping source/destination trees, and
+   the corresponding files into separate Frameleaf media roots. Read-only source
+   mounts are an operator prerequisite; the importer does not inspect mount flags.
+   Identical resolved paths, overlapping source/destination trees, and
    hardlinked destination files are refused with
    `DESTINATION_MEDIA_MUST_BE_INDEPENDENT_COPY`. The importer checks every file
    using device/inode identity, link count, resolved containment, complete content
@@ -95,6 +96,14 @@ are excluded from structural equality. Physical index fillfactor does not alter
 constraint semantics and is ignored. Source instance identities, content rows,
 structural catalogs and the import configuration are bound to every restart.
 
+Destination admission separately compares the complete live public catalog with
+the pinned Frameleaf desired schema, using the owned reader with overrides disabled.
+It also independently checks exact PostgreSQL constraint and trigger definitions.
+Missing artifacts, reader warnings, missing or extra application objects, and
+constraint/trigger drift fail closed with `DESTINATION_SCHEMA_NOT_CANONICAL` even
+when the Frameleaf ledger is intact. The check never repairs the destination and
+runs again immediately before activation.
+
 The fixtures retain the existing exact-tag 3.1.0 PostgreSQL dump, pinned upstream
 migration text and hashes, extracted structural SQL and three complete catalogs.
 3.0.x reverses the sole session-column difference; 3.2.x applies the pinned column,
@@ -142,6 +151,15 @@ Unit tests cover frozen version bounds, legacy conversion, vector model/dimensio
 checks, read-only admission, schema drift, checksum/path-hash remapping and independent
 file/symlink/hardlink failures. `source-schema.spec.ts` qualifies the real PostgreSQL
 catalog and rejects constraint/default/nullability mutations.
-`test/medium/specs/immich-import/restart.spec.ts` uses hosted PostgreSQL to exercise
-real uniqueness failures, transaction rollback, durable checkpoint recovery and
-the inactive/abandoned gate. No tests or builds were run on the operator's Mac.
+`test/medium/specs/immich-import/restart.spec.ts` replays the pinned baseline and
+ORDER-listed migrations into fresh hosted PG19 databases. Its ten-pin adapter
+matrix checks passwords/PINs, album roles, partner and shared-link permissions,
+locked/soft-deleted ownership, legacy/current people mappings and independently
+copied media. It also exercises a real PostgreSQL transaction failure, durable
+checkpoint recovery, inactive/abandoned gates and missing FK/trigger refusal with
+the ledger intact, including drift during dispatch. The matrix uses deterministic
+source transport/fingerprints and a dispatcher acknowledgement stand-in; it does
+not prove real source-role admission, production queue dispatch, password login or
+completed ML regeneration. Separate source catalog/admission tests remain required.
+These tests require the reviewed frozen artifact bundle and hosted execution. No
+tests or builds were run on the operator's Mac.
