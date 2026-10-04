@@ -1,4 +1,3 @@
-import { ConflictException } from '@nestjs/common';
 import type { QueueExecution } from 'src/queue/types.js';
 import type { Mock } from 'vitest';
 import { defaults } from 'src/dtos/config.dto.js';
@@ -83,6 +82,10 @@ describe(PetRecognitionService.name, () => {
     clearConfigCache();
     clearPetPromptCache();
     mocks = getMocks();
+    mocks.job.prepareCheckpoint.mockImplementation(async (_key, prepare) => prepare());
+    mocks.job.collectFollowups.mockImplementation(async (collect) => {
+      await collect();
+    });
     mocks.mlDestination.getById.mockResolvedValue(localWithPets);
     mocks.machineLearning.probe.mockResolvedValue({
       reachable: true,
@@ -118,6 +121,8 @@ describe(PetRecognitionService.name, () => {
       failRun: vi.fn(),
       startRun: vi.fn().mockResolvedValue({ id: runId, ownerId, status: PetRecognitionRunStatus.Queued }),
       setRunAssets: vi.fn(),
+      setSelectedRunAssets: vi.fn(),
+      selectionForPetRecognition: vi.fn().mockReturnValue({ selected: true }),
       cancelRun: vi.fn(),
       getRecognizableAssetIds: vi.fn().mockResolvedValue(['a', 'b']),
       getOwnersWithConfirmedPets: vi.fn().mockResolvedValue([ownerId]),
@@ -365,11 +370,9 @@ describe(PetRecognitionService.name, () => {
 
       await sut.handleQueueAll({ userId: ownerId });
 
-      expect(pets.setRunAssets).toHaveBeenCalledWith(runId, 2);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.PetRecognition, data: { id: 'a', runId } },
-        { name: JobName.PetRecognition, data: { id: 'b', runId } },
-      ]);
+      expect(pets.selectionForPetRecognition).toHaveBeenCalledWith([{ ownerId, id: runId }]);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.PetRecognition, { selected: true });
+      expect(pets.getRecognizableAssetIds).not.toHaveBeenCalled();
     });
 
     it('queues nothing for a run cancelled before it started', async () => {
@@ -381,30 +384,17 @@ describe(PetRecognitionService.name, () => {
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
-    // L2: pet_recognition_run is fork-owned; during a database handoff its writes are refused
-    it('leaves the run alone during a database handoff instead of failing the job', async () => {
-      const handoff = new ConflictException('Pet recognition runs are unavailable during database handoff');
-      pets.getRun.mockResolvedValue({ id: runId, ownerId, status: PetRecognitionRunStatus.Queued });
-      pets.setRunAssets.mockRejectedValue(handoff);
-
-      await expect(sut.handleQueueAll({ userId: ownerId })).resolves.toBe(JobStatus.Success);
-      expect(mocks.job.queueAll).not.toHaveBeenCalled();
-
-      pets.recordRunProgress.mockRejectedValue(handoff);
-      await expect(sut.handleRecognize({ id: assetId, runId })).resolves.not.toBe(JobStatus.Failed);
-    });
-
-    it('lets any other run write error through', async () => {
-      pets.getRun.mockResolvedValue({ id: runId, ownerId, status: PetRecognitionRunStatus.Queued });
-      pets.setRunAssets.mockRejectedValue(new Error('connection lost'));
+    it('fails producer setup atomically when its canonical run cannot be read', async () => {
+      pets.getRun.mockRejectedValue(new Error('connection lost'));
       await expect(sut.handleQueueAll({ userId: ownerId })).rejects.toThrow('connection lost');
+      expect(mocks.job.queueSelection).not.toHaveBeenCalled();
     });
 
     it('starts a run for every owner with a confirmed pet from the Job manager', async () => {
       await sut.handleQueueAll({});
 
       expect(pets.startRun).toHaveBeenCalledWith(ownerId, null);
-      expect(mocks.job.queueAll).toHaveBeenCalled();
+      expect(mocks.job.queueSelection).toHaveBeenCalled();
     });
 
     it('looks again at the owner’s most similar photos after a confirmation', async () => {

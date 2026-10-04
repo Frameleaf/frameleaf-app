@@ -156,6 +156,7 @@ describe(SmartInfoService.name, () => {
   });
 
   describe('handleQueueEncodeClip', () => {
+    beforeEach(() => mocks.database.getDimensionSize.mockResolvedValue(768));
     it('should do nothing if machine learning is disabled', async () => {
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.machineLearningDisabled);
 
@@ -189,7 +190,8 @@ describe(SmartInfoService.name, () => {
         mocks.assetJob.selectionForEncodeClip.mock.results[0].value,
       );
       expect(mocks.assetJob.selectionForEncodeClip).toHaveBeenCalledWith(true);
-      expect(mocks.database.setDimensionSize).toHaveBeenCalledExactlyOnceWith(768);
+      expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
+      expect(mocks.database.deleteAllSearchEmbeddings).not.toHaveBeenCalled();
     });
   });
 

@@ -2279,6 +2279,7 @@ export enum JobName {
 
   PersonCleanup = 'PersonCleanup',
   PersonFileMigration = 'PersonFileMigration',
+  ProfileImageRepair = 'profile-image-repair',
   PersonGenerateThumbnail = 'PersonGenerateThumbnail',
   PersonIdentityRefresh = 'PersonIdentityRefresh',
 

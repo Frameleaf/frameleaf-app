@@ -204,28 +204,20 @@ export class MediaService extends BaseService {
       selected.where('asset.isEdited', '=', true),
     );
 
-    for await (const people of batched(this.personRepository.getAll(force ? undefined : { thumbnailPath: '' }))) {
-      const jobs: JobItem[] = [];
-      for (const person of people) {
-        const { ownerId, personGroupId } = person;
-        if (!person.faceAssetId) {
-          const face = await this.personRepository.getRandomFace(personGroupId);
-          if (!face) {
-            continue;
-          }
+    await this.jobRepository.queueSelection(
+      JobName.PersonGenerateThumbnail,
+      this.personRepository.selectionForThumbnails(!!force),
+    );
+    await this.jobRepository.collectFollowups(() =>
+      this.jobRepository.queue({ name: JobName.ProfileImageRepair, data: {} }),
+    );
 
-          await this.personRepository.update({ ownerId, personGroupId, faceAssetId: face.id });
-        }
+    return JobStatus.Success;
+  }
 
-        jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
-      }
-
-      await this.jobRepository.queueAll(jobs);
-    }
-
-    // profile pictures copied from a photo that became Locked where no replacement could run (FL-53)
+  @OnJob({ name: JobName.ProfileImageRepair, queue: QueueName.ThumbnailGeneration })
+  async handleProfileImageRepair(): Promise<JobStatus> {
     await this.replaceLockedProfileImages();
-
     return JobStatus.Success;
   }
 
@@ -326,6 +318,7 @@ export class MediaService extends BaseService {
   }
 
   private async renderEditThumbnails(id: string, run?: EditOperationRun): Promise<JobStatus> {
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForGenerateThumbnailJob(id);
     const config = await this.getConfig({ withCache: true });
 
@@ -368,7 +361,9 @@ export class MediaService extends BaseService {
     }
 
     const fullsizeDimensions = generated?.fullsizeDimensions ?? getDimensions(asset.exifInfo!);
-    await this.assetRepository.update({ id: asset.id, ...fullsizeDimensions });
+    await publishJobResult(() =>
+      this.assetRepository.update({ id: asset.id, ...fullsizeDimensions }).then(() => undefined),
+    );
 
     return JobStatus.Success;
   }
@@ -654,14 +649,22 @@ export class MediaService extends BaseService {
   async handleGeneratePersonThumbnail({
     ownerId,
     personGroupId,
-  }: JobOf<JobName.PersonGenerateThumbnail>): Promise<JobStatus> {
+    selectionFaceId,
+  }: JobOf<JobName.PersonGenerateThumbnail> & { selectionFaceId?: string }): Promise<JobStatus> {
     const { image } = await this.getConfig({ withCache: true });
     const person = queueExecution.getStore()
       ? await this.personRepository.getByGroupId({ personGroupId, ownerId })
       : undefined;
-    const sourceFace = person?.faceAssetId ? await this.personRepository.getFaceById(person.faceAssetId) : undefined;
+    if (selectionFaceId && person?.faceAssetId && person.faceAssetId !== selectionFaceId) return JobStatus.Skipped;
+    const sourceFaceId = person?.faceAssetId ?? selectionFaceId;
+    const sourceFace = sourceFaceId
+      ? await this.personRepository.getFaceById(sourceFaceId, { viewingUserId: ownerId })
+      : undefined;
     if (sourceFace) await this.jobRepository.guardAssetSource(sourceFace.assetId);
-    const data = await this.personRepository.getDataForThumbnailGenerationJob({ ownerId, personGroupId });
+    const data = await this.personRepository.getDataForThumbnailGenerationJob(
+      { ownerId, personGroupId },
+      person?.faceAssetId ? undefined : selectionFaceId,
+    );
     if (!data) {
       this.logger.error(`Could not generate person thumbnail for ${personGroupId}: missing data`);
       return JobStatus.Failed;
@@ -722,7 +725,10 @@ export class MediaService extends BaseService {
           .forUpdate()
           .execute();
         const currentPerson = await this.personRepository.getByGroupId({ personGroupId, ownerId });
-        const current = await this.personRepository.getDataForThumbnailGenerationJob({ ownerId, personGroupId });
+        const current = await this.personRepository.getDataForThumbnailGenerationJob(
+          { ownerId, personGroupId },
+          person?.faceAssetId ? undefined : selectionFaceId,
+        );
         if (
           !sourceFace ||
           currentPerson?.faceAssetId !== person?.faceAssetId ||
@@ -732,7 +738,7 @@ export class MediaService extends BaseService {
         }
         await tx
           .updateTable('person')
-          .set({ thumbnailPath })
+          .set({ thumbnailPath, ...(sourceFaceId ? { faceAssetId: sourceFaceId } : {}) })
           .where('ownerId', '=', ownerId)
           .where('personGroupId', '=', personGroupId)
           .execute();
@@ -2662,7 +2668,11 @@ export class MediaService extends BaseService {
   }
 
   private async syncFiles(oldFiles: ExistingAssetFile[], newFiles: UpsertFileOptions[]) {
-    if (queueExecution.getStore()?.claim.name === JobName.AssetGenerateThumbnails) {
+    if (
+      [JobName.AssetGenerateThumbnails, JobName.AssetEditThumbnailGeneration].includes(
+        queueExecution.getStore()?.claim.name as JobName,
+      )
+    ) {
       await this.stageGeneratedFiles(oldFiles, newFiles);
       return;
     }
@@ -2907,10 +2917,11 @@ export class MediaService extends BaseService {
     options: ImagePathOptions & { isProgressive: boolean; isTransparent: boolean },
   ) {
     const originalPath = StorageCore.getImagePath(asset, options);
-    const path =
-      queueExecution.getStore()?.claim.name === JobName.AssetGenerateThumbnails
-        ? attemptOutputPath(originalPath)
-        : originalPath;
+    const path = [JobName.AssetGenerateThumbnails, JobName.AssetEditThumbnailGeneration].includes(
+      queueExecution.getStore()?.claim.name as JobName,
+    )
+      ? attemptOutputPath(originalPath)
+      : originalPath;
     return {
       assetId: asset.id,
       type: options.fileType,
