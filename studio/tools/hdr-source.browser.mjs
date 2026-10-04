@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
+import { validateMaskedRasterDiagnostic } from './hdr-source-validation.mjs';
 
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
@@ -229,8 +230,153 @@ window.__vite_plugin_react_preamble_installed__ = true
       mixedRenderer?.dispose();
       for (const { transfer } of sources) registerHdrSourceUrl(`mixed-media-${transfer}`, null);
     }
+
+    // 4. Functional masks and two nested viewports retain the same decoded
+    // working values. The inner alpha mask removes the lower half of the HDR
+    // clip, but not the SDR graphic above its track. The outer instance occupies
+    // the right half of a transparent viewport. Translating that viewport by
+    // quarter pixels produces a genuine premultiplied-alpha filtering ramp.
+    const { useCompositionsStore } = await import('/src/features/timeline/stores/compositions-store.ts');
+    const previousCompositions = useCompositionsStore.getState().compositions;
+    const nestedAlpha = [];
+    const nestedTrack = (id, order, items) => ({ id, name: id, height: 60, locked: false,
+      visible: true, muted: false, solo: false, order, items });
+    const nestedItem = (id, compositionId, transform) => ({ id, type: 'composition', compositionId,
+      compositionWidth: SIZE, compositionHeight: SIZE, trackId: `${id}-track`,
+      from: 0, durationInFrames: 30, label: id, transform });
+    const storeComposition = (id, tracks) => ({ id, name: id, fps: FPS, width: SIZE, height: SIZE,
+      durationInFrames: 30, backgroundColor: '#000000', transitions: [], keyframes: [], tracks,
+      items: tracks.flatMap((track) => track.items) });
+    try {
+      for (const transfer of ['pq', 'hlg']) {
+        const mediaId = `nested-media-${transfer}`;
+        registerHdrSourceUrl(mediaId, `/hdr-fixture/${transfer}.mp4`);
+        try {
+          const clip = { id: `nested-${transfer}`, type: 'video', trackId: 'nested-video', mediaId,
+            src: `/hdr-fixture/${transfer}.mp4`, label: transfer, from: 0, durationInFrames: 30,
+            sourceStart: 0, sourceEnd: 30, sourceFps: FPS, sourceDuration: 30, speed: 1,
+            sourceWidth: SIZE, sourceHeight: SIZE,
+            transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 },
+            effects: [{ id: `nested-exposure-${transfer}`, enabled: true,
+              effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure',
+                params: { exposure: 1, offset: 0, gamma: 1 } } }] };
+          const mask = { id: `nested-mask-${transfer}`, type: 'shape', trackId: 'nested-mask',
+            from: 0, durationInFrames: 30, label: 'upper-half alpha mask', shapeType: 'rectangle',
+            fillColor: '#ffffff', strokeEnabled: false, strokeWidth: 0, isMask: true, maskType: 'alpha',
+            transform: { x: 0, y: -SIZE / 4, width: SIZE + 16, height: SIZE / 2, rotation: 0, opacity: 1 } };
+          const graphic = { id: `nested-sdr-${transfer}`, type: 'shape', trackId: 'nested-sdr',
+            from: 0, durationInFrames: 30, label: 'SDR over masked HDR', shapeType: 'rectangle',
+            fillColor: 'rgb(25%, 50%, 75%)', strokeEnabled: false, strokeWidth: 0,
+            transform: { x: 3 * SIZE / 8, y: 0, width: SIZE / 4, height: SIZE + 16,
+              rotation: 0, opacity: 0.5 } };
+          const innerId = `nested-inner-${transfer}`;
+          const outerId = `nested-outer-${transfer}`;
+          const inner = storeComposition(innerId, [nestedTrack('nested-sdr', 0, [graphic]),
+            nestedTrack('nested-mask', 1, [mask]), nestedTrack('nested-video', 2, [clip])]);
+          const innerInstance = nestedItem(`inner-instance-${transfer}`, innerId,
+            { x: SIZE / 4, y: 0, width: SIZE / 2, height: SIZE, rotation: 0, opacity: 1 });
+          const outer = storeComposition(outerId, [nestedTrack(innerInstance.trackId, 0, [innerInstance])]);
+          useCompositionsStore.getState().setCompositions([inner, outer]);
+          for (const shift of [0, 0.25, 0.5, 0.75, 1]) {
+            const outerInstance = nestedItem(`outer-instance-${transfer}`, outerId,
+              { x: shift, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 0.5 });
+            const canvas = new OffscreenCanvas(SIZE, SIZE);
+            let renderer;
+            try {
+              renderer = await createCompositionRenderer({ fps: FPS, width: SIZE, height: SIZE,
+                durationInFrames: 30, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
+                tracks: [nestedTrack(outerInstance.trackId, 0, [outerInstance])] },
+              canvas, canvas.getContext('2d'), { mode: 'export' });
+              await renderer.preload?.();
+              for (const segment of [0, 1, 2]) {
+                const hdrRgb = out[transfer].uploads[segment].want.map((value) => value * 2);
+                const coverage = 1 - shift;
+                const over = (rgb, alpha) => rgb.map((value, channel) =>
+                  value * alpha + background[channel] * (1 - alpha));
+                // These oracles are source-over algebra on independent decoded
+                // values, not a reference render or an observed output baseline.
+                const points = [
+                  { name: 'outside-viewport', x: 24, y: 16, rgb: background },
+                  { name: 'hdr-fractional-edge', x: 32, y: 16, rgb: over(hdrRgb, 0.5 * coverage) },
+                  { name: 'hdr-plateau', x: 48, y: 16, rgb: over(hdrRgb, 0.5) },
+                  { name: 'mask-excluded', x: 48, y: 48, rgb: background },
+                  { name: 'sdr-over-hdr', x: 60, y: 16,
+                    rgb: over(hdrRgb.map((value, channel) => (value + sdrRgb[channel]) * 0.5), 0.5) },
+                  { name: 'sdr-over-mask-excluded', x: 60, y: 48, rgb: over(sdrRgb, 0.25) },
+                ];
+                const unweightedEdge = over(hdrRgb.map((value) => value * coverage), 0.5 * coverage);
+                const nonnegativePlateau = over(hdrRgb.map((value) => Math.max(0, value)), 0.5);
+                for (const target of ['pq', 'hlg']) {
+                  const frame = await renderer.renderFrameSignal(segment * 10 + 5, target);
+                  nestedAlpha.push({ transfer, segment, shift, target, width: frame.width, height: frame.height,
+                    points: points.map(({ name, x, y, rgb }) => ({ name, working: rgb,
+                      got: Array.from(frame.rgba.slice((y * frame.width + x) * 4, (y * frame.width + x) * 4 + 4)),
+                      want: color.workingToSignal(rgb, target) })),
+                    unweightedEdge: color.workingToSignal(unweightedEdge, target),
+                    nonnegativePlateau: color.workingToSignal(nonnegativePlateau, target) });
+                }
+              }
+            } finally {
+              renderer?.dispose();
+            }
+          }
+        } finally {
+          registerHdrSourceUrl(mediaId, null);
+        }
+      }
+    } finally {
+      useCompositionsStore.getState().setCompositions(previousCompositions);
+    }
+
+    // 5. Diagnostic only: current prepared source is unavailable, so the
+    // supported-float versus forced-Canvas capability cannot be bound here.
+    // Successful output still has mandatory independent numerical goldens.
+    // A documented refusal records missing coverage; it never qualifies this
+    // path or weakens any mandatory nested/video preservation assertion above.
+    const rasterCodes = [0.7, 0.45, 0.25].map((value) => Math.round(value * 65535));
+    const rasterInput = { width: SIZE, height: SIZE, transfer: 'pq',
+      rgb: new Uint16Array(Array.from({ length: SIZE * SIZE }, () => rasterCodes).flat()) };
+    const rasterWorking = color.signalToWorking(rasterCodes.map((value) => value / 65535), 'pq');
+    const rasterClip = (id, from) => ({ id, type: 'image', mediaId: 'masked-raster', trackId: 'raster-clips',
+      label: id, from, durationInFrames: 30, src: '', sourceWidth: SIZE, sourceHeight: SIZE,
+      transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 } });
+    const rasterMask = { id: 'raster-mask', type: 'shape', trackId: 'raster-mask', label: 'raster mask',
+      from: 0, durationInFrames: 60, shapeType: 'rectangle', fillColor: '#ffffff',
+      strokeEnabled: false, strokeWidth: 0, isMask: true, maskType: 'alpha',
+      transform: { x: 0, y: -SIZE / 4, width: SIZE + 16, height: SIZE / 2, rotation: 0, opacity: 1 } };
+    let rasterRenderer;
+    let maskedRasterTransition;
+    const rasterOutputs = [];
+    try {
+      const canvas = new OffscreenCanvas(SIZE, SIZE);
+      rasterRenderer = await createCompositionRenderer({ fps: FPS, width: SIZE, height: SIZE,
+        durationInFrames: 60, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
+        tracks: [nestedTrack('raster-mask', 0, [rasterMask]),
+          nestedTrack('raster-clips', 1, [rasterClip('raster-left', 0), rasterClip('raster-right', 30)])],
+        transitions: [{ id: 'masked-raster-cut', type: 'crossfade', presentation: 'dissolve', timing: 'linear',
+          trackId: 'raster-clips', leftClipId: 'raster-left', rightClipId: 'raster-right',
+          durationInFrames: 20, alignment: 0.5 }] }, canvas, canvas.getContext('2d'),
+      { mode: 'export', hdrRasters: { 'masked-raster': rasterInput } });
+      await rasterRenderer.preload?.();
+      for (const target of ['pq', 'hlg']) {
+        const frame = await rasterRenderer.renderFrameSignal(30, target);
+        rasterOutputs.push({ target, width: frame.width, height: frame.height,
+          points: [rasterWorking, background].map((rgb, index) => ({
+            got: Array.from(frame.rgba.slice(((index ? 48 : 16) * frame.width + 48) * 4,
+              ((index ? 48 : 16) * frame.width + 48) * 4 + 4)),
+            want: color.workingToSignal(rgb, target) })) });
+      }
+      maskedRasterTransition = { coverage: 'diagnostic-unqualified', status: 'preserved',
+        working: rasterWorking, outputs: rasterOutputs };
+    } catch (error) {
+      if (!(error instanceof Error) || !/^HDR raster (cannot (?:fall back to|be drawn through) a canvas|could not be rendered on the float route)$/.test(error.message)) throw error;
+      maskedRasterTransition = { coverage: 'diagnostic-unqualified', status: 'refused', reason: error.message,
+        outputs: rasterOutputs, unavailableCoverage: 'No authoritative supported-float/forced-Canvas discriminator; refusal is not qualification.' };
+    } finally {
+      rasterRenderer?.dispose();
+    }
     device.destroy();
-    return { ...out, mixed };
+    return { ...out, mixed, nestedAlpha, maskedRasterTransition };
   }, { SIZE, FPS });
   // Raw measurements for conformance evidence, written before any assertion.
   if (process.env.HDR_SOURCE_REPORT) await writeFile(process.env.HDR_SOURCE_REPORT, JSON.stringify(result));
@@ -281,7 +427,38 @@ window.__vite_plugin_react_preamble_installed__ = true
   assert.ok(result.mixed.some(({ want, nonnegative }) => nonnegative.some((rgb, region) =>
     rgb.some((v, channel) => Math.abs(v - want[region][channel]) > 0.001))),
     'mixed golden must independently distinguish clipping negative working RGB');
-  console.log(`HDR source ingest matches the reference (${compared} values, PQ and HLG)`);
+  assert.equal(result.nestedAlpha.length, 60, 'both decoded sources, three segments, five edge positions and both outputs ran');
+  for (const { transfer, segment, shift, target, width, height, points } of result.nestedAlpha) {
+    assert.equal(width, SIZE);
+    assert.equal(height, SIZE);
+    assert.equal(points.length, 6);
+    for (const { name, got, want } of points) {
+      want.forEach((value, channel) => {
+        compared++;
+        assert.ok(Number.isFinite(got[channel]) && Math.abs(got[channel] - value) <= 0.004,
+          `nested ${transfer}->${target} segment ${segment} shift ${shift} ${name} channel ${channel}: ${got[channel]} vs ${value}`);
+      });
+      assert.ok(Math.abs(got[3] - 1) < 1e-6, `nested ${name}: opaque output alpha ${got[3]}`);
+    }
+  }
+  const nestedPoint = (entry, name) => entry.points.find((point) => point.name === name);
+  assert.ok(result.nestedAlpha.some((entry) => nestedPoint(entry, 'hdr-plateau').working.some((v) => v > 1)),
+    'nested mask/transform/blend seam must retain above-white working values');
+  assert.ok(result.nestedAlpha.some((entry) => nestedPoint(entry, 'hdr-plateau').working.some((v) => v < -0.01)),
+    'nested mask/transform/blend seam must retain signed working values');
+  assert.ok(result.nestedAlpha.some((entry) => entry.shift === 0.5 &&
+    nestedPoint(entry, 'hdr-fractional-edge').want.some((v, channel) => Math.abs(v - entry.unweightedEdge[channel]) > 0.01)),
+    'fractional golden must distinguish interpolation without premultiplied-alpha weighting');
+  assert.ok(result.nestedAlpha.some((entry) => nestedPoint(entry, 'hdr-plateau').want.some((v, channel) =>
+    Math.abs(v - entry.nonnegativePlateau[channel]) > 0.001)),
+    'nested golden must independently distinguish negative-RGB clipping');
+  compared += validateMaskedRasterDiagnostic(result.maskedRasterTransition, SIZE).compared;
+  console.log(`HDR source, mixed composition and nested mask/alpha goldens match (${compared} values, PQ and HLG)`);
+  console.log(JSON.stringify({ check: 'masked HDR raster transition diagnostic',
+    coverage: result.maskedRasterTransition.coverage, status: result.maskedRasterTransition.status,
+    emittedSignalCount: result.maskedRasterTransition.outputs.length,
+    reason: result.maskedRasterTransition.reason,
+    unavailableCoverage: result.maskedRasterTransition.unavailableCoverage }));
 } finally {
   await browser.close();
 }
