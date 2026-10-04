@@ -2,11 +2,11 @@
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import z from 'zod';
-import { EnvSchema } from './environment-schema.ts';
-import { ENV_ALIASES, resolveEnvAliases } from './env-aliases.ts';
+import { parseHelpLinks } from './app-releases.ts';
 import { BUDDY_UUID } from './buddy-backup-crypto.ts';
 import { createBuddyDirectory, writeBuddyFile } from './buddy-backup-vault.ts';
-import { parseHelpLinks } from './app-releases.ts';
+import { ENV_ALIASES, resolveEnvAliases } from './env-aliases.ts';
+import { EnvSchema } from './environment-schema.ts';
 
 // Private capture grants no activation authority, including for identity/link/security inputs.
 // The authoritative schema owns the complete canonical registry; old aliases are not declarations.
