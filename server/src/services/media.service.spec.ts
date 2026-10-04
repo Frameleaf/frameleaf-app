@@ -3599,6 +3599,7 @@ describe(MediaService.name, () => {
         const version = versionFor(asset, 'export');
         mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
         mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
+        mocks.assetEdit.failVideoVersion.mockResolvedValue(undefined);
         mocks.media.transcode.mockResolvedValue(undefined);
         mocks.media.probe.mockResolvedValue({
           videoStreams: [{ ...videoStream, width: 200, height: 100 }],
@@ -3630,7 +3631,7 @@ describe(MediaService.name, () => {
         expect(mocks.media.transcode).toHaveBeenCalledOnce();
         expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
         expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
-        expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalled();
+        expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalledExactlyOnceWith(asset.id, version.id);
         expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/\.master\.mp4$/));
       },
     );
