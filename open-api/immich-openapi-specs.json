@@ -72616,6 +72616,12 @@
           "queued": {
             "description": "Whether the queue-all job was newly enqueued (false = already in-flight)",
             "type": "boolean"
+          },
+          "runId": {
+            "description": "Canonical run accepted by this request; absent when no local work was accepted",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
           }
         },
         "required": [
@@ -73054,6 +73060,7 @@
           "PetRecognition",
           "PetRecognitionNearest",
           "SmartAlbumReevaluateAll",
+          "SmartAlbumReevaluate",
           "WorkflowAssetTrigger",
           "IntegrityUntrackedFilesQueueAll",
           "IntegrityUntrackedFiles",
@@ -73135,7 +73142,8 @@
                 "destination-configuration",
                 "destination-consent",
                 "destination-budget",
-                "source-unavailable"
+                "source-unavailable",
+                "local-capacity"
               ],
               "type": "string"
             },
@@ -73339,7 +73347,8 @@
                 "destination-configuration",
                 "destination-consent",
                 "destination-budget",
-                "source-unavailable"
+                "source-unavailable",
+                "local-capacity"
               ],
               "type": "string"
             },
@@ -106192,6 +106201,12 @@
           "queued": {
             "description": "Whether the re-evaluate job was newly enqueued (false = already in-flight)",
             "type": "boolean"
+          },
+          "runId": {
+            "description": "Canonical run accepted by this request; absent when no local work was accepted",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
           }
         },
         "required": [

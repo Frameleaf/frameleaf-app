@@ -1158,7 +1158,7 @@ where
 order by
   "asset"."fileCreatedAt" desc
 
--- AssetJobRepository.streamForSmartAlbumReevaluation
+-- AssetJobRepository.getForSmartAlbumReevaluation
 select
   "asset"."id",
   "asset"."ownerId",
@@ -1182,6 +1182,7 @@ where
       and "asset_file"."type" = 'preview'
   )
   and asset_metadata.value -> 'description' ->> 'status' = $2
+  and "asset"."id" = $3::uuid
 order by
   "asset"."fileCreatedAt" desc
 
