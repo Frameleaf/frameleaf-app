@@ -58,6 +58,30 @@ Hosted exact-candidate execution and raw evidence remain pending. The fixture
 uses production renderers, composition stores, masks, video decoding and output
 conversion; no renderer mock or observed output baseline supplies the goldens.
 
+## Supported mask variants packet (October 3, 2026)
+
+`mask-coverage-source-contract.md` binds the selected immutable shader and mask
+sources to the genuine hosted inventory and configured patch series. Masks
+inside a real nested composition use the GPU signed-distance smoothstep, not
+Canvas Gaussian blur. Its independent cubic oracle supplies the half-edge,
+off-center ramp and exact plateau coverage. Matte opacity, inversion and two-mask
+intersection account for each bounded 8-bit alpha quantization stage. HDR picture
+values retain their float route and existing numerical tolerance.
+
+Sixty additional mandatory decoded-video cases cover inverted alpha, differing
+strength combined alpha, combined alpha with an inverted member, feathered alpha
+and inverted feathered alpha. Each covers both PQ/HLG sources, three decoded
+segments and both output policies, with an exact case-identity/count assertion.
+Independent counterfactuals must distinguish missing inversion, omitted mask
+intersection, hard edges instead of feathering, and negative-RGB clipping.
+All supported cases require successful numerical preservation; no refusal may
+satisfy them. The previous 60 nested cases and six mixed cases retain their
+oracles and tolerances. Authored coverage awaits hosted execution and hardware
+qualification; it is not complete graph conformance.
+
+Luma is explicitly a missing production feature: the current schema admits only
+`clip` and `alpha`. No unknown `maskType: luma` fixture is treated as proof.
+
 ## Remaining acceptance matrix
 
 | Graph path | Existing coverage | Remaining qualification |
@@ -65,7 +89,7 @@ conversion; no renderer mock or observed output baseline supplies the goldens.
 | Effects / curves / LUTs | Effects matrix and declared HDR semantics | Per-node numerical ramps and signed/extended golden coverage beyond finite/range checks; imported LUT domains |
 | Blends | Blend matrix, signed soft-light transport; authored nested alpha-coverage ramp | Hosted ramp execution; additional blend modes and supported hardware |
 | Transitions / nested Compose | Float/transition matrices; nested float; authored decoded nested mask/SDR golden | Hosted execution; simultaneous nested PQ+HLG and all fallback paths |
-| Masks | Allocation sites declared; authored functional alpha-mask inclusion/exclusion golden | Hosted execution; luma/inverted/combined/feathered mask goldens; HDR preserves/refuses every Canvas2D fallback |
+| Masks | Allocation audit; authored alpha inclusion/exclusion and inverted/combined/feathered GPU goldens | Hosted execution; luma production feature absent; rotated/path/bitmap/corner-pin cases; HDR preserves/refuses every Canvas2D fallback |
 | Non-GPU effects | Legacy fallback sites declared | Real HDR source keeps float or refuses each Canvas2D effect path |
 | Text | Deliberate SDR graphic input | Numerical HDR reference-white and alpha-edge goldens |
 | Lottie | Deliberate SDR graphic input | Real Lottie HDR reference-white golden with admitted resources |
@@ -76,7 +100,7 @@ conversion; no renderer mock or observed output baseline supplies the goldens.
 GitNexus query found the regression file but not `createCompositionRenderer` or
 `renderFrameSignal`; engine call-graph risk is **UNKNOWN**. The isolated checkout
 has no current index, and indexing is outside this packet's authority. Manual
-scope review limits changes to the regression and this ledger.
+scope review limits changes to the regression, source contract and this ledger.
 
 Physical Vulkan/D3D12/Metal backend coverage, HDR displays and actual playback
 devices remain acceptance gates. FL-87's licensed Dolby toolchain, owned specimens,

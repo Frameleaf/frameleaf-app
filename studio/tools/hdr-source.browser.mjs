@@ -328,6 +328,114 @@ window.__vite_plugin_react_preamble_installed__ = true
       useCompositionsStore.getState().setCompositions(previousCompositions);
     }
 
+    // GPU nested-mask contracts are bound in mask-coverage-source-contract.md.
+    // Quantize only the bounded matte attachments, never the HDR picture.
+    const quantizeMatte = (alpha) => Math.round(Math.max(0, Math.min(1, alpha)) * 255) / 255;
+    const featherCoverage = (distance, feather) => {
+      const width = Math.max(feather, 0.75);
+      const t = Math.max(0, Math.min(1, (distance + width) / (2 * width)));
+      return 1 - t * t * (3 - 2 * t);
+    };
+    const alphaMask = (id, { x = 16, y = 0, width = SIZE / 2, height = SIZE + 16,
+      strength = 100, opacity = 1, invert = false, feather = 0 } = {}) => ({
+      id, type: 'shape', trackId: id, label: id, from: 0, durationInFrames: 30,
+      shapeType: 'rectangle', fillColor: '#ffffff', strokeEnabled: false, strokeWidth: 0,
+      isMask: true, maskType: 'alpha', maskOpacity: strength, maskInvert: invert, maskFeather: feather,
+      transform: { x, y, width, height, rotation: 0, opacity },
+    });
+    const qa = quantizeMatte(0.75 * 0.9);
+    const qb = quantizeMatte(0.8 * 0.65);
+    const qi = quantizeMatte(0.6 * 0.75);
+    const quadrants = [
+      { name: 'upper-left', x: 16, y: 16 }, { name: 'upper-right', x: 48, y: 16 },
+      { name: 'lower-left', x: 16, y: 48 }, { name: 'lower-right', x: 48, y: 48 },
+    ];
+    const featherPoints = [16, 28, 30, 32, 34, 36, 48].map((x) => ({ name: `edge-${x}`, x, y: 32 }));
+    const variants = [
+      { name: 'inverted', masks: [alphaMask('variant-inverted', { strength: 60, opacity: 0.75, invert: true })],
+        points: [{ name: 'outside', x: 16, y: 32 }, { name: 'inside', x: 48, y: 32 }],
+        alpha: ({ x }) => x < 32 ? 1 : 1 - qi,
+        counterfactual: ({ x }) => x < 32 ? 0 : qi },
+      { name: 'combined', masks: [alphaMask('variant-a', { strength: 75, opacity: 0.9 }),
+        alphaMask('variant-b', { x: 0, y: -16, width: SIZE + 16, height: SIZE / 2, strength: 80, opacity: 0.65 })],
+        points: quadrants, alpha: ({ x, y }) => quantizeMatte((x < 32 ? 0 : qa) * (y < 32 ? qb : 0)),
+        counterfactual: ({ x }) => x < 32 ? 0 : qa },
+      { name: 'combined-inverted', masks: [alphaMask('variant-ai', { strength: 75, opacity: 0.9 }),
+        alphaMask('variant-bi', { x: 0, y: -16, width: SIZE + 16, height: SIZE / 2, strength: 80, opacity: 0.65, invert: true })],
+        points: quadrants, alpha: ({ x, y }) => quantizeMatte((x < 32 ? 0 : qa) * (1 - (y < 32 ? qb : 0))),
+        counterfactual: ({ x, y }) => quantizeMatte((x < 32 ? 0 : qa) * (y < 32 ? qb : 0)) },
+      ...[false, true].map((invert) => ({ name: invert ? 'feather-inverted' : 'feather',
+        masks: [alphaMask(`variant-feather-${invert}`, { x: 16.5, feather: 4, invert })], points: featherPoints,
+        // The edge is at x=32.5, so the texel center at x=32 has signed distance 0.
+        alpha: ({ x }) => {
+          const alpha = quantizeMatte(featherCoverage(32 - x, 4));
+          return invert ? 1 - alpha : alpha;
+        },
+        counterfactual: ({ x }) => {
+          const alpha = quantizeMatte(featherCoverage(32 - x, 0));
+          return invert ? 1 - alpha : alpha;
+        } })),
+    ];
+    const maskVariants = [];
+    try {
+      for (const transfer of ['pq', 'hlg']) {
+        const mediaId = `variant-media-${transfer}`;
+        registerHdrSourceUrl(mediaId, `/hdr-fixture/${transfer}.mp4`);
+        try {
+          for (const variant of variants) {
+            const clip = { id: `variant-video-${transfer}-${variant.name}`, type: 'video', trackId: 'variant-video',
+              mediaId, src: `/hdr-fixture/${transfer}.mp4`, label: transfer, from: 0, durationInFrames: 30,
+              sourceStart: 0, sourceEnd: 30, sourceFps: FPS, sourceDuration: 30, speed: 1,
+              sourceWidth: SIZE, sourceHeight: SIZE,
+              transform: { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 1 },
+              effects: [{ id: `variant-exposure-${transfer}-${variant.name}`, enabled: true,
+                effect: { type: 'gpu-effect', gpuEffectType: 'gpu-exposure', params: { exposure: 1, offset: 0, gamma: 1 } } }] };
+            const id = `variant-comp-${transfer}-${variant.name}`;
+            useCompositionsStore.getState().setCompositions([storeComposition(id, [
+              ...variant.masks.map((mask, order) => nestedTrack(mask.trackId, order, [mask])),
+              nestedTrack('variant-video', variant.masks.length, [clip]),
+            ])]);
+            const instance = nestedItem(`variant-instance-${transfer}-${variant.name}`, id,
+              { x: 0, y: 0, width: SIZE, height: SIZE, rotation: 0, opacity: 0.75 });
+            const canvas = new OffscreenCanvas(SIZE, SIZE);
+            let renderer;
+            try {
+              renderer = await createCompositionRenderer({ fps: FPS, width: SIZE, height: SIZE,
+                durationInFrames: 30, backgroundColor: '#333333', colorManagement: { workingRange: 'hdr' },
+                tracks: [nestedTrack(instance.trackId, 0, [instance])] }, canvas, canvas.getContext('2d'), { mode: 'export' });
+              await renderer.preload?.();
+              for (const segment of [0, 1, 2]) {
+                const source = out[transfer].uploads[segment].want.map((value) => value * 2);
+                const over = (rgb, matte) => rgb.map((value, channel) =>
+                  value * matte * 0.75 + background[channel] * (1 - matte * 0.75));
+                for (const target of ['pq', 'hlg']) {
+                  const frame = await renderer.renderFrameSignal(segment * 10 + 5, target);
+                  maskVariants.push({ variant: variant.name, transfer, segment, target, source,
+                    width: frame.width, height: frame.height,
+                    points: variant.points.map((point) => {
+                      const matte = variant.alpha(point);
+                      const working = over(source, matte);
+                      return { ...point, matte, working,
+                        got: Array.from(frame.rgba.slice((point.y * frame.width + point.x) * 4,
+                          (point.y * frame.width + point.x) * 4 + 4)),
+                        want: color.workingToSignal(working, target),
+                        counterfactual: color.workingToSignal(over(source, variant.counterfactual(point)), target),
+                        nonnegative: color.workingToSignal(over(source.map((value) => Math.max(0, value)), matte), target) };
+                    }) });
+                }
+              }
+            } finally {
+              renderer?.dispose();
+            }
+          }
+        } finally {
+          registerHdrSourceUrl(mediaId, null);
+        }
+      }
+    } finally {
+      useCompositionsStore.getState().setCompositions(previousCompositions);
+    }
+
     // 5. Diagnostic only: current prepared source is unavailable, so the
     // supported-float versus forced-Canvas capability cannot be bound here.
     // Successful output still has mandatory independent numerical goldens.
@@ -376,7 +484,7 @@ window.__vite_plugin_react_preamble_installed__ = true
       rasterRenderer?.dispose();
     }
     device.destroy();
-    return { ...out, mixed, nestedAlpha, maskedRasterTransition };
+    return { ...out, mixed, nestedAlpha, maskVariants, maskedRasterTransition };
   }, { SIZE, FPS });
   // Raw measurements for conformance evidence, written before any assertion.
   if (process.env.HDR_SOURCE_REPORT) await writeFile(process.env.HDR_SOURCE_REPORT, JSON.stringify(result));
@@ -452,8 +560,40 @@ window.__vite_plugin_react_preamble_installed__ = true
   assert.ok(result.nestedAlpha.some((entry) => nestedPoint(entry, 'hdr-plateau').want.some((v, channel) =>
     Math.abs(v - entry.nonnegativePlateau[channel]) > 0.001)),
     'nested golden must independently distinguish negative-RGB clipping');
+  const variantNames = ['inverted', 'combined', 'combined-inverted', 'feather', 'feather-inverted'];
+  const expectedVariants = variantNames.flatMap((variant) => ['pq', 'hlg'].flatMap((transfer) =>
+    [0, 1, 2].flatMap((segment) => ['pq', 'hlg'].map((target) => `${variant}/${transfer}/${segment}/${target}`))));
+  assert.equal(result.maskVariants.length, 60, 'all supported mask variant/source/segment/output cases ran');
+  assert.deepEqual(result.maskVariants.map(({ variant, transfer, segment, target }) =>
+    `${variant}/${transfer}/${segment}/${target}`).sort(), expectedVariants.sort());
+  for (const { variant, transfer, segment, target, width, height, points } of result.maskVariants) {
+    assert.equal(width, SIZE);
+    assert.equal(height, SIZE);
+    assert.equal(points.length, variant.startsWith('feather') ? 7 : variant === 'inverted' ? 2 : 4);
+    for (const { name, got, want } of points) {
+      want.forEach((value, channel) => {
+        compared++;
+        assert.ok(Number.isFinite(got[channel]) && Math.abs(got[channel] - value) <= 0.004,
+          `mask ${variant} ${transfer}->${target} segment ${segment} ${name} channel ${channel}: ${got[channel]} vs ${value}`);
+      });
+      assert.ok(Math.abs(got[3] - 1) < 1e-6, `mask ${variant}: opaque output alpha ${got[3]}`);
+    }
+  }
+  for (const variant of variantNames) {
+    const entries = result.maskVariants.filter((entry) => entry.variant === variant);
+    assert.ok(entries.some(({ points }) => points.some(({ want, counterfactual }) =>
+      want.some((value, channel) => Math.abs(value - counterfactual[channel]) > 0.01))),
+    `${variant}: golden must distinguish missing inversion, combination or feathering`);
+    assert.ok(entries.some(({ points }) => points.some(({ working }) => working.some((value) => value > 1))),
+      `${variant}: masked composite must exercise above-white values`);
+    assert.ok(entries.some(({ source }) => source.some((value) => value < -0.01)),
+      `${variant}: decoded source must exercise negative working RGB`);
+    assert.ok(entries.some(({ points }) => points.some(({ want, nonnegative }) =>
+      want.some((value, channel) => Math.abs(value - nonnegative[channel]) > 0.001))),
+    `${variant}: golden must independently distinguish negative-RGB clipping`);
+  }
   compared += validateMaskedRasterDiagnostic(result.maskedRasterTransition, SIZE).compared;
-  console.log(`HDR source, mixed composition and nested mask/alpha goldens match (${compared} values, PQ and HLG)`);
+  console.log(`HDR source, mixed composition, nested alpha and supported mask variant goldens match (${compared} values, PQ and HLG)`);
   console.log(JSON.stringify({ check: 'masked HDR raster transition diagnostic',
     coverage: result.maskedRasterTransition.coverage, status: result.maskedRasterTransition.status,
     emittedSignalCount: result.maskedRasterTransition.outputs.length,
