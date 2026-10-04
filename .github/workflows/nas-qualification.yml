@@ -40,10 +40,18 @@ jobs:
       VERSION: ${{ inputs.version }}
       RELEASE: ${{ inputs.release }}
       PLAN: ${{ inputs.plan }}
-      QUALIFICATION_ROOT: ${{ runner.temp }}/nas-qualification
       GH_TOKEN: ${{ github.token }}
       GITHUB_TOKEN: ${{ github.token }}
     steps:
+      - name: Initialize qualification workspace
+        id: qualification-workspace
+        shell: bash
+        run: |
+          qualification_root="${RUNNER_TEMP:?}/nas-qualification"
+          test -d "$RUNNER_TEMP"
+          test ! -e "$qualification_root"
+          test ! -L "$qualification_root"
+          printf 'QUALIFICATION_ROOT=%s\n' "$qualification_root" >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
@@ -98,6 +106,9 @@ jobs:
         run: node packaging/nas/qualification.cjs rollback "$PLAN" "$QUALIFICATION_ROOT" "$RELEASE"
       # No signing, report publication or success artifact exists until genuine migration/rollback adapters are reviewed.
       - name: Remove disposable checkpoint files
-        if: always()
+        if: always() && steps.qualification-workspace.outcome == 'success'
         shell: bash
-        run: rm -rf -- "$QUALIFICATION_ROOT"
+        run: |
+          expected_root="${RUNNER_TEMP:?}/nas-qualification"
+          test "${QUALIFICATION_ROOT:-}" = "$expected_root"
+          rm -rf -- "$expected_root"
