@@ -8,10 +8,9 @@ import { ScheduledPublicationFiles } from 'src/repositories/icloud-scheduled-pub
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
-import { readAliasedEnv } from 'src/utils/env-aliases.js';
 
 /** Source seam only. Qualification and actual scheduler registration are separate deployment gates. */
-export const scheduledAuditExecutionEnabled = () => readAliasedEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION') === 'true';
+export const scheduledAuditExecutionEnabled = () => process.env.FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION === 'true';
 
 @Injectable()
 export class ICloudScheduledWorkerService {

@@ -109,7 +109,7 @@ export class ICloudScheduledStagingRepository {
       FROM immich_fork.icloud_resource r JOIN immich_fork.icloud_identity_audit q ON q.id=r."auditRequestId" AND q."ownerId"=r."ownerId"
       WHERE r.id=${input.resource.id}::uuid AND r."ownerId"=${input.ownerId}::uuid AND q.id=${input.authority.auditRequestId}::uuid
         AND q.purpose='scheduled-weekly' AND q.result IN ('failed','stale','cancelled') AND r.status='failed'
-        AND r."pendingJobs"='[]'::jsonb AND r."assetId" IS NULL AND r."promotedPath" IS NULL`).execute(this.db)).rows[0];
+        AND r."pendingJobs"='[]'::jsonb AND r."assetId" IS NULL AND r."promotedPath" IS NULL`.execute(this.db)).rows[0];
   }
 
   releaseRefusedBytes(input: ScheduledStagingInput) {
