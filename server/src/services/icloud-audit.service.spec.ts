@@ -26,6 +26,7 @@ describe(ICloudAuditService.name, () => {
   const fresh = Buffer.from('fresh provider source bytes');
   const token = randomUUID();
   const repository = {
+    operationPurpose: vi.fn(),
     get: vi.fn(),
     check: vi.fn(),
     setItemClaim: vi.fn(),

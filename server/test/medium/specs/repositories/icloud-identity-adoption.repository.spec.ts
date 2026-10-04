@@ -1,11 +1,21 @@
+import { ICloudScheduledWorkerRepository } from 'src/repositories/icloud-scheduled-worker.repository.js';
+import { ICloudScheduledWorkerService } from 'src/services/icloud-scheduled-worker.service.js';
+import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
+import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
+import { MediaOperationKind } from 'src/enum.js';
 import { Kysely, sql } from 'kysely';
 import { execFile as execFileCallback } from 'node:child_process';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import { access, lstat, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, copyFile, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
+import { Readable } from 'node:stream';
+import { ICloudScheduledStagingRepository, ScheduledFreshPayload } from 'src/repositories/icloud-scheduled-staging.repository.js';
+import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
+import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
+import { encryptICloudSession, decryptICloudSession } from 'src/utils/icloud-sync.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetLockReason,
@@ -30,6 +40,10 @@ import {
 import { ICLOUD_SYNC_CLAIM_SEC, ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { type ICloudResource, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
+import { ICloudAuditRepository, guardAuditAuthority, publishAudit } from 'src/repositories/icloud-audit.repository.js';
+import { ScheduledAuditAuthority, guardScheduledAudit, scheduledAuditFinalFence } from 'src/repositories/icloud-scheduled-authority.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
+import { MediaRecoveryRepository } from 'src/repositories/media-recovery.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -1702,6 +1716,694 @@ describe('iCloud exact identity adoption', () => {
       expect(Number(current.performedCount)).toBe(0);
       expect(Number(current.unavailableCount)).toBe(1);
       expect(current.status).toBe('settled');
+    });
+
+    describe('scheduled repository admission prerequisites without a byte worker', () => {
+      async function scheduledAuthorityFixture(protectedOriginal = false) {
+        const f = await population(1);
+        const { auth, input } = await grant(f);
+        if (protectedOriginal) {
+          await db.updateTable('user').set({ pinCode: 'scheduled-fixture-pin' }).where('id', '=', f.user.id).execute();
+          await sql`INSERT INTO public.asset_lock ("assetId",reason)
+            VALUES (${f.asset.id}::uuid,${AssetLockReason.Marked})`.execute(db);
+          await db.updateTable('session').set({ pinExpiresAt: sql<Date>`clock_timestamp()+interval '10 minutes'` }).where('id', '=', auth.session!.id).execute();
+          auth.session!.hasElevatedPermission = true;
+          await weekly().setAuthority(auth, f.connection.id, { ...input, requestKey: randomUUID(), includeProtected: true });
+        }
+        const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
+        const operation = (await weekly().createNextBatch(cohort.id, operations()))!;
+        expect(operation).toBeDefined();
+        const member = (await members(cohort.id)).find((row) => row.auditRequestId)!;
+        const authority: ScheduledAuditAuthority = { purpose: 'scheduled-weekly', auditRequestId: member.auditRequestId!,
+          operationId: operation.id, operationClaimToken: randomUUID() };
+        // Durable worker/resource lease fixtures; these do not execute a dispatcher or mint proof.
+        await sql`UPDATE public.media_operation SET status='preparing',"claimToken"=${authority.operationClaimToken}::uuid,
+          "claimExpiresAt"=clock_timestamp()+interval '10 minutes' WHERE id=${operation.id}::uuid`.execute(db);
+        await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
+          WHERE "ownerId"=${f.user.id}::uuid`.execute(db);
+        const [claim] = await identities.claim(f.user.id, [f.resource.sourceAssetId.toUpperCase()], `icloud-sync:audit:${operation.id}`, 600);
+        expect(claim).toBeDefined();
+        await new ICloudAuditRepository(db).setItemClaim(authority.auditRequestId, f.user.id, claim.id);
+        const resource = { id: randomUUID(), leaseToken: randomUUID() };
+        await sql`INSERT INTO immich_fork.icloud_resource (id,"ownerId","connectionId","libraryKey",library,"sourceAssetId",
+          "recordId","resourceKey",role,fingerprint,source,"expectedSize",status,"auditRequestId","leaseToken","leaseExpiresAt")
+          SELECT ${resource.id}::uuid,"ownerId","connectionId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,
+            fingerprint,source,"expectedSize",'claimed',${authority.auditRequestId}::uuid,${resource.leaseToken}::uuid,
+            clock_timestamp()+interval '10 minutes' FROM immich_fork.icloud_resource WHERE id=${f.resource.id}::uuid`.execute(db);
+        return { f, auth, input, authority, resource, cohort, claim };
+      }
+
+      it.each([false, true])('admits actual durable authority after session deletion; protected=%s; publication stays unavailable', async (protectedOriginal) => {
+        const fixture = await scheduledAuthorityFixture(protectedOriginal);
+        const { f, auth, authority, resource } = fixture;
+        await db.deleteFrom('session').where('id', '=', auth.session!.id).execute();
+        await db.transaction().execute(async (tx) => {
+          const guarded = await guardScheduledAudit(tx, authority, f.user.id, { resource });
+          expect(guarded).toBeDefined();
+          expect(guarded?.private).toBe(protectedOriginal);
+          expect(await guardAuditAuthority(tx, authority, f.user.id, true, resource)).toBeDefined();
+          const { rows } = await sql<{ allowed: boolean }>`SELECT ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx);
+          expect(rows[0].allowed).toBe(true);
+          await expect(publishAudit(tx, authority, f.user.id, 'match', resource)).rejects.toThrow('scheduled_audit_execution_unavailable');
+        });
+        const recovery = new MediaRecoveryRepository(db, {} as never, {} as never);
+        const input = { ownerId: f.user.id, resourceId: resource.id, leaseToken: resource.leaseToken, includeHidden: true, audit: authority };
+        expect(await recovery.getResource(input)).toMatchObject({ id: resource.id, auditRequestId: authority.auditRequestId });
+        const verifyFinal = vi.fn();
+        expect(await recovery.commitVerifiedReuse({ ...input, candidate: {} as never,
+          verified: { sha256: f.sha256 } as never, verifyFinal })).toEqual({ outcome: 'retry', reason: 'mapping_changed' });
+        expect(verifyFinal).not.toHaveBeenCalled();
+        const { rows } = await sql<{ result: string }>`SELECT result FROM immich_fork.icloud_identity_audit WHERE id=${authority.auditRequestId}::uuid`.execute(db);
+        expect(rows[0].result).toBe('queued');
+        expect(await db.selectFrom('asset_integrity_verification').select('assetId').where('assetId', '=', f.asset.id).execute()).toEqual([]);
+      });
+
+      it('uses persisted purpose and refuses a session-style caller or nontransactional scheduled admission', async () => {
+        const { f, authority, resource } = await scheduledAuthorityFixture();
+        expect(await guardAuditAuthority(db, authority, f.user.id, true, resource)).toBeUndefined();
+        await db.transaction().execute(async (tx) => {
+          const { purpose: _purpose, ...manual } = authority;
+          expect(await guardAuditAuthority(tx, manual, f.user.id, true, resource)).toBeUndefined();
+          expect(await guardAuditAuthority(tx, { ...authority, operationId: randomUUID() }, f.user.id, true, resource)).toBeUndefined();
+          expect(await guardAuditAuthority(tx, authority, randomUUID(), true, resource)).toBeUndefined();
+        });
+      });
+
+      it.each(['operation', 'item', 'resource', 'pause', 'cancel'] as const)('refuses database-expired or stopped %s authority and final fence', async (kind) => {
+        const { f, authority, resource, claim } = await scheduledAuthorityFixture();
+        const guarded = await db.transaction().execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+        expect(guarded).toBeDefined();
+        if (kind === 'operation') {
+          await sql`UPDATE public.media_operation SET "claimExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${authority.operationId}::uuid`.execute(db);
+        } else if (kind === 'item') {
+          await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second' WHERE id=${claim.id}::uuid`.execute(db);
+        } else if (kind === 'resource') {
+          await sql`UPDATE immich_fork.icloud_resource SET "leaseExpiresAt"=clock_timestamp()-interval '1 second' WHERE id=${resource.id}::uuid`.execute(db);
+        } else if (kind === 'pause') {
+          await sql`UPDATE public.media_operation SET "pauseRequestedAt"=clock_timestamp() WHERE id=${authority.operationId}::uuid`.execute(db);
+        } else {
+          await sql`UPDATE public.media_operation SET "cancelRequestedAt"=clock_timestamp() WHERE id=${authority.operationId}::uuid`.execute(db);
+        }
+        await db.transaction().execute(async (tx) => {
+          expect(await guardScheduledAudit(tx, authority, f.user.id, { resource })).toBeUndefined();
+          expect((await sql<{ allowed: boolean }>`SELECT ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx)).rows[0].allowed).toBe(false);
+        });
+      });
+
+      it.each(['duplicate', 'foreign', 'missing', 'purpose'] as const)('refuses a %s operation audit vector despite a live claim', async (kind) => {
+        const { f, authority, resource } = await scheduledAuthorityFixture();
+        const guarded = await db.transaction().execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+        expect(guarded).toBeDefined();
+        const ids = kind === 'duplicate' ? [authority.auditRequestId, authority.auditRequestId]
+          : kind === 'foreign' ? [randomUUID()] : [];
+        if (kind === 'purpose') {
+          await sql`UPDATE public.media_operation SET snapshot=jsonb_set(snapshot,'{purpose}','"manual-session"'::jsonb)
+            WHERE id=${authority.operationId}::uuid`.execute(db);
+        } else {
+          await sql`UPDATE public.media_operation SET snapshot=jsonb_set(snapshot,'{auditIds}',${JSON.stringify(ids)}::jsonb)
+            WHERE id=${authority.operationId}::uuid`.execute(db);
+        }
+        await db.transaction().execute(async (tx) => {
+          expect(await guardScheduledAudit(tx, authority, f.user.id, { resource })).toBeUndefined();
+          expect((await sql<{ allowed: boolean }>`SELECT ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx)).rows[0].allowed).toBe(false);
+        });
+      });
+
+      it('a revoked/regranted generation cannot revive an old admitted final fence', async () => {
+        const { f, auth, input, authority, resource } = await scheduledAuthorityFixture();
+        const guarded = await db.transaction().execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+        expect(guarded).toBeDefined();
+        await weekly().setAuthority(auth, f.connection.id, { ...input, requestKey: randomUUID(), enabled: false });
+        await weekly().setAuthority(auth, f.connection.id, { ...input, requestKey: randomUUID() });
+        await db.transaction().execute(async (tx) => {
+          expect(await guardScheduledAudit(tx, authority, f.user.id, { resource })).toBeUndefined();
+          expect((await sql<{ allowed: boolean }>`SELECT ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx)).rows[0].allowed).toBe(false);
+        });
+      });
+
+      it.each(['original', 'physical', 'pin', 'source', 'identity'] as const)('refuses changed %s binding after awaited admission', async (kind) => {
+        const { f, authority, resource } = await scheduledAuthorityFixture(kind === 'pin');
+        const guarded = await db.transaction().execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+        expect(guarded).toBeDefined();
+        if (kind === 'original') {
+          await db.updateTable('asset').set({ originalPath: `${f.asset.originalPath}.replaced` }).where('id', '=', f.asset.id).execute();
+        } else if (kind === 'pin') {
+          await db.updateTable('user').set({ pinCode: 'changed-pin' }).where('id', '=', f.user.id).execute();
+        } else if (kind === 'source') {
+          await sql`UPDATE immich_fork.icloud_record SET revision='changed-after-admission'
+            WHERE "connectionId"=${f.connection.id}::uuid AND "recordId"=${f.resource.sourceAssetId}`.execute(db);
+        } else if (kind === 'identity') {
+          await sql`UPDATE immich_fork.icloud_source_identity SET sha256=${Buffer.alloc(32)}
+            WHERE id=${f.identityId}::uuid`.execute(db);
+        } else {
+          // A real owned asset mapping change, never authority inherited from a physical file owner.
+          await sql`INSERT INTO immich_fork.physical_file (id,type,checksum,"canonicalPath","sizeInBytes","createdAt","updatedAt")
+            VALUES (${randomUUID()}::uuid,'original',${f.sha256},${`${f.asset.originalPath}.other-physical`},1,clock_timestamp(),clock_timestamp())`.execute(db);
+          await sql`INSERT INTO immich_fork.asset_physical_file ("assetId","physicalFileId","upstreamPath")
+            SELECT ${f.asset.id}::uuid,id,${f.asset.originalPath} FROM immich_fork.physical_file
+            WHERE "canonicalPath"=${`${f.asset.originalPath}.other-physical`}
+            ON CONFLICT ("assetId") DO UPDATE SET "physicalFileId"=excluded."physicalFileId"`.execute(db);
+        }
+        await db.transaction().execute(async (tx) => {
+          expect(await guardScheduledAudit(tx, authority, f.user.id, { resource })).toBeUndefined();
+          expect((await sql<{ allowed: boolean }>`SELECT ${scheduledAuditFinalFence(authority, guarded!, resource)} AS allowed`.execute(tx)).rows[0].allowed).toBe(false);
+        });
+      });
+
+      it('waits for actual metadata authority before acquiring an original asset row lock', async () => {
+        const { f, authority, resource } = await scheduledAuthorityFixture();
+        const database = new DatabaseRepository(db, getMocks().logger as never, new ConfigRepository());
+        const entered = Promise.withResolvers<number>();
+        const resume = Promise.withResolvers<void>();
+        const classifying = database.withAssetMetadataLock(f.asset.id, async (tx) => {
+          entered.resolve((await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(tx)).rows[0].pid);
+          await resume.promise;
+        });
+        const holderPid = await entered.promise;
+        const admission = db.transaction().execute((tx) => guardScheduledAudit(tx, authority, f.user.id, { resource }));
+        void admission.catch(() => {});
+        void classifying.catch(() => {});
+        try {
+          await expect.poll(async () => (await sql`SELECT 1 FROM pg_stat_activity
+            WHERE wait_event_type='Lock' AND ${holderPid}::int=ANY(pg_blocking_pids(pid))`.execute(db)).rows.length,
+          { timeout: 1000 }).toBe(1);
+          const { rows } = await sql`SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
+            WHERE ${holderPid}::int=ANY(pg_blocking_pids(a.pid)) AND l.relation='public.asset'::regclass
+              AND l.mode='RowShareLock' AND l.granted`.execute(db);
+          expect(rows).toEqual([]);
+        } finally {
+          resume.resolve();
+          await Promise.allSettled([classifying, admission]);
+        }
+        await classifying;
+        expect(await admission).toBeDefined();
+      });
+
+
+      describe('fresh scheduled stream provenance and real decoder ownership', () => {
+        async function createStageFixture(protectedOriginal = false, decoder?: MediaIntegrityService) {
+          const fixture = await scheduledAuthorityFixture(protectedOriginal);
+          const input = { ownerId: fixture.f.user.id, authority: fixture.authority, resource: fixture.resource };
+          const root = join(await realpath(dirname(fixture.f.originalPath)), 'scheduled-stage');
+          vi.stubEnv('FRAMELEAF_ICLOUD_STAGING_PATH', root);
+          vi.stubEnv('FRAMELEAF_ICLOUD_FREE_SPACE_BYTES', '0');
+          const key = Buffer.alloc(32, 77); // Test-only key; no actual secret or provider request.
+          const probe = await open(fixture.f.originalPath, 'r');
+          const syncSpy = vi.spyOn(Object.getPrototypeOf(probe), 'sync');
+          await probe.close();
+          let completed = false;
+          const transport = {
+            decodeSession: vi.fn(async (scope: string, encrypted: string) => encrypted === 'fixture-session'
+              ? { version: 1 } : decryptICloudSession(key, scope, encrypted)),
+            encodeSession: vi.fn(async (scope: string, payload: unknown) => {
+              if (scope.startsWith('icloud-audit-fresh-download:')) {
+                const receipt = payload as ScheduledFreshPayload;
+                // This observes actual pipeline completion, actual file/directory sync and exact
+                // persisted-file identity BEFORE the producer creates authenticated evidence.
+                expect(completed).toBe(true);
+                expect(syncSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+                expect(await readFile(receipt.path)).toEqual(fixture.f.bytes);
+                const stat = await lstat(receipt.path);
+                expect(receipt.identity).toEqual({ dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs });
+                expect(receipt.sha256).toBe(createHash('sha256').update(fixture.f.bytes).digest('hex'));
+              }
+              return encryptICloudSession(key, scope, payload);
+            }),
+            download: vi.fn(async () => ({
+              stream: Readable.from((async function* () {
+                yield fixture.f.bytes.subarray(0, 1);
+                yield fixture.f.bytes.subarray(1);
+                completed = true;
+              })()), session: { version: 1 }, fingerprint: fixture.f.resource.fingerprint, size: fixture.f.bytes.length,
+            })),
+          };
+          const repository = new ICloudScheduledStagingRepository(db, transport as never);
+          const stored = vi.spyOn(repository, 'storeFreshDownload');
+          const withSession = vi.spyOn(sync, 'withSession');
+          const ordinary = new ICloudStagingService(sync, transport as never, { getAll: async () => [] } as never);
+          const staging = new ICloudScheduledStagingService(repository, ordinary, transport as never, decoder ?? integrity);
+          return { ...fixture, input, root, key, repository, stored, withSession, ordinary, staging, transport };
+        }
+
+        async function createWorkerFixture(protectedOriginal = false, decoder?: MediaIntegrityService) {
+          const fixture = await createStageFixture(protectedOriginal, decoder);
+          // Use the actual budget allocator and actual operation claimant, replacing only old admission fixtures.
+          await sql`DELETE FROM immich_fork.icloud_resource WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          await sql`UPDATE public.media_operation SET status='queued',"claimToken"=NULL,"claimExpiresAt"=NULL
+            WHERE id=${fixture.authority.operationId}::uuid`.execute(db);
+          const outbox = operations();
+          const claimed = await db.transaction().execute(async (tx) => {
+            // Other tests' durable queue rows stay untouched; real SKIP LOCKED selects this obligation.
+            await sql`SELECT id FROM public.media_operation WHERE kind='icloud_sync' AND status='queued'
+              AND id<>${fixture.authority.operationId}::uuid ORDER BY id FOR UPDATE`.execute(tx);
+            return outbox.claimNext({ kinds: [MediaOperationKind.ICloudSync], workerId: 'weekly-contract', leaseMs: 600_000 });
+          });
+          expect(claimed?.operation.id).toBe(fixture.authority.operationId);
+          const workerRepository = new ICloudScheduledWorkerRepository(db, fixture.repository);
+          const recoveryRepository = new MediaRecoveryRepository(db, new ForkPrivacyRepository(db), new ForkEnrichmentRepository(db), fixture.repository);
+          const recovery = new MediaRecoveryService(recoveryRepository, decoder ?? integrity);
+          const transport = { ...fixture.transport, enabled: () => true };
+          const worker = new ICloudScheduledWorkerService(workerRepository, identities, fixture.staging, recovery, outbox, transport as never);
+          return { ...fixture, claimed: claimed!, workerRepository, recoveryRepository, recovery, worker };
+        }
+
+        async function scheduledWorkerState(fixture: Awaited<ReturnType<typeof createWorkerFixture>>) {
+          const { rows: [cohort] } = await sql<{ status: string; match: string; mismatch: string; performed: string; unavailable: string; cancelled: string }>`SELECT status,
+            "matchCount" AS match,"mismatchCount" AS mismatch,"performedCount" AS performed,"unavailableCount" AS unavailable,
+            "cancelledCount" AS cancelled FROM immich_fork.icloud_weekly_cohort WHERE id=${fixture.cohort.id}::uuid`.execute(db);
+          const request = await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id);
+          const identity = (await sql<{ lastVerifiedAt: Date | null; lastAuditResult: string | null }>`SELECT "lastVerifiedAt","lastAuditResult"
+            FROM immich_fork.icloud_source_identity WHERE id=${fixture.f.identityId}::uuid`.execute(db)).rows[0];
+          return { cohort, request, identity };
+        }
+
+        it.each([false, true])('executes actual claimed scheduled stream and settles match exactly once without a session; protected=%s', async (protectedOriginal) => {
+          const fixture = await createWorkerFixture(protectedOriginal);
+          await db.deleteFrom('session').where('id', '=', fixture.auth.session!.id).execute();
+          vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true'); // Test seam only; deployment gate stays OFF.
+          await fixture.worker.run(fixture.claimed.operation, fixture.claimed.claimToken);
+          const first = await scheduledWorkerState(fixture);
+          expect(first.request?.result).toBe('match');
+          expect(first.identity.lastVerifiedAt).toBeInstanceOf(Date);
+          expect(first.identity.lastAuditResult).toBe('match');
+          expect(first.cohort).toEqual({ status: 'settled', match: '1', mismatch: '0', performed: '1', unavailable: '0', cancelled: '0' });
+          expect(fixture.transport.download).toHaveBeenCalledTimes(1);
+          expect(fixture.withSession).not.toHaveBeenCalled();
+          const { rows: [resource] } = await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize" FROM immich_fork.icloud_resource
+            WHERE "auditRequestId"=${fixture.authority.auditRequestId}::uuid`.execute(db);
+          expect(resource.status).toBe('committed');
+          expect(Number(resource.reservedBytes)).toBe(fixture.f.bytes.length);
+          expect(resource.verification?.auditFreshDownload).toBeDefined();
+          expect(resource.pendingJobs).toEqual([]);
+          await fixture.worker.run(fixture.claimed.operation, fixture.claimed.claimToken);
+          expect(await scheduledWorkerState(fixture)).toEqual(first);
+          expect(fixture.transport.download).toHaveBeenCalledTimes(1);
+          await fixture.staging.onShutdown();
+        });
+
+        it('refuses authored deep-decode JSON and a healthy result without actual settlement evidence', async () => {
+          const fixture = await createStageFixture();
+          const fresh = await fixture.staging.download(fixture.input);
+          await expect(fixture.staging.holdPublicationFiles(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          const forged = { payload: { version: 1 as const, basis: 'audit-settled-decode' as const, fresh,
+            path: fresh.payload.path, identity: fresh.payload.identity, sha1: fresh.payload.sha1,
+            sha256: fresh.payload.sha256, sizeInBytes: fresh.payload.binding.sizeInBytes }, seal: 'authored-decode-json' };
+          expect(await fixture.repository.storeDeepValidation(fixture.input, forged)).toBe(false);
+          expect(await fixture.repository.authenticateDeepValidation(fixture.input, forged)).toBe(false);
+          expect((await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result).toBe('queued');
+          expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
+        });
+
+        it('rolls back a forced match-as-mismatch reservation after real destination decode; protection precedes outbox visibility', async () => {
+          // Negative reservation test only. This is not a genuine same-descriptor weekly mismatch.
+          const fixture = await createStageFixture(true);
+          const fresh = await fixture.staging.download(fixture.input);
+          const stageValidation = await fixture.staging.validate(fixture.input);
+          const staged = await stageValidation.result; expect(staged.status).toBe('validated'); await stageValidation.settled;
+          if (staged.status !== 'validated') { throw new Error('actual_validation_required'); }
+          const assetId = randomUUID();
+          const promotedPath = join(dirname(fixture.f.originalPath), '.icloud-recovery', `${assetId}.jpg`);
+          await mkdir(dirname(promotedPath), { mode: 0o700 }); await copyFile(fresh.payload.path, promotedPath);
+          const target = { assetId, updateId: null, originalPath: null, checksumHex: null, checksumAlgorithm: null,
+            isExternal: false, libraryId: null, physicalOriginalFileId: null, forkPhysicalFileId: null, outcome: 'imported' as const };
+          // Malicious durable reservation is the negative input. No authored validation/proof stamp.
+          await sql`UPDATE immich_fork.icloud_resource SET "expectedTarget"=${target}::jsonb,"promotedPath"=${promotedPath}
+            WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          const privacy = new ForkPrivacyRepository(db);
+          const originalMirror = privacy.mirrorFromLegacy.bind(privacy);
+          const protectedBeforeJobs = vi.spyOn(privacy, 'mirrorFromLegacy').mockImplementation(async (id, tx) => {
+            expect((await sql`SELECT 1 FROM public.asset_lock WHERE "assetId"=${id}::uuid`.execute(tx!)).rows).toHaveLength(1);
+            expect((await sql<{ pendingJobs: unknown[] }>`SELECT "pendingJobs" FROM immich_fork.icloud_resource
+              WHERE id=${fixture.resource.id}::uuid`.execute(tx!)).rows[0].pendingJobs).toEqual([]);
+            return originalMirror(id, tx);
+          });
+          const repository = new MediaRecoveryRepository(db, privacy, new ForkEnrichmentRepository(db), fixture.repository);
+          let files: Awaited<ReturnType<ICloudScheduledStagingService['holdPublicationFiles']>> | undefined;
+          const publication = { receipt: fresh, validation: staged.validation, paths: [] as string[], current: async () => false };
+          try {
+            await expect(repository.commit({ ownerId: fixture.f.user.id, resourceId: fixture.resource.id,
+              leaseToken: fixture.resource.leaseToken, includeHidden: true, audit: fixture.authority, scheduled: publication,
+              reservation: { target, promotedPath }, verified: staged.verified, originalFileName: 'recovered.jpg', type: AssetType.Image,
+              verifyFinal: async () => {
+                const validation = await fixture.staging.validate(fixture.input, undefined, promotedPath);
+                const result = await validation.result; expect(result.status).toBe('validated'); await validation.settled;
+                if (result.status !== 'validated') { throw new Error('actual_validation_required'); }
+                files = await fixture.staging.holdPublicationFiles(fixture.input, undefined, promotedPath);
+                publication.paths = files.paths; publication.current = files.current; publication.validation = files.validation;
+                return result.verified;
+              },
+            })).rejects.toThrow('scheduled_audit_result_invalid');
+          } finally { await files?.release(); }
+          expect(protectedBeforeJobs).toHaveBeenCalledTimes(1);
+          expect((await db.selectFrom('asset').select('id').where('id', '=', assetId).execute())).toEqual([]);
+          expect((await sql`SELECT 1 FROM immich_fork.asset_physical_file WHERE "assetId"=${assetId}::uuid`.execute(db)).rows).toEqual([]);
+          expect((await fixture.repository.read(fixture.input))!.resource.pendingJobs).toEqual([]);
+          expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
+        });
+
+        it('keeps execution unavailable by default without transport or a successful counter', async () => {
+          const fixture = await createWorkerFixture();
+          vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'false');
+          await fixture.worker.run(fixture.claimed.operation, fixture.claimed.claimToken);
+          expect(fixture.transport.download).not.toHaveBeenCalled();
+          expect((await scheduledWorkerState(fixture)).cohort.performed).toBe('0');
+          expect((await weekly().status(fixture.f.connection.id, fixture.f.user.id)).executionAvailable).toBe(false);
+        });
+
+        it('cancels frozen pending membership without ordinary connection bookkeeping or transport, even with execution OFF', async () => {
+          const fixture = await createWorkerFixture();
+          vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'false');
+          await sql`UPDATE public.media_operation SET status='cancelling',"cancelRequestedAt"=clock_timestamp()
+            WHERE id=${fixture.claimed.operation.id}::uuid`.execute(db);
+          const before = await sync.get(fixture.f.connection.id, fixture.f.user.id);
+          await fixture.worker.run(fixture.claimed.operation, fixture.claimed.claimToken);
+          expect(fixture.transport.download).not.toHaveBeenCalled();
+          expect((await scheduledWorkerState(fixture)).cohort).toMatchObject({ performed: '0', cancelled: '1', status: 'settled' });
+          expect((await members(fixture.cohort.id))[0].outcome).toBe('cancelled');
+          expect(await sync.get(fixture.f.connection.id, fixture.f.user.id)).toEqual(before);
+        });
+
+        it('pauses the same frozen obligation without terminal settlement or ordinary bookkeeping', async () => {
+          const fixture = await createWorkerFixture();
+          vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true');
+          await sql`UPDATE public.media_operation SET "pauseRequestedAt"=clock_timestamp()
+            WHERE id=${fixture.claimed.operation.id}::uuid`.execute(db);
+          const frozen = await members(fixture.cohort.id);
+          await fixture.worker.run(fixture.claimed.operation, fixture.claimed.claimToken);
+          expect(fixture.transport.download).not.toHaveBeenCalled();
+          expect(await members(fixture.cohort.id)).toEqual(frozen);
+          expect((await scheduledWorkerState(fixture)).cohort.performed).toBe('0');
+        });
+
+        it('does not revive an expired operation with a scheduled heartbeat', async () => {
+          const fixture = await createWorkerFixture();
+          await sql`UPDATE public.media_operation SET "claimExpiresAt"=clock_timestamp()-interval '1 second'
+            WHERE id=${fixture.claimed.operation.id}::uuid`.execute(db);
+          expect(await fixture.workerRepository.renewOperation(fixture.claimed.operation.id, fixture.f.user.id, fixture.claimed.claimToken)).toBe(false);
+          expect(await fixture.workerRepository.dispatch(fixture.claimed.operation, fixture.claimed.claimToken)).toBeUndefined();
+          expect(fixture.transport.download).not.toHaveBeenCalled();
+        });
+
+        it('enforces actual staging budget without allocating or settling a replacement', async () => {
+          const fixture = await createWorkerFixture();
+          vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', '0');
+          vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true');
+          await fixture.worker.run(fixture.claimed.operation, fixture.claimed.claimToken);
+          expect(fixture.transport.download).not.toHaveBeenCalled();
+          expect((await scheduledWorkerState(fixture)).request?.result).toBe('queued');
+          expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
+          expect((await sql`SELECT id FROM immich_fork.icloud_resource WHERE "auditRequestId"=${fixture.authority.auditRequestId}::uuid`.execute(db)).rows).toEqual([]);
+        });
+
+        it('commits real consent revocation while an actual noncooperative decoder owns its input, then refuses all proof', async () => {
+          const entered = Promise.withResolvers<string>(); const release = Promise.withResolvers<void>();
+          const decoder = new MediaIntegrityService(new StorageRepository(getMocks().logger as never), new CryptoRepository(), {
+            decodeImage: async (path: string) => { entered.resolve(path); await release.promise; return {} as never; },
+          } as never);
+          const fixture = await createWorkerFixture(false, decoder);
+          vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true');
+          const running = fixture.worker.run(fixture.claimed.operation, fixture.claimed.claimToken);
+          const path = await entered.promise;
+          try {
+            await weekly().setAuthority(fixture.auth, fixture.f.connection.id, { enabled: false, includeProtected: false, requestKey: randomUUID() });
+            expect(await readFile(path)).toEqual(fixture.f.bytes);
+          } finally { release.resolve(); }
+          await running;
+          const state = await scheduledWorkerState(fixture);
+          expect(state.request?.result).toBe('failed'); expect(state.identity.lastVerifiedAt).toBeNull();
+          expect(state.cohort).toMatchObject({ performed: '0', unavailable: '1', match: '0', mismatch: '0', status: 'settled' });
+          await fixture.staging.onShutdown();
+          await expect(access(path)).rejects.toMatchObject({ code: 'ENOENT' });
+        });
+
+        it.each(['staging', 'original'] as const)('refuses actual %s inode replacement before final guarded publication', async (kind) => {
+          const fixture = await createStageFixture();
+          await fixture.staging.download(fixture.input);
+          const validation = await fixture.staging.validate(fixture.input);
+          const outcome = await validation.result; expect(outcome.status).toBe('validated'); await validation.settled;
+          if (outcome.status !== 'validated') { throw new Error('actual_validation_required'); }
+          const files = await fixture.staging.holdPublicationFiles(fixture.input);
+          const target = kind === 'staging' ? files.receipt.payload.path : fixture.f.originalPath;
+          await rename(target, `${target}.replaced`); await writeFile(target, fixture.f.bytes, { mode: 0o600 });
+          try {
+            const repository = new ICloudScheduledWorkerRepository(db, fixture.repository);
+            await expect(repository.publishMatch(fixture.input, files, outcome.verified)).rejects.toThrow('scheduled_audit_file_changed');
+          } finally { await files.release(); }
+          expect((await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result).toBe('queued');
+          expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
+        });
+
+        it.each(['expiry', 'revoke'] as const)('refuses late readonly guard settlement after actual %s without closing its descriptor early', async (kind) => {
+          const fixture = await createStageFixture();
+          await fixture.staging.download(fixture.input);
+          const validation = await fixture.staging.validate(fixture.input);
+          const outcome = await validation.result; expect(outcome.status).toBe('validated'); await validation.settled;
+          if (outcome.status !== 'validated') { throw new Error('actual_validation_required'); }
+          const files = await fixture.staging.holdPublicationFiles(fixture.input);
+          const probe = await open(files.receipt.payload.path, 'r'); const prototype = Object.getPrototypeOf(probe); await probe.close();
+          const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
+          const actualStat = prototype.stat; const actualClose = prototype.close;
+          const closed = new Set<number>();
+          vi.spyOn(prototype, 'close').mockImplementation(async function (this: { fd: number }, ...args: unknown[]) {
+            closed.add(this.fd); return actualClose.apply(this, args);
+          });
+          let guardedFd!: number;
+          vi.spyOn(prototype, 'stat').mockImplementation(async function (this: { fd: number }, ...args: unknown[]) {
+            const result = await actualStat.apply(this, args); guardedFd = this.fd; entered.resolve(); await release.promise; return result;
+          });
+          if (kind === 'expiry') {
+            await sql`UPDATE public.media_operation SET "claimExpiresAt"=clock_timestamp()+interval '1.5 seconds'
+              WHERE id=${fixture.authority.operationId}::uuid`.execute(db);
+          }
+          const publishing = new ICloudScheduledWorkerRepository(db, fixture.repository).publishMatch(fixture.input, files, outcome.verified);
+          void publishing.catch(() => {});
+          let cleanup: Promise<void> | undefined;
+          try {
+            await entered.promise;
+            let revoked: Promise<unknown> | undefined;
+            if (kind === 'revoke') {
+              revoked = weekly().setAuthority(fixture.auth, fixture.f.connection.id,
+                { enabled: false, includeProtected: false, requestKey: randomUUID() });
+              void revoked.catch(() => {});
+            }
+            await sql`SELECT pg_sleep(${kind === 'expiry' ? 1.6 : 2.1})`.execute(db); // Actual DB time, hosted-only authored contract.
+            if (kind === 'expiry') { release.resolve(); }
+            await expect(publishing).rejects.toThrow(kind === 'expiry' ? 'scheduled_audit_authority_expired' : 'scheduled_audit_file_changed');
+            await revoked; // Owner mutation can commit once the bounded readonly transaction refuses/releases.
+            if (kind === 'revoke') { expect((await sql<{ enabled: boolean }>`SELECT enabled FROM immich_fork.icloud_weekly_grant
+              WHERE "connectionId"=${fixture.f.connection.id}::uuid`.execute(db)).rows[0].enabled).toBe(false); }
+            cleanup = files.release();
+            if (kind === 'revoke') { expect(closed.has(guardedFd)).toBe(false); }
+            expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
+            expect((await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result).toBe('queued');
+          } finally { release.resolve(); await (cleanup ?? files.release()); }
+          expect(closed.has(guardedFd)).toBe(true);
+        });
+
+        it.each([false, true])('creates only actual completed stream evidence, resumes same obligation and validates real private bytes; protected=%s', async (protectedOriginal) => {
+          const fixture = await createStageFixture(protectedOriginal);
+          const { f, input, staging, transport, stored, withSession, repository, key } = fixture;
+          const receipt = await staging.download(input);
+          expect(transport.download).toHaveBeenCalledTimes(1);
+          expect(stored).toHaveBeenCalledTimes(1);
+          expect(receipt.payload.binding).toMatchObject({ ownerId: f.user.id, connectionId: f.connection.id,
+            auditRequestId: input.authority.auditRequestId, resourceId: input.resource.id, cohortId: fixture.cohort.id,
+            sourceResourceId: f.resource.id, grantGeneration: Number(fixture.cohort.grantGeneration) });
+          expect(() => decryptICloudSession(key, f.connection.id, receipt.seal)).toThrow('icloud_session_invalid');
+          expect((await repository.read(input))!.resource.verification?.auditFreshDownload).toEqual(receipt);
+          expect(await staging.download(input)).toEqual(receipt);
+          expect(transport.download).toHaveBeenCalledTimes(1);
+          expect(stored).toHaveBeenCalledTimes(1);
+          const validation = await staging.validate(input);
+          const outcome = await validation.result;
+          expect(outcome).toMatchObject({ status: 'validated', verified: { status: 'healthy', sha256: f.sha256 } });
+          await validation.settled;
+          expect((await readdir(join(fixture.root, input.resource.id))).filter((name) => name.startsWith('.validation-'))).toEqual([]);
+          expect(withSession).not.toHaveBeenCalled();
+          const { rows } = await sql<{ result: string; verifiedAt: Date | null }>`SELECT result,"verifiedAt"
+            FROM immich_fork.icloud_identity_audit WHERE id=${input.authority.auditRequestId}::uuid`.execute(db);
+          expect(rows[0]).toEqual({ result: 'queued', verifiedAt: null });
+          expect(await db.selectFrom('asset_integrity_verification').select('assetId').where('assetId', '=', f.asset.id).execute()).toEqual([]);
+          await staging.onShutdown();
+        });
+
+        it.each(['missing', 'forged', 'altered', 'wrong-obligation'] as const)('refuses %s cached provenance without a new transport or stamp', async (kind) => {
+          const fixture = await createStageFixture();
+          const receipt = await fixture.staging.download(fixture.input);
+          if (kind === 'missing') {
+            await sql`UPDATE immich_fork.icloud_resource SET verification=NULL WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          } else {
+            const changed = kind === 'forged' ? { ...receipt, seal: 'manually-authored-json' }
+              : { ...receipt, payload: { ...receipt.payload, binding: { ...receipt.payload.binding,
+                ...(kind === 'altered' ? { sourceRevision: 'invented' } : { auditRequestId: randomUUID() }) } } };
+            await sql`UPDATE immich_fork.icloud_resource SET verification=${{ auditFreshDownload: changed }}::jsonb
+              WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          }
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.transport.download).toHaveBeenCalledTimes(1);
+          expect(fixture.stored).toHaveBeenCalledTimes(1);
+        });
+
+        it('refuses directly authored JSON before any persisted fresh evidence can change', async () => {
+          const fixture = await createStageFixture();
+          const receipt = await fixture.staging.download(fixture.input);
+          expect(await fixture.repository.storeFreshDownload(fixture.input,
+            { ...receipt, seal: 'manually-authored-json' })).toBe(false);
+          expect((await fixture.repository.read(fixture.input))!.resource.verification?.auditFreshDownload).toEqual(receipt);
+        });
+
+        it('refuses an ordinary complete file even when its bytes match the expected digest', async () => {
+          const fixture = await createStageFixture();
+          const owned = (await sync.resource(fixture.resource.id))!;
+          const complete = await fixture.ordinary.download(fixture.f.connection, owned, async () => true);
+          expect(await readFile(complete)).toEqual(fixture.f.bytes);
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.stored).not.toHaveBeenCalled();
+          expect(fixture.transport.download).toHaveBeenCalledTimes(1);
+        });
+
+        it.each(['bytes', 'inode', 'grant'] as const)('refuses changed %s after a genuine cached receipt', async (kind) => {
+          const fixture = await createStageFixture();
+          const receipt = await fixture.staging.download(fixture.input);
+          if (kind === 'bytes') { await writeFile(receipt.payload.path, Buffer.alloc(fixture.f.bytes.length)); }
+          else if (kind === 'inode') {
+            await rename(receipt.payload.path, `${receipt.payload.path}.old`);
+            await writeFile(receipt.payload.path, fixture.f.bytes, { mode: 0o600 });
+          } else {
+            await weekly().setAuthority(fixture.auth, fixture.f.connection.id, { enabled: false, includeProtected: false, requestKey: randomUUID() });
+          }
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.transport.download).toHaveBeenCalledTimes(1);
+          expect(fixture.stored).toHaveBeenCalledTimes(1);
+        });
+
+        it('never revives terminal resource ownership even when a malformed row retains a live lease', async () => {
+          const fixture = await createStageFixture();
+          await sql`UPDATE immich_fork.icloud_resource SET status='committed' WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          expect(await fixture.repository.heartbeat(fixture.input, join(fixture.root, fixture.resource.id, 'complete'))).toBeUndefined();
+          expect((await sync.resource(fixture.resource.id))!.status).toBe('committed');
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.transport.download).not.toHaveBeenCalled();
+        });
+
+        it('refuses an audit resource whose provider zone no longer matches the frozen source', async () => {
+          const fixture = await createStageFixture();
+          await sql`UPDATE immich_fork.icloud_resource SET library='{"area":"private","zoneID":{"zoneName":"foreign-zone"}}'::jsonb
+            WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.transport.download).not.toHaveBeenCalled();
+          expect(fixture.stored).not.toHaveBeenCalled();
+        });
+
+        it.each(['short', 'oversize', 'descriptor', 'fingerprint'] as const)('cannot create provenance from %s stream failure', async (kind) => {
+          const fixture = await createStageFixture();
+          const bytes = kind === 'short' ? fixture.f.bytes.subarray(1) : kind === 'oversize'
+            ? Buffer.concat([fixture.f.bytes, Buffer.from('extra')]) : kind === 'fingerprint' ? Buffer.alloc(fixture.f.bytes.length) : fixture.f.bytes;
+          fixture.transport.download.mockImplementationOnce(async () => ({ stream: Readable.from([bytes]), session: { version: 1 },
+            fingerprint: kind === 'descriptor' ? 'changed' : fixture.f.resource.fingerprint, size: fixture.f.bytes.length }));
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.stored).not.toHaveBeenCalled();
+          expect((await fixture.repository.read(fixture.input))!.resource.verification).toBeNull();
+          expect(fixture.transport.encodeSession.mock.calls.some(([scope]) => scope.startsWith('icloud-audit-fresh-download:'))).toBe(false);
+        });
+
+        it('revokes consent during actual streaming without a connection transaction spanning the request', async () => {
+          const fixture = await createStageFixture();
+          const entered = Promise.withResolvers<void>();
+          const release = Promise.withResolvers<void>();
+          fixture.transport.download.mockImplementationOnce(async () => ({ stream: Readable.from((async function* () {
+            yield fixture.f.bytes.subarray(0, 1); entered.resolve(); await release.promise; yield fixture.f.bytes.subarray(1);
+          })()), session: { version: 1 }, fingerprint: fixture.f.resource.fingerprint, size: fixture.f.bytes.length }));
+          const downloading = fixture.staging.download(fixture.input);
+          void downloading.catch(() => {});
+          try {
+            await entered.promise;
+            // Real owner consent update must commit while the network stream is still admitted.
+            await weekly().setAuthority(fixture.auth, fixture.f.connection.id,
+              { enabled: false, includeProtected: false, requestKey: randomUUID() });
+          } finally { release.resolve(); }
+          await expect(downloading).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.stored).not.toHaveBeenCalled();
+          expect(fixture.withSession).not.toHaveBeenCalled();
+        });
+
+        it('owns the private decoder input through actual noncooperative failure and then cleans it', async () => {
+          const entered = Promise.withResolvers<string>();
+          const release = Promise.withResolvers<void>();
+          const decoder = new MediaIntegrityService(new StorageRepository(getMocks().logger as never), new CryptoRepository(), {
+            decodeImage: async (path: string) => { entered.resolve(path); await release.promise; throw new Error('native_decode_failed'); },
+          } as never);
+          const fixture = await createStageFixture(false, decoder);
+          await fixture.staging.download(fixture.input);
+          const validation = await fixture.staging.validate(fixture.input);
+          const path = await entered.promise;
+          try {
+            expect(await readFile(path)).toEqual(fixture.f.bytes);
+          } finally { release.resolve(); }
+          expect(await validation.result).toEqual({ status: 'unavailable' });
+          await validation.settled;
+          await expect(access(path)).rejects.toMatchObject({ code: 'ENOENT' });
+          await fixture.staging.onShutdown();
+        });
+
+        it.each(['cancel', 'timeout', 'revoke'] as const)('retains noncooperative decoder input after %s refusal, then cleans at actual settlement', async (kind) => {
+          const entered = Promise.withResolvers<string>();
+          const release = Promise.withResolvers<void>();
+          vi.stubEnv('FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS', '10000');
+          const decoder = new MediaIntegrityService(new StorageRepository(getMocks().logger as never), new CryptoRepository(), {
+            decodeImage: async (path: string) => { entered.resolve(path); await release.promise; return {} as never; },
+          } as never);
+          const fixture = await createStageFixture(false, decoder);
+          await fixture.staging.download(fixture.input);
+          let timeout!: () => void;
+          const actualTimer = globalThis.setTimeout;
+          vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void, delay?: number, ...args: unknown[]) => {
+            if (delay === 10_000) { timeout = callback; }
+            return actualTimer(callback, delay, ...args);
+          }) as never);
+          let heartbeat!: () => void;
+          const actualInterval = globalThis.setInterval;
+          vi.spyOn(globalThis, 'setInterval').mockImplementation(((callback: () => void, delay?: number, ...args: unknown[]) => {
+            if (delay === 15_000) { heartbeat = callback; }
+            return actualInterval(callback, delay, ...args);
+          }) as never);
+          const controller = new AbortController();
+          const validation = await fixture.staging.validate(fixture.input, controller.signal);
+          const path = await entered.promise;
+          let settled = false;
+          void validation.settled.then(() => { settled = true; });
+          try {
+            if (kind === 'timeout') { timeout(); }
+            else if (kind === 'revoke') {
+              await weekly().setAuthority(fixture.auth, fixture.f.connection.id,
+                { enabled: false, includeProtected: false, requestKey: randomUUID() });
+              heartbeat(); // Exercise actual admission revocation, without waiting/polling a timer.
+            } else { controller.abort(); }
+            expect(await validation.result).toEqual({ status: 'unavailable' });
+            expect(settled).toBe(false);
+            expect(await readFile(path)).toEqual(fixture.f.bytes);
+            const resource = (await sync.resource(fixture.resource.id))!;
+            // Owned staging cleanup is credential-independent and cannot remove the decoder copy.
+            await fixture.ordinary.cleanup(resource);
+            expect(await readFile(path)).toEqual(fixture.f.bytes);
+            const { rows } = await sql<{ verifiedAt: Date | null }>`SELECT "verifiedAt" FROM immich_fork.icloud_identity_audit
+              WHERE id=${fixture.authority.auditRequestId}::uuid`.execute(db);
+            expect(rows[0].verifiedAt).toBeNull();
+          } finally { release.resolve(); await validation.settled; await fixture.staging.onShutdown(); }
+          await expect(access(path)).rejects.toMatchObject({ code: 'ENOENT' });
+        });
+      });
+
+      it('keeps manual integrity privacy filters while scheduled structural lookup requires separate authority', async () => {
+        const { f, auth } = await scheduledAuthorityFixture();
+        const integrity = new IntegrityRepository(db);
+        const hash = [f.sha256.toString('hex')];
+        expect(await integrity.getSafetyQuery(auth, hash).where('asset.id', '=', f.asset.id).execute()).toHaveLength(1);
+        await sql`INSERT INTO public.asset_lock ("assetId",reason) VALUES (${f.asset.id}::uuid,${AssetLockReason.Marked})`.execute(db);
+        expect(await integrity.getSafetyQuery(auth, hash).where('asset.id', '=', f.asset.id).execute()).toEqual([]);
+        expect(await integrity.getOwnedOriginalSafetyQuery(f.user.id, hash).where('asset.id', '=', f.asset.id).execute()).toHaveLength(1);
+        expect(await integrity.getOwnedOriginalSafetyQuery(randomUUID(), hash).execute()).toEqual([]);
+      });
     });
   });
 });
