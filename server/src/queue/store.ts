@@ -15,7 +15,10 @@ import {
 
 type Executor = Kysely<any> | Transaction<any>;
 
-/** All methods own short transactions. No connection escapes to a handler or an enumerator. */
+/**
+ * All methods own short transactions. No connection escapes to a handler or an enumerator.
+ * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
+ */
 export class SqlQueueStore {
   constructor(readonly db: Kysely<any>) {}
 
@@ -84,7 +87,7 @@ export class SqlQueueStore {
               if (intent.runId && intent.itemKey) {
                 await this.insertRunItem(intent, db);
               }
-              await sql`update job set "latestPending" = ${JSON.stringify(intent)}::jsonb where id = ${existing.id}::uuid`.execute(
+              await sql`update job set "latestPending" = ${JSON.stringify(intent)}::text::jsonb where id = ${existing.id}::uuid`.execute(
                 db,
               );
               await this.finishSupersededProducers(superseded, db);
@@ -101,7 +104,7 @@ export class SqlQueueStore {
             if (intent.runId && intent.itemKey) {
               await this.insertRunItem(intent, db);
             }
-            await sql`update job set data = ${JSON.stringify(intent.data)}::jsonb,
+            await sql`update job set data = ${JSON.stringify(intent.data)}::text::jsonb,
                 "safeToRetry" = ${intent.safeToRetry}, sensitive = ${intent.sensitive}, "deadlineMs" = ${intent.deadlineMs},
                 "runId" = ${intent.runId ?? null}::uuid, "itemKey" = ${intent.itemKey ?? null}, "rootItemKey" = ${intent.rootItemKey ?? null},
                 "availableAt" = now() + ${intent.options.delay ?? 0} * interval '1 millisecond'
@@ -127,7 +130,7 @@ export class SqlQueueStore {
       const id = randomUUID();
       await sql`insert into job(id, queue, name, data, "dedupKey", "externalId", "safeToRetry", sensitive,
         "deadlineMs", "availableAt", "runId", "itemKey", "rootItemKey", "parentId")
-        values (${id}::uuid, ${intent.queue}, ${intent.name}, ${JSON.stringify(intent.data)}::jsonb,
+        values (${id}::uuid, ${intent.queue}, ${intent.name}, ${JSON.stringify(intent.data)}::text::jsonb,
         ${key}, ${intent.options?.jobId ?? null}, ${intent.safeToRetry}, ${intent.sensitive}, ${intent.deadlineMs},
         now() + ${intent.options?.delay ?? 0} * interval '1 millisecond', ${intent.runId ?? null}::uuid,
         ${intent.itemKey ?? null}, ${intent.rootItemKey ?? null}, ${intent.parentId ?? null}::uuid)
@@ -166,13 +169,13 @@ export class SqlQueueStore {
 
   private async insertRunItem(intent: QueueIntent, db: Executor, state: QueueState = 'pending') {
     await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, state)
-      values (${intent.runId}::uuid, ${intent.itemKey}, ${intent.rootItemKey ?? null}, ${intent.name}, ${intent.queue}, ${JSON.stringify(intent.sensitive ? {} : intent.data)}::jsonb, ${state})
+      values (${intent.runId}::uuid, ${intent.itemKey}, ${intent.rootItemKey ?? null}, ${intent.name}, ${intent.queue}, ${JSON.stringify(intent.sensitive ? {} : intent.data)}::text::jsonb, ${state})
       on conflict do nothing`.execute(db);
   }
 
   async createRun(kind: string, selection: Record<string, unknown>) {
     const id = randomUUID();
-    await sql`insert into job_run(id, kind, selection) values (${id}::uuid, ${kind}, ${JSON.stringify(selection)}::jsonb)`.execute(
+    await sql`insert into job_run(id, kind, selection) values (${id}::uuid, ${kind}, ${JSON.stringify(selection)}::text::jsonb)`.execute(
       this.db,
     );
     return id;
@@ -192,7 +195,7 @@ export class SqlQueueStore {
       await sql`select name from job_queue where name = ${queue} for update`.execute(tx);
     }
     await sql`insert into job_run(id, kind, selection)
-      values (${id}::uuid, ${kind}, ${JSON.stringify(selection)}::jsonb)`.execute(tx);
+      values (${id}::uuid, ${kind}, ${JSON.stringify(selection)}::text::jsonb)`.execute(tx);
     await this.enqueue(intents, tx);
     await sql`update job_run set "enumerationDone" = true where id = ${id}::uuid and not exists (
       select 1 from job_run_item where "runId" = ${id}::uuid and "rootItemKey" is null
@@ -267,7 +270,7 @@ export class SqlQueueStore {
       await sql`update job_worker set "heartbeatAt" = now() where id = ${workerId}::uuid`.execute(tx);
       // One bounded statement irrespective of active media concurrency.
       await sql`update job j set "leaseExpiresAt" = now() + interval '60 seconds'
-        from jsonb_to_recordset(${JSON.stringify(claims)}::jsonb) as owned(id uuid, token uuid)
+        from jsonb_to_recordset(${JSON.stringify(claims)}::text::jsonb) as owned(id uuid, token uuid)
         where j.id = owned.id and j.token = owned.token and j.state = 'active'
         and j."workerId" = ${workerId}::uuid and j."leaseExpiresAt" > clock_timestamp()`.execute(tx);
     });
@@ -471,7 +474,7 @@ export class SqlQueueStore {
       return;
     }
     // A repeated item/stage in one run retains its ledger row and monotonic attempt audit.
-    const { rows } = await sql`update job set state = 'pending', data = ${JSON.stringify(latest.data)}::jsonb,
+    const { rows } = await sql`update job set state = 'pending', data = ${JSON.stringify(latest.data)}::text::jsonb,
       "rootItemKey" = ${latest.rootItemKey ?? null}, "safeToRetry" = ${latest.safeToRetry}, sensitive = ${latest.sensitive}, "deadlineMs" = ${latest.deadlineMs},
       "availableAt" = now() + ${latest.options?.delay ?? 0} * interval '1 millisecond',
       "retryBaseAttempt" = attempt, "finishedAt" = null, "cancelRequestedAt" = null, error = null,

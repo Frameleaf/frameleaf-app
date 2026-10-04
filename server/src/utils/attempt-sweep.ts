@@ -30,7 +30,7 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
       owner: null,
       expires: 0,
     };
-    await sql`INSERT INTO system_metadata (key, value) VALUES (${STATE_KEY}, ${JSON.stringify(initial)}::jsonb)
+    await sql`INSERT INTO system_metadata (key, value) VALUES (${STATE_KEY}, ${JSON.stringify(initial)}::text::jsonb)
       ON CONFLICT (key) DO NOTHING`.execute(tx);
     const {
       rows: [row],
@@ -47,7 +47,9 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
       owner,
       expires: Number(row.now) + 60_000,
     };
-    await sql`UPDATE system_metadata SET value=${JSON.stringify(state)}::jsonb WHERE key=${STATE_KEY}`.execute(tx);
+    await sql`UPDATE system_metadata SET value=${JSON.stringify(state)}::text::jsonb WHERE key=${STATE_KEY}`.execute(
+      tx,
+    );
     return state;
   });
   if (!state) return;
@@ -125,7 +127,7 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
     throw error;
   }
   async function save() {
-    await sql`UPDATE system_metadata SET value=${JSON.stringify({ ...state, owner: null, expires: 0 })}::jsonb
+    await sql`UPDATE system_metadata SET value=${JSON.stringify({ ...state, owner: null, expires: 0 })}::text::jsonb
       WHERE key=${STATE_KEY} AND value->>'owner'=${owner}`.execute(db);
   }
 }

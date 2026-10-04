@@ -84,6 +84,13 @@ describe('attempt output retention and cleanup', () => {
     const unknown = await file({ id: randomUUID(), token: randomUUID() }, 'unknown.jpeg');
     const result = await files.sweepAttempts([root]);
     expect(result?.deleted).toBe(1);
+    const { rows: states } = await sql`SELECT jsonb_typeof(value) AS type, value->'roots' AS roots,
+      jsonb_typeof(value->'cursor') AS "cursorType", jsonb_typeof(value->'pass') AS "passType",
+      jsonb_typeof(value->'owner') AS "ownerType", value->'expires' AS expires FROM system_metadata
+      WHERE key='frameleaf-attempt-cleanup-v1'`.execute(db);
+    expect(states).toEqual([
+      { type: 'object', roots: [root], cursorType: 'object', passType: 'object', ownerType: 'null', expires: 0 },
+    ]);
     await expect(readFile(orphan)).rejects.toMatchObject({ code: 'ENOENT' });
     for (const path of [referenced, pinned, inFlight, unknown])
       expect(await readFile(path, 'utf8')).toBe('generated fixture');
@@ -237,7 +244,7 @@ describe('attempt output retention and cleanup', () => {
       VALUES (${asset.id}::uuid,0,0,${paths.moment},1,1)`.execute(db);
     await sql`INSERT INTO video_edit_version ("assetId","ownerId","sourcePath","sourceChecksum",recipe,purpose,status,"masterPath","proxyPath",files)
       VALUES (${asset.id}::uuid,${user.id}::uuid,${asset.originalPath},${asset.checksum},'[]','save','ready',${paths['video-master']},${paths['video-proxy']},
-        ${JSON.stringify([{ path: paths['video-thumb'] }])}::jsonb)`.execute(db);
+        ${JSON.stringify([{ path: paths['video-thumb'] }])}::text::jsonb)`.execute(db);
     await sql`INSERT INTO asset_file ("assetId",type,path,"isEdited") VALUES (${asset.id}::uuid,'encoded_video',${paths['standalone-master']},true)`.execute(
       db,
     );

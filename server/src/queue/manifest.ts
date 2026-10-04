@@ -90,7 +90,7 @@ export async function freezeSelection(
       );
       await sql`insert into job_run_item("runId", "itemKey", "rootItemKey", stage, queue, selection, "selectionId")
         select ${runId}::uuid, selected.id::text, coalesce(to_jsonb(selected)->>'rootItemKey', selected.id::text), ${intent.name}, ${intent.queue},
-          ${JSON.stringify(intent.data)}::jsonb || coalesce(to_jsonb(selected)->'data', '{}'::jsonb) || jsonb_build_object('id', selected.id), ${selectionId}::uuid
+          ${JSON.stringify(intent.data)}::text::jsonb || coalesce(to_jsonb(selected)->'data', '{}'::jsonb) || jsonb_build_object('id', selected.id), ${selectionId}::uuid
         from (${selection}) selected on conflict do nothing`.execute(tx);
     }
     if (claim) {

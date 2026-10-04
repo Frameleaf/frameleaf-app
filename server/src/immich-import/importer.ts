@@ -28,6 +28,7 @@ const BOOTSTRAP_TABLES = new Set([
 ]);
 const localColumns = new Set(['updateId', 'createId']);
 
+// Serialized row/checkpoint parameters enter as text so postgres.js does not JSON-encode them again.
 export class ImmichImportService {
   readonly source: ImmichSource;
   private embeddingAdmission?: EmbeddingAdmission;
@@ -283,7 +284,7 @@ export class ImmichImportService {
         }
         await db.query(
           `INSERT INTO public.frameleaf_immich_import_checkpoint(table_name,cursor,row_count)
-          VALUES ($1,$2::jsonb,$3) ON CONFLICT(table_name) DO UPDATE SET cursor=excluded.cursor,
+          VALUES ($1,$2::text::jsonb,$3) ON CONFLICT(table_name) DO UPDATE SET cursor=excluded.cursor,
           row_count=frameleaf_immich_import_checkpoint.row_count+excluded.row_count`,
           [table, JSON.stringify(batch.at(-1)!.cursor), batch.length],
         );
@@ -344,7 +345,7 @@ export class ImmichImportService {
     const columns = Object.keys(row).filter((column) => !localColumns.has(column));
     await db.query(
       `INSERT INTO public.${quote(table)} (${columns.map((column) => quote(column)).join(',')})
-      SELECT ${columns.map((column) => quote(column)).join(',')} FROM jsonb_populate_record(NULL::public.${quote(table)},$1::jsonb)`,
+      SELECT ${columns.map((column) => quote(column)).join(',')} FROM jsonb_populate_record(NULL::public.${quote(table)},$1::text::jsonb)`,
       [JSON.stringify(row)],
     );
   }
@@ -360,7 +361,7 @@ export class ImmichImportService {
     const keys = this.targetKeys(table);
     await db.query(
       `UPDATE public.${quote(table)} d SET ${columns.map((column) => `${quote(column)}=s.${quote(column)}`).join(',')}
-      FROM jsonb_populate_record(NULL::public.${quote(table)},$1::jsonb) s
+      FROM jsonb_populate_record(NULL::public.${quote(table)},$1::text::jsonb) s
       WHERE ${keys.map((key) => `d.${quote(key)}=s.${quote(key)}`).join(' AND ')}`,
       [JSON.stringify(row)],
     );
@@ -372,7 +373,7 @@ export class ImmichImportService {
     const keys = this.targetKeys(table);
     const records = await this.destination.query(
       `SELECT 1 FROM public.${quote(table)} d,
-      jsonb_populate_record(NULL::public.${quote(table)},$1::jsonb) s
+      jsonb_populate_record(NULL::public.${quote(table)},$1::text::jsonb) s
       WHERE ${keys.map((key) => `d.${quote(key)}=s.${quote(key)}`).join(' AND ')}
       AND ${columns.map((column) => `d.${quote(column)} IS NOT DISTINCT FROM s.${quote(column)}`).join(' AND ')}`,
       [JSON.stringify(row)],

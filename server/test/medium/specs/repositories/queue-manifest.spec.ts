@@ -109,12 +109,22 @@ describe('durable bounded selection manifests', () => {
             }>`(select 'asset-a'::text id, '{"runId":"pet-run","ownerId":"owner-a"}'::jsonb data)`.as('selected'),
           )
           .select(['id', 'data']),
+        { options: { enabled: false, values: [null, 'source'] } },
       ),
     );
     expect(await store.feedManifest(queue)).toBe(1);
     const [claim] = await store.claim(queue, worker);
     expect(claim.runId).toBe(runId);
-    expect(claim.data).toEqual({ id: 'asset-a', runId: 'pet-run', ownerId: 'owner-a' });
+    const expected = {
+      id: 'asset-a',
+      runId: 'pet-run',
+      ownerId: 'owner-a',
+      options: { enabled: false, values: [null, 'source'] },
+    };
+    expect(claim.data).toEqual(expected);
+    const { rows } = await sql`select selection, jsonb_typeof(selection) as type from job_run_item
+      where "runId" = ${runId}::uuid`.execute(db);
+    expect(rows).toEqual([{ selection: expected, type: 'object' }]);
   });
 
   it('reuses the exact nightly snapshot on a fresh claim after a crashed no-runId producer', async () => {
