@@ -110,7 +110,11 @@ const stagedExport = async (
   const claimToken = randomUUID();
   await defaultDatabase
     .updateTable('media_operation')
-    .set({ claimToken, status: MediaOperationStatus.Validating })
+    .set({
+      claimToken,
+      status: MediaOperationStatus.Validating,
+      claimExpiresAt: sql<Date>`clock_timestamp() + interval '10 minutes'`,
+    })
     .where('id', '=', operation.id)
     .execute();
   const staged = await sut.stage(
@@ -142,7 +146,11 @@ const stagedExport = async (
   );
   await defaultDatabase
     .updateTable('media_operation')
-    .set({ claimToken, status: MediaOperationStatus.Validating })
+    .set({
+      claimToken,
+      status: MediaOperationStatus.Validating,
+      claimExpiresAt: sql<Date>`clock_timestamp() + interval '10 minutes'`,
+    })
     .where('id', '=', staged!.operation.id)
     .execute();
   return {
@@ -202,6 +210,34 @@ const expectRefusal = async (promise: Promise<unknown>, code: string) => {
 
 describe(StudioExportRepository.name, () => {
   describe('claim fencing', () => {
+    it('refuses an expired publication token before recovery clears it', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const source = await ownSource(context.ctx, user.id);
+      const staged = await stagedExport(context, user.id, [source]);
+      const before = await defaultDatabase.selectFrom('asset').select('id').where('ownerId', '=', user.id).execute();
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ claimExpiresAt: sql<Date>`clock_timestamp() - interval '1 second'` })
+        .where('id', '=', staged.publishId)
+        .execute();
+      await expectRefusal(context.sut.publish(publication(staged, [source])), 'claim-lost');
+      expect(await context.sut.getById(staged.version.id)).toMatchObject({
+        state: StudioExportVersionState.Staged,
+        resultAssetId: null,
+      });
+      expect(await defaultDatabase.selectFrom('asset').select('id').where('ownerId', '=', user.id).execute()).toEqual(
+        before,
+      );
+      // Negative control: same token/state works after an explicit new valid lease, proving expiry is the fence.
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ claimExpiresAt: sql<Date>`clock_timestamp() + interval '10 minutes'` })
+        .where('id', '=', staged.publishId)
+        .execute();
+      await expect(context.sut.publish(publication(staged, [source]))).resolves.toMatchObject({ status: 'published' });
+    });
+
     const claims = [
       { name: 'cancelled', status: MediaOperationStatus.Cancelled, stale: false },
       { name: 'cancelling', status: MediaOperationStatus.Cancelling, stale: false },

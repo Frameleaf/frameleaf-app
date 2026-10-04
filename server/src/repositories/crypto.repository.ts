@@ -5,7 +5,10 @@ import { createHash, createHmac, createPublicKey, createVerify, randomBytes, ran
 import { constants, createReadStream } from 'node:fs';
 import { link, mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { advanceExecutionProgress, executionSignal } from 'src/utils/execution-signal.js';
 
 /** FL-161: the per-server keyed-hash secret, in the identity directory next to the instance key. */
 export const SERVER_HMAC_KEY_FILE = 'server-hmac.key';
@@ -170,14 +173,20 @@ export class CryptoRepository {
    *   New code that needs to verify against a stored asset checksum should
    *   pass the algorithm explicitly — see `hashFileMatching` for a helper.
    */
-  hashFile(filepath: string | Buffer, algorithm: 'sha1' | 'sha256' = 'sha1'): Promise<Buffer> {
-    return new Promise<Buffer>((resolve, reject) => {
-      const hash = createHash(algorithm);
-      const stream = createReadStream(filepath);
-      stream.on('error', (error) => reject(error));
-      stream.on('data', (chunk) => hash.update(chunk));
-      stream.on('end', () => resolve(hash.digest()));
-    });
+  async hashFile(filepath: string | Buffer, algorithm: 'sha1' | 'sha256' = 'sha1'): Promise<Buffer> {
+    const hash = createHash(algorithm);
+    await pipeline(
+      createReadStream(filepath),
+      new Writable({
+        write(chunk: Buffer, _encoding, done) {
+          hash.update(chunk);
+          advanceExecutionProgress(chunk.length);
+          done();
+        },
+      }),
+      { signal: executionSignal() },
+    );
+    return hash.digest();
   }
 
   hashFileDigests(filepath: string | Buffer): Promise<{ sha1: Buffer; sha256: Buffer; sizeInBytes: number }> {

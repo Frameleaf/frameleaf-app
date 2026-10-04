@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-imports -- Offline recovery runs directly under Node without application aliases. */
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises';
+import { lstat, open, readdir, readFile, realpath, rename, rm } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { BUDDY_ID, BUDDY_UUID } from './buddy-backup-crypto.ts';
 import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from './buddy-backup-vault.ts';
@@ -30,13 +30,21 @@ export const buddyInside = (root: string, path: string) => {
   return !child || (child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child));
 };
 
-export const buddyFileHash = async (path: string) => {
+export const buddyFileHash = async (
+  path: string,
+  options: { signal?: AbortSignal; progress?: (bytes: number) => void } = {},
+) => {
+  options.signal?.throwIfAborted();
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const before = await file.stat({ bigint: true });
     if (!before.isFile()) throw new Error('Buddy recovery requires regular files');
     const hash = createHash('sha256');
-    for await (const bytes of file.createReadStream({ autoClose: false })) hash.update(bytes);
+    for await (const bytes of file.createReadStream({ autoClose: false, signal: options.signal })) {
+      hash.update(bytes);
+      options.progress?.(bytes.length);
+    }
+    options.signal?.throwIfAborted();
     const after = await file.stat({ bigint: true });
     if (
       before.ino !== after.ino ||

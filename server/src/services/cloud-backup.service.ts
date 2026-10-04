@@ -11,23 +11,6 @@ import { basename, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type {
-  CloudBackupOwnerSetupResponseDto,
-  OwnerBackupHistoryDto,
-  OwnerBackupHistoryResponseDto,
-  OwnerBackupPageDto,
-  OwnerBackupsResponseDto,
-} from 'src/dtos/cloud-backup-owner.dto.js';
-import type { ArgOf } from 'src/repositories/event.repository.js';
-import type { OwnerRestoreDetailsContext } from 'src/services/cloud-backup-details.service.js';
-import type {
-  CloudBackupKeyMode,
-  FrameleafCloudBackup,
-  FrameleafCloudBackupManaged,
-  FrameleafCloudBackupRestore,
-  FrameleafCloudBackupRun,
-} from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
@@ -70,6 +53,7 @@ import {
   StorageFolder,
   SystemMetadataKey,
 } from 'src/enum.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import {
   CloudBackupAsset,
@@ -91,7 +75,6 @@ import { CronRepository } from 'src/repositories/cron.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import {
   FrameleafCloudBackupRepository,
   ManagedBackupApi,
@@ -120,13 +103,13 @@ import {
 } from 'src/services/cloud-backup-maintenance.js';
 import {
   CloudBackupRestoreFile,
+  CloudBackupRestorer,
   CloudBackupRestoreResult,
   CloudBackupRestoreScope,
   CloudBackupRestoreSnapshot,
-  CloudBackupRestorer,
+  emptyRestoreResult,
   IN_PLACE_SCOPES,
   RESTORE_REPLACED_FOLDER,
-  emptyRestoreResult,
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
@@ -141,6 +124,8 @@ import { checkOwnerRestoreItems, ownerRestoreHash } from 'src/utils/cloud-backup
 import { ownerBackupHistoryPage, ownerThumbnail } from 'src/utils/cloud-backup-owner.js';
 import { manifestTime, readManifest, verificationDue } from 'src/utils/cloud-backup-retention.js';
 import {
+  backupKeyFile,
+  bucketRef,
   CLOUD_BACKUP_BATCH,
   CLOUD_BACKUP_DB_PREFIX,
   CLOUD_BACKUP_MANIFEST_FORMAT,
@@ -153,8 +138,6 @@ import {
   CloudBackupManifest,
   CloudBackupManifestFile,
   CloudBackupRunResult,
-  backupKeyFile,
-  bucketRef,
   compactIso,
   emptyRunResult,
   isSha256Hex,
@@ -173,9 +156,15 @@ import { recordConfigHistory } from 'src/utils/config-history.js';
 import { getConfig, readConfig, updateConfig } from 'src/utils/config.js';
 import { CLOUD_BACKUP_DUMP_PREFIX, isCloudBackupDumpName } from 'src/utils/database-backups.js';
 import {
+  advanceExecutionProgress,
+  assertExecutionActive,
+  executionSignal,
+  reportExecutionProgress,
+} from 'src/utils/execution-signal.js';
+import {
+  backupGrantProblem,
   BackupGrantResponse,
   MANAGED_ENTITLEMENT_MISSING_REFUSAL,
-  backupGrantProblem,
   managedBackupRefusal,
   managedStorageRef,
 } from 'src/utils/frameleaf-cloud-backup.js';
@@ -185,13 +174,31 @@ import {
   loadInstanceIdentity,
   readCloudLink,
 } from 'src/utils/frameleaf-cloud-gateway.js';
-import { FrameleafCloudError, errorEnvelopeSchema, pausedException } from 'src/utils/frameleaf-cloud.js';
+import { errorEnvelopeSchema, FrameleafCloudError, pausedException } from 'src/utils/frameleaf-cloud.js';
 import {
-  CloudBackupActivationProgress,
   activationLine,
+  CloudBackupActivationProgress,
   cloudBackupActivationProgress,
 } from 'src/utils/frameleaf-push.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type {
+  CloudBackupOwnerSetupResponseDto,
+  OwnerBackupHistoryDto,
+  OwnerBackupHistoryResponseDto,
+  OwnerBackupPageDto,
+  OwnerBackupsResponseDto,
+} from 'src/dtos/cloud-backup-owner.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { OwnerRestoreDetailsContext } from 'src/services/cloud-backup-details.service.js';
+import type {
+  CloudBackupKeyMode,
+  FrameleafCloudBackup,
+  FrameleafCloudBackupManaged,
+  FrameleafCloudBackupRestore,
+  FrameleafCloudBackupRun,
+} from 'src/types.js';
 
 const KIND = MediaOperationKind.CloudBackup;
 /** FL-164: a restore uses the bucket too, so it never runs beside a backup operation, nor they beside it. */
@@ -1364,30 +1371,34 @@ export class CloudBackupService {
   }
 
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
-    const keepAlive = setInterval(() => {
-      this.operations.heartbeat(operation.id, claimToken, CLOUD_BACKUP_LEASE_MS).catch(() => false);
-    }, CLOUD_BACKUP_LEASE_MS / 4);
-    try {
-      if (operation.kind === RESTORE_KIND) {
-        await this.runRestore(operation, claimToken);
-      } else {
-        switch (taskOf(operation)) {
-          case 'verify': {
-            await this.runVerify(operation, claimToken);
-            break;
-          }
-          case 'prune': {
-            await this.runPrune(operation, claimToken);
-            break;
-          }
-          case 'backup': {
-            await this.runBackup(operation, claimToken);
-            break;
-          }
+    return withOperationExecution(
+      {
+        renew: () =>
+          this.operations.heartbeat(operation.id, claimToken, CLOUD_BACKUP_LEASE_MS, { requireActiveClaim: true }),
+        stopped: () => this.stopping,
+      },
+      () => this.runClaim(operation, claimToken),
+    );
+  }
+
+  private async runClaim(operation: MediaOperation, claimToken: string): Promise<void> {
+    if (operation.kind === RESTORE_KIND) {
+      await this.runRestore(operation, claimToken);
+    } else {
+      switch (taskOf(operation)) {
+        case 'verify': {
+          await this.runVerify(operation, claimToken);
+          break;
+        }
+        case 'prune': {
+          await this.runPrune(operation, claimToken);
+          break;
+        }
+        case 'backup': {
+          await this.runBackup(operation, claimToken);
+          break;
         }
       }
-    } finally {
-      clearInterval(keepAlive);
     }
     if (operation.kind === RESTORE_KIND || taskOf(operation) !== 'backup') {
       await this.startDueScheduledRun().catch((error: unknown) =>
@@ -1401,6 +1412,7 @@ export class CloudBackupService {
     try {
       await this.process(operation, claimToken, progress);
     } catch (error) {
+      if (await settleOperationStop(this.operations, operation, claimToken)) return;
       const message = errorMessage(error);
       this.logger.error(`Cloud backup run ${operation.id} failed: ${message}`);
       const outcome = await this.operations.fail(operation.id, claimToken, {
@@ -1766,7 +1778,10 @@ export class CloudBackupService {
    */
   private async backUpDatabase(run: Run): Promise<boolean> {
     await this.removeLeftoverDumps();
-    const path = await this.databaseBackup.createDatabaseBackup(CLOUD_BACKUP_DUMP_PREFIX);
+    const path = await this.databaseBackup.createDatabaseBackup(CLOUD_BACKUP_DUMP_PREFIX, {
+      signal: executionSignal(),
+      progress: advanceExecutionProgress,
+    });
     try {
       const sha256 = (await this.cryptoRepository.hashFile(path, 'sha256')).toString('hex');
       const key = `${CLOUD_BACKUP_DB_PREFIX}${basename(path)}`;
@@ -2072,6 +2087,7 @@ export class CloudBackupService {
         async (source: AsyncIterable<Buffer>) => {
           await this.store.uploadStream(run.connection, result.manifestKey!, source, run.bucketKey, 'application/gzip');
         },
+        { signal: executionSignal() },
       );
       await this.index.finishManifest(manifestId, {
         status: 'complete',
@@ -2195,6 +2211,7 @@ export class CloudBackupService {
   }
 
   private async finish(run: Run) {
+    assertExecutionActive();
     const { id, claimToken, operation } = run;
     const { result } = run.progress;
     // The manifest is in the bucket and the `done` checkpoint saved: its recorded files can go now.
@@ -2211,8 +2228,8 @@ export class CloudBackupService {
       lastManifestKey: result.manifestKey ?? current.lastManifestKey,
     }));
     const completed =
-      (await this.operations.beginValidation(id, claimToken)) &&
-      (await this.operations.complete(id, claimToken, { resultAssetId: null }));
+      (await this.operations.beginValidation(id, claimToken, true)) &&
+      (await this.operations.complete(id, claimToken, { resultAssetId: null }, undefined, true));
     if (!completed) {
       // Cancelled after the manifest was written: the backup stands as recorded; settle the cancel.
       await this.operations.acknowledgeCancel(id, claimToken, { released: false });
@@ -2232,8 +2249,10 @@ export class CloudBackupService {
 
   /** Write the cursor and counts; answer whether to carry on (no on a lost claim, a cancel or a pause). */
   private async checkpoint(run: Run): Promise<boolean> {
+    assertExecutionActive();
     const { id, claimToken, operation } = run;
     const { result } = run.progress;
+    reportExecutionProgress('assets', result.assets);
     const written = await this.operations.setBulkResult(id, claimToken, {
       result: result as unknown as Record<string, unknown>,
       processedUnits: result.assets,
@@ -2369,8 +2388,8 @@ export class CloudBackupService {
   /** Complete an operation whose work is done; a cancel that arrived at the very end is settled instead. */
   private async completeTask(operation: MediaOperation, claimToken: string): Promise<boolean> {
     const completed =
-      (await this.operations.beginValidation(operation.id, claimToken)) &&
-      (await this.operations.complete(operation.id, claimToken, { resultAssetId: null }));
+      (await this.operations.beginValidation(operation.id, claimToken, true)) &&
+      (await this.operations.complete(operation.id, claimToken, { resultAssetId: null }, undefined, true));
     if (!completed) {
       await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
     }
@@ -2379,6 +2398,7 @@ export class CloudBackupService {
 
   /** A verification, a clean-up or a restore failed: after its automatic retry, the administrators hear why. */
   private async failTask(operation: MediaOperation, claimToken: string, error: unknown, what: string) {
+    if (await settleOperationStop(this.operations, operation, claimToken)) return false;
     // a file system error names its path: shown to administrators, it names it below the media folder only
     const diagnostic = maskMediaPath(errorMessage(error));
     this.logger.error(`${what} ${operation.id} failed: ${diagnostic}`);

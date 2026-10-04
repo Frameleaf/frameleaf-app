@@ -4,7 +4,6 @@ import { createWriteStream } from 'node:fs';
 import { type FileHandle, open, rename, rm } from 'node:fs/promises';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   CLOUD_BACKUP_MARKER,
@@ -16,6 +15,15 @@ import {
   sseCustomerHeaders,
 } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
+import {
+  advanceExecutionProgress,
+  assertExecutionActive,
+  executionDelay,
+  executionSignal,
+  executionTimeout,
+  withExecutionCleanup,
+} from 'src/utils/execution-signal.js';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 /**
  * Cloud backup storage (FL-160): the S3 API calls the backup agent makes, signed with AWS Signature
@@ -181,6 +189,7 @@ export const sanitizeProviderResponse = (response: Response, action: string): Re
           controller.close();
           reader.releaseLock();
         } else {
+          advanceExecutionProgress(chunk.value.length);
           controller.enqueue(chunk.value);
         }
       },
@@ -453,6 +462,7 @@ export class CloudBackupStoreRepository {
           'ChecksumMismatch',
         );
       }
+      assertExecutionActive();
       await rename(partial, destination);
       return { size, sha256 };
     } catch (error) {
@@ -495,7 +505,7 @@ export class CloudBackupStoreRepository {
         callback();
       },
     });
-    await pipeline(body, hasher, sink ?? discard);
+    await pipeline(body, hasher, sink ?? discard, { signal: executionSignal() });
     return { size, sha256: digest.digest('hex') };
   }
 
@@ -780,7 +790,10 @@ export class CloudBackupStoreRepository {
     const body = Buffer.alloc(length);
     let read = 0;
     while (read < length) {
+      assertExecutionActive();
       const { bytesRead } = await handle.read(body, read, length - read, offset + read);
+      assertExecutionActive();
+      advanceExecutionProgress(bytesRead);
       if (bytesRead === 0) {
         throw new CloudBackupFileChangedError(path);
       }
@@ -796,6 +809,7 @@ export class CloudBackupStoreRepository {
     let pending: Buffer[] = [];
     let pendingBytes = 0;
     for await (const chunk of source) {
+      assertExecutionActive();
       let buffer = Buffer.from(chunk);
       while (pendingBytes + buffer.length >= CLOUD_BACKUP_PART_BYTES) {
         const take = CLOUD_BACKUP_PART_BYTES - pendingBytes;
@@ -859,14 +873,17 @@ export class CloudBackupStoreRepository {
             null,
           );
         }
+        advanceExecutionProgress(body.length);
         uploaded.push({ partNumber, etag });
         size += body.length;
       }
+      assertExecutionActive();
       beforeComplete?.();
       return await this.complete(connection, key, uploadId, uploaded, bucketKey, size);
     } catch (error) {
-      await this.send(connection, { method: 'DELETE', key, query: { uploadId } }).catch((abortError: unknown) =>
-        this.logger.warn(`Could not abandon the unfinished upload of ${key}: ${String(abortError)}`),
+      await withExecutionCleanup(() => this.send(connection, { method: 'DELETE', key, query: { uploadId } })).catch(
+        (abortError: unknown) =>
+          this.logger.warn(`Could not abandon the unfinished upload of ${key}: ${String(abortError)}`),
       );
       throw error;
     }
@@ -954,7 +971,7 @@ export class CloudBackupStoreRepository {
         if (!waiting) {
           throw error;
         }
-        await new Promise((resolve) => setTimeout(resolve, this.freshKeyRetryMs));
+        await executionDelay(this.freshKeyRetryMs);
       }
     }
   }
@@ -963,11 +980,12 @@ export class CloudBackupStoreRepository {
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt++) {
       if (attempt > 0) {
-        await new Promise((resolve) => setTimeout(resolve, this.retryDelaysMs[attempt - 1]));
+        await executionDelay(this.retryDelaysMs[attempt - 1]);
       }
       try {
         return await this.sendOnce(connection, request);
       } catch (error) {
+        assertExecutionActive();
         lastError = error;
         const transient =
           !(error instanceof CloudBackupStoreError) ||
@@ -989,6 +1007,7 @@ export class CloudBackupStoreRepository {
   }
 
   private async sendOnce(connection: CloudBackupConnection, request: SignedRequest): Promise<Response> {
+    assertExecutionActive();
     const endpoint = new URL(connection.endpoint);
     const basePath = endpoint.pathname.replace(/\/+$/, '');
     const objectPath = request.key
@@ -1027,9 +1046,10 @@ export class CloudBackupStoreRepository {
         body: request.body ? new Uint8Array(request.body) : undefined,
         // a signed request is never replayed at another address
         redirect: 'manual',
-        signal: AbortSignal.timeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
+        signal: executionTimeout(request.timeoutMs ?? REQUEST_TIMEOUT_MS),
       });
     } catch {
+      assertExecutionActive();
       throw new CloudBackupStoreError(`The storage provider could not be reached (${action}).`, null, null);
     }
 

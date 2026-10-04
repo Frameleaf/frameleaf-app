@@ -22,7 +22,7 @@ import {
   StudioExportVersion,
   StudioExportVersionSource,
 } from 'src/repositories/studio-export.repository.js';
-import { StudioExportService, settleStudioExportPublication } from 'src/services/studio-export.service.js';
+import { settleStudioExportPublication, StudioExportService } from 'src/services/studio-export.service.js';
 import { StudioAuthorizedEntry } from 'src/services/studio-resource.service.js';
 import { studioExportStagingFolder } from 'src/utils/studio-export.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
@@ -967,7 +967,13 @@ describe(StudioExportService.name, () => {
 
       await sut.run(smooth);
 
-      expect(operations.complete).toHaveBeenCalledWith(PUBLISH, 'claim-p', { resultAssetId: 'asset-new' });
+      expect(operations.complete).toHaveBeenCalledWith(
+        PUBLISH,
+        'claim-p',
+        { resultAssetId: 'asset-new' },
+        undefined,
+        true,
+      );
       expect(restorations.queueExportSmoothMotion).toHaveBeenCalledWith({
         ownerId: OWNER,
         assetId: 'asset-new',
@@ -1024,7 +1030,13 @@ describe(StudioExportService.name, () => {
         name: JobName.AssetExtractMetadata,
         data: { id: 'asset-new', source: 'upload' },
       });
-      expect(operations.complete).toHaveBeenCalledWith(PUBLISH, 'claim-p', { resultAssetId: 'asset-new' });
+      expect(operations.complete).toHaveBeenCalledWith(
+        PUBLISH,
+        'claim-p',
+        { resultAssetId: 'asset-new' },
+        undefined,
+        true,
+      );
       expect(operations.fail).not.toHaveBeenCalled();
     });
 
@@ -1169,6 +1181,22 @@ describe(StudioExportService.name, () => {
       expect(jobs.queue).not.toHaveBeenCalled();
     });
 
+    it('never restores staging after publication committed but metadata dispatch failed', async () => {
+      jobs.queue.mockRejectedValue(new Error('queue unavailable after commit'));
+      await sut.run(job());
+      expect(repository.publish).toHaveBeenCalledOnce();
+      // The only rename is preparation into the final location. No reverse rename may unpublish it.
+      expect(storage.rename).toHaveBeenCalledTimes(1);
+      expect(operations.fail).not.toHaveBeenCalled();
+      expect(operations.complete).toHaveBeenCalledWith(
+        PUBLISH,
+        'claim-p',
+        { resultAssetId: 'asset-new' },
+        undefined,
+        true,
+      );
+    });
+
     it('cancels, without publishing, when the project went to the trash', async () => {
       projects.getById.mockResolvedValue({ id: PROJECT, ownerId: OWNER, name: 'Lake trip', deletedAt: new Date() });
 
@@ -1259,7 +1287,13 @@ describe(StudioExportService.name, () => {
       await sut.run(job());
 
       expect(operations.fail).not.toHaveBeenCalled();
-      expect(operations.complete).toHaveBeenCalledWith(PUBLISH, 'claim-p', { resultAssetId: 'asset-new' });
+      expect(operations.complete).toHaveBeenCalledWith(
+        PUBLISH,
+        'claim-p',
+        { resultAssetId: 'asset-new' },
+        undefined,
+        true,
+      );
       // The file stays where the committed result points.
       expect(storage.rename).toHaveBeenCalledTimes(1);
     });
@@ -1281,7 +1315,13 @@ describe(StudioExportService.name, () => {
       await sut.run(job());
 
       expect(repository.publish).not.toHaveBeenCalled();
-      expect(operations.complete).toHaveBeenCalledWith(PUBLISH, 'claim-p', { resultAssetId: 'asset-new' });
+      expect(operations.complete).toHaveBeenCalledWith(
+        PUBLISH,
+        'claim-p',
+        { resultAssetId: 'asset-new' },
+        undefined,
+        true,
+      );
     });
   });
 

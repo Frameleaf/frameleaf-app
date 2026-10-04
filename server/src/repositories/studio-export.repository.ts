@@ -2,8 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import type { VideoPacketInfo } from 'src/types.js';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import {
   AssetType,
   AssetVisibility,
@@ -15,7 +13,6 @@ import {
   StudioExportVersionState,
 } from 'src/enum.js';
 import { DerivativePrivacyRepository, LockedSourceRow } from 'src/repositories/derivative-privacy.repository.js';
-
 import { MediaOperation, MediaOperationCreate } from 'src/repositories/media-operation.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -31,6 +28,8 @@ import {
   satisfiesDerivativePrivacy,
   unionDerivativePrivacy,
 } from 'src/utils/derivative-privacy.js';
+import type { VideoPacketInfo } from 'src/types.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 /**
  * FL-195 follow-up (owner decision, September 27, 2026): which sessions a version is hidden from. A
  * result carries the lock its sources had when it was published, and any source lock added later
@@ -567,7 +566,7 @@ export class StudioExportRepository {
    */
   async publish(input: StudioExportPublication): Promise<StudioExportPublished> {
     return this.db.transaction().execute(async (tx) => {
-      if (!(await this.lockClaim(tx, input.operationId, input.claimToken))) {
+      if (!(await this.lockClaim(tx, input.operationId, input.claimToken, true))) {
         throw new StudioExportRefusal('claim-lost', 'The publication claim is no longer validating');
       }
       const version = (await tx

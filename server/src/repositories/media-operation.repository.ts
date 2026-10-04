@@ -1,10 +1,7 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
+import { ExpressionBuilder, Insertable, Kysely, Selectable, sql, Transaction } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import { queueExecution } from 'src/queue/context.js';
-import { publicationTransaction } from 'src/queue/transaction.js';
-import type { PostgresError } from 'postgres';
 import {
   DatabaseLock,
   MediaOperationCheckpointState,
@@ -12,7 +9,8 @@ import {
   MediaOperationKind,
   MediaOperationStatus,
 } from 'src/enum.js';
-
+import { queueExecution } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
@@ -26,6 +24,7 @@ import {
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+import type { PostgresError } from 'postgres';
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const MEDIA_OPERATION_HANDOFF_REFUSAL = 'Media operations are unavailable during database handoff';
 export type MediaOperation = Selectable<MediaOperationTable>;
@@ -901,7 +900,12 @@ export class MediaOperationRepository {
     return Number(result.numUpdatedRows) === 1;
   }
   /** Extend the lease. Returns false when the claim has already been taken away. */
-  async heartbeat(id: string, claimToken: string, leaseMs: number): Promise<boolean> {
+  async heartbeat(
+    id: string,
+    claimToken: string,
+    leaseMs: number,
+    options: { requireActiveClaim?: boolean } = {},
+  ): Promise<boolean> {
     const result = await this.write((db) =>
       db
         .updateTable('media_operation')
@@ -911,6 +915,10 @@ export class MediaOperationRepository {
         })
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
+        .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+        .$if(options.requireActiveClaim === true, (qb) =>
+          qb.where('cancelRequestedAt', 'is', null).where('pauseRequestedAt', 'is', null),
+        )
         .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
         .executeTakeFirst(),
     );
@@ -994,6 +1002,7 @@ export class MediaOperationRepository {
         })
         .where('id', '=', id)
         .where('claimToken', '=', claimToken)
+        .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
         .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
         .returning(['status', 'cancelRequestedAt', 'pauseRequestedAt'])
         .executeTakeFirst(),
