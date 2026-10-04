@@ -3,7 +3,7 @@
   "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
   "node": "24.21.0",
   "npm": "11.8.0",
-  "lockfileSha256": "5efddf7c35a2600f0228f0b973991838af8996fba8d5591dd7460dc3690a36dc",
+  "lockfileSha256": "95802b5950cdecaea43be49ac42b86e70af9b1bdfde120f8f5705441e0d13b9a",
   "patches": [
     {
       "path": "patches/0001-isolated-package.patch",
