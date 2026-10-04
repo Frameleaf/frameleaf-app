@@ -1,9 +1,15 @@
+import { ModuleRef, Reflector } from '@nestjs/core';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Kysely } from 'kysely';
 import {
   AlbumUserRole,
   AssetFileType,
   AssetLockReason,
   AssetVisibility,
+  ImmichWorker,
   JobName,
   Permission,
   UserMetadataKey,
@@ -189,6 +195,67 @@ const newSourceAsset = async (ctx: Ctx, ownerId: string, size = 1234) => {
 };
 
 describe(PartnerCopyService.name, () => {
+  it.each([ImmichWorker.Api, ImmichWorker.Microservices])(
+    'leaves imported media and partnerships intact on %s bootstrap',
+    async (worker) => {
+      const media = await mkdtemp(join(tmpdir(), 'frameleaf-import-bootstrap-'));
+      try {
+        const sourcePath = join(media, 'source-original.jpg');
+        const destinationPath = join(media, 'frameleaf-copy.jpg');
+        const bytes = Buffer.from('independently copied imported original');
+        await writeFile(sourcePath, bytes);
+        await writeFile(destinationPath, bytes);
+        expect((await stat(sourcePath)).ino).not.toBe((await stat(destinationPath)).ino);
+        const { sut, ctx, origins } = setup();
+        const { user: alice } = await ctx.newUser();
+        const { user: bob } = await ctx.newUser();
+        await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
+        const { asset } = await ctx.newAsset({
+          ownerId: alice.id,
+          originalPath: destinationPath,
+          checksum: createHash('sha1').update(bytes).digest(),
+        });
+        await ctx.newExif({ assetId: asset.id, fileSizeInByte: bytes.length });
+        const original = await ctx.get(PhysicalFileRepository).ensureOriginalPhysicalFile(asset.id);
+        const beforeAsset = await db
+          .selectFrom('asset')
+          .selectAll()
+          .where('id', '=', asset.id)
+          .executeTakeFirstOrThrow();
+        const beforePhysical = await ctx.get(PhysicalFileRepository).getPhysicalFile(original!.id);
+        const reflector = new Reflector();
+        const events = new EventRepository(
+          { get: (token: unknown) => (token === Reflector ? reflector : sut) } as unknown as ModuleRef,
+          { getWorker: () => worker } as unknown as ConfigRepository,
+          ctx.getMock(LoggingRepository),
+        );
+        events.setup({ services: [PartnerCopyService] });
+        await events.emit('AppBootstrap');
+        await events.emit('AppBootstrap');
+
+        expect(ctx.getMock(JobRepository).queue).not.toHaveBeenCalled();
+        expect(ctx.getMock(JobRepository).queueAll).not.toHaveBeenCalled();
+        expect(await origins.getBackfill(alice.id, bob.id)).toBeUndefined();
+        expect(await db.selectFrom('asset').selectAll().where('id', '=', asset.id).executeTakeFirstOrThrow()).toEqual(
+          beforeAsset,
+        );
+        expect(await ctx.get(PhysicalFileRepository).getPhysicalFile(original!.id)).toEqual(beforePhysical);
+        expect(await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute()).toEqual([]);
+        expect(await readFile(sourcePath)).toEqual(bytes);
+        expect(await readFile(destinationPath)).toEqual(bytes);
+        expect(
+          await db
+            .selectFrom('physical_file_trash')
+            .select('id')
+            .where('path', 'in', [sourcePath, destinationPath])
+            .execute(),
+        ).toEqual([]);
+      } finally {
+        await rm(media, { recursive: true, force: true });
+      }
+    },
+  );
+
   describe('copyAsset', () => {
     it('creates the recipient their own asset linked to the same stored files, with no analysis queued', async () => {
       const { sut, ctx } = setup();
@@ -492,22 +559,6 @@ describe(PartnerCopyService.name, () => {
       });
       const afterSecond = await db.selectFrom('asset').select('id').where('ownerId', '=', bob.id).execute();
       expect(afterSecond).toHaveLength(3);
-    });
-
-    it('queues each existing partnership once at upgrade', async () => {
-      const { sut, ctx, origins } = setup();
-      const { user: alice } = await ctx.newUser();
-      const { user: bob } = await ctx.newUser();
-      await ctx.newPartner({ sharedById: alice.id, sharedWithId: bob.id });
-
-      await sut.queueUpgradeBackfills();
-      await expect(origins.getBackfill(alice.id, bob.id)).resolves.toMatchObject({
-        state: PartnerBackfillState.Pending,
-      });
-      await expect(origins.getPartnershipsWithoutBackfill()).resolves.not.toContainEqual({
-        sharedById: alice.id,
-        sharedWithId: bob.id,
-      });
     });
 
     it('stops following when the partnership ends; the partner keeps every copy', async () => {

@@ -64,6 +64,19 @@ describe(EventRepository.name, () => {
     // Canonical database migrations run in DatabaseService's bootstrap step: the first AppBootstrap handler,
     // awaited before the queue workers start (QueueService) and before the API listens for HTTP
     // (configureExpress runs after NestFactory.create resolves module init).
+    it.each([ImmichWorker.Api, ImmichWorker.Microservices])(
+      'does not register automatic media-upgrade work on the %s worker',
+      (worker) => {
+        const { labels } = setupServices(worker);
+        expect(services.map((service) => service.name)).not.toContain('StorageMigrationService');
+        expect(labels('AppBootstrap')).not.toContain('PartnerCopyService.onBootstrap');
+        expect(labels('AppBootstrap').some((label) => label.startsWith('StorageMigrationService.'))).toBe(false);
+        expect(labels('StorageMigrationDone')).toEqual([]);
+        // Ongoing storage-template cleanup and original protections remain registered.
+        expect(labels('AssetDelete')).toContain('StorageTemplateService.handleMoveHistoryCleanup');
+      },
+    );
+
     it('runs the database bootstrap first and the queue workers after it on the API worker', () => {
       const { labels } = setupServices(ImmichWorker.Api);
       const bootstrap = labels('AppBootstrap');

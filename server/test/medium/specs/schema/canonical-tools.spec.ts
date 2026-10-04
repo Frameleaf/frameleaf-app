@@ -31,7 +31,7 @@ describe('canonical SQL tools on PostgreSQL', () => {
       await admin.end();
     }
   });
-  const read = () => schemaFromDatabase({ connection: { connectionType: 'url', url } });
+  const read = () => schemaFromDatabase({ connection: { connectionType: 'url', url }, overrides: false });
 
   it('captures and restores vector dimensions, CHECK bodies, deferred FKs, expression indexes and multi-event triggers', async () => {
     await sql

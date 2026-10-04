@@ -1,6 +1,6 @@
 import type { DatabaseSchema } from '@frameleaf/sql-tools';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 export const CATALOG_HELPER_SOURCES = [
@@ -8,6 +8,14 @@ export const CATALOG_HELPER_SOURCES = [
   'src/schema/shared-services-schema.ts',
   'src/queue/schema.ts',
   'src/immich-import/state.ts',
+] as const;
+
+export const CATALOG_FIXED_SOURCES = [
+  ...CATALOG_HELPER_SOURCES,
+  'src/schema/index.ts',
+  'src/schema/functions.ts',
+  'src/schema/enums.ts',
+  'src/enum.ts',
 ] as const;
 
 export type CatalogProvenance = {
@@ -50,6 +58,7 @@ export const validateFrameleafCatalog = (catalog: DatabaseSchema): DatabaseSchem
     'icloud_weekly_grant',
     'job',
     'job_run_item',
+    'job_selection',
     'frameleaf_immich_import',
     'frameleaf_rate_limit',
     'socket_io_attachments',
@@ -57,6 +66,14 @@ export const validateFrameleafCatalog = (catalog: DatabaseSchema): DatabaseSchem
     'album_source_asset',
   ]) {
     if (!catalog.tables.some((table) => table.name === name)) throw new Error(`Canonical catalog is missing ${name}`);
+  }
+  for (const [tableName, columnName] of [
+    ['job_run_item', 'selectionId'],
+    ['job_queue', 'manifestFilling'],
+  ]) {
+    if (!catalog.tables.find(({ name }) => name === tableName)?.columns.some(({ name }) => name === columnName)) {
+      throw new Error(`Canonical catalog is missing ${tableName}.${columnName}`);
+    }
   }
   return structuredClone(catalog);
 };
@@ -66,15 +83,31 @@ export const verifyCatalogSources = async (serverRoot: string, provenance: Catal
   if (!/^[a-f\d]{40}$/u.test(provenance.sourceCommit) || !/^[a-f\d]{64}$/u.test(provenance.baselineSha256)) {
     throw new Error('Canonical catalog must record its immutable source commit and baseline digest');
   }
-  for (const name of CATALOG_HELPER_SOURCES) {
+  const actualSources = await collectCatalogSourceHashes(serverRoot);
+  if (Object.keys(actualSources).sort().join('\n') !== Object.keys(provenance.sourceHashes).sort().join('\n')) {
+    throw new Error('Canonical catalog source inventory changed without reconciliation');
+  }
+  for (const name of Object.keys(actualSources)) {
     const expected = provenance.sourceHashes[name];
     if (!expected || !/^[a-f\d]{64}$/u.test(expected))
       throw new Error(`Canonical catalog lacks source digest: ${name}`);
-    const actual = createHash('sha256')
-      .update(await readFile(resolve(serverRoot, name)))
-      .digest('hex');
+    const actual = actualSources[name];
     if (actual !== expected) {
       throw new Error(`Canonical helper changed without catalog reconciliation: ${name}`);
     }
   }
+};
+
+/** Include model additions/deletions, not just edits to the raw helper files. */
+export const collectCatalogSourceHashes = async (serverRoot: string): Promise<Record<string, string>> => {
+  const names: string[] = [...CATALOG_FIXED_SOURCES];
+  for (const entry of await readdir(resolve(serverRoot, 'src/schema/tables'))) {
+    if (entry.endsWith('.ts') && !entry.endsWith('.spec.ts')) names.push(`src/schema/tables/${entry}`);
+  }
+  const hashes: Record<string, string> = {};
+  for (const name of names.sort())
+    hashes[name] = createHash('sha256')
+      .update(await readFile(resolve(serverRoot, name)))
+      .digest('hex');
+  return hashes;
 };
