@@ -1,9 +1,9 @@
-import { Kysely, Transaction, sql } from 'kysely';
+import { Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
 import type { AuditAuthority, ICloudAuditRow } from 'src/repositories/icloud-audit.repository.js';
-import { lockAuditOwner } from 'src/repositories/icloud-audit.repository.js';
 import { AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { lockAuditOwner } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { BUDDY_CAPTURE_LOCK, lockChecksum } from 'src/repositories/physical-file.repository.js';
@@ -21,17 +21,48 @@ export type AuditExecutionAuthority = ManualAuditAuthority | ScheduledAuditAutho
 export type ScheduledAuditResourceAuthority = { id: string; leaseToken: string };
 type ScheduledRequest = Extract<ICloudAuditRow, { purpose: 'scheduled-weekly' }>;
 type FrozenBindings = {
-  receipt: { id: string; sourceResourceId: string; identityId: string; assetId: string; role: string;
-    snapshot: Record<string, unknown>; [key: string]: unknown };
+  receipt: {
+    id: string;
+    sourceResourceId: string;
+    identityId: string;
+    assetId: string;
+    role: string;
+    snapshot: Record<string, unknown>;
+    [key: string]: unknown;
+  };
   source: { resource: ICloudResource; assetRecord: ICloudRecord; masterRecord: ICloudRecord };
   identity: Record<string, unknown>;
-  original: { id: string; updateId: string; originalPath: string; checksumHex: string;
-    checksumAlgorithm: string | null; physicalId: string | null; forkPhysicalId: string | null; [key: string]: unknown };
+  original: {
+    id: string;
+    updateId: string;
+    originalPath: string;
+    checksumHex: string;
+    checksumAlgorithm: string | null;
+    physicalId: string | null;
+    forkPhysicalId: string | null;
+    [key: string]: unknown;
+  };
 };
-type Member = { ordinal: string; auditRequestId: string | null; selected: boolean; outcome: string; technicalEligibility: string;
-  expectedSha256: Buffer; grantId: string; grantGeneration: number; bindings: FrozenBindings };
-type Grant = { id: string; generation: number; enabled: boolean; includeProtected: boolean;
-  configFingerprint: string; privacyFingerprint: string; pinBinding: string | null };
+type Member = {
+  ordinal: string;
+  auditRequestId: string | null;
+  selected: boolean;
+  outcome: string;
+  technicalEligibility: string;
+  expectedSha256: Buffer;
+  grantId: string;
+  grantGeneration: number;
+  bindings: FrozenBindings;
+};
+type Grant = {
+  id: string;
+  generation: number;
+  enabled: boolean;
+  includeProtected: boolean;
+  configFingerprint: string;
+  privacyFingerprint: string;
+  pinBinding: string | null;
+};
 export type GuardedScheduledAudit = {
   request: ScheduledRequest;
   source: ICloudResource;
@@ -45,11 +76,14 @@ const fingerprint = (value: unknown) => createHash('sha256').update(canonicalJso
 
 /** Metadata locks precede every asset lock, including original/pair/stack and hinted destinations. */
 export async function lockScheduledAuditAssets(db: Transaction<DB>, originalId: string, candidateIds: string[] = []) {
-  const group = async () => (await sql<{ id: string }>`SELECT a.id FROM public.asset a
+  const group = async () =>
+    (
+      await sql<{ id: string }>`SELECT a.id FROM public.asset a
     WHERE a.id=${originalId}::uuid OR a."livePhotoVideoId"=${originalId}::uuid
       OR a.id IN (SELECT "livePhotoVideoId" FROM public.asset WHERE id=${originalId}::uuid)
       OR a."stackId" IN (SELECT "stackId" FROM public.asset WHERE id=${originalId}::uuid)
-    ORDER BY a.id`.execute(db)).rows.map(({ id }) => id);
+    ORDER BY a.id`.execute(db)
+    ).rows.map(({ id }) => id);
   const related = await group();
   const ids = [...new Set([...related, originalId, ...candidateIds].map((id) => id.toLowerCase()))].sort();
   for (const id of ids) {
@@ -71,50 +105,103 @@ export async function guardScheduledAudit(
   db: Transaction<DB>,
   authority: ScheduledAuditAuthority,
   ownerId: string,
-  options: { requireClaim?: boolean; resource?: ScheduledAuditResourceAuthority; candidateAssetIds?: string[]; recoveryChecksum?: Buffer } = {},
+  options: {
+    requireClaim?: boolean;
+    resource?: ScheduledAuditResourceAuthority;
+    candidateAssetIds?: string[];
+    recoveryChecksum?: Buffer;
+  } = {},
 ): Promise<GuardedScheduledAudit | undefined> {
   if (!db.isTransaction || authority.purpose !== 'scheduled-weekly') {
     return;
   }
-  const { rows: [hint] } = await sql<ScheduledRequest>`SELECT * FROM immich_fork.icloud_identity_audit
-    WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid AND purpose='scheduled-weekly'`.execute(db);
-  if (!hint || hint.sessionId !== null || hint.operationId !== authority.operationId || !hint.grantId ||
-    !hint.cohortId || !['queued','running'].includes(hint.result)) {
+  const {
+    rows: [hint],
+  } = await sql<ScheduledRequest>`SELECT * FROM immich_fork.icloud_identity_audit
+    WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid AND purpose='scheduled-weekly'`.execute(
+    db,
+  );
+  if (
+    !hint ||
+    hint.sessionId !== null ||
+    hint.operationId !== authority.operationId ||
+    !hint.grantId ||
+    !hint.cohortId ||
+    !['queued', 'running'].includes(hint.result)
+  ) {
     return;
   }
   await lockPublicForkWrites(db);
   await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(db);
-  const digests = [...new Map([hint.expectedSha256, ...(options.recoveryChecksum ? [options.recoveryChecksum] : [])]
-    .map((digest) => [digest.toString('hex'), digest])).values()].sort((a, b) => Buffer.compare(a, b));
-  for (const digest of digests) { await lockChecksum(db, digest); }
-  const contentKeys = digests.map((digest) => createHash('sha1').update(`icloud-content:${ownerId}:${digest.toString('hex')}`)
-    .digest().readBigInt64BE(0)).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
-  for (const key of contentKeys) { await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db); }
+  const digests = new Map(
+    [hint.expectedSha256, ...(options.recoveryChecksum ? [options.recoveryChecksum] : [])].map((digest) => [
+      digest.toString('hex'),
+      digest,
+    ]),
+  )
+    .values()
+    .toArray()
+    .sort(Buffer.compare);
+  for (const digest of digests) {
+    await lockChecksum(db, digest);
+  }
+  const contentKeys = digests
+    .map((digest) =>
+      createHash('sha1')
+        .update(`icloud-content:${ownerId}:${digest.toString('hex')}`)
+        .digest()
+        .readBigInt64BE(0),
+    )
+    .sort((a, b) => Number(a - b));
+  for (const key of contentKeys) {
+    await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(db);
+  }
   await lockAuditOwner(db, ownerId, hint.expectedSha256, true);
-  const owner = await db.selectFrom('user').select(['pinCode', 'deletedAt']).where('id', '=', ownerId).executeTakeFirst();
+  const owner = await db
+    .selectFrom('user')
+    .select(['pinCode', 'deletedAt'])
+    .where('id', '=', ownerId)
+    .executeTakeFirst();
   if (!owner || owner.deletedAt) {
     return;
   }
   // A missing preference row is materialized only as the ordinary empty preference, never as consent.
   await sql`INSERT INTO public.user_metadata ("userId",key,value) VALUES
     (${ownerId}::uuid,${UserMetadataKey.Preferences},'{}'::jsonb) ON CONFLICT ("userId",key) DO NOTHING`.execute(db);
-  const metadata = await db.selectFrom('user_metadata').selectAll().where('userId', '=', ownerId)
-    .where('key', '=', UserMetadataKey.Preferences).forShare().execute();
-  const { rows: [connection] } = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
+  const metadata = await db
+    .selectFrom('user_metadata')
+    .selectAll()
+    .where('userId', '=', ownerId)
+    .where('key', '=', UserMetadataKey.Preferences)
+    .forShare()
+    .execute();
+  const {
+    rows: [connection],
+  } = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
     WHERE id=${hint.connectionId}::uuid AND "ownerId"=${ownerId}::uuid AND state='connected'
       AND "encryptedSession" IS NOT NULL AND "lastError" IS DISTINCT FROM 'owner_removed' FOR SHARE`.execute(db);
   if (!connection) {
     return;
   }
-  const { rows: [grant] } = await sql<Grant>`SELECT * FROM immich_fork.icloud_weekly_grant
-    WHERE id=${hint.grantId}::uuid AND "ownerId"=${ownerId}::uuid AND "connectionId"=${connection.id}::uuid FOR SHARE`.execute(db);
+  const {
+    rows: [grant],
+  } = await sql<Grant>`SELECT * FROM immich_fork.icloud_weekly_grant
+    WHERE id=${hint.grantId}::uuid AND "ownerId"=${ownerId}::uuid AND "connectionId"=${connection.id}::uuid FOR SHARE`.execute(
+    db,
+  );
   const privacy = (metadata[0]?.value as { privacy?: unknown } | undefined)?.privacy ?? {};
-  if (!grant?.enabled || grant.generation !== hint.grantGeneration ||
-    grant.configFingerprint !== fingerprint(connection.config) || grant.privacyFingerprint !== fingerprint(privacy) ||
-    (grant.includeProtected && (!owner.pinCode || grant.pinBinding !== fingerprint(['weekly-pin-v1', owner.pinCode])))) {
+  if (
+    !grant?.enabled ||
+    grant.generation !== hint.grantGeneration ||
+    grant.configFingerprint !== fingerprint(connection.config) ||
+    grant.privacyFingerprint !== fingerprint(privacy) ||
+    (grant.includeProtected && (!owner.pinCode || grant.pinBinding !== fingerprint(['weekly-pin-v1', owner.pinCode])))
+  ) {
     return;
   }
-  const { rows: [cohort] } = await sql<{ id: string }>`SELECT id FROM immich_fork.icloud_weekly_cohort
+  const {
+    rows: [cohort],
+  } = await sql<{ id: string }>`SELECT id FROM immich_fork.icloud_weekly_cohort
     WHERE id=${hint.cohortId}::uuid AND "ownerId"=${ownerId}::uuid AND "connectionId"=${connection.id}::uuid
       AND "grantId"=${grant.id}::uuid AND "grantGeneration"=${grant.generation}
       AND "configFingerprint"=${grant.configFingerprint} AND "privacyFingerprint"=${grant.privacyFingerprint}
@@ -125,46 +212,91 @@ export async function guardScheduledAudit(
   const { rows: members } = await sql<Member>`SELECT * FROM immich_fork.icloud_weekly_member
     WHERE "cohortId"=${cohort.id}::uuid AND "ownerId"=${ownerId}::uuid AND "connectionId"=${connection.id}::uuid
       AND selected AND "batchOrdinal"=${hint.batchOrdinal} ORDER BY ordinal FOR UPDATE`.execute(db);
-  const member = members.find(({ ordinal }) => String(ordinal) === String(hint.memberOrdinal));
-  const auditIds = members.flatMap(({ auditRequestId }) => auditRequestId ? [auditRequestId] : []);
-  if (!member || member.technicalEligibility !== 'current' || member.outcome !== 'pending' || member.auditRequestId !== hint.id || members.length > 100 ||
-    auditIds.length < 1 || new Set(auditIds).size !== auditIds.length ||
-    members.some((row) => row.grantId !== grant.id || row.grantGeneration !== grant.generation ||
-      (!row.auditRequestId && row.outcome === 'pending'))) {
+  const member = members.find(({ ordinal }) => ordinal === String(hint.memberOrdinal));
+  const auditIds = members.flatMap(({ auditRequestId }) => (auditRequestId ? [auditRequestId] : []));
+  if (
+    !member ||
+    member.technicalEligibility !== 'current' ||
+    member.outcome !== 'pending' ||
+    member.auditRequestId !== hint.id ||
+    members.length > 100 ||
+    auditIds.length === 0 ||
+    new Set(auditIds).size !== auditIds.length ||
+    members.some(
+      (row) =>
+        row.grantId !== grant.id ||
+        row.grantGeneration !== grant.generation ||
+        (!row.auditRequestId && row.outcome === 'pending'),
+    )
+  ) {
     return;
   }
-  const { rows: [operation] } = await sql<{ snapshot: Record<string, unknown>; totalUnits: number }>`SELECT snapshot,"totalUnits"
+  const {
+    rows: [operation],
+  } = await sql<{ snapshot: Record<string, unknown>; totalUnits: number }>`SELECT snapshot,"totalUnits"
     FROM public.media_operation WHERE id=${authority.operationId}::uuid AND "ownerId"=${ownerId}::uuid AND kind='icloud_sync'
       AND "claimToken"=${authority.operationClaimToken}::uuid AND "claimExpiresAt">clock_timestamp()
       AND status IN ('preparing','rendering','validating') AND "cancelRequestedAt" IS NULL AND "pauseRequestedAt" IS NULL
       FOR UPDATE`.execute(db);
-  if (!operation || operation.snapshot.task !== 'identity-audit-weekly' || operation.snapshot.purpose !== 'scheduled-weekly' ||
-    operation.snapshot.connectionId !== connection.id || operation.snapshot.cohortId !== cohort.id ||
-    operation.snapshot.grantId !== grant.id || operation.snapshot.grantGeneration !== grant.generation ||
-    operation.snapshot.batchOrdinal !== hint.batchOrdinal || Number(operation.totalUnits) !== auditIds.length ||
-    canonicalJson(operation.snapshot.auditIds) !== canonicalJson(auditIds)) {
+  if (
+    !operation ||
+    operation.snapshot.task !== 'identity-audit-weekly' ||
+    operation.snapshot.purpose !== 'scheduled-weekly' ||
+    operation.snapshot.connectionId !== connection.id ||
+    operation.snapshot.cohortId !== cohort.id ||
+    operation.snapshot.grantId !== grant.id ||
+    operation.snapshot.grantGeneration !== grant.generation ||
+    operation.snapshot.batchOrdinal !== hint.batchOrdinal ||
+    Number(operation.totalUnits) !== auditIds.length ||
+    canonicalJson(operation.snapshot.auditIds) !== canonicalJson(auditIds)
+  ) {
     return;
   }
   const { rows: batch } = await sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit
     WHERE id=ANY(${auditIds}::uuid[]) ORDER BY id FOR SHARE`.execute(db);
-  if (batch.length !== auditIds.length || batch.some((audit) => audit.purpose !== 'scheduled-weekly' || audit.sessionId !== null ||
-    audit.ownerId !== ownerId || audit.connectionId !== connection.id || audit.operationId !== authority.operationId ||
-    audit.cohortId !== cohort.id || audit.grantId !== grant.id || audit.grantGeneration !== grant.generation ||
-    audit.batchOrdinal !== hint.batchOrdinal ||
-    members.find((m) => String(m.ordinal) === String(audit.memberOrdinal))?.auditRequestId !== audit.id)) {
+  if (
+    batch.length !== auditIds.length ||
+    batch.some(
+      (audit) =>
+        audit.purpose !== 'scheduled-weekly' ||
+        audit.sessionId !== null ||
+        audit.ownerId !== ownerId ||
+        audit.connectionId !== connection.id ||
+        audit.operationId !== authority.operationId ||
+        audit.cohortId !== cohort.id ||
+        audit.grantId !== grant.id ||
+        audit.grantGeneration !== grant.generation ||
+        audit.batchOrdinal !== hint.batchOrdinal ||
+        members.find((m) => m.ordinal === String(audit.memberOrdinal))?.auditRequestId !== audit.id,
+    )
+  ) {
     return;
   }
-  const { rows: [request] } = await sql<ScheduledRequest>`SELECT * FROM immich_fork.icloud_identity_audit
+  const {
+    rows: [request],
+  } = await sql<ScheduledRequest>`SELECT * FROM immich_fork.icloud_identity_audit
     WHERE id=${hint.id}::uuid AND purpose='scheduled-weekly' AND result IN ('queued','running') FOR UPDATE`.execute(db);
   const frozen = member.bindings;
-  if (!request || request.operationId !== authority.operationId || request.identityId !== frozen.receipt.identityId ||
-    request.originalAssetId !== frozen.original.id || request.originalAssetId !== frozen.receipt.assetId ||
-    request.sourceResourceId !== frozen.receipt.sourceResourceId || !request.expectedSha256.equals(member.expectedSha256) ||
-    canonicalJson(request.snapshot) !== canonicalJson({ ...frozen.receipt.snapshot,
-      updateId: frozen.original.updateId, config: canonicalJson(connection.config) })) {
+  if (
+    !request ||
+    request.operationId !== authority.operationId ||
+    request.identityId !== frozen.receipt.identityId ||
+    request.originalAssetId !== frozen.original.id ||
+    request.originalAssetId !== frozen.receipt.assetId ||
+    request.sourceResourceId !== frozen.receipt.sourceResourceId ||
+    !request.expectedSha256.equals(member.expectedSha256) ||
+    canonicalJson(request.snapshot) !==
+      canonicalJson({
+        ...frozen.receipt.snapshot,
+        updateId: frozen.original.updateId,
+        config: canonicalJson(connection.config),
+      })
+  ) {
     return;
   }
-  const { rows: [receipt] } = await sql<{ row: unknown }>`SELECT to_jsonb(r) AS row FROM immich_fork.icloud_identity_reuse r
+  const {
+    rows: [receipt],
+  } = await sql<{ row: unknown }>`SELECT to_jsonb(r) AS row FROM immich_fork.icloud_identity_reuse r
     WHERE id=${frozen.receipt.id}::uuid AND basis='exact-identity' AND "ownerId"=${ownerId}::uuid
       AND "connectionId"=${connection.id}::uuid AND "sourceResourceId"=${request.sourceResourceId}::uuid
       AND "identityId"=${request.identityId}::uuid AND "assetId"=${request.originalAssetId}::uuid
@@ -172,79 +304,146 @@ export async function guardScheduledAudit(
   if (!receipt || canonicalJson(receipt.row) !== canonicalJson(frozen.receipt)) {
     return;
   }
-  const { rows: [source] } = await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize"
+  const {
+    rows: [source],
+  } = await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize"
     FROM immich_fork.icloud_resource WHERE id=${request.sourceResourceId}::uuid AND "ownerId"=${ownerId}::uuid
       AND "connectionId"=${connection.id}::uuid AND "auditRequestId" IS NULL
       AND "assetId"=${request.originalAssetId}::uuid AND sha256=${request.expectedSha256}
       AND path=${frozen.original.originalPath} AND status IN ('committed','finalized','reused') FOR SHARE`.execute(db);
   const expected = frozen.source.resource;
-  if (!source || canonicalJson(source.library) !== canonicalJson(expected.library) || source.libraryKey !== expected.libraryKey || source.sourceAssetId !== expected.sourceAssetId ||
-    source.recordId !== expected.recordId || source.resourceKey !== expected.resourceKey || source.role !== expected.role ||
-    source.fingerprint !== expected.fingerprint || source.expectedSize !== expected.expectedSize ||
+  if (
+    !source ||
+    canonicalJson(source.library) !== canonicalJson(expected.library) ||
+    source.libraryKey !== expected.libraryKey ||
+    source.sourceAssetId !== expected.sourceAssetId ||
+    source.recordId !== expected.recordId ||
+    source.resourceKey !== expected.resourceKey ||
+    source.role !== expected.role ||
+    source.fingerprint !== expected.fingerprint ||
+    source.expectedSize !== expected.expectedSize ||
     identityRoleOf[source.role] !== frozen.receipt.role ||
-    (connection.config.libraries.length > 0 && !connection.config.libraries.includes(source.libraryKey))) {
+    (connection.config.libraries.length > 0 && !connection.config.libraries.includes(source.libraryKey))
+  ) {
     return;
   }
-  const { rows: records } = await sql<{ recordName: string; recordType: string; recordChangeTag: string; fields: Record<string, unknown> }>`
+  const { rows: records } = await sql<{
+    recordName: string;
+    recordType: string;
+    recordChangeTag: string;
+    fields: Record<string, unknown>;
+  }>`
     SELECT "recordId" AS "recordName","recordType",revision AS "recordChangeTag",fields FROM immich_fork.icloud_record
     WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${source.libraryKey} AND NOT deleted
-      AND "recordId" IN (${source.sourceAssetId},${String(source.source.sourceMasterId ?? '')}) ORDER BY "recordId" FOR SHARE`.execute(db);
+      AND "recordId" IN (${source.sourceAssetId},${String(source.source.sourceMasterId ?? '')}) ORDER BY "recordId" FOR SHARE`.execute(
+    db,
+  );
   const assetRecord = records.find((row) => row.recordName === source.sourceAssetId);
   const masterRecord = records.find((row) => row.recordName === source.source.sourceMasterId);
-  if (!assetRecord || !masterRecord || canonicalJson(assetRecord) !== canonicalJson(frozen.source.assetRecord) ||
-    canonicalJson(masterRecord) !== canonicalJson(frozen.source.masterRecord)) {
+  if (
+    !assetRecord ||
+    !masterRecord ||
+    canonicalJson(assetRecord) !== canonicalJson(frozen.source.assetRecord) ||
+    canonicalJson(masterRecord) !== canonicalJson(frozen.source.masterRecord)
+  ) {
     return;
   }
-  const descriptor = resourcesForICloudAsset(assetRecord, masterRecord).find((row) =>
-    row.recordId === source.recordId && row.resourceKey === source.resourceKey && row.role === source.role);
-  if (!descriptor || descriptor.fingerprint !== source.fingerprint || descriptor.expectedSize !== source.expectedSize ||
-    descriptor.source.type !== expected.source.type || descriptor.source.isHidden !== expected.source.isHidden ||
+  const descriptor = resourcesForICloudAsset(assetRecord, masterRecord).find(
+    (row) => row.recordId === source.recordId && row.resourceKey === source.resourceKey && row.role === source.role,
+  );
+  if (
+    !descriptor ||
+    descriptor.fingerprint !== source.fingerprint ||
+    descriptor.expectedSize !== source.expectedSize ||
+    descriptor.source.type !== expected.source.type ||
+    descriptor.source.isHidden !== expected.source.isHidden ||
     source.source.isHidden !== expected.source.isHidden ||
     canonicalJson(descriptor.source.resource) !== canonicalJson(expected.source.resource) ||
     canonicalJson(source.source.resource) !== canonicalJson(expected.source.resource) ||
-    (!connection.config.includeHidden && descriptor.source.isHidden === true)) {
+    (!connection.config.includeHidden && descriptor.source.isHidden === true)
+  ) {
     return;
   }
-  if (connection.config.albums.length > 0 && (await sql`SELECT 1 FROM immich_fork.icloud_membership
+  if (
+    connection.config.albums.length > 0 &&
+    (
+      await sql`SELECT 1 FROM immich_fork.icloud_membership
     WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${source.libraryKey} AND "sourceAssetId"=${source.sourceAssetId}
-      AND "sourcePresent" AND ("libraryKey"||':'||"sourceAlbumId")=ANY(${connection.config.albums}::text[]) FOR SHARE`.execute(db)).rows.length === 0) {
+      AND "sourcePresent" AND ("libraryKey"||':'||"sourceAlbumId")=ANY(${connection.config.albums}::text[]) FOR SHARE`.execute(
+        db,
+      )
+    ).rows.length === 0
+  ) {
     return;
   }
-  if (options.requireClaim !== false && (!request.itemClaimId || (await sql`SELECT id FROM immich_fork.icloud_claim
+  if (
+    options.requireClaim !== false &&
+    (!request.itemClaimId ||
+      (
+        await sql`SELECT id FROM immich_fork.icloud_claim
     WHERE id=${request.itemClaimId}::uuid AND "ownerId"=${ownerId}::uuid AND "cplAssetRecordName"=upper(${source.sourceAssetId})
-      AND holder=${`icloud-sync:audit:${authority.operationId}`} AND "expiresAt">clock_timestamp() FOR SHARE`.execute(db)).rows.length !== 1)) {
+      AND holder=${`icloud-sync:audit:${authority.operationId}`} AND "expiresAt">clock_timestamp() FOR SHARE`.execute(
+          db,
+        )
+      ).rows.length !== 1)
+  ) {
     return;
   }
   if (!(await lockScheduledAuditAssets(db, request.originalAssetId, options.candidateAssetIds))) {
     return;
   }
-  const structural = new IntegrityRepository(db).getOwnedOriginalSafetyQuery(ownerId, [request.expectedSha256.toString('hex')])
-    .where('asset.id', '=', request.originalAssetId).where('asset.originalPath', '=', frozen.original.originalPath)
-    .where('asset.updateId', '=', frozen.original.updateId).where('asset.checksum', '=', Buffer.from(frozen.original.checksumHex, 'hex'))
-    .where(sql<boolean>`asset."checksumAlgorithm"::text IS NOT DISTINCT FROM ${frozen.original.checksumAlgorithm}::text`)
-    .where('asset.isExternal', '=', false).where('asset.isOffline', '=', false).forShare('asset');
+  const structural = new IntegrityRepository(db)
+    .getOwnedOriginalSafetyQuery(ownerId, [request.expectedSha256.toString('hex')])
+    .where('asset.id', '=', request.originalAssetId)
+    .where('asset.originalPath', '=', frozen.original.originalPath)
+    .where('asset.updateId', '=', frozen.original.updateId)
+    .where('asset.checksum', '=', Buffer.from(frozen.original.checksumHex, 'hex'))
+    .where(
+      sql<boolean>`asset."checksumAlgorithm"::text IS NOT DISTINCT FROM ${frozen.original.checksumAlgorithm}::text`,
+    )
+    .where('asset.isExternal', '=', false)
+    .where('asset.isOffline', '=', false)
+    .forShare('asset');
   if (!(await structural.executeTakeFirst())) {
     return;
   }
-  const { rows: [identity] } = await sql<{ row: Record<string, unknown> }>`SELECT to_jsonb(i) AS row
+  const {
+    rows: [identity],
+  } = await sql<{ row: Record<string, unknown> }>`SELECT to_jsonb(i) AS row
     FROM immich_fork.icloud_source_identity i WHERE id=${request.identityId}::uuid AND "ownerId"=${ownerId}::uuid
       AND "assetId"=${request.originalAssetId}::uuid AND sha256=${request.expectedSha256} AND "editVersion"=''
       AND "cplAssetRecordName"=upper(${source.sourceAssetId}) AND role=${identityRoleOf[source.role]}
       AND "cplMasterRecordName"=${String(source.source.sourceMasterId ?? '')} FOR SHARE`.execute(db);
-  if (!identity || identity.row.cloudIdentifier !== frozen.identity.cloudIdentifier ||
-    identity.row.deliveredBy !== frozen.identity.deliveredBy || identity.row.libraryKey !== frozen.identity.libraryKey) {
+  if (
+    !identity ||
+    identity.row.cloudIdentifier !== frozen.identity.cloudIdentifier ||
+    identity.row.deliveredBy !== frozen.identity.deliveredBy ||
+    identity.row.libraryKey !== frozen.identity.libraryKey
+  ) {
     return;
   }
-  await sql`SELECT "assetId" FROM immich_fork.asset_physical_file WHERE "assetId"=${request.originalAssetId}::uuid FOR SHARE`.execute(db);
-  const { rows: [physical] } = await sql<{ physicalId: string | null; forkPhysicalId: string | null; upstreamPath: string | null }>`
+  await sql`SELECT "assetId" FROM immich_fork.asset_physical_file WHERE "assetId"=${request.originalAssetId}::uuid FOR SHARE`.execute(
+    db,
+  );
+  const {
+    rows: [physical],
+  } = await sql<{ physicalId: string | null; forkPhysicalId: string | null; upstreamPath: string | null }>`
     SELECT to_jsonb(a)->>'physicalOriginalFileId' AS "physicalId",p."physicalFileId" AS "forkPhysicalId",p."upstreamPath"
-    FROM public.asset a LEFT JOIN immich_fork.asset_physical_file p ON p."assetId"=a.id WHERE a.id=${request.originalAssetId}::uuid`.execute(db);
-  if (!physical || physical.physicalId !== frozen.original.physicalId || physical.forkPhysicalId !== frozen.original.forkPhysicalId ||
-    (physical.forkPhysicalId && physical.upstreamPath !== frozen.original.originalPath)) {
+    FROM public.asset a LEFT JOIN immich_fork.asset_physical_file p ON p."assetId"=a.id WHERE a.id=${request.originalAssetId}::uuid`.execute(
+    db,
+  );
+  if (
+    !physical ||
+    physical.physicalId !== frozen.original.physicalId ||
+    physical.forkPhysicalId !== frozen.original.forkPhysicalId ||
+    (physical.forkPhysicalId && physical.upstreamPath !== frozen.original.originalPath)
+  ) {
     return;
   }
   const suppression = getPreferences(metadata).privacy.suppression;
-  const { rows: [classification] } = await sql<{ protected: boolean }>`SELECT (
+  const {
+    rows: [classification],
+  } = await sql<{ protected: boolean }>`SELECT (
     ${isLocked('a')} OR EXISTS (SELECT 1 FROM public.asset still JOIN public.asset_lock al ON al."assetId"=still.id
       WHERE still."livePhotoVideoId"=a.id AND a.visibility=${AssetVisibility.Hidden})
     OR (a.visibility=${AssetVisibility.Hidden} AND ${source.role !== 'motion'})
@@ -253,17 +452,29 @@ export async function guardScheduledAudit(
   if (!classification || (classification.protected && !grant.includeProtected)) {
     return;
   }
-  if (options.resource && (await sql`SELECT id FROM immich_fork.icloud_resource WHERE id=${options.resource.id}::uuid
+  if (
+    options.resource &&
+    (
+      await sql`SELECT id FROM immich_fork.icloud_resource WHERE id=${options.resource.id}::uuid
     AND "ownerId"=${ownerId}::uuid AND "connectionId"=${connection.id}::uuid AND "auditRequestId"=${request.id}::uuid
     AND "leaseToken"=${options.resource.leaseToken}::uuid AND "leaseExpiresAt">clock_timestamp()
     AND library=${frozen.source.resource.library}::jsonb AND "libraryKey"=${source.libraryKey} AND "sourceAssetId"=${source.sourceAssetId}
     AND "recordId"=${source.recordId} AND "resourceKey"=${source.resourceKey} AND role=${source.role}
     AND fingerprint=${source.fingerprint} AND "expectedSize"=${source.expectedSize} AND source=${source.source}::jsonb
-    AND status NOT IN ('removed','finalized') FOR UPDATE`.execute(db)).rows.length !== 1) {
+    AND status NOT IN ('removed','finalized') FOR UPDATE`.execute(db)
+    ).rows.length !== 1
+  ) {
     return;
   }
-  return { request, source, connection, grant, auditIds, bindings: frozen,
-    private: classification.protected || descriptor.source.isHidden === true };
+  return {
+    request,
+    source,
+    connection,
+    grant,
+    auditIds,
+    bindings: frozen,
+    private: classification.protected || descriptor.source.isHidden === true,
+  };
 }
 
 /** Final SQL prerequisite only. No fresh-stream evidence means no scheduled proof writer exists yet. */
