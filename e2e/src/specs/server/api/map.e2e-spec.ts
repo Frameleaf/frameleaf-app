@@ -172,7 +172,7 @@ describe('/map', () => {
         partner.userId,
         admin.userId,
       ]);
-      if (!partnership.rows.length) {
+      if (partnership.rows.length === 0) {
         await utils.createPartner(partner.accessToken, admin.userId);
       }
       const { id: partnerLocatedId } = await utils.createAsset(partner.accessToken, {
@@ -211,14 +211,11 @@ describe('/map', () => {
       expect(owned.rows).toHaveLength(3);
       expect(owned.rows.find(({ id }) => id === adminArchivedAssetId)).toMatchObject({ visibility: 'archive' });
       // The recipient already owns these bytes: the one-copy rule keeps its existing archived item.
-      expect(
-        (
-          await db.query(
-            'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
-            [partnerLocatedId, admin.userId],
-          )
-        ).rows,
-      ).toEqual([]);
+      const duplicateOrigin = await db.query(
+        'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
+        [partnerLocatedId, admin.userId],
+      );
+      expect(duplicateOrigin.rows).toEqual([]);
       await request(app)
         .get(`/assets/${partnerLocatedId}`)
         .set('Authorization', `Bearer ${admin.accessToken}`)
@@ -239,22 +236,16 @@ describe('/map', () => {
       const later = await utils.createAsset(partner.accessToken);
       try {
         await utils.waitForAllQueuesFinish(admin.accessToken);
-        expect(
-          (
-            await db.query(
-              'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
-              [later.id, admin.userId],
-            )
-          ).rows,
-        ).toEqual([]);
-        expect(
-          (
-            await db.query(
-              'SELECT id, visibility FROM asset WHERE "ownerId" = $1 AND "deletedAt" IS NULL ORDER BY id',
-              [admin.userId],
-            )
-          ).rows,
-        ).toEqual(owned.rows);
+        const laterOrigin = await db.query(
+          'SELECT "assetId" FROM immich_fork.asset_origin WHERE "sourceAssetId" = $1 AND "ownerId" = $2',
+          [later.id, admin.userId],
+        );
+        expect(laterOrigin.rows).toEqual([]);
+        const retainedInventory = await db.query(
+          'SELECT id, visibility FROM asset WHERE "ownerId" = $1 AND "deletedAt" IS NULL ORDER BY id',
+          [admin.userId],
+        );
+        expect(retainedInventory.rows).toEqual(owned.rows);
         expect(await markerIds()).toHaveLength(2);
         expect(await statistics()).toEqual({ archived: 1, partner: 0, unlocated: 0 });
         expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(2);

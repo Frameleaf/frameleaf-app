@@ -678,7 +678,7 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       [partner.userId, sources],
     );
     expect(copies).toHaveLength(5);
-    expect(copies.map(({ sourceAssetId }) => sourceAssetId).toSorted()).toEqual(sources.toSorted());
+    expect(copies.map(({ sourceAssetId }) => sourceAssetId).toSorted(byId)).toEqual(sources.toSorted(byId));
     for (const copy of copies) {
       expect(copy.ownerId).toBe(partner.userId);
       expect(copy.rootOwnerId).toBe(owner.userId);
