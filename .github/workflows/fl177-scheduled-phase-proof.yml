@@ -1,0 +1,43 @@
+name: FL177 scheduled decoder phase proof
+on:
+  push:
+    branches: [aj/fl177-scheduled-phase-proof]
+permissions:
+  contents: read
+jobs:
+  scheduled-phases:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - run: mise run //server:install
+      - run: mise run //:plugins
+      - run: mise run //packages/plugin-core:build
+      - name: Observe the six actual late decoder and cleanup cases
+        working-directory: server
+        run: >-
+          pnpm exec vitest --config test/vitest.config.medium.mjs --run
+          test/medium/specs/repositories/icloud-identity-adoption.repository.spec.ts
+          -t 'keeps actual late decoder work|refuses a replacement JSON generation|does not authenticate authored work-generation|rolls back a forced match-as-mismatch|refuses late readonly guard settlement'
+      - name: Collect genuine diagnostic formatting output
+        if: ${{ !cancelled() }}
+        working-directory: server
+        run: |
+          pnpm format:fix
+          git diff --binary -- test/medium/specs/repositories/icloud-identity-adoption.repository.spec.ts > "$RUNNER_TEMP/scheduled-phase-format.patch"
+      - name: Archive diagnostic formatter output
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fl177-scheduled-phase-format
+          path: ${{ runner.temp }}/scheduled-phase-format.patch
+          retention-days: 7
