@@ -1139,7 +1139,7 @@ describe(FrameleafAuthService.name, () => {
         const { auth } = setup(false);
         idClaims.frameleaf_role = 'user';
         const { confirmToken } = await sut.link(auth, { ...callbackDto, preview: true }, {});
-        const [payload, mac] = confirmToken!.split('.');
+        const [payload, mac] = confirmToken!.split('.', 2);
         const claims = JSON.parse(Buffer.from(payload, 'base64url').toString());
         const forged = `${Buffer.from(JSON.stringify({ ...claims, role: 'admin' })).toString('base64url')}.${mac}`;
 
