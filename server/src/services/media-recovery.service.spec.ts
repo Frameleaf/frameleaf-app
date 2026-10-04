@@ -29,9 +29,11 @@ describe(MediaRecoveryService.name, () => {
     reserve: vi.fn(),
     commit: vi.fn(),
     commitVerifiedReuse: vi.fn(),
+    identityReuseAuthority: vi.fn(),
   };
   beforeEach(async () => {
     vi.clearAllMocks();
+    repository.identityReuseAuthority.mockResolvedValue({ required: false });
     directory = await mkdtemp(join(tmpdir(), 'icloud-recovery-test-'));
     const mocks = getMocks();
     mocks.media.decodeImage.mockResolvedValue({ data: bytes, info: {} } as never);

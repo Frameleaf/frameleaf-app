@@ -101,6 +101,9 @@ describe('iCloud exact identity adoption', () => {
   beforeEach(() => {
     vi.stubEnv('FRAMELEAF_ICLOUD_IDENTITY_ADOPTION', 'true');
     vi.stubEnv('FRAMELEAF_ICLOUD_IDENTITY_MATCHING', 'true');
+    // Runtime activation prerequisites for source contracts, never evidence of deployment qualification.
+    vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'true');
+    vi.stubEnv('FRAMELEAF_ICLOUD_BRIDGE_URL', 'https://icloud-contract.invalid');
     const mocks = getMocks();
     media = new MediaRepository(mocks.logger as never);
     integrity = new MediaIntegrityService(new StorageRepository(mocks.logger as never), new CryptoRepository(), media);
@@ -124,6 +127,7 @@ describe('iCloud exact identity adoption', () => {
   async function arrange(
     role: 'original' | 'raw' | 'motion' = 'original',
     config: { concurrency?: number; includeHidden?: boolean } = {},
+    withWeeklyGrant = true,
   ) {
     const directory = await mkdtemp(join(tmpdir(), 'identity-adoption-'));
     directories.add(directory);
@@ -222,6 +226,12 @@ describe('iCloud exact identity adoption', () => {
       VALUES (${identityId}::uuid,${user.id}::uuid,${asset.id}::uuid,'library',${NAME},${master},${identityRoleOf[role]},
         ${sha256},${`device:${device}`},${`${NAME}:001:${master}`},'corroborated')`.execute(db);
     await identities.claimForSync(user.id, NAME, connection.id);
+    const { session } = await ctx.newSession({ userId: user.id });
+    const grantAuth = factory.auth({ user, session });
+    if (withWeeklyGrant) {
+      await new ICloudWeeklyRepository(db).setAuthority(grantAuth, connection.id,
+        { enabled: true, includeProtected: false, requestKey: randomUUID() });
+    }
     const authority: IdentityAdoptionAuthority = {
       ownerId: user.id,
       connectionId: connection.id,
@@ -243,6 +253,7 @@ describe('iCloud exact identity adoption', () => {
       master,
       resourceFingerprint,
       identityId,
+      grantAuth,
     };
   }
 
@@ -998,6 +1009,207 @@ describe('iCloud exact identity adoption', () => {
       ).rows,
     ).toHaveLength(0);
   });
+  describe('mandatory weekly admission before adoption, replay and mapped reuse', () => {
+    const weekly = () => new ICloudWeeklyRepository(db);
+    const recovery = () => new MediaRecoveryService(new MediaRecoveryRepository(db,
+      new ForkPrivacyRepository(db), new ForkEnrichmentRepository(db)), integrity);
+    const mappedAuthority = (f: Awaited<ReturnType<typeof arrange>>) => ({
+      ownerId: f.user.id, resourceId: f.resource.id, leaseToken: f.resource.leaseToken!, includeHidden: true,
+    });
+
+    it.each(['execution', 'transport'] as const)('refuses new adoption before file work with %s activation unavailable', async (kind) => {
+      const f = await arrange();
+      const verify = vi.fn();
+      vi.stubEnv(kind === 'execution' ? 'FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION' : 'FRAMELEAF_ICLOUD_BRIDGE_URL', '');
+      expect(identityAdoptionEnabled()).toBe(false);
+      expect(await service.adopt(f.authority)).toBe('miss');
+      expect(await repository.adopt(f.authority, verify)).toBe('miss');
+      expect(verify).not.toHaveBeenCalled();
+      await unpublished(f);
+      expect((await weekly().status(f.connection.id, f.user.id)).executionAvailable).toBe(false);
+    });
+
+    it('returns a real missing-grant miss before the producer verifier, leaving fresh-download fallback eligible', async () => {
+      const f = await arrange('original', {}, false);
+      const verify = vi.fn();
+      expect((await sql`SELECT id FROM immich_fork.icloud_weekly_grant WHERE "connectionId"=${f.connection.id}::uuid`.execute(db)).rows).toEqual([]);
+      expect(await repository.adopt(f.authority, verify)).toBe('miss');
+      expect(verify).not.toHaveBeenCalled();
+      await unpublished(f);
+      expect((await sync.resource(f.resource.id))?.status).toBe(f.resource.status);
+    });
+
+    it('requires actual current consent before verification and preserves immutable replay provenance after revoke/regrant', async () => {
+      const f = await arrange();
+      await weekly().setAuthority(f.grantAuth, f.connection.id, { enabled: false, includeProtected: false, requestKey: randomUUID() });
+      const verify = vi.fn();
+      expect(await repository.adopt(f.authority, verify)).toBe('miss');
+      expect(verify).not.toHaveBeenCalled();
+      await unpublished(f);
+      await weekly().setAuthority(f.grantAuth, f.connection.id, { enabled: true, includeProtected: false, requestKey: randomUUID() });
+      expect(await service.adopt(f.authority)).toBe('adopted');
+      const receipts = () => sql`SELECT * FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${f.resource.id}::uuid`.execute(db);
+      const before = (await receipts()).rows;
+      await weekly().setAuthority(f.grantAuth, f.connection.id, { enabled: false, includeProtected: false, requestKey: randomUUID() });
+      expect(await service.adopt(f.authority)).toBe('miss');
+      expect((await receipts()).rows).toEqual(before);
+      expect((await sync.resource(f.resource.id))?.assetId).toBe(f.asset.id);
+      await weekly().setAuthority(f.grantAuth, f.connection.id, { enabled: true, includeProtected: false, requestKey: randomUUID() });
+      expect(await service.adopt(f.authority)).toBe('adopted');
+      expect((await receipts()).rows).toEqual(before);
+      expect((await sql`SELECT "lastAuditResult","lastVerifiedAt" FROM immich_fork.icloud_source_identity
+        WHERE id=${f.identityId}::uuid`.execute(db)).rows).toEqual([{ lastAuditResult: null, lastVerifiedAt: null }]);
+    });
+
+    it('refuses activation loss after actual native verification without publishing mapping or receipt', async () => {
+      const f = await arrange();
+      const decode = media.decodeImage.bind(media);
+      vi.spyOn(media, 'decodeImage').mockImplementation(async (...args) => {
+        const actual = await decode(...args);
+        vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'false');
+        return actual;
+      });
+      expect(await service.adopt(f.authority)).toBe('miss');
+      await service.onShutdown();
+      await unpublished(f);
+      expect(await readFile(f.originalPath)).toEqual(f.bytes);
+    });
+
+    it.each(['generation', 'config'] as const)('rolls mapping back if real SQL changes captured %s between mapping and receipt CAS', async (kind) => {
+      const f = await arrange();
+      const name = `weekly_adoption_retire_${randomUUID().replaceAll('-', '')}`;
+      const retire = kind === 'generation'
+        ? sql`UPDATE immich_fork.icloud_weekly_grant SET enabled=false,generation=generation+1
+            WHERE "connectionId"=NEW."connectionId" AND "ownerId"=NEW."ownerId"`
+        : sql`UPDATE immich_fork.icloud_connection SET config=config||'{"concurrency":2}'::jsonb
+            WHERE id=NEW."connectionId" AND "ownerId"=NEW."ownerId"`;
+      await sql`CREATE FUNCTION public.${sql.id(name)}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+        IF OLD."assetId" IS NULL AND NEW."assetId" IS NOT NULL AND NEW.id=${sql.lit(f.resource.id)}::uuid THEN
+          ${retire};
+        END IF; RETURN NEW; END $$`.execute(db);
+      try {
+        await sql`CREATE TRIGGER ${sql.id(name)} AFTER UPDATE ON immich_fork.icloud_resource
+          FOR EACH ROW EXECUTE FUNCTION public.${sql.id(name)}()`.execute(db);
+        expect(await service.adopt(f.authority)).toBe('miss');
+        await unpublished(f);
+        // Retirement and mapping were in the rejected transaction; neither partially committed.
+        expect((await weekly().status(f.connection.id, f.user.id)).enabled).toBe(true);
+      } finally {
+        await sql`DROP TRIGGER IF EXISTS ${sql.id(name)} ON immich_fork.icloud_resource`.execute(db);
+        await sql`DROP FUNCTION public.${sql.id(name)}()`.execute(db);
+      }
+    });
+
+    it('serializes actual grant revocation behind held verification authority and refuses subsequent replay', async () => {
+      const f = await arrange();
+      const entered = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const decode = media.decodeImage.bind(media);
+      vi.spyOn(media, 'decodeImage').mockImplementation(async (...args) => {
+        entered.resolve(); await resume.promise; return decode(...args);
+      });
+      const running = service.adopt(f.authority);
+      await entered.promise;
+      const retiring = weekly().setAuthority(f.grantAuth, f.connection.id,
+        { enabled: false, includeProtected: false, requestKey: randomUUID() });
+      void retiring.catch(() => {});
+      try {
+        await expect.poll(async () => (await sql`SELECT 1 FROM pg_stat_activity
+          WHERE wait_event_type='Lock' AND query LIKE '%user%'
+            AND cardinality(pg_blocking_pids(pid))>0`.execute(db)).rows.length > 0, { timeout: 1500 }).toBe(true);
+      } finally { resume.resolve(); }
+      expect(await running).toBe('adopted');
+      await retiring;
+      expect(await service.adopt(f.authority)).toBe('miss');
+      expect((await sync.resource(f.resource.id))?.assetId).toBe(f.asset.id);
+      expect((await sql`SELECT id FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${f.resource.id}::uuid`.execute(db)).rows).toHaveLength(1);
+    });
+
+    it('requires current grant for genuine mapped receipt reuse before decoder work and preserves its mapping on refusal', async () => {
+      const f = await arrange();
+      expect(await service.adopt(f.authority)).toBe('adopted');
+      const before = (await sql`SELECT * FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${f.resource.id}::uuid`.execute(db)).rows;
+      const decoder = vi.spyOn(media, 'decodeImage');
+      expect(await recovery().verifyMapped(mappedAuthority(f))).toEqual({ outcome: 'reused', assetId: f.asset.id });
+      expect(decoder).toHaveBeenCalled();
+      expect((await sync.resource(f.resource.id))?.verification?.basis).toBe('exact-identity');
+      decoder.mockClear();
+      await weekly().setAuthority(f.grantAuth, f.connection.id, { enabled: false, includeProtected: false, requestKey: randomUUID() });
+      const mapped = await sync.resource(f.resource.id);
+      expect(await recovery().verifyMapped(mappedAuthority(f))).toEqual({ outcome: 'retry', reason: 'identity_adoption_unavailable' });
+      expect(decoder).not.toHaveBeenCalled();
+      expect(await sync.resource(f.resource.id)).toEqual(mapped);
+      expect((await sql`SELECT * FROM immich_fork.icloud_identity_reuse WHERE "sourceResourceId"=${f.resource.id}::uuid`.execute(db)).rows).toEqual(before);
+    });
+
+    it('refuses mapped final reuse after real decode if activation disappears, retaining old proof unchanged', async () => {
+      const f = await arrange();
+      expect(await service.adopt(f.authority)).toBe('adopted');
+      const before = await sync.resource(f.resource.id);
+      const decode = media.decodeImage.bind(media);
+      vi.spyOn(media, 'decodeImage').mockImplementation(async (...args) => {
+        const actual = await decode(...args); vi.stubEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION', 'false'); return actual;
+      });
+      expect(await recovery().verifyMapped(mappedAuthority(f))).toEqual({ outcome: 'retry', reason: 'identity_adoption_unavailable' });
+      expect(await sync.resource(f.resource.id)).toEqual(before);
+    });
+
+    it('allows actual revocation during mapped verification and refuses the captured generation at commit', async () => {
+      const f = await arrange();
+      expect(await service.adopt(f.authority)).toBe('adopted');
+      const before = await sync.resource(f.resource.id);
+      const decode = media.decodeImage.bind(media);
+      vi.spyOn(media, 'decodeImage').mockImplementation(async (...args) => {
+        const actual = await decode(...args);
+        // The pre-decode grant capture transaction has ended: this real writer can commit here.
+        await weekly().setAuthority(f.grantAuth, f.connection.id,
+          { enabled: false, includeProtected: false, requestKey: randomUUID() });
+        return actual;
+      });
+      expect(await recovery().verifyMapped(mappedAuthority(f))).toEqual({ outcome: 'retry', reason: 'identity_adoption_unavailable' });
+      expect((await weekly().status(f.connection.id, f.user.id)).enabled).toBe(false);
+      expect(await sync.resource(f.resource.id)).toEqual(before);
+    });
+
+    it('refuses mapped resource expiry during final actual native verification without updating reuse proof', async () => {
+      const f = await arrange();
+      expect(await service.adopt(f.authority)).toBe('adopted');
+      const decode = media.decodeImage.bind(media);
+      let calls = 0;
+      vi.spyOn(media, 'decodeImage').mockImplementation(async (...args) => {
+        const actual = await decode(...args);
+        if (++calls === 1) {
+          await sql`UPDATE immich_fork.icloud_resource SET "leaseExpiresAt"=clock_timestamp()+interval '1500 milliseconds'
+            WHERE id=${f.resource.id}::uuid`.execute(db);
+        } else {
+          await sql`SELECT pg_sleep(1.6)`.execute(db);
+        }
+        return actual;
+      });
+      const before = (await sync.resource(f.resource.id))?.verification;
+      expect(await recovery().verifyMapped(mappedAuthority(f))).toEqual({ outcome: 'retry', reason: 'lease_expired' });
+      expect(calls).toBe(2);
+      const after = await sync.resource(f.resource.id);
+      expect(after?.verification).toEqual(before);
+      expect(after?.assetId).toBe(f.asset.id);
+    });
+
+    it('does not let genuine scoped protected consent broaden new or mapped adoption eligibility', async () => {
+      const f = await arrange('original', { includeHidden: true });
+      expect(await service.adopt(f.authority)).toBe('adopted');
+      await db.updateTable('user').set({ pinCode: 'b3-protected-contract' }).where('id', '=', f.user.id).execute();
+      await sql`UPDATE public.session SET "pinExpiresAt"=clock_timestamp()+interval '1 hour'
+        WHERE id=${f.grantAuth.session!.id}::uuid`.execute(db);
+      await weekly().setAuthority(f.grantAuth, f.connection.id, { enabled: true, includeProtected: true, requestKey: randomUUID() });
+      await new AssetRepository(db).lock([f.asset.id], AssetLockReason.Marked, f.user.id);
+      const before = await sync.resource(f.resource.id);
+      expect(await service.adopt(f.authority)).toBe('miss');
+      expect(await recovery().verifyMapped(mappedAuthority(f))).toEqual({ outcome: 'retry', reason: 'identity_adoption_unavailable' });
+      expect(await sync.resource(f.resource.id)).toEqual(before);
+      expect((await sql`SELECT "assetId" FROM public.asset_lock WHERE "assetId"=${f.asset.id}::uuid`.execute(db)).rows).toHaveLength(1);
+    });
+  });
+
   describe('weekly full-population producer using actual adoption receipts', () => {
     const weekly = () => new ICloudWeeklyRepository(db);
     const operations = () => new MediaOperationRepository(db);
@@ -1514,6 +1726,9 @@ describe('iCloud exact identity adoption', () => {
 
     it('keeps N/k and immutable selected membership without a grant, and cannot revive under regrant', async () => {
       const f = await population(1);
+      // Adoption now requires genuine consent first. Retire it before freezing; receipt provenance remains.
+      await weekly().setAuthority(f.grantAuth, f.connection.id,
+        { enabled: false, includeProtected: false, requestKey: randomUUID() });
       const cohort = await weekly().freezeCohort(f.user.id, f.connection.id);
       expect(Number(cohort.populationCount)).toBe(1);
       expect(Number(cohort.selectedCount)).toBe(1);
