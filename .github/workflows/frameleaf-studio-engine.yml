@@ -104,6 +104,20 @@ jobs:
         run: node studio/tools/allocation-audit.mjs
       - name: Install locked dependencies without lifecycle scripts
         run: npm --prefix studio/engine ci --ignore-scripts --no-audit --no-fund
+      - name: Approved-fixture Whisper inference timing diagnostic (FL-103, FL-111)
+        timeout-minutes: 12
+        env:
+          STUDIO_WHISPER_TIMING: '1'
+          STUDIO_MODEL_CACHE: ${{ runner.temp }}
+          STUDIO_WHISPER_REPORT: ${{ runner.temp }}/whisper-timing-report.json
+        run: node --test studio/tools/lib/ephemeral-pipeline.test.mjs studio/tools/whisper-timing.test.mjs
+      - name: Retain genuine Whisper diagnostic provenance
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: whisper-timing-diagnostic-${{ github.sha }}
+          path: ${{ runner.temp }}/whisper-timing-report.json
+          if-no-files-found: warn
       - name: Install FFmpeg with libx265 for HDR master verification
         run: |
           sudo apt-get update
