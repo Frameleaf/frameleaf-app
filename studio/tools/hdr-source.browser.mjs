@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromeLaunchArgs } from '../engine/headless/lib/cli.mjs';
+import { validateMaskedRasterDiagnostic } from './hdr-source-validation.mjs';
 
 const require = createRequire(new URL('../engine/package.json', import.meta.url));
 const { chromium } = require('playwright');
@@ -451,23 +452,7 @@ window.__vite_plugin_react_preamble_installed__ = true
   assert.ok(result.nestedAlpha.some((entry) => nestedPoint(entry, 'hdr-plateau').want.some((v, channel) =>
     Math.abs(v - entry.nonnegativePlateau[channel]) > 0.001)),
     'nested golden must independently distinguish negative-RGB clipping');
-  if (result.maskedRasterTransition.status === 'preserved') {
-    assert.equal(result.maskedRasterTransition.outputs.length, 2);
-    assert.ok(result.maskedRasterTransition.working.some((v) => v > 1));
-    assert.ok(result.maskedRasterTransition.working.some((v) => v < -0.01));
-    for (const { target, width, height, points } of result.maskedRasterTransition.outputs) {
-      assert.equal(width, SIZE);
-      assert.equal(height, SIZE);
-      for (const [region, { got, want }] of points.entries()) {
-        want.forEach((value, channel) => {
-          compared++;
-          assert.ok(Number.isFinite(got[channel]) && Math.abs(got[channel] - value) <= 0.004,
-            `masked HDR raster ${target} region ${region} channel ${channel}: ${got[channel]} vs ${value}`);
-        });
-        assert.ok(Math.abs(got[3] - 1) < 1e-6, `masked raster: opaque output alpha ${got[3]}`);
-      }
-    }
-  }
+  compared += validateMaskedRasterDiagnostic(result.maskedRasterTransition, SIZE).compared;
   console.log(`HDR source, mixed composition and nested mask/alpha goldens match (${compared} values, PQ and HLG)`);
   console.log(JSON.stringify({ check: 'masked HDR raster transition diagnostic',
     coverage: result.maskedRasterTransition.coverage, status: result.maskedRasterTransition.status,
