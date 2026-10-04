@@ -859,8 +859,17 @@ test("release Compose files pull only digest-pinned or promotion-verified images
     }
   }
   assert.equal(typeof release.verifyDependencyImages, "function");
-  assert.match(
-    read(".github/frameleaf-release.cjs"),
-    /await verifyDependencyImages\(registry, process\.cwd\(\)\)/,
-  );
+  const dependencyVerification =
+    /\bawait\s+verifyDependencyImages\s*\(\s*registry\s*,\s*process\.cwd\s*\(\s*\)\s*,\s*cliQualification\s*,?\s*\)/;
+  assert.match(read(".github/frameleaf-release.cjs"), dependencyVerification);
+  for (const invalid of [
+    "const dependencies = [];",
+    "verifyDependencyImages(registry, process.cwd(), cliQualification)",
+    "await verifyDependencyImages(otherRegistry, process.cwd(), cliQualification)",
+    "await verifyDependencyImages(registry, otherRoot, cliQualification)",
+    "await verifyDependencyImages(registry, process.cwd())",
+    "await verifyDependencyImages(registry, process.cwd(), otherQualification)",
+    "await verifyDependencyImages(registry, process.cwd(), cliQualification, extra)",
+  ])
+    assert.doesNotMatch(invalid, dependencyVerification);
 });

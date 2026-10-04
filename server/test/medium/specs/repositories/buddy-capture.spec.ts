@@ -940,9 +940,9 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     );
     const directory = join(root, 'fenced-boot-stage');
     await expect(
-      stageBuddyBootConfiguration(directory, randomUUID(), configuration, async () => {
-        throw new Error('Synthetic staging fence lost');
-      }),
+      stageBuddyBootConfiguration(directory, randomUUID(), configuration, () =>
+        Promise.reject(new Error('Synthetic staging fence lost')),
+      ),
     ).rejects.toThrow('Synthetic staging fence lost');
     await expect(readFile(join(directory, 'boot-configuration.json'))).rejects.toMatchObject({ code: 'ENOENT' });
     const publicDirectory = join(root, 'public-boot-stage');
@@ -961,6 +961,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     vi.stubEnv('FRAMELEAF_SUPPORT_URL', ' https://canonical.example.test/support/ ');
     vi.stubEnv('IMMICH_THIRD_PARTY_SUPPORT_URL', 'https://legacy.example.test/support');
     vi.stubEnv('FRAMELEAF_BUG_FEATURE_URL', '');
+    // eslint-disable-next-line unicorn/prefer-secure-protocols -- Invalid legacy HTTP must remain inert in report-only fallback.
     vi.stubEnv('IMMICH_THIRD_PARTY_BUG_FEATURE_URL', 'http://invalid-legacy.example.test');
     vi.stubEnv('FRAMELEAF_SOURCE_URL', ' ');
     vi.stubEnv('IMMICH_THIRD_PARTY_SOURCE_URL', 'https://legacy.example.test/source/');
@@ -979,11 +980,13 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       { key: 'FRAMELEAF_BUG_FEATURE_URL', state: 'unset' },
       { key: 'FRAMELEAF_SOURCE_URL', state: 'value', value: 'https://legacy.example.test/source' },
     ]);
+    // eslint-disable-next-line unicorn/prefer-secure-protocols -- Invalid canonical HTTP must exercise capture refusal.
     vi.stubEnv('FRAMELEAF_DOCS_URL', 'http://invalid-canonical.example.test');
     expect(() => captureBuddyBootConfiguration(declaration)).toThrow('Invalid declared boot configuration values');
     expect(() =>
       readBuddyBootConfiguration({
         version: 1,
+        // eslint-disable-next-line unicorn/prefer-secure-protocols -- Invalid typed HTTP must exercise configuration refusal.
         entries: [{ key: 'FRAMELEAF_SUPPORT_URL', state: 'value', value: 'http://invalid-canonical.example.test' }],
       }),
     ).toThrow('Invalid declared boot configuration values');
