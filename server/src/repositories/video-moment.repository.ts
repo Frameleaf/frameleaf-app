@@ -12,6 +12,7 @@ import {
   VideoMomentTable,
 } from 'src/schema/tables/video-moment.table.js';
 import { anyUuid, asUuid, withHiddenContentFilter, withVideoFormat, withVideoStream } from 'src/utils/database.js';
+import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { sourceFingerprint } from 'src/utils/enrichment-plan.js';
 import { notLockedOrOwnedBy } from 'src/utils/locked.js';
 
@@ -154,11 +155,14 @@ export class VideoMomentRepository {
    */
   withFrameLock<R>(assetId: string, callback: () => Promise<R>): Promise<R> {
     return this.db.connection().execute(async (connection) => {
-      await sql`SELECT pg_advisory_lock(-59, hashtext(${assetId})::int)`.execute(connection);
       try {
+        await sql`SELECT pg_advisory_lock(-59, hashtext(${assetId})::int)`.execute(connection);
         return await callback();
       } finally {
-        await sql`SELECT pg_advisory_unlock(-59, hashtext(${assetId})::int)`.execute(connection);
+        // Acquisition can succeed in PostgreSQL just as its response is cancelled. Always clean up.
+        await withDatabaseCleanup(() =>
+          sql`SELECT pg_advisory_unlock(-59, hashtext(${assetId})::int)`.execute(connection),
+        );
       }
     });
   }

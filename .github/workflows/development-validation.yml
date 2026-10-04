@@ -64,6 +64,12 @@ jobs:
         run: |
           set -o pipefail
           pnpm --dir server lint 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/server-lint.log"
+      - name: Capture server lint repairs
+        if: ${{ always() && steps.lint.outcome == 'failure' }}
+        continue-on-error: true
+        run: |
+          pnpm --dir server exec eslint . --max-warnings 0 --fix > "$RUNNER_TEMP/frameleaf-development/reports/server-lint-fixes.log" 2>&1 || true
+          git diff --binary -- server > "$RUNNER_TEMP/frameleaf-development/server-lint-fixes.patch"
       - name: Build server generators
         id: server
         if: ${{ always() && steps.sdks.outcome == 'success' }}
@@ -98,6 +104,15 @@ jobs:
         run: |
           set -o pipefail
           pnpm --dir server migrations:run 2>&1 | tee "$RUNNER_TEMP/frameleaf-development/reports/schema.log"
+      - name: Capture exact baseline SQL and raw metadata
+        id: baseline_sql
+        if: ${{ always() && steps.schema.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/frameleaf-development/generated"
+          docker exec frameleaf-development-postgres pg_dump -U postgres -d frameleaf --schema-only --no-owner --no-privileges > "$output/frameleaf-baseline.sql"
+          docker exec frameleaf-development-postgres psql -U postgres -d frameleaf -XAtc "SELECT jsonb_build_object('constraints', (SELECT jsonb_agg(jsonb_build_object('schema', n.nspname, 'table', t.relname, 'name', c.conname, 'definition', pg_get_constraintdef(c.oid))) FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname='public'), 'triggers', (SELECT jsonb_agg(jsonb_build_object('schema', n.nspname, 'table', t.relname, 'name', g.tgname, 'definition', pg_get_triggerdef(g.oid))) FROM pg_trigger g JOIN pg_class t ON t.oid=g.tgrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname='public' AND NOT g.tgisinternal))" > "$output/frameleaf-raw-metadata.json"
       - name: Generate schema catalog
         id: catalog
         if: ${{ always() && steps.schema.outcome == 'success' }}
@@ -171,7 +186,7 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           const results = JSON.parse(process.env.STEP_RESULTS);
-          const required = ['lockfile', 'install', 'sdks', 'types', 'lint', 'server', 'postgres', 'schema', 'catalog', 'openapi', 'client', 'queries'];
+          const required = ['lockfile', 'install', 'sdks', 'types', 'lint', 'server', 'postgres', 'schema', 'baseline_sql', 'catalog', 'openapi', 'client', 'queries'];
           const failed = required.filter(name => results[name]?.outcome !== 'success');
           if (failed.length) {
             console.error(`Development validation requires successful steps: ${failed.join(', ')}`);

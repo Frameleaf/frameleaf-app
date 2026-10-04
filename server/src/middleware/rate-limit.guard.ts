@@ -24,17 +24,17 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
 
 /**
  * FL-161: request limits for sign-in and Frameleaf Cloud endpoints, and a per-address ceiling for
- * remote access, counted in Redis so every API process shares them.
+ * remote access, counted in PostgreSQL so every API process shares them.
  *
  * - A route marked `@RateLimited(RATE_LIMITS.x)` is limited per client address and, where the request
  *   names one, per principal: the email of a password login, the shared link being unlocked, or the
  *   session or API key presented. The principal is counted as an HMAC under this server's own key
- *   (`CryptoRepository.serverKeyedHash`); it never reaches Redis in clear or as a plain hash.
+ *   (`CryptoRepository.serverKeyedHash`); it never reaches PostgreSQL in clear or as a plain hash.
  * - For a password login and a shared-link unlock the principal counts failed attempts per email (or
  *   link) *and* client address, so a stranger's wrong passwords from elsewhere never lock anyone out
- *   of their own address, at home or away. Each attempt is counted up front, atomically (`INCR`), so
+ *   of their own address, at home or away. Each attempt is counted up front, with an atomic SQL increment, so
  *   parallel attempts cannot all slip in before a failure is recorded; `RateLimitFailureInterceptor`
- *   gives the attempt back (`DECR`) when it did not fail with 401, so a correct password never uses
+ *   decrements the counter when it did not fail with 401, so a correct password never uses
  *   up the limit. There is deliberately no cap per account across addresses (it would let anyone
  *   lock a person out): guessing from many addresses is held back by the per-address limits and by
  *   bcrypt, which makes each guess cost tens of milliseconds of server time.
@@ -49,7 +49,7 @@ import { isRemoteVia } from 'src/utils/frameleaf-sign-in.js';
  *
  * Going over answers 429 with `Retry-After` (seconds until the window ends) and the error code
  * `rate_limited`. If the counters cannot be reached, remote-access requests are refused (503) and
- * requests from the home network are let through with a warning, so a Redis outage never locks
+ * requests from the home network are let through with a warning, so a counter-service outage never locks
  * anyone out at home. The 503 carries `Retry-After`. The limits are documented in `docs/docs/administration/frameleaf-cloud.md`.
  *
  * The route limits are not applied when `FRAMELEAF_ENV=testing` (the end-to-end suites sign in hundreds

@@ -587,6 +587,7 @@ export type JobItem =
       data: IEntityJob & {
         lockedIds?: string[];
         description?: boolean;
+        cloudDescription?: boolean;
         videoMomentCaptions?: boolean;
         searchDestinationId?: string;
         planRun?: boolean;

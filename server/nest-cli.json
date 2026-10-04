@@ -12,6 +12,17 @@
           "introspectComments": true
         }
       }
+    ],
+    "assets": [
+      {
+        "include": "schema/migrations/ORDER"
+      },
+      {
+        "include": "schema/catalog/*.json"
+      },
+      {
+        "include": "schema/catalog/*.sql"
+      }
     ]
   }
 }
