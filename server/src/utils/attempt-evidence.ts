@@ -17,7 +17,7 @@ export async function recordStoppedAttempt(db: Kysely<any>, jobId: string, token
 
 export async function pruneWorkerStopEvidence(db: Kysely<any>) {
   await sql`DELETE FROM system_metadata WHERE key IN (
-    SELECT m.key FROM system_metadata m WHERE m.key >= 'frameleaf-worker-stopped:' AND m.key < 'frameleaf-worker-stopped;'
+    SELECT m.key FROM system_metadata m WHERE starts_with(m.key, 'frameleaf-worker-stopped:')
       AND NOT EXISTS (SELECT 1 FROM job_worker w WHERE w.id=(m.value->>'workerId')::uuid)
       AND NOT EXISTS (SELECT 1 FROM job_attempt a WHERE a."workerId"=(m.value->>'workerId')::uuid)
       AND NOT EXISTS (SELECT 1 FROM job j WHERE j."workerId"=(m.value->>'workerId')::uuid)
@@ -45,10 +45,10 @@ export async function preserveAttemptEvidence(db: Kysely<any>, ids: string[]): P
 /** Complete traversals only, in small pages. Concurrently created evidence waits for the next pass. */
 export async function pruneAttemptEvidence(db: Kysely<any>, pass: { id: string; startedAt: number }) {
   const { rows } = await sql`DELETE FROM system_metadata WHERE key IN (
-    SELECT m.key FROM system_metadata m WHERE m.key >= ${ATTEMPT_EVIDENCE_PREFIX} AND m.key < 'frameleaf-attempt-evidence;'
+    SELECT m.key FROM system_metadata m WHERE starts_with(m.key, ${ATTEMPT_EVIDENCE_PREFIX})
       AND (m.value->>'recordedAt')::numeric < ${pass.startedAt}
       AND m.value->>'seenPass' IS DISTINCT FROM ${pass.id}
-      AND NOT EXISTS (SELECT 1 FROM job_attempt a WHERE a.token=substring(m.key from ${ATTEMPT_EVIDENCE_PREFIX.length + 1})::uuid)
+      AND NOT EXISTS (SELECT 1 FROM job_attempt a WHERE a.token=substring(m.key from ${ATTEMPT_EVIDENCE_PREFIX.length + 1}::integer)::uuid)
     ORDER BY m.key LIMIT 250 FOR UPDATE SKIP LOCKED
   ) RETURNING key`.execute(db);
   return rows.length;

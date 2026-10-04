@@ -6,27 +6,34 @@ import { ATTEMPT_EVIDENCE_PREFIX, pruneAttemptEvidence } from 'src/utils/attempt
 import { ATTEMPT_GRACE_MS, AttemptCursor, emptyAttemptCursor, sweepAttemptTree } from 'src/utils/attempt-tree.js';
 
 const STATE_KEY = 'frameleaf-attempt-cleanup-v1';
-type Pass = { id: string; startedAt: number; complete: boolean; incomplete: boolean };
+type Pass = { id: string; startedAt: number; clock: 'database'; complete: boolean; incomplete: boolean };
 type SweepState = { roots: string[]; cursor: AttemptCursor; pass: Pass; owner: string | null; expires: number };
 type Remove = (tx: Transaction<DB>, path: string, unlink: () => Promise<boolean>) => Promise<boolean>;
 const windows = new AttemptDirectoryWindows();
 let windowsPass: string | undefined;
 export const closeAttemptSweep = () => windows.close();
-const newPass = (now: number): Pass => ({ id: randomUUID(), startedAt: now, complete: false, incomplete: false });
+const newPass = (now: number): Pass => ({
+  id: randomUUID(),
+  startedAt: now,
+  clock: 'database',
+  complete: false,
+  incomplete: false,
+});
 
 /** Short durable lease; no reserved SQL connection while walking the filesystem. */
 export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remove: Remove) {
   const owner = randomUUID();
-  const state = await db.transaction().execute(async (tx) => {
+  const acquisition = await db.transaction().execute(async (tx) => {
     await sql`SET LOCAL lock_timeout='1s'`.execute(tx);
     const {
       rows: [lock],
-    } = await sql<{ acquired: boolean }>`SELECT pg_try_advisory_xact_lock(-333, 2) acquired`.execute(tx);
+    } = await sql<{ acquired: boolean; now: number }>`SELECT pg_try_advisory_xact_lock(-333, 2) acquired,
+      extract(epoch FROM clock_timestamp()) * 1000 AS now`.execute(tx);
     if (!lock.acquired) return;
     const initial: SweepState = {
       roots,
       cursor: emptyAttemptCursor(),
-      pass: newPass(Date.now()),
+      pass: newPass(Number(lock.now)),
       owner: null,
       expires: 0,
     };
@@ -40,19 +47,23 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
     );
     if (row.value.expires > Number(row.now)) return;
     const sameRoots = JSON.stringify(row.value.roots) === JSON.stringify(roots);
+    // Legacy boundaries used the application clock. Their unseen-evidence cutoff is
+    // unknowable, so restart the traversal instead of pruning with that saved pass.
+    const resumable = sameRoots && row.value.pass?.clock === 'database';
     const state: SweepState = {
       roots,
-      cursor: sameRoots ? row.value.cursor : emptyAttemptCursor(),
-      pass: sameRoots && row.value.pass ? row.value.pass : newPass(Number(row.now)),
+      cursor: resumable ? row.value.cursor : emptyAttemptCursor(),
+      pass: resumable ? row.value.pass : newPass(Number(row.now)),
       owner,
       expires: Number(row.now) + 60_000,
     };
     await sql`UPDATE system_metadata SET value=${JSON.stringify(state)}::text::jsonb WHERE key=${STATE_KEY}`.execute(
       tx,
     );
-    return state;
+    return { state, now: Number(row.now) };
   });
-  if (!state) return;
+  if (!acquisition) return;
+  const { state, now } = acquisition;
   if (windowsPass !== state.pass.id) {
     await windows.close();
     windowsPass = state.pass.id;
@@ -70,7 +81,7 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
   try {
     if (state.pass.complete) {
       const removed = await withLease((tx) => pruneAttemptEvidence(tx, state.pass));
-      if (removed < 250) state.pass = newPass(Date.now());
+      if (removed < 250) state.pass = newPass(now);
       await save();
       return { deleted: 0, visited: 0, examined: 0, done: true, incomplete: false };
     }
@@ -116,7 +127,7 @@ export async function sweepAttemptOutputs(db: Kysely<DB>, roots: string[], remov
     state.pass.incomplete ||= result.incomplete;
     if (result.done) {
       // A missing/symlink/depth-limited subtree cannot prove absence. Keep its evidence.
-      state.pass = state.pass.incomplete ? newPass(Date.now()) : { ...state.pass, complete: true };
+      state.pass = state.pass.incomplete ? newPass(now) : { ...state.pass, complete: true };
     }
     await save();
     return result;

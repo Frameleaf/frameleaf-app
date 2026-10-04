@@ -12,7 +12,7 @@ import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
-import { ATTEMPT_EVIDENCE_PREFIX } from 'src/utils/attempt-evidence.js';
+import { ATTEMPT_EVIDENCE_PREFIX, pruneWorkerStopEvidence, recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { closeAttemptSweep } from 'src/utils/attempt-sweep.js';
 import { ATTEMPT_GRACE_MS } from 'src/utils/attempt-tree.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -184,6 +184,139 @@ describe('attempt output retention and cleanup', () => {
     await utimes(dirname(path), old, old);
     for (let slice = 0; slice < 8 && (await evidence()).rows.length > 0; slice++) await files.sweepAttempts([root]);
     expect((await evidence()).rows).toHaveLength(0);
+  });
+
+  it('releases unseen stopped proof after a complete pass when the application clock is behind PostgreSQL', async () => {
+    const { files } = setup();
+    const token = randomUUID();
+    await recordStoppedAttempt(db, randomUUID(), token);
+    await sql`DELETE FROM system_metadata WHERE key='frameleaf-attempt-cleanup-v1'`.execute(db);
+    const now = Date.now;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now() - 60 * 60 * 1000);
+    try {
+      expect((await files.sweepAttempts([root]))?.done).toBe(true);
+      await files.sweepAttempts([root]);
+      expect(
+        (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + token}`.execute(db)).rows,
+      ).toHaveLength(0);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('restarts a saved traversal with an unknown clock before pruning proof for an unseen output', async () => {
+    const { files } = setup();
+    expect((await files.sweepAttempts([root]))?.done).toBe(true);
+    const stopped = { id: randomUUID(), token: randomUUID() };
+    const path = await file(stopped, 'late.jpeg');
+    await recordStoppedAttempt(db, stopped.id, stopped.token);
+    await sql`UPDATE system_metadata SET value=jsonb_set(
+      jsonb_set(value #- '{pass,clock}', '{pass,startedAt}',to_jsonb(extract(epoch FROM clock_timestamp())*1000+3600000)),
+      '{cursor}',jsonb_build_object('root',1,'stack','[]'::jsonb)) WHERE key='frameleaf-attempt-cleanup-v1'`.execute(
+      db,
+    );
+
+    expect(await files.sweepAttempts([root])).toMatchObject({ done: true, deleted: 0, incomplete: false });
+    await files.sweepAttempts([root]);
+
+    expect(await readFile(path, 'utf8')).toBe('generated fixture');
+    expect(
+      (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + stopped.token}`.execute(db))
+        .rows,
+    ).toHaveLength(1);
+  });
+
+  it('prunes only worker-stop proof without a registered worker and leaves neighboring metadata alone', async () => {
+    const orphan = randomUUID();
+    const keys = [
+      `frameleaf-worker-stopped:${orphan}`,
+      `frameleaf-worker-stopped:${worker}`,
+      `frameleaf-worker-stopped-extra:${orphan}`,
+    ];
+    await sql`INSERT INTO system_metadata (key,value) VALUES
+      (${keys[0]},jsonb_build_object('workerId',${orphan}::text)),
+      (${keys[1]},jsonb_build_object('workerId',${worker}::text)),
+      (${keys[2]},jsonb_build_object('workerId',${orphan}::text))`.execute(db);
+
+    await pruneWorkerStopEvidence(db);
+
+    expect(
+      (await sql<{ key: string }>`SELECT key FROM system_metadata WHERE key=ANY(${keys}::text[])`.execute(db)).rows
+        .map(({ key }) => key)
+        .sort(),
+    ).toEqual(keys.slice(1).sort());
+  });
+
+  it('retains compact proof while its exact attempt token remains in SQL history', async () => {
+    const { files } = setup();
+    const settled = await claim();
+    await recordStoppedAttempt(db, settled.id, settled.token);
+    const evidence = () =>
+      sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + settled.token}`.execute(db);
+
+    expect((await files.sweepAttempts([root]))?.done).toBe(true);
+    await files.sweepAttempts([root]);
+    expect((await evidence()).rows).toHaveLength(1);
+
+    await sql`DELETE FROM job WHERE id=${settled.id}::uuid`.execute(db);
+    expect((await files.sweepAttempts([root]))?.done).toBe(true);
+    await files.sweepAttempts([root]);
+    expect((await evidence()).rows).toHaveLength(0);
+  });
+
+  it.each(['initial', 'completed', 'incomplete'] as const)(
+    'retains evidence recorded after the %s pass begins when the application clock is ahead',
+    async (previous) => {
+      const { files } = setup();
+      const token = randomUUID();
+      const missing = join(root, 'missing');
+      const roots = previous === 'incomplete' ? [root, missing] : [root];
+      await sql`DELETE FROM system_metadata WHERE key='frameleaf-attempt-cleanup-v1'`.execute(db);
+      const now = Date.now;
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => now() + 60 * 60 * 1000);
+      try {
+        const first = await files.sweepAttempts(roots);
+        expect(first).toMatchObject({ done: true, incomplete: previous === 'incomplete' });
+        if (previous === 'completed') await files.sweepAttempts(roots);
+        else if (previous === 'incomplete') await mkdir(missing);
+
+        // The producer stops only after this traversal's boundary. Its proof must survive
+        // until another full pass can account for any outputs it left behind the cursor.
+        await recordStoppedAttempt(db, randomUUID(), token);
+        if (previous !== 'initial') expect((await files.sweepAttempts(roots))?.done).toBe(true);
+        await files.sweepAttempts(roots);
+        expect(
+          (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + token}`.execute(db)).rows,
+        ).toHaveLength(1);
+
+        expect((await files.sweepAttempts(roots))?.done).toBe(true);
+        await files.sweepAttempts(roots);
+        expect(
+          (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + token}`.execute(db)).rows,
+        ).toHaveLength(0);
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
+  it('retains stopped proof until a missing subtree is included in a complete traversal', async () => {
+    const { files } = setup();
+    const token = randomUUID();
+    const missing = join(root, 'missing');
+    await recordStoppedAttempt(db, randomUUID(), token);
+    for (let pass = 0; pass < 2; pass++) {
+      expect(await files.sweepAttempts([root, missing])).toMatchObject({ done: true, incomplete: true });
+      expect(
+        (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + token}`.execute(db)).rows,
+      ).toHaveLength(1);
+    }
+    await mkdir(missing);
+    expect(await files.sweepAttempts([root, missing])).toMatchObject({ done: true, incomplete: false });
+    await files.sweepAttempts([root, missing]);
+    expect(
+      (await sql`SELECT value FROM system_metadata WHERE key=${ATTEMPT_EVIDENCE_PREFIX + token}`.execute(db)).rows,
+    ).toHaveLength(0);
   });
 
   it('does not equate lease recovery with stopped execution, but accepts the parent worker-stop proof', async () => {
