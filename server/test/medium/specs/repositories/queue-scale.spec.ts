@@ -1,6 +1,6 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { listRunItems } from 'src/queue/run-query.js';
+import { listRunItems, listRuns } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
@@ -182,6 +182,19 @@ describe('large durable queue query work', () => {
       expect(
         (await sql`select id from job_run where id=${runId}::uuid and "finishedAt" is not null`.execute(db)).rows,
       ).toEqual([]);
+      // Calibrate the intentionally exact aggregate separately from bounded execution queries.
+      // This fixture does not claim a full UI latency or process-memory acceptance result.
+      const summaryStarted = performance.now();
+      const summaries = await listRuns(db, 10, 0);
+      process.stdout.write(
+        `${JSON.stringify({ size, phase: 'exact-run-summary', durationMs: performance.now() - summaryStarted })}\n`,
+      );
+      expect(summaries.find(({ id }) => id === runId)).toMatchObject({
+        total: size,
+        completed: size - 240,
+        waiting: 240,
+        stageTotals: { total: size * 4, completed: size * 4 - 240, waiting: 240 },
+      });
     },
     180_000,
   );
