@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import type { DatabaseSchema } from '@frameleaf/sql-tools';
 // Standalone migration tooling loads this module with native ESM, without application aliases.
 // eslint-disable-next-line no-restricted-imports
 import { validateFrameleafCatalog } from './catalog-authority.js';
+import type { DatabaseSchema } from '@frameleaf/sql-tools';
 
 export type ArtifactManifest = {
   sourceCommit: string;
