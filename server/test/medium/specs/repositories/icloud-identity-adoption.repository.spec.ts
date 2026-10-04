@@ -1000,12 +1000,14 @@ describe('iCloud exact identity adoption', () => {
     async function population(size: number) {
       const started = performance.now();
       const concurrency = size > 101 ? 4 : 1;
+      const timings = { claimMs: 0, adoptionMs: 0, verificationMs: 0, finalizationMs: 0, waveMs: 0 };
       const progress = (phase: string, receipts: number) => {
         if (size > 101) {
           console.info('weekly-large-population-qualification', {
             phase,
             receipts,
             elapsedMs: Math.round(performance.now() - started),
+            ...Object.fromEntries(Object.entries(timings).map(([phase, duration]) => [phase, Math.round(duration)])),
           });
         }
       };
@@ -1044,6 +1046,15 @@ describe('iCloud exact identity adoption', () => {
           SELECT ${f.user.id}::uuid,${f.asset.id}::uuid,'library',name,${f.master},'original',${f.sha256},
             ${`device:${device}`},cloud,'corroborated'
           FROM jsonb_to_recordset(${JSON.stringify(identities)}::text::jsonb) AS x(name text,cloud text)`.execute(db);
+        if (size > 101) {
+          // A bulk-loaded qualification fixture must not rely on autovacuum eventually
+          // refreshing statistics. In particular, these distinct item names all reuse
+          // one asset: stale join/selectivity estimates can scan the whole identity
+          // population for each ORDER BY id LIMIT 2 adoption lookup.
+          await sql`ANALYZE immich_fork.icloud_record`.execute(db);
+          await sql`ANALYZE immich_fork.icloud_resource`.execute(db);
+          await sql`ANALYZE immich_fork.icloud_source_identity`.execute(db);
+        }
       }
       // Every receipt is produced by the actual adoption transaction. The test verifier reads the
       // actual owned file and checks its identity after hashing; it never inserts a reuse receipt.
@@ -1058,22 +1069,28 @@ describe('iCloud exact identity adoption', () => {
           expect(claims.map((claim) => claim.cplAssetRecordName).sort()).toEqual([...requested].sort());
           expect(claims.every((claim) => claim.holder === holder)).toBe(true);
         }
+        if (size > 101) await sql`ANALYZE immich_fork.icloud_claim`.execute(db);
         progress('actual-receipts', 1);
         for (let index = 1; index < size; index += concurrency) {
           const admitted: ICloudResource[] = [];
           for (let slot = 0; slot < Math.min(concurrency, size - index); slot++) {
+            const claimStarted = performance.now();
             const resource = (await sync.claim(f.connection.id, f.connection.config.stagingBytes))!;
+            timings.claimMs += performance.now() - claimStarted;
             expect(resource).toBeDefined();
             admitted.push(resource);
           }
           // Admission pauses until the whole wave finalizes: a new claim otherwise
           // could take another adopter's committed resource before it releases its lease.
+          const waveStarted = performance.now();
           const settled = await Promise.allSettled(
             admitted.map(async (resource) => {
+              const adoptionStarted = performance.now();
               expect(
                 await repository.adopt(
                   { ...f.authority, resourceId: resource.id, resourceLeaseToken: resource.leaseToken! },
                   async (candidate) => {
+                    const verificationStarted = performance.now();
                     const bytes = await readFile(candidate.originalPath);
                     const stat = await lstat(candidate.originalPath);
                     const identity = {
@@ -1085,25 +1102,35 @@ describe('iCloud exact identity adoption', () => {
                     };
                     const apple = appleFingerprintHash();
                     apple.update(bytes);
-                    return {
+                    const evidence = {
                       sha1: createHash('sha1').update(bytes).digest(),
                       sha256: createHash('sha256').update(bytes).digest(),
                       sizeInBytes: bytes.length,
                       appleFingerprint: apple.digest(),
                       identity,
                       current: async () => {
+                        const currentStarted = performance.now();
                         const current = await lstat(candidate.originalPath);
-                        return Object.entries(identity).every(
+                        const matches = Object.entries(identity).every(
                           ([key, value]) => current[key as keyof typeof identity] === value,
                         );
+                        timings.verificationMs += performance.now() - currentStarted;
+                        return matches;
                       },
                     };
+                    timings.verificationMs += performance.now() - verificationStarted;
+                    return evidence;
                   },
                 ),
               ).toBe('adopted');
+              // Summed adopter durations include the real shared-file lock wait.
+              timings.adoptionMs += performance.now() - adoptionStarted;
+              const finalizationStarted = performance.now();
               expect(await sync.finalize(resource, async () => {})).toBe(true);
+              timings.finalizationMs += performance.now() - finalizationStarted;
             }),
           );
+          timings.waveMs += performance.now() - waveStarted;
           for (const result of settled) {
             if (result.status === 'rejected') throw result.reason;
           }
