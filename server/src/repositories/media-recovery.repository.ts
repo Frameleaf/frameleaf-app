@@ -4,7 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
-import type { MediaIntegrityResult } from 'src/services/media-integrity.service.js';
+import type { MediaIntegrityResult, MediaIntegrityIdentity } from 'src/services/media-integrity.service.js';
 import {
   AssetLockReason,
   AssetStatus,
@@ -23,12 +23,15 @@ import {
   writesLegacy,
 } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
+import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { guardAudit, guardAuditAuthority, publishAudit } from 'src/repositories/icloud-audit.repository.js';
 import { guardScheduledAudit } from 'src/repositories/icloud-scheduled-authority.js';
+import { guardWeeklyIdentityAdoption, lockIdentityAdoptionMetadata, WeeklyIdentityAdoptionContext, weeklyIdentityAdoptionFence } from 'src/repositories/icloud-weekly-adoption-authority.js';
 import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
 import { ScheduledPublicationFiles, publishScheduledAudit } from 'src/repositories/icloud-scheduled-publication.js';
-import { lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
+import { canonicalJson } from 'src/utils/studio-project.js';
 import type { AuditExecutionAuthority } from 'src/repositories/icloud-scheduled-authority.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
@@ -106,6 +109,8 @@ export type RecoveryAuthority = {
   includeHidden: boolean;
   audit?: AuditExecutionAuthority;
   scheduled?: ScheduledPublicationFiles;
+  /** Captured internally before decoding a genuine 0217 mapped reuse; never scheduled/session authority. */
+  weeklyReuse?: WeeklyIdentityAdoptionContext;
 };
 export type RecoveryReservation = { target: RecoveryTarget; promotedPath: string };
 
@@ -117,6 +122,61 @@ export class MediaRecoveryRepository {
     private forkEnrichment: ForkEnrichmentRepository,
     @Optional() private scheduledStaging?: ICloudScheduledStagingRepository,
   ) {}
+
+  async identityReuseAuthority(input: RecoveryAuthority, db?: Transaction<DB>): Promise<{
+    required: boolean; context?: WeeklyIdentityAdoptionContext; fileIdentity?: MediaIntegrityIdentity;
+  }> {
+    if (input.audit) { return { required: false }; }
+    if (!db) { return this.db.transaction().execute(async (trx) => {
+      await lockPublicForkWrites(trx);
+      await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(trx);
+      return this.identityReuseAuthority(input, trx);
+    }); }
+    // A real immutable receipt selects this branch; a verification JSON label cannot create consent authority.
+    const { rows } = await sql<{ connectionId: string; valid: boolean; fileIdentity: MediaIntegrityIdentity; config: string }>`SELECT r."connectionId",
+      reuse.snapshot->'fileIdentity' AS "fileIdentity",reuse.snapshot->>'config' AS config,
+      (r."assetId"=reuse."assetId" AND r.sha256=reuse."expectedSha256" AND i."assetId"=reuse."assetId"
+        AND r."libraryKey" IS NOT DISTINCT FROM reuse."libraryKey" AND upper(r."sourceAssetId")=reuse."cplAssetRecordName"
+        AND r.source->>'sourceMasterId'=reuse."cplMasterRecordName"
+        AND reuse.role=CASE r.role WHEN 'original' THEN 'original' WHEN 'motion' THEN 'live-motion' WHEN 'raw' THEN 'raw-alternate' END
+        AND i.sha256=reuse."expectedSha256" AND i."deliveredBy" LIKE 'device:%' AND i."editVersion"=''
+        AND i."lastAuditResult" IS DISTINCT FROM 'mismatch' AND i.role=reuse.role
+        AND i."cplAssetRecordName"=reuse."cplAssetRecordName" AND i."cplMasterRecordName"=reuse."cplMasterRecordName"
+        AND r."resourceKey"=reuse.snapshot->>'resourceKey' AND r.fingerprint=reuse.snapshot->>'fingerprint'
+        AND asset.revision=reuse.snapshot->>'sourceRevision' AND master.revision=reuse.snapshot->>'masterRevision'
+        AND NOT asset.deleted AND NOT master.deleted AND a."originalPath"=reuse.snapshot->>'originalPath'
+        AND a."updateId"::text=reuse.snapshot->>'updateId' AND encode(a.checksum,'hex')=reuse.snapshot->>'checksum'
+        AND a."checksumAlgorithm"::text=reuse.snapshot->>'algorithm'
+        AND (to_jsonb(a)->>'physicalOriginalFileId') IS NOT DISTINCT FROM reuse.snapshot->>'physicalId'
+        AND p."physicalFileId"::text IS NOT DISTINCT FROM reuse.snapshot->>'forkPhysicalId'
+        AND (p."physicalFileId" IS NULL OR p."upstreamPath"=a."originalPath")) AS valid
+      FROM immich_fork.icloud_identity_reuse reuse
+      JOIN immich_fork.icloud_resource r ON r.id=reuse."sourceResourceId" AND r."ownerId"=reuse."ownerId"
+        AND r."connectionId"=reuse."connectionId"
+      LEFT JOIN immich_fork.icloud_source_identity i ON i.id=reuse."identityId" AND i."ownerId"=reuse."ownerId"
+      LEFT JOIN public.asset a ON a.id=reuse."assetId" AND a."ownerId"=reuse."ownerId"
+      LEFT JOIN immich_fork.asset_physical_file p ON p."assetId"=a.id
+      LEFT JOIN immich_fork.icloud_record asset ON asset."connectionId"=r."connectionId" AND asset."libraryKey"=r."libraryKey"
+        AND asset."recordId"=r."sourceAssetId"
+      LEFT JOIN immich_fork.icloud_record master ON master."connectionId"=r."connectionId" AND master."libraryKey"=r."libraryKey"
+        AND master."recordId"=r.source->>'sourceMasterId'
+      WHERE reuse."sourceResourceId"=${input.resourceId}::uuid AND reuse."ownerId"=${input.ownerId}::uuid`.execute(db);
+    if (rows.length === 0) { return { required: !!input.weeklyReuse }; }
+    if (rows.length !== 1 || !rows[0].valid) { return { required: true }; }
+    const context = await guardWeeklyIdentityAdoption(db, input.ownerId, rows[0].connectionId, input.weeklyReuse);
+    if (!context || canonicalJson(context.config) !== rows[0].config) { return { required: true }; }
+    const hidden = await this.hiddenFilter(db, input.ownerId);
+    const eligible = await sql`SELECT 1 FROM public.asset a
+      JOIN immich_fork.icloud_identity_reuse reuse ON reuse."assetId"=a.id AND reuse."ownerId"=a."ownerId"
+      WHERE reuse."sourceResourceId"=${input.resourceId}::uuid AND a."ownerId"=${input.ownerId}::uuid
+        AND a."deletedAt" IS NULL AND a.status=${AssetStatus.Active} AND NOT a."isExternal" AND NOT a."isOffline"
+        AND (reuse.role='live-motion' OR a.visibility<>${AssetVisibility.Hidden}) AND NOT ${hidden}
+        AND NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=a.id)
+        AND NOT EXISTS (SELECT 1 FROM public.asset still JOIN public.asset_lock l ON l."assetId"=still.id
+          WHERE still."livePhotoVideoId"=a.id)`.execute(db);
+    if (eligible.rows.length !== 1) { return { required: true }; }
+    return { required: true, context, fileIdentity: rows[0].fileIdentity };
+  }
 
   async getResource(input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
     if (input.audit?.purpose === 'scheduled-weekly') {
@@ -201,6 +261,16 @@ export class MediaRecoveryRepository {
     if (input.audit?.purpose === 'scheduled-weekly') { return { outcome: 'retry', reason: 'mapping_changed' }; }
     return this.db.transaction().execute(async (trx) => {
       await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
+      const reuse = await this.identityReuseAuthority(input, trx as Transaction<DB>);
+      if (reuse.required && (!input.weeklyReuse || !reuse.context)) {
+        return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
+      }
+      if (reuse.required) {
+        // The real classification writer's metadata protocol precedes lockTarget's asset row lock.
+        if (!(await lockIdentityAdoptionMetadata(trx as Transaction<DB>, input.candidate.id))) {
+          return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
+        }
+      }
       const resource = await this.lockResource(trx, input);
       if (
         !resource ||
@@ -226,6 +296,9 @@ export class MediaRecoveryRepository {
       if (!candidate || candidate.damaged || candidate.isOffline) {
         return { outcome: 'retry', reason: 'target_changed' };
       }
+      if (reuse.required && (candidate.hidden || canonicalJson(input.verified.identity) !== canonicalJson(reuse.fileIdentity))) {
+        return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
+      }
       const final = await input.verifyFinal();
       if (
         final.status !== 'healthy' ||
@@ -237,10 +310,20 @@ export class MediaRecoveryRepository {
       if (!(await this.lockResource(trx, input))) {
         return { outcome: 'retry', reason: 'lease_expired' };
       }
-      await sql`UPDATE immich_fork.icloud_resource SET
+      const finalReuse = await this.identityReuseAuthority(input, trx as Transaction<DB>);
+      if (finalReuse.required !== reuse.required || (finalReuse.required && (!finalReuse.context ||
+        canonicalJson(final.identity) !== canonicalJson(finalReuse.fileIdentity)))) {
+        return { outcome: 'retry', reason: 'identity_adoption_unavailable' };
+      }
+      const updated = await sql`UPDATE immich_fork.icloud_resource SET
         status = 'committed',
-        path = ${candidate.originalPath}, verification = ${{ outcome: 'reused', identity: final.identity, sizeInBytes: final.sizeInBytes }}::jsonb,
-        "lastError" = NULL, "updatedAt" = now() WHERE id = ${input.resourceId}::uuid`.execute(trx);
+        path = ${candidate.originalPath}, verification = (CASE WHEN ${reuse.required} THEN coalesce(verification,'{}'::jsonb)
+          ELSE '{}'::jsonb END) || ${{ outcome: 'reused', identity: final.identity, sizeInBytes: final.sizeInBytes }}::jsonb,
+        "lastError" = NULL, "updatedAt" = now() WHERE id = ${input.resourceId}::uuid
+          AND ${finalReuse.context ? weeklyIdentityAdoptionFence(finalReuse.context) : sql<boolean>`true`}
+          AND (NOT ${reuse.required} OR ("leaseToken"=${input.leaseToken}::uuid AND "leaseExpiresAt">clock_timestamp()))
+          RETURNING id`.execute(trx);
+      if (updated.rows.length !== 1) { return { outcome: 'retry', reason: 'identity_adoption_unavailable' }; }
       return { outcome: 'reused', assetId: candidate.id };
     });
   }
