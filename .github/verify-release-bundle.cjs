@@ -31,7 +31,12 @@ const {
 async function verifyBundle(
   directory,
   expectedTag,
-  { authenticate = false, run, request = github, registry = new Registry() } = {},
+  {
+    authenticate = false,
+    run,
+    request = github,
+    registry = new Registry(),
+  } = {},
 ) {
   assert.match(
     expectedTag,
