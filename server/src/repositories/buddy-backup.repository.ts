@@ -4,11 +4,11 @@ import { InjectKysely } from 'nestjs-kysely';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { BuddyBootDeclaration } from 'src/utils/buddy-boot-configuration.js';
 import type { BuddyPairing } from 'src/utils/frameleaf-buddy.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DB } from 'src/schema/index.js';
 import { writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
-import type { BuddyBootDeclaration } from 'src/utils/buddy-boot-configuration.js';
 import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
 
 export type BuddySettings = {

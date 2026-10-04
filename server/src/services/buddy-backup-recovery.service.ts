@@ -24,9 +24,9 @@ import {
 } from 'src/utils/buddy-backup-recovery.js';
 import { type BuddySettingsSnapshot, readBuddySettingsSnapshot } from 'src/utils/buddy-backup-settings.js';
 import { createBuddyDirectory, flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
+import { finalizeBuddyBootBinding } from 'src/utils/buddy-boot-binding.js';
 import { keyFingerprint, parseBackupKey } from 'src/utils/cloud-backup.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
-import { finalizeBuddyBootBinding } from 'src/utils/buddy-boot-binding.js';
 
 /** Available in maintenance without booting application jobs, accounts or the Cloud client. */
 @Injectable()
