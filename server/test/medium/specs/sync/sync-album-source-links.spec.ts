@@ -1,10 +1,14 @@
 import { Kysely } from 'kysely';
+import request from 'supertest';
+import { SyncController } from 'src/controllers/sync.controller.js';
 import { AlbumSourceKind } from 'src/dtos/album-source.dto.js';
 import { SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { DB } from 'src/schema/index.js';
+import { SyncService } from 'src/services/sync.service.js';
 import { SyncTestContext } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB } from 'test/utils.js';
+import { controllerSetup, getActiveForkKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
 beforeAll(async () => {
@@ -14,6 +18,74 @@ const types = [SyncRequestType.AlbumSourceLinksV1];
 const events = (rows: any[]) => rows.filter((row) => row.type !== SyncEntityType.SyncCompleteV1);
 
 describe(SyncRequestType.AlbumSourceLinksV1, () => {
+  it('keeps source-link checkpoints out of the legacy GET /sync/ack response without losing resume state', async () => {
+    const ctx = new SyncTestContext(db);
+    const { auth, user, session } = await ctx.newSyncAuthUser();
+    const { auth: otherAuth } = await ctx.newSyncAuthUser();
+    const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Private source' });
+    const links = new AlbumSourceRepository(db);
+    const id = await links.write((tx) =>
+      links.create(tx, {
+        userId: user.id,
+        albumId: album.id,
+        kind: AlbumSourceKind.IosPhotos,
+        sourceId: 'private-cloud-source',
+        deviceKey: null,
+        name: 'Private source',
+      }),
+    );
+    const http = await controllerSetup(SyncController, [
+      { provide: SyncService, useValue: ctx.sut },
+      { provide: GlobalExceptionFilter, useValue: { handleError: vi.fn() } },
+    ]);
+    // Authentication selects the real database session; sync handlers and repositories remain real.
+    http.authenticate.mockResolvedValue(auth);
+
+    try {
+      const legacy = events(await ctx.syncStream(auth, [SyncRequestType.AuthUsersV1]));
+      expect(legacy).toEqual([
+        expect.objectContaining({ type: SyncEntityType.AuthUserV1, ack: expect.any(String) }),
+      ]);
+      const legacyAck = { type: SyncEntityType.AuthUserV1, ack: legacy[0].ack };
+      await ctx.syncAckAll(auth, legacy);
+
+      const created = events(await ctx.syncStream(auth, types));
+      expect(created).toEqual([
+        expect.objectContaining({ type: SyncEntityType.AlbumSourceLinkV1, data: expect.objectContaining({ id }) }),
+      ]);
+      expect(events(await ctx.syncStream(otherAuth, types))).toEqual([]);
+      await request(http.getHttpServer()).post('/sync/ack').send({ acks: [created[0].ack] }).expect(204);
+      await ctx.assertSyncIsComplete(auth, types);
+
+      await links.write((tx) => links.delete(tx, id));
+      const deleted = events(await ctx.syncStream(auth, types));
+      expect(deleted).toEqual([
+        expect.objectContaining({ type: SyncEntityType.AlbumSourceLinkDeleteV1, data: { linkId: id } }),
+      ]);
+      await request(http.getHttpServer()).post('/sync/ack').send({ acks: [deleted[0].ack] }).expect(204);
+      await ctx.assertSyncIsComplete(auth, types);
+
+      const stored = await db
+        .selectFrom('session_sync_checkpoint')
+        .select(['type', 'ack'])
+        .where('sessionId', '=', session.id)
+        .execute();
+      expect(stored).toEqual(
+        expect.arrayContaining([
+          legacyAck,
+          { type: SyncEntityType.AlbumSourceLinkV1, ack: created[0].ack },
+          { type: SyncEntityType.AlbumSourceLinkDeleteV1, ack: deleted[0].ack },
+        ]),
+      );
+
+      const { body } = await request(http.getHttpServer()).get('/sync/ack').expect(200);
+      expect(body).toContainEqual(legacyAck);
+      expect(body.filter(({ type }: { type: string }) => type.startsWith('AlbumSourceLink'))).toEqual([]);
+    } finally {
+      await http.close();
+    }
+  });
+
   it('sends links, their changes and their removal, and only the owner’s', async () => {
     const ctx = new SyncTestContext(db);
     const { auth, user } = await ctx.newSyncAuthUser();
