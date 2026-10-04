@@ -127,7 +127,7 @@ jobs:
       - name: HDR diagnostic master metadata, PTS, audio and interrupted restart (FL-107)
         env:
           HDR_TIMING_REPORT: ${{ runner.temp }}/hdr-master-timing-report.json
-        run: node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs
+        run: node --test studio/tools/hdr-master.test.mjs studio/tools/hdr-master-timing.test.mjs studio/tools/hdr-source-validation.test.mjs
       - name: Install Chromium for compositor readback
         working-directory: studio/engine
         run: npx --no-install playwright install --with-deps chromium
