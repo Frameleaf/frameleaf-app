@@ -1,4 +1,5 @@
 import { Kysely, RawBuilder, sql } from 'kysely';
+import { selectionItemState } from 'src/queue/selection-state.js';
 
 export const RUN_OUTCOMES = [
   'completed',
@@ -80,11 +81,11 @@ export type RunItemRead = {
 // Bookkeeping (rootItemKey NULL) affects run settlement, but never selected-media item counts.
 const stagesFor = (
   filter: RawBuilder<boolean>,
-) => sql`select i."runId", i."rootItemKey", i.stage, i.state, j."availableAt", j.attempt, j."retryBaseAttempt", j."dependencyReason", q.paused,
+) => sql`select i."runId", i."rootItemKey", i.stage, ${selectionItemState} state, j."availableAt", j.attempt, j."retryBaseAttempt", j."dependencyReason", q.paused,
   greatest(j."progressAt", j."startedAt", j."finishedAt") "meaningfulAt",
   case
-    when i.state = 'needs_attention' then 'needsAttention'
-    when i.state not in ('pending','waiting') then i.state
+    when ${selectionItemState} = 'needs_attention' then 'needsAttention'
+    when ${selectionItemState} not in ('pending','waiting') then ${selectionItemState}
     when q.paused then 'paused'
     when j."dependencyReason" is not null then 'blocked'
     when p.id is not null and p.state != 'completed' then 'blocked'
@@ -92,6 +93,7 @@ const stagesFor = (
     when j."availableAt" > now() then 'delayed'
     else 'waiting' end outcome
   from job_run_item i left join job j on j.id = i."jobId"
+  left join job_selection snapshot on snapshot.id = i."selectionId"
   left join job_queue q on q.name = coalesce(j.queue, i.queue) left join job p on p.id = j."parentId" where ${filter}`;
 
 const counts = (alias: string) => sql`jsonb_build_object('total', count(*)::int,

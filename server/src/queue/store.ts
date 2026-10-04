@@ -1,7 +1,17 @@
 import { Kysely, Transaction, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
-import { feedManifest, finishSelections, resumeSelections, shareSelections } from 'src/queue/manifest.js';
+import {
+  QueuePublication,
+  assertSelectionsShared,
+  attachSelectionMemberships,
+  feedManifest,
+  finishSelections,
+  resumeSelections,
+  shareSelectionPage,
+  withSelectionSharing,
+} from 'src/queue/manifest.js';
 import { listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
+import { unfinishedQueueItems, unfinishedRunItems } from 'src/queue/selection-state.js';
 import {
   JobDependencyReason,
   QUEUE_BATCH,
@@ -46,7 +56,7 @@ export class SqlQueueStore {
     // Same lock order as admission/completion, including multi-queue follow-ups.
     for (const queue of [...new Set(intents.map((intent) => intent.queue))].sort()) {
       await sql`insert into job_queue(name) values (${queue}) on conflict do nothing`.execute(db);
-      await sql`select name from job_queue where name = ${queue} for update`.execute(db);
+      await sql`select name from job_queue where name = ${queue} for no key update`.execute(db);
     }
     for (const intent of intents) {
       const key = intent.options?.deduplication?.id ?? intent.options?.jobId ?? null;
@@ -125,8 +135,9 @@ export class SqlQueueStore {
               where "runId" = ${intent.runId}::uuid and "itemKey" = ${intent.itemKey} and stage = ${intent.name}`.execute(
               db,
             );
+            if (!intent.rootItemKey) await attachSelectionMemberships(db, existing.id);
           }
-          await shareSelections(db, existing.id);
+          // Durable headers make late sharing recoverable even after the producer becomes terminal.
           continue;
         }
       }
@@ -166,9 +177,8 @@ export class SqlQueueStore {
         select 1 from job_run_item i where i."runId" = r.id and i."rootItemKey" is null
           and i.state not in ('completed','failed','needs_attention','cancelled','blocked'))
       and not exists (
-        select 1 from job_selection s where s.state = 'enumerating' and
-          (s."runId" = r.id or exists (
-            select 1 from job_run_item i where i."runId" = r.id and i."selectionId" = s.id)))`.execute(db);
+        select 1 from job_selection_run m join job_selection s on s.id = m."selectionId"
+          where m."runId" = r.id and (s.state = 'enumerating' or not m."copyComplete"))`.execute(db);
     // settleRuns separately requires every retained descendant stage to be terminal, including
     // manifest items not yet admitted to job. Never infer completion from the live job table.
   }
@@ -198,7 +208,7 @@ export class SqlQueueStore {
     // Lock every prepared destination before insertBatch can take any job/item locks.
     for (const queue of [...new Set(intents.map((intent) => intent.queue))].sort()) {
       await sql`insert into job_queue(name) values (${queue}) on conflict do nothing`.execute(tx);
-      await sql`select name from job_queue where name = ${queue} for update`.execute(tx);
+      await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
     }
     await sql`insert into job_run(id, kind, selection)
       values (${id}::uuid, ${kind}, ${JSON.stringify(selection)}::text::jsonb)`.execute(tx);
@@ -218,6 +228,7 @@ export class SqlQueueStore {
   }
 
   async feedManifest(queue: string) {
+    await shareSelectionPage(this.db, { queue });
     return feedManifest(this.db, queue, (intents, tx) => this.enqueue(intents, tx));
   }
 
@@ -227,7 +238,7 @@ export class SqlQueueStore {
       const {
         rows: [config],
       } = await sql<{ paused: boolean; concurrency: number }>`
-        select paused, concurrency from job_queue where name = ${queue} for update skip locked
+        select paused, concurrency from job_queue where name = ${queue} for no key update skip locked
       `.execute(tx);
       if (!config || config.paused) {
         return [];
@@ -293,72 +304,84 @@ export class SqlQueueStore {
   }
 
   /** Canonical adoption callback and follow-up intents share the token-fenced commit. No I/O here. */
-  async complete(claim: QueueClaim, followups: QueueIntent[], adopt?: (tx: Transaction<any>) => Promise<void>) {
-    return this.db.transaction().execute(async (tx) => {
-      // Publications may construct additional child intents after reading their accepted rows.
-      // Lock the finite queue catalogue in one order before any job/asset rows, including those
-      // destinations. Media work has already finished; only the short publication is serialized.
-      await sql`select name from job_queue order by name for update`.execute(tx);
-      const {
-        rows: [job],
-      } = await sql<{ latestPending: QueueIntent | null }>`
+  async complete(
+    claim: QueueClaim,
+    followups: QueueIntent[],
+    adopt?: (tx: Transaction<any>) => Promise<void>,
+    publication?: QueuePublication,
+  ) {
+    return withSelectionSharing(
+      this.db,
+      async (tx) => {
+        // Publications may construct additional child intents after reading their accepted rows.
+        // Lock the finite queue catalogue in one order before any job/asset rows, including those
+        // destinations. Media work has already finished; only the short publication is serialized.
+        await sql`select name from job_queue order by name for no key update`.execute(tx);
+        const {
+          rows: [job],
+        } = await sql<{ latestPending: QueueIntent | null }>`
         select "latestPending" from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
         and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update
       `.execute(tx);
-      if (!job) {
-        return false;
-      }
-      await adopt?.(tx);
-      const { rows: accepted } =
-        await sql`update job set state = 'completed', "finishedAt" = clock_timestamp(), token = null,
+        if (!job) {
+          return false;
+        }
+        // Check before an adoption can append follow-ups in memory. A sharing retry rolls back
+        // only the fence/check, never repeats a successful media publication callback.
+        await assertSelectionsShared(tx, claim.id);
+        await adopt?.(tx);
+        const { rows: accepted } =
+          await sql`update job set state = 'completed', "finishedAt" = clock_timestamp(), token = null,
         "leaseExpiresAt" = null, "latestPending" = null, "dependencyReason" = null,
         data = case when sensitive then '{}'::jsonb else data end
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and "leaseExpiresAt" > clock_timestamp()
         and "cancelRequestedAt" is null returning id`.execute(tx);
-      if (accepted.length === 0) {
-        throw new Error('Publication lease expired before commit');
-      }
-      await sql`update job_attempt set outcome = 'completed', "finishedAt" = now() where token = ${claim.token}::uuid`.execute(
-        tx,
-      );
-      const affectedRuns = await this.syncItem(claim.id, tx);
-      const { rows: lineage } = await sql<{
-        runId: string;
-        itemKey: string;
-        rootItemKey: string | null;
-      }>`select "runId", "itemKey", "rootItemKey" from job_run_item
-        where "jobId" = ${claim.id}::uuid and state != 'cancelled'`.execute(tx);
-      const inherited = followups.flatMap((intent) => {
-        if (lineage.length === 0 || (intent.runId && intent.runId !== claim.runId)) {
-          return [intent];
+        if (accepted.length === 0) {
+          throw new Error('Publication lease expired before commit');
         }
-        return lineage.map((parent) => ({
-          ...intent,
-          runId: parent.runId,
-          rootItemKey: parent.rootItemKey,
-          itemKey:
-            intent.itemKey === claim.itemKey
-              ? parent.itemKey
-              : (intent.itemKey ??
-                String(
-                  intent.data.id ??
-                    intent.data.assetId ??
-                    createHash('sha256').update(JSON.stringify(intent.data)).digest('hex'),
-                )),
-        }));
-      });
-      await this.enqueue(inherited, tx);
-      const latest = await this.scheduleLatest(claim.id, job.latestPending, tx);
-      await finishSelections(tx, claim.id, true);
-      await this.settleRuns(tx, [...affectedRuns, ...latest.runIds]);
-      return true;
-    });
+        await sql`update job_attempt set outcome = 'completed', "finishedAt" = now() where token = ${claim.token}::uuid`.execute(
+          tx,
+        );
+        const affectedRuns = await this.syncItem(claim.id, tx);
+        const { rows: lineage } = await sql<{
+          runId: string;
+          itemKey: string;
+          rootItemKey: string | null;
+        }>`select "runId", "itemKey", "rootItemKey" from job_run_item
+        where "jobId" = ${claim.id}::uuid and state != 'cancelled'`.execute(tx);
+        const inherited = followups.flatMap((intent) => {
+          if (lineage.length === 0 || (intent.runId && intent.runId !== claim.runId)) {
+            return [intent];
+          }
+          return lineage.map((parent) => ({
+            ...intent,
+            runId: parent.runId,
+            rootItemKey: parent.rootItemKey,
+            itemKey:
+              intent.itemKey === claim.itemKey
+                ? parent.itemKey
+                : (intent.itemKey ??
+                  String(
+                    intent.data.id ??
+                      intent.data.assetId ??
+                      createHash('sha256').update(JSON.stringify(intent.data)).digest('hex'),
+                  )),
+          }));
+        });
+        await this.enqueue(inherited, tx);
+        const latest = await this.scheduleLatest(claim.id, job.latestPending, tx);
+        await finishSelections(tx, claim.id, true);
+        await this.settleRuns(tx, [...affectedRuns, ...latest.runIds]);
+        return true;
+      },
+      publication,
+    );
   }
 
   /** A dependency refusal is not an execution failure. Keep the item and audit, refund its retry credit. */
   async defer(claim: QueueClaim, reason: JobDependencyReason) {
     return this.db.transaction().execute(async (tx) => {
-      await sql`select name from job_queue where name = ${claim.queue} for update`.execute(tx);
+      await sql`select name from job_queue where name = ${claim.queue} for no key update`.execute(tx);
       const { rows } = await sql`update job set state = 'pending', token = null, "leaseExpiresAt" = null,
         "workerId" = null, "cancelRequestedAt" = null, "finishedAt" = null, error = null,
         "retryBaseAttempt" = "retryBaseAttempt" + 1, "dependencyReason" = ${reason},
@@ -377,20 +400,22 @@ export class SqlQueueStore {
     claim: QueueClaim,
     reason: string,
     diagnostic?: (tx: Transaction<any>) => Promise<void>,
-    options: { expiredRecovery?: boolean } = {},
+    options: { expiredRecovery?: boolean; publication?: QueuePublication } = {},
   ) {
-    return this.db.transaction().execute(async (tx) => {
-      await sql`select name from job_queue where name = ${claim.queue} for update`.execute(tx);
-      let unconfirmedStop = false;
-      let operationId: string | null = null;
-      if (options.expiredRecovery) {
-        const {
-          rows: [expired],
-        } = await sql<{
-          stopped: boolean;
-          graceElapsed: boolean;
-          operationId: string | null;
-        }>`select data->>'operationId' "operationId",
+    return withSelectionSharing(
+      this.db,
+      async (tx) => {
+        await sql`select name from job_queue where name = ${claim.queue} for no key update`.execute(tx);
+        let unconfirmedStop = false;
+        let operationId: string | null = null;
+        if (options.expiredRecovery) {
+          const {
+            rows: [expired],
+          } = await sql<{
+            stopped: boolean;
+            graceElapsed: boolean;
+            operationId: string | null;
+          }>`select data->>'operationId' "operationId",
           "leaseExpiresAt" <= clock_timestamp() - interval '30 seconds' "graceElapsed",
           (exists (select 1 from system_metadata m
             where m.key = 'frameleaf-attempt-evidence:' || j.token::text
@@ -400,32 +425,32 @@ export class SqlQueueStore {
               and m.value->>'workerId' = j."workerId"::text and m.value ? 'stoppedAt')) stopped
           from job j where id = ${claim.id}::uuid and token = ${claim.token}::uuid
             and state = 'active' and "leaseExpiresAt" <= clock_timestamp() for update`.execute(tx);
-        if (!expired) return false;
-        operationId = expired.operationId;
-        // Allow one sweep for the independent supervisor's bounded proof write. The expired
-        // token already fences publication. A timestamp alone never permits another executor.
-        if (!expired.stopped && !expired.graceElapsed) {
-          await sql`update job set "cancelRequestedAt" = coalesce("cancelRequestedAt", clock_timestamp()),
+          if (!expired) return false;
+          operationId = expired.operationId;
+          // Allow one sweep for the independent supervisor's bounded proof write. The expired
+          // token already fences publication. A timestamp alone never permits another executor.
+          if (!expired.stopped && !expired.graceElapsed) {
+            await sql`update job set "cancelRequestedAt" = coalesce("cancelRequestedAt", clock_timestamp()),
             error = 'Waiting for confirmation that the expired executor has stopped'
             where id = ${claim.id}::uuid`.execute(tx);
-          return false;
+            return false;
+          }
+          unconfirmedStop = !expired.stopped;
+          if (unconfirmedStop) reason = 'Executor stop could not be confirmed; review the worker before retrying';
         }
-        unconfirmedStop = !expired.stopped;
-        if (unconfirmedStop) reason = 'Executor stop could not be confirmed; review the worker before retrying';
-      }
-      if (diagnostic) {
-        const { rows } = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
+        if (diagnostic) {
+          const { rows } = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
           and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
-          tx,
-        );
-        if (rows.length === 0) return false;
-        await diagnostic(tx);
-        const { rows: valid } =
-          await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
+            tx,
+          );
+          if (rows.length === 0) return false;
+          await diagnostic(tx);
+          const { rows: valid } =
+            await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
           and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null`.execute(tx);
-        if (valid.length === 0) throw new Error('Diagnostic publication lost its claim');
-      }
-      const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
+          if (valid.length === 0) throw new Error('Diagnostic publication lost its claim');
+        }
+        const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
         state = case when ${unconfirmedStop} or not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
         "availableAt" = now() + interval '30 seconds', "dependencyReason" = null, token = null, "leaseExpiresAt" = null,
         "finishedAt" = case when ${unconfirmedStop} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
@@ -433,46 +458,48 @@ export class SqlQueueStore {
         data = case when sensitive then '{}'::jsonb else data end
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
         returning id, state, "latestPending"`.execute(tx);
-      if (rows.length === 0) {
-        return false;
-      }
-      await sql`update job_attempt set outcome = ${rows[0].state}, "finishedAt" = now(),
+        if (rows.length === 0) {
+          return false;
+        }
+        await sql`update job_attempt set outcome = ${rows[0].state}, "finishedAt" = now(),
         error = (select error from job where id = ${claim.id}::uuid) where token = ${claim.token}::uuid`.execute(tx);
-      if (operationId) {
-        if (unconfirmedStop) {
-          // The media-operation dispatcher must not acquire a second retry budget or replay
-          // an executor whose stop is unknown after this queue claim is fenced.
-          await sql`update media_operation set status = 'failed', "finishedAt" = now(),
+        if (operationId) {
+          if (unconfirmedStop) {
+            // The media-operation dispatcher must not acquire a second retry budget or replay
+            // an executor whose stop is unknown after this queue claim is fenced.
+            await sql`update media_operation set status = 'failed', "finishedAt" = now(),
             "claimToken" = null, "claimExpiresAt" = null, "claimedBy" = null,
             "errorCode" = 'executor_stop_unconfirmed', error = ${reason},
             result = coalesce(result, '{}'::jsonb) || '{"status":"needs_attention"}'::jsonb
             where id::text = ${operationId} and "claimedBy" = 'job-queue' and "claimToken" is not null`.execute(tx);
-        } else {
-          await sql`update media_operation set "claimExpiresAt" = now()
+          } else {
+            await sql`update media_operation set "claimExpiresAt" = now()
             where id::text = ${operationId} and "claimedBy" = 'job-queue' and "claimToken" is not null`.execute(tx);
+          }
         }
-      }
-      const affectedRuns = await this.syncItem(claim.id, tx);
-      if (rows[0].state !== 'pending') {
-        const terminalParents = [claim.id];
-        await finishSelections(tx, claim.id, false);
-        await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
-        const latest = rows[0].latestPending;
-        if (unconfirmedStop && latest) {
-          await sql`update job_run_item set state = 'needs_attention'
+        const affectedRuns = await this.syncItem(claim.id, tx);
+        if (rows[0].state !== 'pending') {
+          const terminalParents = [claim.id];
+          await finishSelections(tx, claim.id, false);
+          await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
+          const latest = rows[0].latestPending;
+          if (unconfirmedStop && latest) {
+            await sql`update job_run_item set state = 'needs_attention'
             where "jobId" is null and "runId" = ${latest.runId ?? null}::uuid
               and "itemKey" = ${latest.itemKey ?? null} and stage = ${latest.name}`.execute(tx);
-          if (latest.runId) affectedRuns.push(latest.runId);
-        } else {
-          const scheduled = await this.scheduleLatest(claim.id, latest, tx, false);
-          affectedRuns.push(...scheduled.runIds);
-          terminalParents.push(...scheduled.terminalIds);
+            if (latest.runId) affectedRuns.push(latest.runId);
+          } else {
+            const scheduled = await this.scheduleLatest(claim.id, latest, tx, false);
+            affectedRuns.push(...scheduled.runIds);
+            terminalParents.push(...scheduled.terminalIds);
+          }
+          affectedRuns.push(...(await this.settleDependencies(tx, terminalParents)));
         }
-        affectedRuns.push(...(await this.settleDependencies(tx, terminalParents)));
-      }
-      await this.settleRuns(tx, affectedRuns);
-      return true;
-    });
+        await this.settleRuns(tx, affectedRuns);
+        return true;
+      },
+      options.publication,
+    );
   }
 
   private async scheduleLatest(
@@ -576,8 +603,7 @@ export class SqlQueueStore {
     if (runIds.length === 0) return;
     await sql`update job_run r set "finishedAt" = now()
       where r.id = any(${[...new Set(runIds)]}::uuid[]) and "enumerationDone" and "finishedAt" is null
-      and not exists (select 1 from job_run_item i where i."runId" = r.id
-        and i.state in ('pending','waiting','active'))`.execute(tx);
+      and not (${unfinishedRunItems(sql<string>`r.id`)})`.execute(tx);
   }
 
   async setConcurrency(name: string, concurrency: number) {
@@ -628,13 +654,7 @@ export class SqlQueueStore {
   async hasUnfinishedWork(queue: string) {
     const {
       rows: [row],
-    } = await sql<{ unfinished: boolean }>`select
-      exists (select 1 from job where queue = ${queue} and state in ('pending','waiting','active'))
-      or exists (select 1 from job_run_item where queue = ${queue} and "jobId" is null
-        and state in ('pending','waiting','active'))
-      or exists (select 1 from job_selection where queue = ${queue} and state = 'enumerating') unfinished`.execute(
-      this.db,
-    );
+    } = await sql<{ unfinished: boolean }>`select ${unfinishedQueueItems(queue)} unfinished`.execute(this.db);
     return row.unfinished;
   }
 
@@ -652,8 +672,8 @@ export class SqlQueueStore {
 
   async clear(queue: string, states: QueueState[]) {
     // Keep run accounting and dependency history. Clearing hides payloads and cancels pending work.
-    await this.db.transaction().execute(async (tx) => {
-      await sql`select name from job_queue where name = ${queue} for update`.execute(tx);
+    await withSelectionSharing(this.db, async (tx) => {
+      await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
       const { rows: cancelledLatest } = await sql<{ runId: string; rootItemKey: string | null }>`
         update job_run_item i set state = 'cancelled' where i."jobId" is null and exists (
         select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
@@ -664,9 +684,9 @@ export class SqlQueueStore {
         const { rows: cancelled } = await sql<{
           runId: string;
         }>`with cancelled as (
-          update job_run_item set state = 'cancelled' where queue = ${queue}
-            and "selectionId" is not null and "jobId" is null and state = 'pending' returning "runId"
-        ) select distinct "runId" from cancelled`.execute(tx);
+          update job_selection set state = 'cancelled' where queue = ${queue}
+            and state in ('enumerating','ready') returning id
+        ) select distinct m."runId" from cancelled c join job_selection_run m on m."selectionId" = c.id`.execute(tx);
         affectedRuns.push(...cancelled.map((item) => item.runId));
       }
       const { rows } = await sql<{ id: string }>`update job set state = 'cancelled', data = '{}'::jsonb,
@@ -691,7 +711,7 @@ export class SqlQueueStore {
     let total = 0;
     for (;;) {
       const count = await this.db.transaction().execute(async (tx) => {
-        await sql`select name from job_queue where name = ${queue} for update`.execute(tx);
+        await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
         const { rows } = await sql<{ id: string; runId: string | null }>`update job j set state = 'pending',
           "availableAt" = now(), "finishedAt" = null, error = null, "retryBaseAttempt" = attempt
           where id in (
@@ -745,12 +765,13 @@ export async function resetQueueAfterRestore(db: Executor) {
     join job j on j.id = s."producerId" where j.state in ('failed','needs_attention','cancelled','blocked')`.execute(
     db,
   );
-  for (const { producerId } of stoppedProducers) await finishSelections(db, producerId, false);
-  await sql`update job_selection set state = 'needs_attention' where not "safeToRetry"`.execute(db);
-  await sql`update job_run_item set state = 'needs_attention' where "jobId" is null and state = 'pending'
-    and "selectionId" in (select id from job_selection where state = 'needs_attention')`.execute(db);
+  for (const { producerId } of stoppedProducers) {
+    await finishSelections(db, producerId, false);
+  }
+  await sql`update job_selection set state = 'needs_attention' where not "safeToRetry" and state != 'cancelled'`.execute(
+    db,
+  );
   await sql`update job_run r set "finishedAt" = now() where "enumerationDone" and "finishedAt" is null
-    and not exists(select 1 from job_run_item i where i."runId" = r.id
-      and i.state in ('pending','waiting','active'))`.execute(db);
+    and not (${unfinishedRunItems(sql<string>`r.id`)})`.execute(db);
   await sql`update job_worker set state = 'lost'`.execute(db);
 }

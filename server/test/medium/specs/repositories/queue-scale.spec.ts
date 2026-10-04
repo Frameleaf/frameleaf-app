@@ -75,6 +75,8 @@ describe('large durable queue query work', () => {
       values (${runId}::uuid,'scale','{}',true)`.execute(db);
       await sql`insert into job_selection(id,"runId",stage,queue,"safeToRetry",sensitive,"deadlineMs",state)
       values (${selectionId}::uuid,${runId}::uuid,'stage-0',${queue},true,false,60000,'ready')`.execute(db);
+      await sql`insert into job_selection_run("runId","selectionId","copyComplete")
+        values (${runId}::uuid,${selectionId}::uuid,true)`.execute(db);
       await sql`insert into job_run_item("runId","itemKey","rootItemKey",stage,queue,selection,"selectionId","jobId",state)
         select ${runId}::uuid,lpad(n::text,8,'0'),lpad(n::text,8,'0'),'stage-' || s,${queue},
           jsonb_build_object('id',lpad(n::text,8,'0')),case when s=0 then ${selectionId}::uuid end,

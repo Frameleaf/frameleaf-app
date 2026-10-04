@@ -65,9 +65,10 @@ describe('durable bounded selection manifests', () => {
     sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
   const manifest = (runId: string) =>
     sql<{ selected: number; unscheduled: number; attention: number }>`select count(*)::int selected,
-    count(*) filter(where "jobId" is null and state = 'pending')::int unscheduled,
-    count(*) filter(where state = 'needs_attention')::int attention from job_run_item
-    where "runId" = ${runId}::uuid and "selectionId" is not null`
+    count(*) filter(where i."jobId" is null and i.state = 'pending' and s.state in ('ready','enumerating'))::int unscheduled,
+    count(*) filter(where i.state = 'needs_attention' or (i."jobId" is null and i.state = 'pending' and s.state = 'needs_attention'))::int attention
+    from job_run_item i join job_selection s on s.id = i."selectionId"
+    where i."runId" = ${runId}::uuid`
       .execute(db)
       .then(({ rows }) => rows[0]);
   const snapshotRunId = async () => {

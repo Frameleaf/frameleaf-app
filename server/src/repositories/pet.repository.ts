@@ -5,6 +5,7 @@ import type { AssetVisibility } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { JobName, PetObservationState, PetRecognitionRunStatus, PetSpecies } from 'src/enum.js';
+import { selectionItemState, unfinishedRunItems } from 'src/queue/selection-state.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -804,12 +805,12 @@ export class PetRepository {
     // Only retained terminal evidence may settle a live domain run. Queue retries, pauses and
     // dependency deferrals remain authoritative; this read never enqueues or resets anything.
     await sql`update public.pet_recognition_run p set
-      status = case when exists (select 1 from job_run_item i where i."runId" = r.id
-        and i.state in ('failed', 'needs_attention', 'blocked')) then ${PetRecognitionRunStatus.Failed}
-        when exists (select 1 from job_run_item i where i."runId" = r.id and i.state = 'cancelled')
+      status = case when exists (select 1 from job_run_item i left join job_selection snapshot on snapshot.id = i."selectionId" where i."runId" = r.id
+        and ${selectionItemState} in ('failed', 'needs_attention', 'blocked')) then ${PetRecognitionRunStatus.Failed}
+        when exists (select 1 from job_run_item i left join job_selection snapshot on snapshot.id = i."selectionId" where i."runId" = r.id and ${selectionItemState} = 'cancelled')
           then ${PetRecognitionRunStatus.Cancelled} else ${PetRecognitionRunStatus.Completed} end,
-      error = case when exists (select 1 from job_run_item i where i."runId" = r.id
-        and i.state in ('failed', 'needs_attention', 'blocked'))
+      error = case when exists (select 1 from job_run_item i left join job_selection snapshot on snapshot.id = i."selectionId" where i."runId" = r.id
+        and ${selectionItemState} in ('failed', 'needs_attention', 'blocked'))
           then 'Pet recognition queue run ended with errors; review the job run before retrying.' else null end,
       "finishedAt" = r."finishedAt", "updatedAt" = clock_timestamp()
       from system_metadata m join job_run r on r.id = (m.value->>'queueRunId')::uuid
@@ -818,8 +819,7 @@ export class PetRepository {
         and p.status in (${PetRecognitionRunStatus.Queued}, ${PetRecognitionRunStatus.Running})
         and r."enumerationDone" and r."finishedAt" is not null
         and exists (select 1 from job_run_item i where i."runId" = r.id)
-        and not exists (select 1 from job_run_item i where i."runId" = r.id
-          and i.state in ('pending', 'waiting', 'active'))`.execute(this.db);
+        and not (${unfinishedRunItems(sql<string>`r.id`)})`.execute(this.db);
     return sql<PetRecognitionRun>`
       SELECT p.* FROM public.pet_recognition_run p WHERE p."ownerId" = ${ownerId}
         and (${requestedQueueRunId ?? null}::uuid is null or exists (
@@ -837,7 +837,7 @@ export class PetRepository {
   ): Promise<PetRecognitionRun> {
     return this.forkWrite(async (tx) => {
       // Admission and producer checkpoints take catalogue locks before any pet domain locks.
-      if (enqueue) await sql`select name from job_queue order by name for update`.execute(tx);
+      if (enqueue) await sql`select name from job_queue order by name for no key update`.execute(tx);
       const {
         rows: [run],
       } = await sql<PetRecognitionRun>`
