@@ -1,3 +1,4 @@
+import { IMPORT_DERIVED_RUN_KIND, importDerivedRunId } from 'src/immich-import/derived-work.js';
 import { ImportDatabase, ImportRefused } from 'src/immich-import/types.js';
 
 // Included in the canonical Frameleaf bootstrap by the integration owner. Never run on the source.
@@ -20,8 +21,14 @@ CREATE TABLE public.frameleaf_immich_import_work (
 
 export const getImmichImportState = async (db: ImportDatabase) => {
   const [run] = await db.query(
-    'SELECT status, source_version, created_at, verified_at FROM public.frameleaf_immich_import',
+    'SELECT status, source_version, source_fingerprint, config_fingerprint, created_at, verified_at FROM public.frameleaf_immich_import',
   );
+  const [derived] = run
+    ? await db.query('SELECT id FROM public.job_run WHERE id=$1::uuid AND kind=$2', [
+        importDerivedRunId(String(run.source_fingerprint), String(run.config_fingerprint)),
+        IMPORT_DERIVED_RUN_KIND,
+      ])
+    : [];
   const checkpoints = await db.query(
     'SELECT table_name, row_count, complete FROM public.frameleaf_immich_import_checkpoint ORDER BY table_name',
   );
@@ -31,6 +38,7 @@ export const getImmichImportState = async (db: ImportDatabase) => {
   return {
     status: run?.status ?? 'fresh',
     version: run?.source_version,
+    derivedRunId: derived?.id,
     checkpoints,
     pendingDerivedWork: work?.pending ?? '0',
   };

@@ -124,9 +124,14 @@ counts, canonical foreign-key relationships, original checksums and mapped file
 bytes and independent destination file identities. External `sha1-path` values are
 verified against the original source path, then recalculated using the mapped
 destination path; the external/library classification stays intact. It checks the source fingerprint again, persists missing derived work,
-drains that journal transactionally into the PostgreSQL queue facade, and rebuilds
-the destination HNSW indexes. It activates only when every gate has passed; derived
-jobs need to be durably queued, not already executed. Worker/API startup must call
+transfers that journal into one durable run with frozen per-stage selections, and rebuilds
+the destination HNSW indexes. `status` reports the retained `derivedRunId`. Journal acknowledgements
+are bounded to 250 rows per transaction and require matching retained memberships; a restart
+reuses the same run and snapshots, including empty stages. Legacy acknowledgements without
+that proof fail closed. Verification creates no hot queue executions and does not wait for workers.
+After activation, the coordinator admits manifest work in batches of 250 up to 1,000 live
+jobs per queue, refilling when that queue reaches 500. It activates only when every gate has passed;
+derived jobs need to be durably retained, not already executed. Worker/API startup must call
 `assertImmichImportActivated()` so partial or abandoned imports stay inaccessible.
 The integration owner must also keep the CLI bootstrap from starting normal
 workers or ordinary user-registration logic.

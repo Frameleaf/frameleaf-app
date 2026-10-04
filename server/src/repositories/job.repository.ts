@@ -11,6 +11,7 @@ import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
+import { transferImportedWork } from 'src/immich-import/derived-work.js';
 import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { attachProducerRun, freezeSelection, getManifestJobOptions } from 'src/queue/manifest.js';
@@ -653,28 +654,10 @@ export class JobRepository {
     );
   }
 
-  async dispatchImportedWork(): Promise<number> {
-    return this.store.db.transaction().execute(async (tx) => {
-      const { rows } = await sql<{
-        asset_id: string;
-        kind: string;
-      }>`select asset_id, kind from frameleaf_immich_import_work
-        where dispatched_at is null order by asset_id, kind limit 250 for update skip locked`.execute(tx);
-      const names: Record<string, JobName> = {
-        metadata: JobName.AssetExtractMetadata,
-        thumbnail: JobName.AssetGenerateThumbnails,
-        'smart-search': JobName.SmartSearch,
-        'face-detection': JobName.AssetDetectFaces,
-      };
-      for (const row of rows) {
-        const intent = this.intent({ name: names[row.kind], data: { id: row.asset_id } } as JobItem);
-        intent.options = { deduplication: { id: `import/${row.kind}/${row.asset_id}` } };
-        await this.store.enqueue([intent], tx);
-        await sql`update frameleaf_immich_import_work set dispatched_at = now()
-          where asset_id = ${row.asset_id}::uuid and kind = ${row.kind}`.execute(tx);
-      }
-      return rows.length;
-    });
+  async dispatchImportedWork(): Promise<string> {
+    const runId = await transferImportedWork(this.store.db, (name) => this.intent({ name, data: {} } as JobItem));
+    await this.store.finishEnumeration(runId);
+    return runId;
   }
   private getNamedJobOptions(item: JobItem): QueueOptions | null {
     switch (item.name) {
