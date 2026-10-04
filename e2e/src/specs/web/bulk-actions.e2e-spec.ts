@@ -76,7 +76,7 @@ test.describe('Bulk actions', () => {
     const bar = page.getByRole('region', { name: 'Selected items' });
     await bar.getByRole('button', { name: 'Favorite', exact: true }).click();
 
-    await expect(page.getByText('Favorite: 2 of 2 updated, 0 failed, 0 skipped')).toBeVisible();
+    await expect(page.getByText('Favorite: 2 items updated', { exact: true })).toBeVisible();
     await expect.poll(() => isFavorite(admin.accessToken, own.id)).toBe(true);
     await expect.poll(() => isFavorite(admin.accessToken, copyId)).toBe(true);
     await expect(isFavorite(partner.accessToken, theirs.id)).resolves.toBe(false);
