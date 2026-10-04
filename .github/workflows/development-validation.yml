@@ -166,7 +166,21 @@ jobs:
         if: ${{ always() && steps.lint.outcome == 'failure' }}
         continue-on-error: true
         run: |
-          timeout 3m pnpm --dir server exec eslint 'src/**/*.ts' 'test/**/*.ts' --max-warnings 0 --fix > "$RUNNER_TEMP/frameleaf-development/reports/server-lint-fixes.log" 2>&1 || true
+          # Limit fixes to the files reported by the preceding full lint. A second
+          # whole-tree pass can time out before ESLint writes any repairs.
+          mapfile -d '' files < <(python3 - <<'PY'
+          import os
+          from pathlib import Path
+          report = Path(os.environ['RUNNER_TEMP']) / 'frameleaf-development/reports/server-lint.log'
+          prefix = str(Path.cwd() / 'server') + '/'
+          for line in report.read_text().splitlines():
+              if line.startswith(prefix) and line.endswith('.ts'):
+                  print(line.removeprefix(prefix), end='\0')
+          PY
+          )
+          if (( ${#files[@]} > 0 )); then
+            timeout 8m pnpm --dir server exec eslint "${files[@]}" --max-warnings 0 --fix > "$RUNNER_TEMP/frameleaf-development/reports/server-lint-fixes.log" 2>&1 || true
+          fi
           git diff --binary -- server > "$RUNNER_TEMP/frameleaf-development/server-lint-fixes.patch"
       - name: Collect generated files and outcomes
         if: ${{ always() }}

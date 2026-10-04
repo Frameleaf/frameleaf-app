@@ -2318,7 +2318,7 @@ var readColumns = async (ctx, db) => {
 		WHERE n.nspname = ${ctx.schemaName} AND a.attnum > 0 AND NOT a.attisdropped
 	`.execute(db);
 	const attributeMap = new Map(attributes.map((a) => [`${a.tableName}.${a.columnName}`, a]));
-	const columns = await db.selectFrom("information_schema.columns as c").leftJoin("information_schema.element_types as o", (join) => join.onRef("c.table_catalog", "=", "o.object_catalog").onRef("c.table_schema", "=", "o.object_schema").onRef("c.table_name", "=", "o.object_name").on("o.object_type", "=", sql.lit("TABLE")).onRef("c.dtd_identifier", "=", "o.collection_type_identifier")).leftJoin("pg_type as t", (join) => join.onRef("t.typname", "=", "c.udt_name").on("c.data_type", "=", sql.lit("USER-DEFINED"))).leftJoin("pg_enum as e", (join) => join.onRef("e.enumtypid", "=", "t.oid")).select([
+	const columns = await db.selectFrom("information_schema.columns as c").leftJoin("information_schema.element_types as o", (join) => join.onRef("c.table_catalog", "=", "o.object_catalog").onRef("c.table_schema", "=", "o.object_schema").onRef("c.table_name", "=", "o.object_name").on("o.object_type", "=", sql.lit("TABLE")).onRef("c.dtd_identifier", "=", "o.collection_type_identifier")).select([
 		"c.table_name",
 		"c.column_name",
 		"c.data_type",
@@ -2333,7 +2333,7 @@ var readColumns = async (ctx, db) => {
 		"c.udt_name",
 		"o.data_type as array_type"
 	]).where("table_schema", "=", ctx.schemaName).execute();
-	const enums = (await db.selectFrom("pg_type").innerJoin("pg_namespace", (join) => join.onRef("pg_namespace.oid", "=", "pg_type.typnamespace").on("pg_namespace.nspname", "=", ctx.schemaName)).where("typtype", "=", sql.lit("e")).select((eb) => ["pg_type.typname as name", jsonArrayFrom(eb.selectFrom("pg_enum as e").select(["e.enumlabel as value"]).whereRef("e.enumtypid", "=", "pg_type.oid")).as("values")]).execute()).map((item) => ({
+	const enums = (await db.selectFrom("pg_type").innerJoin("pg_namespace", (join) => join.onRef("pg_namespace.oid", "=", "pg_type.typnamespace").on("pg_namespace.nspname", "=", ctx.schemaName)).where("typtype", "=", sql.lit("e")).select((eb) => ["pg_type.typname as name", jsonArrayFrom(eb.selectFrom("pg_enum as e").select(["e.enumlabel as value"]).whereRef("e.enumtypid", "=", "pg_type.oid").orderBy("e.enumsortorder")).as("values")]).execute()).map((item) => ({
 		name: item.name,
 		values: item.values.map(({ value }) => value)
 	}));

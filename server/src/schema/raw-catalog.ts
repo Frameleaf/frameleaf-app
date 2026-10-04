@@ -13,7 +13,7 @@ export const verifyRawCatalog = (catalog: DatabaseSchema, raw: RawCatalog): void
           )
         : [],
     );
-    const expected = new Map(
+    const expected = new Map<string, string>(
       catalog.tables.flatMap((table) =>
         table[kind].map((item) => [`${table.name}.${item.name}`, item.definition] as const),
       ),

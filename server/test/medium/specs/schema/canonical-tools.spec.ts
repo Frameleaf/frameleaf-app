@@ -33,6 +33,36 @@ describe('canonical SQL tools on PostgreSQL', () => {
   });
   const read = () => schemaFromDatabase({ connection: { connectionType: 'url', url }, overrides: false });
 
+  it('reads each enum column once and retains declared enum ordering', async () => {
+    await sql
+      .raw(
+        `
+      CREATE TYPE catalog_state AS ENUM ('waiting', 'completed');
+      ALTER TYPE catalog_state ADD VALUE 'active' BEFORE 'completed';
+      CREATE TABLE catalog_enum (id integer, state catalog_state, history catalog_state[]);
+    `,
+      )
+      .execute(db);
+    const schema = await read();
+    expect(schema.warnings).toEqual([]);
+    const table = schema.tables.find((table) => table.name === 'catalog_enum')!;
+    expect(table.columns.map(({ name }) => name).sort()).toEqual(['history', 'id', 'state']);
+    expect(table.columns.find(({ name }) => name === 'state')).toMatchObject({
+      type: 'enum',
+      enumName: 'catalog_state',
+    });
+    expect(table.columns.find(({ name }) => name === 'history')).toMatchObject({
+      type: 'enum',
+      enumName: 'catalog_state',
+      isArray: true,
+    });
+    expect(schema.enums.find(({ name }) => name === 'catalog_state')?.values).toEqual([
+      'waiting',
+      'active',
+      'completed',
+    ]);
+  });
+
   it('captures and restores vector dimensions, CHECK bodies, deferred FKs, expression indexes and multi-event triggers', async () => {
     await sql
       .raw(
