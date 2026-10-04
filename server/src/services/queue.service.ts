@@ -164,9 +164,10 @@ export class QueueService extends BaseService {
   async runCommandLegacy(name: QueueName, dto: QueueCommandDto): Promise<QueueResponseLegacyDto> {
     this.logger.debug(`Handling command: queue=${name},command=${dto.command},force=${dto.force}`);
 
+    let runId: string | undefined;
     switch (dto.command) {
       case QueueCommand.Start: {
-        await this.start(name, dto);
+        runId = await this.jobRepository.createRun(name, { force: dto.force ?? false }, () => this.start(name, dto));
         break;
       }
 
@@ -194,7 +195,7 @@ export class QueueService extends BaseService {
 
     const response = await this.getByName(name);
 
-    return mapQueueLegacy(response);
+    return { ...mapQueueLegacy(response), ...(runId ? { runId } : {}) };
   }
 
   async getAll(_auth: AuthDto): Promise<QueueResponseDto[]> {
@@ -328,11 +329,7 @@ export class QueueService extends BaseService {
    * with its saved data. Returns how many were failed when the command ran.
    */
   async retryFailedJobs(auth: AuthDto, name: QueueName): Promise<QueueRetryFailedResponseDto> {
-    const { failed } = await this.jobRepository.getJobCounts(name);
-    if (failed > 0) {
-      await this.jobRepository.retryFailed(name);
-    }
-    return { count: failed };
+    return { count: await this.jobRepository.retryFailed(name) };
   }
 
   async emptyQueue(auth: AuthDto, name: QueueName, dto: QueueDeleteDto) {

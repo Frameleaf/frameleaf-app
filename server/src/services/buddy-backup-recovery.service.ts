@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { Queue } from 'bullmq';
 import { sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -11,6 +10,7 @@ import type { MaintenanceModeState } from 'src/types.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { StorageFolder, SystemMetadataKey } from 'src/enum.js';
+import { resetQueueAfterRestore } from 'src/queue/store.js';
 import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
 import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
@@ -32,7 +32,7 @@ import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
 export class BuddyBackupRecoveryService {
   constructor(
     private repository: BuddyBackupRepository,
-    private config: ConfigRepository,
+    _config: ConfigRepository,
     private backups: DatabaseBackupService,
     private keys: CloudBackupKeyRepository,
   ) {}
@@ -229,9 +229,13 @@ export class BuddyBackupRecoveryService {
     await this.repository.db.transaction().execute(async (trx) => {
       await assert();
       await trx.deleteFrom('session').execute();
+      // Stopped-worker restore: fence active claims and retain only the queue's safe durable work.
+      await resetQueueAfterRestore(trx);
+      await sql`TRUNCATE public.frameleaf_rate_limit, public.frameleaf_upload_lease,
+        public.frameleaf_websocket_worker, public.socket_io_attachments`.execute(trx);
       // Restored unfinished jobs describe work from the old server and cannot safely be resumed.
       await sql`DELETE FROM public.media_operation`.execute(trx);
-      await sql`DELETE FROM immich_fork.buddy_backup_reference`.execute(trx);
+      await sql`DELETE FROM public.buddy_backup_reference`.execute(trx);
       await trx.deleteFrom('system_metadata').where('key', 'in', replacement.keys).execute();
       for (const row of replacement.metadata)
         await sql`INSERT INTO system_metadata (key, value) VALUES (${row.key}, ${JSON.stringify(row.value)}::text::jsonb)
@@ -239,17 +243,6 @@ export class BuddyBackupRecoveryService {
       await sql`INSERT INTO system_metadata (key, value) VALUES (${SystemMetadataKey.MaintenanceMode}, ${JSON.stringify(maintenance)}::text::jsonb)
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(trx);
     });
-    const { bull } = this.config.getEnv();
-    for (const { name } of bull.queues) {
-      await assert();
-      if (!name) throw new Error('Recovery queue name is unavailable');
-      const queue = new Queue(name, bull.config);
-      try {
-        await queue.obliterate({ force: true });
-      } finally {
-        await queue.close();
-      }
-    }
     await files.verify(plan, roots, settings.configurationFiles);
     await this.restoreKeys(plan.manifest, assert);
     await this.restoreBuddySettings(buddy, plan.mode, assert);
@@ -278,7 +271,7 @@ export class BuddyBackupRecoveryService {
     }
     const preimage = join(directory, 'settings-rollback.json');
     const digest = createHash('sha256').update(JSON.stringify(plan)).digest('hex');
-    type Previous = { id: string; digest: string; system: unknown; users: unknown[]; fork: unknown[] };
+    type Previous = { id: string; digest: string; system: unknown; users: unknown[] };
     let previous: Previous;
     try {
       previous = JSON.parse(await readFile(preimage, 'utf8'));
@@ -291,8 +284,7 @@ export class BuddyBackupRecoveryService {
         .where('key', '=', SystemMetadataKey.SystemConfig)
         .executeTakeFirst();
       const users = await this.repository.db.selectFrom('user_metadata').selectAll().execute();
-      const fork = await sql`SELECT key, value FROM immich_fork.config`.execute(this.repository.db);
-      previous = { id, digest, system: system?.value ?? {}, users, fork: fork.rows };
+      previous = { id, digest, system: system?.value ?? {}, users };
       // Persist the original preimage once, before publishing or committing anything.
       await writeBuddyFile(preimage, JSON.stringify(previous), true, assert);
     }
@@ -307,12 +299,6 @@ export class BuddyBackupRecoveryService {
         const merged = plan.mode === 'replace' ? restored : { ...restored, ...old };
         await sql`INSERT INTO system_metadata (key, value) VALUES (${SystemMetadataKey.SystemConfig}, ${JSON.stringify(merged)}::text::jsonb)
           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(trx);
-        for (const row of plan.manifest.settings.fork) {
-          await sql`INSERT INTO immich_fork.config (key, value) VALUES (${row.key}, ${JSON.stringify(row.value)}::text::jsonb)
-            ON CONFLICT (key) DO UPDATE SET value = CASE WHEN ${plan.mode === 'replace'} THEN EXCLUDED.value ELSE immich_fork.config.value END`.execute(
-            trx,
-          );
-        }
         for (const row of plan.manifest.settings.users) {
           if (!(await trx.selectFrom('user').select('id').where('id', '=', row.userId).executeTakeFirst())) continue;
           await sql`INSERT INTO user_metadata ("userId", key, value) VALUES (${row.userId}::uuid, ${row.key}, ${JSON.stringify(row.value)}::text::jsonb)

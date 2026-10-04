@@ -1,5 +1,5 @@
-import { Column, PrimaryGeneratedColumn, Table, Unique } from '@immich/sql-tools';
-import type { Generated } from '@immich/sql-tools';
+import { Column, PrimaryGeneratedColumn, Table, Unique } from '@frameleaf/sql-tools';
+import type { Generated } from '@frameleaf/sql-tools';
 import type { PathType } from 'src/enum.js';
 
 @Table('move_history')

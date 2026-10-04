@@ -17,7 +17,7 @@ import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -37,12 +37,9 @@ import {
   CalendarHeatmapType,
   TimeBucketDateType,
 } from 'src/enum.js';
-import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
+
 import { VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
-import { getForkSchemaPhase, readsForkSidecar } from 'src/repositories/fork-derived-results.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
-import { canWriteFork } from 'src/repositories/fork-write-guard.js';
+
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -99,9 +96,7 @@ import {
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 import { globToPostgresRegex } from 'src/utils/misc.js';
 import { deriveIsNsfwFromMetadata } from 'src/utils/nsfw.js';
-
 export type AssetStats = Record<AssetType, number>;
-
 /** FL-97: what became of a Studio HDR intermediate's original. */
 export type StudioHdrIntermediateStatus = 'ready' | 'ineligible' | 'failed';
 export type StudioHdrIntermediateState = {
@@ -114,22 +109,21 @@ export type StudioHdrIntermediateState = {
   path: string | null;
   createdAt: Date | null;
 };
-
 /**
  * FL-97: identifies the original an intermediate was made from. The checksum alone is not enough:
  * an external-library item's checksum is of its path, so an edit in place changes only its
  * modification time (which a rescan re-reads).
  */
 const studioHdrSourceFingerprint = sql<Buffer>`sha256(a.checksum || convert_to(extract(epoch FROM a."fileModifiedAt")::text, 'UTF8'))`;
-
 /** FL-97: the sidecar exists once the fork schema has been migrated (never on an unmigrated library). */
 const hasStudioHdrTable = async (db: Kysely<DB>): Promise<boolean> => {
-  const { rows } = await sql<{ table: string | null }>`
-    SELECT to_regclass('immich_fork.studio_hdr_intermediate')::text AS table
+  const { rows } = await sql<{
+    table: string | null;
+  }>`
+    SELECT to_regclass('public.studio_hdr_intermediate')::text AS table
   `.execute(db);
   return !!rows[0]?.table;
 };
-
 /** The files a removed asset held, read under its row lock in the removal's transaction (FL-169). */
 export type RemovedAsset = {
   originalPath: string;
@@ -147,25 +141,25 @@ export type RemovedAsset = {
    */
   pendingMoves: AssetPendingMove[];
 };
-
 export type AssetMovePathType = AssetPathType | AssetFileType;
-
 /** A recorded move; `stagedPath` is where a copy across filesystems is staged (`getStagedMovePath`). */
-export type AssetPendingMove = { pathType: AssetMovePathType; oldPath: string; newPath: string; stagedPath: string };
-
+export type AssetPendingMove = {
+  pathType: AssetMovePathType;
+  oldPath: string;
+  newPath: string;
+  stagedPath: string;
+};
 /**
  * FL-179: where a move across filesystems stages its copy, beside the new path and named by the move's
  * record, so a copy left by an interrupted move is found from the record: the next attempt of the move
  * replaces it, and a removal of the asset releases it.
  */
 export const getStagedMovePath = (to: string, moveId: string) => `${to}.${moveId}.moving`;
-
 /** The path types whose moves `moveFile` commits: the asset's original and its own unedited files. */
 export const ASSET_MOVE_PATH_TYPES: ReadonlySet<string> = new Set<string>([
   ...Object.values(AssetPathType),
   ...Object.values(AssetFileType),
 ]);
-
 /** One storage move of an asset's file, recorded in `move_history` before it starts (FL-179). */
 export type AssetFileMove = {
   /** The `move_history` row that records the move until it commits. */
@@ -178,7 +172,6 @@ export type AssetFileMove = {
   source: string;
   to: string;
 };
-
 /**
  * - `moved`: the file is at `to` and every row that named it says so.
  * - `failed`: the file could not be moved; nothing changed and the move stays recorded.
@@ -190,7 +183,6 @@ export type AssetFileMove = {
  *   the move stays recorded until the two agree again (a relink or verification repairs them).
  */
 export type AssetFileMoveResult = 'moved' | 'failed' | 'removed' | 'changed' | 'deferred' | 'mismatched';
-
 /** The filesystem side of a move, run by `moveFile` while it holds the move's locks. */
 export type AssetFileMoveOperations = {
   /** A rename on one filesystem to `to`; false when it could not, having changed nothing. */
@@ -205,24 +197,14 @@ export type AssetFileMoveOperations = {
   /** Leaves the file only at `source` again after the new path could not be saved. Must not throw. */
   undo: () => Promise<void>;
 };
-
 /** FL-179: how many times a removal starts over when its locks changed under it. */
 const REMOVE_ATTEMPTS = 3;
-
 /** FL-179: the removal found, under the asset's row lock, a path or stack it had not locked before it. */
 class RemovalLocksChanged extends Error {
   constructor() {
     super('The paths or stack of the asset changed during its removal');
   }
 }
-
-const hasForkSchema = async (db: Kysely<DB>): Promise<boolean> => {
-  const { rows } = await sql<{ table: string | null }>`SELECT to_regclass('immich_fork.state')::text AS table`.execute(
-    db,
-  );
-  return !!rows[0]?.table;
-};
-
 /** The file cleanup `remove` queues inside its transaction (FL-169). */
 export type AssetFileRelease = {
   /** Every file the removal frees, in the order they are queued. Called with what the removal reports. */
@@ -230,32 +212,27 @@ export type AssetFileRelease = {
   /** Queues their deletion; a failure rolls the removal back. */
   queue: (files: string[]) => Promise<void>;
 };
-
 export interface DescriptionStats {
   totalAssets: number;
   withDescription: number;
   withoutDescription: number;
 }
-
 export interface BoundingBox {
   west: number;
   south: number;
   east: number;
   north: number;
 }
-
 interface AssetStatsOptions extends HiddenContentQueryOptions {
   isFavorite?: boolean;
   isTrashed?: boolean;
   visibility?: AssetVisibility;
 }
-
 /**
  * `lockedOwnerId`: the owner, when their session is elevated. Only then may a duplicate lookup name
  * their Locked media; otherwise a Locked match stays unnamed (FL-34).
  */
 type AssetChecksumOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
-
 interface LivePhotoSearchOptions {
   ownerId: string;
   libraryId?: string | null;
@@ -263,7 +240,6 @@ interface LivePhotoSearchOptions {
   otherAssetId: string;
   type: AssetType;
 }
-
 interface AssetBuilderOptions extends HiddenContentQueryOptions {
   isFavorite?: boolean;
   isTrashed?: boolean;
@@ -304,30 +280,24 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
    */
   lockedRuleMatches?: HiddenContentFilter;
 }
-
 export interface TimeBucketOptions extends AssetBuilderOptions {
   dateType?: TimeBucketDateType;
   orderBy?: AssetOrderBy;
   order?: AssetOrder;
 }
-
 /** FL-30 (S-15): the flat Browse/Work orders the time buckets cannot give. */
 export type TimelineOrderedSort = 'filename' | 'rating';
-
 export interface TimelineOrderedPage {
   sort: TimelineOrderedSort;
   skip: number;
   take: number;
 }
-
 export interface TimeBucketItem {
   timeBucket: string;
   count: number;
 }
-
 /** FL-33: how many places a curated timeline card names */
 export const TIMELINE_HIGHLIGHT_PLACES = 3;
-
 export interface TimelineHighlightOptions {
   grouping: 'year' | 'month';
   /** highlights besides the key photo */
@@ -335,7 +305,6 @@ export interface TimelineHighlightOptions {
   /** false for a shared link that hides EXIF: no card names a place */
   withPlaces: boolean;
 }
-
 export interface TimelineHighlightItem {
   timeBucket: string;
   count: number;
@@ -343,30 +312,29 @@ export interface TimelineHighlightItem {
   highlightAssetIds: string[];
   places: string[];
 }
-
 export interface YearMonthDay {
   day: number;
   month: number;
   year: number;
 }
-
 interface AssetExploreFieldOptions extends HiddenContentQueryOptions {
   maxFields: number;
   minAssetsPerField: number;
 }
-
 interface AssetGetByChecksumOptions {
   ownerId: string;
   checksum: Buffer;
   libraryId?: string;
 }
-
 type UpsertAssetFile = Pick<Insertable<AssetFileTable>, 'assetId' | 'path' | 'type'> &
   Partial<Pick<Insertable<AssetFileTable>, 'physicalFileId' | 'isEdited' | 'isProgressive' | 'isTransparent'>>;
-
 interface GetByIdsRelations {
   exifInfo?: boolean;
-  faces?: { person?: boolean; withDeleted?: boolean; viewingUserId?: string };
+  faces?: {
+    person?: boolean;
+    withDeleted?: boolean;
+    viewingUserId?: string;
+  };
   files?: boolean;
   library?: boolean;
   owner?: boolean;
@@ -375,11 +343,13 @@ interface GetByIdsRelations {
    * `lockedOwnerId`: the viewer, when their session is elevated. A stack whose primary is Locked media
    * someone else owns, or that the viewer has not unlocked, is left off the asset (FL-34).
    */
-  stack?: { assets?: boolean; lockedOwnerId?: string };
+  stack?: {
+    assets?: boolean;
+    lockedOwnerId?: string;
+  };
   tags?: boolean;
   edits?: boolean;
 }
-
 type UpsertExifOptions = {
   cameraEvidence?: CameraIdentification;
   exif: Insertable<AssetExifTable>;
@@ -390,10 +360,8 @@ type UpsertExifOptions = {
   /** Extraction may apply file values only while the pre-read EXIF revision is still current. */
   expectedUpdateId?: string | null;
 };
-
 const distinctLocked = <T extends LockableProperty[] | null>(eb: ExpressionBuilder<DB, 'asset_exif'>, columns: T) =>
   sql<T>`nullif(array(select distinct unnest(${eb.ref('asset_exif.lockedProperties')} || ${columns})), '{}')`;
-
 const getBoundingCircle = (bbox: BoundingBox) => {
   const { west, south, east, north } = bbox;
   const eastUnwrapped = west <= east ? east : east + 360;
@@ -405,27 +373,21 @@ const getBoundingCircle = (bbox: BoundingBox) => {
     earth_distance(ll_to_earth_public(${centerLatitude}, ${centerLongitude}), ll_to_earth_public(${north}, ${west})),
     earth_distance(ll_to_earth_public(${centerLatitude}, ${centerLongitude}), ll_to_earth_public(${north}, ${east}))
   )`;
-
   return { centerLatitude, centerLongitude, radius };
 };
-
-const withBoundingBox = <T>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', T>, bbox: BoundingBox) => {
+const withBoundingBox = <T,>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', T>, bbox: BoundingBox) => {
   const { west, south, east, north } = bbox;
   const withLatitude = qb.where('asset_exif.latitude', '>=', south).where('asset_exif.latitude', '<=', north);
-
   if (west <= east) {
     return withLatitude.where('asset_exif.longitude', '>=', west).where('asset_exif.longitude', '<=', east);
   }
-
   return withLatitude.where((eb) =>
     eb.or([eb('asset_exif.longitude', '>=', west), eb('asset_exif.longitude', '<=', east)]),
   );
 };
-
 /** FL-54: leaves out assets of owners who hide their locations from the viewer (no-op when there are none). */
-const withoutLocationHiddenOwners = <O>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', O>, ownerIds?: string[]) =>
+const withoutLocationHiddenOwners = <O,>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', O>, ownerIds?: string[]) =>
   ownerIds && ownerIds.length > 0 ? qb.where('asset.ownerId', 'not in', ownerIds) : qb;
-
 /**
  * The visibility a timeline request lists (see `visibilityIs`). FL-34: the Locked view is every locked
  * item plus every timeline or archived item the owner's Locked rules match (`lockedRuleMatches`); a
@@ -436,24 +398,19 @@ const timelineVisibility = (options: AssetBuilderOptions) => {
   if (options.visibility !== AssetVisibility.Locked || !options.lockedRuleMatches || options.lockReasons) {
     return visibility;
   }
-
   const listed = sql<boolean>`${sql.ref('asset.visibility')} in (${sql.lit(AssetVisibility.Timeline)}, ${sql.lit(AssetVisibility.Archive)})`;
   const ruleMatch = hiddenContentAssetIdExists(sql.ref('asset.id'), options.lockedRuleMatches);
   return sql<boolean>`(${visibility} or (${listed} and ${ruleMatch}))`;
 };
-
 @Injectable()
 export class AssetRepository {
-  private readonly forkPrivacy: ForkPrivacyRepository;
-  private readonly forkEnrichment: ForkEnrichmentRepository;
   private readonly smartAlbums: SmartAlbumRepository;
-
-  constructor(@InjectKysely() private db: Kysely<DB>) {
-    this.forkPrivacy = new ForkPrivacyRepository(db);
-    this.forkEnrichment = new ForkEnrichmentRepository(db);
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {
     this.smartAlbums = new SmartAlbumRepository(db);
   }
-
   @GenerateSql({
     params: [
       {
@@ -490,7 +447,6 @@ export class AssetRepository {
           ),
       );
     }
-
     if (video) {
       (query as any) = query.with('video', (qb) =>
         qb
@@ -518,7 +474,6 @@ export class AssetRepository {
           ),
       );
     }
-
     if (keyframes) {
       (query as any) = query.with('keyframe', (qb) =>
         qb
@@ -536,7 +491,6 @@ export class AssetRepository {
           ),
       );
     }
-
     const buildExifQuery = (db: Pick<Kysely<DB>, 'insertInto'>) =>
       db
         .insertInto('asset_exif')
@@ -597,7 +551,6 @@ export class AssetRepository {
             ? update
             : update.where('asset_exif.updateId', expectedUpdateId === null ? 'is' : '=', expectedUpdateId);
         });
-
     if (cameraEvidence === undefined) {
       await buildExifQuery(query).execute();
       return;
@@ -621,7 +574,6 @@ export class AssetRepository {
       .onConflict((oc) => oc.columns(['assetId', 'key']).doUpdateSet((eb) => ({ value: eb.ref('excluded.value') })))
       .execute();
   }
-
   @GenerateSql({ params: [[DummyValue.UUID], { model: DummyValue.STRING }] })
   @Chunked()
   async updateAllExif(
@@ -632,7 +584,6 @@ export class AssetRepository {
     if (ids.length === 0) {
       return;
     }
-
     const locked = Object.keys(options) as LockableProperty[];
     await this.db
       .updateTable('asset_exif')
@@ -649,7 +600,6 @@ export class AssetRepository {
       .where('assetId', 'in', ids)
       .execute();
   }
-
   /**
    * FL-51: removes the location of these assets (the geolocation utility's "Remove location"): the
    * coordinates and the place names read from them. The coordinates stay locked, so the sidecar is
@@ -661,7 +611,6 @@ export class AssetRepository {
     if (ids.length === 0) {
       return;
     }
-
     await this.db
       .updateTable('asset_exif')
       .set((eb) => ({
@@ -675,7 +624,6 @@ export class AssetRepository {
       .where('assetId', 'in', ids)
       .execute();
   }
-
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.NUMBER, DummyValue.STRING] })
   @Chunked()
   updateDateTimeOriginal(ids: string[], delta?: number, timeZone?: string) {
@@ -690,7 +638,6 @@ export class AssetRepository {
       .returning(['assetId', 'dateTimeOriginal', 'timeZone'])
       .execute();
   }
-
   /**
    * Set one asset's capture date outright, locking it as `updateDateTimeOriginal` does (FL-32).
    *
@@ -708,7 +655,6 @@ export class AssetRepository {
       .returning(['assetId', 'dateTimeOriginal'])
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, ['description']] })
   unlockProperties(assetId: string, properties: LockableProperty[], kysely: Kysely<DB> = this.db) {
     return kysely
@@ -719,12 +665,10 @@ export class AssetRepository {
       }))
       .execute();
   }
-
   async upsertJobStatus(...jobStatus: Insertable<AssetJobStatusTable>[]): Promise<void> {
     if (jobStatus.length === 0) {
       return;
     }
-
     const values = jobStatus.map((row) => ({ ...row, assetId: asUuid(row.assetId) }));
     await this.db
       .insertInto('asset_job_status')
@@ -744,7 +688,6 @@ export class AssetRepository {
       )
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   getMetadata(assetId: string) {
     return this.db
@@ -753,12 +696,17 @@ export class AssetRepository {
       .where('assetId', '=', assetId)
       .execute();
   }
-
-  async upsertMetadata(id: string, items: Array<{ key: string; value: Record<string, unknown> }>, kysely?: Kysely<DB>) {
+  async upsertMetadata(
+    id: string,
+    items: Array<{
+      key: string;
+      value: Record<string, unknown>;
+    }>,
+    kysely?: Kysely<DB>,
+  ) {
     if (items.length === 0) {
       return [];
     }
-
     const execute = async (tx: Kysely<DB>) => {
       const result = await tx
         .insertInto('asset_metadata')
@@ -770,17 +718,14 @@ export class AssetRepository {
         )
         .returning(['key', 'value', 'updatedAt'])
         .execute();
-
       await this.syncIsNsfwForItems(
         tx,
         items.map((item) => ({ assetId: id, ...item })),
       );
       return result;
     };
-
     return kysely ? execute(kysely) : this.db.transaction().execute(execute);
   }
-
   /** Update the legacy privacy projection inside the caller's transaction. */
   async updateIsNsfw(assetId: string, isNsfw: boolean, kysely: Kysely<DB> = this.db): Promise<void> {
     await kysely
@@ -790,7 +735,6 @@ export class AssetRepository {
       .where('is_nsfw', '!=', isNsfw)
       .execute();
   }
-
   async upsertBulkMetadata(items: Insertable<AssetMetadataTable>[]) {
     return this.db.transaction().execute(async (tx) => {
       const result = await tx
@@ -803,12 +747,10 @@ export class AssetRepository {
         )
         .returning(['assetId', 'key', 'value', 'updatedAt'])
         .execute();
-
       await this.syncIsNsfwForItems(tx, items);
       return result;
     });
   }
-
   /**
    * Derive privacy once for every `ml-enrichment` item, update the legacy
    * projection, then mirror the same committed state into the fork sidecar.
@@ -816,7 +758,11 @@ export class AssetRepository {
    */
   private async syncIsNsfwForItems(
     kysely: Kysely<DB>,
-    items: Array<{ assetId: string; key: string; value: unknown }>,
+    items: Array<{
+      assetId: string;
+      key: string;
+      value: unknown;
+    }>,
   ): Promise<void> {
     const privacyAssetIds: string[] = [];
     for (const item of items) {
@@ -827,9 +773,7 @@ export class AssetRepository {
       await this.updateIsNsfw(item.assetId, isNsfw, kysely);
       privacyAssetIds.push(item.assetId);
     }
-    await this.forkPrivacy.mirrorManyFromLegacy([...new Set(privacyAssetIds)], kysely);
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
   getMetadataByKey(assetId: string, key: string, kysely: Kysely<DB> = this.db) {
     return kysely
@@ -839,24 +783,25 @@ export class AssetRepository {
       .where('key', '=', key)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
   async deleteMetadataByKey(id: string, key: string) {
     await this.db.transaction().execute(async (tx) => {
       await tx.deleteFrom('asset_metadata').where('assetId', '=', id).where('key', '=', key).execute();
       if (key === AssetMetadataKey.MlEnrichment) {
         await this.updateIsNsfw(id, false, tx);
-        await this.forkPrivacy.mirrorFromLegacy(id, tx);
       }
     });
   }
-
   @GenerateSql({ params: [[{ assetId: DummyValue.UUID, key: DummyValue.STRING }]] })
-  async deleteBulkMetadata(items: Array<{ assetId: string; key: string }>) {
+  async deleteBulkMetadata(
+    items: Array<{
+      assetId: string;
+      key: string;
+    }>,
+  ) {
     if (items.length === 0) {
       return;
     }
-
     await this.db.transaction().execute(async (tx) => {
       const privacyAssetIds: string[] = [];
       for (const { assetId, key } of items) {
@@ -866,23 +811,22 @@ export class AssetRepository {
           privacyAssetIds.push(assetId);
         }
       }
-      await this.forkPrivacy.mirrorManyFromLegacy([...new Set(privacyAssetIds)], tx);
     });
   }
-
   /**
    * Creates an asset. With `lock` (FL-34, an upload into the Locked view) its lock record is written
    * in the same transaction, so the asset is never listed unlocked, not even for a moment.
    */
   async create(
     asset: Insertable<AssetTable>,
-    lock?: { reason: AssetLockReason; lockedBy: string | null },
+    lock?: {
+      reason: AssetLockReason;
+      lockedBy: string | null;
+    },
     kysely?: Transaction<DB>,
   ) {
     const execute = async (tx: Kysely<DB>) => {
       const result = await tx.insertInto('asset').values(asset).returningAll().executeTakeFirstOrThrow();
-      await this.forkPrivacy.mirrorFromLegacy(result.id, tx);
-      await this.forkEnrichment.initialize([result.id], tx);
       if (lock) {
         await this.lockIn(tx, [result.id], lock.reason, lock.lockedBy);
       }
@@ -890,7 +834,6 @@ export class AssetRepository {
     };
     return kysely ? execute(kysely) : this.inTransaction(execute);
   }
-
   @ChunkedArray({ chunkSize: 4000 })
   async createAll(assets: Insertable<AssetTable>[]) {
     if (assets.length === 0) {
@@ -898,18 +841,9 @@ export class AssetRepository {
     }
     return this.inTransaction(async (tx) => {
       const ids = await tx.insertInto('asset').values(assets).returning('id').execute();
-      await this.forkPrivacy.mirrorManyFromLegacy(
-        ids.map(({ id }) => id),
-        tx,
-      );
-      await this.forkEnrichment.initialize(
-        ids.map(({ id }) => id),
-        tx,
-      );
       return ids.map(({ id }) => id);
     });
   }
-
   /**
    * One owner's timeline assets in a local-date window, with the place their metadata
    * records, ordered by local capture time (FL-62).
@@ -953,7 +887,6 @@ export class AssetRepository {
         .execute()
     );
   }
-
   /**
    * A spread of one owner's assets across a calendar year, for a year-in-review recap
    * (FL-62). Diversity is enforced in SQL: at most `perDay` assets from any one local day
@@ -1008,7 +941,6 @@ export class AssetRepository {
       .orderBy('localDateTime', 'asc')
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, { year: 2000, day: 1, month: 1 }] })
   getByDayOfYear(ownerIds: string[], { year, day, month }: YearMonthDay) {
     return this.db
@@ -1060,7 +992,6 @@ export class AssetRepository {
       .orderBy(sql`("localDateTime" at time zone 'UTC')::date`, 'desc')
       .execute();
   }
-
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
   getByIds(ids: string[]) {
@@ -1071,7 +1002,6 @@ export class AssetRepository {
       .where('asset.id', '=', anyUuid(ids))
       .execute();
   }
-
   /**
    * FL-101: the persisted picture stream of these assets, for the decode qualification. An asset
    * whose metadata has not been extracted yet has no row and is left out.
@@ -1085,14 +1015,12 @@ export class AssetRepository {
       .where('assetId', '=', anyUuid(ids))
       .execute();
   }
-
   /** Which of these assets are locked (FL-34: the lock record), whoever owns them. */
   @ChunkedSet()
   async getLockedAssetIds(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) {
       return new Set();
     }
-
     const rows = await this.db
       .selectFrom('asset_lock')
       .select('asset_lock.assetId')
@@ -1100,21 +1028,18 @@ export class AssetRepository {
       .execute();
     return new Set(rows.map(({ assetId }) => assetId));
   }
-
   /** Why each of these assets is locked; an asset that is not locked is absent (FL-34). */
   @ChunkedArray()
   getLockReasons(ids: string[]) {
     if (ids.length === 0) {
       return Promise.resolve([]);
     }
-
     return this.db
       .selectFrom('asset_lock')
       .select(['asset_lock.assetId', 'asset_lock.reason', 'asset_lock.lockedAt'])
       .where('asset_lock.assetId', '=', anyUuid(ids))
       .execute();
   }
-
   /**
    * Locks assets (FL-34). A lock is metadata: albums, favourites, tags, faces, stack and the stored
    * visibility are left as they are, and every read except the owner's elevated session stops showing
@@ -1131,12 +1056,10 @@ export class AssetRepository {
     if (ids.length === 0) {
       return [];
     }
-
     return kysely
       ? this.lockIn(kysely, ids, reason, lockedBy)
       : this.inTransaction((tx) => this.lockIn(tx, ids, reason, lockedBy));
   }
-
   /**
    * FL-34: takes, in the caller's transaction and in id order, the row locks that a later lock or
    * unlock of `ids` needs on its whole stack and live-photo group. Called first in a transaction that
@@ -1147,7 +1070,6 @@ export class AssetRepository {
   async lockGroupRows(ids: string[], kysely: Kysely<DB>): Promise<void> {
     await lockAssetRowsInOrder(kysely, await this.getLockGroupIds(kysely, ids));
   }
-
   /**
    * FL-34: the ids a lock or unlock of `ids` covers, read outside any transaction: what a caller takes
    * the per-asset metadata locks of before it takes the group's rows (see `lockGroupMembers`).
@@ -1155,7 +1077,6 @@ export class AssetRepository {
   findLockGroupIds(ids: string[]): Promise<string[]> {
     return ids.length === 0 ? Promise.resolve([]) : this.getLockGroupIds(this.db, ids);
   }
-
   /**
    * FL-34: `lockGroupRows`, returning each member of the group with its owner and whether it is locked
    * as read under those row locks, for a caller that reviews and unlocks the whole group in `kysely`.
@@ -1163,7 +1084,13 @@ export class AssetRepository {
   async lockGroupMembers(
     ids: string[],
     kysely: Kysely<DB>,
-  ): Promise<{ id: string; ownerId: string; isLocked: boolean }[]> {
+  ): Promise<
+    {
+      id: string;
+      ownerId: string;
+      isLocked: boolean;
+    }[]
+  > {
     const groupIds = await this.getLockGroupIds(kysely, ids);
     if (groupIds.length === 0) {
       return [];
@@ -1177,7 +1104,6 @@ export class AssetRepository {
       .orderBy('asset.id')
       .execute();
   }
-
   /** `lock` inside the caller's transaction `tx`. */
   private async lockIn(
     tx: Kysely<DB>,
@@ -1191,7 +1117,6 @@ export class AssetRepository {
     }
     // the group's rows before its lock records, in id order, like every lock writer (FL-34)
     await lockAssetRowsInOrder(tx, targetIds);
-
     // FL-195 follow-up: a lock put on an item that only carried a lock inherited from its sources (a
     // Studio export result) makes that lock its own, so unlocking the sources no longer releases it
     await sql`
@@ -1199,8 +1124,9 @@ export class AssetRepository {
       set inherited = false, "lockedBy" = coalesce(${lockedBy}::uuid, "lockedBy")
       where "assetId" = any(${`{${targetIds}}`}::uuid[]) and inherited = true
     `.execute(tx);
-
-    const { rows } = await sql<{ assetId: string }>`
+    const { rows } = await sql<{
+      assetId: string;
+    }>`
       insert into asset_lock ("assetId", "reason", "lockedBy")
       select target.id, ${reason}, ${lockedBy}::uuid
       from unnest(${`{${targetIds}}`}::uuid[]) as target(id)
@@ -1215,10 +1141,8 @@ export class AssetRepository {
       lockedIds.push(...(await lockDerivedResults(tx, lockedIds)));
       await releaseLockedCoverReferences(tx, lockedIds);
     }
-
     return lockedIds;
   }
-
   /**
    * Assets that sensitive-content detection flagged, that no owner has reviewed and that are not locked
    * (FL-34): what "hide sensitive detections" locks when it is switched on. The source follows the
@@ -1231,17 +1155,7 @@ export class AssetRepository {
     const rows = await this.db
       .selectFrom('asset')
       .select('asset.id')
-      .where(
-        sql<boolean>`case
-        when coalesce((select phase from immich_fork.state where id = 1), 'inactive') = 'active' then exists (
-          select 1
-          from immich_fork.asset_privacy as privacy_asset
-          where privacy_asset."assetId" = asset.id
-            and privacy_asset."isNsfw" = true
-        )
-        else asset.is_nsfw = true
-      end`,
-      )
+      .where('asset.is_nsfw', '=', true)
       .where('asset.deletedAt', 'is', null)
       .where(isNotLocked('asset'))
       .where((eb) =>
@@ -1259,7 +1173,6 @@ export class AssetRepository {
       .execute();
     return rows.map(({ id }) => id);
   }
-
   /**
    * Unlocks assets (FL-34), stacks and live photos as a whole like `lock`. The stored visibility is
    * left as it is, so an item goes back exactly where it was. Returns what was unlocked and why it had
@@ -1274,27 +1187,34 @@ export class AssetRepository {
     ids: string[],
     kysely?: Kysely<DB>,
     reasons?: AssetLockReason[],
-  ): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+  ): Promise<
+    {
+      assetId: string;
+      reason: AssetLockReason;
+    }[]
+  > {
     if (ids.length === 0) {
       return [];
     }
-
     return kysely ? this.unlockIn(kysely, ids, reasons) : this.inTransaction((tx) => this.unlockIn(tx, ids, reasons));
   }
-
   /** `unlock` inside the caller's transaction `tx`. */
   private async unlockIn(
     tx: Kysely<DB>,
     ids: string[],
     reasons?: AssetLockReason[],
-  ): Promise<{ assetId: string; reason: AssetLockReason }[]> {
+  ): Promise<
+    {
+      assetId: string;
+      reason: AssetLockReason;
+    }[]
+  > {
     const targetIds = await this.getLockGroupIds(tx, ids);
     if (targetIds.length === 0) {
       return [];
     }
     // the group's rows before its lock records, in id order, like every lock writer (FL-34)
     await lockAssetRowsInOrder(tx, targetIds);
-
     const unlocked = await tx
       .deleteFrom('asset_lock')
       .where('asset_lock.assetId', '=', anyUuid(targetIds))
@@ -1309,16 +1229,16 @@ export class AssetRepository {
       // and checks exactly the group it asked for.
       await releaseDerivedResults(tx, unlockedIds);
     }
-
     return unlocked;
   }
-
   /**
    * The ids a lock or unlock of `ids` covers: the assets themselves, the stills whose video part they
    * are, every member of their stacks, and the video parts of all of those.
    */
   private async getLockGroupIds(db: Kysely<DB>, ids: string[]): Promise<string[]> {
-    const { rows } = await sql<{ id: string }>`
+    const { rows } = await sql<{
+      id: string;
+    }>`
       with direct as (
         select asset.id, asset."stackId" from asset where asset.id = ${anyUuid(ids)}
         union
@@ -1338,13 +1258,14 @@ export class AssetRepository {
     `.execute(db);
     return rows.map(({ id }) => id);
   }
-
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray({ paramIndex: 0 })
   getByIdsWithAllRelationsButStacks(
     ids: string[],
     viewingUserId?: string,
-    exploreOptions?: HiddenContentQueryOptions & { ownerId: string },
+    exploreOptions?: HiddenContentQueryOptions & {
+      ownerId: string;
+    },
   ) {
     // Explore selects IDs before hydrating; the current row must still qualify at this read.
     return this.db
@@ -1367,7 +1288,6 @@ export class AssetRepository {
       )
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async deleteAll(ownerId: string): Promise<
     {
@@ -1404,26 +1324,20 @@ export class AssetRepository {
       }>`
         SELECT
           asset.id,
-          coalesce(mapping."upstreamPath", reservation."upstreamPath", asset."originalPath") AS "originalPath",
+          asset."originalPath" AS "originalPath",
           asset."originalFileName",
           asset.checksum,
           coalesce(exif."fileSizeInByte", 0)::float8 AS "sizeInBytes",
-          reservation."temporaryPath" AS "reservationTemporaryPath",
+          NULL::text AS "reservationTemporaryPath",
           asset."libraryId",
           asset."isOffline"
         FROM public.asset asset
-        LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
-        LEFT JOIN immich_fork.asset_storage_reservation reservation ON reservation."assetId" = asset.id
         LEFT JOIN public.asset_exif exif ON exif."assetId" = asset.id
         WHERE asset."ownerId" = ${ownerId}::uuid
         FOR UPDATE OF asset
       `.execute(tx);
       const assets = locked.rows;
       const ids = assets.map(({ id }) => id);
-      // Retained video versions are left to the nightly orphan release, which queues their files
-      // for deletion; this bulk path returns only the originals it removed.
-      await this.forkPrivacy.delete(ids, tx);
-      await this.forkEnrichment.delete(ids, tx);
       await this.smartAlbums.deleteAssets(ids, tx);
       await this.deleteForkDerivedResults(ids, tx);
       // FL-97: the files live in the owner's encoded-video folder, which the user deletion removes
@@ -1464,7 +1378,6 @@ export class AssetRepository {
       );
     });
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
   getByLibraryIdAndOriginalPath(libraryId: string, originalPath: string) {
     return this.db
@@ -1475,7 +1388,6 @@ export class AssetRepository {
       .limit(1)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async getLivePhotoCount(motionId: string): Promise<number> {
     const [{ count }] = await this.db
@@ -1485,12 +1397,10 @@ export class AssetRepository {
       .execute();
     return count;
   }
-
   @GenerateSql()
   getFileSamples() {
     return this.db.selectFrom('asset_file').select(['assetId', 'path']).limit(sql.lit(3)).execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   getForCopy(id: string) {
     return this.db
@@ -1501,7 +1411,6 @@ export class AssetRepository {
       .limit(1)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   getById(
     id: string,
@@ -1514,9 +1423,9 @@ export class AssetRepository {
       .where('asset.id', '=', asUuid(id))
       .$if(!!exifInfo, withExif)
       .$if(!!faces, (qb) =>
-        qb
-          .select(faces?.person ? withFacesAndPeople({ viewingUserId: faces.viewingUserId! }) : withFaces)
-          .$narrowType<{ faces: NotNull }>(),
+        qb.select(faces?.person ? withFacesAndPeople({ viewingUserId: faces.viewingUserId! }) : withFaces).$narrowType<{
+          faces: NotNull;
+        }>(),
       )
       .$if(!!library, (qb) => qb.select(withLibrary))
       .$if(!!owner, (qb) => qb.select(withOwner))
@@ -1562,14 +1471,12 @@ export class AssetRepository {
       .limit(1)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [[DummyValue.UUID], {}] })
   @Chunked()
   async updateAll(ids: string[], options: Updateable<AssetTable>): Promise<void> {
     if (ids.length === 0) {
       return;
     }
-
     // `locked` is never stored (FL-34): it is a lock record. `AssetService` translates a request for
     // it before it gets here; any other caller that still asks gets the lock, and nothing is stored.
     if (options.visibility === AssetVisibility.Locked) {
@@ -1580,14 +1487,11 @@ export class AssetRepository {
       await this.lock(ids, AssetLockReason.Marked, null);
       return;
     }
-
     await this.db.updateTable('asset').set(options).where('id', '=', anyUuid(ids)).execute();
   }
-
   async updateByLibraryId(libraryId: string, options: Updateable<AssetTable>): Promise<void> {
     await this.db.updateTable('asset').set(options).where('libraryId', '=', asUuid(libraryId)).execute();
   }
-
   /**
    * The ids of every other member of the stacks `assetIds` belong to (FL-53). Call it after `update` or
    * `updateAll` moves `assetIds` into or out of the Locked folder, so the caller can give every stack
@@ -1598,12 +1502,14 @@ export class AssetRepository {
     if (assetIds.length === 0) {
       return [];
     }
-
     const rows = await otherStackMembers(this.db, assetIds).execute();
     return rows.map(({ id }) => id);
   }
-
-  async update(input: Updateable<AssetTable> & { id: string }) {
+  async update(
+    input: Updateable<AssetTable> & {
+      id: string;
+    },
+  ) {
     let asset = input;
     // `locked` is never stored (FL-34); see `updateAll`
     if (input.visibility === AssetVisibility.Locked) {
@@ -1611,13 +1517,11 @@ export class AssetRepository {
       await this.lock([input.id], AssetLockReason.Marked, null);
       asset = rest;
     }
-
     const value = omitBy(asset, isUndefined);
     delete value.id;
     if (isEmpty(value)) {
       return this.getById(asset.id, { exifInfo: true, faces: {}, edits: true });
     }
-
     const updateAndSelect = (db: Kysely<DB>) =>
       db
         .with('asset', (qb) => qb.updateTable('asset').set(asset).where('id', '=', asUuid(asset.id)).returningAll())
@@ -1627,11 +1531,9 @@ export class AssetRepository {
         .$call((qb) => qb.select(withFaces))
         .$call((qb) => qb.select(withEdits))
         .executeTakeFirst();
-
     if (!asset.stackId) {
       return updateAndSelect(this.db);
     }
-
     // a stack that holds a locked photo is locked as a whole (FL-53, FL-34): joining one locks the rest
     return this.inTransaction(async (tx) => {
       const updated = await updateAndSelect(tx);
@@ -1639,12 +1541,10 @@ export class AssetRepository {
       return updated;
     });
   }
-
   /** Runs `callback` in a transaction, joining the current one when this repository is bound to it. */
   private inTransaction<T>(callback: (tx: Kysely<DB>) => Promise<T>): Promise<T> {
     return this.db.isTransaction ? callback(this.db) : this.db.transaction().execute(callback);
   }
-
   /**
    * Removes an asset row and everything the fork keeps for it, in one transaction.
    *
@@ -1664,7 +1564,12 @@ export class AssetRepository {
    * Only the last of `REMOVE_ATTEMPTS` locks late, and Postgres then resolves any deadlock by failing
    * one side, which is retried.
    */
-  async remove(asset: { id: string }, release?: AssetFileRelease): Promise<RemovedAsset | undefined> {
+  async remove(
+    asset: {
+      id: string;
+    },
+    release?: AssetFileRelease,
+  ): Promise<RemovedAsset | undefined> {
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.db
@@ -1677,7 +1582,6 @@ export class AssetRepository {
       }
     }
   }
-
   private async removeOnce(
     tx: Kysely<DB>,
     id: string,
@@ -1712,7 +1616,6 @@ export class AssetRepository {
       await lockPaths(missing);
       await lockStack(stackId);
     };
-
     if (release) {
       const unlocked = await this.readRemovedPaths(tx, id, false);
       if (unlocked) {
@@ -1720,7 +1623,6 @@ export class AssetRepository {
       }
     }
     await lockStack(await this.getStackId(tx, id));
-
     const lockedAsset = await this.readRemovedPaths(tx, id, true);
     if (!lockedAsset) {
       return;
@@ -1735,8 +1637,6 @@ export class AssetRepository {
     // only a removal that releases their files takes the develop revisions (they have no foreign key)
     const developPaths = release ? await this.deleteDevelopRevisions(id, tx) : [];
     const studioHdrPaths = await this.deleteStudioHdrIntermediates([id], tx);
-    await this.forkPrivacy.delete([id], tx);
-    await this.forkEnrichment.delete([id], tx);
     await this.smartAlbums.deleteAssets([id], tx);
     await this.deleteForkDerivedResults([id], tx);
     // FL-179: a recorded move that never committed is released with the asset (see `pendingMoves`)
@@ -1756,17 +1656,14 @@ export class AssetRepository {
       ...(videoEditPaths.length > 0 && { videoEditPaths }),
       pendingMoves: lockedAsset.pendingMoves,
     };
-
     if (release) {
       const files = release.files(removed);
       // a version saved after the locked read: start over as well
       await lockLate(files);
       await release.queue(files);
     }
-
     return removed;
   }
-
   /**
    * Commits one storage move of an asset's file (FL-179): the rename and the new path are one unit,
    * so a move cannot race the asset's removal and leave the file where no row names it.
@@ -1786,31 +1683,22 @@ export class AssetRepository {
    */
   async moveFile(move: AssetFileMove, operations: AssetFileMoveOperations): Promise<AssetFileMoveResult> {
     return this.db.transaction().execute(async (tx) => {
-      const forkSchema = await hasForkSchema(tx);
       // holds the phase (FOR SHARE) for the rest of the transaction, before any other lock
-      const forkWritable = await canWriteFork(tx);
-
       for (const path of [...new Set([move.from, move.source, move.to])].toSorted()) {
         await lockFilePath(tx, path);
       }
-
       if (
-        forkSchema &&
         (
-          await sql`SELECT 1 FROM immich_fork.buddy_backup_reference
+          await sql`SELECT 1 FROM public.buddy_backup_reference
         WHERE path = ANY(${[move.from, move.source, move.to]}::text[]) AND NOT released LIMIT 1`.execute(tx)
         ).rows.length > 0
       ) {
         return 'deferred';
       }
-
-      const current = await this.readMovedFile(tx, move, forkSchema);
+      const current = await this.readMovedFile(tx, move);
       if (!current) {
         await tx.deleteFrom('move_history').where('id', '=', asUuid(move.moveId)).execute();
         return 'removed';
-      }
-      if (current.mappingDisagrees) {
-        return 'mismatched';
       }
       if (current.path !== move.from) {
         // Another writer changed the file. Unless an earlier attempt left the file elsewhere, the
@@ -1821,20 +1709,11 @@ export class AssetRepository {
         return 'changed';
       }
       // public physical files follow `lockPublicForkWrites`; Frameleaf rows need a writable phase
-      if (
-        current.reserved ||
-        (current.forkReferenced && !forkWritable) ||
-        (current.physicalFile && forkSchema && !forkWritable)
-      ) {
-        return 'deferred';
-      }
-
       if (!(await operations.rename())) {
         return 'failed';
       }
-
       try {
-        await this.saveMovedPath(tx, move, forkSchema && forkWritable);
+        await this.saveMovedPath(tx, move);
         await tx.deleteFrom('move_history').where('id', '=', asUuid(move.moveId)).execute();
       } catch (error) {
         // still holding the locks, so nothing has counted the file at its new path yet
@@ -1845,7 +1724,6 @@ export class AssetRepository {
       return 'moved';
     });
   }
-
   /**
    * Where the asset's row records a moved file, resolved the way a removal resolves it, and what else
    * names that path. Takes the asset row lock.
@@ -1853,14 +1731,10 @@ export class AssetRepository {
   private async readMovedFile(
     tx: Kysely<DB>,
     move: AssetFileMove,
-    forkSchema: boolean,
   ): Promise<
     | {
         path: string | null;
         physicalFile: boolean;
-        forkReferenced: boolean;
-        reserved: boolean;
-        mappingDisagrees: boolean;
       }
     | undefined
   > {
@@ -1873,7 +1747,6 @@ export class AssetRepository {
     if (!asset) {
       return;
     }
-
     let path: string | null = asset.originalPath;
     if (move.pathType !== AssetPathType.Original) {
       const file = await tx
@@ -1885,58 +1758,16 @@ export class AssetRepository {
         .executeTakeFirst();
       path = file?.path ?? null;
     }
-
     const physical = await tx.selectFrom('physical_file').select('id').where('path', '=', move.from).executeTakeFirst();
-    if (!forkSchema) {
-      return { path, physicalFile: !!physical, forkReferenced: false, reserved: false, mappingDisagrees: false };
-    }
-
-    const { rows } = await sql<{ mapped: string | null; referenced: boolean; reserved: boolean }>`
-      SELECT
-        (SELECT mapping."upstreamPath" FROM immich_fork.asset_physical_file mapping
-          WHERE mapping."assetId" = ${move.assetId}::uuid) AS mapped,
-        EXISTS (SELECT 1 FROM immich_fork.asset_physical_file mapping WHERE mapping."upstreamPath" = ${move.from})
-          OR EXISTS (SELECT 1 FROM immich_fork.physical_file physical WHERE physical."canonicalPath" = ${move.from})
-          AS referenced,
-        EXISTS (
-          SELECT 1 FROM immich_fork.asset_storage_reservation reservation
-          WHERE reservation."assetId" = ${move.assetId}::uuid
-            OR ${move.from} IN (reservation."sourcePath", reservation."upstreamPath", reservation."temporaryPath")
-        ) AS reserved
-    `.execute(tx);
-    const fork = rows[0];
-    // after cutover a removal releases the mapped path, so the file can move only while both agree
-    const mappingDisagrees =
-      move.pathType === AssetPathType.Original && !!fork.mapped && fork.mapped !== asset.originalPath;
-    return {
-      path,
-      physicalFile: !!physical,
-      forkReferenced: fork.referenced,
-      reserved: fork.reserved,
-      mappingDisagrees,
-    };
+    return { path, physicalFile: !!physical };
   }
-
   /** Points every row that names `from` at `to`, under the path locks of both. */
-  private async saveMovedPath(tx: Kysely<DB>, move: AssetFileMove, writesFork: boolean): Promise<void> {
-    // every asset naming the path shares the one file on disk, whether or not a physical file links them
+  private async saveMovedPath(tx: Kysely<DB>, move: AssetFileMove): Promise<void> {
     await (move.pathType === AssetPathType.Original
       ? tx.updateTable('asset').set({ originalPath: move.to }).where('originalPath', '=', move.from).execute()
       : tx.updateTable('asset_file').set({ path: move.to }).where('path', '=', move.from).execute());
     await tx.updateTable('physical_file').set({ path: move.to }).where('path', '=', move.from).execute();
-    if (!writesFork) {
-      return;
-    }
-    await sql`
-      UPDATE immich_fork.asset_physical_file SET "upstreamPath" = ${move.to}, "updatedAt" = now()
-      WHERE "upstreamPath" = ${move.from}
-    `.execute(tx);
-    await sql`
-      UPDATE immich_fork.physical_file SET "canonicalPath" = ${move.to}, "updatedAt" = now()
-      WHERE "canonicalPath" = ${move.from}
-    `.execute(tx);
   }
-
   /**
    * What a removal of the asset would free, read in the removal's transaction. Locked, the asset row
    * is held, so no generated file, frame or restoration can be added or changed until it ends.
@@ -1945,14 +1776,20 @@ export class AssetRepository {
     tx: Kysely<DB>,
     id: string,
     lock: boolean,
-  ): Promise<(RemovedAsset & { restorationPaths: string[] }) | undefined> {
-    const rows = await sql<{ originalPath: string; reservationTemporaryPath: string | null }>`
+  ): Promise<
+    | (RemovedAsset & {
+        restorationPaths: string[];
+      })
+    | undefined
+  > {
+    const rows = await sql<{
+      originalPath: string;
+      reservationTemporaryPath: string | null;
+    }>`
       SELECT
-        coalesce(mapping."upstreamPath", reservation."upstreamPath", asset."originalPath") AS "originalPath",
-        reservation."temporaryPath" AS "reservationTemporaryPath"
+        asset."originalPath" AS "originalPath",
+        NULL::text AS "reservationTemporaryPath"
       FROM public.asset asset
-      LEFT JOIN immich_fork.asset_physical_file mapping ON mapping."assetId" = asset.id
-      LEFT JOIN immich_fork.asset_storage_reservation reservation ON reservation."assetId" = asset.id
       WHERE asset.id = ${id}::uuid
       ${lock ? sql`FOR UPDATE OF asset` : sql``}
     `.execute(tx);
@@ -1960,16 +1797,16 @@ export class AssetRepository {
     if (!row) {
       return;
     }
-
     const files = await tx
       .selectFrom('asset_file')
       .select(['id', 'type', 'path', 'isEdited'])
       .where('assetId', '=', asUuid(id))
       .execute();
     // the legacy table and the fork sidecar can both hold an asset's frames, depending on the phase
-    const frames = await sql<{ path: string }>`
+    const frames = await sql<{
+      path: string;
+    }>`
       SELECT path FROM public.asset_video_duplicate_frame WHERE "assetId" = ${id}::uuid
-      UNION SELECT path FROM immich_fork.asset_video_duplicate_frame WHERE "assetId" = ${id}::uuid
     `.execute(tx);
     // restorations are removed with the asset (ON DELETE CASCADE), so their outputs are read here
     const restorations = await tx
@@ -1986,7 +1823,6 @@ export class AssetRepository {
       .where('entityId', '=', asUuid(id))
       .where('pathType', 'in', [...ASSET_MOVE_PATH_TYPES] as AssetMovePathType[])
       .execute();
-
     const restorationPaths = restorations
       .flatMap((restoration) => [
         restoration.previewBeforePath,
@@ -1995,7 +1831,6 @@ export class AssetRepository {
         restoration.resultPreviewPath,
       ])
       .filter((path): path is string => !!path);
-
     return {
       ...row,
       files,
@@ -2011,12 +1846,10 @@ export class AssetRepository {
       })),
     };
   }
-
   private async getStackId(tx: Kysely<DB>, id: string): Promise<string | null | undefined> {
     const row = await tx.selectFrom('asset').select('stackId').where('id', '=', asUuid(id)).executeTakeFirst();
     return row?.stackId;
   }
-
   /**
    * Takes a removed asset out of its stack, with the stack row locked (FL-179). A stack left with fewer
    * than two members is dissolved; one whose primary is removed gets another member as its primary.
@@ -2031,7 +1864,6 @@ export class AssetRepository {
     if (!stack) {
       return;
     }
-
     const others = await tx
       .selectFrom('asset')
       .select('id')
@@ -2041,7 +1873,6 @@ export class AssetRepository {
       .where('visibility', '=', sql.val(AssetVisibility.Timeline))
       .where('status', '!=', sql.val(AssetStatus.Deleted))
       .execute();
-
     // the primary stays unless it is the asset being removed
     const remaining = others.length + (stack.primaryAssetId === id ? 0 : 1);
     if (remaining < 2) {
@@ -2050,7 +1881,6 @@ export class AssetRepository {
       await tx.updateTable('stack').set({ primaryAssetId: others[0].id }).where('id', '=', asUuid(stackId)).execute();
     }
   }
-
   /**
    * The outputs of the asset's develop revisions, when the revisions can be deleted with it now. The
    * revisions have no foreign key to the asset, so the removal deletes them itself (FL-169). Like the
@@ -2058,26 +1888,24 @@ export class AssetRepository {
    * reconciliation runs (FL-179), and the AssetDelete listener cleans them up later.
    */
   private async getReleasableDevelopPaths(id: string, db: Kysely<DB>): Promise<string[] | undefined> {
-    if (!(await canWriteFork(db))) {
-      return;
-    }
-    const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`
-      SELECT "masterPath", "previewPath" FROM immich_fork.asset_develop_revision WHERE "assetId" = ${id}::uuid
+    const { rows } = await sql<{
+      masterPath: string | null;
+      previewPath: string | null;
+    }>`
+      SELECT "masterPath", "previewPath" FROM public.asset_develop_revision WHERE "assetId" = ${id}::uuid
     `.execute(db);
     return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
   }
-
   private async deleteDevelopRevisions(id: string, db: Kysely<DB>): Promise<string[]> {
-    if (!(await canWriteFork(db))) {
-      return [];
-    }
-    const { rows } = await sql<{ masterPath: string | null; previewPath: string | null }>`
-      DELETE FROM immich_fork.asset_develop_revision WHERE "assetId" = ${id}::uuid
+    const { rows } = await sql<{
+      masterPath: string | null;
+      previewPath: string | null;
+    }>`
+      DELETE FROM public.asset_develop_revision WHERE "assetId" = ${id}::uuid
       RETURNING "masterPath", "previewPath"
     `.execute(db);
     return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
   }
-
   /**
    * The files of the assets' saved video versions, when the versions can be deleted with them now.
    * While fork writes are disabled or a handoff runs, the rows are left behind as orphans: the asset
@@ -2086,23 +1914,14 @@ export class AssetRepository {
   private async getReleasableVideoEditPaths(ids: string[], db: Kysely<DB>): Promise<string[] | undefined> {
     return (await this.getReleasableVideoEditVersions(ids, db))?.paths;
   }
-
   private async getReleasableVideoEditVersions(
     ids: string[],
     db: Kysely<DB>,
   ): Promise<{ count: number; paths: string[] } | undefined> {
     if (ids.length === 0) return;
-    const phase = await sql<{
-      phase: ForkSchemaPhase;
-    }>`SELECT phase FROM immich_fork.state WHERE id=1 FOR SHARE`.execute(db);
-    if (!phase.rows[0] || !isForkWriteEnabled(phase.rows[0].phase)) return;
-    const handoff = await sql`SELECT 1 FROM immich_fork.migration_audit WHERE status='running'
-      AND name IN ('official-handoff-preparation','fork-return-reconciliation') LIMIT 1`.execute(db);
-    if (handoff.rows.length > 0) return;
     const retained = await sql<Pick<VideoEditVersion, 'masterPath' | 'proxyPath' | 'files'>>`
-      SELECT "masterPath", "proxyPath", files FROM immich_fork.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])
-      UNION ALL SELECT payload->>'masterPath', payload->>'proxyPath', payload->'files' FROM immich_fork.orphaned_records
-      WHERE "sourceTable"='video_edit_version' AND payload->>'assetId'=ANY(${ids}::text[])`.execute(db);
+    SELECT "masterPath", "proxyPath", files FROM public.video_edit_version WHERE "assetId" = ANY(${ids}::uuid[])
+  `.execute(db);
     const paths = retained.rows
       .flatMap((version) => [
         version.masterPath,
@@ -2113,43 +1932,19 @@ export class AssetRepository {
       .filter((path): path is string => !!path);
     return { count: retained.rows.length, paths: [...new Set(paths)] };
   }
-
   private async deleteVideoEditVersions(ids: string[], db: Kysely<DB>): Promise<string[]> {
     const releasable = await this.getReleasableVideoEditVersions(ids, db);
     if (!releasable || releasable.count === 0) return [];
     const { paths } = releasable;
-    await sql`DELETE FROM immich_fork.video_edit_selection WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
-    await sql`DELETE FROM immich_fork.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
-    await sql`DELETE FROM immich_fork.orphaned_records WHERE "sourceTable" IN ('video_edit_selection','video_edit_version')
-      AND payload->>'assetId'=ANY(${ids}::text[])`.execute(db);
+    await sql`DELETE FROM public.video_edit_selection WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
+    await sql`DELETE FROM public.video_edit_version WHERE "assetId"=ANY(${ids}::uuid[])`.execute(db);
+
     // FileDelete checks all remaining public and private references under a path lock.
     return paths;
   }
-
   private async deleteForkDerivedResults(ids: string[], db: Kysely<DB>): Promise<void> {
-    if (ids.length === 0 || !isForkWriteEnabled(await getForkSchemaPhase(db))) {
-      return;
-    }
-    await sql`
-      DELETE FROM immich_fork.asset_health_candidate candidate
-      USING immich_fork.asset_health health
-      WHERE candidate."healthId" = health.id AND health."assetId" = ANY(${ids}::uuid[])
-    `.execute(db);
-    await sql`DELETE FROM immich_fork.asset_health WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
-    await sql`DELETE FROM immich_fork.asset_best_photo_score WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
-    await sql`DELETE FROM immich_fork.asset_video_duplicate_frame WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
-    await sql`DELETE FROM immich_fork.asset_storage_reservation WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
-    await sql`DELETE FROM immich_fork.asset_checksum WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
-    await sql`DELETE FROM immich_fork.asset_physical_file WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
-    await sql`
-      DELETE FROM immich_fork.physical_file physical
-      WHERE NOT EXISTS (
-        SELECT 1 FROM immich_fork.asset_physical_file mapping
-        WHERE mapping."physicalFileId" = physical.id
-      )
-    `.execute(db);
+    await sql`DELETE FROM public.asset_checksum WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
   }
-
   @GenerateSql({ params: [{ ownerId: DummyValue.UUID, libraryId: DummyValue.UUID, checksum: DummyValue.BUFFER }] })
   getByChecksum({ ownerId, libraryId, checksum }: AssetGetByChecksumOptions) {
     return this.db
@@ -2161,7 +1956,6 @@ export class AssetRepository {
       .limit(1)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.BUFFER], { excludeNsfw: true }] })
   getByChecksums(userId: string, checksums: Buffer[], options: AssetChecksumOptions = {}) {
     return this.db
@@ -2173,7 +1967,6 @@ export class AssetRepository {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.BUFFER, { excludeNsfw: true }] })
   async getUploadAssetIdByChecksum(
     ownerId: string,
@@ -2190,10 +1983,8 @@ export class AssetRepository {
       .$call((qb) => withHiddenContentFilter(qb, options))
       .limit(1)
       .executeTakeFirst();
-
     return asset?.id;
   }
-
   findLivePhotoMatch(options: LivePhotoSearchOptions) {
     const { ownerId, otherAssetId, livePhotoCID, type } = options;
     return this.db
@@ -2207,7 +1998,6 @@ export class AssetRepository {
       .limit(1)
       .executeTakeFirst();
   }
-
   getStatistics(ownerId: string, options: AssetStatsOptions): Promise<AssetStats> {
     const { visibility, isFavorite, isTrashed } = options;
     return (
@@ -2228,23 +2018,30 @@ export class AssetRepository {
         .executeTakeFirstOrThrow()
     );
   }
-
   @GenerateSql({
     params: [DummyValue.UUID, { from: DummyValue.DATE, to: DummyValue.DATE, type: CalendarHeatmapType.Upload }],
   })
   getCalendarHeatmap(
     ownerId: string,
-    dto: { from: Date; to: Date; type: CalendarHeatmapType; lockedOwnerId?: string },
+    dto: {
+      from: Date;
+      to: Date;
+      type: CalendarHeatmapType;
+      lockedOwnerId?: string;
+    },
   ) {
-    const dateColumns: Record<CalendarHeatmapType, { order: AssetOrderBy; column: 'createdAt' | 'localDateTime' }> = {
+    const dateColumns: Record<
+      CalendarHeatmapType,
+      {
+        order: AssetOrderBy;
+        column: 'createdAt' | 'localDateTime';
+      }
+    > = {
       [CalendarHeatmapType.Upload]: { order: AssetOrderBy.CreatedAt, column: 'createdAt' },
       [CalendarHeatmapType.Taken]: { order: AssetOrderBy.TakenAt, column: 'localDateTime' },
     } as const;
-
     const { order, column } = dateColumns[dto.type];
-
     const date = truncatedDate<Date>(order, 'DAY');
-
     return (
       this.db
         .selectFrom('asset')
@@ -2261,7 +2058,6 @@ export class AssetRepository {
         .execute()
     );
   }
-
   /**
    * The assets a timeline request may show, with the bucket each one falls in. Shared by the bucket
    * counts and the curated highlights (FL-33) so both apply the very same owner, partner, album,
@@ -2277,7 +2073,6 @@ export class AssetRepository {
         .$if(!!options.bbox, (qb) => {
           const bbox = options.bbox!;
           const circle = getBoundingCircle(bbox);
-
           const withBoundingCircle = qb
             .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
             .where(
@@ -2285,7 +2080,6 @@ export class AssetRepository {
               '@>',
               sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
             );
-
           // FL-54: matching a place reveals it, so owners who hide their locations never match
           return withoutLocationHiddenOwners(withBoundingBox(withBoundingCircle, bbox), options.locationHiddenOwnerIds);
         })
@@ -2329,13 +2123,11 @@ export class AssetRepository {
         .$if(!!options.tagId, (qb) => withTagId(qb, options.tagId!))
     );
   }
-
   private timelineBucketDate(options: TimeBucketOptions, size: 'MONTH' | 'YEAR' = 'MONTH') {
     return options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt
       ? sql<Date>`date_trunc(${sql.lit(size)}, asset."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
       : sql<Date>`date_trunc(${sql.lit(size)}, "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
   }
-
   @GenerateSql({ params: [{}, { user: { id: DummyValue.UUID } }] })
   async getTimeBuckets(options: TimeBucketOptions, auth?: AuthDto): Promise<TimeBucketItem[]> {
     return this.db
@@ -2347,7 +2139,6 @@ export class AssetRepository {
       .orderBy('timeBucket', options.order ?? 'desc')
       .execute() as any as Promise<TimeBucketItem[]>;
   }
-
   /**
    * FL-33: one curated card per year or month of a timeline request. Each card carries its count,
    * its key photo (highest Best Photos score, then highest star rating, then the most recent
@@ -2364,8 +2155,7 @@ export class AssetRepository {
     auth: AuthDto | undefined,
     { grouping, highlightCount, withPlaces }: TimelineHighlightOptions,
   ): Promise<TimelineHighlightItem[]> {
-    const phase = await getForkSchemaPhase(this.db);
-    const scoreTable = sql.table(`${readsForkSidecar(phase) ? 'immich_fork' : 'public'}.asset_best_photo_score`);
+    const scoreTable = sql.table(`${'public'}.asset_best_photo_score`);
     const order = options.order === AssetOrder.Asc ? sql`asc` : sql`desc`;
     const hiddenOwnerIds = options.locationHiddenOwnerIds ?? [];
     const size = grouping === 'year' ? 'YEAR' : 'MONTH';
@@ -2376,7 +2166,6 @@ export class AssetRepository {
         : sql<Date>`asset."localDateTime"`;
     const place = sql`coalesce(nullif(trim(e.city), ''), nullif(trim(e.state), ''), nullif(trim(e.country), ''))`;
     const locationShared = hiddenOwnerIds.length > 0 ? sql`not (a."ownerId" = ${anyUuid(hiddenOwnerIds)})` : sql`true`;
-
     const { rows } = await sql<{
       timeBucket: string;
       count: string;
@@ -2434,7 +2223,6 @@ export class AssetRepository {
       group by r."timeBucket"
       order by r."timeBucket" ${order}
     `.execute(this.db);
-
     return rows.map((row) => ({
       timeBucket: row.timeBucket,
       count: Number(row.count),
@@ -2443,14 +2231,12 @@ export class AssetRepository {
       places: row.places ?? [],
     }));
   }
-
   @GenerateSql({
     params: [DummyValue.TIME_BUCKET, { withStacked: true }, { user: { id: DummyValue.UUID } }],
   })
   getTimeBucket(timeBucket: string, options: TimeBucketOptions, auth: AuthDto) {
     return this.timelineAssetColumns(options, auth, { timeBucket });
   }
-
   /**
    * FL-30 (S-15): one page of the timeline's assets in a flat order — by file name or by rating —
    * for the Browse and Work layouts. It is the time bucket's own query without the bucket filter,
@@ -2464,11 +2250,18 @@ export class AssetRepository {
   getTimelineOrdered(options: TimeBucketOptions, auth: AuthDto, page: TimelineOrderedPage) {
     return this.timelineAssetColumns(options, auth, { page });
   }
-
   private timelineAssetColumns(
     options: TimeBucketOptions,
     auth: AuthDto,
-    target: { timeBucket: string; page?: undefined } | { timeBucket?: undefined; page: TimelineOrderedPage },
+    target:
+      | {
+          timeBucket: string;
+          page?: undefined;
+        }
+      | {
+          timeBucket?: undefined;
+          page: TimelineOrderedPage;
+        },
   ) {
     const { timeBucket, page } = target;
     const order = options.order ?? 'desc';
@@ -2478,9 +2271,11 @@ export class AssetRepository {
     const hiddenOwnerIds = options.locationHiddenOwnerIds ?? [];
     const hidesLocation = hiddenOwnerIds.length > 0;
     const locationColumn = <C extends 'city' | 'country' | 'latitude' | 'longitude'>(column: C) =>
-      sql<(C extends 'city' | 'country' ? string : number) | null>`case when asset."ownerId" = ${anyUuid(
-        hiddenOwnerIds,
-      )} then null else asset_exif.${sql.ref(column)} end`.as(column);
+      sql<
+        (C extends 'city' | 'country' ? string : number) | null
+      >`case when asset."ownerId" = ${anyUuid(hiddenOwnerIds)} then null else asset_exif.${sql.ref(column)} end`.as(
+        column,
+      );
     const useAddedDate = options.dateType === TimeBucketDateType.Added || options.orderBy === AssetOrderBy.CreatedAt;
     const timeBucketDate = useAddedDate
       ? sql`date_trunc(${sql.lit('MONTH')}, asset."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`
@@ -2564,13 +2359,11 @@ export class AssetRepository {
           .$if(!!options.bbox, (qb) => {
             const bbox = options.bbox!;
             const circle = getBoundingCircle(bbox);
-
             const withBoundingCircle = qb.where(
               sql`earth_box(ll_to_earth_public(${circle.centerLatitude}, ${circle.centerLongitude}), ${circle.radius})`,
               '@>',
               sql`ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
             );
-
             // FL-54: matching a place reveals it, so owners who hide their locations never match
             return withoutLocationHiddenOwners(
               withBoundingBox(withBoundingCircle, bbox),
@@ -2705,10 +2498,8 @@ export class AssetRepository {
       )
       .selectFrom('agg')
       .select(sql<string>`to_json(agg)::text`.as('assets'));
-
     return query.executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, { minAssetsPerField: 5, maxFields: 12 }] })
   async getAssetIdByCity(ownerId: string, options: AssetExploreFieldOptions) {
     const { minAssetsPerField, maxFields } = options;
@@ -2716,7 +2507,9 @@ export class AssetRepository {
       .selectFrom('asset')
       .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
       .select([sql<string>`min(asset.id::text)`.as('data'), 'asset_exif.city as value'])
-      .$narrowType<{ value: NotNull }>()
+      .$narrowType<{
+        value: NotNull;
+      }>()
       .where('asset_exif.city', 'is not', null)
       .where('ownerId', '=', asUuid(ownerId))
       .where(isTimelineVisible('asset', options.revealLockedOwnerId))
@@ -2728,10 +2521,8 @@ export class AssetRepository {
       .orderBy('asset_exif.city')
       .limit(maxFields)
       .execute();
-
     return { fieldName: 'exifInfo.city', items };
   }
-
   @GenerateSql({ params: [DummyValue.UUID, { minAssetsPerField: 5, maxFields: 12 }] })
   async getRecentlyCreatedAssetIds(ownerId: string, options: AssetExploreFieldOptions) {
     const { maxFields } = options;
@@ -2746,17 +2537,14 @@ export class AssetRepository {
       .orderBy('value', 'desc')
       .limit(maxFields)
       .execute();
-
     return { fieldName: 'createdAt', items };
   }
-
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
   async getNsfwAssetIds(ids: string[]): Promise<Set<string>> {
     if (ids.length === 0) {
       return new Set();
     }
-
     const rows = await this.db
       .selectFrom('asset')
       .select('asset.id')
@@ -2765,13 +2553,11 @@ export class AssetRepository {
       .execute();
     return new Set(rows.map(({ id }) => id));
   }
-
   async getHiddenContentAssetIds(ids: string[], options: HiddenContentQueryOptions): Promise<Set<string>> {
     const hiddenContent = getHiddenContentFilter(options);
     if (ids.length === 0 || !hiddenContent) {
       return new Set();
     }
-
     const rows = await this.db
       .selectFrom('asset')
       .select('asset.id')
@@ -2780,7 +2566,6 @@ export class AssetRepository {
       .execute();
     return new Set(rows.map(({ id }) => id));
   }
-
   async upsertFile(file: UpsertAssetFile, kysely: Kysely<DB> = this.db): Promise<void> {
     await kysely
       .insertInto('asset_file')
@@ -2793,12 +2578,10 @@ export class AssetRepository {
       )
       .execute();
   }
-
   async upsertFiles(files: UpsertAssetFile[]): Promise<void> {
     if (files.length === 0) {
       return;
     }
-
     await this.db
       .insertInto('asset_file')
       .values(files)
@@ -2812,7 +2595,6 @@ export class AssetRepository {
       )
       .execute();
   }
-
   async deleteFile({
     assetId,
     type,
@@ -2829,18 +2611,15 @@ export class AssetRepository {
       .$if(edited !== undefined, (qb) => qb.where('isEdited', '=', edited!))
       .execute();
   }
-
   async deleteFiles(files: Pick<Selectable<AssetFileTable>, 'id'>[]): Promise<void> {
     if (files.length === 0) {
       return;
     }
-
     await this.db
       .deleteFrom('asset_file')
       .where('id', '=', anyUuid(files.map((file) => file.id)))
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING], [DummyValue.STRING]] })
   async detectOfflineExternalAssets(
     libraryId: string,
@@ -2849,7 +2628,6 @@ export class AssetRepository {
   ): Promise<UpdateResult> {
     const paths = importPaths.map((importPath) => `${importPath}%`);
     const exclusions = exclusionPatterns.map((pattern) => globToPostgresRegex(pattern));
-
     return this.db
       .updateTable('asset')
       .set({
@@ -2867,7 +2645,6 @@ export class AssetRepository {
       )
       .executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING]] })
   async filterNewExternalAssetPaths(libraryId: string, paths: string[]): Promise<string[]> {
     const result = await this.db
@@ -2886,20 +2663,16 @@ export class AssetRepository {
         ),
       )
       .execute();
-
     return result.map((row) => row.path as string);
   }
-
   async getLibraryAssetCount(libraryId: string): Promise<number> {
     const { count } = await this.db
       .selectFrom('asset')
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .where('libraryId', '=', asUuid(libraryId))
       .executeTakeFirstOrThrow();
-
     return count;
   }
-
   private buildGetForOriginal(ids: string[], isEdited: boolean) {
     return this.db
       .selectFrom('asset')
@@ -2918,17 +2691,14 @@ export class AssetRepository {
       )
       .select('originalPath');
   }
-
   @GenerateSql({ params: [DummyValue.UUID, true] })
   getForOriginal(id: string, isEdited: boolean) {
     return this.buildGetForOriginal([id], isEdited).executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [[DummyValue.UUID], true] })
   getForOriginals(ids: string[], isEdited: boolean) {
     return this.buildGetForOriginal(ids, isEdited).execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID, AssetFileType.Preview, true] })
   async getForThumbnail(id: string, type: AssetFileType, isEdited: boolean) {
     return this.db
@@ -2941,7 +2711,6 @@ export class AssetRepository {
       .orderBy('asset_file.isEdited', isEdited ? 'desc' : 'asc')
       .executeTakeFirstOrThrow();
   }
-
   /** The owner's current rendered develop version, separate from legacy asset_file edits. */
   async getCurrentDevelop(id: string) {
     const { rows } = await sql<{
@@ -2952,13 +2721,12 @@ export class AssetRepository {
       masterPath: string | null;
     }>`
       SELECT id, "ownerId", status, "previewPath", "masterPath"
-      FROM immich_fork.asset_develop_revision
+      FROM public.asset_develop_revision
       WHERE "assetId" = ${id}::uuid AND "isCurrent"
       LIMIT 1
     `.execute(this.db);
     return rows[0];
   }
-
   /**
    * FL-97: what is known about the Studio HDR intermediates (fork sidecar) of these videos.
    * `current` means the row was made from the original as it is now (`sourceFingerprint`) for its
@@ -2978,12 +2746,11 @@ export class AssetRepository {
         coalesce(i."ownerId" = a."ownerId" AND i."sourceFingerprint" = ${studioHdrSourceFingerprint}, false) AS current,
         i.status, i.path, i."createdAt"
       FROM public.asset a
-      LEFT JOIN immich_fork.studio_hdr_intermediate i ON i."assetId" = a.id
+      LEFT JOIN public.studio_hdr_intermediate i ON i."assetId" = a.id
       WHERE a.id = ANY(${ids}::uuid[]) AND a."deletedAt" IS NULL
     `.execute(this.db);
     return rows;
   }
-
   /** FL-97: the ready, current intermediates of these videos that no published edit covers. */
   async getCurrentStudioHdrIntermediates(ids: string[]): Promise<Map<string, string>> {
     const states = await this.getStudioHdrIntermediateStates(ids);
@@ -2993,20 +2760,19 @@ export class AssetRepository {
         .map(({ assetId, path }) => [assetId, path!]),
     );
   }
-
   /** FL-97: the fingerprint of the original as it is now, taken before an intermediate is made from it. */
   async getStudioHdrSourceFingerprint(id: string): Promise<Buffer | undefined> {
-    const { rows } = await sql<{ fingerprint: Buffer }>`
+    const { rows } = await sql<{
+      fingerprint: Buffer;
+    }>`
       SELECT ${studioHdrSourceFingerprint} AS fingerprint FROM public.asset a WHERE a.id = ${id}::uuid
     `.execute(this.db);
     return rows[0]?.fingerprint;
   }
-
   /** FL-97: whether Studio HDR intermediates can be recorded now (the fork schema is writable). */
   canRecordStudioHdrIntermediates(): Promise<boolean> {
-    return canWriteFork(this.db);
+    return true;
   }
-
   /**
    * FL-97: record what became of the original with `sourceFingerprint`: a ready intermediate at
    * `path`, or a refusal (`ineligible`, `failed`) so it is not made again on every project read.
@@ -3019,16 +2785,19 @@ export class AssetRepository {
     sourceFingerprint: Buffer;
     status: StudioHdrIntermediateStatus;
     path?: string;
-  }): Promise<{ recorded: boolean; replacedPath?: string }> {
+  }): Promise<{
+    recorded: boolean;
+    replacedPath?: string;
+  }> {
     const path = entry.status === 'ready' ? (entry.path ?? null) : null;
     if (entry.status === 'ready' && !path) {
       throw new Error('A ready Studio HDR intermediate needs its path');
     }
     return this.db.transaction().execute(async (tx) => {
-      if (!(await canWriteFork(tx))) {
-        return { recorded: false };
-      }
-      const { rows: assets } = await sql<{ fingerprint: Buffer; ownerId: string }>`
+      const { rows: assets } = await sql<{
+        fingerprint: Buffer;
+        ownerId: string;
+      }>`
         SELECT ${studioHdrSourceFingerprint} AS fingerprint, a."ownerId" FROM public.asset a
         WHERE a.id = ${entry.assetId}::uuid AND a."deletedAt" IS NULL FOR SHARE
       `.execute(tx);
@@ -3036,11 +2805,13 @@ export class AssetRepository {
       if (!asset || asset.ownerId !== entry.ownerId || !asset.fingerprint.equals(entry.sourceFingerprint)) {
         return { recorded: false };
       }
-      const previous = await sql<{ path: string | null }>`
-        SELECT path FROM immich_fork.studio_hdr_intermediate WHERE "assetId" = ${entry.assetId}::uuid FOR UPDATE
+      const previous = await sql<{
+        path: string | null;
+      }>`
+        SELECT path FROM public.studio_hdr_intermediate WHERE "assetId" = ${entry.assetId}::uuid FOR UPDATE
       `.execute(tx);
       await sql`
-        INSERT INTO immich_fork.studio_hdr_intermediate ("assetId", "ownerId", "sourceFingerprint", status, path)
+        INSERT INTO public.studio_hdr_intermediate ("assetId", "ownerId", "sourceFingerprint", status, path)
         VALUES (${entry.assetId}::uuid, ${entry.ownerId}::uuid, ${entry.sourceFingerprint}, ${entry.status}, ${path})
         ON CONFLICT ("assetId") DO UPDATE SET "ownerId" = excluded."ownerId",
           "sourceFingerprint" = excluded."sourceFingerprint", status = excluded.status, path = excluded.path,
@@ -3050,18 +2821,16 @@ export class AssetRepository {
       return { recorded: true, ...(replacedPath && replacedPath !== path && { replacedPath }) };
     });
   }
-
   /** FL-97: note that projects still use these intermediates (at most one write a day each). */
   async touchStudioHdrIntermediates(ids: string[]): Promise<void> {
-    if (ids.length === 0 || !(await canWriteFork(this.db))) {
+    if (ids.length === 0) {
       return;
     }
     await sql`
-      UPDATE immich_fork.studio_hdr_intermediate SET "lastUsedAt" = clock_timestamp()
+      UPDATE public.studio_hdr_intermediate SET "lastUsedAt" = clock_timestamp()
       WHERE "assetId" = ANY(${ids}::uuid[]) AND "lastUsedAt" < clock_timestamp() - interval '1 day'
     `.execute(this.db);
   }
-
   /**
    * FL-97: the nightly sweep. Rows whose asset is gone (left while fork writes were disabled, or
    * archived by a handoff return), whose original changed or was replaced, that a published edit
@@ -3070,11 +2839,10 @@ export class AssetRepository {
    */
   async releaseStudioHdrIntermediates(): Promise<string[]> {
     return this.db.transaction().execute(async (tx) => {
-      if (!(await canWriteFork(tx))) {
-        return [];
-      }
-      const released = await sql<{ path: string | null }>`
-        DELETE FROM immich_fork.studio_hdr_intermediate i
+      const released = await sql<{
+        path: string | null;
+      }>`
+        DELETE FROM public.studio_hdr_intermediate i
         WHERE NOT EXISTS (
           SELECT 1 FROM public.asset a
           WHERE a.id = i."assetId" AND a."ownerId" = i."ownerId" AND a."deletedAt" IS NULL
@@ -3086,44 +2854,32 @@ export class AssetRepository {
         )
         OR i."lastUsedAt" < clock_timestamp() - interval '30 days'
         RETURNING i.path`.execute(tx);
-      const archived = await sql<{ path: string | null }>`
-        DELETE FROM immich_fork.orphaned_records o
-        WHERE o."sourceTable" = 'studio_hdr_intermediate'
-          AND NOT EXISTS (SELECT 1 FROM public.asset a WHERE a.id::text = o.payload->>'assetId')
-        RETURNING o.payload->>'path' AS path`.execute(tx);
-      return [
-        ...new Set(
-          [...released.rows, ...archived.rows].map(({ path }) => path).filter((path): path is string => !!path),
-        ),
-      ];
+
+      return [...new Set([...released.rows].map(({ path }) => path).filter((path): path is string => !!path))];
     });
   }
-
   /** FL-97: the intermediates of these assets, including rows a return archived as orphans. */
   private async getStudioHdrIntermediatePaths(ids: string[], db: Kysely<DB>): Promise<string[]> {
     if (!(await hasStudioHdrTable(db))) {
       return [];
     }
-    const { rows } = await sql<{ path: string | null }>`
-      SELECT path FROM immich_fork.studio_hdr_intermediate WHERE "assetId" = ANY(${ids}::uuid[])
-      UNION SELECT payload->>'path' FROM immich_fork.orphaned_records
-      WHERE "sourceTable" = 'studio_hdr_intermediate' AND payload->>'assetId' = ANY(${ids}::text[])
+    const { rows } = await sql<{
+      path: string | null;
+    }>`
+      SELECT path FROM public.studio_hdr_intermediate WHERE "assetId" = ANY(${ids}::uuid[])
     `.execute(db);
     return rows.map(({ path }) => path).filter((path): path is string => !!path);
   }
-
   /** FL-97: the asset's removal takes its intermediates; files go only if the rows could be deleted. */
   private async deleteStudioHdrIntermediates(ids: string[], db: Kysely<DB>): Promise<string[]> {
-    if (ids.length === 0 || !(await canWriteFork(db))) {
+    if (ids.length === 0) {
       return [];
     }
     const paths = await this.getStudioHdrIntermediatePaths(ids, db);
-    await sql`DELETE FROM immich_fork.studio_hdr_intermediate WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
-    await sql`DELETE FROM immich_fork.orphaned_records WHERE "sourceTable" = 'studio_hdr_intermediate'
-      AND payload->>'assetId' = ANY(${ids}::text[])`.execute(db);
+    await sql`DELETE FROM public.studio_hdr_intermediate WHERE "assetId" = ANY(${ids}::uuid[])`.execute(db);
+
     return paths;
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForVideo(id: string) {
     return this.db
@@ -3135,7 +2891,6 @@ export class AssetRepository {
       .where('asset.type', '=', AssetType.Video)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForOcr(id: string) {
     return this.db
@@ -3146,7 +2901,6 @@ export class AssetRepository {
       .select(['asset_exif.exifImageWidth', 'asset_exif.exifImageHeight', 'asset_exif.orientation'])
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForEdit(id: string) {
     return this.db
@@ -3168,7 +2922,6 @@ export class AssetRepository {
       ])
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForMetadataExtractionTags(id: string) {
     return this.db
@@ -3177,7 +2930,6 @@ export class AssetRepository {
       .where('asset_exif.assetId', '=', id)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForFaces(id: string) {
     return this.db
@@ -3188,7 +2940,6 @@ export class AssetRepository {
       .where('asset.id', '=', id)
       .executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async getForUpdateTags(id: string) {
     return this.db
@@ -3205,7 +2956,6 @@ export class AssetRepository {
       .where('asset.id', '=', id)
       .executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [] })
   async getDescriptionStats(): Promise<DescriptionStats> {
     // Mirrors the same filters used by streamForImageDescriptionJob / streamForImageEnrichmentTask
@@ -3242,7 +2992,6 @@ export class AssetRepository {
           .as('withDescription'),
       )
       .executeTakeFirstOrThrow();
-
     const totalAssets = Number(result.totalAssets);
     const withDescription = Number(result.withDescription);
     return {

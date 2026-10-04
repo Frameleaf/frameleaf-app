@@ -22,7 +22,7 @@ import { type EdgeCloudSession, EdgeRelayService } from 'src/edge/edge-relay.ser
 import { DatabaseLock, NotificationLevel, NotificationType, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository, type HeldLock } from 'src/repositories/database.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -162,7 +162,7 @@ export class EdgeStateService {
     private systemMetadataRepository: SystemMetadataRepository,
     private instanceIdentityRepository: InstanceIdentityRepository,
     private frameleafCloudRepository: FrameleafCloudRepository,
-    private forkSchemaRepository: ForkSchemaRepository,
+    private forkSchemaRepository: AssetChecksumRepository,
     private userRepository: UserRepository,
     private notificationRepository: NotificationRepository,
     private certificates: EdgeCertificateRepository,
@@ -230,7 +230,6 @@ export class EdgeStateService {
         configRepo: this.configRepository,
         metadataRepo: this.systemMetadataRepository,
         logger: this.logger,
-        forkSchemaRepo: this.forkSchemaRepository,
       },
       { withCache: false },
     );

@@ -5,7 +5,7 @@ import type { TrashReviewRow, TrashScopeRow } from 'src/utils/trash-review.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { TrashItemSort, UtilityActivityAction, UtilityActivityTool } from 'src/dtos/trash.dto.js';
 import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
-import { canWriteFork } from 'src/repositories/fork-write-guard.js';
+
 import { DB } from 'src/schema/index.js';
 import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
@@ -16,7 +16,6 @@ import {
   trashActionSourceStatus,
   trashActionTargetStatus,
 } from 'src/utils/trash-review.js';
-
 /**
  * Who is looking (FL-47). Everything this repository reads or changes is one owner's own media, and
  * only what that owner's session may see: Locked media only for the owner's elevated session
@@ -28,7 +27,6 @@ export type TrashScopeOptions = {
   /** Suppressed people, pets and tags, and hidden sensitive detections, for an ordinary session. */
   privacy?: HiddenContentQueryOptions;
 };
-
 export type TrashItemsOptions = TrashScopeOptions & {
   terms: string[];
   type?: AssetType;
@@ -36,7 +34,6 @@ export type TrashItemsOptions = TrashScopeOptions & {
   page: number;
   size: number;
 };
-
 export type TrashItemRow = {
   id: string;
   originalFileName: string;
@@ -47,28 +44,31 @@ export type TrashItemRow = {
   isLocked: boolean;
   isOffline: boolean;
 };
-
 /** One item of a utility activity entry, as stored: what it was when it was moved. */
-export type UtilityActivityItem = { assetId: string; fileName: string; bytes: number };
-
+export type UtilityActivityItem = {
+  assetId: string;
+  fileName: string;
+  bytes: number;
+};
 export type UtilityActivityRow = {
   id: string;
   action: UtilityActivityAction;
   createdAt: Date;
   items: UtilityActivityItem[];
 };
-
 /** How long, and how much, utility activity is kept per owner and tool (FL-47, FL-146). */
 export const UTILITY_ACTIVITY_RETENTION_DAYS = 365;
 export const UTILITY_ACTIVITY_LIMIT = 500;
-
 export class TrashRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
-  getDeletedIds(): AsyncIterableIterator<{ id: string }> {
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
+  getDeletedIds(): AsyncIterableIterator<{
+    id: string;
+  }> {
     return this.db.selectFrom('asset').select(['id']).where('status', '=', AssetStatus.Deleted).stream();
   }
-
   /**
    * The owner's items in one lifecycle state, as far as this session may see them. The hidden video
    * part of a live photo follows its photo and is never listed or changed on its own.
@@ -101,7 +101,6 @@ export class TrashRepository {
         .$call((qb) => withHiddenContentFilter(qb, privacy))
     );
   }
-
   /** Narrow mirror state over precisely the same owner/Locked/privacy scope as the trash counts. */
   @GenerateSql({ params: [DummyValue.UUID] })
   getSyncStates(userId: string, options: TrashScopeOptions = {}, assetId?: string) {
@@ -122,7 +121,6 @@ export class TrashRepository {
       .orderBy('asset.id', 'desc')
       .execute();
   }
-
   /** The trash counts the page shows: what is in it, and what is still being removed from storage. */
   async getSummary(userId: string, options: TrashScopeOptions = {}) {
     const listed = await this.scope(this.db, userId, 'listed', options)
@@ -136,11 +134,9 @@ export class TrashRepository {
         sql<string>`coalesce(sum(asset_exif."fileSizeInByte"), 0)`.as('bytes'),
       ])
       .executeTakeFirstOrThrow();
-
     const deleted = await this.scope(this.db, userId, AssetStatus.Deleted, options)
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .executeTakeFirstOrThrow();
-
     return {
       count: Number(listed.count),
       offline: Number(listed.offline),
@@ -148,7 +144,6 @@ export class TrashRepository {
       pendingDeletion: Number(deleted.count),
     };
   }
-
   /** One page of the owner's trash, filtered and ordered as the page asks, with the matching total. */
   async getItems(userId: string, options: TrashItemsOptions) {
     const filtered = this.scope(this.db, userId, 'listed', options)
@@ -165,9 +160,7 @@ export class TrashRepository {
         }
         return query;
       });
-
     const { count } = await filtered.select((eb) => eb.fn.countAll<number>().as('count')).executeTakeFirstOrThrow();
-
     let query = filtered.select([
       'asset.id',
       'asset.originalFileName',
@@ -192,17 +185,14 @@ export class TrashRepository {
         break;
       }
     }
-
     const rows: TrashItemRow[] = await query
       .limit(options.size + 1)
       .offset((options.page - 1) * options.size)
       .execute();
-
     const hasNextPage = rows.length > options.size;
     rows.splice(options.size);
     return { items: rows, hasNextPage, total: Number(count) };
   }
-
   /**
    * The set an action would change, with what the review shows about each item. `ids` names the
    * items for the actions that take them; without it the whole visible trash is the set.
@@ -245,10 +235,8 @@ export class TrashRepository {
       ])
       .orderBy('asset.id', 'asc')
       .execute();
-
     return rows.map((row) => ({ ...row, isLocked: !!row.isLocked, sharesOriginal: !!row.sharesOriginal }));
   }
-
   /**
    * Apply a reviewed action. The set is found again inside the transaction and its rows are locked
    * before `verify` compares it with the review, so nothing can join or leave it between the check
@@ -263,7 +251,6 @@ export class TrashRepository {
   ): Promise<string[] | null> {
     const source = trashActionSourceStatus(action);
     const target = trashActionTargetStatus(action);
-
     return this.db.transaction().execute(async (trx) => {
       const found = await this.scope(trx, userId, source, options)
         .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
@@ -271,7 +258,6 @@ export class TrashRepository {
         .orderBy('asset.id', 'asc')
         .forUpdate()
         .execute();
-
       const rows = found.map((row) => ({ ...row, isLocked: !!row.isLocked }));
       if (!verify(rows)) {
         return null;
@@ -279,14 +265,12 @@ export class TrashRepository {
       if (rows.length === 0) {
         return [];
       }
-
       const changes =
         target === AssetStatus.Active
           ? { status: target, deletedAt: null }
           : target === AssetStatus.Trashed
             ? { status: target, deletedAt: new Date() }
             : { status: target };
-
       const updated = await trx
         .updateTable('asset')
         .where('asset.id', '=', anyUuid(rows.map((row) => row.id)))
@@ -294,18 +278,15 @@ export class TrashRepository {
         .set(changes)
         .returning('asset.id')
         .execute();
-
       return updated.map((row) => row.id);
     });
   }
-
   /** Restores chosen items that are still in the trash, and says which ones actually were. */
   @GenerateSql({ params: [[DummyValue.UUID]] })
   async restoreAll(ids: string[]): Promise<string[]> {
     if (ids.length === 0) {
       return [];
     }
-
     const restored = await this.db
       .updateTable('asset')
       .where('status', '=', AssetStatus.Trashed)
@@ -313,10 +294,8 @@ export class TrashRepository {
       .set({ status: AssetStatus.Active, deletedAt: null })
       .returning('id')
       .execute();
-
     return restored.map(({ id }) => id);
   }
-
   /**
    * The name and size of each changed original, for a utility activity entry. Read after the change,
    * from the owner's own rows only.
@@ -340,7 +319,6 @@ export class TrashRepository {
       bytes: toByteCount(row.fileSizeInByte),
     }));
   }
-
   /**
    * Record one utility change (FL-47): a move to the trash or its undo, with its items. Keeps the
    * newest `UTILITY_ACTIVITY_LIMIT` entries of the owner's tool from the last
@@ -355,22 +333,19 @@ export class TrashRepository {
   }): Promise<boolean> {
     const bytes = entry.items.reduce((sum, item) => sum + item.bytes, 0);
     return this.db.transaction().execute(async (trx) => {
-      if (!(await canWriteFork(trx))) {
-        return false;
-      }
       await sql`
-        INSERT INTO immich_fork.utility_activity ("userId", tool, action, "itemCount", bytes, items)
+        INSERT INTO public.utility_activity ("userId", tool, action, "itemCount", bytes, items)
         VALUES (${entry.userId}::uuid, ${entry.tool}, ${entry.action}, ${entry.items.length}, ${bytes},
           ${JSON.stringify(entry.items)}::text::jsonb)
       `.execute(trx);
       await sql`
-        DELETE FROM immich_fork.utility_activity
+        DELETE FROM public.utility_activity
         WHERE "userId" = ${entry.userId}::uuid
           AND tool = ${entry.tool}
           AND (
             "createdAt" < clock_timestamp() - make_interval(days => ${UTILITY_ACTIVITY_RETENTION_DAYS})
             OR id NOT IN (
-              SELECT id FROM immich_fork.utility_activity
+              SELECT id FROM public.utility_activity
               WHERE "userId" = ${entry.userId}::uuid AND tool = ${entry.tool}
               ORDER BY "createdAt" DESC, id DESC
               LIMIT ${UTILITY_ACTIVITY_LIMIT}
@@ -380,12 +355,11 @@ export class TrashRepository {
       return true;
     });
   }
-
   /** The owner's utility activity for one tool, newest first, within the retention window. */
   async getUtilityActivity(userId: string, tool: UtilityActivityTool): Promise<UtilityActivityRow[]> {
     const { rows } = await sql<UtilityActivityRow>`
       SELECT id, action, "createdAt", items
-      FROM immich_fork.utility_activity
+      FROM public.utility_activity
       WHERE "userId" = ${userId}::uuid
         AND tool = ${tool}
         AND "createdAt" >= clock_timestamp() - make_interval(days => ${UTILITY_ACTIVITY_RETENTION_DAYS})
@@ -394,7 +368,6 @@ export class TrashRepository {
     `.execute(this.db);
     return rows;
   }
-
   /**
    * Which of these items the session may still see (FL-47): the owner's own, not the hidden part of
    * a live photo, Locked media only for the owner's unlocked session, and nothing the privacy filters

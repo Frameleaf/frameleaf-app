@@ -8,19 +8,17 @@ import type { UserMetadata, UserMetadataItem } from 'src/types.js';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetStatus, AssetType, AssetVisibility, UserMetadataKey, UserStatus } from 'src/enum.js';
-import { canWriteFork, lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { UTILITY_ACTIVITY_RETENTION_DAYS } from 'src/repositories/trash.repository.js';
 import { DB } from 'src/schema/index.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { bestPhotoRank, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
 import { asUuid, isNotLockedAsset, nsfwAssetIdExists } from 'src/utils/database.js';
 import { isLockedAssetId, isUnlockedAsset } from 'src/utils/locked-state.js';
-
 export interface UserListFilter {
   id?: string;
   withDeleted?: boolean;
 }
-
 export interface UserStatsQueryResponse {
   userId: string;
   userName: string;
@@ -31,30 +29,30 @@ export interface UserStatsQueryResponse {
   usageVideos: number;
   quotaSizeInBytes: number | null;
 }
-
 /** FL-71: the account that owns a queue job's subject (an asset, person, library or the account itself). */
 export interface JobSubjectOwner {
   subjectId: string;
   ownerId: string;
   ownerName: string;
 }
-
 /** FL-71 (CC-10): one saved change of an account's own preferences. */
 export interface UserPreferenceHistoryRow {
   id: string;
   createdAt: Date;
   deviceLabel: string | null;
-  changes: Array<{ path: string; before: string | null; after: string | null; protected?: boolean }>;
+  changes: Array<{
+    path: string;
+    before: string | null;
+    after: string | null;
+    protected?: boolean;
+  }>;
   omittedChanges: number;
 }
-
 /** How many preference history entries an account keeps. */
 export const USER_PREFERENCE_HISTORY_LIMIT = 50;
-
 export interface UserFindOptions {
   withDeleted?: boolean;
 }
-
 const withMetadata = (eb: ExpressionBuilder<DB, 'user'>) => {
   return jsonArrayFrom(
     eb
@@ -63,15 +61,15 @@ const withMetadata = (eb: ExpressionBuilder<DB, 'user'>) => {
       .whereRef('user.id', '=', 'user_metadata.userId'),
   ).as('metadata');
 };
-
 @Injectable()
 export class UserRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.BOOLEAN] })
   get(userId: string, options: UserFindOptions) {
     options ||= {};
-
     return this.db
       .selectFrom('user')
       .select(columns.userAdmin)
@@ -80,7 +78,6 @@ export class UserRepository {
       .$if(!options.withDeleted, (eb) => eb.where('user.deletedAt', 'is', null))
       .executeTakeFirst();
   }
-
   /** `db` is a transaction when the read must be consistent with a write that follows (FL-67). */
   getMetadata(userId: string, db: Kysely<DB> = this.db) {
     return db
@@ -89,7 +86,6 @@ export class UserRepository {
       .where('user_metadata.userId', '=', userId)
       .execute() as Promise<UserMetadataItem[]>;
   }
-
   /** FL-232: private, revisioned pin references; hydration always rechecks current access. */
   getPinnedCollections(userId: string) {
     return this.db
@@ -97,9 +93,16 @@ export class UserRepository {
       .select(['value', 'updateId'])
       .where('userId', '=', userId)
       .where('key', '=', UserMetadataKey.PinnedCollections)
-      .executeTakeFirst() as Promise<{ value: { pins: StoredPinnedCollection[] }; updateId: string } | undefined>;
+      .executeTakeFirst() as Promise<
+      | {
+          value: {
+            pins: StoredPinnedCollection[];
+          };
+          updateId: string;
+        }
+      | undefined
+    >;
   }
-
   setPinnedCollections(userId: string, pins: StoredPinnedCollection[], expectedRevision: string | null) {
     if (expectedRevision !== null) {
       return this.db
@@ -118,7 +121,6 @@ export class UserRepository {
       .returning('updateId')
       .executeTakeFirst();
   }
-
   @GenerateSql()
   getAdmin() {
     return this.db
@@ -129,7 +131,6 @@ export class UserRepository {
       .where('user.deletedAt', 'is', null)
       .executeTakeFirst();
   }
-
   /** FL-155: every administrator that is not deleted, oldest first. */
   @GenerateSql()
   getAdmins() {
@@ -142,7 +143,6 @@ export class UserRepository {
       .orderBy('user.createdAt', 'asc')
       .execute();
   }
-
   @GenerateSql()
   getFileSamples() {
     return this.db
@@ -152,7 +152,6 @@ export class UserRepository {
       .limit(sql.lit(3))
       .execute();
   }
-
   @GenerateSql()
   async hasAdmin(): Promise<boolean> {
     const admin = await this.db
@@ -161,10 +160,8 @@ export class UserRepository {
       .where('user.isAdmin', '=', true)
       .where('user.deletedAt', 'is', null)
       .executeTakeFirst();
-
     return !!admin;
   }
-
   /**
    * FL-76: whether an account has a Locked PIN, for the administrator's account detail. Only the
    * presence is read, never the hash; deleted accounts are included so their detail still says it.
@@ -177,7 +174,6 @@ export class UserRepository {
       .executeTakeFirst();
     return row === undefined ? undefined : Boolean(row.hasPinCode);
   }
-
   /**
    * FL-71: the owning account of each id that names an asset, person (its group), library or account,
    * for the Job manager's Account column. Ids naming nothing, or a person several accounts share, are
@@ -189,7 +185,11 @@ export class UserRepository {
     }
     // One array parameter for every table, so a long job list never approaches the protocol's
     // 65,535-parameter limit.
-    const { rows } = await sql<JobSubjectOwner & { owners: number }>`
+    const { rows } = await sql<
+      JobSubjectOwner & {
+        owners: number;
+      }
+    >`
       WITH "ids" AS (SELECT unnest(${ids}::uuid[]) AS "id"),
       "subject" AS (
         SELECT "asset"."id" AS "subjectId", "asset"."ownerId" FROM "asset" JOIN "ids" ON "ids"."id" = "asset"."id"
@@ -210,7 +210,6 @@ export class UserRepository {
       .filter(({ owners }) => Number(owners) === 1)
       .map(({ subjectId, ownerId, ownerName }) => ({ subjectId, ownerId, ownerName }));
   }
-
   /**
    * FL-71 (CC-10): adds one preferences change to the account's own history and keeps only its
    * newest USER_PREFERENCE_HISTORY_LIMIT entries.
@@ -222,19 +221,15 @@ export class UserRepository {
     omittedChanges: number;
   }): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
-      // Skipped (never blocking the save) while the fork schema is not writable, as recipient groups are.
-      if (!(await canWriteFork(trx))) {
-        return false;
-      }
       await sql`
-        INSERT INTO immich_fork.user_preference_history ("userId", "deviceLabel", changes, "omittedChanges")
+        INSERT INTO public.user_preference_history ("userId", "deviceLabel", changes, "omittedChanges")
         VALUES (${entry.userId}::uuid, ${entry.deviceLabel}, ${JSON.stringify(entry.changes)}::text::jsonb, ${entry.omittedChanges})
       `.execute(trx);
       await sql`
-        DELETE FROM immich_fork.user_preference_history
+        DELETE FROM public.user_preference_history
         WHERE "userId" = ${entry.userId}::uuid
           AND id NOT IN (
-            SELECT id FROM immich_fork.user_preference_history
+            SELECT id FROM public.user_preference_history
             WHERE "userId" = ${entry.userId}::uuid
             ORDER BY "createdAt" DESC, id DESC
             LIMIT ${USER_PREFERENCE_HISTORY_LIMIT}
@@ -243,7 +238,6 @@ export class UserRepository {
       return true;
     });
   }
-
   /**
    * FL-71 (CC-10): a deleted account leaves no preference history behind, nor (FL-47) its utility
    * activity. Skipped (never blocking the delete) while the fork schema is not writable, like
@@ -251,15 +245,11 @@ export class UserRepository {
    */
   async deletePreferenceHistory(userId: string): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
-      if (!(await canWriteFork(trx))) {
-        return false;
-      }
-      await sql`DELETE FROM immich_fork.user_preference_history WHERE "userId" = ${userId}::uuid`.execute(trx);
-      await sql`DELETE FROM immich_fork.utility_activity WHERE "userId" = ${userId}::uuid`.execute(trx);
+      await sql`DELETE FROM public.user_preference_history WHERE "userId" = ${userId}::uuid`.execute(trx);
+      await sql`DELETE FROM public.utility_activity WHERE "userId" = ${userId}::uuid`.execute(trx);
       return true;
     });
   }
-
   /**
    * FL-71 (CC-10), FL-55: fork rows of accounts that no longer exist, left behind when an account
    * was removed while the fork schema was not writable. Preference history of a removed account
@@ -280,24 +270,21 @@ export class UserRepository {
     | undefined
   > {
     return this.db.transaction().execute(async (trx) => {
-      if (!(await canWriteFork(trx))) {
-        return;
-      }
       const history = await sql`
-        DELETE FROM immich_fork.user_preference_history AS history
+        DELETE FROM public.user_preference_history AS history
         WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = history."userId")
       `.execute(trx);
       const groups = await sql`
-        DELETE FROM immich_fork.recipient_group AS recipient_group
+        DELETE FROM public.recipient_group AS recipient_group
         WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = recipient_group."ownerId")
       `.execute(trx);
       // FL-91: a Studio workspace layout left by an account removed during a handoff.
       const layouts = await sql`
-        DELETE FROM immich_fork.studio_workspace_layout AS layout
+        DELETE FROM public.studio_workspace_layout AS layout
         WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = layout."userId")
       `.execute(trx);
       await sql`
-        UPDATE immich_fork.recipient_group
+        UPDATE public.recipient_group
         SET "userIds" = ARRAY(
               SELECT member FROM unnest("userIds") AS member
               WHERE EXISTS (SELECT 1 FROM "user" WHERE "user".id = member)
@@ -310,24 +297,24 @@ export class UserRepository {
       `.execute(trx);
       // FL-47: utility activity of a removed account, and any past its retention window.
       const activity = await sql`
-        DELETE FROM immich_fork.utility_activity AS activity
+        DELETE FROM public.utility_activity AS activity
         WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = activity."userId")
            OR activity."createdAt" < clock_timestamp() - make_interval(days => ${UTILITY_ACTIVITY_RETENTION_DAYS})
       `.execute(trx);
       // FL-62: the removed account's memory show-less rules and memory curation.
       const showLess = await sql`
-        DELETE FROM immich_fork.memory_show_less AS rule
+        DELETE FROM public.memory_show_less AS rule
         WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = rule."userId")
       `.execute(trx);
       const curations = await sql`
-        DELETE FROM immich_fork.memory_curation AS curation
+        DELETE FROM public.memory_curation AS curation
         WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE "user".id = curation."ownerId")
       `.execute(trx);
       let peopleAndPets = 0;
       for (const table of [
-        sql`immich_fork.face_correction`,
-        sql`immich_fork.person_merge_verdict`,
-        sql`immich_fork.pet_recognition_run`,
+        sql`public.face_correction`,
+        sql`public.person_merge_verdict`,
+        sql`public.pet_recognition_run`,
       ]) {
         const removed = await sql`
           DELETE FROM ${table} AS owned
@@ -346,19 +333,17 @@ export class UserRepository {
       };
     });
   }
-
   /** FL-71 (CC-10): the account's own preference history, newest first. */
   async getPreferenceHistory(userId: string): Promise<UserPreferenceHistoryRow[]> {
     const { rows } = await sql<UserPreferenceHistoryRow>`
       SELECT id, "createdAt", "deviceLabel", changes, "omittedChanges"
-      FROM immich_fork.user_preference_history
+      FROM public.user_preference_history
       WHERE "userId" = ${userId}::uuid
       ORDER BY "createdAt" DESC, id DESC
       LIMIT ${USER_PREFERENCE_HISTORY_LIMIT}
     `.execute(this.db);
     return rows;
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   getForPinCode(id: string) {
     return this.db
@@ -368,7 +353,6 @@ export class UserRepository {
       .where('user.deletedAt', 'is', null)
       .executeTakeFirstOrThrow();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   getForChangePassword(id: string) {
     return this.db
@@ -378,13 +362,18 @@ export class UserRepository {
       .where('user.deletedAt', 'is', null)
       .executeTakeFirstOrThrow();
   }
-
   /**
    * `withDeleted` (FL-76): the email is unique across soft-deleted accounts too, so a duplicate check
    * before an insert or update must see them. Sign-in never passes it.
    */
   @GenerateSql({ params: [DummyValue.EMAIL] })
-  getByEmail(email: string, options?: { withPassword?: boolean; withDeleted?: boolean }) {
+  getByEmail(
+    email: string,
+    options?: {
+      withPassword?: boolean;
+      withDeleted?: boolean;
+    },
+  ) {
     return this.db
       .selectFrom('user')
       .select(columns.userAdmin)
@@ -394,7 +383,6 @@ export class UserRepository {
       .$if(!options?.withDeleted, (qb) => qb.where('user.deletedAt', 'is', null))
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.STRING] })
   /**
    * `withDeleted` (FL-76): the unique constraint on `storageLabel` covers soft-deleted accounts too, so
@@ -408,7 +396,6 @@ export class UserRepository {
       .$if(!withDeleted, (qb) => qb.where('user.deletedAt', 'is', null))
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DummyValue.STRING] })
   getByOAuthId(oauthId: string) {
     return this.db
@@ -419,12 +406,10 @@ export class UserRepository {
       .where('user.deletedAt', 'is', null)
       .executeTakeFirst();
   }
-
   @GenerateSql({ params: [DateTime.now().minus({ years: 1 })] })
   getDeletedAfter(target: DateTime) {
     return this.db.selectFrom('user').select(['id']).where('user.deletedAt', '<', target.toJSDate()).execute();
   }
-
   @GenerateSql(
     { name: 'with deleted', params: [{ withDeleted: true }] },
     { name: 'without deleted', params: [{ withDeleted: false }] },
@@ -439,7 +424,6 @@ export class UserRepository {
       .orderBy('createdAt', 'desc')
       .execute();
   }
-
   async create(dto: Insertable<UserTable>) {
     return this.db
       .insertInto('user')
@@ -448,14 +432,15 @@ export class UserRepository {
       .returning(withMetadata)
       .executeTakeFirstOrThrow();
   }
-
   async setPinCodeAndLockSessions(
     id: string,
-    verified: { pinCode: string | null; password: string | null },
+    verified: {
+      pinCode: string | null;
+      password: string | null;
+    },
     pinCode: string | null,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (db) => {
-      await lockPublicForkWrites(db);
       const user = await db
         .selectFrom('user')
         .select('user.id')
@@ -468,7 +453,6 @@ export class UserRepository {
       if (!user) {
         return false;
       }
-
       // Match elevation/grant admission's owner-before-session order. New sessions' owner FK
       // also waits for this owner lock; no old elevation can survive the committed mutation.
       await db.selectFrom('session').select('id').where('userId', '=', asUuid(id)).orderBy('id').forUpdate().execute();
@@ -477,7 +461,6 @@ export class UserRepository {
       return true;
     });
   }
-
   update(id: string, dto: Updateable<UserTable>) {
     const write = (db: Kysely<DB>) =>
       db
@@ -489,10 +472,9 @@ export class UserRepository {
         .returning(withMetadata)
         .executeTakeFirstOrThrow();
     return Object.hasOwn(dto, 'pinCode') || Object.hasOwn(dto, 'deletedAt')
-      ? withPublicForkWrites(this.db, write)
+      ? this.db.transaction().execute(write)
       : write(this.db);
   }
-
   /**
    * Whether the user's profile picture was copied from a photo that is Locked now (FL-53). Such a
    * picture is never served; `replaceLockedProfileImages` gives the user another one.
@@ -507,7 +489,6 @@ export class UserRepository {
       .executeTakeFirst();
     return !!row;
   }
-
   /** Users whose profile picture was copied from a photo that is Locked now (FL-53). */
   @GenerateSql()
   getLockedProfileImageSources() {
@@ -519,7 +500,6 @@ export class UserRepository {
       .where('user.deletedAt', 'is', null)
       .execute();
   }
-
   /**
    * The photo a profile picture is copied from in place of one that became Locked (owner decisions 2
    * and 4, FL-53). A profile picture is seen by everyone on the server, so only a photo of the user's
@@ -530,7 +510,13 @@ export class UserRepository {
    * linked to a person.
    */
   @GenerateSql({ params: [DummyValue.UUID] })
-  async getProfileImageReplacement(userId: string): Promise<{ id: string; path: string } | undefined> {
+  async getProfileImageReplacement(userId: string): Promise<
+    | {
+        id: string;
+        path: string;
+      }
+    | undefined
+  > {
     const scores = await getBestPhotoScoreTable(this.db);
     return this.db
       .selectFrom('asset')
@@ -551,7 +537,6 @@ export class UserRepository {
       .limit(1)
       .executeTakeFirst();
   }
-
   /**
    * Replaces a profile picture copied from the Locked photo `lockedAssetId`, unless the user set
    * another picture in the meantime. Whether it replaced it.
@@ -562,7 +547,10 @@ export class UserRepository {
   async replaceLockedProfileImage(
     id: string,
     lockedAssetId: string,
-    value: { profileImagePath: string; profileImageAssetId: string | null },
+    value: {
+      profileImagePath: string;
+      profileImageAssetId: string | null;
+    },
   ): Promise<boolean> {
     const result = await this.db
       .updateTable('user')
@@ -572,33 +560,38 @@ export class UserRepository {
       .executeTakeFirst();
     return Number(result.numUpdatedRows) > 0;
   }
-
   async updateAll(dto: Updateable<UserTable>) {
     const write = async (db: Kysely<DB>) => {
       await db.updateTable('user').set(dto).execute();
     };
     if (Object.hasOwn(dto, 'pinCode') || Object.hasOwn(dto, 'deletedAt')) {
-      await withPublicForkWrites(this.db, write);
+      await this.db.transaction().execute(write);
     } else {
       await write(this.db);
     }
   }
-
   restore(id: string) {
-    return withPublicForkWrites(this.db, (db) =>
-      db
-        .updateTable('user')
-        .set({ status: UserStatus.Active, deletedAt: null })
-        .where('user.id', '=', asUuid(id))
-        .returning(columns.userAdmin)
-        .returning(withMetadata)
-        .executeTakeFirstOrThrow(),
-    );
+    return this.db
+      .transaction()
+      .execute((db) =>
+        db
+          .updateTable('user')
+          .set({ status: UserStatus.Active, deletedAt: null })
+          .where('user.id', '=', asUuid(id))
+          .returning(columns.userAdmin)
+          .returning(withMetadata)
+          .executeTakeFirstOrThrow(),
+      );
   }
-
   async upsertMetadata<T extends keyof UserMetadata>(
     id: string,
-    { key, value }: { key: T; value: UserMetadata[T] },
+    {
+      key,
+      value,
+    }: {
+      key: T;
+      value: UserMetadata[T];
+    },
     transaction?: Transaction<DB>,
   ) {
     const write = async (db: Kysely<DB>) => {
@@ -615,35 +608,38 @@ export class UserRepository {
     };
     if (transaction) {
       if (key === UserMetadataKey.Preferences) {
-        await lockPublicForkWrites(transaction);
       }
       await write(transaction);
     } else if (key === UserMetadataKey.Preferences) {
-      await withPublicForkWrites(this.db, write);
+      await this.db.transaction().execute(write);
     } else {
       await write(this.db);
     }
   }
-
   async deleteMetadata<T extends keyof UserMetadata>(id: string, key: T) {
     const write = async (db: Kysely<DB>) => {
       await db.deleteFrom('user_metadata').where('userId', '=', id).where('key', '=', key).execute();
     };
     if (key === UserMetadataKey.Preferences) {
-      await withPublicForkWrites(this.db, write);
+      await this.db.transaction().execute(write);
     } else {
       await write(this.db);
     }
   }
-
-  delete(user: { id: string }, hard?: boolean) {
-    return withPublicForkWrites(this.db, async (db) =>
-      hard
-        ? await db.deleteFrom('user').where('id', '=', user.id).execute()
-        : await db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', user.id).execute(),
-    );
+  delete(
+    user: {
+      id: string;
+    },
+    hard?: boolean,
+  ) {
+    return this.db
+      .transaction()
+      .execute(async (db) =>
+        hard
+          ? await db.deleteFrom('user').where('id', '=', user.id).execute()
+          : await db.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', user.id).execute(),
+      );
   }
-
   @GenerateSql()
   getUserStats() {
     return this.db
@@ -705,7 +701,6 @@ export class UserRepository {
       .orderBy('user.createdAt', 'asc')
       .execute();
   }
-
   @GenerateSql()
   async getCount(): Promise<number> {
     const result = await this.db
@@ -715,7 +710,6 @@ export class UserRepository {
       .executeTakeFirstOrThrow();
     return Number(result.count);
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.NUMBER] })
   async updateUsage(id: string, delta: number): Promise<void> {
     await this.db
@@ -725,7 +719,6 @@ export class UserRepository {
       .where('user.deletedAt', 'is', null)
       .execute();
   }
-
   @GenerateSql({ params: [DummyValue.UUID] })
   async syncUsage(id?: string) {
     const query = this.db
@@ -742,7 +735,6 @@ export class UserRepository {
       })
       .where('user.deletedAt', 'is', null)
       .$if(id !== undefined, (eb) => eb.where('user.id', '=', asUuid(id!)));
-
     await query.execute();
   }
 }

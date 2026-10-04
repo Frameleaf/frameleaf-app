@@ -1,4 +1,4 @@
-import { ForeignKeyColumn, Table } from '@immich/sql-tools';
+import { ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
 import { ActivityTable } from 'src/schema/tables/activity.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 

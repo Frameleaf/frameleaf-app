@@ -9,7 +9,8 @@ import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.s
 import { flushBuddyDirectory, writeBuddyFile } from 'src/utils/buddy-backup-vault.js';
 import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
 
-const fixture = vi.hoisted(() => ({ media: '', rows: [] as unknown[] }));
+const fixture = vi.hoisted(() => ({ reset: vi.fn(), media: '', rows: [] as unknown[] }));
+vi.mock('src/queue/store.js', () => ({ resetQueueAfterRestore: fixture.reset }));
 vi.mock('src/constants.js', () => ({ serverVersion: '2.6.0' }));
 vi.mock('src/cores/storage.core.js', () => ({ StorageCore: { getMediaLocation: () => fixture.media } }));
 vi.mock('src/repositories/buddy-backup.repository.js', () => ({ BuddyBackupRepository: class {} }));
@@ -113,7 +114,7 @@ describe('Buddy recovery crash barriers', () => {
     };
     service = new BuddyBackupRecoveryService(
       repository as never,
-      { getEnv: () => ({ bull: { queues: [], config: {} } }) } as never,
+      {} as never,
       {} as never,
       new CloudBackupKeyRepository(LoggingRepository.create()),
     );
@@ -304,6 +305,7 @@ describe('Buddy recovery crash barriers', () => {
     } as never;
     const before = await repository.state();
     await service.restore(id, restore, maintenance, assert);
+    expect(fixture.reset).toHaveBeenCalledWith(database);
     expect(database.deleteFrom.mock.calls).toEqual([['session'], ['system_metadata']]);
     expect(deletion.where).toHaveBeenCalledExactlyOnceWith('key', 'in', []);
     expect((await repository.state()).settings).toMatchObject({

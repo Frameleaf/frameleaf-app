@@ -4,7 +4,7 @@ import { ChecksumAlgorithm, MediaOperationStatus } from 'src/enum.js';
 import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -72,7 +72,7 @@ describe('FL-226 persisted proof prerequisites', () => {
       path: '/original',
       source: 'upload' as const,
     };
-    const fork = ctx.get(ForkSchemaRepository);
+    const fork = ctx.get(AssetChecksumRepository);
     await fork.recordAssetChecksums(baseline);
     const readBaseline = async () =>
       (await sql`SELECT * FROM immich_fork.asset_checksum WHERE "assetId" = ${asset.id}::uuid`.execute(db)).rows;

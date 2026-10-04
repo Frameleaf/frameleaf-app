@@ -1,5 +1,5 @@
-import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table, Unique } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import {

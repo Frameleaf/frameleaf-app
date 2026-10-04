@@ -28,7 +28,6 @@ function buildSpk(manifest, output) {
       '@SERVER_REF@': manifest.images.server,
       '@ML_REF@': manifest.images.machineLearning,
       '@PG_REF@': manifest.images.postgres,
-      '@VALKEY_REF@': manifest.images.valkey,
     })) compose = compose.replaceAll(key, value);
     assert(!/@[A-Z_]+@/.test(compose), 'Unresolved Synology image');
     fs.writeFileSync(path.join(payload, 'project/compose.yaml'), compose);

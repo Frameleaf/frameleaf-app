@@ -2,23 +2,35 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
-import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
+
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
-
-type Values = { isFavorite?: boolean; isHidden?: boolean; fileCreatedAt?: string };
+type Values = {
+  isFavorite?: boolean;
+  isHidden?: boolean;
+  fileCreatedAt?: string;
+};
 type Baseline = {
   signature: string;
   updatedAt: string;
   source: Values;
-  applied: { isFavorite?: boolean; visibility?: AssetVisibility; fileCreatedAt?: string };
+  applied: {
+    isFavorite?: boolean;
+    visibility?: AssetVisibility;
+    fileCreatedAt?: string;
+  };
   overridden: string[];
   status: 'applied' | 'needs-review';
   reason?: string;
 };
-type Candidate = { id: string; assetId: string; signature: string; previous?: Baseline };
+type Candidate = {
+  id: string;
+  assetId: string;
+  signature: string;
+  previous?: Baseline;
+};
 type Target = {
   isFavorite: boolean;
   visibility: AssetVisibility;
@@ -26,19 +38,20 @@ type Target = {
   timeZone: string | null;
   lockedProperties: string[] | null;
 };
-
 @Injectable()
 export class ICloudMetadataRepository {
-  constructor(@InjectKysely() private readonly db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private readonly db: Kysely<DB>,
+  ) {}
   private candidate(db: Kysely<DB>, connectionId: string, ownerId: string, assetId?: string) {
     return sql<Candidate>`SELECT DISTINCT ON (r."assetId") r.id,r."assetId",version.signature,baseline.previous
-      FROM immich_fork.icloud_resource r JOIN asset a ON a.id=r."assetId"
+      FROM public.icloud_resource r JOIN asset a ON a.id=r."assetId"
       JOIN asset_job_status jobs ON jobs."assetId"=a.id AND jobs."metadataExtractedAt" IS NOT NULL
       CROSS JOIN LATERAL (SELECT md5(coalesce(string_agg(jsonb_build_object('id',s.id,'favorite',s.source->'isFavorite','hidden',s.source->'isHidden','date',s.source->'fileCreatedAt')::text,',' ORDER BY s.id),'') || jobs."metadataExtractedAt"::text) signature
-        FROM immich_fork.icloud_resource s WHERE s."auditRequestId" IS NULL AND s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId"
+        FROM public.icloud_resource s WHERE s."auditRequestId" IS NULL AND s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId"
         AND coalesce((s.source->>'current')::boolean,true) AND s.role<>'motion' AND s.status IN ('committed','finalized','reused')) version
-      LEFT JOIN LATERAL (SELECT s.source#>'{_sync,metadata}' previous FROM immich_fork.icloud_resource s
+      LEFT JOIN LATERAL (SELECT s.source#>'{_sync,metadata}' previous FROM public.icloud_resource s
         WHERE s."auditRequestId" IS NULL AND s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId" AND s.source#>'{_sync,metadata}' IS NOT NULL
         ORDER BY s.source#>>'{_sync,metadata,updatedAt}' DESC,s.id LIMIT 1) baseline ON true
       WHERE r."auditRequestId" IS NULL AND r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND a."ownerId"=${ownerId}::uuid
@@ -49,28 +62,14 @@ export class ICloudMetadataRepository {
       .execute(db)
       .then(({ rows }) => rows[0]);
   }
-
   /**
    * One destination asset per transaction; at most 100 source descriptors are inspected. The ids of
    * any assets it locks (FL-34) are added to `locked`, for the caller's follow-up once it commits.
    */
   async reconcile(connectionId: string, ownerId: string, assetId?: string, locked: string[] = []): Promise<boolean> {
     return this.db.transaction().execute(async (db) => {
-      const phase = await sql<{ phase: ForkSchemaPhase }>`SELECT phase FROM immich_fork.state WHERE id=1 FOR SHARE`
-        .execute(db)
-        .then(({ rows }) => rows[0]?.phase);
-      if (!phase || !isForkWriteEnabled(phase)) {
-        return true;
-      }
-      const handoff =
-        await sql`SELECT 1 FROM immich_fork.migration_audit WHERE status='running' AND name IN ('official-handoff-preparation','fork-return-reconciliation') LIMIT 1`.execute(
-          db,
-        );
-      if (handoff.rows.length > 0) {
-        return true;
-      }
       const connection =
-        await sql`SELECT id FROM immich_fork.icloud_connection WHERE id=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid AND state='connected' FOR UPDATE`.execute(
+        await sql`SELECT id FROM public.icloud_connection WHERE id=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid AND state='connected' FOR UPDATE`.execute(
           db,
         );
       if (connection.rows.length === 0) {
@@ -95,7 +94,7 @@ export class ICloudMetadataRepository {
       }
       const { rows: resources } = await sql<{
         source: Values;
-      }>`SELECT source FROM immich_fork.icloud_resource WHERE "ownerId"=${ownerId}::uuid AND "assetId"=${candidate.assetId}::uuid
+      }>`SELECT source FROM public.icloud_resource WHERE "ownerId"=${ownerId}::uuid AND "assetId"=${candidate.assetId}::uuid
         AND "auditRequestId" IS NULL AND coalesce((source->>'current')::boolean,true) AND role<>'motion' AND status IN ('committed','finalized','reused') ORDER BY id LIMIT 101`.execute(
         db,
       );
@@ -185,20 +184,19 @@ export class ICloudMetadataRepository {
         }
       }
       state.overridden = [...new Set(state.overridden)];
-      await sql`UPDATE immich_fork.icloud_resource SET source=jsonb_set(source,'{_sync}',coalesce(source->'_sync','{}') || jsonb_build_object('metadata',${state}::jsonb)) WHERE id=${candidate.id}::uuid AND "ownerId"=${ownerId}::uuid`.execute(
+      await sql`UPDATE public.icloud_resource SET source=jsonb_set(source,'{_sync}',coalesce(source->'_sync','{}') || jsonb_build_object('metadata',${state}::jsonb)) WHERE id=${candidate.id}::uuid AND "ownerId"=${ownerId}::uuid`.execute(
         db,
       );
       return !(await this.candidate(db, connectionId, ownerId, assetId));
     });
   }
-
   /** Returns the ids of the assets it locked (FL-34). */
   async afterExtraction(assetId: string, ownerId: string): Promise<string[]> {
     const locked: string[] = [];
     const { rows } = await sql<{
       connectionId: string;
-    }>`SELECT DISTINCT r."connectionId" FROM immich_fork.icloud_resource r
-      JOIN immich_fork.icloud_connection c ON c.id=r."connectionId" WHERE r."auditRequestId" IS NULL AND r."assetId"=${assetId}::uuid AND r."ownerId"=${ownerId}::uuid
+    }>`SELECT DISTINCT r."connectionId" FROM public.icloud_resource r
+      JOIN public.icloud_connection c ON c.id=r."connectionId" WHERE r."auditRequestId" IS NULL AND r."assetId"=${assetId}::uuid AND r."ownerId"=${ownerId}::uuid
       AND c."ownerId"=${ownerId}::uuid AND c.state='connected' AND r.role<>'motion' LIMIT 100`.execute(this.db);
     for (const { connectionId } of rows) {
       await this.reconcile(connectionId, ownerId, assetId, locked);

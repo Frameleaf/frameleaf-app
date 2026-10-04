@@ -40,11 +40,11 @@ questions:
             If something goes wrong, you will have to restore from backup.
           schema:
             type: string
-            default: vectorchord_14_image
+            default: pgvector_19_image
             required: true
             enum:
-              - value: vectorchord_14_image
-                description: Postgres 14
+              - value: pgvector_19_image
+                description: Postgres 19
         - variable: db_storage_type
           label: Database Storage Type
           description: |
@@ -61,13 +61,6 @@ questions:
                 description: HDD
         - variable: db_password
           label: Database Password
-          schema:
-            type: string
-            default: ""
-            required: true
-            private: true
-        - variable: redis_password
-          label: Redis Password
           schema:
             type: string
             default: ""
@@ -263,8 +256,6 @@ questions:
                                         description: machine-learning
                                       - value: pgvecto
                                         description: pgvecto
-                                      - value: redis
-                                        description: redis
                                 - variable: config
                                   label: Container Network Configuration
                                   schema:
@@ -758,8 +749,6 @@ questions:
                             description: machine-learning
                           - value: pgvecto
                             description: pgvecto
-                          - value: redis
-                            description: redis
   - variable: resources
     label: ""
     group: Resources Configuration

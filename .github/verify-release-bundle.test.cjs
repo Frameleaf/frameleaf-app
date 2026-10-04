@@ -22,10 +22,6 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
       recursive: true,
     });
     await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
-    await fs.writeFile(
-      path.join(root, "packaging/nas/certified-sources.json"),
-      '{"officialImmich":[],"priorFrameleaf":[]}',
-    );
     for (const name of INSTALL_FILES)
       await fs.writeFile(
         path.join(root, "docker", name),
@@ -39,22 +35,18 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
                 "  immich-machine-learning:",
                 "    image: ghcr.io/frameleaf/frameleaf-machine-learning:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
                 "  database:",
-                `    image: ghcr.io/frameleaf/frameleaf-postgres:14@sha256:${"c".repeat(64)}`,
-                "  redis:",
-                `    image: valkey/valkey:9@sha256:${"d".repeat(64)}`,
+                `    image: ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7@sha256:${"c".repeat(64)}`,
                 "",
               ].join("\n")
             : "services: {}\n",
       );
-    await fs.writeFile(
-      path.join(root, "server/src/fork-schema/supported-versions.json"),
-      "{}",
-    );
     const manifest = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       repository: REPOSITORY,
       tag,
       sourceCommit,
+      buildRun: "https://github.com/Frameleaf/frameleaf-app/actions/runs/123",
+      dependencies: [{ reference: "ghcr.io/frameleaf/frameleaf-postgres:19beta4-pgvector0.8.7", digest: `sha256:${"c".repeat(64)}` }],
       images: VARIANTS.map((spec) => ({
         image: `ghcr.io/frameleaf/${spec.image}`,
         suffix: spec.suffix,
@@ -67,6 +59,13 @@ test("NAS packaging accepts one complete version-matched release bundle", async 
     await createBundle(bundle, root, tag, manifest);
     const sumsFile = path.join(bundle, "SHA256SUMS");
     const originalSums = await fs.readFile(sumsFile, "utf8");
+    assert.equal(manifest.schemaVersion, 3);
+    const generatedNas = JSON.parse(await fs.readFile(path.join(bundle, "nas-manifest.json"), "utf8"));
+    assert.equal(generatedNas.schemaVersion, 3);
+    assert.equal(generatedNas.buildRun, manifest.buildRun);
+    assert.equal(generatedNas.migration, undefined);
+    assert.equal(generatedNas.images.valkey, undefined);
+    assert.equal(await fs.stat(path.join(bundle, "supported-versions.json")).then(() => true, () => false), false);
     const refreshSums = async () => {
       const lines = await Promise.all(
         originalSums

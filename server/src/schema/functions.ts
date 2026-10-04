@@ -1,4 +1,4 @@
-import { registerFunction } from '@immich/sql-tools';
+import { registerFunction } from '@frameleaf/sql-tools';
 import { BACKUP_DELETION_CAPTURE_BODY } from 'src/utils/cloud-backup-deletion-sql.js';
 
 export const immich_uuid_v7 = registerFunction({

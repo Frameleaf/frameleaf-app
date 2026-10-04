@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Frameleaf deployment test (FL-142, owner decision 2026-09-27: "we should do a deployment test before an
 // image is pushed"). Runs the release Compose stack (docker/docker-compose.yml: server, machine learning,
-// Redis and Postgres) from images that are on this runner only, waits for health, and proves a working
+// Postgres) from images that are on this runner only, waits for health, and proves a working
 // installation: the API answers with the expected version and source, an administrator can be created and
 // sign in, an upload reads back byte for byte, a background job (the thumbnail) runs, every migration the
 // image ships is applied, and the edge worker is up with its direct port published. Nothing is pushed here;
@@ -264,13 +264,11 @@ async function checkInstallation({
     await wait(2_000);
   }
 
-  // Every migration the image ships is recorded as applied: the upstream-numbered and Frameleaf public
-  // migrations in public.kysely_migrations (or moved by the fork cutover into immich_fork.migration_audit),
-  // and the fork schema's own in immich_fork.migrations.
+  // Every canonical public migration shipped by the image must be recorded as applied.
   const shipped = exec("immich-server", [
     "sh",
     "-c",
-    "ls /usr/src/app/server/dist/schema/migrations /usr/src/app/server/dist/fork-schema/migrations",
+    "ls /usr/src/app/server/dist/schema/migrations",
   ])
     .split("\n")
     .map((line) => line.trim())
@@ -278,7 +276,7 @@ async function checkInstallation({
   const recorded = exec("database", [
     "sh",
     "-c",
-    `psql -XAt -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT name FROM public.kysely_migrations UNION SELECT name FROM immich_fork.migrations UNION SELECT name FROM immich_fork.migration_audit"`,
+    `psql -XAt -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT name FROM public.frameleaf_migrations"`,
   ])
     .split("\n")
     .map((line) => line.trim())
@@ -326,7 +324,7 @@ function serviceStates(output) {
 async function waitHealthy(
   list,
   timeoutMs,
-  { now = Date.now, wait = sleep, services = 4 } = {},
+  { now = Date.now, wait = sleep, services = 3 } = {},
 ) {
   const deadline = now() + timeoutMs;
   for (;;) {
@@ -527,29 +525,13 @@ async function main(env = process.env) {
         databaseArchive,
       ]).trim(),
     };
-  } else
-    try {
-      run("docker", ["pull", "--quiet", database]);
-      images.database = { source: database };
-    } catch {
-      console.log(
-        `::warning::${database} could not be pulled; building it from docker/postgres for the deployment test.`,
-      );
-      run(
-        "docker",
-        [
-          "build",
-          "--quiet",
-          "--tag",
-          database,
-          path.join(root, "docker/postgres"),
-        ],
-        {
-          stdio: ["ignore", "pipe", "inherit"],
-        },
-      );
-      images.database = { source: "built from docker/postgres" };
-    }
+  } else {
+    // Source CI always builds the candidate database locally; publication is a separate authorized step.
+    run("docker", ["build", "--quiet", "--tag", database, path.join(root, "docker/postgres")], {
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    images.database = { source: "built from docker/postgres" };
+  }
 
   const composeArgs = [
     "compose",

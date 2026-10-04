@@ -1,177 +1,79 @@
-import { getQueueToken } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { Job, JobsOptions, Queue, WaitingError, Worker, type WorkerOptions } from 'bullmq';
+import { Kysely, sql, type SelectQueryBuilder } from 'kysely';
+import { InjectKysely } from 'nestjs-kysely';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { Redis } from 'ioredis';
+import { MessageChannel, parentPort, Worker } from 'node:worker_threads';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
-import { ImmichWorker, JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
+import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
+import { SqlQueueStore } from 'src/queue/store.js';
+import {
+  QUEUE_TIMING,
+  QueueClaim,
+  QueueDispatch,
+  QueueExecution,
+  QueueIntent,
+  QueueOptions,
+  toJobItem,
+} from 'src/queue/types.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
 
-/** A queue job as bullmq has it, before the Job manager's account and worker are added (FL-71). */
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;
   status: QueueJobStatus;
 };
-
 type JobMapItem = {
   jobName: JobName;
   queueName: QueueName;
   handler: (job: JobOf<any>) => Promise<JobStatus>;
   label: string;
 };
-
-export const getForkSchemaBackfillJobOptions = (
-  kind: JobOf<JobName.ForkSchemaBackfill>['kind'],
-  delay?: number,
-): JobsOptions => ({
-  deduplication: { id: `${JobName.ForkSchemaBackfill}:${kind}`, keepLastIfActive: true },
-  ...(delay && { delay }),
-});
-
-const DATABASE_BACKUP_LOCK_DURATION = 30 * 60_000;
-
-/**
- * Size of the per-job-name ring buffer used to compute a rolling average of
- * job completion duration. Sized for steady-state image-description workloads
- * (~10s/job, 100 samples ≈ last ~16 minutes of activity) — large enough to
- * smooth out outliers, small enough that fresh hardware/model changes are
- * reflected in the estimate within a few minutes of activity.
- */
-const ROLLING_AVG_BUFFER_SIZE = 100;
-const WORKER_WATCH_INTERVAL_MS = 30_000;
-
-/**
- * How long after a job finishes the worker looks at whether its queue has drained (FL-72). While a
- * queue is busy the look happens at most this often; after its last job it happens once, this long
- * after, which is what closes the run.
- */
-export const QUEUE_RUN_IDLE_CHECK_MS = 2000;
-
-/**
- * How long a queue must stay empty before its run is over (FL-72). Work often arrives in bursts —
- * metadata extraction feeds thumbnail generation one asset at a time — and a queue that empties for
- * a moment between two of them is still the same run: its bar must carry on, not restart at zero.
- */
-export const QUEUE_RUN_IDLE_GRACE_MS = 10_000;
-
-/** What the running-jobs summary shows for one queue's current run (FL-72). */
-export type QueueRun = {
-  active: number;
-  /** Waiting to start: queued, prioritized, or held by a paused queue. Delayed jobs are not counted. */
-  waiting: number;
-  /** Finished, completed or failed, since the run started. */
-  processed: number;
-  /** When the run was first seen with work in it; null when the queue is idle. */
-  startedAt: Date | null;
-};
-
-/**
- * One queue's run window, kept in Redis beside the queue itself so the API process that answers the
- * summary sees what the microservices worker counted (FL-72).
- *
- * `processed` only ever goes up: the worker adds one for every job that finishes. `base` is where
- * the current run started counting from, and `startedAt` when it was first seen with work. A queue
- * found empty starts its grace period (`idleSince`); once it has stayed empty for the whole grace
- * period the run closes: `base` catches up with `processed` and `startedAt` is removed, so the next
- * job to arrive starts a new run at zero. Work arriving during the grace period continues the run.
- * Everything happens in one script, so two observers — the worker's idle check and an
- * administrator's poll — can never interleave half an update.
- *
- * The clock is Redis's own, so an API process and a worker on different hosts agree on it.
- *
- * KEYS[1] the run hash; ARGV[1] active + waiting now; ARGV[2] the grace period in ms.
- * Returns `{processed in this run, startedAt}`; startedAt is an empty string for a closed run.
- */
-const QUEUE_RUN_SCRIPT = `
-local key = KEYS[1]
-local pending = tonumber(ARGV[1])
-local time = redis.call('TIME')
-local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
-local processed = tonumber(redis.call('HGET', key, 'processed') or '0')
-local base = tonumber(redis.call('HGET', key, 'base') or '0')
-if base > processed then
-  base = processed
-  redis.call('HSET', key, 'base', base)
-end
-local startedAt = redis.call('HGET', key, 'startedAt')
-if pending == 0 then
-  if not startedAt then
-    redis.call('HSET', key, 'base', processed)
-    return {0, ''}
-  end
-  local idleSince = tonumber(redis.call('HGET', key, 'idleSince') or '')
-  if not idleSince then
-    redis.call('HSET', key, 'idleSince', now)
-    return {processed - base, startedAt}
-  end
-  if now - idleSince >= tonumber(ARGV[2]) then
-    redis.call('HSET', key, 'base', processed)
-    redis.call('HDEL', key, 'startedAt', 'idleSince')
-    return {0, ''}
-  end
-  return {processed - base, startedAt}
-end
-redis.call('HDEL', key, 'idleSince')
-if not startedAt then
-  startedAt = tostring(now)
-  redis.call('HSET', key, 'startedAt', startedAt)
-end
-return {processed - base, startedAt}
-`;
-
-/** A job this process is running (FL-291): what is needed to hand it back if the server stops. */
-type RunningJob = {
-  queueName: QueueName;
-  job: Job;
-  token?: string;
-  finished: Promise<unknown>;
-  /** Ends the processor with a WaitingError, so BullMQ leaves the handed-back job alone. */
-  release: () => void;
-};
+export type QueueRun = { active: number; waiting: number; processed: number; startedAt: Date | null };
+const runSubmission = new AsyncLocalStorage<string>();
+// Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
+const REPEATABLE_JOBS = new Set<JobName>([
+  JobName.AssetGenerateThumbnails,
+  JobName.AssetEncodeVideo,
+  JobName.SmartSearch,
+  JobName.AssetExtractMetadata,
+  JobName.AssetDetectFaces,
+  JobName.Ocr,
+  JobName.AssetGenerateThumbnailsQueueAll,
+  JobName.AssetEncodeVideoQueueAll,
+  JobName.SmartSearchQueueAll,
+  JobName.AssetExtractMetadataQueueAll,
+  JobName.AssetDetectFacesQueueAll,
+]);
 
 @Injectable()
 export class JobRepository {
-  private workers: Partial<Record<QueueName, Worker>> = {};
-  private running = new Set<RunningJob>();
-  private stopping?: Promise<void>;
   private handlers: Partial<Record<JobName, JobMapItem>> = {};
-  private workerWatcher?: ReturnType<typeof setInterval>;
-  private microservicesPresent = true;
-
-  /**
-   * In-memory ring buffer of per-job-name completion durations (ms).
-   *
-   * - Populated by the BullMQ Worker `completed` event (finishedOn - processedOn).
-   * - Bounded to ROLLING_AVG_BUFFER_SIZE entries; oldest entries are dropped first.
-   * - Resets on process restart — acceptable for v1. A persistent store would
-   *   require schema churn for marginal value (admin only consults this when
-   *   estimating the cost of a one-shot re-queue).
-   * - Not shared across workers; each Node process keeps its own buffer. The
-   *   single-process default deployment means the API process happens to see
-   *   every completion event it owns, which is good enough for an estimate.
-   */
+  private coordinator?: Worker;
+  private stopping?: Promise<void>;
+  private active = new Map<string, { abort: AbortController; finished: Promise<void> }>();
   private rollingAvgBuffers: Partial<Record<JobName, number[]>> = {};
-
-  /** Pending "has this queue drained?" looks, one per queue at most (FL-72). */
-  private queueRunChecks: Partial<Record<QueueName, ReturnType<typeof setTimeout>>> = {};
+  private store: SqlQueueStore;
 
   constructor(
     private moduleRef: ModuleRef,
     private configRepository: ConfigRepository,
     private eventRepository: EventRepository,
     private logger: LoggingRepository,
+    @InjectKysely() db: Kysely<any>,
   ) {
     this.logger.setContext(JobRepository.name);
+    this.store = new SqlQueueStore(db);
   }
-
   setup(services: (new (...args: any[]) => unknown)[]) {
     const reflector = this.moduleRef.get(Reflector, { strict: false });
 
@@ -223,477 +125,349 @@ export class JobRepository {
   }
 
   startWorkers() {
-    const { bull } = this.configRepository.getEnv();
-    for (const queueName of Object.values(QueueName)) {
-      this.logger.debug(`Starting worker for queue: ${queueName}`);
-      this.workers[queueName] = new Worker(
-        queueName,
-        (job, token) => this.processJob(queueName, job, token),
-        this.getWorkerOptions(queueName, bull.config as WorkerOptions),
-      );
-      this.registerWorkerEvents(queueName, this.workers[queueName]);
+    if (this.coordinator) {
+      return;
     }
-  }
-
-  private getWorkerOptions(queueName: QueueName, bullConfig: WorkerOptions): WorkerOptions {
-    const workerOptions: WorkerOptions = { ...bullConfig, concurrency: 1, name: ImmichWorker.Microservices };
-
-    if (queueName === QueueName.BackupDatabase) {
-      workerOptions.lockDuration = DATABASE_BACKUP_LOCK_DURATION;
-      workerOptions.lockRenewTime = DATABASE_BACKUP_LOCK_DURATION / 2;
+    if (!parentPort) {
+      throw new Error('Job execution requires the supervised microservices worker');
     }
-
-    return workerOptions;
-  }
-
-  private async processJob(queueName: QueueName, job: Job, token?: string): Promise<void> {
-    if (this.stopping) {
-      // FL-291: fetched while the workers were being paused; it goes back untouched
-      await job.moveToWait(token);
-      throw new WaitingError();
-    }
-
-    let release!: () => void;
-    const released = new Promise<never>((_, reject) => (release = () => reject(new WaitingError())));
-    const finished = this.eventRepository.emit('JobRun', queueName, job as JobItem);
-    const entry: RunningJob = { queueName, job, token, finished, release };
-    this.running.add(entry);
-
-    try {
-      await Promise.race([finished, released]);
-    } catch (error: any) {
-      if (!(error instanceof WaitingError)) {
-        this.logger.error(`Unable to process job ${job.name} in queue ${queueName}: ${error}`, error?.stack);
+    const { port1, port2 } = new MessageChannel();
+    parentPort.postMessage({ type: 'queue-watchdog-port', port: port1 }, [port1]);
+    this.coordinator = new Worker(new URL('../workers/queue-coordinator.js', import.meta.url), {
+      workerData: {
+        workerId: randomUUID(),
+        queues: Object.values(QueueName),
+        connection: this.configRepository.getEnv().database.config,
+        supervisor: port2,
+      },
+      transferList: [port2],
+    });
+    this.coordinator.on('message', (message: QueueDispatch | { type: 'unavailable' }) => {
+      if (message.type === 'execute') {
+        const abort = new AbortController();
+        const finished = this.execute(message.claim, abort).finally(() => {
+          this.active.delete(message.claim.id);
+          this.coordinator?.postMessage({ type: 'settled', id: message.claim.id });
+        });
+        this.active.set(message.claim.id, { abort, finished });
+      } else if (message.type === 'cancel') {
+        this.active.get(message.id)?.abort.abort(new Error('Job deadline or lease expired'));
       }
-      throw error;
-    } finally {
-      this.running.delete(entry);
+    });
+    this.coordinator.on('error', () =>
+      this.logger.error('Queue coordinator failed; supervisor will recover the worker'),
+    );
+  }
+
+  private async execute(claim: QueueClaim, abort: AbortController) {
+    const context: QueueExecution = {
+      claim,
+      signal: abort.signal,
+      followups: [],
+      adoptions: [],
+      buffering: false,
+      progressUnits: 0,
+      progress: (units) => this.coordinator?.postMessage({ type: 'progress', id: claim.id, units }),
+    };
+    try {
+      await queueExecution.run(context, () =>
+        this.eventRepository.emit('JobRun', claim.queue as QueueName, toJobItem(claim)),
+      );
+      abort.signal.throwIfAborted();
+      if (context.outcome === 'failed') {
+        throw new Error('Handler returned Failed');
+      }
+      const accepted = await this.store.complete(claim, context.followups, async (tx) => {
+        for (const adopt of context.adoptions) {
+          await adopt(tx);
+        }
+      });
+      if (accepted) {
+        const buffer = (this.rollingAvgBuffers[claim.name as JobName] ??= []);
+        buffer.push(Date.now() - new Date(claim.startedAt).getTime());
+        if (buffer.length > 100) {
+          buffer.shift();
+        }
+      }
+    } catch (error) {
+      try {
+        await this.store.fail(claim, error instanceof Error ? error.message : 'Job failed');
+      } catch {
+        // No successful database outcome was observed. Lease recovery owns this claim.
+        this.logger.error('Could not persist job outcome; lease recovery is pending');
+      }
     }
   }
 
-  /**
-   * FL-291: stop this process's workers for a server stop. No worker takes a new job; running jobs get
-   * `graceMs` to finish. A job still running then goes back to waiting at once, so the next boot runs
-   * it without waiting for BullMQ's stalled-job check — except a job that is unsafe to run again
-   * (JOBS_UNSAFE_TO_RERUN_AFTER_STOP: it may already have sent its mail, notice or push, or made its
-   * partial records), which is recorded as failed instead, as a failed handler would have left it. Then the
-   * workers close. The handler of a job handed back may still be running; the process exits shortly
-   * after and its result is ignored.
-   */
   stopWorkers(graceMs: number): Promise<void> {
-    this.stopping ??= this.stopWorkersOnce(graceMs);
+    this.stopping ??= this.stopOnce(graceMs);
     return this.stopping;
   }
 
-  private async stopWorkersOnce(graceMs: number) {
-    const workers = Object.values(this.workers);
-    if (workers.length === 0) {
-      return;
+  private async stopOnce(graceMs: number) {
+    this.coordinator?.postMessage({ type: 'stop' });
+    await Promise.race([Promise.allSettled([...this.active.values()].map(({ finished }) => finished)), sleep(graceMs)]);
+    for (const { abort } of this.active.values()) {
+      abort.abort(new Error('Worker stopped'));
     }
-
-    // FL-299: how long each step holds the stop (debug level)
-    const startedAt = performance.now();
-    const elapsed = () => `${Math.round(performance.now() - startedAt)} ms`;
-
-    await Promise.all(
-      workers.map((worker) =>
-        worker.pause(true).catch((error) => this.logger.warn(`Unable to pause worker ${worker.name}: ${error}`)),
-      ),
-    );
-    this.logger.debug(`Stop: ${workers.length} job workers paused after ${elapsed()}`);
-
-    if (this.running.size > 0) {
-      this.logger.log(`Waiting up to ${graceMs / 1000} s for ${this.running.size} running job(s) to finish`);
-      let timer: NodeJS.Timeout | undefined;
-      await Promise.race([
-        Promise.allSettled([...this.running].map(({ finished }) => finished)),
-        new Promise((resolve) => (timer = setTimeout(resolve, graceMs))),
-      ]);
-      clearTimeout(timer);
-    }
-
-    await Promise.all([...this.running].map((entry) => this.handBack(entry)));
-    this.logger.debug(`Stop: running jobs finished or handed back after ${elapsed()}`);
-
-    await Promise.all(
-      workers.map((worker) =>
-        worker
-          .close()
-          .catch((error) => this.logger.warn(`Unable to close worker ${worker.name}: ${error}`))
-          .then(() => this.logger.debug(`Stop: job worker ${worker.name} closed after ${elapsed()}`)),
-      ),
-    );
-  }
-
-  private async handBack({ queueName, job, token, release }: RunningJob) {
-    const label = `${job.name} (${job.id}) in queue ${queueName}`;
-    try {
-      if (JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(job.name as JobName)) {
-        await job.moveToFailed(new Error('The server stopped while the job was running'), token as string, false);
-        this.logger.warn(`Job ${label} was still running when the server stopped; not run again`);
-      } else {
-        await job.moveToWait(token);
-        this.logger.log(`Job ${label} was still running when the server stopped; handed back to waiting`);
-      }
-    } catch (error: any) {
-      this.logger.error(`Unable to hand back job ${label}: ${error}`, error?.stack);
-    } finally {
-      release();
+    // A still-running handler retains its claim until the supervisor terminates this worker.
+    // Never release a live handler's lease and allow a second execution owner.
+    if (this.active.size === 0) {
+      await this.coordinator?.terminate();
+      this.coordinator = undefined;
     }
   }
 
-  private registerWorkerEvents(queueName: QueueName, worker?: Worker) {
-    worker?.on('error', (error) => {
-      this.logger.error(`Queue worker error in ${queueName}: ${error}`, error?.stack);
-    });
-
-    worker?.on('failed', (job, error) => {
-      this.logger.error(`Job ${job?.name || 'unknown'} failed in queue ${queueName}: ${error}`, error?.stack);
-      // Jobs make one attempt, so a failure is final and counts towards the run like a completion.
-      this.recordQueueRunJob(queueName);
-    });
-
-    worker?.on('stalled', (jobId, previous) => {
-      this.logger.warn(`Job ${jobId} stalled in queue ${queueName} from ${previous}`);
-    });
-
-    worker?.on('completed', (job) => {
-      this.recordQueueRunJob(queueName);
-
-      // BullMQ sets processedOn when the worker picks the job up and
-      // finishedOn when the handler resolves. Both are present on `completed`
-      // events; guard defensively to avoid crashing on any future BullMQ
-      // changes.
-      const startedAt = job.processedOn;
-      const finishedAt = job.finishedOn;
-      if (startedAt === undefined || finishedAt === undefined || finishedAt < startedAt) {
-        return;
-      }
-      const duration = finishedAt - startedAt;
-      this.recordRollingAvgSample(job.name as JobName, duration);
-    });
-  }
-
-  private recordRollingAvgSample(name: JobName, durationMs: number) {
-    let buffer = this.rollingAvgBuffers[name];
-    if (!buffer) {
-      buffer = [];
-      this.rollingAvgBuffers[name] = buffer;
-    }
-    buffer.push(durationMs);
-    if (buffer.length > ROLLING_AVG_BUFFER_SIZE) {
-      // Drop the oldest sample. shift() is O(n) but n is bounded at 100, so
-      // even a hot description queue won't notice. If this gets hot we can
-      // swap in a true ring buffer with a write index.
-      buffer.shift();
-    }
-  }
-
-  /**
-   * Returns the rolling-average completion duration (ms) for the given job
-   * name, or `null` if no samples have been recorded since process start.
-   * Used by the admin re-queue cost estimator to show a realistic wall-clock
-   * estimate that reflects the user's actual hardware.
-   */
-  getRollingAvgMs(name: JobName): number | null {
-    const buffer = this.rollingAvgBuffers[name];
-    if (!buffer || buffer.length === 0) {
-      return null;
-    }
-    let sum = 0;
-    for (const sample of buffer) {
-      sum += sample;
-    }
-    return sum / buffer.length;
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Queue runs (FL-72)                                                  */
-  /* ------------------------------------------------------------------ */
-
-  /**
-   * Count one finished job towards its queue's run, and make sure somebody looks at whether the
-   * queue has drained shortly afterwards. Called from the worker's own events; a Redis hiccup here
-   * only makes a progress bar less exact, so it is logged and never allowed to fail the job.
-   */
-  private recordQueueRunJob(queueName: QueueName) {
-    // a count that cannot be made (no queue yet, Redis away) never breaks the listener that records it
-    void Promise.try(() => this.queueRunClient(queueName))
-      .then((client) => client.hincrby(this.queueRunKey(queueName), 'processed', 1))
-      .catch((error) => this.logger.debug(`Unable to count a finished ${queueName} job: ${error}`));
-
-    this.scheduleQueueRunCheck(queueName, QUEUE_RUN_IDLE_CHECK_MS);
-  }
-
-  /**
-   * Look at the queue once, `delayMs` from now, unless a look is already pending. A queue found empty
-   * with its run still open is in its grace period, so it is looked at again once that has passed;
-   * that second look is what closes a run nobody is watching.
-   */
-  private scheduleQueueRunCheck(queueName: QueueName, delayMs: number) {
-    this.queueRunChecks[queueName] ??= setTimeout(() => {
-      this.queueRunChecks[queueName] = undefined;
-      this.observeQueueRun(queueName)
-        .then((run) => {
-          if (run.active + run.waiting === 0 && run.startedAt) {
-            this.scheduleQueueRunCheck(queueName, QUEUE_RUN_IDLE_GRACE_MS);
-          }
-        })
-        .catch((error) => this.logger.debug(`Unable to check whether ${queueName} drained: ${error}`));
-    }, delayMs);
-    this.queueRunChecks[queueName]?.unref?.();
-  }
-
-  /**
-   * The queue's current run: how much is active and waiting now, and how much has finished since
-   * the run started. Looking also moves the window: a queue with work and no open run starts one,
-   * and one that has stayed empty through the grace period closes it. `total = processed + active +
-   * waiting` therefore grows as work is added and holds steady as work finishes; it never goes
-   * backwards within a run.
-   */
-  async observeQueueRun(name: QueueName): Promise<QueueRun> {
-    const counts: Record<string, number | undefined> = await this.getQueue(name).getJobCounts(
-      'active',
-      'waiting',
-      'prioritized',
-      'paused',
-    );
-    const active = counts.active ?? 0;
-    const waiting = (counts.waiting ?? 0) + (counts.prioritized ?? 0) + (counts.paused ?? 0);
-
-    const client = await this.queueRunClient(name);
-    const [processed, startedAt] = (await client.eval(
-      QUEUE_RUN_SCRIPT,
-      1,
-      this.queueRunKey(name),
-      String(active + waiting),
-      String(QUEUE_RUN_IDLE_GRACE_MS),
-    )) as [number, string];
-
-    return {
-      active,
-      waiting,
-      processed: Math.max(0, Number(processed) || 0),
-      startedAt: startedAt ? new Date(Number(startedAt)) : null,
-    };
-  }
-
-  private queueRunKey(name: QueueName) {
-    const { bull } = this.configRepository.getEnv();
-    return `${bull.config.prefix ?? 'bull'}:frameleaf:queue-run:${name}`;
-  }
-
-  private queueRunClient(name: QueueName) {
-    return this.getQueue(name).client as unknown as Promise<Redis>;
-  }
-
-  watchWorkers() {
-    this.workerWatcher ??= setInterval(() => void this.checkWorkers(), WORKER_WATCH_INTERVAL_MS);
-  }
-
-  teardown() {
-    if (!this.workerWatcher) {
-      return;
-    }
-
-    clearInterval(this.workerWatcher);
-    this.workerWatcher = undefined;
-  }
-
-  private async checkWorkers() {
-    let isPresent: boolean;
-    try {
-      const suffix = `:w:${ImmichWorker.Microservices}`;
-      const workers = await this.getQueue(QueueName.BackgroundTask).getWorkers();
-      isPresent = workers.some((worker) => worker.rawname?.endsWith(suffix));
-    } catch {
-      return;
-    }
-
-    if (this.microservicesPresent !== isPresent) {
-      if (isPresent) {
-        this.logger.log('Microservices worker connected.');
-      } else {
-        this.logger.warn(
-          'No microservices worker is connected. Background jobs will not be processed until one is running.',
-        );
-      }
-    }
-    this.microservicesPresent = isPresent;
-  }
+  teardown() {}
+  watchWorkers() {} // Worker availability comes from durable heartbeat rows, not a Redis client list.
 
   async run({ name, data }: JobItem) {
-    const item = this.handlers[name as JobName];
-    if (!item) {
-      this.logger.warn(`Skipping unknown job: "${name}"`);
-      return JobStatus.Skipped;
+    const handler = this.handlers[name];
+    if (!handler) {
+      throw new Error(`No handler for ${name}`);
     }
-
-    return item.handler(data);
-  }
-
-  setConcurrency(queueName: QueueName, concurrency: number) {
-    const worker = this.workers[queueName];
-    if (!worker) {
-      this.logger.warn(`Unable to set queue concurrency, worker not found: '${queueName}'`);
-      return;
+    const response = await handler.handler(data);
+    const context = queueExecution.getStore();
+    if (context) {
+      context.outcome = response === JobStatus.Failed ? 'failed' : 'completed';
     }
-
-    worker.concurrency = concurrency;
+    return response;
   }
 
-  async isActive(name: QueueName): Promise<boolean> {
-    const queue = this.getQueue(name);
-    const count = await queue.getActiveCount();
-    return count > 0;
+  async collectFollowups(action: () => Promise<void>) {
+    const context = queueExecution.getStore();
+    if (!context) {
+      return action();
+    }
+    context.buffering = true;
+    try {
+      await action();
+    } finally {
+      context.buffering = false;
+    }
   }
 
-  async isPaused(name: QueueName): Promise<boolean> {
-    return this.getQueue(name).isPaused();
+  getRollingAvgMs(name: JobName) {
+    const buffer = this.rollingAvgBuffers[name];
+    return buffer?.length ? buffer.reduce((sum, value) => sum + value, 0) / buffer.length : null;
   }
 
+  setConcurrency(name: QueueName, concurrency: number) {
+    void this.store
+      .setConcurrency(name, concurrency)
+      .catch(() => this.logger.error(`Unable to configure queue ${name}`));
+  }
+  async isActive(name: QueueName) {
+    return (await this.store.counts(name)).active > 0;
+  }
+  isPaused(name: QueueName) {
+    return this.store.isPaused(name);
+  }
   pause(name: QueueName) {
-    return this.getQueue(name).pause();
+    return this.store.pause(name, true);
   }
-
   resume(name: QueueName) {
-    return this.getQueue(name).resume();
+    return this.store.pause(name, false);
   }
-
   empty(name: QueueName) {
-    return this.getQueue(name).drain();
+    return this.store.clear(name, ['pending', 'waiting']);
   }
-
-  clear(name: QueueName, type: QueueCleanType) {
-    return this.getQueue(name).clean(0, 1000, type);
+  clear(name: QueueName, _type: QueueCleanType) {
+    return this.store.clear(name, ['failed', 'needs_attention', 'blocked']);
   }
-
-  /**
-   * FL-71 "Retry failed" (`JobsManager.jsx` 715-727): every failed job of the queue goes back to
-   * waiting (or paused, when the queue is paused) with its saved data, in batches of 1,000.
-   */
   retryFailed(name: QueueName) {
-    return this.getQueue(name).retryJobs({ state: 'failed', count: 1000 });
+    return this.store.retryFailed(name);
   }
-
   getJobCounts(name: QueueName): Promise<JobCounts> {
-    return this.getQueue(name).getJobCounts(
-      'active',
-      'completed',
-      'failed',
-      'delayed',
-      'waiting',
-      'paused',
-    ) as unknown as Promise<JobCounts>;
+    return this.store.counts(name);
   }
-
-  /**
-   * Check whether a deduplicated job (via BullMQ dedup id) is currently
-   * in-flight on the given queue. Used to surface the "already running"
-   * state for one-shot admin-triggered jobs that share a queue with others
-   * (e.g. SmartAlbumReevaluateAll on BackgroundTask).
-   */
-  async hasDedupJob(name: QueueName, dedupId: string): Promise<boolean> {
-    const jobId = await this.getQueue(name).getDeduplicationJobId(dedupId);
-    return jobId !== null && jobId !== undefined;
+  hasDedupJob(name: QueueName, id: string) {
+    return this.store.hasDedup(name, id);
   }
-
   private getQueueName(name: JobName) {
     return (this.handlers[name] as JobMapItem).queueName;
   }
 
-  async queueAll(items: JobItem[]): Promise<void> {
-    if (items.length === 0) {
-      return;
-    }
-
-    const promises = [];
-    const itemsByQueue = {} as Record<string, { name: JobName; data: any; opts?: JobsOptions }[]>;
-    for (const item of items) {
-      const queueName = this.getQueueName(item.name);
-      const job = {
-        name: item.name,
-        data: item.data || {},
-        options: this.getJobOptions(item) || undefined,
-      } as JobItem & { data: any; options: JobsOptions | undefined };
-
-      if (job.options?.jobId || job.options?.deduplication) {
-        // need to use add() instead of addBulk() for jobId/deduplication to take effect
-        promises.push(this.getQueue(queueName).add(item.name, item.data, job.options));
-      } else {
-        itemsByQueue[queueName] ||= [];
-        // addBulk reads a job's options from `opts`
-        itemsByQueue[queueName].push({ name: job.name, data: job.data, opts: job.options });
-      }
-    }
-
-    for (const [queueName, jobs] of Object.entries(itemsByQueue)) {
-      const queue = this.getQueue(queueName as QueueName);
-      promises.push(queue.addBulk(jobs));
-    }
-
-    await Promise.all(promises);
+  async observeQueueRun(name: QueueName): Promise<QueueRun> {
+    const counts = await this.store.counts(name);
+    const {
+      rows: [run],
+    } = await sql<{ startedAt: Date | null; processed: number }>`
+      select min(j."createdAt") "startedAt", count(*) filter (where j.state in ('completed','failed','needs_attention','blocked','cancelled'))::int processed
+      from job j join job_run r on r.id = j."runId" where j.queue = ${name} and r."finishedAt" is null
+    `.execute(this.store.db);
+    return {
+      active: counts.active,
+      waiting: counts.waiting + counts.paused + counts.delayed,
+      processed: run.processed,
+      startedAt: run.startedAt,
+    };
   }
 
-  async queue(item: JobItem): Promise<void> {
+  async createRun(kind: string, selection: Record<string, unknown>, enqueue: () => Promise<void>) {
+    const id = await this.store.createRun(kind, selection);
+    await runSubmission.run(id, enqueue);
+    await this.store.finishEnumeration(id);
+    return id;
+  }
+
+  listRuns(take: number, skip: number) {
+    return this.store.listRuns(take, skip);
+  }
+
+  private intent(item: JobItem): QueueIntent {
+    const context = queueExecution.getStore();
+    const runId = runSubmission.getStore() ?? context?.claim.runId ?? undefined;
+    const data = (item.data ?? {}) as Record<string, unknown>;
+    const queue = this.getQueueName(item.name);
+    const isMl = [
+      QueueName.SmartSearch,
+      QueueName.FaceDetection,
+      QueueName.ImageDescription,
+      QueueName.ImageEnrichment,
+      QueueName.NsfwDetection,
+      QueueName.Ocr,
+      QueueName.PetRecognition,
+    ].includes(queue);
+    return {
+      name: item.name,
+      data,
+      queue,
+      options: this.getNamedJobOptions(item) ?? undefined,
+      safeToRetry:
+        !data.operationId &&
+        REPEATABLE_JOBS.has(item.name) &&
+        !JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(item.name) &&
+        !JOBS_NOT_RETRIED.has(item.name),
+      sensitive: JOBS_WITH_SENSITIVE_DATA.has(item.name),
+      deadlineMs: isMl ? QUEUE_TIMING.mlDeadline : QUEUE_TIMING.opaqueDeadline,
+      runId,
+      itemKey: runId
+        ? String(data.id ?? data.assetId ?? createHash('sha256').update(JSON.stringify(data)).digest('hex'))
+        : undefined,
+      parentId: context?.buffering ? context.claim.id : undefined,
+    };
+  }
+
+  /** Materialize the full selected ID set in PostgreSQL before workers see any item. */
+  async queueSelection(name: JobName, selection: SelectQueryBuilder<any, any, { id: string }>) {
+    const context = queueExecution.getStore();
+    const runId = context?.claim.runId ?? runSubmission.getStore() ?? (await this.store.createRun(name, {}));
+    const intent = this.intent({ name, data: {} } as JobItem);
+    await this.store.db.transaction().execute(async (tx) => {
+      await sql`select name from job_queue where name = ${intent.queue} for update`.execute(tx);
+      if (context) {
+        const claim = context.claim;
+        const result = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
+          and state = 'active' and "leaseExpiresAt" > now() and "cancelRequestedAt" is null for update`.execute(tx);
+        if (!result.rows.length) {
+          throw new Error('Selection producer lost its claim');
+        }
+      }
+      await sql`insert into job_run_item("runId", "itemKey", stage, selection)
+        select ${runId}::uuid, selected.id::text, ${name}, jsonb_build_object('id', selected.id)
+        from (${selection}) selected on conflict do nothing`.execute(tx);
+      await sql`with added as (
+        insert into job(id, queue, name, data, "safeToRetry", sensitive, "deadlineMs", "runId", "itemKey")
+        select gen_random_uuid(), ${intent.queue}, ${name}, selection, ${intent.safeToRetry}, ${intent.sensitive},
+          ${intent.deadlineMs}, "runId", "itemKey" from job_run_item where "runId" = ${runId}::uuid and stage = ${name}
+        on conflict do nothing returning id, "runId", "itemKey", name
+      ) update job_run_item i set "jobId" = a.id from added a
+        where i."runId" = a."runId" and i."itemKey" = a."itemKey" and i.stage = a.name`.execute(tx);
+    });
+    if (!context?.claim.runId && !runSubmission.getStore()) {
+      await this.store.finishEnumeration(runId);
+    }
+  }
+
+  async queueAll(items: JobItem[]): Promise<void> {
+    const intents = items.map((item) => this.intent(item));
+    const context = queueExecution.getStore();
+    context?.signal.throwIfAborted();
+    if (context?.buffering) {
+      context.followups.push(...intents);
+      return;
+    }
+    if (context) {
+      for (let offset = 0; offset < intents.length; offset += 250) {
+        const batch = intents.slice(offset, offset + 250);
+        await this.store.db.transaction().execute(async (tx) => {
+          for (const queue of [...new Set(batch.map((item) => item.queue))].sort()) {
+            await sql`select name from job_queue where name = ${queue} for update`.execute(tx);
+          }
+          const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
+            and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > now()
+            and "cancelRequestedAt" is null for update`.execute(tx);
+          if (!rows.length) {
+            throw new Error('Producer lost its claim');
+          }
+          await this.store.enqueue(batch, tx);
+        });
+      }
+    } else {
+      await this.store.enqueue(intents);
+    }
+  }
+  queue(item: JobItem): Promise<void> {
     return this.queueAll([item]);
   }
 
   async waitForQueueCompletion(...queues: QueueName[]): Promise<void> {
-    const getPending = async () => {
-      const results = await Promise.all(queues.map(async (name) => ({ pending: await this.isActive(name), name })));
-      return results.filter(({ pending }) => pending).map(({ name }) => name);
-    };
-
-    let pending = await getPending();
-
-    while (pending.length > 0) {
-      this.logger.verbose(`Waiting for ${pending[0]} queue to stop...`);
-      await sleep(1000);
-      pending = await getPending();
+    while (
+      (await Promise.all(queues.map((queue) => this.store.counts(queue)))).some(
+        (counts) => counts.active + counts.waiting + counts.paused + counts.delayed > 0,
+      )
+    ) {
+      queueExecution.getStore()?.signal.throwIfAborted();
+      await sleep(QUEUE_TIMING.scan);
     }
   }
 
   async searchJobs(name: QueueName, dto: QueueJobSearchDto, limit = 1000): Promise<QueueJobRow[]> {
-    const jobs = await this.getQueue(name).getJobs(dto.status ?? Object.values(QueueJobStatus), 0, limit - 1);
-    const only = dto.status?.length === 1 ? dto.status[0] : undefined;
-    return jobs.map((job) => {
-      const { id, name, timestamp, data, attemptsMade, failedReason, finishedOn, processedOn, delay } = job;
-      // FL-71: the status decides whether the job's worker is where it ran or where it will run.
-      const status =
-        only ??
-        (finishedOn
-          ? failedReason
-            ? QueueJobStatus.Failed
-            : QueueJobStatus.Complete
-          : processedOn
-            ? QueueJobStatus.Active
-            : delay > 0 && timestamp + delay > Date.now()
-              ? QueueJobStatus.Delayed
-              : QueueJobStatus.Waiting);
-      return {
-        status,
-        id,
-        name: name as JobName,
-        timestamp,
-        // FL-71: the signup notice and its mail carry a password, which the Job manager never shows
-        data: JOBS_WITH_SENSITIVE_DATA.has(name as JobName) ? {} : data,
-        attemptsMade,
-        // FL-71: the Job manager shows a failed job's last error; bullmq keeps it on the job. A
-        // stack-sized message is cut to the 500 characters the manager has room for.
-        ...(failedReason && { failedReason: failedReason.slice(0, 500) }),
+    const statuses = dto.status ?? Object.values(QueueJobStatus);
+    const { rows } = await sql<QueueJobRow>`select * from (
+      select j.id, j.name, case when j.sensitive then '{}'::jsonb else j.data end data,
+      (extract(epoch from j."createdAt") * 1000)::bigint::float8 timestamp, j.attempt "attemptsMade", j.error "failedReason",
+      case when j.state in ('failed','needs_attention','blocked') then 'failed'
+        when j.state in ('pending','waiting') and j."availableAt" > now() then 'delayed'
+        when j.state in ('pending','waiting') and q.paused then 'paused'
+        when j.state = 'pending' then 'waiting' else j.state end status
+      from job j join job_queue q on q.name = j.queue where j.queue = ${name}
+      ) jobs where status = any(${statuses}::text[]) order by timestamp desc, id limit ${limit}`.execute(this.store.db);
+    return rows;
+  }
+
+  async removeJob(name: JobName, jobID: string): Promise<void> {
+    await sql`update job set state = 'cancelled', data = '{}'::jsonb, "finishedAt" = now()
+      where queue = ${this.getQueueName(name)} and "externalId" = ${jobID} and state in ('pending','waiting')`.execute(
+      this.store.db,
+    );
+  }
+
+  async dispatchImportedWork(): Promise<number> {
+    return this.store.db.transaction().execute(async (tx) => {
+      const { rows } = await sql<{
+        asset_id: string;
+        kind: string;
+      }>`select asset_id, kind from frameleaf_immich_import_work
+        where dispatched_at is null order by asset_id, kind limit 250 for update skip locked`.execute(tx);
+      const names: Record<string, JobName> = {
+        metadata: JobName.AssetExtractMetadata,
+        thumbnail: JobName.AssetGenerateThumbnails,
+        'smart-search': JobName.SmartSearch,
+        'face-detection': JobName.AssetDetectFaces,
       };
+      for (const row of rows) {
+        const intent = this.intent({ name: names[row.kind], data: { id: row.asset_id } } as JobItem);
+        intent.options = { deduplication: { id: `import/${row.kind}/${row.asset_id}` } };
+        await this.store.enqueue([intent], tx);
+        await sql`update frameleaf_immich_import_work set dispatched_at = now()
+          where asset_id = ${row.asset_id}::uuid and kind = ${row.kind}`.execute(tx);
+      }
+      return rows.length;
     });
   }
-
-  private getJobOptions(item: JobItem): JobsOptions | null {
-    const options = this.getNamedJobOptions(item);
-    // FL-71: a job that must never be retried, or whose data is sensitive, is not kept once it has
-    // failed, however it failed (a handler error is not rethrown for these, but a stalled job still fails)
-    return JOBS_NOT_RETRIED.has(item.name) ? { ...options, removeOnFail: true } : options;
-  }
-
-  private getNamedJobOptions(item: JobItem): JobsOptions | null {
+  private getNamedJobOptions(item: JobItem): QueueOptions | null {
     switch (item.name) {
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };
@@ -743,9 +517,6 @@ export class JobRepository {
       }
       case JobName.ImageDescriptionQueueAll: {
         return { deduplication: { id: JobName.ImageDescriptionQueueAll } };
-      }
-      case JobName.ForkSchemaBackfill: {
-        return getForkSchemaBackfillJobOptions(item.data.kind, item.data.delay);
       }
       case JobName.SmartAlbumReevaluateAll: {
         // Kind-scoped dispatches get their own dedup namespace so they don't
@@ -808,19 +579,6 @@ export class JobRepository {
       default: {
         return null;
       }
-    }
-  }
-
-  private getQueue(queue: QueueName): Queue {
-    return this.moduleRef.get<Queue>(getQueueToken(queue), { strict: false });
-  }
-
-  /** @deprecated */
-  // todo: remove this when asset notifications no longer need it.
-  public async removeJob(name: JobName, jobID: string): Promise<void> {
-    const existingJob = await this.getQueue(this.getQueueName(name)).getJob(jobID);
-    if (existingJob) {
-      await existingJob.remove();
     }
   }
 }

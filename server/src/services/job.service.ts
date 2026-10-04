@@ -1,6 +1,6 @@
+import { JobRunResponseDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { JobItem } from 'src/types.js';
-import { JOBS_NOT_RETRIED } from 'src/constants.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
@@ -99,6 +99,16 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
 
 @Injectable()
 export class JobService extends BaseService {
+  async getRuns({ take, skip }: JobRunSearchDto): Promise<JobRunResponseDto[]> {
+    const rows = await this.jobRepository.listRuns(take, skip);
+    return rows.map((row) => ({
+      ...row,
+      createdAt: row.createdAt.toISOString(),
+      finishedAt: row.finishedAt?.toISOString() ?? null,
+      state: row.state as JobRunResponseDto['state'],
+    }));
+  }
+
   async create(dto: JobCreateDto): Promise<void> {
     await this.jobRepository.queue(asJobItem(dto));
   }
@@ -106,31 +116,31 @@ export class JobService extends BaseService {
   @OnEvent({ name: 'JobRun' })
   async onJobRun(...[queueName, job]: ArgsOf<'JobRun'>) {
     try {
-      let response: JobStatus | undefined;
-      try {
-        await this.eventRepository.emit('JobStart', queueName, job);
-        response = await this.jobRepository.run(job);
-      } catch (error: any) {
-        await this.reportJobError(job, error);
-        // FL-71: a job whose handler throws is a failed job. Rethrown, BullMQ records it as failed with
-        // its reason and attempts, which the Job manager's Failed tab, "Retry failed" and "Remove failed
-        // records" work on. Jobs that are unsafe to run again, or whose data is sensitive, are reported
-        // but not kept (JOBS_NOT_RETRIED).
-        if (JOBS_NOT_RETRIED.has(job.name)) {
-          return;
+      await this.eventRepository.emit('JobStart', queueName, job);
+      const response = await this.jobRepository.run(job);
+      // Explicit Failed is a durable failed outcome, never a successful worker callback.
+      if (response === JobStatus.Failed) {
+        if (job.name === JobName.AssetVideoEditGeneration) {
+          const asset = await this.assetRepository.getById(job.data.id);
+          if (asset) {
+            this.websocketRepository.clientSend('VideoEditVersionFailedV1', asset.ownerId, {
+              assetId: asset.id,
+              versionId: job.data.versionId ?? null,
+            });
+          }
         }
-        throw error;
+        throw new Error('Handler returned Failed');
       }
-
-      // FL-71: the handler has succeeded from here on. An error in the events or follow-up jobs below
-      // is logged, not rethrown, so it cannot record the job as failed and have a retry repeat it.
-      try {
-        await this.onSuccess(job, response);
-      } catch (error: any) {
-        this.logger.error(`Unable to finish job ${job.name} after it succeeded: ${error}`, error?.stack);
-      }
+      await this.jobRepository.collectFollowups(() => this.onSuccess(job, response));
+    } catch (error: unknown) {
+      await this.reportJobError(job, error);
+      throw error;
     } finally {
-      await this.eventRepository.emit('JobComplete', queueName, job);
+      try {
+        await this.eventRepository.emit('JobComplete', queueName, job);
+      } catch {
+        this.logger.warn(`Unable to notify completion of ${job.name}`);
+      }
     }
   }
 
@@ -144,7 +154,11 @@ export class JobService extends BaseService {
   }
 
   private async onSuccess(job: JobItem, response: JobStatus | undefined) {
-    await this.eventRepository.emit('JobSuccess', { job, response });
+    try {
+      await this.eventRepository.emit('JobSuccess', { job, response });
+    } catch {
+      this.logger.error(`Unable to notify success of ${job.name}`);
+    }
     const shouldRunFollowUp =
       response &&
       typeof response === 'string' &&

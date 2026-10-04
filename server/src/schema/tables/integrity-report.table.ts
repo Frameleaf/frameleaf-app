@@ -1,5 +1,5 @@
-import { Column, CreateDateColumn, ForeignKeyColumn, Table, Unique } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { Column, CreateDateColumn, ForeignKeyColumn, Table, Unique } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import { IntegrityReport } from 'src/enum.js';
 import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';

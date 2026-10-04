@@ -3,8 +3,14 @@ import { ExpressionBuilder, Insertable, Kysely, Selectable, Transaction, sql } f
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { PostgresError } from 'postgres';
-import { DatabaseLock, MediaOperationCheckpointState, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
-import { lockPublicForkWrites, withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import {
+  DatabaseLock,
+  MediaOperationCheckpointState,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+} from 'src/enum.js';
+
 import { DB } from 'src/schema/index.js';
 import { MediaOperationCheckpointTable, MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
@@ -13,27 +19,21 @@ import {
   CLAIMED_MEDIA_OPERATION_STATUSES,
   MEDIA_OPERATION_AUTO_RETRIES,
   MEDIA_OPERATION_AUTO_RETRY_DELAY_MS,
-  MEDIA_OPERATION_LOST_CLAIM_RESUMES,
   PAUSABLE_MEDIA_OPERATION_STATUSES,
-  RESUMABLE_MEDIA_OPERATION_KINDS,
+  SAFE_MEDIA_OPERATION_REPLAY_KINDS,
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
-
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const MEDIA_OPERATION_HANDOFF_REFUSAL = 'Media operations are unavailable during database handoff';
-
 export type MediaOperation = Selectable<MediaOperationTable>;
-
 /** One unfinished retry per job (migration 2100000000590, FL-43). */
 export const MEDIA_OPERATION_ACTIVE_RETRY_CONSTRAINT = 'media_operation_retryOfId_active_uq';
 export type MediaOperationCheckpoint = Selectable<MediaOperationCheckpointTable>;
-
 export type MediaOperationCreate = Omit<
   Insertable<MediaOperationTable>,
   'id' | 'createdAt' | 'updatedAt' | 'updateId' | 'status' | 'progress' | 'attempt' | 'autoRetries' | 'retryAt'
 >;
-
 /**
  * What a worker's failure report did (FL-104).
  *
@@ -42,7 +42,6 @@ export type MediaOperationCreate = Omit<
  * - `false`: the claim was not ours any more, or the job had already finished; nothing changed.
  */
 export type MediaOperationFailOutcome = 'retrying' | 'failed' | false;
-
 /** What one recovery pass over lapsed claims did, by outcome (see `recoverExpiredClaims`). */
 export type MediaOperationRecovery = {
   requeued: number;
@@ -51,21 +50,18 @@ export type MediaOperationRecovery = {
   abandonedCancels: number;
   paused: number;
 };
-
 /** What a worker learns from a write: whether to carry on, stop for a cancel, or stop for a pause. */
 export type MediaOperationWriteState = {
   status: MediaOperationStatus;
   cancelRequestedAt: Date | null;
   pauseRequestedAt: Date | null;
 };
-
 /** The statuses a live claim may report from. `cancelling` is left out: a cancel is never retried. */
 const WORKING_STATUSES = [
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
   MediaOperationStatus.Validating,
 ];
-
 /**
  * The stages a progress report may come from, by the stage it reports (FL-43). A report may stay
  * in its stage or move forward, never back; anything else is not a progress report.
@@ -79,31 +75,29 @@ const PROGRESS_FROM: Readonly<Partial<Record<MediaOperationStatus, readonly Medi
     MediaOperationStatus.Validating,
   ],
 };
-
 /** `now() + ms`, for leases and retry delays. */
 const nowPlus = (ms: number) => sql<Date>`now() + ${sql.lit(ms)} * interval '1 millisecond'`;
-
 /**
  * Where a job goes when its worker lets go of it without finishing: back to the queue, or — when
  * the owner has asked for a pause (FL-104) — to `paused`, where no worker will take it.
  */
 const pausedIfRequested = () =>
   sql<MediaOperationStatus>`case when "pauseRequestedAt" is not null then ${sql.lit(MediaOperationStatus.Paused)} else ${sql.lit(MediaOperationStatus.Queued)} end`;
+/** Only audited local compute can replay without confirmation of an external side effect. */
+const safeAutomaticReplay = () => sql<boolean>`("kind" = any(${[...SAFE_MEDIA_OPERATION_REPLAY_KINDS]}::text[])
+  and "destination" = ${MediaOperationDestination.Local} and "remoteJobId" is null)`;
 
-/**
- * A lapsed claim this job may resume from (FL-43): a resumable kind that has not used up its
- * resumes. The SQL twin of `canResumeLostClaim`; recovery requeues exactly these and treats every
- * other lapse as a failure.
- */
-const resumesLostClaim = () =>
-  sql<boolean>`("kind" = any(${[...RESUMABLE_MEDIA_OPERATION_KINDS]}::text[]) and "attempt" < least("maxAttempts", ${sql.lit(1 + MEDIA_OPERATION_LOST_CLAIM_RESUMES)}))`;
-
+/** Queue-owned operations cannot recover before their execution owner has been fenced. */
+const executionOwnerSettled = () => sql<boolean>`("claimedBy" is distinct from 'job-queue' or not exists (
+  select 1 from public.job j where j.state = 'active' and j.data->>'operationId' = media_operation.id::text
+))`;
 /** Statuses with no worker attached: a cancel settles them at once. */
 const UNCLAIMED_STATUSES = [MediaOperationStatus.Queued, MediaOperationStatus.Paused];
-
 /** A row whose state changed: who to tell, and which job (FL-43 `on_media_operation_update`). */
-export type MediaOperationChange = { id: string; ownerId: string };
-
+export type MediaOperationChange = {
+  id: string;
+  ownerId: string;
+};
 export type MediaOperationListOptions = {
   ownerId: string;
   kind?: MediaOperationKind;
@@ -118,7 +112,6 @@ export type MediaOperationListOptions = {
   take: number;
   skip: number;
 };
-
 /** One server process holding claims (FL-72 worker inventory). Identity only, never whose media. */
 export type MediaOperationClaimantRow = {
   workerId: string;
@@ -126,14 +119,12 @@ export type MediaOperationClaimantRow = {
   count: number;
   lastHeartbeatAt: Date | null;
 };
-
 /** Queued and claimed jobs per destination named in the snapshot (FL-72 worker inventory). */
 export type MediaOperationDestinationLoadRow = {
   destinationId: string;
   queued: number;
   active: number;
 };
-
 /** What the admin aggregate may contain: counts, ages and destinations. Never media, never names. */
 export type MediaOperationAggregateRow = {
   kind: MediaOperationKind;
@@ -142,7 +133,6 @@ export type MediaOperationAggregateRow = {
   count: number;
   oldestQueuedAt: Date | null;
 };
-
 /** Every column except the two JSON documents `list` trims rather than returns whole. */
 const LIST_COLUMNS = [
   'id',
@@ -184,7 +174,6 @@ const LIST_COLUMNS = [
   'updatedAt',
   'updateId',
 ] as const;
-
 /** FL-162: one confirmed Frameleaf Cloud job, as a person's monthly spend counts it. */
 export type CloudMlJobSpendRow = {
   status: MediaOperationStatus;
@@ -193,7 +182,6 @@ export type CloudMlJobSpendRow = {
   holdUsd: number | null;
   settledUsd: number | null;
 };
-
 /**
  * Durable media operations (FL-43, FL-104).
  *
@@ -205,14 +193,14 @@ export type CloudMlJobSpendRow = {
 @Injectable()
 export class MediaOperationRepository {
   private listeners = new Set<(changes: MediaOperationChange[]) => void>();
-
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
   private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
-    return withPublicForkWrites(this.db, query, MEDIA_OPERATION_HANDOFF_REFUSAL);
+    return this.db.transaction().execute(query);
   }
-
   /**
    * Be told about rows whose status, stage or progress changed through this repository (FL-43).
    * The owner's open Activity pages are nudged to ask again; nothing about the job travels with it.
@@ -221,7 +209,6 @@ export class MediaOperationRepository {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
-
   private changed<T extends Partial<MediaOperationChange> | undefined>(rows: T | T[]): void {
     const changes = (Array.isArray(rows) ? rows : [rows]).filter(
       (row): row is T & MediaOperationChange => !!row?.id && !!row?.ownerId,
@@ -237,7 +224,6 @@ export class MediaOperationRepository {
       }
     }
   }
-
   async create(operation: MediaOperationCreate): Promise<MediaOperation> {
     const row = await this.write((db) =>
       db.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow(),
@@ -245,14 +231,16 @@ export class MediaOperationRepository {
     this.changed(row as unknown as MediaOperationChange);
     return row as unknown as MediaOperation;
   }
-
   /** Serialize command submission with the project's edit lease and saves, including duplicate requests. */
   async createStudioReverseCommand(
     operation: MediaOperationCreate,
-    binding: { requestKey: string; clientId: string; revision: number },
+    binding: {
+      requestKey: string;
+      clientId: string;
+      revision: number;
+    },
   ): Promise<MediaOperation> {
     const row = await this.db.transaction().execute(async (tx) => {
-      await lockPublicForkWrites(tx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       const project = await tx
         .selectFrom('studio_project')
         .selectAll()
@@ -296,7 +284,6 @@ export class MediaOperationRepository {
     this.changed(row as unknown as MediaOperationChange);
     return row as unknown as MediaOperation;
   }
-
   /** A worker's read of its own job, not scoped to an owner. Never answers a request. */
   async getForWorker(id: string): Promise<MediaOperation | undefined> {
     return (await this.db
@@ -305,7 +292,6 @@ export class MediaOperationRepository {
       .where('id', '=', id)
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
-
   /** Owner-scoped read. Anything that answers a request goes through this or `list`. */
   async getForOwner(id: string, ownerId: string): Promise<MediaOperation | undefined> {
     return (await this.db
@@ -315,7 +301,6 @@ export class MediaOperationRepository {
       .where('ownerId', '=', ownerId)
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
-
   /**
    * A job of one kind by id, whoever submitted it (FL-73). Only for kinds whose page every
    * administrator shares, like physical deduplication; the caller decides what of it to answer with.
@@ -328,22 +313,20 @@ export class MediaOperationRepository {
       .where('kind', '=', kind)
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
-
-  async list(options: MediaOperationListOptions): Promise<{ items: MediaOperation[]; total: number }> {
+  async list(options: MediaOperationListOptions): Promise<{
+    items: MediaOperation[];
+    total: number;
+  }> {
     let query = this.db.selectFrom('media_operation').where('ownerId', '=', options.ownerId);
-
     if (options.kind) {
       query = query.where('kind', '=', options.kind);
     }
-
     if (options.statuses?.length) {
       query = query.where('status', 'in', [...options.statuses]);
     }
-
     if (!options.includeDismissed) {
       query = query.where('dismissedAt', 'is', null);
     }
-
     const [items, total] = await Promise.all([
       query
         .select(LIST_COLUMNS)
@@ -369,10 +352,8 @@ export class MediaOperationRepository {
         .executeTakeFirst()
         .then((row) => Number(row?.count ?? 0)),
     ]);
-
     return { items: items as unknown as MediaOperation[], total };
   }
-
   /**
    * The owner's bulk operation submitted under a client idempotency key, if any (FL-32).
    *
@@ -390,7 +371,6 @@ export class MediaOperationRepository {
       .limit(1)
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
-
   /**
    * The owner's job of one kind submitted under a client idempotency key, if any (FL-91).
    *
@@ -412,7 +392,6 @@ export class MediaOperationRepository {
       .limit(1)
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
-
   /**
    * The newest jobs of one kind across every account (FL-73).
    *
@@ -435,7 +414,6 @@ export class MediaOperationRepository {
       .limit(take)
       .execute() as unknown as Promise<MediaOperation[]>;
   }
-
   /**
    * Create a job of a kind that runs one at a time across the whole server, or answer with the one
    * already unfinished (FL-73). The check and the insert happen under one transaction-scoped
@@ -446,12 +424,23 @@ export class MediaOperationRepository {
   async createExclusive(
     operation: MediaOperationCreate,
     lock: DatabaseLock,
-    options: { alsoKinds?: readonly MediaOperationKind[] } = {},
-  ): Promise<{ created: MediaOperation } | { active: { id: string; ownerId: string; fingerprint: string | null } }> {
+    options: {
+      alsoKinds?: readonly MediaOperationKind[];
+    } = {},
+  ): Promise<
+    | {
+        created: MediaOperation;
+      }
+    | {
+        active: {
+          id: string;
+          ownerId: string;
+          fingerprint: string | null;
+        };
+      }
+  > {
     return this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       await sql`SELECT pg_advisory_xact_lock(${lock})`.execute(trx);
-
       const active = await trx
         .selectFrom('media_operation')
         .select(['id', 'ownerId'])
@@ -464,7 +453,6 @@ export class MediaOperationRepository {
       if (active) {
         return { active };
       }
-
       const created = await trx
         .insertInto('media_operation')
         .values(operation)
@@ -474,7 +462,6 @@ export class MediaOperationRepository {
       return { created: created as unknown as MediaOperation };
     });
   }
-
   /**
    * Create a job unless one of the same kind is already unfinished for the same subject, named by a
    * snapshot key (FL-78: one scan per library). The check and the insert happen under one
@@ -483,12 +470,21 @@ export class MediaOperationRepository {
    */
   async createUnlessActive(
     operation: MediaOperationCreate,
-    subject: { key: string; value: string; lock: DatabaseLock },
-  ): Promise<{ created: MediaOperation } | { active: MediaOperation }> {
+    subject: {
+      key: string;
+      value: string;
+      lock: DatabaseLock;
+    },
+  ): Promise<
+    | {
+        created: MediaOperation;
+      }
+    | {
+        active: MediaOperation;
+      }
+  > {
     return this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       await sql`SELECT pg_advisory_xact_lock(${subject.lock}::int, hashtext(${subject.value}))`.execute(trx);
-
       const active = await trx
         .selectFrom('media_operation')
         .selectAll()
@@ -501,7 +497,6 @@ export class MediaOperationRepository {
       if (active) {
         return { active: active as unknown as MediaOperation };
       }
-
       const created = await trx
         .insertInto('media_operation')
         .values(operation)
@@ -511,7 +506,6 @@ export class MediaOperationRepository {
       return { created: created as unknown as MediaOperation };
     });
   }
-
   /**
    * The newest job of one kind for each of these subjects, named by a snapshot key (FL-78: each
    * library's latest scan), whoever owns it. Unfinished ones first would hide a finished retry, so
@@ -521,7 +515,6 @@ export class MediaOperationRepository {
     if (values.length === 0) {
       return [];
     }
-
     return (
       (await this.db
         .selectFrom('media_operation')
@@ -536,7 +529,6 @@ export class MediaOperationRepository {
         .execute()) as unknown as MediaOperation[]
     );
   }
-
   /** The unfinished job of one kind for one subject, whoever owns it (FL-78). */
   async getActiveBySubject(kind: MediaOperationKind, key: string, value: string): Promise<MediaOperation | undefined> {
     return (await this.db
@@ -549,7 +541,6 @@ export class MediaOperationRepository {
       .limit(1)
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
-
   /** Whether any job of these kinds is waiting for a worker right now (FL-78 scan wake-up). */
   async hasClaimable(kinds: readonly MediaOperationKind[]): Promise<boolean> {
     const row = await this.db
@@ -563,15 +554,19 @@ export class MediaOperationRepository {
       .executeTakeFirst();
     return !!row;
   }
-
   /** Any unfinished job of one kind, whoever owns it (FL-73), with the plan it is applying. */
   /**
    * FL-168: every unfinished job of these kinds, whoever submitted it (queued, paused, running or
    * already cancelling), oldest first. For a server-wide stop such as turning cloud processing off.
    */
-  async listUnfinishedOfKinds(
-    kinds: readonly MediaOperationKind[],
-  ): Promise<Array<{ id: string; ownerId: string; kind: MediaOperationKind; status: MediaOperationStatus }>> {
+  async listUnfinishedOfKinds(kinds: readonly MediaOperationKind[]): Promise<
+    Array<{
+      id: string;
+      ownerId: string;
+      kind: MediaOperationKind;
+      status: MediaOperationStatus;
+    }>
+  > {
     if (kinds.length === 0) {
       return [];
     }
@@ -588,8 +583,13 @@ export class MediaOperationRepository {
       status: MediaOperationStatus;
     }>;
   }
-
-  async getActiveOfKind(kind: MediaOperationKind): Promise<{ id: string; fingerprint: string | null } | undefined> {
+  async getActiveOfKind(kind: MediaOperationKind): Promise<
+    | {
+        id: string;
+        fingerprint: string | null;
+      }
+    | undefined
+  > {
     return this.db
       .selectFrom('media_operation')
       .select(['id'])
@@ -600,7 +600,6 @@ export class MediaOperationRepository {
       .limit(1)
       .executeTakeFirst();
   }
-
   /**
    * Finished bundle exports whose file is past its expiry and has not been swept yet (FL-91).
    * The row stays for lineage; the sweep removes the file and records `expiredAt` in the result.
@@ -620,7 +619,6 @@ export class MediaOperationRepository {
       .limit(limit)
       .execute()) as unknown as Array<Pick<MediaOperation, 'id' | 'ownerId' | 'result'>>;
   }
-
   /** Replace the result of a job no worker holds. Used by sweeps on finished jobs only. */
   async setFinishedResult(id: string, result: Record<string, unknown>): Promise<boolean> {
     const updated = await this.write((db) =>
@@ -633,7 +631,6 @@ export class MediaOperationRepository {
     );
     return Number(updated.numUpdatedRows) === 1;
   }
-
   /**
    * Which of these assets are locked right now (FL-34). The bulk worker skips them for a job that
    * was submitted without the PIN: something may have locked them after the job was queued.
@@ -642,7 +639,6 @@ export class MediaOperationRepository {
     if (assetIds.length === 0) {
       return new Set();
     }
-
     const rows = await this.db
       .selectFrom('asset_lock')
       .select('asset_lock.assetId')
@@ -650,7 +646,6 @@ export class MediaOperationRepository {
       .execute();
     return new Set(rows.map(({ assetId }) => assetId));
   }
-
   /**
    * How many of these assets are the owner's and locked (FL-32; FL-34: the lock record).
    *
@@ -661,7 +656,6 @@ export class MediaOperationRepository {
     if (assetIds.length === 0) {
       return 0;
     }
-
     const row = await this.db
       .selectFrom('asset')
       .select((eb) => eb.fn.countAll<string>().as('count'))
@@ -669,10 +663,8 @@ export class MediaOperationRepository {
       .where('id', '=', anyUuid(assetIds))
       .where((eb) => isLockedAsset(eb))
       .executeTakeFirst();
-
     return Number(row?.count ?? 0);
   }
-
   /**
    * Which of these ids are the owner's Locked media (FL-34). An operation keeps the ids it was given;
    * a read from a session that has not been unlocked must not name the ones that are Locked now.
@@ -681,7 +673,6 @@ export class MediaOperationRepository {
     if (assetIds.length === 0) {
       return new Set();
     }
-
     const rows = await this.db
       .selectFrom('asset')
       .select('asset.id')
@@ -691,7 +682,6 @@ export class MediaOperationRepository {
       .execute();
     return new Set(rows.map(({ id }) => id));
   }
-
   /**
    * The capture date of each of the owner's assets, for a relative date shift's starting points
    * (FL-32). An asset without a metadata row answers null; one that is not the owner's, or is gone,
@@ -701,7 +691,6 @@ export class MediaOperationRepository {
     if (assetIds.length === 0) {
       return new Map();
     }
-
     const rows = await this.db
       .selectFrom('asset')
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
@@ -709,7 +698,6 @@ export class MediaOperationRepository {
       .where('asset.ownerId', '=', ownerId)
       .where('asset.id', '=', anyUuid(assetIds))
       .execute();
-
     return new Map(
       rows.map((row): [string, Date | null] => {
         const value = row.dateTimeOriginal as unknown as Date | string | null;
@@ -717,7 +705,6 @@ export class MediaOperationRepository {
       }),
     );
   }
-
   /**
    * A retry of this job that is still running, if there is one.
    *
@@ -735,7 +722,6 @@ export class MediaOperationRepository {
       .limit(1)
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
-
   /**
    * Queue a retry of a job, or answer with the one already unfinished (FL-43).
    *
@@ -743,7 +729,11 @@ export class MediaOperationRepository {
    * the insert. `media_operation_retryOfId_active_uq` admits one unfinished row per `retryOfId`, so
    * of two requests racing, one inserts and the other finds the winner here.
    */
-  async createRetry(operation: MediaOperationCreate & { retryOfId: string }): Promise<{
+  async createRetry(
+    operation: MediaOperationCreate & {
+      retryOfId: string;
+    },
+  ): Promise<{
     operation: MediaOperation;
     created: boolean;
   }> {
@@ -780,7 +770,6 @@ export class MediaOperationRepository {
       return { operation: existing, created: false };
     }
   }
-
   getCheckpoints(operationId: string): Promise<MediaOperationCheckpoint[]> {
     return this.db
       .selectFrom('media_operation_checkpoint')
@@ -789,7 +778,6 @@ export class MediaOperationRepository {
       .orderBy('sequence', 'asc')
       .execute() as unknown as Promise<MediaOperationCheckpoint[]>;
   }
-
   /**
    * Clear a finished job out of the owner's Activity list.
    *
@@ -807,14 +795,11 @@ export class MediaOperationRepository {
         .where('dismissedAt', 'is', null)
         .executeTakeFirst(),
     );
-
     return Number(result.numUpdatedRows) === 1;
   }
-
   /* ------------------------------------------------------------------ */
   /* Claim lifecycle                                                     */
   /* ------------------------------------------------------------------ */
-
   /**
    * Take the oldest queued job of a kind, atomically.
    *
@@ -831,14 +816,22 @@ export class MediaOperationRepository {
     kinds: readonly MediaOperationKind[];
     workerId: string;
     leaseMs: number;
-    holdBack?: { kinds: readonly MediaOperationKind[]; destinationIds: readonly string[] };
-  }): Promise<{ operation: MediaOperation; claimToken: string } | undefined> {
+    holdBack?: {
+      kinds: readonly MediaOperationKind[];
+      destinationIds: readonly string[];
+    };
+  }): Promise<
+    | {
+        operation: MediaOperation;
+        claimToken: string;
+      }
+    | undefined
+  > {
     const claimToken = randomUUID();
     const holdBack =
       options.holdBack && options.holdBack.kinds.length > 0 && options.holdBack.destinationIds.length > 0
         ? options.holdBack
         : undefined;
-
     const row = await this.write((db) =>
       db
         .updateTable('media_operation')
@@ -878,11 +871,9 @@ export class MediaOperationRepository {
         .returningAll()
         .executeTakeFirst(),
     );
-
     this.changed(row as unknown as MediaOperationChange | undefined);
     return row ? { operation: row as unknown as MediaOperation, claimToken } : undefined;
   }
-
   /**
    * FL-163: record the remote job a claimed operation started (a Frameleaf Cloud job id), so a cancel or
    * failure that happens while nobody holds the claim still leaves the remote job to be released by the
@@ -900,10 +891,8 @@ export class MediaOperationRepository {
         .where((eb) => eb.or([eb('remoteJobId', 'is', null), eb('remoteJobId', '=', remoteJobId)]))
         .executeTakeFirst(),
     );
-
     return Number(result.numUpdatedRows) === 1;
   }
-
   /** Extend the lease. Returns false when the claim has already been taken away. */
   async heartbeat(id: string, claimToken: string, leaseMs: number): Promise<boolean> {
     const result = await this.write((db) =>
@@ -918,10 +907,8 @@ export class MediaOperationRepository {
         .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
         .executeTakeFirst(),
     );
-
     return Number(result.numUpdatedRows) === 1;
   }
-
   /**
    * Record real progress.
    *
@@ -932,13 +919,17 @@ export class MediaOperationRepository {
   async reportProgress(
     id: string,
     claimToken: string,
-    patch: { status: MediaOperationStatus; processedUnits: number; totalUnits: number | null; progress: number },
+    patch: {
+      status: MediaOperationStatus;
+      processedUnits: number;
+      totalUnits: number | null;
+      progress: number;
+    },
   ): Promise<boolean> {
     const from = PROGRESS_FROM[patch.status];
     if (!from) {
       return false;
     }
-
     const row = await this.write((db) =>
       db
         .updateTable('media_operation')
@@ -957,11 +948,9 @@ export class MediaOperationRepository {
         .returning(['id', 'ownerId'])
         .executeTakeFirst(),
     );
-
     this.changed(row);
     return !!row;
   }
-
   /**
    * Record what a bulk operation has done so far (FL-32), and extend the lease while doing it.
    *
@@ -1002,7 +991,6 @@ export class MediaOperationRepository {
         .returning(['status', 'cancelRequestedAt', 'pauseRequestedAt'])
         .executeTakeFirst(),
     );
-
     return row
       ? {
           status: row.status as MediaOperationStatus,
@@ -1011,7 +999,6 @@ export class MediaOperationRepository {
         }
       : undefined;
   }
-
   /**
    * Publish a validated result.
    *
@@ -1026,7 +1013,11 @@ export class MediaOperationRepository {
   async complete(
     id: string,
     claimToken: string,
-    result: { resultAssetId: string | null; progress?: number; result?: Record<string, unknown> },
+    result: {
+      resultAssetId: string | null;
+      progress?: number;
+      result?: Record<string, unknown>;
+    },
     executor?: Kysely<DB>,
     requireActiveClaim = false,
   ): Promise<boolean> {
@@ -1072,11 +1063,9 @@ export class MediaOperationRepository {
         .returning(['id', 'ownerId'])
         .executeTakeFirst();
     const updated = await (executor ? run(executor) : this.write(run));
-
     this.changed(updated);
     return !!updated;
   }
-
   /** Whether an asset may be adopted as this owner's result: theirs, and not deleted (FL-43). */
   async isPublishableResult(ownerId: string, assetId: string): Promise<boolean> {
     const row = await this.db
@@ -1088,7 +1077,6 @@ export class MediaOperationRepository {
       .executeTakeFirst();
     return !!row;
   }
-
   /**
    * Adopt a validated output and complete the job as one unit (FL-43).
    *
@@ -1112,7 +1100,6 @@ export class MediaOperationRepository {
     publish: (trx: Transaction<DB>) => Promise<boolean>,
   ): Promise<'completed' | 'rejected' | 'lost'> {
     return this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       const held = await trx
         .selectFrom('media_operation')
         .select('id')
@@ -1124,11 +1111,9 @@ export class MediaOperationRepository {
       if (!held) {
         return 'lost';
       }
-
       if (!(await publish(trx))) {
         return 'rejected';
       }
-
       if (!(await this.complete(id, claimToken, { resultAssetId: null }, trx))) {
         // Unreachable while the row is held above under the same predicates; throwing rolls the
         // publication back, so an adopted output and an unfinished job are never committed apart.
@@ -1137,7 +1122,6 @@ export class MediaOperationRepository {
       return 'completed';
     });
   }
-
   /** Move a claimed job to `validating`. The last gate before anything is published. */
   async beginValidation(id: string, claimToken: string, requireActiveClaim = false): Promise<boolean> {
     const row = await this.write((db) =>
@@ -1156,11 +1140,9 @@ export class MediaOperationRepository {
         .returning(['id', 'ownerId'])
         .executeTakeFirst(),
     );
-
     this.changed(row);
     return !!row;
   }
-
   /**
    * Report a claimed job's failure.
    *
@@ -1181,8 +1163,13 @@ export class MediaOperationRepository {
   async fail(
     id: string,
     claimToken: string,
-    failure: { error: string; errorCode: string },
-    options: { retry?: boolean } = {},
+    failure: {
+      error: string;
+      errorCode: string;
+    },
+    options: {
+      retry?: boolean;
+    } = {},
   ): Promise<MediaOperationFailOutcome> {
     // A failure retrying cannot help (FL-43: an edited item that left the library) is reported at once.
     const requeued =
@@ -1206,16 +1193,15 @@ export class MediaOperationRepository {
               .where('claimToken', '=', claimToken)
               .where('status', 'in', WORKING_STATUSES)
               .where('cancelRequestedAt', 'is', null)
+              .where(safeAutomaticReplay())
               .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
               .returning(['id', 'ownerId'])
               .executeTakeFirst(),
           );
-
     if (requeued) {
       this.changed(requeued);
       return 'retrying';
     }
-
     const result = await this.write((db) =>
       db
         .updateTable('media_operation')
@@ -1235,11 +1221,9 @@ export class MediaOperationRepository {
         .returning(['id', 'ownerId'])
         .executeTakeFirst(),
     );
-
     this.changed(result);
     return result ? 'failed' : false;
   }
-
   /**
    * Hand a claimed job back to the queue on purpose, keeping everything it has recorded (FL-32).
    *
@@ -1255,7 +1239,10 @@ export class MediaOperationRepository {
   async requeue(
     id: string,
     claimToken: string,
-    options: { delayMs: number; returnAttempt?: boolean },
+    options: {
+      delayMs: number;
+      returnAttempt?: boolean;
+    },
   ): Promise<boolean> {
     const result = await this.write((db) =>
       db
@@ -1276,15 +1263,12 @@ export class MediaOperationRepository {
         .returning(['id', 'ownerId'])
         .executeTakeFirst(),
     );
-
     this.changed(result);
     return !!result;
   }
-
   /* ------------------------------------------------------------------ */
   /* Cancellation                                                        */
   /* ------------------------------------------------------------------ */
-
   /**
    * Record the owner's cancellation.
    *
@@ -1304,7 +1288,14 @@ export class MediaOperationRepository {
     projectIds: readonly string[],
     kinds: readonly MediaOperationKind[],
     ownerId?: string,
-  ): Promise<Array<{ id: string; ownerId: string; kind: string; projectId: string | null }>> {
+  ): Promise<
+    Array<{
+      id: string;
+      ownerId: string;
+      kind: string;
+      projectId: string | null;
+    }>
+  > {
     if (projectIds.length === 0 || kinds.length === 0) {
       return [];
     }
@@ -1317,7 +1308,6 @@ export class MediaOperationRepository {
       .where('status', 'not in', [...TERMINAL_MEDIA_OPERATION_STATUSES])
       .execute();
   }
-
   /**
    * Merge into an open preview stream's signalling record (FL-96). Guarded in the WHERE clause:
    * only an unfinished `studio_preview_stream`, and with `negotiation` only while the record is
@@ -1327,7 +1317,9 @@ export class MediaOperationRepository {
   async mergeStreamSignal(
     id: string,
     patch: Record<string, unknown>,
-    expect: { negotiation?: number } = {},
+    expect: {
+      negotiation?: number;
+    } = {},
   ): Promise<MediaOperation | undefined> {
     return (await this.write((db) =>
       db
@@ -1347,9 +1339,13 @@ export class MediaOperationRepository {
         .executeTakeFirst(),
     )) as unknown as MediaOperation | undefined;
   }
-
   /** An account's open preview streams, oldest first (FL-96 session limits). */
-  async listOpenStreams(ownerId: string): Promise<Array<{ id: string; projectId: string | null }>> {
+  async listOpenStreams(ownerId: string): Promise<
+    Array<{
+      id: string;
+      projectId: string | null;
+    }>
+  > {
     return this.db
       .selectFrom('media_operation')
       .select(['id', 'projectId'])
@@ -1360,17 +1356,11 @@ export class MediaOperationRepository {
       .orderBy('createdAt', 'asc')
       .execute();
   }
-
   async requestCancel(id: string, ownerId: string, claimToken?: string): Promise<MediaOperation | undefined> {
-    const row = await withPublicForkWrites(
-      this.db,
-      (tx) => this.requestCancelWithin(tx, id, ownerId, claimToken),
-      MEDIA_OPERATION_HANDOFF_REFUSAL,
-    );
+    const row = await this.db.transaction().execute((tx) => this.requestCancelWithin(tx, id, ownerId, claimToken));
     this.notifyCancellation(row);
     return row;
   }
-
   /** Caller holds the fork write guard; notification follows its OUTER commit. */
   async requestCancelWithin(
     tx: Transaction<DB>,
@@ -1419,11 +1409,9 @@ export class MediaOperationRepository {
       .returningAll()
       .executeTakeFirst()) as unknown as MediaOperation | undefined;
   }
-
   notifyCancellation(row: MediaOperation | undefined): void {
     this.changed(row);
   }
-
   /**
    * The worker holding the claim confirms the work stopped.
    *
@@ -1436,7 +1424,13 @@ export class MediaOperationRepository {
    * lease lapsed, and whose job was requeued and claimed by another since, must not settle the new
    * claim's cancel while that worker — possibly a remote one still billing — carries on.
    */
-  async acknowledgeCancel(id: string, claimToken: string, options: { released: boolean }): Promise<boolean> {
+  async acknowledgeCancel(
+    id: string,
+    claimToken: string,
+    options: {
+      released: boolean;
+    },
+  ): Promise<boolean> {
     const result = await this.db
       .updateTable('media_operation')
       .set({
@@ -1471,11 +1465,9 @@ export class MediaOperationRepository {
       )
       .returning(['id', 'ownerId'])
       .executeTakeFirst();
-
     this.changed(result);
     return !!result;
   }
-
   /**
    * Cancelled or failed jobs on a remote destination whose cleanup has not been confirmed.
    *
@@ -1502,7 +1494,6 @@ export class MediaOperationRepository {
         .execute() as unknown as Promise<MediaOperation[]>
     );
   }
-
   /**
    * FL-163 review P2: record the remote job an operation started when its claim is already gone, so the
    * job is never left without a row that names it. Only fills an empty handle (or confirms the same
@@ -1519,7 +1510,6 @@ export class MediaOperationRepository {
     );
     return Number(result.numUpdatedRows) === 1;
   }
-
   /** Several jobs for a worker at once, not scoped to an owner (FL-163 settlement). */
   async getManyForWorker(ids: readonly string[]): Promise<MediaOperation[]> {
     if (ids.length === 0) {
@@ -1531,11 +1521,9 @@ export class MediaOperationRepository {
       .where('id', 'in', [...ids])
       .execute()) as unknown as MediaOperation[];
   }
-
   /* ------------------------------------------------------------------ */
   /* Frameleaf Cloud description batches (FL-163)                        */
   /* ------------------------------------------------------------------ */
-
   /** Every photo in an unfinished description batch, whoever owns it. */
   async getOpenCloudDescriptionAssetIds(): Promise<Set<string>> {
     const rows = await this.db
@@ -1546,7 +1534,6 @@ export class MediaOperationRepository {
       .execute();
     return new Set(rows.map(({ assetId }) => assetId));
   }
-
   /**
    * What description batches admitted in [from, to) cost: each batch's settled charge once known, else
    * what the wallet holds for it. With `origin`, only batches made that way (the automatic budget).
@@ -1572,7 +1559,6 @@ export class MediaOperationRepository {
       .executeTakeFirstOrThrow();
     return Number(row.spentUsd);
   }
-
   /**
    * What the wallet holds for a destination's admitted description batches that are not settled yet
    * (FL-163 re-check P2): unfinished batches, and finished ones admitted since `since` (the budget
@@ -1588,7 +1574,6 @@ export class MediaOperationRepository {
       .executeTakeFirstOrThrow();
     return Number(row.heldUsd);
   }
-
   /** Whether an admitted description batch still waits for its settlement, bounded as the holds are. */
   async hasUnsettledCloudDescriptionJobs(since: Date): Promise<boolean> {
     const row = await this.db
@@ -1600,7 +1585,6 @@ export class MediaOperationRepository {
       .executeTakeFirst();
     return !!row;
   }
-
   /** Admitted, not settled, and either unfinished or admitted since `since`. */
   private unsettledAdmission(eb: ExpressionBuilder<DB, 'media_operation'>, since: Date) {
     return eb.and([
@@ -1612,7 +1596,6 @@ export class MediaOperationRepository {
       ]),
     ]);
   }
-
   /**
    * Finished description batches whose `POST /v2/jobs` was sent but whose job was never recorded
    * (FL-163 re-check): the cleanup pass replays their idempotency key, once their estimate expired, to
@@ -1634,7 +1617,6 @@ export class MediaOperationRepository {
         .execute() as unknown as Promise<MediaOperation[]>
     );
   }
-
   /**
    * FL-162: finished Frameleaf Cloud jobs whose cloud job was admitted but whose settled cost is not
    * recorded yet, oldest first. The settle pass reads each one's cost once and writes it to the result;
@@ -1655,7 +1637,6 @@ export class MediaOperationRepository {
       .limit(options.limit)
       .execute() as unknown as Promise<MediaOperation[]>;
   }
-
   /**
    * FL-162: finished cloud ML jobs whose cloud job was never acknowledged. A job is acknowledged only
    * after its result is published, so a crash or a failed `DELETE` between the two leaves it here for
@@ -1677,7 +1658,6 @@ export class MediaOperationRepository {
         .execute() as unknown as Promise<MediaOperation[]>
     );
   }
-
   /**
    * FL-162: the Frameleaf Cloud jobs one person confirmed since `since`, with what each was settled at
    * (its accounting row), its hold, and enough of its state to count a job still running.
@@ -1709,7 +1689,6 @@ export class MediaOperationRepository {
       .execute();
     return rows as unknown as CloudMlJobSpendRow[];
   }
-
   /** FL-162: the snapshots of unfinished cloud ML jobs, for the prepared inputs they still need. */
   async listUnfinishedCloudMlJobSnapshots(): Promise<unknown[]> {
     const rows = await this.db
@@ -1720,7 +1699,6 @@ export class MediaOperationRepository {
       .execute();
     return rows.map((row) => row.snapshot);
   }
-
   /**
    * FL-162: cloud ML jobs cancelled before anything was sent (no cloud job), which the cleanup pass has
    * not put right yet: a cancel of a job no worker held lands without a step, so its version and its
@@ -1739,18 +1717,22 @@ export class MediaOperationRepository {
       .limit(options.limit)
       .execute() as unknown as Promise<MediaOperation[]>;
   }
-
   /**
    * FL-162: create a job together with the rows it binds, in one transaction. `bind` writes those rows
    * with the transaction it is given and answers with the job to insert; `after` runs in the same
    * transaction once the job exists. Either everything lands or nothing does.
    */
   async createWithin<T>(
-    bind: (trx: Transaction<DB>) => Promise<{ operation: MediaOperationCreate; value: T }>,
+    bind: (trx: Transaction<DB>) => Promise<{
+      operation: MediaOperationCreate;
+      value: T;
+    }>,
     after: (trx: Transaction<DB>, created: MediaOperation, value: T) => Promise<void>,
-  ): Promise<{ operation: MediaOperation; value: T }> {
+  ): Promise<{
+    operation: MediaOperation;
+    value: T;
+  }> {
     const done = await this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       const { operation, value } = await bind(trx);
       const created = (await trx
         .insertInto('media_operation')
@@ -1763,7 +1745,6 @@ export class MediaOperationRepository {
     this.changed(done.operation as unknown as MediaOperationChange);
     return done;
   }
-
   async markRemoteReleased(id: string): Promise<void> {
     await this.db
       .updateTable('media_operation')
@@ -1771,11 +1752,9 @@ export class MediaOperationRepository {
       .where('id', '=', id)
       .execute();
   }
-
   /* ------------------------------------------------------------------ */
   /* Pause and resume (FL-104, owner request September 23, 2026)        */
   /* ------------------------------------------------------------------ */
-
   /**
    * Record the owner's pause.
    *
@@ -1813,7 +1792,6 @@ export class MediaOperationRepository {
     this.changed(row);
     return row;
   }
-
   /**
    * Resume a paused job, or withdraw a pause its worker has not reached yet.
    *
@@ -1850,7 +1828,6 @@ export class MediaOperationRepository {
     this.changed(row);
     return row;
   }
-
   /**
    * A worker reached a checkpoint with a pause requested and lets go of the job.
    *
@@ -1879,40 +1856,17 @@ export class MediaOperationRepository {
         .returning(['id', 'ownerId'])
         .executeTakeFirst(),
     );
-
     this.changed(result);
     return !!result;
   }
-
   /* ------------------------------------------------------------------ */
   /* Recovery                                                            */
   /* ------------------------------------------------------------------ */
-
   /**
-   * Reclaim jobs whose lease expired: the worker died, the server restarted, the network went.
-   *
-   * Four outcomes, in order of how the row should honestly read afterwards:
-   *
-   * - A resumable job with lost-claim resumes left returns to the queue and resumes from its
-   *   checkpoints (FL-43: at most `MEDIA_OPERATION_LOST_CLAIM_RESUMES`, and never a kind that would
-   *   start again from nothing — for those a lost claim is a failure straight away).
-   * - One that has none left has failed, and a failure gets its one automatic retry first
-   *   (FL-104): it returns to the queue after the retry delay with the error recorded.
-   * - One that has also used its automatic retry fails with a stable code rather than looping.
-   * - One the owner had already asked to cancel becomes `cancelled`, because it plainly stopped —
-   *   but `cancelAcknowledgedAt` stays null, so a remote job whose cleanup nobody confirmed is
-   *   still an open obligation for the cleanup pass.
-   *
-   * Clearing the claim token is what makes all of them safe: if the old worker comes back, none of
-   * its writes match any more.
-   *
-   * A job whose owner asked for a pause is none of the above: it becomes `paused` (FL-104). That
-   * step runs first, and the steps after it only match jobs whose status is still claimed, so a
-   * paused job is never also requeued or failed. A job that is already `paused` holds no claim to
-   * lapse, so recovery never touches it.
-   *
-   * Every kind is recovered in one pass, and only `MediaOperationSweepService` calls this, so a
-   * lapsed claim is judged once, by one set of rules, whichever worker held it (FL-104).
+   * A lost claim consumes the same single retry as a handler failure. Only audited local work
+   * is replayable. Remote identity and checkpoints survive; unsafe work settles for attention.
+   * Queue-backed claims wait for the queue owner to fence its execution before recovery.
+   * Cancellation and a requested pause take precedence over retry.
    */
   async recoverExpiredClaims(options: { errorCode: string; error: string }): Promise<MediaOperationRecovery> {
     // A job whose owner asked to pause stays paused when its worker disappears (FL-104): the pause
@@ -1926,30 +1880,15 @@ export class MediaOperationRepository {
         .where('status', 'in', WORKING_STATUSES)
         .where('claimExpiresAt', 'is not', null)
         .where('claimExpiresAt', '<', sql<Date>`now()`)
+        .where(executionOwnerSettled())
         .where('pauseRequestedAt', 'is not', null)
         .where('cancelRequestedAt', 'is', null)
         .returning(['id', 'ownerId'])
         .execute(),
     );
-
     // The steps below also land on `paused` if a pause arrived after the step above ran: the steps
     // are separate statements, and a pause request between them must not leave a queued job with a
     // pause pending that nothing would ever settle.
-    const requeued = await this.write((db) =>
-      db
-        .updateTable('media_operation')
-        .set({ status: pausedIfRequested(), claimToken: null, claimedBy: null, claimExpiresAt: null })
-        .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
-        .where('claimExpiresAt', 'is not', null)
-        .where('claimExpiresAt', '<', sql<Date>`now()`)
-        .where(resumesLostClaim())
-        // A cancel already requested must not be resurrected as a queued job.
-        .where('cancelRequestedAt', 'is', null)
-        .returning(['id', 'ownerId'])
-        .execute(),
-    );
-
-    // Out of attempts is a failure, and every failure gets its one automatic retry first (FL-104).
     const retried = await this.write((db) =>
       db
         .updateTable('media_operation')
@@ -1966,13 +1905,13 @@ export class MediaOperationRepository {
         .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
         .where('claimExpiresAt', 'is not', null)
         .where('claimExpiresAt', '<', sql<Date>`now()`)
-        .where(sql<boolean>`not ${resumesLostClaim()}`)
+        .where(executionOwnerSettled())
+        .where(safeAutomaticReplay())
         .where('autoRetries', '<', MEDIA_OPERATION_AUTO_RETRIES)
         .where('cancelRequestedAt', 'is', null)
         .returning(['id', 'ownerId'])
         .execute(),
     );
-
     const failed = await this.write((db) =>
       db
         .updateTable('media_operation')
@@ -1988,13 +1927,14 @@ export class MediaOperationRepository {
         .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
         .where('claimExpiresAt', 'is not', null)
         .where('claimExpiresAt', '<', sql<Date>`now()`)
-        .where(sql<boolean>`not ${resumesLostClaim()}`)
-        .where('autoRetries', '>=', MEDIA_OPERATION_AUTO_RETRIES)
+        .where(executionOwnerSettled())
+        .where((eb) =>
+          eb.or([eb('autoRetries', '>=', MEDIA_OPERATION_AUTO_RETRIES), sql<boolean>`not ${safeAutomaticReplay()}`]),
+        )
         .where('cancelRequestedAt', 'is', null)
         .returning(['id', 'ownerId'])
         .execute(),
     );
-
     const abandonedCancels = await this.write((db) =>
       db
         .updateTable('media_operation')
@@ -2008,25 +1948,23 @@ export class MediaOperationRepository {
         .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
         .where('claimExpiresAt', 'is not', null)
         .where('claimExpiresAt', '<', sql<Date>`now()`)
+        .where(executionOwnerSettled())
         .where('cancelRequestedAt', 'is not', null)
         .returning(['id', 'ownerId'])
         .execute(),
     );
-
-    this.changed([...paused, ...requeued, ...retried, ...failed, ...abandonedCancels]);
+    this.changed([...paused, ...retried, ...failed, ...abandonedCancels]);
     return {
-      requeued: requeued.length,
+      requeued: 0,
       retried: retried.length,
       failed: failed.length,
       abandonedCancels: abandonedCancels.length,
       paused: paused.length,
     };
   }
-
   /* ------------------------------------------------------------------ */
   /* Job-queue edits (FL-43)                                             */
   /* ------------------------------------------------------------------ */
-
   /**
    * Claim an edit row for the delivery of its job. Only a queued row the job queue holds is taken,
    * and only once: a second delivery of the same job, a delivery after a cancel, or one after the
@@ -2036,7 +1974,13 @@ export class MediaOperationRepository {
   async beginJobQueueRun(
     id: string,
     leaseMs: number,
-  ): Promise<{ operation: MediaOperation; claimToken: string } | undefined> {
+  ): Promise<
+    | {
+        operation: MediaOperation;
+        claimToken: string;
+      }
+    | undefined
+  > {
     const claimToken = randomUUID();
     const row = await this.write((db) =>
       db
@@ -2059,11 +2003,9 @@ export class MediaOperationRepository {
         .returningAll()
         .executeTakeFirst(),
     );
-
     this.changed(row as unknown as MediaOperationChange | undefined);
     return row ? { operation: row as unknown as MediaOperation, claimToken } : undefined;
   }
-
   /**
    * Take the job-queue rows that have no job to run them, for dispatch: queued without a holder
    * (an automatic retry, a lapsed claim recovery put back, a manual retry) once their retry time has
@@ -2105,10 +2047,8 @@ export class MediaOperationRepository {
         .returning(['id', 'ownerId', 'snapshot'])
         .execute(),
     );
-
     return rows as unknown as Pick<MediaOperation, 'id' | 'ownerId' | 'snapshot'>[];
   }
-
   /** Dispatch failed: the rows wait for the next pass instead of looking queued with a job. */
   async releaseJobQueueDispatch(ids: string[]): Promise<void> {
     if (ids.length === 0) {
@@ -2122,7 +2062,6 @@ export class MediaOperationRepository {
       .where('claimedBy', '=', JOB_QUEUE_CLAIMANT)
       .execute();
   }
-
   /** The owner's unfinished edit rows for one photo version (FL-43), so an editor cancel reaches them. */
   listActiveEditsOfRevision(ownerId: string, revisionId: string): Promise<Pick<MediaOperation, 'id' | 'status'>[]> {
     return this.db
@@ -2135,7 +2074,6 @@ export class MediaOperationRepository {
       .where(sql<boolean>`"snapshot"->>'executor' = ${JOB_QUEUE_EXECUTOR}`)
       .execute() as unknown as Promise<Pick<MediaOperation, 'id' | 'status'>[]>;
   }
-
   /** Which of these photo versions an unfinished edit row is watching (FL-43). */
   async getTrackedRevisionIds(revisionIds: string[]): Promise<Set<string>> {
     if (revisionIds.length === 0) {
@@ -2151,11 +2089,9 @@ export class MediaOperationRepository {
       .execute();
     return new Set(rows.map(({ revisionId }) => revisionId as string));
   }
-
   /* ------------------------------------------------------------------ */
   /* Checkpoints                                                         */
   /* ------------------------------------------------------------------ */
-
   /** Record a planned chunk. Re-planning the same sequence replaces its identity and clears it. */
   async upsertCheckpoint(
     operationId: string,
@@ -2163,14 +2099,12 @@ export class MediaOperationRepository {
     chunk: Insertable<MediaOperationCheckpointTable>,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       // The claim check and the write are one unit (FL-43): the share lock holds off recovery's
       // requeue of this row until the chunk is recorded, so a lease that lapses between the two
       // cannot let a presumed-dead worker re-plan a chunk its replacement already owns.
       if (!(await this.lockClaim(trx, operationId, claimToken))) {
         return false;
       }
-
       await trx
         .insertInto('media_operation_checkpoint')
         .values({ ...chunk, operationId, claimToken })
@@ -2196,11 +2130,9 @@ export class MediaOperationRepository {
           }),
         )
         .execute();
-
       return true;
     });
   }
-
   /**
    * Mark a chunk finished.
    *
@@ -2211,15 +2143,19 @@ export class MediaOperationRepository {
   async completeCheckpoint(
     operationId: string,
     claimToken: string,
-    chunk: { sequence: number; chunkKey: string; outputPath: string; outputChecksum: Buffer; sizeInBytes: number },
+    chunk: {
+      sequence: number;
+      chunkKey: string;
+      outputPath: string;
+      outputChecksum: Buffer;
+      sizeInBytes: number;
+    },
     verifiedArtifact = false,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, MEDIA_OPERATION_HANDOFF_REFUSAL);
       if (!(await this.lockClaim(trx, operationId, claimToken, verifiedArtifact))) {
         return false;
       }
-
       const result = await trx
         .updateTable('media_operation_checkpoint')
         .set({
@@ -2235,11 +2171,9 @@ export class MediaOperationRepository {
         .where('claimToken', '=', claimToken)
         .$if(verifiedArtifact, (qb) => qb.where('state', '=', MediaOperationCheckpointState.Pending))
         .executeTakeFirst();
-
       return Number(result.numUpdatedRows) === 1;
     });
   }
-
   /** Retire chunks that can no longer describe the work. Invalid chunks are never reused. */
   async invalidateCheckpointsFrom(operationId: string, sequence: number): Promise<void> {
     await this.write((db) =>
@@ -2251,7 +2185,6 @@ export class MediaOperationRepository {
         .execute(),
     );
   }
-
   /**
    * Whether this claim still holds the job, taking a share lock on the row for the rest of the
    * transaction. Every claim transfer — recovery, cancel, pause, completion — is an UPDATE of this
@@ -2278,14 +2211,11 @@ export class MediaOperationRepository {
       .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
       .forShare()
       .executeTakeFirst();
-
     return !!row;
   }
-
   /* ------------------------------------------------------------------ */
   /* Operational aggregates                                              */
   /* ------------------------------------------------------------------ */
-
   /**
    * Counts for the administrator's operational view.
    *
@@ -2305,7 +2235,6 @@ export class MediaOperationRepository {
       ])
       .groupBy(['kind', 'status', 'destination'])
       .execute();
-
     return rows.map((row) => ({
       kind: row.kind as MediaOperationKind,
       status: row.status as MediaOperationStatus,
@@ -2314,7 +2243,6 @@ export class MediaOperationRepository {
       oldestQueuedAt: (row.oldestQueuedAt as Date | null) ?? null,
     }));
   }
-
   /**
    * Who holds claims on these kinds right now, grouped by worker identity and kind (FL-72). The
    * worker identity is the claiming process (`restoration:<host>:<pid>` or a render worker id);
@@ -2337,7 +2265,6 @@ export class MediaOperationRepository {
       .where('claimedBy', 'is not', null)
       .groupBy(['claimedBy', 'kind'])
       .execute();
-
     return rows.map((row) => ({
       workerId: row.claimedBy as string,
       kind: row.kind as MediaOperationKind,
@@ -2345,7 +2272,6 @@ export class MediaOperationRepository {
       lastHeartbeatAt: (row.lastHeartbeatAt as Date | null) ?? null,
     }));
   }
-
   /**
    * Queued and claimed jobs of these kinds per destination the snapshot names (FL-72). Counts
    * only; an administrator learns how busy a worker is, not whose media it holds.
@@ -2369,7 +2295,6 @@ export class MediaOperationRepository {
       .where(destinationId, 'is not', null)
       .groupBy(destinationId)
       .execute();
-
     return rows
       .map((row) => ({ destinationId: row.destinationId, queued: Number(row.queued), active: Number(row.active) }))
       .filter((row) => row.queued > 0 || row.active > 0);

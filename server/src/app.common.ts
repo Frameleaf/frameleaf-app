@@ -6,7 +6,6 @@ import helmetMiddleware from 'helmet';
 import { existsSync } from 'node:fs';
 import sirv from 'sirv';
 import { IMMICH_SERVER_START, excludePaths, serverVersion } from 'src/constants.js';
-import { FirstLaunchWorkerService } from 'src/maintenance/first-launch-worker.service.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
 import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
 import { WebSocketAdapter } from 'src/middleware/websocket.adapter.js';
@@ -30,7 +29,7 @@ export async function configureExpress(
     /**
      * Service to use for server-side rendering
      */
-    ssr: typeof ApiService | typeof MaintenanceWorkerService | typeof FirstLaunchWorkerService;
+    ssr: typeof ApiService | typeof MaintenanceWorkerService;
   },
 ) {
   const configRepository = app.get(ConfigRepository);

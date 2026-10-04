@@ -20,30 +20,24 @@ import {
 } from 'src/utils/database.js';
 import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
 import { isNotLocked, isTimelineVisible } from 'src/utils/locked.js';
-
 type AccessPrivacy = boolean | HiddenContentFilter | undefined;
-
 const privacyOptions = (privacy: AccessPrivacy): HiddenContentQueryOptions => {
   return typeof privacy === 'object' ? { hiddenContent: privacy } : privacy ? { excludeNsfw: true } : {};
 };
-
 /**
  * FL-37 / FL-46: the people or tags a session that is not unlocked suppresses. Only a real
  * hidden-content filter carries them; the NSFW-only form (`true`) suppresses no entity.
  */
 const suppressedEntityIds = (privacy: AccessPrivacy, entity: 'personIds' | 'tagIds'): string[] =>
   typeof privacy === 'object' ? privacy[entity] : [];
-
 class ActivityAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(userId: string, activityIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
     if (activityIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('activity')
       .leftJoin('asset', (join) => join.onRef('asset.id', '=', 'activity.assetId').on('asset.deletedAt', 'is', null))
@@ -54,14 +48,12 @@ class ActivityAccess {
       .execute()
       .then((activities) => new Set(activities.map((activity) => activity.id)));
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
   @ChunkedSet({ paramIndex: 1 })
   async checkAlbumOwnerAccess(userId: string, activityIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
     if (activityIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('activity')
       .leftJoin('asset', (join) => join.onRef('asset.id', '=', 'activity.assetId').on('asset.deletedAt', 'is', null))
@@ -78,14 +70,12 @@ class ActivityAccess {
       .execute()
       .then((activities) => new Set(activities.map((activity) => activity.id)));
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkCreateAccess(userId: string, albumIds: Set<string>) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('album')
       .select('album.id')
@@ -99,17 +89,14 @@ class ActivityAccess {
       .then((albums) => new Set(albums.map((album) => album.id)));
   }
 }
-
 class AlbumAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(userId: string, albumIds: Set<string>) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('album')
       .select('album.id')
@@ -124,17 +111,14 @@ class AlbumAccess {
       .execute()
       .then((albums) => new Set(albums.map((album) => album.id)));
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkSharedAlbumAccess(userId: string, albumIds: Set<string>, access: AlbumUserRole) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
-
     const accessRole =
       access === AlbumUserRole.Editor ? [AlbumUserRole.Editor] : [AlbumUserRole.Editor, AlbumUserRole.Viewer];
-
     return this.db
       .selectFrom('album')
       .select('album.id')
@@ -147,14 +131,12 @@ class AlbumAccess {
       .execute()
       .then((albums) => new Set(albums.map((album) => album.id)));
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkSharedLinkAccess(sharedLinkId: string, albumIds: Set<string>) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('shared_link')
       .select('shared_link.albumId')
@@ -169,20 +151,16 @@ class AlbumAccess {
       );
   }
 }
-
 class AssetAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkAlbumAccess(userId: string, assetIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
-
     const options = privacyOptions(hideNsfwAssets);
     const hiddenContent = getHiddenContentFilter(options);
-
     return (
       this.db
         .with('target', (qb) => qb.selectNoFrom(sql`array[${sql.join([...assetIds])}]::uuid[]`.as('ids')))
@@ -231,7 +209,6 @@ class AssetAccess {
         })
     );
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(
@@ -243,7 +220,6 @@ class AssetAccess {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
-
     return (
       this.db
         .selectFrom('asset')
@@ -258,9 +234,8 @@ class AssetAccess {
         .then((assets) => new Set(assets.map((asset) => asset.id)))
     );
   }
-
   /**
-   * FL-83 (AL-30b): items the owner shared with this person (`immich_fork.asset_user_share`). A
+   * FL-83 (AL-30b): items the owner shared with this person (`public.asset_user_share`). A
    * shared item is never reachable while it is Hidden or locked, whoever locked it and whenever, and
    * never once it is trashed or its owner is gone; the motion part of a shared live photo comes with it.
    */
@@ -269,14 +244,12 @@ class AssetAccess {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
-
     const options = privacyOptions(hideNsfwAssets);
     const hiddenContent = getHiddenContentFilter(options);
     const ids = [...assetIds];
-
     return (
       this.db
-        .selectFrom(sql.table('immich_fork.asset_user_share').as('share'))
+        .selectFrom(sql.table('public.asset_user_share').as('share'))
         .innerJoin('asset', (join) =>
           join.on(sql<boolean>`"asset"."id" = "share"."assetId"`).on('asset.deletedAt', 'is', null),
         )
@@ -324,7 +297,13 @@ class AssetAccess {
               allowedIds.add(asset.id);
             }
             const motion = asset.livePhotoVideoId;
-            const motionHidden = !!hiddenContent && (asset as { isLivePhotoVideoNsfw?: boolean }).isLivePhotoVideoNsfw;
+            const motionHidden =
+              !!hiddenContent &&
+              (
+                asset as {
+                  isLivePhotoVideoNsfw?: boolean;
+                }
+              ).isLivePhotoVideoNsfw;
             if (motion && assetIds.has(motion) && !motionHidden && !hidden.has(motion)) {
               allowedIds.add(motion);
             }
@@ -333,17 +312,14 @@ class AssetAccess {
         })
     );
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkSharedLinkAccess(sharedLinkId: string, assetIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
-
     const options = privacyOptions(hideNsfwAssets);
     const hiddenContent = getHiddenContentFilter(options);
-
     return (
       this.db
         .selectFrom('shared_link')
@@ -420,10 +396,8 @@ class AssetAccess {
     );
   }
 }
-
 class AssetFileAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(
@@ -435,7 +409,6 @@ class AssetFileAccess {
     if (fileIds.size === 0) {
       return new Set<string>();
     }
-
     return (
       this.db
         .selectFrom('asset_file')
@@ -453,17 +426,14 @@ class AssetFileAccess {
     );
   }
 }
-
 class AuthDeviceAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(userId: string, deviceIds: Set<string>) {
     if (deviceIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('session')
       .select('session.id')
@@ -473,20 +443,16 @@ class AuthDeviceAccess {
       .then((tokens) => new Set(tokens.map((token) => token.id)));
   }
 }
-
 class DuplicateAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(userId: string, duplicateIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
     if (duplicateIds.size === 0) {
       return new Set<string>();
     }
-
     const options = privacyOptions(hideNsfwAssets);
     const hasHiddenContent = !!getHiddenContentFilter(options);
-
     return this.db
       .selectFrom('asset')
       .select('asset.duplicateId')
@@ -495,23 +461,22 @@ class DuplicateAccess {
       .where('asset.deletedAt', 'is', null)
       .$if(hasHiddenContent, (qb) => qb.$call(withDefaultVisibility).where('asset.stackId', 'is', null))
       .$call((qb) => withHiddenContentFilter(qb, options))
-      .$narrowType<{ duplicateId: NotNull }>()
+      .$narrowType<{
+        duplicateId: NotNull;
+      }>()
       .$if(hasHiddenContent, (qb) => qb.groupBy('asset.duplicateId').having((eb) => eb.fn.count('asset.id'), '>', 1))
       .execute()
       .then((assets) => new Set(assets.map((asset) => asset.duplicateId)));
   }
 }
-
 class NotificationAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(userId: string, notificationIds: Set<string>) {
     if (notificationIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('notification')
       .select('notification.id')
@@ -521,17 +486,14 @@ class NotificationAccess {
       .then((stacks) => new Set(stacks.map((stack) => stack.id)));
   }
 }
-
 class SessionAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(userId: string, sessionIds: Set<string>) {
     if (sessionIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('session')
       .select('session.id')
@@ -543,14 +505,12 @@ class SessionAccess {
 }
 class StackAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(userId: string, stackIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
     if (stackIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('stack')
       .select('stack.id')
@@ -566,10 +526,8 @@ class StackAccess {
       .then((stacks) => new Set(stacks.map((stack) => stack.id)));
   }
 }
-
 class MemoryAccess {
   constructor(private db: Kysely<DB>) {}
-
   /**
    * The owner's memories this session may reach. FL-195 follow-up (owner decision, September 27,
    * 2026): a memory with even one item hidden from the session — locked and not revealed to it
@@ -587,7 +545,6 @@ class MemoryAccess {
     if (memoryIds.size === 0) {
       return new Set<string>();
     }
-
     const options: HiddenContentQueryOptions = {
       ...privacyOptions(hideNsfwAssets),
       ...(revealLockedOwnerId && { revealLockedOwnerId }),
@@ -627,17 +584,14 @@ class MemoryAccess {
       .then((memories) => new Set(memories.map((memory) => memory.id)));
   }
 }
-
 class ClusterGroupAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   checkInviteAccess(userId: string, clusterGroupIds: Set<string>) {
     if (clusterGroupIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('cluster_group_request')
       .select('cluster_group_request.clusterGroupId')
@@ -646,14 +600,12 @@ class ClusterGroupAccess {
       .execute()
       .then((requests) => new Set(requests.map((request) => request.clusterGroupId)));
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(userId: string, clusterGroupIds: Set<string>) {
     if (clusterGroupIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('user')
       .select('user.clusterGroupId')
@@ -663,17 +615,14 @@ class ClusterGroupAccess {
       .then((users) => new Set(users.map((user) => user.clusterGroupId)));
   }
 }
-
 class ClusterGroupRequestAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   checkOwnerAccess(userId: string, clusterGroupRequestIds: Set<string>) {
     if (clusterGroupRequestIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('cluster_group_request')
       .select('cluster_group_request.id')
@@ -682,14 +631,12 @@ class ClusterGroupRequestAccess {
       .execute()
       .then((requests) => new Set(requests.map(({ id }) => id)));
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   checkGroupAccess(userId: string, clusterGroupRequestIds: Set<string>) {
     if (clusterGroupRequestIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('cluster_group_request')
       .select('cluster_group_request.id')
@@ -701,17 +648,14 @@ class ClusterGroupRequestAccess {
       .then((requests) => new Set(requests.map(({ id }) => id)));
   }
 }
-
 class PersonAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(userId: string, personGroupIds: Set<string>, hideNsfwAssets?: AccessPrivacy) {
     if (personGroupIds.size === 0) {
       return new Set<string>();
     }
-
     const suppressedIds = suppressedEntityIds(hideNsfwAssets, 'personIds');
     return (
       this.db
@@ -763,7 +707,6 @@ class PersonAccess {
         .then((persons) => new Set(persons.map((person) => person.personGroupId)))
     );
   }
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET, true] })
   @ChunkedSet({ paramIndex: 1 })
   async checkFaceOwnerAccess(
@@ -775,7 +718,6 @@ class PersonAccess {
     if (assetFaceIds.size === 0) {
       return new Set<string>();
     }
-
     return (
       this.db
         .selectFrom('asset_face')
@@ -794,17 +736,14 @@ class PersonAccess {
     );
   }
 }
-
 class PartnerAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkUpdateAccess(userId: string, partnerIds: Set<string>) {
     if (partnerIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('partner')
       .select('partner.sharedById')
@@ -814,10 +753,8 @@ class PartnerAccess {
       .then((partners) => new Set(partners.map((partner) => partner.sharedById)));
   }
 }
-
 class TagAccess {
   constructor(private db: Kysely<DB>) {}
-
   /**
    * `hideLocked`: the session is not unlocked, so a tag carried only by locked items is not there
    * either (owner decision, September 27, 2026).
@@ -828,7 +765,6 @@ class TagAccess {
     if (tagIds.size === 0) {
       return new Set<string>();
     }
-
     const suppressedIds = suppressedEntityIds(hideNsfwAssets, 'tagIds');
     return (
       this.db
@@ -851,17 +787,14 @@ class TagAccess {
     );
   }
 }
-
 class WorkflowAccess {
   constructor(private db: Kysely<DB>) {}
-
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
   async checkOwnerAccess(userId: string, workflowIds: Set<string>) {
     if (workflowIds.size === 0) {
       return new Set<string>();
     }
-
     return this.db
       .selectFrom('workflow')
       .select('workflow.id')
@@ -871,7 +804,6 @@ class WorkflowAccess {
       .then((workflows) => new Set(workflows.map((workflow) => workflow.id)));
   }
 }
-
 @Injectable()
 export class AccessRepository {
   activity: ActivityAccess;
@@ -890,8 +822,10 @@ export class AccessRepository {
   stack: StackAccess;
   tag: TagAccess;
   workflow: WorkflowAccess;
-
-  constructor(@InjectKysely() db: Kysely<DB>) {
+  constructor(
+    @InjectKysely()
+    db: Kysely<DB>,
+  ) {
     this.activity = new ActivityAccess(db);
     this.album = new AlbumAccess(db);
     this.asset = new AssetAccess(db);

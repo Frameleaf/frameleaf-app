@@ -100,8 +100,6 @@ services:
     depends_on:
       immich-init:
         condition: service_healthy
-      redis:
-        condition: service_started
       database:
         condition: service_started
     healthcheck:
@@ -155,12 +153,6 @@ services:
     healthcheck:
       disable: false
 
-  redis:
-    container_name: frameleaf_redis
-    image: docker.io/valkey/valkey:9@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
-    healthcheck:
-      test: redis-cli ping | grep -q PONG || exit 1
-
   database:
     container_name: frameleaf_postgres
     image: frameleaf-postgres:local
@@ -176,7 +168,7 @@ services:
       POSTGRES_DB: ${DB_DATABASE_NAME}
       POSTGRES_INITDB_ARGS: "--data-checksums"
     volumes:
-      - ${UPLOAD_LOCATION}/postgres:/var/lib/postgresql/data
+      - ${UPLOAD_LOCATION}/postgres:/var/lib/postgresql
     ports:
       - 5432:5432
     shm_size: 128mb

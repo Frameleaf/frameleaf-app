@@ -11,6 +11,7 @@ name: Postgres Image
   pull_request:
     branches:
       - fork/main
+      - master/frameleaf-implementation
     paths:
       - docker/postgres/**
       - .github/workflows/postgres.yml
@@ -79,14 +80,12 @@ jobs:
           echo "Built frameleaf-postgres for $architecture with configuration $config_digest"
       - name: Verify PostgreSQL and extension versions
         env:
-          EXPECTED_PG_MAJOR: '14'
-          EXPECTED_VCHORD: 0.4.3
-          EXPECTED_PGVECTOR: 0.8.1
-          EXPECTED_PGVECTORS: 0.2.0
+          EXPECTED_PG_MAJOR: '19'
+          EXPECTED_PGVECTOR: 0.8.7
         run: |-
           set -euo pipefail
           docker run -d --name frameleaf-postgres-ci \
-            -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=immich \
+            -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=frameleaf \
             -e POSTGRES_INITDB_ARGS=--data-checksums \
             frameleaf-postgres:ci
           # The image's own health check (pg_isready plus the checksum-failure count) must pass once
@@ -106,23 +105,17 @@ jobs:
             echo "::error::The Postgres image did not become ready."
             exit 1
           fi
-          query() { docker exec frameleaf-postgres-ci psql -U postgres -d immich -tAX -c "$1"; }
+          query() { docker exec frameleaf-postgres-ci psql -U postgres -d frameleaf -tAX -c "$1"; }
           major=$(query "SELECT current_setting('server_version_num')::int / 10000")
-          preload=$(query "SHOW shared_preload_libraries")
-          search_path=$(query "SHOW search_path")
-          query "CREATE EXTENSION IF NOT EXISTS vchord CASCADE" > /dev/null
-          query "CREATE EXTENSION IF NOT EXISTS vectors" > /dev/null
-          vchord=$(query "SELECT extversion FROM pg_extension WHERE extname = 'vchord'")
+          query "CREATE EXTENSION IF NOT EXISTS vector" > /dev/null
           pgvector=$(query "SELECT extversion FROM pg_extension WHERE extname = 'vector'")
-          pgvectors=$(query "SELECT extversion FROM pg_extension WHERE extname = 'vectors'")
-          echo "PostgreSQL $major; preload: $preload; search_path: $search_path"
-          echo "vchord $vchord, vector $pgvector, vectors $pgvectors"
           [[ "$major" == "$EXPECTED_PG_MAJOR" ]] || { echo "::error::PostgreSQL major is $major"; exit 1; }
-          [[ "$preload" == "vchord.so, vectors.so" ]] || { echo "::error::Unexpected preload libraries: $preload"; exit 1; }
-          [[ "$search_path" == *vectors* ]] || { echo "::error::The vectors schema is not on the search path"; exit 1; }
-          [[ "$vchord" == "$EXPECTED_VCHORD" ]] || { echo "::error::VectorChord is $vchord"; exit 1; }
           [[ "$pgvector" == "$EXPECTED_PGVECTOR" ]] || { echo "::error::pgvector is $pgvector"; exit 1; }
-          [[ "$pgvectors" == "$EXPECTED_PGVECTORS" ]] || { echo "::error::pgvecto.rs is $pgvectors"; exit 1; }
+          [[ "$(query "SELECT count(*) FROM pg_extension WHERE extname IN ('vectors', 'vchord')")" == "0" ]] || { echo "::error::Legacy vector extensions found"; exit 1; }
+          query "CREATE TABLE hnsw_probe (id integer PRIMARY KEY, embedding vector(3)); INSERT INTO hnsw_probe VALUES (1, '[1,0,0]'), (2, '[0,1,0]'); CREATE INDEX ON hnsw_probe USING hnsw (embedding vector_cosine_ops);" > /dev/null
+          nearest=$(query "SET enable_seqscan=off; SELECT id FROM hnsw_probe ORDER BY embedding <=> '[1,0,0]' LIMIT 1" | tail -n1)
+          [[ "$nearest" == "1" ]] || { echo "::error::HNSW nearest-neighbor result differs"; exit 1; }
+          query "DROP TABLE hnsw_probe" > /dev/null
           docker rm -f frameleaf-postgres-ci > /dev/null
       - name: Keep the tested image for publication
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
@@ -149,7 +142,7 @@ jobs:
       digest: ${{ steps.publish.outputs.digest }}
     env:
       IMAGE: ghcr.io/frameleaf/frameleaf-postgres
-      VERSION_TAG: 14-vectorchord0.4.3-pgvectors0.2.0
+      VERSION_TAG: 19beta4-pgvector0.8.7
     steps:
       - name: Checkout release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

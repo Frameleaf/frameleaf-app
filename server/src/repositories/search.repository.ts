@@ -23,15 +23,8 @@ import {
   SearchHistogramGranularity,
   SearchOrder,
 } from 'src/dtos/search.dto.js';
-import {
-  AssetStatus,
-  AssetType,
-  AssetVisibility,
-  ImageEnrichmentFilter,
-  PetObservationState,
-  VectorIndex,
-} from 'src/enum.js';
-import { probes } from 'src/repositories/database.repository.js';
+import { AssetStatus, AssetType, AssetVisibility, ImageEnrichmentFilter, PetObservationState } from 'src/enum.js';
+import { deferJobAdoption } from 'src/queue/context.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import {
@@ -464,7 +457,7 @@ export class SearchRepository {
     }
 
     return this.db.transaction().execute(async (trx) => {
-      await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.Clip])}`.execute(trx);
+      await sql`set local hnsw.ef_search = 100`.execute(trx);
       const items = await searchAssetBuilderLegacy(trx, options)
         .selectAll('asset')
         .select(isLocked('asset').as('isLocked'))
@@ -501,7 +494,7 @@ export class SearchRepository {
     }
 
     return this.db.transaction().execute(async (trx) => {
-      await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.Face])}`.execute(trx);
+      await sql`set local hnsw.ef_search = 100`.execute(trx);
       return await trx
         .with('cte', (qb) =>
           qb
@@ -683,11 +676,16 @@ export class SearchRepository {
   }
 
   async upsert(assetId: string, embedding: string): Promise<void> {
-    await this.db
-      .insertInto('smart_search')
-      .values({ assetId, embedding })
-      .onConflict((oc) => oc.column('assetId').doUpdateSet((eb) => ({ embedding: eb.ref('excluded.embedding') })))
-      .execute();
+    const adopt = async (db: Kysely<DB>) => {
+      await db
+        .insertInto('smart_search')
+        .values({ assetId, embedding })
+        .onConflict((oc) => oc.column('assetId').doUpdateSet((eb) => ({ embedding: eb.ref('excluded.embedding') })))
+        .execute();
+    };
+    if (!deferJobAdoption(adopt)) {
+      await adopt(this.db);
+    }
   }
 
   async upsertDescriptionEmbedding(assetId: string, embedding: string): Promise<void> {
@@ -805,7 +803,7 @@ export class SearchRepository {
     scope: AssetSearchScope,
   ) {
     return this.db.transaction().execute(async (trx) => {
-      await sql`set local vchordrq.probes = ${sql.lit(probes[VectorIndex.Clip])}`.execute(trx);
+      await sql`set local hnsw.ef_search = 100`.execute(trx);
       const items = await searchAssetBuilder(trx, options, scope)
         .select(columns.searchAsset)
         .select(isLocked('asset').as('isLocked'))

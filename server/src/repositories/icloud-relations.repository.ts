@@ -1,17 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
+
 import { AssetType, AssetVisibility } from 'src/enum.js';
-import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
+
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
-
 export type ICloudRelationEvent =
-  | { name: 'AssetHide'; assetId: string; userId: string }
-  | { name: 'StackCreate' | 'StackUpdate'; stackId: string; userId: string };
+  | {
+      name: 'AssetHide';
+      assetId: string;
+      userId: string;
+    }
+  | {
+      name: 'StackCreate' | 'StackUpdate';
+      stackId: string;
+      userId: string;
+    };
 type RelationState = {
   signature?: string;
   status?: 'applied' | 'needs-review' | 'pending';
@@ -22,7 +29,16 @@ type RelationState = {
   memberAssetIds?: string[];
   events?: ICloudRelationEvent[];
 };
-type Origin = { id: string; assetId: string; signature: string; source: { _sync?: { relations?: RelationState } } };
+type Origin = {
+  id: string;
+  assetId: string;
+  signature: string;
+  source: {
+    _sync?: {
+      relations?: RelationState;
+    };
+  };
+};
 type Resource = {
   id: string;
   sourceAssetId: string;
@@ -30,7 +46,11 @@ type Resource = {
   role: string;
   assetId: string | null;
   status: string;
-  source: { _sync?: { relations?: RelationState } };
+  source: {
+    _sync?: {
+      relations?: RelationState;
+    };
+  };
 };
 type Target = {
   id: string;
@@ -40,18 +60,19 @@ type Target = {
   livePhotoVideoId: string | null;
   visibility: AssetVisibility;
 };
-
 @Injectable()
 export class ICloudRelationsRepository {
-  constructor(@InjectKysely() private readonly db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private readonly db: Kysely<DB>,
+  ) {}
   private pending(db: Kysely<DB>, connectionId: string, ownerId: string) {
     return sql<Origin>`SELECT DISTINCT ON (o."assetId") o.id,o."assetId",o.source,version.signature
-      FROM immich_fork.icloud_resource o JOIN asset a ON a.id=o."assetId"
+      FROM public.icloud_resource o JOIN asset a ON a.id=o."assetId"
       CROSS JOIN LATERAL (SELECT md5(coalesce(string_agg(r.id::text || ':' || r.fingerprint || ':' || coalesce(r."assetId"::text,'') || ':' || r.status,',' ORDER BY r.id),'empty')) AS signature
-        FROM immich_fork.icloud_resource r WHERE r."auditRequestId" IS NULL AND r."connectionId"=o."connectionId" AND r."ownerId"=${ownerId}::uuid
+        FROM public.icloud_resource r WHERE r."auditRequestId" IS NULL AND r."connectionId"=o."connectionId" AND r."ownerId"=${ownerId}::uuid
           AND coalesce((r.source->>'current')::boolean,true) AND r.role IN ('original','motion','edited-image','edited-video')
-          AND EXISTS(SELECT 1 FROM immich_fork.icloud_resource family WHERE family."connectionId"=o."connectionId"
+          AND EXISTS(SELECT 1 FROM public.icloud_resource family WHERE family."connectionId"=o."connectionId"
             AND family."auditRequestId" IS NULL AND family."ownerId"=${ownerId}::uuid AND family."assetId"=o."assetId" AND family.role='original'
             AND coalesce((family.source->>'current')::boolean,true) AND family."libraryKey"=r."libraryKey" AND family."sourceAssetId"=r."sourceAssetId")) version
       WHERE o."auditRequestId" IS NULL AND o."connectionId"=${connectionId}::uuid AND o."ownerId"=${ownerId}::uuid AND o.role='original'
@@ -62,44 +83,31 @@ export class ICloudRelationsRepository {
       .execute(db)
       .then(({ rows }) => rows[0]);
   }
-
   private async nextEvent(connectionId: string, ownerId: string, db: Kysely<DB>) {
-    return sql<{ id: string; event: ICloudRelationEvent }>`SELECT r.id,r.source#>'{_sync,relations,events,0}' AS event
-      FROM immich_fork.icloud_resource r JOIN immich_fork.icloud_connection c ON c.id=r."connectionId"
+    return sql<{
+      id: string;
+      event: ICloudRelationEvent;
+    }>`SELECT r.id,r.source#>'{_sync,relations,events,0}' AS event
+      FROM public.icloud_resource r JOIN public.icloud_connection c ON c.id=r."connectionId"
       WHERE r."auditRequestId" IS NULL AND r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND c."ownerId"=${ownerId}::uuid
         AND c.state='connected' AND jsonb_array_length(coalesce(r.source#>'{_sync,relations,events}','[]'))>0 ORDER BY r.id LIMIT 1`
       .execute(db)
       .then(({ rows }) => rows[0]);
   }
-
   private async acknowledgeEvent(id: string, ownerId: string, event: ICloudRelationEvent, db: Kysely<DB>) {
-    await sql`UPDATE immich_fork.icloud_resource SET source=jsonb_set(source,'{_sync,relations,events}',(source#>'{_sync,relations,events}') - 0)
+    await sql`UPDATE public.icloud_resource SET source=jsonb_set(source,'{_sync,relations,events}',(source#>'{_sync,relations,events}') - 0)
       WHERE id=${id}::uuid AND "ownerId"=${ownerId}::uuid AND source#>'{_sync,relations,events,0}'=${event}::jsonb`.execute(
       db,
     );
   }
-
   async dispatchEvent(
     connectionId: string,
     ownerId: string,
     send: (event: ICloudRelationEvent) => Promise<void>,
   ): Promise<boolean> {
     return this.db.transaction().execute(async (db) => {
-      const phase = await sql<{ phase: ForkSchemaPhase }>`SELECT phase FROM immich_fork.state WHERE id=1 FOR SHARE`
-        .execute(db)
-        .then(({ rows }) => rows[0]?.phase);
-      if (!phase || !isForkWriteEnabled(phase)) {
-        throw new Error('icloud_fork_inactive');
-      }
-      const handoff =
-        await sql`SELECT 1 FROM immich_fork.migration_audit WHERE status='running' AND name IN ('official-handoff-preparation','fork-return-reconciliation') LIMIT 1`.execute(
-          db,
-        );
-      if (handoff.rows.length > 0) {
-        throw new Error('icloud_fork_handoff');
-      }
       const connection =
-        await sql`SELECT id FROM immich_fork.icloud_connection WHERE id=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid AND state='connected' FOR UPDATE`.execute(
+        await sql`SELECT id FROM public.icloud_connection WHERE id=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid AND state='connected' FOR UPDATE`.execute(
           db,
         );
       if (connection.rows.length === 0) {
@@ -114,24 +122,10 @@ export class ICloudRelationsRepository {
       return true;
     });
   }
-
   async reconcile(connectionId: string, ownerId: string): Promise<boolean> {
     return this.db.transaction().execute(async (db) => {
-      const phase = await sql<{ phase: ForkSchemaPhase }>`SELECT phase FROM immich_fork.state WHERE id=1 FOR SHARE`
-        .execute(db)
-        .then(({ rows }) => rows[0]?.phase);
-      if (!phase || !isForkWriteEnabled(phase)) {
-        throw new Error('icloud_fork_inactive');
-      }
-      const handoff =
-        await sql`SELECT 1 FROM immich_fork.migration_audit WHERE status='running' AND name IN ('official-handoff-preparation','fork-return-reconciliation') LIMIT 1`.execute(
-          db,
-        );
-      if (handoff.rows.length > 0) {
-        throw new Error('icloud_fork_handoff');
-      }
       const connection =
-        await sql`SELECT id FROM immich_fork.icloud_connection WHERE id=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid AND state='connected' FOR UPDATE`.execute(
+        await sql`SELECT id FROM public.icloud_connection WHERE id=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid AND state='connected' FOR UPDATE`.execute(
           db,
         );
       if (connection.rows.length === 0) {
@@ -143,9 +137,9 @@ export class ICloudRelationsRepository {
       }
       const { rows: resources } =
         await sql<Resource>`SELECT r.id,r."sourceAssetId",r."libraryKey",r.role,r."assetId",r.status,r.source
-        FROM immich_fork.icloud_resource r WHERE r."auditRequestId" IS NULL AND r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid
+        FROM public.icloud_resource r WHERE r."auditRequestId" IS NULL AND r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid
           AND coalesce((r.source->>'current')::boolean,true) AND r.role IN ('original','motion','edited-image','edited-video')
-          AND EXISTS(SELECT 1 FROM immich_fork.icloud_resource family WHERE family."connectionId"=r."connectionId" AND family."ownerId"=${ownerId}::uuid
+          AND EXISTS(SELECT 1 FROM public.icloud_resource family WHERE family."connectionId"=r."connectionId" AND family."ownerId"=${ownerId}::uuid
             AND family."auditRequestId" IS NULL AND family.role='original' AND family."assetId"=${origin.assetId}::uuid AND coalesce((family.source->>'current')::boolean,true)
             AND family."libraryKey"=r."libraryKey" AND family."sourceAssetId"=r."sourceAssetId")
         ORDER BY r."updatedAt" DESC,r.id LIMIT 101`.execute(db);
@@ -190,14 +184,13 @@ export class ICloudRelationsRepository {
           state.reason = 'resource_owner_or_trash_changed';
         }
       }
-      await sql`UPDATE immich_fork.icloud_resource SET source=jsonb_set(source,'{_sync}',coalesce(source->'_sync','{}') || jsonb_build_object('relations',
+      await sql`UPDATE public.icloud_resource SET source=jsonb_set(source,'{_sync}',coalesce(source->'_sync','{}') || jsonb_build_object('relations',
         CASE WHEN id=${origin.id}::uuid THEN ${state}::jsonb ELSE ${{ ...state, events: [] }}::jsonb END),true)
         WHERE "connectionId"=${connectionId}::uuid AND "ownerId"=${ownerId}::uuid AND role='original' AND "assetId"=${origin.assetId}::uuid
           AND coalesce((source->>'current')::boolean,true)`.execute(db);
       return !(await this.pending(db, connectionId, ownerId));
     });
   }
-
   private async linkMotion(
     db: Kysely<DB>,
     ownerId: string,
@@ -271,7 +264,6 @@ export class ICloudRelationsRepository {
     }
     state.motionAssetId = motion.id;
   }
-
   private async stack(
     db: Kysely<DB>,
     ownerId: string,

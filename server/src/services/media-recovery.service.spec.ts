@@ -75,7 +75,6 @@ describe(MediaRecoveryService.name, () => {
       isOffline: false,
       hidden: false,
       physicalOriginalFileId: null,
-      forkPhysicalFileId: null,
       sizeInBytes: bytes.length,
       damaged: false,
       matchesContent: true,
@@ -103,7 +102,6 @@ describe(MediaRecoveryService.name, () => {
           isExternal: false,
           libraryId: null,
           physicalOriginalFileId: null,
-          forkPhysicalFileId: null,
           outcome,
         },
       };

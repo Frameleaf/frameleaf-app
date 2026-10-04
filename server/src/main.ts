@@ -3,7 +3,7 @@ import { CommandFactory } from 'nest-commander';
 import { ChildProcess, fork } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
-import { Worker } from 'node:worker_threads';
+import { Worker, type MessagePort } from 'node:worker_threads';
 import { PostgresError } from 'postgres';
 import { DatabaseLock, ExitCode, ImmichWorker, LogLevel, SystemMetadataKey } from 'src/enum.js';
 import { ConfigRepository, warnDeprecatedEnv } from 'src/repositories/config.repository.js';
@@ -11,7 +11,6 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { type DB } from 'src/schema/index.js';
 import { buddyMaintenanceState } from 'src/utils/buddy-backup-maintenance.js';
 import { getKyselyConfig } from 'src/utils/database.js';
-import { chooseBootWorkers, isFirstLaunchHandover } from 'src/utils/first-launch.js';
 import { SupervisorStop, WORKER_STOP_MESSAGE } from 'src/utils/shutdown.js';
 
 /**
@@ -53,12 +52,6 @@ class Workers {
    */
   restarting = false;
 
-  /**
-   * FL-295: the "Getting Ready…" worker handed over (the safety copy is done or not needed); the next
-   * bootstrap starts the configured workers without checking again. Used up by that bootstrap.
-   */
-  firstLaunchPrepared = false;
-
   /** FL-165: the edge worker was asked to stop for a restart. */
   stoppingEdge = false;
 
@@ -94,16 +87,7 @@ class Workers {
         return;
       }
 
-      // FL-295: the first start on a library the official server created serves "Getting Ready…" and
-      // takes the safety copy before any worker that migrates starts
-      const prepared = this.firstLaunchPrepared;
-      this.firstLaunchPrepared = false;
-      const toStart = await chooseBootWorkers({ workers, prepared, isFirstLaunch: () => this.isFirstLaunch() });
-      if (this.stopper.stopping) {
-        return;
-      }
-
-      for (const worker of toStart) {
+      for (const worker of workers) {
         this.startWorker(worker);
       }
     }
@@ -148,22 +132,6 @@ class Workers {
       }
 
       throw error;
-    } finally {
-      await kysely.destroy();
-    }
-  }
-
-  /** FL-295: the first start on a library the official server created (see DatabaseRepository). */
-  private async isFirstLaunch(): Promise<boolean> {
-    const { database } = new ConfigRepository().getEnv();
-    const { log: _, ...kyselyConfig } = getKyselyConfig(database.config);
-    const kysely = new Kysely<DB>(kyselyConfig);
-    try {
-      // imported lazily, like the admin module: the supervisor does not load the migration code otherwise
-      const { DatabaseRepository } = await import('./repositories/database.repository.js');
-      const { LoggingRepository } = await import('./repositories/logging.repository.js');
-      const repository = new DatabaseRepository(kysely, LoggingRepository.create('Supervisor'), new ConfigRepository());
-      return await repository.isFirstLaunchOnOfficialLibrary();
     } finally {
       await kysely.destroy();
     }
@@ -227,6 +195,51 @@ class Workers {
       anyWorker = worker;
     } else {
       const worker = new Worker(workerFile);
+      if (name === ImmichWorker.Microservices) {
+        let watchdog: MessagePort | undefined;
+        const children = new Set<number>();
+        const killChildren = () => {
+          for (const pid of children) {
+            try {
+              process.kill(pid, 'SIGKILL');
+            } catch {
+              /* already exited */
+            }
+          }
+          children.clear();
+        };
+        let lastSeen = Date.now();
+        const timer = setInterval(() => {
+          if (watchdog && Date.now() - lastSeen > 15_000) {
+            killChildren();
+            void worker.terminate();
+          }
+        }, 5000);
+        worker.on('message', (message: { type?: string; port?: MessagePort; pid?: number; active?: boolean }) => {
+          if (message.type === 'queue-child' && Number.isSafeInteger(message.pid) && message.pid! > 0) {
+            if (message.active) {
+              children.add(message.pid!);
+            } else {
+              children.delete(message.pid!);
+            }
+          }
+          if (message.type === 'queue-watchdog-port' && message.port) {
+            watchdog = message.port;
+            watchdog.on('message', (event: { type: string }) => {
+              lastSeen = Date.now();
+              if (event.type === 'terminate') {
+                killChildren();
+                void worker.terminate();
+              }
+            });
+          }
+        });
+        worker.once('exit', () => {
+          clearInterval(timer);
+          killChildren();
+          watchdog?.close();
+        });
+      }
 
       kill = async () => void (await worker.terminate());
       stop = () => worker.postMessage(WORKER_STOP_MESSAGE);
@@ -253,15 +266,6 @@ class Workers {
       console.info(`${name} worker stopped`);
       delete this.workers[name];
       this.stopper.workerExited(Object.keys(this.workers).length);
-      return;
-    }
-
-    // FL-295: the safety copy is done (or not needed); start the configured workers, which migrate
-    if (isFirstLaunchHandover(name, exitCode) && !this.restarting) {
-      console.info('The safety copy is ready; starting the server normally');
-      delete this.workers[name];
-      this.firstLaunchPrepared = true;
-      void this.bootstrap();
       return;
     }
 
@@ -322,6 +326,18 @@ class Workers {
           this.startWorker(ImmichWorker.Edge);
         }
       }, delay);
+      return;
+    }
+
+    // Queue watchdog/crash recovery restarts only the execution owner. Expired claims are recovered
+    // by the replacement coordinator; there is never a second live handler for the same claim.
+    if (name === ImmichWorker.Microservices) {
+      delete this.workers[name];
+      setTimeout(() => {
+        if (!this.stopper.stopping && !this.restarting && !this.workers[name]) {
+          this.startWorker(name);
+        }
+      }, 1000);
       return;
     }
 

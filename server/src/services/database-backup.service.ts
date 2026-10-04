@@ -48,6 +48,7 @@ import {
 } from 'src/utils/database-backups.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 
 /** FL-71 (CC-9): how often a backup should be proved to restore before the Overview asks again. */
 export const RESTORE_VERIFICATION_INTERVAL_DAYS = 90;
@@ -257,7 +258,7 @@ export class DatabaseBackupService {
       }
     }
 
-    if (!databaseMajorVersion || !databaseSemver || !satisfies(databaseSemver, '>=14.0.0 <19.0.0')) {
+    if (!databaseMajorVersion || !databaseSemver || !satisfies(databaseSemver, '>=19.0.0 <20.0.0')) {
       this.logger.error(`Database Restore Failure: Unsupported PostgreSQL version: ${databaseVersion}`);
       throw new UnsupportedPostgresError(databaseVersion);
     }
@@ -294,7 +295,7 @@ export class DatabaseBackupService {
     this.logger.log(`Database Backup Starting. Database Version: ${databaseMajorVersion}`);
 
     const timestamp = DateTime.now().toFormat("yyyyLLdd'T'HHmmss");
-    const filename = `${filenamePrefix}immich-db-backup-${timestamp}${label ? `-${label}` : ''}-v${serverVersion.toString()}-pg${databaseVersion.split(' ', 1)[0]}.sql.gz`;
+    const filename = `${filenamePrefix}frameleaf-db-backup-${timestamp}${label ? `-${label}` : ''}-v${serverVersion.toString()}-pg${databaseVersion.split(' ', 1)[0]}.sql.gz`;
     const backupFilePath = path.join(StorageCore.getBaseFolder(StorageFolder.Backups), filename);
     const temporaryFilePath = `${backupFilePath}.tmp`;
 
@@ -312,7 +313,7 @@ export class DatabaseBackupService {
       gzip = this.processRepository.spawnDuplexStream('gzip', ['--rsyncable']);
       const fileStream = this.storageRepository.createWriteStream(temporaryFilePath);
 
-      await pipeline(pgdump, gzip, fileStream);
+      await pipeline(pgdump, gzip, fileStream, { signal: jobSignal() });
       if (verify) {
         await this.verifyDatabaseBackup(temporaryFilePath);
       }
@@ -367,6 +368,42 @@ export class DatabaseBackupService {
 
     if (!DUMP_COMPLETE.test(tail)) {
       throw new DatabaseBackupVerificationError(`${basename(filePath)} does not finish like a complete dump`);
+    }
+  }
+
+  /** Validate before any restore DDL; an Immich dump is a source for import-immich only. */
+  private async assertFrameleafBackup(filePath: string): Promise<void> {
+    const file = this.storageRepository.createPlainReadStream(filePath);
+    const stream = filePath.endsWith('.gz') ? file.pipe(this.storageRepository.createGunzip()) : file;
+    const signal = jobSignal();
+    const abort = () => {
+      file.destroy(signal?.reason);
+      stream.destroy(signal?.reason);
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    let tail = '';
+    let ledger = false;
+    let postgres19 = false;
+    try {
+      signal?.throwIfAborted();
+      for await (const chunk of stream) {
+        advanceJobProgress(chunk.byteLength);
+        const text = tail + chunk.toString();
+        ledger ||= /CREATE TABLE (?:public\.)?"?frameleaf_migrations"?\s*\(/.test(text);
+        postgres19 ||= /-- Dumped from database version 19(?:[.\s]|beta|rc)/.test(text);
+        if (/CREATE SCHEMA "?immich_fork"?|CREATE TABLE (?:public\.)?"?kysely_migrations"?\s*\(/.test(text)) {
+          throw new Error(
+            'This is not a canonical Frameleaf backup. Use import-immich for a supported Immich library.',
+          );
+        }
+        tail = text.slice(-8192);
+      }
+      if (!ledger || !postgres19 || !DUMP_COMPLETE.test(tail))
+        throw new Error('Restore requires a complete Frameleaf PostgreSQL 19 backup.');
+    } finally {
+      signal?.removeEventListener('abort', abort);
+      file.destroy();
+      stream.destroy();
     }
   }
 
@@ -549,7 +586,8 @@ export class DatabaseBackupService {
       }
 
       const backupFilePath = path.join(StorageCore.getBaseFolder(StorageFolder.Backups), filename);
-      await this.storageRepository.stat(backupFilePath); // => check file exists
+      await this.storageRepository.stat(backupFilePath);
+      await this.assertFrameleafBackup(backupFilePath);
 
       let isPgClusterDump = false;
       const version = findDatabaseBackupVersion(filename);
@@ -608,40 +646,17 @@ export class DatabaseBackupService {
         progressCb?.('restore', progress);
       });
 
-      await pipeline(sqlStream, createSqlOwnerTransformStream(databaseUsername), progressSource, psql, progressSink);
+      await pipeline(sqlStream, createSqlOwnerTransformStream(databaseUsername), progressSource, psql, progressSink, {
+        signal: jobSignal(),
+      });
 
       try {
         await fence?.assert();
         progressCb?.('migrations', 0.9);
 
-        if (await this.databaseRepository.isCertifiedReturnStartup()) {
-          await this.databaseRepository.assertCertifiedReturnLedger();
-        }
-        const migrationMode = await this.databaseRepository.detectMigrationMode();
+        await this.databaseRepository.runMigrations();
         await fence?.assert();
-        // Mirror the startup routing in DatabaseService: only post-cutover
-        // isolated and adopted official-origin databases are certified-upstream.
-        // A restored blank/fresh database has no ledger at all and still needs
-        // the legacy-fork public-schema migrations (they create plugin_method,
-        // whose upstream creator is an audited provider gap), or later upstream
-        // migrations that ALTER those tables fail against a schema that never
-        // got them.
-        await (migrationMode === 'isolated' || migrationMode === 'official-origin'
-          ? this.databaseRepository.runOfficialMigrations()
-          : this.databaseRepository.runMigrations());
-        if (migrationMode === 'isolated') {
-          await fence?.assert();
-          // FL-180: as at startup, a restored library past the certified cutover receives the newer
-          // Frameleaf public migrations before the `immich_fork` migrations that may build on them.
-          const { applied } = await this.databaseRepository.withLock(DatabaseLock.Migrations, () =>
-            this.databaseRepository.applyIsolatedFrameleafMigrations('startup'),
-          );
-          for (const name of applied) {
-            this.logger.log(`Frameleaf migration "${name}" succeeded`);
-          }
-        }
-        await fence?.assert();
-        await this.databaseRepository.runForkMigrations();
+        await this.databaseRepository.resetTransientExecutionState();
 
         const hasAdmin = await this.userRepository.hasAdmin();
         if (!hasAdmin) {
@@ -715,17 +730,6 @@ const SQL_RESET_SCHEMA = (username: string) => `
   -- re-create the default schema
   DROP SCHEMA public CASCADE;
   CREATE SCHEMA public;
-
-  -- The fork's sidecar schema lives outside public, so dropping public alone
-  -- would leave a stale immich_fork behind: its rows would no longer match the
-  -- restored public tables, and its surviving migration ledger would make the
-  -- half-wiped database look 'isolated' to detectMigrationMode — routing the
-  -- restore to the certified official migrator, which omits the migrations
-  -- that create the fork's public tables. A fork backup carries immich_fork in
-  -- the same dump, so it is restored alongside public; restoring an official
-  -- backup correctly yields a fork-free database that runForkMigrations
-  -- re-initialises.
-  DROP SCHEMA IF EXISTS immich_fork CASCADE;
 
   -- restore access to schema
   GRANT ALL ON SCHEMA public TO "${username}";

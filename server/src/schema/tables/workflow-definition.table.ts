@@ -1,5 +1,5 @@
-import { Column, ForeignKeyColumn, Table, UpdateDateColumn } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { Column, ForeignKeyColumn, Table, UpdateDateColumn } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { WorkflowTable } from 'src/schema/tables/workflow.table.js';
 
 /** One ordered step of a stored workflow definition (FL-82). */

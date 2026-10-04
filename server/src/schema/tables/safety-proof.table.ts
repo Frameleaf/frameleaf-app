@@ -1,5 +1,5 @@
-import { Column, ForeignKeyColumn, PrimaryColumn, Table } from '@immich/sql-tools';
-import type { Generated, Timestamp } from '@immich/sql-tools';
+import { Column, ForeignKeyColumn, PrimaryColumn, Table } from '@frameleaf/sql-tools';
+import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { CloudBackupManifestTable } from 'src/schema/tables/cloud-backup.table.js';
 import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';

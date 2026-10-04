@@ -9,7 +9,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -31,7 +31,7 @@ const setup = (db?: Kysely<DB>) => {
       AssetRepository,
       ConfigRepository,
       SystemMetadataRepository,
-      ForkSchemaRepository,
+      AssetChecksumRepository,
       PhysicalFileRepository,
       // FL-81: a full run gets an id for its batches (`startCheckRun`).
       CryptoRepository,

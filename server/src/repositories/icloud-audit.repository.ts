@@ -7,7 +7,7 @@ import type { MediaIntegrityResult } from 'src/services/media-integrity.service.
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudVerifyDto, ICloudVerifyResponseDto } from 'src/dtos/icloud-identity.dto.js';
 import { MediaOperationDestination, MediaOperationKind, MediaOperationStatus, UserMetadataKey } from 'src/enum.js';
-import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { ICloudConnection, ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -17,7 +17,6 @@ import { identityRoleOf, parseCloudIdentifier } from 'src/utils/icloud-identity.
 import { resourcesForICloudAsset } from 'src/utils/icloud-records.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
-
 export type AuditAuthority = {
   auditRequestId: string;
   operationId: string;
@@ -67,16 +66,17 @@ export type ICloudAuditRow = AuditRowFields &
         batchOrdinal: number;
       }
   );
-type Outcome = { id: string; state: 'queued' | 'unavailable' };
+type Outcome = {
+  id: string;
+  state: 'queued' | 'unavailable';
+};
 class Replay extends Error {
   constructor(readonly response: ICloudVerifyResponseDto) {
     super('audit_replay');
   }
 }
-
 /** The recovery prefix is shared by match publication, audit allocation and housekeeping. */
 export async function lockAuditOwner(db: Transaction<DB>, ownerId: string, digest?: Buffer, receiptCleanup = false) {
-  await lockPublicForkWrites(db);
   if (digest) {
     const key = createHash('sha1')
       .update(`icloud-content:${ownerId}:${digest.toString('hex')}`)
@@ -93,7 +93,6 @@ export async function lockAuditOwner(db: Transaction<DB>, ownerId: string, diges
     throw new Error('audit_owner_unavailable');
   }
 }
-
 /** No credentials or serialized elevation survive a worker restart. */
 async function currentAuth(
   db: Kysely<DB>,
@@ -132,7 +131,9 @@ async function currentAuth(
   const suppression = getPreferences(metadata).privacy.suppression;
   // Preferences/asset locks can wait after the first session read. Database time, not a
   // serialized session or worker clock, decides whether elevation still exists.
-  const live = await sql<{ elevated: boolean }>`SELECT ("pinExpiresAt">clock_timestamp()) IS TRUE AS elevated
+  const live = await sql<{
+    elevated: boolean;
+  }>`SELECT ("pinExpiresAt">clock_timestamp()) IS TRUE AS elevated
     FROM public.session WHERE id=${sessionId}::uuid AND "userId"=${ownerId}::uuid
       AND ("expiresAt" IS NULL OR "expiresAt">clock_timestamp())`.execute(db);
   if (live.rows.length === 0) {
@@ -145,15 +146,18 @@ async function currentAuth(
     ...(!elevated && { hiddenContent: { userId: ownerId, includeNsfw: false, ...suppression } }),
   };
 }
-
 export type GuardedAudit = {
-  request: Extract<ICloudAuditRow, { purpose: 'manual-session' }>;
+  request: Extract<
+    ICloudAuditRow,
+    {
+      purpose: 'manual-session';
+    }
+  >;
   source: ICloudResource;
   connection: ICloudConnection;
   private: boolean;
   requiresElevation: boolean;
 };
-
 /** Called inside the recovery transaction AFTER its fork/digest/user prefix, before the audit resource. */
 export async function guardAudit(
   db: Kysely<DB>,
@@ -162,7 +166,7 @@ export async function guardAudit(
   lock = false,
   requireClaim = true,
 ): Promise<GuardedAudit | undefined> {
-  const request = await sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit
+  const request = await sql<ICloudAuditRow>`SELECT * FROM public.icloud_identity_audit
     WHERE id=${authority.auditRequestId}::uuid AND "ownerId"=${ownerId}::uuid`
     .execute(db)
     .then(({ rows }) => rows[0]);
@@ -174,7 +178,7 @@ export async function guardAudit(
   ) {
     return;
   }
-  const connection = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
+  const connection = await sql<ICloudConnection>`SELECT * FROM public.icloud_connection
     WHERE id=${request.connectionId}::uuid AND "ownerId"=${ownerId}::uuid AND state='connected'
       AND "encryptedSession" IS NOT NULL AND "lastError" IS DISTINCT FROM 'owner_removed'
     ${lock ? sql`FOR SHARE` : sql``}`
@@ -192,7 +196,7 @@ export async function guardAudit(
   if (operation.rows.length === 0) {
     return;
   }
-  const current = await sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit
+  const current = await sql<ICloudAuditRow>`SELECT * FROM public.icloud_identity_audit
     WHERE id=${request.id}::uuid AND purpose='manual-session' AND result IN ('queued','running') ${lock ? sql`FOR UPDATE` : sql``}`.execute(
     db,
   );
@@ -201,7 +205,7 @@ export async function guardAudit(
     return;
   }
   const source = await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize"
-    FROM immich_fork.icloud_resource WHERE id=${request.sourceResourceId}::uuid AND "auditRequestId" IS NULL
+    FROM public.icloud_resource WHERE id=${request.sourceResourceId}::uuid AND "auditRequestId" IS NULL
       AND "connectionId"=${connection.id}::uuid AND "ownerId"=${ownerId}::uuid
       AND coalesce((source->>'current')::boolean,true)
       ${lock ? sql`FOR SHARE` : sql``}`
@@ -222,7 +226,7 @@ export async function guardAudit(
     masterId: string | null;
     recordType: string;
   }>`
-    SELECT "recordId", revision, fields, "masterId", "recordType" FROM immich_fork.icloud_record
+    SELECT "recordId", revision, fields, "masterId", "recordType" FROM public.icloud_record
     WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${source.libraryKey} AND NOT deleted
       AND "recordId" IN (${source.sourceAssetId}, ${String(source.source.sourceMasterId ?? '')})
     ORDER BY "recordId" ${lock ? sql`FOR SHARE` : sql``}`
@@ -260,7 +264,7 @@ export async function guardAudit(
     return;
   }
   if (connection.config.albums.length > 0) {
-    const members = await sql`SELECT 1 FROM immich_fork.icloud_membership WHERE "connectionId"=${connection.id}::uuid
+    const members = await sql`SELECT 1 FROM public.icloud_membership WHERE "connectionId"=${connection.id}::uuid
       AND "libraryKey"=${source.libraryKey} AND "sourceAssetId"=${source.sourceAssetId} AND "sourcePresent"
       AND ("libraryKey"||':'||"sourceAlbumId")=ANY(${connection.config.albums}::text[])
       ${lock ? sql`FOR SHARE` : sql``}`.execute(db);
@@ -268,7 +272,7 @@ export async function guardAudit(
       return;
     }
   }
-  const identity = await sql`SELECT id FROM immich_fork.icloud_source_identity WHERE id=${request.identityId}::uuid
+  const identity = await sql`SELECT id FROM public.icloud_source_identity WHERE id=${request.identityId}::uuid
     AND "ownerId"=${ownerId}::uuid AND "assetId"=${request.originalAssetId}::uuid AND sha256=${request.expectedSha256}
     AND "cplAssetRecordName"=upper(${source.sourceAssetId}) AND role=${identityRoleOf[source.role] ?? ''}
     AND "editVersion"=CASE WHEN ${source.role.startsWith('edited-')}
@@ -281,7 +285,7 @@ export async function guardAudit(
     return;
   }
   if (requireClaim && request.itemClaimId) {
-    const claimed = await sql`SELECT 1 FROM immich_fork.icloud_claim WHERE id=${request.itemClaimId}::uuid
+    const claimed = await sql`SELECT 1 FROM public.icloud_claim WHERE id=${request.itemClaimId}::uuid
       AND "ownerId"=${ownerId}::uuid AND "cplAssetRecordName"=upper(${source.sourceAssetId})
       AND holder=${`icloud-sync:audit:${authority.operationId}`} AND "expiresAt">clock_timestamp()
       ${lock ? sql`FOR SHARE` : sql``}`.execute(db);
@@ -329,11 +333,12 @@ export async function guardAudit(
     requiresElevation: !visible,
   };
 }
-
 @Injectable()
 export class ICloudAuditRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   async submit(
     auth: AuthDto,
     dto: ICloudVerifyDto,
@@ -373,14 +378,21 @@ export class ICloudAuditRepository {
             if (snapshot.connectionId !== connectionId || canonicalJson(snapshot.input) !== canonicalJson(input)) {
               throw new ConflictException('icloud_audit_request_key_conflict');
             }
-            throw new Replay({ operationId: previous.id, items: (previous.result as { items: Outcome[] }).items });
+            throw new Replay({
+              operationId: previous.id,
+              items: (
+                previous.result as {
+                  items: Outcome[];
+                }
+              ).items,
+            });
           }
           await lockAuditOwner(db, auth.user.id);
           const submitting = await currentAuth(db, auth.user.id, auth.session!.id, true);
           if (!submitting) {
             throw new ForbiddenException('icloud_audit_session_required');
           }
-          const connection = await sql<ICloudConnection>`SELECT * FROM immich_fork.icloud_connection
+          const connection = await sql<ICloudConnection>`SELECT * FROM public.icloud_connection
           WHERE id=${connectionId}::uuid AND "ownerId"=${auth.user.id}::uuid AND state='connected'
             AND "encryptedSession" IS NOT NULL FOR SHARE`
             .execute(db)
@@ -404,17 +416,20 @@ export class ICloudAuditRepository {
             const identities = await sql<{
               id: string;
               sha256: Buffer;
-            }>`SELECT id,sha256 FROM immich_fork.icloud_source_identity
+            }>`SELECT id,sha256 FROM public.icloud_source_identity
             WHERE "ownerId"=${auth.user.id}::uuid AND "assetId"=${item.assetId}::uuid
               AND "cplAssetRecordName"=${parsed.cplAssetRecordName} AND role=${item.role} AND "editVersion"=${item.editVersion}
               AND sha256=${Buffer.from(safe.sha256, 'hex')} FOR SHARE`.execute(db);
             const sourceRows = await sql<
-              ICloudResource & { sourceRevision: string; masterRevision: string }
+              ICloudResource & {
+                sourceRevision: string;
+                masterRevision: string;
+              }
             >`SELECT r.*,r."expectedSize"::float8 AS "expectedSize",
               a.revision AS "sourceRevision",m.revision AS "masterRevision"
-            FROM immich_fork.icloud_resource r JOIN immich_fork.icloud_record a
+            FROM public.icloud_resource r JOIN public.icloud_record a
               ON a."connectionId"=r."connectionId" AND a."libraryKey"=r."libraryKey" AND a."recordId"=r."sourceAssetId" AND NOT a.deleted
-            JOIN immich_fork.icloud_record m ON m."connectionId"=a."connectionId" AND m."libraryKey"=a."libraryKey" AND m."recordId"=a."masterId" AND NOT m.deleted
+            JOIN public.icloud_record m ON m."connectionId"=a."connectionId" AND m."libraryKey"=a."libraryKey" AND m."recordId"=a."masterId" AND NOT m.deleted
             WHERE r."connectionId"=${connection.id}::uuid AND r."ownerId"=${auth.user.id}::uuid AND r."auditRequestId" IS NULL
               AND upper(r."sourceAssetId")=${parsed.cplAssetRecordName} AND coalesce((r.source->>'current')::boolean,true)
               AND (CASE r.role WHEN 'original' THEN 'original' WHEN 'motion' THEN 'live-motion' WHEN 'raw' THEN 'raw-alternate' ELSE 'edit-render' END)=${item.role}
@@ -437,7 +452,7 @@ export class ICloudAuditRepository {
             const member =
               config.albums.length === 0 ||
               (
-                await sql`SELECT 1 FROM immich_fork.icloud_membership
+                await sql`SELECT 1 FROM public.icloud_membership
             WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${source.libraryKey}
               AND "sourceAssetId"=${source.sourceAssetId} AND "sourcePresent"
               AND ("libraryKey"||':'||"sourceAlbumId")=ANY(${config.albums}::text[])`.execute(db)
@@ -457,7 +472,7 @@ export class ICloudAuditRepository {
               .where('id', '=', item.assetId)
               .executeTakeFirstOrThrow();
             const id = randomUUID();
-            await sql`INSERT INTO immich_fork.icloud_identity_audit
+            await sql`INSERT INTO public.icloud_identity_audit
             (id,"ownerId","connectionId","sessionId","identityId","originalAssetId","sourceResourceId","expectedSha256",snapshot)
             VALUES (${id}::uuid,${auth.user.id}::uuid,${connection.id}::uuid,${auth.session!.id}::uuid,${identities.rows[0].id}::uuid,
               ${item.assetId}::uuid,${source.id}::uuid,${identities.rows[0].sha256},${{
@@ -494,7 +509,7 @@ export class ICloudAuditRepository {
           };
         },
         async (db, created) => {
-          await sql`UPDATE immich_fork.icloud_identity_audit SET "operationId"=${created.id}::uuid
+          await sql`UPDATE public.icloud_identity_audit SET "operationId"=${created.id}::uuid
           WHERE id=ANY(${created.snapshot.auditIds as string[]}::uuid[])`.execute(db);
           if ((created.snapshot.auditIds as string[]).length === 0) {
             await db
@@ -513,28 +528,22 @@ export class ICloudAuditRepository {
       throw error;
     }
   }
-
   async get(id: string, ownerId: string): Promise<ICloudAuditRow | undefined> {
-    return sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit WHERE id=${id}::uuid AND "ownerId"=${ownerId}::uuid`
+    return sql<ICloudAuditRow>`SELECT * FROM public.icloud_identity_audit WHERE id=${id}::uuid AND "ownerId"=${ownerId}::uuid`
       .execute(this.db)
       .then(({ rows }) => rows[0]);
   }
-
   async check(authority: AuditAuthority, ownerId: string, requireClaim = true) {
     return guardAudit(this.db, authority, ownerId, false, requireClaim);
   }
-
   async setItemClaim(id: string, ownerId: string, claimId: string) {
     await this.db.transaction().execute(async (db) => {
-      await lockPublicForkWrites(db);
-      await sql`UPDATE immich_fork.icloud_identity_audit SET "itemClaimId"=${claimId}::uuid
+      await sql`UPDATE public.icloud_identity_audit SET "itemClaimId"=${claimId}::uuid
         WHERE id=${id}::uuid AND "ownerId"=${ownerId}::uuid AND result IN ('queued','running')`.execute(db);
     });
   }
-
   async allocate(authority: AuditAuthority, ownerId: string): Promise<ICloudResource | undefined> {
     return this.db.transaction().execute(async (db) => {
-      await lockPublicForkWrites(db);
       await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(db);
       await lockAuditOwner(db, ownerId);
       const guarded = await guardAudit(db, authority, ownerId, true);
@@ -543,7 +552,7 @@ export class ICloudAuditRepository {
       }
       const { source, connection, request } = guarded;
       const existing =
-        await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize" FROM immich_fork.icloud_resource
+        await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize" FROM public.icloud_resource
         WHERE "auditRequestId"=${request.id}::uuid FOR UPDATE`
           .execute(db)
           .then(({ rows }) => rows[0]);
@@ -555,18 +564,24 @@ export class ICloudAuditRepository {
       }
       const {
         rows: [budget],
-      } = await sql<{ used: number; active: number }>`SELECT coalesce(sum("reservedBytes"),0)::float8 AS used,
+      } = await sql<{
+        used: number;
+        active: number;
+      }>`SELECT coalesce(sum("reservedBytes"),0)::float8 AS used,
         count(*) FILTER (WHERE "leaseExpiresAt">clock_timestamp())::int AS active
-        FROM immich_fork.icloud_resource WHERE "connectionId"=${connection.id}::uuid AND status NOT IN ('finalized','removed')`.execute(
+        FROM public.icloud_resource WHERE "connectionId"=${connection.id}::uuid AND status NOT IN ('finalized','removed')`.execute(
         db,
       );
       const globalLimit = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES') ?? 100 * 1024 ** 3);
       const concurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? 4);
       const {
         rows: [global],
-      } = await sql<{ used: number; active: number }>`SELECT coalesce(sum("reservedBytes"),0)::float8 AS used,
+      } = await sql<{
+        used: number;
+        active: number;
+      }>`SELECT coalesce(sum("reservedBytes"),0)::float8 AS used,
         count(*) FILTER (WHERE "leaseExpiresAt">clock_timestamp())::int AS active
-        FROM immich_fork.icloud_resource WHERE status NOT IN ('finalized','removed')`.execute(db);
+        FROM public.icloud_resource WHERE status NOT IN ('finalized','removed')`.execute(db);
       const bytes = existing?.reservedBytes ? 0 : source.expectedSize;
       if (
         !Number.isSafeInteger(source.expectedSize) ||
@@ -582,15 +597,15 @@ export class ICloudAuditRepository {
         return;
       }
       const lease = randomUUID();
-      await sql`UPDATE immich_fork.icloud_identity_audit SET result='running' WHERE id=${request.id}::uuid`.execute(db);
+      await sql`UPDATE public.icloud_identity_audit SET result='running' WHERE id=${request.id}::uuid`.execute(db);
       if (existing) {
-        return sql<ICloudResource>`UPDATE immich_fork.icloud_resource SET "leaseToken"=${lease}::uuid,
+        return sql<ICloudResource>`UPDATE public.icloud_resource SET "leaseToken"=${lease}::uuid,
           "leaseExpiresAt"=clock_timestamp()+interval '30 minutes' WHERE id=${existing.id}::uuid
           RETURNING *,"expectedSize"::float8 AS "expectedSize"`
           .execute(db)
           .then(({ rows }) => rows[0]);
       }
-      return sql<ICloudResource>`INSERT INTO immich_fork.icloud_resource
+      return sql<ICloudResource>`INSERT INTO public.icloud_resource
         ("connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize","auditRequestId","reservedBytes","leaseToken","leaseExpiresAt")
         VALUES (${connection.id}::uuid,${ownerId}::uuid,${source.libraryKey},${source.library}::jsonb,${source.sourceAssetId},${source.recordId},${source.resourceKey},
           ${source.role},${source.fingerprint},${{ ...source.source, _sync: undefined }}::jsonb,${source.expectedSize},${request.id}::uuid,${source.expectedSize},${lease}::uuid,clock_timestamp()+interval '30 minutes')
@@ -599,7 +614,6 @@ export class ICloudAuditRepository {
         .then(({ rows }) => rows[0]);
     });
   }
-
   async publishMatch(
     authority: AuditAuthority,
     resource: ICloudResource,
@@ -612,7 +626,7 @@ export class ICloudAuditRepository {
       if (!guarded || !guarded.request.expectedSha256.equals(verified.sha256)) {
         return false;
       }
-      const held = await sql`SELECT 1 FROM immich_fork.icloud_resource WHERE id=${resource.id}::uuid
+      const held = await sql`SELECT 1 FROM public.icloud_resource WHERE id=${resource.id}::uuid
         AND "auditRequestId"=${authority.auditRequestId}::uuid AND "leaseToken"=${resource.leaseToken}::uuid
         AND "stagingPath"=${resource.stagingPath}
         AND "leaseExpiresAt">clock_timestamp() AND status NOT IN ('committed','finalized','removed') FOR UPDATE`.execute(
@@ -631,7 +645,7 @@ export class ICloudAuditRepository {
       ) {
         return false;
       }
-      const stillHeld = await sql`SELECT 1 FROM immich_fork.icloud_resource WHERE id=${resource.id}::uuid
+      const stillHeld = await sql`SELECT 1 FROM public.icloud_resource WHERE id=${resource.id}::uuid
         AND "leaseToken"=${resource.leaseToken}::uuid AND "leaseExpiresAt">clock_timestamp()
         AND "auditRequestId"=${authority.auditRequestId}::uuid AND "stagingPath"=${resource.stagingPath}`.execute(db);
       if (stillHeld.rows.length === 0) {
@@ -641,7 +655,7 @@ export class ICloudAuditRepository {
         id: resource.id,
         leaseToken: resource.leaseToken!,
       });
-      await sql`UPDATE immich_fork.icloud_resource SET status='committed',sha256=${verified.sha256},sha1=${verified.sha1},
+      await sql`UPDATE public.icloud_resource SET status='committed',sha256=${verified.sha256},sha1=${verified.sha1},
         verification=${{
           kind: 'audit-match-staging',
           resourceId: resource.id,
@@ -655,14 +669,13 @@ export class ICloudAuditRepository {
       return true;
     });
   }
-
   /** Credential-independent receipt cleanup; no original/source/session access or proof writes. */
   async housekeeping(process: (resource: ICloudResource, db: Kysely<DB>) => Promise<void>): Promise<void> {
     const candidates = await sql<{
       id: string;
       ownerId: string;
-    }>`SELECT r.id,r."ownerId" FROM immich_fork.icloud_resource r
-      JOIN immich_fork.icloud_identity_audit q ON q.id=r."auditRequestId" AND q."ownerId"=r."ownerId"
+    }>`SELECT r.id,r."ownerId" FROM public.icloud_resource r
+      JOIN public.icloud_identity_audit q ON q.id=r."auditRequestId" AND q."ownerId"=r."ownerId"
       WHERE r.status='committed' AND q.result IN ('match','mismatch')
         AND (r."nextAttemptAt" IS NULL OR r."nextAttemptAt"<=clock_timestamp())
       ORDER BY r.id LIMIT 10`.execute(this.db);
@@ -673,22 +686,22 @@ export class ICloudAuditRepository {
           connectionId: string;
           auditRequestId: string;
         }>`SELECT "connectionId","auditRequestId"
-          FROM immich_fork.icloud_resource WHERE id=${candidate.id}::uuid AND "ownerId"=${candidate.ownerId}::uuid`
+          FROM public.icloud_resource WHERE id=${candidate.id}::uuid AND "ownerId"=${candidate.ownerId}::uuid`
           .execute(db)
           .then(({ rows }) => rows[0]);
         if (!binding) {
           return;
         }
-        await sql`SELECT id FROM immich_fork.icloud_connection WHERE id=${binding.connectionId}::uuid AND "ownerId"=${candidate.ownerId}::uuid FOR SHARE`.execute(
+        await sql`SELECT id FROM public.icloud_connection WHERE id=${binding.connectionId}::uuid AND "ownerId"=${candidate.ownerId}::uuid FOR SHARE`.execute(
           db,
         );
         const request =
-          await sql<ICloudAuditRow>`SELECT * FROM immich_fork.icloud_identity_audit WHERE id=${binding.auditRequestId}::uuid
+          await sql<ICloudAuditRow>`SELECT * FROM public.icloud_identity_audit WHERE id=${binding.auditRequestId}::uuid
           AND "ownerId"=${candidate.ownerId}::uuid AND result IN ('match','mismatch') FOR UPDATE`
             .execute(db)
             .then(({ rows }) => rows[0]);
         const resource =
-          await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize" FROM immich_fork.icloud_resource
+          await sql<ICloudResource>`SELECT *,"expectedSize"::float8 AS "expectedSize" FROM public.icloud_resource
           WHERE id=${candidate.id}::uuid AND "ownerId"=${candidate.ownerId}::uuid AND status='committed'
           FOR UPDATE SKIP LOCKED`
             .execute(db)
@@ -742,26 +755,28 @@ export class ICloudAuditRepository {
         }
         try {
           await process(resource, db);
-          await sql`UPDATE immich_fork.icloud_resource SET status='finalized',"reservedBytes"=0,"pendingJobs"='[]'::jsonb,
+          await sql`UPDATE public.icloud_resource SET status='finalized',"reservedBytes"=0,"pendingJobs"='[]'::jsonb,
             "leaseToken"=NULL,"leaseExpiresAt"=NULL,"lastError"=NULL,"nextAttemptAt"=NULL WHERE id=${resource.id}::uuid`.execute(
             db,
           );
         } catch {
-          await sql`UPDATE immich_fork.icloud_resource SET "lastError"='audit_cleanup_retry',"nextAttemptAt"=clock_timestamp()+interval '5 minutes'
+          await sql`UPDATE public.icloud_resource SET "lastError"='audit_cleanup_retry',"nextAttemptAt"=clock_timestamp()+interval '5 minutes'
             WHERE id=${resource.id}::uuid`.execute(db);
         }
       });
     }
   }
 }
-
 /** Called only inside guarded publication, never by housekeeping. */
 export async function publishAudit(
   db: Kysely<DB>,
   authority: AuditAuthority,
   ownerId: string,
   result: 'match' | 'mismatch',
-  resource: { id: string; leaseToken: string },
+  resource: {
+    id: string;
+    leaseToken: string;
+  },
   assetId?: string,
 ) {
   const guarded = await guardAudit(db, authority, ownerId, true);
@@ -770,7 +785,7 @@ export async function publishAudit(
   }
   if (result === 'mismatch') {
     const copy =
-      await sql`SELECT id FROM immich_fork.icloud_resource WHERE "auditRequestId"=${authority.auditRequestId}::uuid
+      await sql`SELECT id FROM public.icloud_resource WHERE "auditRequestId"=${authority.auditRequestId}::uuid
       AND "ownerId"=${ownerId}::uuid AND status='committed' AND "assetId"=${assetId ?? null}::uuid
       AND "assetId"<>${guarded.request.originalAssetId}::uuid AND sha256 IS NOT NULL AND sha256<>${guarded.request.expectedSha256}`.execute(
         db,
@@ -791,7 +806,7 @@ export async function publishAudit(
   }
   // All row locks, privacy reads, file validation and mismatch destination writes precede
   // this statement. Locks serialize mutations but cannot stop time-based expiry.
-  const published = await sql`UPDATE immich_fork.icloud_source_identity SET "lastAuditResult"=${result},
+  const published = await sql`UPDATE public.icloud_source_identity SET "lastAuditResult"=${result},
     "lastVerifiedAt"=CASE WHEN ${result}='match' THEN clock_timestamp() ELSE NULL END
     WHERE id=${guarded.request.identityId}::uuid AND sha256=${guarded.request.expectedSha256}
       AND EXISTS (SELECT 1 FROM public.session WHERE id=${guarded.request.sessionId}::uuid AND "userId"=${ownerId}::uuid
@@ -800,16 +815,16 @@ export async function publishAudit(
       AND EXISTS (SELECT 1 FROM public.media_operation WHERE id=${authority.operationId}::uuid AND "ownerId"=${ownerId}::uuid
         AND "claimToken"=${authority.operationClaimToken}::uuid AND "claimExpiresAt">clock_timestamp()
         AND status IN ('preparing','rendering','validating') AND "cancelRequestedAt" IS NULL AND "pauseRequestedAt" IS NULL)
-      AND EXISTS (SELECT 1 FROM immich_fork.icloud_claim WHERE id=${guarded.request.itemClaimId}::uuid
+      AND EXISTS (SELECT 1 FROM public.icloud_claim WHERE id=${guarded.request.itemClaimId}::uuid
         AND "ownerId"=${ownerId}::uuid AND holder=${`icloud-sync:audit:${authority.operationId}`}
         AND "expiresAt">clock_timestamp())
-      AND EXISTS (SELECT 1 FROM immich_fork.icloud_resource WHERE id=${resource.id}::uuid
+      AND EXISTS (SELECT 1 FROM public.icloud_resource WHERE id=${resource.id}::uuid
         AND "ownerId"=${ownerId}::uuid AND "auditRequestId"=${authority.auditRequestId}::uuid
         AND "leaseToken"=${resource.leaseToken}::uuid AND "leaseExpiresAt">clock_timestamp()
         AND status NOT IN ('removed','finalized')) RETURNING id`.execute(db);
   if (published.rows.length === 0) {
     throw new Error('audit_authority_expired');
   }
-  await sql`UPDATE immich_fork.icloud_identity_audit SET result=${result},"verifiedAt"=clock_timestamp(),"resultAssetId"=${assetId ?? null}::uuid
+  await sql`UPDATE public.icloud_identity_audit SET result=${result},"verifiedAt"=clock_timestamp(),"resultAssetId"=${assetId ?? null}::uuid
     WHERE id=${authority.auditRequestId}::uuid`.execute(db);
 }

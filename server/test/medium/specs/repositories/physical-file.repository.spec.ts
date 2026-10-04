@@ -7,7 +7,7 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
@@ -96,35 +96,6 @@ describe(PhysicalFileRepository.name, () => {
     });
   });
 
-  describe('withLockedNormalizationAsset', () => {
-    it('records the checksum evidence as a JSON object, not as JSON text', async () => {
-      const { ctx, sut } = setup();
-      const { user } = await ctx.newUser();
-      const asset = await newAssetWithSize(ctx, user.id);
-      await sut.ensureOriginalPhysicalFile(asset.id);
-      const evidence = { sourcePath: asset.originalPath, upstreamPath: asset.originalPath, sizeInBytes: 1000 };
-
-      await sut.withLockedNormalizationAsset(asset.id, randomUUID(), ({ commit }) =>
-        commit({
-          evidence,
-          linkCount: 1,
-          sha1: randomBytes(20),
-          sha256: randomBytes(32),
-          sizeInBytes: 1000,
-          upstreamPath: asset.originalPath,
-          verifiedPaths: [asset.originalPath],
-        }),
-      );
-
-      const { rows } = await sql<{ type: string; evidence: unknown }>`
-        SELECT jsonb_typeof(evidence) AS type, evidence
-        FROM immich_fork.asset_checksum
-        WHERE "assetId" = ${asset.id}::uuid
-      `.execute(defaultDatabase);
-      expect(rows).toEqual([{ type: 'object', evidence }]);
-    });
-  });
-
   describe('deleteUnreferencedPath (refcount gate)', () => {
     it('counts asset originalPath references and refuses to unlink while any remain', async () => {
       const { ctx, sut } = setup();
@@ -167,55 +138,44 @@ describe(PhysicalFileRepository.name, () => {
     });
   });
 
-  describe('deleteUnreferencedPath retained references (FL-44)', () => {
-    const mapTo = async (assetId: string, upstreamPath: string, physicalFileId: string | null = null) => {
-      await sql`
-        INSERT INTO immich_fork.asset_physical_file ("assetId", "physicalFileId", "upstreamPath")
-        VALUES (${assetId}::uuid, ${physicalFileId}::uuid, ${upstreamPath})
-      `.execute(defaultDatabase);
-    };
-
-    it('keeps a path only a live asset fork mapping names, and frees it with the asset', async () => {
+  describe('canonical retained references', () => {
+    it('retains a physical original through its asset pointer even when the asset path differs', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const asset = await newAssetWithSize(ctx, user.id);
-      const upstreamPath = `/data/library/${randomUUID()}/upstream.jpg`;
-      await mapTo(asset.id, upstreamPath);
+      const physical = (await sut.ensureOriginalPhysicalFile(asset.id))!;
+      await defaultDatabase
+        .updateTable('asset')
+        .set({ originalPath: `/data/other/${randomUUID()}.jpg` })
+        .where('id', '=', asset.id)
+        .execute();
       const unlink = vi.fn().mockResolvedValue(undefined);
-
-      await expect(sut.deleteUnreferencedPath(upstreamPath, unlink)).resolves.toEqual({
+      await expect(sut.deleteUnreferencedPath(physical.path, unlink)).resolves.toEqual({
         deleted: false,
         references: 1,
       });
       expect(unlink).not.toHaveBeenCalled();
+    });
 
-      // the mapping of an asset that no longer exists holds nothing
-      await defaultDatabase.deleteFrom('asset').where('id', '=', asset.id).execute();
-      await expect(sut.deleteUnreferencedPath(upstreamPath, unlink)).resolves.toEqual({
-        deleted: true,
-        references: 0,
-      });
+    it('keeps a Buddy capture path until the reference is released', async () => {
+      const { sut } = setup();
+      const path = `/data/library/${randomUUID()}.jpg`;
+      const runId = randomUUID();
+      await sql`INSERT INTO public.buddy_backup_reference ("runId", path) VALUES (${runId}::uuid, ${path})`.execute(
+        defaultDatabase,
+      );
+      const unlink = vi.fn().mockResolvedValue(undefined);
+      await expect(sut.deleteUnreferencedPath(path, unlink)).resolves.toEqual({ deleted: false, references: 1 });
+      expect(unlink).not.toHaveBeenCalled();
+      await sql`UPDATE public.buddy_backup_reference SET released = true WHERE "runId" = ${runId}::uuid`.execute(
+        defaultDatabase,
+      );
+      await expect(sut.deleteUnreferencedPath(path, unlink)).resolves.toEqual({ deleted: true, references: 0 });
       expect(unlink).toHaveBeenCalledTimes(1);
     });
+  });
 
-    it('keeps the canonical path of a fork physical file a live mapping still uses', async () => {
-      const { ctx, sut } = setup();
-      const { user } = await ctx.newUser();
-      const asset = await newAssetWithSize(ctx, user.id);
-      const canonicalPath = `/data/upload/${randomUUID()}-canonical.jpg`;
-      const physicalFileId = randomUUID();
-      await sql`
-        INSERT INTO immich_fork.physical_file
-          (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath", "createdAt", "updatedAt")
-        VALUES (${physicalFileId}::uuid, ${asset.id}::uuid, 'original', ${randomBytes(20)}, 1000, ${canonicalPath}, now(), now())
-      `.execute(defaultDatabase);
-      await mapTo(asset.id, `/data/library/${randomUUID()}/upstream.jpg`, physicalFileId);
-      const unlink = vi.fn().mockResolvedValue(undefined);
-
-      await expect(sut.deleteUnreferencedPath(canonicalPath, unlink)).resolves.toMatchObject({ deleted: false });
-      expect(unlink).not.toHaveBeenCalled();
-    });
-
+  describe('deleteUnreferencedPath retained references (FL-44)', () => {
     it('keeps a preservation package until it is removed, and a restoration result', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();

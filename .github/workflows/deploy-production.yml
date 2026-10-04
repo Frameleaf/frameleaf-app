@@ -4,7 +4,7 @@
 # A manual dispatch of fork/main. It replaces the former automatic Frameleaf Release workflow and keeps
 # its promotion logic (.github/frameleaf-release.cjs `release`):
 #   release  - verify that the named candidate (the exact fork/main commit, or the digest of its
-#              frameleaf-server candidate) is a qualified build of that commit (a successful same-SHA
+#              frameleaf-server candidate) is a verified build of that commit (a successful same-SHA
 #              Deploy run, verified manifests; rolling tags are never evidence), run the deployment test on
 #              those exact images, then in the protected `production` environment promote the version,
 #              `release` and `latest` tags, sign every image digest with the Frameleaf cosign key, attach
@@ -56,7 +56,7 @@ permissions: {}
 
 jobs:
   candidate:
-    name: Verify the qualified candidate
+    name: Verify the verified candidate
     if: github.repository == 'Frameleaf/frameleaf-app' && inputs.action == 'release' && (github.ref == 'refs/heads/fork/main' || inputs.dry-run)
     runs-on: ubuntu-24.04
     permissions:
@@ -73,7 +73,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - name: Resolve the candidate and prove it is a qualified build of that exact commit
+      - name: Resolve the candidate and prove it is a verified build of that exact commit
         id: candidate
         env:
           CANDIDATE: ${{ inputs.candidate }}
@@ -152,7 +152,7 @@ jobs:
       - name: Verify all manifests, promote, sign every digest and publish the release
         env:
           SOURCE_SHA: ${{ needs.candidate.outputs.sha }}
-          CERTIFIED_RUN_ID: ${{ needs.candidate.outputs.run }}
+          BUILD_RUN_ID: ${{ needs.candidate.outputs.run }}
           DEPLOY_RUN_ID: ${{ github.run_id }}
           ROLLOUT_PERCENT: ${{ inputs['rollout-percent'] }}
           SIGN: '1'

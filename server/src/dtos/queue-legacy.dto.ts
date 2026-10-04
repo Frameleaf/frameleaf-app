@@ -12,6 +12,7 @@ const QueueStatusLegacySchema = z
 
 const QueueResponseLegacySchema = z
   .object({
+    runId: z.uuid().optional().describe('Durable run created by a batch start'),
     queueStatus: QueueStatusLegacySchema,
     jobCounts: QueueStatisticsSchema,
   })

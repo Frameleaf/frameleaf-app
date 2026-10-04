@@ -1,16 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import {
-  PHYSICAL_FILE_HANDOFF_REFUSAL,
   PhysicalFileTrashMove,
   countPathReferences,
   lockFilePath,
   trashUnreferencedOriginal,
 } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
-
 export type PhysicalFileTrashEntry = {
   id: string;
   physicalFileId: string | null;
@@ -22,7 +20,6 @@ export type PhysicalFileTrashEntry = {
   originalFileName: string;
   trashedAt: Date;
 };
-
 export type PhysicalFileTrashInput = {
   /** The original's physical file row, deleted once the file is in the trash; null for an unregistered original. */
   physicalFileId: string | null;
@@ -35,25 +32,30 @@ export type PhysicalFileTrashInput = {
   /** FL-169: an asset whose removal queued this; while it still exists (its removal rolled back) the file stays. */
   removedAssetId?: string;
 };
-
 export type PhysicalFileTrashResult =
-  | { status: 'trashed'; entry: PhysicalFileTrashEntry }
-  | { status: 'referenced'; references: number }
-  | { status: 'missing' };
-
+  | {
+      status: 'trashed';
+      entry: PhysicalFileTrashEntry;
+    }
+  | {
+      status: 'referenced';
+      references: number;
+    }
+  | {
+      status: 'missing';
+    };
 export type { PhysicalFileTrashMove } from 'src/repositories/physical-file.repository.js';
-
 const ENTRY_COLUMNS = sql`
   id, "physicalFileId", path, checksum, "sizeInBytes"::float8 AS "sizeInBytes", "lastOwnerId", "lastAssetId",
   "originalFileName", "trashedAt"`;
-
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === 'ENOENT';
-
 /** Library Care file trash (universal storage, spec §3.5). */
 @Injectable()
 export class PhysicalFileTrashRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /**
    * Moves an original nothing references any more into the file trash, instead of unlinking it. Under the
    * path lock the references are counted as `deleteUnreferencedPath` counts them; while any remain nothing
@@ -63,9 +65,7 @@ export class PhysicalFileTrashRepository {
    */
   async trash(input: PhysicalFileTrashInput, move: PhysicalFileTrashMove): Promise<PhysicalFileTrashResult> {
     return this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       await lockFilePath(trx, input.path);
-
       if (input.removedAssetId) {
         const kept = await trx
           .selectFrom('asset')
@@ -76,7 +76,6 @@ export class PhysicalFileTrashRepository {
           return { status: 'referenced', references: 1 };
         }
       }
-
       const physicalFile = await trx
         .selectFrom('physical_file')
         .select(['id'])
@@ -86,7 +85,6 @@ export class PhysicalFileTrashRepository {
       if (references > 0) {
         return { status: 'referenced', references };
       }
-
       const trashed = await trashUnreferencedOriginal(trx, input.path, move, {
         physicalFileId: input.physicalFileId ?? physicalFile?.id ?? null,
         checksum: input.checksum,
@@ -105,7 +103,6 @@ export class PhysicalFileTrashRepository {
       return { status: 'trashed', entry };
     });
   }
-
   /** The newest trashed original with this exact content, if any. */
   async findByChecksum(
     checksum: Buffer,
@@ -113,30 +110,30 @@ export class PhysicalFileTrashRepository {
     kysely: Kysely<DB> = this.db,
   ): Promise<PhysicalFileTrashEntry | undefined> {
     const { rows } = await sql<PhysicalFileTrashEntry>`
-      SELECT ${ENTRY_COLUMNS} FROM immich_fork.physical_file_trash
+      SELECT ${ENTRY_COLUMNS} FROM public.physical_file_trash
       WHERE checksum = ${checksum} AND "sizeInBytes" = ${sizeInBytes}::bigint
       ORDER BY "trashedAt" DESC, id
       LIMIT 1`.execute(kysely);
     return rows[0];
   }
-
   async getById(id: string): Promise<PhysicalFileTrashEntry | undefined> {
     const { rows } = await sql<PhysicalFileTrashEntry>`
-      SELECT ${ENTRY_COLUMNS} FROM immich_fork.physical_file_trash WHERE id = ${id}::uuid`.execute(this.db);
+      SELECT ${ENTRY_COLUMNS} FROM public.physical_file_trash WHERE id = ${id}::uuid`.execute(this.db);
     return rows[0];
   }
-
   async list({ skip, take }: { skip: number; take: number }) {
     const { rows } = await sql<PhysicalFileTrashEntry>`
-      SELECT ${ENTRY_COLUMNS} FROM immich_fork.physical_file_trash
+      SELECT ${ENTRY_COLUMNS} FROM public.physical_file_trash
       ORDER BY "trashedAt" DESC, id
       LIMIT ${take} OFFSET ${skip}`.execute(this.db);
-    const totals = await sql<{ total: number; totalBytes: number }>`
+    const totals = await sql<{
+      total: number;
+      totalBytes: number;
+    }>`
       SELECT count(*)::int AS total, coalesce(sum("sizeInBytes"), 0)::float8 AS "totalBytes"
-      FROM immich_fork.physical_file_trash`.execute(this.db);
+      FROM public.physical_file_trash`.execute(this.db);
     return { items: rows, total: totals.rows[0].total, totalBytes: totals.rows[0].totalBytes };
   }
-
   /**
    * Takes a trashed file back out to `targetPath` and removes its trash row, under both paths' locks, in
    * `trx` when one is given (the caller then registers the file in that transaction). Returns the entry,
@@ -149,7 +146,6 @@ export class PhysicalFileTrashRepository {
     trx?: Transaction<DB>,
   ): Promise<PhysicalFileTrashEntry | undefined> {
     const execute = async (trx: Transaction<DB>) => {
-      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       const entry = await this.getForUpdate(trx, id);
       if (!entry) {
         return;
@@ -158,16 +154,14 @@ export class PhysicalFileTrashRepository {
         await lockFilePath(trx, path);
       }
       await move(entry.path, targetPath);
-      await sql`DELETE FROM immich_fork.physical_file_trash WHERE id = ${id}::uuid`.execute(trx);
+      await sql`DELETE FROM public.physical_file_trash WHERE id = ${id}::uuid`.execute(trx);
       return entry;
     };
     return trx ? execute(trx) : this.db.transaction().execute(execute);
   }
-
   /** Permanently deletes a trashed file: `unlink` runs under the path lock, then the row goes. */
   async purge(id: string, unlink: (path: string) => Promise<void>): Promise<PhysicalFileTrashEntry | undefined> {
     return this.db.transaction().execute(async (trx) => {
-      await lockPublicForkWrites(trx, PHYSICAL_FILE_HANDOFF_REFUSAL);
       const entry = await this.getForUpdate(trx, id);
       if (!entry) {
         return;
@@ -178,14 +172,13 @@ export class PhysicalFileTrashRepository {
           throw error;
         }
       });
-      await sql`DELETE FROM immich_fork.physical_file_trash WHERE id = ${id}::uuid`.execute(trx);
+      await sql`DELETE FROM public.physical_file_trash WHERE id = ${id}::uuid`.execute(trx);
       return entry;
     });
   }
-
   private async getForUpdate(trx: Transaction<DB>, id: string) {
     const { rows } = await sql<PhysicalFileTrashEntry>`
-      SELECT ${ENTRY_COLUMNS} FROM immich_fork.physical_file_trash WHERE id = ${id}::uuid FOR UPDATE`.execute(trx);
+      SELECT ${ENTRY_COLUMNS} FROM public.physical_file_trash WHERE id = ${id}::uuid FOR UPDATE`.execute(trx);
     return rows[0];
   }
 }

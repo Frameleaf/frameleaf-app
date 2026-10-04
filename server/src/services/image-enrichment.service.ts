@@ -63,14 +63,12 @@ import {
 import { cloudRouteAllows } from 'src/utils/ml-destination.js';
 import { upsertTags } from 'src/utils/tag.js';
 import { ensureVideoFrames, withTemporaryFrames } from 'src/utils/video-moment-frames.js';
-
 type EnrichmentReview = {
   action: 'accepted' | 'marked-safe' | 'marked-nsfw';
   isNsfw: boolean;
   reviewedAt: string;
   reviewedBy: string;
 };
-
 type EnrichmentTask<T> =
   | {
       status: 'success';
@@ -83,7 +81,10 @@ type EnrichmentTask<T> =
       appliedTagHash?: string;
       appliedTagValues?: string[];
       /** Identity validation flags recorded after post-processing the ML description. */
-      identityFlags?: { hallucinatedNames?: string[]; ambiguousReferences?: string[] };
+      identityFlags?: {
+        hallucinatedNames?: string[];
+        ambiguousReferences?: string[];
+      };
       /** What the result was made from (FL-59); a change to any of it makes the result stale. */
       provenance?: EnrichmentResultProvenance;
     }
@@ -93,7 +94,6 @@ type EnrichmentTask<T> =
       updatedAt: string;
       error: string;
     };
-
 type DescriptionEnrichmentTask =
   | EnrichmentTask<ImageDescriptionResult>
   | {
@@ -102,16 +102,13 @@ type DescriptionEnrichmentTask =
       updatedAt: string;
       reason: string;
     };
-
 type NsfwEnrichmentTask = EnrichmentTask<NsfwDetectionResult> & {
   review?: EnrichmentReview;
 };
-
 type EnrichmentMetadata = {
   description?: DescriptionEnrichmentTask;
   nsfwDetection?: NsfwEnrichmentTask;
 };
-
 /**
  * FL-34: aborts (rolling the transaction back) when a lock group, worked out again under its row locks,
  * reaches assets outside the ones already checked and metadata-locked: a concurrent stack join.
@@ -122,10 +119,12 @@ const requireUnchangedGroup = (ids: string[], checkedIds: string[]) => {
     throw new ConflictException('The stack or live photo changed meanwhile, try again');
   }
 };
-
 /** An owner's safe review written in a transaction, for its tag follow-up once that commits (FL-34). */
-type SafeReview = { id: string; ownerId: string; metadata: EnrichmentMetadata };
-
+type SafeReview = {
+  id: string;
+  ownerId: string;
+  metadata: EnrichmentMetadata;
+};
 /** Provenance pinned on a generated result (FL-59). */
 type EnrichmentResultProvenance = {
   /** The ML destination that produced it (FL-110). */
@@ -137,7 +136,6 @@ type EnrichmentResultProvenance = {
   /** The enrichment plan configuration digest, when a plan produced it. */
   planConfigHash?: string;
 };
-
 /**
  * How an enrichment plan (FL-59) runs a stage: the destinations and configuration it pinned at
  * submit. A queue job passes nothing and gets the routed destinations and the saved configuration.
@@ -162,10 +160,12 @@ export type EnrichmentRunOptions = {
    */
   planRun?: boolean;
 };
-
 /** What one stage did to one asset, for the plan's per-asset record. */
-export type EnrichmentStageResult = { status: JobStatus; reasonKey?: string; message?: string };
-
+export type EnrichmentStageResult = {
+  status: JobStatus;
+  reasonKey?: string;
+  message?: string;
+};
 /** A description made with a draft model and prompt, and written nowhere (FL-59). */
 export type DescriptionPreview =
   | {
@@ -173,16 +173,26 @@ export type DescriptionPreview =
       current: string | null;
       candidate: string;
       tags: string[];
-      identityFlags?: { hallucinatedNames?: string[]; ambiguousReferences?: string[] };
+      identityFlags?: {
+        hallucinatedNames?: string[];
+        ambiguousReferences?: string[];
+      };
       warnings: string[];
       modelName: string;
       destinationId: string;
       frameCount: number;
       durationMs: number;
     }
-  | { status: 'failed'; current: string | null; message: string; warnings: string[] }
-  | { status: 'skipped'; reasonKey: string };
-
+  | {
+      status: 'failed';
+      current: string | null;
+      message: string;
+      warnings: string[];
+    }
+  | {
+      status: 'skipped';
+      reasonKey: string;
+    };
 /** The saved configuration with a plan's pinned values laid over it. Enable switches stay the saved ones. */
 const withPinnedConfig = (
   machineLearning: SystemConfig['machineLearning'],
@@ -193,16 +203,20 @@ const withPinnedConfig = (
   nsfwDetection: { ...machineLearning.nsfwDetection, ...options.nsfwDetection },
   clip: { ...machineLearning.clip, ...(options.clipModelName && { modelName: options.clipModelName }) },
 });
-
 const GENERATED_DESCRIPTION_PREFIX = 'AI description:';
 const HIGH_CONFIDENCE = 'high';
-
 /**
  * FL-36: the description confidence a destination reported, as a number from 0 to 1, or null.
  * Anything else (a low/medium/high label, a percentage, a missing value) is null: a confidence is
  * never inferred or rescaled.
  */
-export const descriptionConfidence = (result: { confidence?: unknown } | undefined): number | null => {
+export const descriptionConfidence = (
+  result:
+    | {
+        confidence?: unknown;
+      }
+    | undefined,
+): number | null => {
   const value = result?.confidence;
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
 };
@@ -225,40 +239,31 @@ const STRONG_NSFW_INDICATORS = new Set([
 ]);
 const STRONG_NSFW_TEXT_PATTERN =
   /\b(naked|nude|nudity|genitals?|penis|vagina|buttocks?|sexual activity|sex toy|bondage|restrained|restraint)\b/i;
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
-
 const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-
 const promptConfigHash = (promptConfig: unknown) =>
   createHash('sha256').update(JSON.stringify(promptConfig)).digest('hex').slice(0, 8);
-
 const getGeneratedDescriptionBlock = (description: string) => {
   const trimmed = description.trim();
   return trimmed ? `${GENERATED_DESCRIPTION_PREFIX} ${trimmed}` : undefined;
 };
-
 const withoutGeneratedDescriptionBlocks = (description: string, generatedDescriptions: string[]) => {
   const blocks = new Set(
     generatedDescriptions
       .map((generatedDescription) => getGeneratedDescriptionBlock(generatedDescription))
       .filter((block): block is string => !!block),
   );
-
   if (blocks.size === 0) {
     return description.trim();
   }
-
   return description
     .split(/\n{2,}/)
     .filter((part) => !blocks.has(part.trim()))
     .join('\n\n')
     .trim();
 };
-
 const copyAppliedFields = <T extends Record<string, unknown>>(target: T, source: T, keys: Array<keyof T>) => {
   for (const key of keys) {
     if (source[key] === undefined) {
@@ -268,7 +273,6 @@ const copyAppliedFields = <T extends Record<string, unknown>>(target: T, source:
     }
   }
 };
-
 const normalizeTag = (tag: string) =>
   tag
     .toLowerCase()
@@ -277,15 +281,12 @@ const normalizeTag = (tag: string) =>
     .replaceAll(/\s+/g, '-')
     .replaceAll(/-+/g, '-')
     .replaceAll(/^-|-$/g, '');
-
 /** Assets unlocked per transaction by a bulk unlock (FL-34); see `unlockAssets`. */
 const UNLOCK_CHUNK_SIZE = 200;
-
 @Injectable()
 export class ImageEnrichmentService extends BaseService {
   @InjectKysely()
   private db?: Kysely<DB>;
-
   private readonly promptAssembler = new ImageDescriptionPromptAssembler();
   private readonly identityPostValidator = new IdentityPostValidator();
   /** FL-163: new photos for automatic Frameleaf Cloud batches, written to the queue in batches. */
@@ -294,27 +295,21 @@ export class ImageEnrichmentService extends BaseService {
     (message) => this.logger.warn(message),
   );
   private _classificationService: ClassificationService | undefined;
-
   private get classificationService(): ClassificationService {
     this._classificationService ??= BaseService.create(ClassificationService, this);
     return this._classificationService;
   }
-
   private _smartAlbumService: SmartAlbumService | undefined;
-
   /** Lazy accessor — avoids referencing `this` before super() returns. */
   private get smartAlbumService(): SmartAlbumService {
     this._smartAlbumService ??= BaseService.create(SmartAlbumService, this);
     return this._smartAlbumService;
   }
-
   async getAssetEnrichment(auth: AuthDto, id: string): Promise<AssetImageEnrichmentResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id], ignorePrivacy: true });
-
     const metadata = await this.getEnrichmentMetadata(id);
     return this.toResponse(id, metadata, await this.getDescriptionStaleReason(id, metadata));
   }
-
   /**
    * Whether the stored generated description no longer describes what it claims to (FL-59): the
    * original was replaced, a face correction changed the confirmed names it was given, or the
@@ -328,7 +323,6 @@ export class ImageEnrichmentService extends BaseService {
     if (description?.status !== 'success') {
       return null;
     }
-
     const asset = await this.assetRepository.getById(id);
     const { machineLearning } = await this.getConfig({ withCache: true });
     const knownPersons = asset ? await this.getKnownPersonsForAsset(id, asset.ownerId) : [];
@@ -345,25 +339,21 @@ export class ImageEnrichmentService extends BaseService {
       },
     );
   }
-
   async updateAssetEnrichment(
     auth: AuthDto,
     id: string,
     dto: AssetImageEnrichmentActionRequestDto,
   ): Promise<AssetImageEnrichmentResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id], ignorePrivacy: true });
-
     const asset = await this.assetRepository.getById(id, { exifInfo: true, tags: true });
     if (!asset) {
       throw new BadRequestException('Asset not found');
     }
-
     // FL-34: marking safe reviews and unlocks the asset's whole stack or live photo in one transaction
     if (dto.action === AssetImageEnrichmentAction.MarkSafe) {
       await this.markGroupSafe(auth, id);
       return this.toResponse(id, await this.getEnrichmentMetadata(id));
     }
-
     // Queue-only actions don't touch asset_metadata — no lock needed.
     if (dto.action === AssetImageEnrichmentAction.RerunImageDescription) {
       await this.jobRepository.queue({ name: JobName.ImageDescription, data: { id } });
@@ -373,7 +363,6 @@ export class ImageEnrichmentService extends BaseService {
       await this.jobRepository.queue({ name: JobName.NsfwDetection, data: { id } });
       return this.toResponse(id, await this.getEnrichmentMetadata(id));
     }
-
     // Phase 1 (under per-asset advisory lock): read metadata, mutate the
     // review/clear fields, persist. Kept narrow so the transaction's
     // connection isn't held while tag application or job queueing runs —
@@ -385,7 +374,6 @@ export class ImageEnrichmentService extends BaseService {
         await this.lockGroupRows(id, trx);
       }
       const m = await this.getEnrichmentMetadata(id, trx);
-
       switch (dto.action) {
         case AssetImageEnrichmentAction.AcceptNsfwResult: {
           const nsfw = this.ensureManualNsfwMetadata(m, this.getEffectiveNsfw(m) ?? false);
@@ -414,9 +402,7 @@ export class ImageEnrichmentService extends BaseService {
           break;
         }
       }
-
       await this.saveEnrichmentMetadata(id, m, trx);
-
       // FL-34: the sensitive mark is the lock. Marking locks the asset (the owner's own lock), and
       // accepting a sensitive detection locks it as detected (marking it safe unlocks it, in
       // `markGroupSafe`). The lock record commits in the same transaction as the review and its privacy
@@ -428,16 +414,17 @@ export class ImageEnrichmentService extends BaseService {
       } else if (dto.action === AssetImageEnrichmentAction.AcceptNsfwResult && m.nsfwDetection?.review?.isNsfw) {
         locked = await this.assetRepository.lock([id], AssetLockReason.Detected, auth.user.id, trx);
       }
-
       return { metadata: m, locked };
     });
     // the lock is committed: release what a locked photo may no longer be before anything below can fail
     await this.afterSensitiveLock(locked);
-
     // Phase 2 (no lock): tag application + finalize. These are idempotent on
     // their applied-hash bookkeeping, so the brief unlocked window between
     // phases is safe even under concurrent reviewer/detection writes.
-    let changed: { visible: boolean; metadata: boolean };
+    let changed: {
+      visible: boolean;
+      metadata: boolean;
+    };
     switch (dto.action) {
       case AssetImageEnrichmentAction.AcceptNsfwResult: {
         changed = metadata.nsfwDetection?.review?.isNsfw
@@ -471,12 +458,9 @@ export class ImageEnrichmentService extends BaseService {
         changed = { visible: false, metadata: false };
       }
     }
-
     await this.finalizeRepair(id, changed, metadata);
-
     return this.toResponse(id, await this.getEnrichmentMetadata(id));
   }
-
   /**
    * Unlock (FL-34): removes the lock, whatever its reason, from assets the caller owns. Only an elevated
    * session may unlock, since it shows what was hidden. The stored visibility is untouched, so each asset
@@ -505,7 +489,6 @@ export class ImageEnrichmentService extends BaseService {
       await this.recordPartnerUnlock(auth, unlocked);
     }
   }
-
   /**
    * FL-326: unlocking a partner copy makes its visibility the owner's; copies of these items follow the
    * unlock (spec §4.9).
@@ -518,7 +501,6 @@ export class ImageEnrichmentService extends BaseService {
       [AssetOriginField.Visibility],
     );
   }
-
   /**
    * FL-34: in the caller's transaction `trx`, after its owner unlocked `assetIds`, records "safe" as
    * their own review on every one of them, whatever the sensitive-content check says now, so the owner's
@@ -539,7 +521,6 @@ export class ImageEnrichmentService extends BaseService {
       false,
     );
   }
-
   /**
    * FL-34: Mark Safe on one asset unlocks its whole stack or live photo (`AssetRepository.unlock`), so it
    * is the owner's safe review of the asset and of every member that unlock released, written in the same
@@ -585,7 +566,6 @@ export class ImageEnrichmentService extends BaseService {
     await this.notifyAssetsUpdated(unlocked, auth.user.id);
     await this.recordPartnerUnlock(auth, unlocked);
   }
-
   /**
    * Writes the owner's safe review on each of `members` in `trx`, with its privacy projection. An asset
    * already reviewed as safe keeps its review; with `repair` its projection is written again and it is
@@ -593,7 +573,10 @@ export class ImageEnrichmentService extends BaseService {
    */
   private async reviewSafe(
     auth: AuthDto,
-    members: { id: string; ownerId: string }[],
+    members: {
+      id: string;
+      ownerId: string;
+    }[],
     trx: Kysely<DB>,
     repair: boolean,
   ): Promise<SafeReview[]> {
@@ -607,7 +590,6 @@ export class ImageEnrichmentService extends BaseService {
         }
         continue;
       }
-
       const nsfw = this.ensureManualNsfwMetadata(metadata, false);
       nsfw.review = this.getReview(auth, 'marked-safe', false);
       await this.saveEnrichmentMetadata(id, metadata, trx);
@@ -615,7 +597,6 @@ export class ImageEnrichmentService extends BaseService {
     }
     return reviewed;
   }
-
   /** Once safe reviews are committed: removes the sensitive tags they had applied. */
   private async clearSafeReviewTags(reviewed: SafeReview[]) {
     for (const { id, ownerId, metadata } of reviewed) {
@@ -623,7 +604,6 @@ export class ImageEnrichmentService extends BaseService {
       await this.finalizeRepair(id, changed, metadata);
     }
   }
-
   /**
    * FL-34: switching "hide sensitive detections" on locks what detection had already flagged and no
    * owner has reviewed, so those photos move to their owners' Locked view instead of staying in view.
@@ -635,7 +615,6 @@ export class ImageEnrichmentService extends BaseService {
     if (hideDetections === isNsfwHidingEnabled(oldConfig.machineLearning)) {
       return;
     }
-
     if (hideDetections) {
       await this.lockUnreviewedDetections();
     }
@@ -643,7 +622,6 @@ export class ImageEnrichmentService extends BaseService {
       hideFromLibrary: hideDetections,
     });
   }
-
   /**
    * FL-34: the upgrade (migration 2100000000320) locks earlier detections only when the saved
    * configuration hides them, and a configuration file can switch hiding on without saving it. On
@@ -657,7 +635,6 @@ export class ImageEnrichmentService extends BaseService {
     if (state?.hideFromLibrary === hideDetections) {
       return;
     }
-
     if (hideDetections) {
       await this.lockUnreviewedDetections();
     }
@@ -665,7 +642,6 @@ export class ImageEnrichmentService extends BaseService {
       hideFromLibrary: hideDetections,
     });
   }
-
   /** Locks what detection flagged and no owner reviewed (FL-34), a page at a time. */
   private async lockUnreviewedDetections() {
     const ids = await this.assetRepository.getUnlockedDetectionIds();
@@ -673,12 +649,10 @@ export class ImageEnrichmentService extends BaseService {
       await this.lockSensitive(ids.slice(index, index + JOBS_ASSET_PAGINATION_SIZE), AssetLockReason.Detected, null);
     }
   }
-
   /** Locks `assetIds` as sensitive (FL-34) and releases what a locked photo may no longer be. */
   private async lockSensitive(assetIds: string[], reason: AssetLockReason, lockedBy: string | null) {
     await this.afterSensitiveLock(await this.assetRepository.lock(assetIds, reason, lockedBy));
   }
-
   /**
    * FL-34: first in a metadata transaction that may lock or unlock `id`, takes its whole group's rows
    * in a fixed order, so parallel reviews or detections of two members of one stack or live photo
@@ -689,14 +663,12 @@ export class ImageEnrichmentService extends BaseService {
       await this.assetRepository.lockGroupRows([id], trx);
     }
   }
-
   /** Once a sensitive lock is committed: releases what a locked photo may no longer be (FL-53). */
   private async afterSensitiveLock(locked: string[]) {
     if (locked.length > 0) {
       await this.afterAssetsLocked(locked);
     }
   }
-
   /**
    * FL-34: a sensitive detection locks the asset as `detected`, reviewable and reversible in the Locked
    * view, when the administrator has "hide sensitive detections" on. An owner's own review always
@@ -713,10 +685,8 @@ export class ImageEnrichmentService extends BaseService {
     if (!hideDetections || metadata.nsfwDetection?.review || this.getEffectiveNsfw(metadata) !== true) {
       return [];
     }
-
     return this.assetRepository.lock([id], AssetLockReason.Detected, null, trx);
   }
-
   @OnJob({ name: JobName.ImageDescriptionQueueAll, queue: QueueName.ImageDescription })
   async handleQueueImageDescription({ force }: JobOf<JobName.ImageDescriptionQueueAll>): Promise<JobStatus> {
     const { machineLearning, libraryCare, frameleafCloud } = await this.getConfig({ withCache: false });
@@ -732,55 +702,44 @@ export class ImageEnrichmentService extends BaseService {
       );
       return JobStatus.Skipped;
     }
-
     // Library care → "Reprocess only affected outputs" (FL-69, settings-catalog.mjs:966-971): a full
     // rerun still visits every photo, but each keeps a current description and only one that is
     // missing, failed or out of date (its original, confirmed names or prompt changed) is redone.
     const onlyAffected = !!force && libraryCare.incrementalEnrichment;
     let jobs: JobItem[] = [];
     const assets = this.assetJobRepository.streamForImageDescriptionJob(force);
-
     for await (const asset of assets) {
       jobs.push({ name: JobName.ImageDescription, data: { id: asset.id, ...(onlyAffected && { onlyAffected }) } });
-
       if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
         await this.jobRepository.queueAll(jobs);
         jobs = [];
       }
     }
-
     await this.jobRepository.queueAll(jobs);
     return JobStatus.Success;
   }
-
   @OnJob({ name: JobName.NsfwDetectionQueueAll, queue: QueueName.NsfwDetection })
   async handleQueueNsfwDetection({ force }: JobOf<JobName.NsfwDetectionQueueAll>): Promise<JobStatus> {
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isNsfwDetectionEnabled(machineLearning)) {
       return JobStatus.Skipped;
     }
-
     let jobs: JobItem[] = [];
     const assets = this.assetJobRepository.streamForNsfwDetectionJob(force);
-
     for await (const asset of assets) {
       jobs.push({ name: JobName.NsfwDetection, data: { id: asset.id } });
-
       if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
         await this.jobRepository.queueAll(jobs);
         jobs = [];
       }
     }
-
     await this.jobRepository.queueAll(jobs);
     return JobStatus.Success;
   }
-
   @OnJob({ name: JobName.NsfwDetection, queue: QueueName.NsfwDetection })
   async handleNsfwDetection({ id }: JobOf<JobName.NsfwDetection>): Promise<JobStatus> {
     return (await this.detectLockedContent(id)).status;
   }
-
   /**
    * The Locked-content check of one photo. The queue job runs it with the routed destination and the
    * saved model; an enrichment plan (FL-59) runs it with the destination and model it pinned.
@@ -791,7 +750,6 @@ export class ImageEnrichmentService extends BaseService {
     if (!isNsfwDetectionEnabled(machineLearning)) {
       return { status: JobStatus.Skipped, reasonKey: 'disabled' };
     }
-
     const asset = await this.assetJobRepository.getForImageEnrichment(id);
     if (!asset || !this.isEligibleImage(asset)) {
       return {
@@ -799,11 +757,9 @@ export class ImageEnrichmentService extends BaseService {
         reasonKey: asset?.type === AssetType.Video ? 'not-an-image' : 'not-eligible',
       };
     }
-
     if (!asset.previewFile) {
       return { status: JobStatus.Skipped, reasonKey: 'no-preview' };
     }
-
     // ML inference runs outside the per-asset lock — it can take hundreds of
     // ms and would otherwise hold the transaction's connection long enough to
     // starve the pool under parallel jobs.
@@ -836,7 +792,6 @@ export class ImageEnrichmentService extends BaseService {
       });
       return { status: JobStatus.Failed, reasonKey: 'model-error', message: getErrorMessage(error) };
     }
-
     // Serialize the RMW of the metadata blob against concurrent reviewer
     // actions and parallel description jobs. Side effects (tag application,
     // sidecar queueing) run afterwards on the regular pool.
@@ -864,7 +819,6 @@ export class ImageEnrichmentService extends BaseService {
       return { metadata: m, locked };
     });
     await this.afterSensitiveLock(locked);
-
     // the owner's review decides which tags apply, not the raw detection (FL-34)
     const changed = await this.applyNsfwTags(id, asset.ownerId, this.getStoredNsfw(metadata)!, metadata);
     if (changed.metadata) {
@@ -873,10 +827,8 @@ export class ImageEnrichmentService extends BaseService {
     if (changed.visible) {
       await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
     }
-
     return { status: JobStatus.Success };
   }
-
   @OnJob({ name: JobName.ImageDescription, queue: QueueName.ImageDescription })
   async handleImageDescription({ id, onlyAffected }: JobOf<JobName.ImageDescription>): Promise<JobStatus> {
     if (onlyAffected && !(await this.isDescriptionAffected(id))) {
@@ -884,7 +836,6 @@ export class ImageEnrichmentService extends BaseService {
     }
     return (await this.describeAsset(id)).status;
   }
-
   /**
    * Whether a description has to be redone (FL-69): there is no successful one, or the one there is
    * no longer describes what it claims to (`getDescriptionStaleReason`).
@@ -896,7 +847,6 @@ export class ImageEnrichmentService extends BaseService {
     }
     return (await this.getDescriptionStaleReason(id, metadata)) !== null;
   }
-
   /**
    * FL-57: after a face or person change (rename, hide, merge, a face moved, taken off or added), the
    * generated text of only the affected assets is brought up to date: the owner's assets showing the
@@ -921,7 +871,6 @@ export class ImageEnrichmentService extends BaseService {
     const seen = new Set<string>();
     let described = 0;
     let withdrawn = 0;
-
     const refresh = async (ids: string[]) => {
       const jobs: JobItem[] = [];
       for (const id of ids) {
@@ -938,7 +887,6 @@ export class ImageEnrichmentService extends BaseService {
       described += jobs.length;
       await this.jobRepository.queueAll(jobs);
     };
-
     await refresh(assetIds);
     let after: string | undefined;
     for (;;) {
@@ -952,7 +900,6 @@ export class ImageEnrichmentService extends BaseService {
       await refresh(page);
       after = page.at(-1);
     }
-
     if (described > 0 || withdrawn > 0) {
       this.logger.log(
         `People changed: describing ${described} asset(s) again and withdrew ${withdrawn} generated caption(s)`,
@@ -960,13 +907,15 @@ export class ImageEnrichmentService extends BaseService {
     }
     return JobStatus.Success;
   }
-
   /**
    * Whether an asset's generated text names other people than it shows now (FL-57). Read under the
    * asset's metadata lock, the one a description is published under, so a description published with
    * the old names just before is seen here, and one not yet published re-checks the names itself.
    */
-  private async refreshAssetIdentity(id: string): Promise<{ describe: boolean; withdrawnCaptions: number }> {
+  private async refreshAssetIdentity(id: string): Promise<{
+    describe: boolean;
+    withdrawnCaptions: number;
+  }> {
     const asset = await this.assetRepository.getById(id);
     if (!asset || asset.deletedAt) {
       return { describe: false, withdrawnCaptions: 0 };
@@ -982,7 +931,6 @@ export class ImageEnrichmentService extends BaseService {
         : 0;
     return { describe, withdrawnCaptions };
   }
-
   /**
    * Describe one photo or video. The queue job runs it with the routed destination and the saved
    * model and prompt; an enrichment plan (FL-59) runs it with the destination and configuration it
@@ -1001,29 +949,29 @@ export class ImageEnrichmentService extends BaseService {
     if (!isImageDescriptionEnabled(machineLearning)) {
       return { status: JobStatus.Skipped, reasonKey: 'disabled' };
     }
-
     const asset = await this.assetJobRepository.getForImageEnrichment(id);
     if (!asset || !this.isEligibleForDescription(asset)) {
       return { status: JobStatus.Skipped, reasonKey: 'not-eligible' };
     }
-
     if (!asset.previewFile) {
       return { status: JobStatus.Skipped, reasonKey: 'no-preview' };
     }
-
     // FL-163: the description stage routed (or pinned) to Frameleaf Cloud runs in batches, never one
     // photo at a time, and nothing is sent from here
     const cloud = await this.cloudDescriptionDestination(options);
     if (cloud) {
       return this.leaveForCloudBatch(asset, config, machineLearning.imageDescription.modelName);
     }
-
     const fingerprintBefore = await this.getSourceFingerprint(id);
-
     // A video is described as a grid of its reusable frames. When none can be cut (too short, too
     // long, unreadable), persist a `skipped` status with `video-frames-unavailable` so the badge can
     // explain why, and bail without invoking the model — a single thumbnail is a poor input.
-    let videoGrid: { path: string; videoContext: VideoContext } | undefined;
+    let videoGrid:
+      | {
+          path: string;
+          videoContext: VideoContext;
+        }
+      | undefined;
     if (asset.type === AssetType.Video) {
       videoGrid = await this.prepareVideoGrid(asset.id, asset.ownerId, config);
       if (!videoGrid) {
@@ -1039,13 +987,10 @@ export class ImageEnrichmentService extends BaseService {
         return { status: JobStatus.Skipped, reasonKey: 'video-frames-unavailable' };
       }
     }
-
     const descriptionInputPath = videoGrid ? videoGrid.path : asset.previewFile!;
-
     // Snapshot the metadata to decide whether NSFW inference is needed; the
     // canonical read happens again inside the lock when we persist.
     const snapshot = await this.getEnrichmentMetadata(id);
-
     let nsfw = this.getStoredNsfw(snapshot);
     let nsfwIsFresh = false;
     if (!nsfw && isNsfwDetectionEnabled(machineLearning)) {
@@ -1081,9 +1026,7 @@ export class ImageEnrichmentService extends BaseService {
         nsfw = undefined;
       }
     }
-
     const knownPersons = await this.getKnownPersonsForAsset(asset.id, asset.ownerId);
-
     let result: ImageDescriptionResult;
     let destinationId: string;
     try {
@@ -1125,7 +1068,6 @@ export class ImageEnrichmentService extends BaseService {
         await this.storageRepository.unlink(videoGrid.path).catch(() => {});
       }
     }
-
     return this.publishDescription({
       asset,
       config,
@@ -1140,14 +1082,18 @@ export class ImageEnrichmentService extends BaseService {
       modelName: machineLearning.imageDescription.modelName,
     });
   }
-
   /**
    * Publish a finished description (the local model's, or a Frameleaf Cloud batch's for one photo):
    * checked against the original and the confirmed names it was made with, stored with its provenance,
    * and applied to the visible metadata, search, smart albums and classification rules.
    */
   private async publishDescription(args: {
-    asset: { id: string; ownerId: string; type: AssetType; description?: string | null };
+    asset: {
+      id: string;
+      ownerId: string;
+      type: AssetType;
+      description?: string | null;
+    };
     config: SystemConfig;
     machineLearning: SystemConfig['machineLearning'];
     options: EnrichmentRunOptions;
@@ -1163,21 +1109,23 @@ export class ImageEnrichmentService extends BaseService {
     const { destinationId, modelName } = args;
     const id = asset.id;
     let result = args.result;
-
     // FL-36: keep a reported confidence only when it is a real 0-1 number; never invent one
     result = { ...result, confidence: descriptionConfidence(result) };
-
     // The original was replaced while the model was working: this description is of a file the
     // library no longer holds. Publish nothing; the next run describes the new original.
     if (fingerprintBefore && (await this.getSourceFingerprint(id)) !== fingerprintBefore) {
       return { status: JobStatus.Skipped, reasonKey: 'source-changed' };
     }
-
     // Post-validate the ML description against known persons: strip any
     // hallucinated names and substitute unambiguous generic person references.
     // Only runs when there is at least one known person and a non-empty
     // description — the validator is a no-op otherwise.
-    let identityFlags: { hallucinatedNames?: string[]; ambiguousReferences?: string[] } | undefined;
+    let identityFlags:
+      | {
+          hallucinatedNames?: string[];
+          ambiguousReferences?: string[];
+        }
+      | undefined;
     if (result.description && knownPersons.length > 0) {
       const { description: validatedDescription, flags } = this.identityPostValidator.validate(
         result.description,
@@ -1188,14 +1136,12 @@ export class ImageEnrichmentService extends BaseService {
         identityFlags = flags;
       }
     }
-
     const provenance: EnrichmentResultProvenance = {
       destinationId,
       identityHash: identityHash(knownPersons.map(({ name }) => name)),
       ...(fingerprintBefore && { sourceFingerprint: fingerprintBefore }),
       ...(options.configHash && { planConfigHash: options.configHash }),
     };
-
     // Phase: serialize the RMW so reviewer / NSFW writes can't clobber the
     // description (and vice versa). ML inference is already done above.
     const published = await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
@@ -1208,7 +1154,6 @@ export class ImageEnrichmentService extends BaseService {
       if (namesNow !== provenance.identityHash) {
         return null;
       }
-
       if (isNsfwHidingEnabled(machineLearning)) {
         await this.lockGroupRows(id, trx);
       }
@@ -1218,7 +1163,6 @@ export class ImageEnrichmentService extends BaseService {
           ? m.description.result.description
           : undefined;
       const previousTagValues = m.description?.status === 'success' ? (m.description.appliedTagValues ?? []) : [];
-
       if (nsfwIsFresh && nsfw && !this.getStoredNsfw(m)) {
         const appliedTagHash = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagHash : undefined;
         const appliedTagValues = m.nsfwDetection?.status === 'success' ? m.nsfwDetection.appliedTagValues : undefined;
@@ -1232,7 +1176,6 @@ export class ImageEnrichmentService extends BaseService {
           ...(m.nsfwDetection?.review && { review: m.nsfwDetection.review }),
         };
       }
-
       m.description = {
         status: 'success',
         modelName,
@@ -1257,13 +1200,11 @@ export class ImageEnrichmentService extends BaseService {
     }
     const { metadata, previousDescription, previousTagValues, locked } = published;
     await this.afterSensitiveLock(locked);
-
     // A plan that pinned no search destination (search was off when it was queued) leaves the
     // description embedding alone rather than sending the text to an unpinned destination.
     if (isSmartSearchEnabled(machineLearning) && (!options.planRun || options.searchDestinationId)) {
       await this.upsertDescriptionEmbedding(id, result.description, machineLearning.clip, options);
     }
-
     const changed = await this.applyVisibleMetadata({
       id,
       keepManual: config.libraryCare.manualMetadata,
@@ -1275,14 +1216,12 @@ export class ImageEnrichmentService extends BaseService {
       previousDescription,
       previousTagValues,
     });
-
     if (changed.metadata) {
       await this.persistAppliedBookkeeping(id, metadata);
     }
     if (changed.visible) {
       await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
     }
-
     // Smart-album evaluation: outside the metadata lock to keep the lock window
     // small. Non-fatal — description has already succeeded; smart-album
     // bookkeeping is best-effort.
@@ -1297,16 +1236,13 @@ export class ImageEnrichmentService extends BaseService {
     }
     // The owner's own classification rules (FL-60) see the new description tags. Never throws.
     await this.classificationService.evaluateAsset(asset.id, asset.ownerId);
-
     // "Describe video moments" (FL-59): the video's reusable frames are captioned next, one more model
     // request per frame. A plan picks its own stages instead.
     if (asset.type === AssetType.Video && !options.planRun && machineLearning.imageDescription.videoMomentCaptions) {
       await this.jobRepository.queue({ name: JobName.VideoMomentCaptions, data: { id } });
     }
-
     return { status: JobStatus.Success };
   }
-
   /**
    * FL-163: write one photo's description from a finished Frameleaf Cloud batch (an FC-44 item), as
    * the description stage writes a local one: with the Frameleaf Cloud destination as its provenance and
@@ -1317,8 +1253,17 @@ export class ImageEnrichmentService extends BaseService {
    */
   async publishCloudDescription(
     assetId: string,
-    item: { description: string; tags: string[]; moment: string | null; confidence: number },
-    source: { destinationId: string; modelName: string; failure?: string },
+    item: {
+      description: string;
+      tags: string[];
+      moment: string | null;
+      confidence: number;
+    },
+    source: {
+      destinationId: string;
+      modelName: string;
+      failure?: string;
+    },
   ): Promise<EnrichmentStageResult> {
     const config = await this.getConfig({ withCache: true });
     const machineLearning = config.machineLearning;
@@ -1364,7 +1309,6 @@ export class ImageEnrichmentService extends BaseService {
       modelName: source.modelName,
     });
   }
-
   /**
    * Describe one asset with a draft model and prompt, and write nothing (FL-59, sample-first
    * enrichment). The stored description, tags, Locked state, embeddings and frames are untouched:
@@ -1374,20 +1318,21 @@ export class ImageEnrichmentService extends BaseService {
    */
   async previewDescription(
     id: string,
-    options: { imageDescription: SystemConfig['machineLearning']['imageDescription']; destinationId: string },
+    options: {
+      imageDescription: SystemConfig['machineLearning']['imageDescription'];
+      destinationId: string;
+    },
   ): Promise<DescriptionPreview> {
     const config = await this.getConfig({ withCache: true });
     const asset = await this.assetJobRepository.getForImageEnrichment(id);
     if (!asset || !this.isEligibleForDescription(asset) || !asset.previewFile) {
       return { status: 'skipped', reasonKey: 'not-eligible' };
     }
-
     const stored = await this.getEnrichmentMetadata(id);
     const nsfw = this.getStoredNsfw(stored);
     const knownPersons = await this.getKnownPersonsForAsset(asset.id, asset.ownerId);
     const current = stored.description?.status === 'success' ? stored.description.result.description : null;
     const startedAt = Date.now();
-
     const describe = async (inputPath: string, videoContext?: VideoContext): Promise<DescriptionPreview> => {
       const { prompt, warnings } = this.promptAssembler.build({
         config: options.imageDescription.prompt,
@@ -1409,7 +1354,12 @@ export class ImageEnrichmentService extends BaseService {
           nsfw,
           prompt,
         );
-        let identityFlags: { hallucinatedNames?: string[]; ambiguousReferences?: string[] } | undefined;
+        let identityFlags:
+          | {
+              hallucinatedNames?: string[];
+              ambiguousReferences?: string[];
+            }
+          | undefined;
         if (result.description && knownPersons.length > 0) {
           const { description, flags } = this.identityPostValidator.validate(result.description, knownPersons);
           result = { ...result, description };
@@ -1433,16 +1383,13 @@ export class ImageEnrichmentService extends BaseService {
         return { status: 'failed', current, message: getErrorMessage(error), warnings };
       }
     };
-
     if (asset.type !== AssetType.Video) {
       return describe(asset.previewFile);
     }
-
     const moments = this.videoMoments;
     if (!moments) {
       return { status: 'skipped', reasonKey: 'video-frames-unavailable' };
     }
-
     const folder = await mkdtemp(join(tmpdir(), 'frameleaf-description-preview-'));
     try {
       const gridPath = join(folder, 'grid.jpeg');
@@ -1454,7 +1401,6 @@ export class ImageEnrichmentService extends BaseService {
           ? describe(grid.path, grid.videoContext)
           : { status: 'skipped', reasonKey: 'video-frames-unavailable' };
       }
-
       const described = await withTemporaryFrames(
         { media: this.mediaRepository, storage: this.storageRepository, moments, logger: this.logger },
         id,
@@ -1469,7 +1415,6 @@ export class ImageEnrichmentService extends BaseService {
       await rm(folder, { recursive: true, force: true });
     }
   }
-
   /**
    * FL-163: the Frameleaf Cloud destination this description would go to (the one a plan pinned, else
    * the routed one), or undefined when it goes to this server or a home-network worker. Only the row is
@@ -1481,7 +1426,6 @@ export class ImageEnrichmentService extends BaseService {
     }
     return cloudDescriptionDestination(this.mlDestinationRepository, options.enrichmentDestinationId);
   }
-
   /**
    * FL-163: a description routed to Frameleaf Cloud waits for a batch. With "Describe new photos
    * automatically" on, a photo joins the automatic queue; otherwise (and for a video, which Frameleaf
@@ -1490,7 +1434,11 @@ export class ImageEnrichmentService extends BaseService {
    * for anything. It is never described on this server instead.
    */
   private async leaveForCloudBatch(
-    asset: { id: string; ownerId: string; type: AssetType },
+    asset: {
+      id: string;
+      ownerId: string;
+      type: AssetType;
+    },
     config: SystemConfig,
     modelName: string,
   ): Promise<EnrichmentStageResult> {
@@ -1513,12 +1461,10 @@ export class ImageEnrichmentService extends BaseService {
     }
     return { status: JobStatus.Skipped, reasonKey: 'cloud-batch' };
   }
-
   /** FL-163: write the new photos waiting in memory to the automatic queue now. */
   flushCloudDescriptionQueue(): Promise<void> {
     return this.cloudQueue.flush();
   }
-
   @OnEvent({ name: 'AppShutdown' })
   async onShutdownFlushCloudDescriptionQueue() {
     try {
@@ -1527,7 +1473,6 @@ export class ImageEnrichmentService extends BaseService {
       this.logger.warn(`The Frameleaf Cloud description queue was not written: ${getErrorMessage(error)}`);
     }
   }
-
   /**
    * Admit one request against the destination a plan pinned (FL-110) or, without one, the routed
    * destination. Never a different one: a pinned destination that is gone or refuses fails the
@@ -1548,21 +1493,17 @@ export class ImageEnrichmentService extends BaseService {
       ? this.selectMlDestination({ workload, destinationId, jobId, jobName })
       : this.selectRoutedMlDestination({ workload, jobId, jobName });
   }
-
   /** Reusable frames (FL-59), on the injected database. Tests hand one in with `useVideoMomentRepository`. */
   private _videoMoments?: VideoMomentRepository;
-
   private get videoMoments(): VideoMomentRepository | undefined {
     if (!this._videoMoments && this.db) {
       this._videoMoments = new VideoMomentRepository(this.db);
     }
     return this._videoMoments;
   }
-
   useVideoMomentRepository(repository: VideoMomentRepository) {
     this._videoMoments = repository;
   }
-
   /** The fingerprint of the asset's original now, or undefined when it cannot be read. */
   private async getSourceFingerprint(id: string): Promise<string | undefined> {
     const moments = this.videoMoments;
@@ -1571,7 +1512,6 @@ export class ImageEnrichmentService extends BaseService {
     }
     return (await moments.getFingerprints([id])).get(id);
   }
-
   private toResponse(
     id: string,
     metadata: EnrichmentMetadata,
@@ -1579,7 +1519,6 @@ export class ImageEnrichmentService extends BaseService {
   ): AssetImageEnrichmentResponseDto {
     const description = metadata.description;
     const nsfwDetection = metadata.nsfwDetection;
-
     return {
       assetId: id,
       description:
@@ -1635,7 +1574,6 @@ export class ImageEnrichmentService extends BaseService {
             },
     };
   }
-
   private getReview(auth: AuthDto, action: EnrichmentReview['action'], isNsfw: boolean): EnrichmentReview {
     return {
       action,
@@ -1644,21 +1582,21 @@ export class ImageEnrichmentService extends BaseService {
       reviewedBy: auth.user.id,
     };
   }
-
   private async finalizeRepair(
     id: string,
-    changed: { visible: boolean; metadata: boolean },
+    changed: {
+      visible: boolean;
+      metadata: boolean;
+    },
     metadata: EnrichmentMetadata,
   ) {
     if (changed.metadata) {
       await this.persistAppliedBookkeeping(id, metadata);
     }
-
     if (changed.visible) {
       await this.jobRepository.queue({ name: JobName.SidecarWrite, data: { id } });
     }
   }
-
   /**
    * Re-lock and merge only the tag-application bookkeeping fields
    * (`appliedDescriptionHash`, `appliedTagHash`, `appliedTagValues`) from an
@@ -1674,7 +1612,6 @@ export class ImageEnrichmentService extends BaseService {
   private async persistAppliedBookkeeping(id: string, snapshot: EnrichmentMetadata) {
     await this.databaseRepository.withAssetMetadataLock(id, async (trx) => {
       const m = await this.getEnrichmentMetadata(id, trx);
-
       if (m.description?.status === 'success' && snapshot.description?.status === 'success') {
         copyAppliedFields(m.description, snapshot.description, [
           'appliedDescriptionHash',
@@ -1682,20 +1619,16 @@ export class ImageEnrichmentService extends BaseService {
           'appliedTagValues',
         ]);
       }
-
       if (m.nsfwDetection?.status === 'success' && snapshot.nsfwDetection?.status === 'success') {
         copyAppliedFields(m.nsfwDetection, snapshot.nsfwDetection, ['appliedTagHash', 'appliedTagValues']);
       }
-
       await this.saveEnrichmentMetadata(id, m, trx);
     });
   }
-
   private ensureManualNsfwMetadata(metadata: EnrichmentMetadata, isNsfw: boolean): NsfwEnrichmentTask {
     if (metadata.nsfwDetection?.status === 'success') {
       return metadata.nsfwDetection;
     }
-
     metadata.nsfwDetection = {
       status: 'success',
       modelName: 'manual-review',
@@ -1708,89 +1641,67 @@ export class ImageEnrichmentService extends BaseService {
     };
     return metadata.nsfwDetection;
   }
-
   private getEffectiveNsfw(metadata: EnrichmentMetadata) {
     const nsfw = metadata.nsfwDetection;
-
     if (nsfw?.review) {
       return nsfw.review.isNsfw;
     }
-
     if (nsfw?.status === 'success' && nsfw.result.isNsfw) {
       return true;
     }
-
     const description = metadata.description?.status === 'success' ? metadata.description.result : undefined;
     if (this.isDescriptionNsfwLikely(description)) {
       return true;
     }
-
     return nsfw?.status === 'success' ? false : undefined;
   }
-
   private async clearGeneratedDescription(id: string, existingDescription: string, metadata: EnrichmentMetadata) {
     if (metadata.description?.status !== 'success' || !metadata.description.appliedDescriptionHash) {
       return { visible: false, metadata: false };
     }
-
     const description = withoutGeneratedDescriptionBlocks(existingDescription, [
       metadata.description.result.description,
     ]);
-
-    const sidecarOnly = await this.isEnrichmentSidecarAuthoritative();
-    const visible = !sidecarOnly && description !== existingDescription.trim();
+    const visible = !false && description !== existingDescription.trim();
     if (visible) {
       await this.assetRepository.upsertExif({
         exif: updateLockedColumns({ assetId: id, description }),
         lockedPropertiesBehavior: 'append',
       });
     }
-
     delete metadata.description.appliedDescriptionHash;
     return { visible, metadata: true };
   }
-
   private getStoredGeneratedTags(metadata: EnrichmentMetadata) {
     const tags = new Set<string>();
-
     if (metadata.description?.status === 'success' && metadata.description.appliedTagValues) {
       for (const tag of metadata.description.appliedTagValues) {
         tags.add(tag);
       }
     }
-
     if (metadata.nsfwDetection?.status === 'success' && metadata.nsfwDetection.appliedTagValues) {
       for (const tag of metadata.nsfwDetection.appliedTagValues) {
         tags.add(tag);
       }
     }
-
     return [...tags];
   }
-
   private async clearGeneratedTags(id: string, ownerId: string, tags: string[]) {
-    if (await this.isEnrichmentSidecarAuthoritative()) {
-      return { visible: false, metadata: false };
-    }
     let visible = false;
     for (const tag of tags) {
       const existing = await this.tagRepository.getByValue(ownerId, tag);
       if (!existing) {
         continue;
       }
-
       await this.tagRepository.removeAssetIds(existing.id, [id]);
       visible = true;
     }
-
     if (visible) {
       await this.updateExifTags(id);
       await this.eventRepository.emit('AssetUntag', { assetId: id });
     }
-
     return { visible, metadata: false };
   }
-
   // Encodes the freshly generated description through CLIP's text encoder
   // and persists the result alongside the visual embedding. Smart search
   // blends this in so an asset can match a query via what the VLM said
@@ -1799,7 +1710,9 @@ export class ImageEnrichmentService extends BaseService {
   private async upsertDescriptionEmbedding(
     assetId: string,
     description: string,
-    clipConfig: { modelName: string },
+    clipConfig: {
+      modelName: string;
+    },
     options: EnrichmentRunOptions = {},
   ): Promise<void> {
     const text = description?.trim();
@@ -1824,16 +1737,13 @@ export class ImageEnrichmentService extends BaseService {
       this.logger.warn(`Failed to embed description for asset ${assetId}: ${getErrorMessage(error)}`);
     }
   }
-
   private getStoredNsfw(metadata: EnrichmentMetadata) {
     if (metadata.nsfwDetection?.status !== 'success') {
       return;
     }
-
     const isNsfw = this.getEffectiveNsfw(metadata);
     return isNsfw === undefined ? metadata.nsfwDetection.result : { ...metadata.nsfwDetection.result, isNsfw };
   }
-
   private isEligibleImage(
     asset:
       | {
@@ -1851,7 +1761,6 @@ export class ImageEnrichmentService extends BaseService {
       (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive)
     );
   }
-
   private isEligibleForDescription(
     asset:
       | {
@@ -1870,101 +1779,21 @@ export class ImageEnrichmentService extends BaseService {
       (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive)
     );
   }
-
   /**
    * Once the sidecars are authoritative the privacy row decides the sensitive verdict and review.
    * A missing row is "no classification yet" (FL-34): the stored enrichment is read as it is, with no
    * verdict laid over it, and the next save creates the row (`ForkPrivacyRepository.saveClassification`).
    */
   private async getEnrichmentMetadata(id: string, kysely?: Kysely<DB>): Promise<EnrichmentMetadata> {
-    const database = kysely ?? this.db;
-    let authoritativePrivacy: PrivacySidecar | undefined;
-    if (this.db) {
-      const privacyRepository = new ForkPrivacyRepository(this.db);
-      if (await privacyRepository.shouldReadSidecar(database)) {
-        authoritativePrivacy = await privacyRepository.get(id, database);
-      }
-    }
-    let metadata: EnrichmentMetadata;
-    if (this.db && database && (await new ForkEnrichmentRepository(this.db).shouldReadSidecar(database))) {
-      const sidecar = await new ForkEnrichmentRepository(this.db).get(id, database);
-      if (!sidecar) {
-        throw new Error(`Missing fork enrichment sidecar for asset ${id}`);
-      }
-      metadata = sidecar.provenance as EnrichmentMetadata;
-    } else {
-      const row = await this.assetRepository.getMetadataByKey(id, AssetMetadataKey.MlEnrichment, kysely);
-      metadata = isRecord(row?.value) ? (row.value as EnrichmentMetadata) : {};
-    }
-    if (!this.db) {
-      return metadata;
-    }
-
-    if (!authoritativePrivacy) {
-      return metadata;
-    }
-    return this.applyPrivacySidecar(metadata, authoritativePrivacy);
+    const row = await this.assetRepository.getMetadataByKey(id, AssetMetadataKey.MlEnrichment, kysely);
+    return isRecord(row?.value) ? (row.value as EnrichmentMetadata) : {};
   }
-
   private async saveEnrichmentMetadata(id: string, value: EnrichmentMetadata, kysely?: Kysely<DB>) {
-    const database = kysely ?? this.db;
-    if (!this.db || !database) {
-      await this.assetRepository.upsertMetadata(
-        id,
-        [{ key: AssetMetadataKey.MlEnrichment, value: value as Record<string, unknown> }],
-        kysely,
-      );
-      return;
-    }
-    const repository = new ForkEnrichmentRepository(this.db);
-    const sidecarOnly = await repository.shouldReadSidecar(database);
-    if (!sidecarOnly) {
-      await this.assetRepository.upsertMetadata(
-        id,
-        [{ key: AssetMetadataKey.MlEnrichment, value: value as Record<string, unknown> }],
-        kysely,
-      );
-    }
-    await repository.save(id, value as Record<string, unknown>, database);
-    if (sidecarOnly) {
-      // FL-34: once the sidecars are authoritative, the privacy projection that every read filters on
-      // is written with the enrichment in the caller's transaction (before the cutover
-      // `upsertMetadata` keeps `asset.is_nsfw` and the mirror in step the same way).
-      await new ForkPrivacyRepository(this.db).saveClassification(
-        id,
-        this.getEffectiveNsfw(value),
-        (value.nsfwDetection?.review as Record<string, unknown> | undefined) ?? null,
-        database,
-      );
-    }
-  }
-
-  private applyPrivacySidecar(metadata: EnrichmentMetadata, privacy: PrivacySidecar): EnrichmentMetadata {
-    const current = metadata.nsfwDetection;
-    const suppression = privacy.suppression as EnrichmentReview | null;
-    if (current?.status === 'success') {
-      const nsfwDetection: NsfwEnrichmentTask = {
-        ...current,
-        result: { ...current.result, isNsfw: privacy.isNsfw },
-      };
-      if (suppression) {
-        nsfwDetection.review = suppression;
-      } else {
-        delete nsfwDetection.review;
-      }
-      return { ...metadata, nsfwDetection };
-    }
-
-    return {
-      ...metadata,
-      nsfwDetection: {
-        status: 'success',
-        modelName: 'privacy-sidecar',
-        updatedAt: suppression?.reviewedAt ?? new Date(0).toISOString(),
-        result: { isNsfw: privacy.isNsfw, score: privacy.isNsfw ? 1 : 0, labels: {} },
-        ...(suppression && { review: suppression }),
-      },
-    };
+    await this.assetRepository.upsertMetadata(
+      id,
+      [{ key: AssetMetadataKey.MlEnrichment, value: value as Record<string, unknown> }],
+      kysely,
+    );
   }
 
   private async applyVisibleMetadata({
@@ -1996,9 +1825,6 @@ export class ImageEnrichmentService extends BaseService {
   }) {
     let visible = false;
     let metadataChanged = false;
-    const enrichmentRepository = this.db ? new ForkEnrichmentRepository(this.db) : undefined;
-    const sidecarOnly = !!enrichmentRepository && (await enrichmentRepository.shouldReadSidecar());
-
     const descriptionHash = hash(result.description);
     if (
       result.description &&
@@ -2009,8 +1835,7 @@ export class ImageEnrichmentService extends BaseService {
       const baseDescription = keepManual
         ? withoutGeneratedDescriptionBlocks(existingDescription, previousDescription ? [previousDescription] : [])
         : '';
-
-      if (!sidecarOnly && block && !baseDescription.includes(block)) {
+      if (!false && block && !baseDescription.includes(block)) {
         const description = baseDescription ? `${baseDescription}\n\n${block}` : block;
         await this.assetRepository.upsertExif({
           exif: updateLockedColumns({ assetId: id, description }),
@@ -2021,7 +1846,6 @@ export class ImageEnrichmentService extends BaseService {
       metadata.description.appliedDescriptionHash = descriptionHash;
       metadataChanged = true;
     }
-
     const tags = this.getTags(result, nsfw, metadata);
     const tagHash = hash(tags);
     const descriptionMetadata = metadata.description?.status === 'success' ? metadata.description : undefined;
@@ -2032,17 +1856,15 @@ export class ImageEnrichmentService extends BaseService {
       (tags.length > 0 || hasStoredTagApplication) &&
       descriptionMetadata.appliedTagHash !== tagHash
     ) {
-      if (!sidecarOnly) {
+      if (!false) {
         const cleared = await this.clearGeneratedTags(id, ownerId, previousTagValues);
         visible ||= cleared.visible;
       }
-
       if (tags.length > 0) {
-        const tagsChanged = sidecarOnly
+        const tagsChanged = false
           ? { visible: false, appliedTagValues: tags }
           : await this.upsertAssetTags(id, ownerId, tags);
         visible ||= tagsChanged.visible;
-
         descriptionMetadata.appliedTagHash = tagHash;
         descriptionMetadata.appliedTagValues = tagsChanged.appliedTagValues;
       } else {
@@ -2051,56 +1873,38 @@ export class ImageEnrichmentService extends BaseService {
       }
       metadataChanged = true;
     }
-
     return { visible, metadata: metadataChanged };
   }
-
   private async applyNsfwTags(id: string, ownerId: string, nsfw: NsfwDetectionResult, metadata: EnrichmentMetadata) {
     if (metadata.nsfwDetection?.status !== 'success') {
       return { visible: false, metadata: false };
     }
-
     if (!nsfw.isNsfw) {
       return this.clearAppliedNsfwTags(id, ownerId, metadata);
     }
-
     const tags = this.getNsfwTags(nsfw);
     const tagHash = hash(tags);
     if (metadata.nsfwDetection.appliedTagHash === tagHash) {
       return { visible: false, metadata: false };
     }
-
-    if (await this.isEnrichmentSidecarAuthoritative()) {
-      metadata.nsfwDetection.appliedTagHash = tagHash;
-      metadata.nsfwDetection.appliedTagValues = tags;
-      return { visible: false, metadata: true };
-    }
-
     const cleared = await this.clearGeneratedTags(id, ownerId, metadata.nsfwDetection.appliedTagValues ?? []);
     const tagsChanged = await this.upsertAssetTags(id, ownerId, tags);
     metadata.nsfwDetection.appliedTagHash = tagHash;
     metadata.nsfwDetection.appliedTagValues = tagsChanged.appliedTagValues;
     return { visible: cleared.visible || tagsChanged.visible, metadata: true };
   }
-
   private async clearAppliedNsfwTags(id: string, ownerId: string, metadata: EnrichmentMetadata) {
     const changed = await this.clearGeneratedTags(
       id,
       ownerId,
       metadata.nsfwDetection?.status === 'success' ? (metadata.nsfwDetection.appliedTagValues ?? []) : [],
     );
-
     if (metadata.nsfwDetection?.status === 'success') {
       delete metadata.nsfwDetection.appliedTagHash;
       delete metadata.nsfwDetection.appliedTagValues;
       changed.metadata = true;
     }
-
     return changed;
-  }
-
-  private async isEnrichmentSidecarAuthoritative(kysely?: Kysely<DB>): Promise<boolean> {
-    return !!this.db && new ForkEnrichmentRepository(this.db).shouldReadSidecar(kysely ?? this.db);
   }
 
   private getTags(result: ImageDescriptionResult, nsfw?: NsfwDetectionResult, metadata?: EnrichmentMetadata) {
@@ -2111,14 +1915,12 @@ export class ImageEnrichmentService extends BaseService {
     // misclassify an asset.
     const required = new Set<string>();
     const effectiveNsfw = metadata ? this.getEffectiveNsfw(metadata) : nsfw?.isNsfw;
-
     if (effectiveNsfw) {
       const effectiveNsfwResult = nsfw?.isNsfw ? nsfw : this.getDescriptionNsfwResult(result);
       for (const tag of this.getNsfwTags(effectiveNsfwResult)) {
         required.add(tag);
       }
     }
-
     if (result.medical?.is_medical_likely) {
       required.add('medical');
       for (const indicator of result.medical.indicators) {
@@ -2128,7 +1930,6 @@ export class ImageEnrichmentService extends BaseService {
         }
       }
     }
-
     const TAG_BUDGET = 24;
     const remaining = Math.max(0, TAG_BUDGET - required.size);
     const optional = new Set<string>();
@@ -2141,29 +1942,23 @@ export class ImageEnrichmentService extends BaseService {
         optional.add(normalized);
       }
     }
-
     return [...required, ...optional];
   }
-
   private isNsfwTag(tag: string) {
     return tag === 'nsfw' || STRONG_NSFW_INDICATORS.has(tag);
   }
-
   private isDescriptionNsfwLikely(result?: ImageDescriptionResult) {
     const safety = result?.safety;
     if (!result || !safety?.is_nsfw_likely || safety.confidence.toLowerCase() !== HIGH_CONFIDENCE) {
       return false;
     }
-
     for (const indicator of safety.indicators) {
       if (STRONG_NSFW_INDICATORS.has(normalizeTag(indicator))) {
         return true;
       }
     }
-
     return STRONG_NSFW_TEXT_PATTERN.test([result.description, safety.reason].join(' '));
   }
-
   private getDescriptionNsfwResult(result: ImageDescriptionResult): NsfwDetectionResult {
     const labels: Record<string, number> = {};
     for (const indicator of result.safety?.indicators ?? []) {
@@ -2178,7 +1973,6 @@ export class ImageEnrichmentService extends BaseService {
       labels,
     };
   }
-
   private getNsfwTags(nsfw: NsfwDetectionResult) {
     const tags = new Set(['nsfw']);
     for (const [label, score] of Object.entries(nsfw.labels)) {
@@ -2189,23 +1983,19 @@ export class ImageEnrichmentService extends BaseService {
     }
     return [...tags];
   }
-
   private async upsertAssetTags(id: string, ownerId: string, tags: string[]) {
     const upsertedTags = await upsertTags(this.tagRepository, { userId: ownerId, tags });
     const items: Insertable<TagAssetTable>[] = upsertedTags.map((tag) => ({ tagId: tag.id, assetId: id }));
     const results = await this.tagRepository.upsertAssetIds(items);
     const insertedTagIds = new Set(results.map(({ tagId }) => tagId));
     const appliedTagValues = upsertedTags.filter(({ id }) => insertedTagIds.has(id)).map(({ value }) => value);
-
     if (results.length === 0) {
       return { visible: false, appliedTagValues };
     }
-
     await this.updateExifTags(id);
     await this.eventRepository.emit('AssetTag', { assetId: id, userId: ownerId });
     return { visible: true, appliedTagValues };
   }
-
   private async updateExifTags(assetId: string) {
     const { tags } = await this.assetRepository.getForUpdateTags(assetId);
     await this.assetRepository.upsertExif({
@@ -2213,7 +2003,6 @@ export class ImageEnrichmentService extends BaseService {
       lockedPropertiesBehavior: 'append',
     });
   }
-
   /**
    * Build the list of named persons detected in the asset for identity-aware
    * prompt assembly.
@@ -2241,7 +2030,6 @@ export class ImageEnrichmentService extends BaseService {
       return [];
     }
     const knownPersons: KnownPerson[] = [];
-
     for (const face of faces) {
       // Trim before checking so whitespace-only names ('   ') are rejected the same
       // as empty strings — both would degrade the identity hint to "Known people: -".
@@ -2249,14 +2037,11 @@ export class ImageEnrichmentService extends BaseService {
       if (!face.personGroupId || !name || face.person?.isHidden) {
         continue;
       }
-
       const { imageWidth, imageHeight, boundingBoxX1, boundingBoxX2, boundingBoxY1, boundingBoxY2 } = face;
-
       // Skip faces with degenerate dimensions to avoid division by zero or NaN.
       if (!imageWidth || !imageHeight) {
         continue;
       }
-
       knownPersons.push({
         name,
         // Always 1 — see method docstring (Immich has no per-face confidence column).
@@ -2267,10 +2052,8 @@ export class ImageEnrichmentService extends BaseService {
         ],
       });
     }
-
     return knownPersons;
   }
-
   /**
    * Build a composite frame-grid image of a video from its reusable frames (FL-59), cutting them
    * first when the video has none or its original changed. Duplicate detection plays no part.
@@ -2281,12 +2064,17 @@ export class ImageEnrichmentService extends BaseService {
     assetId: string,
     ownerId: string,
     config: SystemConfig,
-  ): Promise<{ path: string; videoContext: VideoContext } | undefined> {
+  ): Promise<
+    | {
+        path: string;
+        videoContext: VideoContext;
+      }
+    | undefined
+  > {
     const moments = this.videoMoments;
     if (!moments) {
       return undefined;
     }
-
     const outcome = await ensureVideoFrames(
       { media: this.mediaRepository, storage: this.storageRepository, moments, logger: this.logger },
       assetId,
@@ -2295,29 +2083,34 @@ export class ImageEnrichmentService extends BaseService {
     if (outcome.status !== 'cut' && outcome.status !== 'current') {
       return undefined;
     }
-
     const outputPath = StorageCore.getNestedPath(StorageFolder.Thumbnails, ownerId, `${assetId}_description_grid.jpeg`);
     this.storageCore.ensureFolders(outputPath);
     return this.composeGrid(outcome.frames, outputPath, assetId);
   }
-
   /**
    * Lay frames out in time order as one grid image. Layout escalates with frame count: 2 → 1×2,
    * 3-4 → 2×2, 5-6 → 2×3, 7+ → 3×3 (subsampling evenly when more than nine exist).
    */
   private async composeGrid(
-    frames: readonly { path: string; timestampMs: number }[],
+    frames: readonly {
+      path: string;
+      timestampMs: number;
+    }[],
     outputPath: string,
     assetId: string,
-  ): Promise<{ path: string; videoContext: VideoContext } | undefined> {
+  ): Promise<
+    | {
+        path: string;
+        videoContext: VideoContext;
+      }
+    | undefined
+  > {
     if (frames.length < 2) {
       return undefined;
     }
-
     const ordered = [...frames].sort((a, b) => a.timestampMs - b.timestampMs);
     const layout = chooseGridLayout(ordered.length);
     const selected = subsampleFrames(ordered, layout.cols * layout.rows);
-
     try {
       await this.mediaRepository.composeImageGrid(
         selected.map((f) => f.path),
@@ -2327,7 +2120,6 @@ export class ImageEnrichmentService extends BaseService {
       this.logger.warn(`Failed to compose video frame grid for asset ${assetId}: ${getErrorMessage(error)}`);
       return undefined;
     }
-
     return {
       path: outputPath,
       videoContext: {
@@ -2338,8 +2130,12 @@ export class ImageEnrichmentService extends BaseService {
     };
   }
 }
-
-const chooseGridLayout = (frameCount: number): { cols: number; rows: number } => {
+const chooseGridLayout = (
+  frameCount: number,
+): {
+  cols: number;
+  rows: number;
+} => {
   if (frameCount <= 2) {
     return { cols: 2, rows: 1 };
   }
@@ -2351,8 +2147,7 @@ const chooseGridLayout = (frameCount: number): { cols: number; rows: number } =>
   }
   return { cols: 3, rows: 3 };
 };
-
-const subsampleFrames = <T>(frames: T[], target: number): T[] => {
+const subsampleFrames = <T,>(frames: T[], target: number): T[] => {
   if (frames.length <= target) {
     return frames;
   }

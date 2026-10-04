@@ -1,5 +1,5 @@
 /* eslint-disable unicorn/no-this-outside-of-class */
-import { DatabaseConnectionParams, createPostgres } from '@immich/sql-tools';
+import { DatabaseConnectionParams, createPostgres } from '@frameleaf/sql-tools';
 import { CallHandler, ExecutionContext, Provider } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { transformException } from '@nestjs/platform-express/multer/multer/multer.utils';
@@ -41,7 +41,7 @@ import { DownloadRepository } from 'src/repositories/download.repository.js';
 import { DuplicateRepository } from 'src/repositories/duplicate.repository.js';
 import { EmailRepository } from 'src/repositories/email.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { ForkSchemaRepository } from 'src/repositories/fork-schema.repository.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { FrameleafCloudMlRepository } from 'src/repositories/frameleaf-cloud-ml.repository.js';
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
@@ -203,7 +203,7 @@ export const mockBaseService = <T extends BaseService>(service: new (...args: an
   return automock(service, { args: [{ setContext: () => {} }], strict: false });
 };
 
-export const automock = <T>(
+export const automock = <T,>(
   Dependency: new (...args: any[]) => T,
   options?: {
     args?: ConstructorParameters<new (...args: any[]) => T>;
@@ -278,7 +278,7 @@ export type ServiceOverrides = {
   duplicateRepository: DuplicateRepository;
   email: EmailRepository;
   event: EventRepository;
-  forkSchema: ForkSchemaRepository;
+  forkSchema: AssetChecksumRepository;
   integrityReport: IntegrityRepository;
   job: JobRepository;
   library: LibraryRepository;
@@ -356,9 +356,8 @@ export const getMocks = () => {
   databaseMock.withAssetMetadataLocks.mockImplementation((_assetIds, fn) => fn(undefined as never));
   databaseMock.withAssetSidecarLock.mockImplementation((_assetId, fn) => fn(undefined as never));
   databaseMock.withUserPreferencesLock.mockImplementation((_userId, fn) => fn(undefined as never));
-  databaseMock.applyIsolatedFrameleafMigrations.mockResolvedValue({ applied: [], pending: [], skipped: null });
-  databaseMock.getPostgresVersion = vitest.fn().mockResolvedValue('14.10 (Debian 14.10-1.pgdg120+1)');
-  databaseMock.getPostgresVersionRange = vitest.fn().mockReturnValue('>=14.0.0');
+  databaseMock.getPostgresVersion = vitest.fn().mockResolvedValue('19beta4 (Debian 19~beta4-1.pgdg12+1)');
+  databaseMock.getPostgresVersionRange = vitest.fn().mockReturnValue('>=19.0.0 <20.0.0');
   databaseMock.createExtension = vitest.fn().mockResolvedValue(void 0);
 
   const mocks: ServiceMocks = {
@@ -520,7 +519,7 @@ export const newTestService = <T extends BaseService>(
     overrides.duplicateRepository || (mocks.duplicateRepository as As<DuplicateRepository>),
     overrides.email || (mocks.email as As<EmailRepository>),
     overrides.event || (mocks.event as As<EventRepository>),
-    overrides.forkSchema || (mocks.forkSchema as As<ForkSchemaRepository>),
+    overrides.forkSchema || (mocks.forkSchema as As<AssetChecksumRepository>),
     overrides.integrityReport || (mocks.integrityReport as As<IntegrityRepository>),
     overrides.job || (mocks.job as As<JobRepository>),
     overrides.library || (mocks.library as As<LibraryRepository>),
@@ -599,7 +598,7 @@ function* newPngFactory() {
 
 const pngFactory = newPngFactory();
 
-const templateName = 'mich';
+const templateName = 'frameleaf';
 
 const withDatabase = (url: string, name: string) => url.replace(`/${templateName}`, () => `/${name}`);
 
@@ -609,7 +608,7 @@ export const getKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
   const sql = createPostgres({ maxConnections: 1, connection });
 
   const randomSuffix = Math.random().toString(36).slice(2, 7);
-  const dbName = `immich_${suffix ?? randomSuffix}`;
+  const dbName = `frameleaf_${suffix ?? randomSuffix}`;
   try {
     await sql.unsafe(`CREATE DATABASE ${dbName} WITH TEMPLATE ${templateName} OWNER postgres;`);
   } finally {
@@ -623,7 +622,6 @@ export const getKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
 
 export const getActiveForkKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
   const db = await getKyselyDB(suffix);
-  await kyselySql`UPDATE immich_fork.state SET phase = 'active', active = true WHERE id = 1`.execute(db);
   return db;
 };
 

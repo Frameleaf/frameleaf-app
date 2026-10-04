@@ -1,5 +1,5 @@
-import { Column, ForeignKeyColumn, PrimaryColumn, Table } from '@immich/sql-tools';
-import type { Generated } from '@immich/sql-tools';
+import { Column, ForeignKeyColumn, PrimaryColumn, Table } from '@frameleaf/sql-tools';
+import type { Generated } from '@frameleaf/sql-tools';
 import { UpdateIdColumn } from 'src/decorators.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 

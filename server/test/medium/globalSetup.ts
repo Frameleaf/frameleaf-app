@@ -11,7 +11,7 @@ import { getKyselyConfig } from 'src/utils/database.js';
 const postgresImageContext = fileURLToPath(new URL('../../../docker/postgres', import.meta.url));
 
 const globalSetup = async () => {
-  const templateName = 'mich';
+  const templateName = 'frameleaf';
   // The Dockerfile falls back to dpkg for its architecture, so the default builder is enough.
   const postgresImage = await GenericContainer.fromDockerfile(postgresImageContext).build('frameleaf-postgres:medium', {
     deleteOnExit: false,
@@ -26,8 +26,6 @@ const globalSetup = async () => {
     .withCommand([
       'postgres',
       '-c',
-      'shared_preload_libraries=vchord.so',
-      '-c',
       'max_wal_size=2GB',
       '-c',
       'shared_buffers=512MB',
@@ -37,8 +35,6 @@ const globalSetup = async () => {
       'full_page_writes=off',
       '-c',
       'synchronous_commit=off',
-      '-c',
-      'config_file=/var/lib/postgresql/data/postgresql.conf',
     ])
     .withWaitStrategy(Wait.forAll([Wait.forLogMessage('database system is ready to accept connections', 2)]))
     .start();
@@ -54,7 +50,6 @@ const globalSetup = async () => {
   const logger = LoggingRepository.create();
   const databaseRepository = new DatabaseRepository(db, logger, configRepository);
   await databaseRepository.runMigrations();
-  await databaseRepository.runForkMigrations();
 
   await db.destroy();
 };

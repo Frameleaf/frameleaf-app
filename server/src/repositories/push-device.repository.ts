@@ -6,14 +6,14 @@ import type { DB } from 'src/schema/index.js';
 import type { PushDeviceActivityTable, PushDeviceTable } from 'src/schema/tables/push-device.table.js';
 import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import { AssetVisibility, PushPlatform } from 'src/enum.js';
-import { withPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+
 import { anyUuid, withHiddenContentFilter } from 'src/utils/database.js';
 import { isNotLocked } from 'src/utils/locked.js';
-
 export type PushDevice = Selectable<PushDeviceTable>;
 export type PushDeviceActivity = Selectable<PushDeviceActivityTable>;
-export type PushDeviceWithActivities = PushDevice & { activities: PushDeviceActivity[] };
-
+export type PushDeviceWithActivities = PushDevice & {
+  activities: PushDeviceActivity[];
+};
 export type PushDeviceRegistration = {
   userId: string;
   sessionId: string;
@@ -25,14 +25,12 @@ export type PushDeviceRegistration = {
   backupDeviceKey: string | null;
   disabledEvents: string[];
 };
-
 export type PushDeviceChanges = Partial<
   Pick<
     PushDeviceRegistration,
     'pushToken' | 'pushToStartToken' | 'apnsEnvironment' | 'publicKey' | 'backupDeviceKey' | 'disabledEvents'
   >
 >;
-
 export type StaleBackupWakeTarget = {
   deviceId: string;
   userId: string;
@@ -41,22 +39,23 @@ export type StaleBackupWakeTarget = {
   pendingCount: number;
   lastSuccessfulBackupAt: Date;
 };
-
 /**
  * FL-228: the push device registry (`push_device`, `push_device_activity`). Tokens are delivery
  * addresses for the Frameleaf push gateway: they are read only to deliver, and never logged.
  */
 @Injectable()
 export class PushDeviceRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
-
+  constructor(
+    @InjectKysely()
+    private db: Kysely<DB>,
+  ) {}
   /**
    * Register the device of `sessionId`, or update its registration (a rotated push token, a new key).
    * A push token belongs to one installation, so a registration elsewhere holding the same token (the
    * app signed in again under a new session) is removed first.
    */
   upsert(registration: PushDeviceRegistration): Promise<PushDevice> {
-    return withPublicForkWrites(this.db, async (tx) => {
+    return this.db.transaction().execute(async (tx) => {
       await tx
         .deleteFrom('push_device')
         .where('platform', '=', registration.platform)
@@ -83,10 +82,9 @@ export class PushDeviceRepository {
         .executeTakeFirstOrThrow();
     });
   }
-
   /** Change some fields of the registration of `sessionId`; undefined when it has none. */
   update(sessionId: string, changes: PushDeviceChanges): Promise<PushDevice | undefined> {
-    return withPublicForkWrites(this.db, async (tx) => {
+    return this.db.transaction().execute(async (tx) => {
       if (changes.pushToken !== undefined) {
         const current = await tx
           .selectFrom('push_device')
@@ -110,12 +108,10 @@ export class PushDeviceRepository {
         .executeTakeFirst();
     });
   }
-
   async getBySession(sessionId: string): Promise<PushDeviceWithActivities | undefined> {
     const device = await this.devices().where('push_device.sessionId', '=', sessionId).executeTakeFirst();
     return device ? (await this.withActivities([device]))[0] : undefined;
   }
-
   async getByUser(userId: string): Promise<PushDeviceWithActivities[]> {
     const devices = await this.devices()
       .where('push_device.userId', '=', userId)
@@ -124,7 +120,6 @@ export class PushDeviceRepository {
       .execute();
     return this.withActivities(devices);
   }
-
   /** Every registration of these users, with Live Activity tokens, for one delivery. */
   async getDeliveryTargets(userIds: string[]): Promise<PushDeviceWithActivities[]> {
     if (userIds.length === 0) {
@@ -137,48 +132,53 @@ export class PushDeviceRepository {
       .execute();
     return this.withActivities(devices);
   }
-
   async deleteBySession(sessionId: string): Promise<boolean> {
-    const result = await withPublicForkWrites(this.db, (tx) =>
-      tx.deleteFrom('push_device').where('sessionId', '=', sessionId).executeTakeFirst(),
-    );
+    const result = await this.db
+      .transaction()
+      .execute((tx) => tx.deleteFrom('push_device').where('sessionId', '=', sessionId).executeTakeFirst());
     return Number(result.numDeletedRows) > 0;
   }
-
   async deleteForUser(userId: string, id: string): Promise<boolean> {
-    const result = await withPublicForkWrites(this.db, (tx) =>
-      tx.deleteFrom('push_device').where('id', '=', id).where('userId', '=', userId).executeTakeFirst(),
-    );
+    const result = await this.db
+      .transaction()
+      .execute((tx) =>
+        tx.deleteFrom('push_device').where('id', '=', id).where('userId', '=', userId).executeTakeFirst(),
+      );
     return Number(result.numDeletedRows) > 0;
   }
-
   async deleteAllForUser(userId: string): Promise<number> {
-    const result = await withPublicForkWrites(this.db, (tx) =>
-      tx.deleteFrom('push_device').where('userId', '=', userId).executeTakeFirst(),
-    );
+    const result = await this.db
+      .transaction()
+      .execute((tx) => tx.deleteFrom('push_device').where('userId', '=', userId).executeTakeFirst());
     return Number(result.numDeletedRows);
   }
-
   /** The gateway said these tokens are gone (APNs 410, FCM UNREGISTERED). */
   async deleteByIds(ids: string[]): Promise<void> {
     if (ids.length === 0) {
       return;
     }
-    await withPublicForkWrites(this.db, (tx) => tx.deleteFrom('push_device').where('id', '=', anyUuid(ids)).execute());
+    await this.db.transaction().execute((tx) => tx.deleteFrom('push_device').where('id', '=', anyUuid(ids)).execute());
   }
-
   /** Forget a push-to-start token the gateway reported gone, keeping the registration. */
   async clearPushToStartTokens(ids: string[]): Promise<void> {
     if (ids.length === 0) {
       return;
     }
-    await withPublicForkWrites(this.db, (tx) =>
-      tx.updateTable('push_device').set({ pushToStartToken: null }).where('id', '=', anyUuid(ids)).execute(),
-    );
+    await this.db
+      .transaction()
+      .execute((tx) =>
+        tx.updateTable('push_device').set({ pushToStartToken: null }).where('id', '=', anyUuid(ids)).execute(),
+      );
   }
-
-  setActivity(deviceId: string, activity: { activityId: string; kind: string; token: string }) {
-    return withPublicForkWrites(this.db, (tx) =>
+  setActivity(
+    deviceId: string,
+    activity: {
+      activityId: string;
+      kind: string;
+      token: string;
+    },
+  ) {
+    return this.db.transaction().execute((tx) =>
       tx
         .insertInto('push_device_activity')
         .values({ deviceId, ...activity })
@@ -193,32 +193,31 @@ export class PushDeviceRepository {
         .executeTakeFirstOrThrow(),
     );
   }
-
   async deleteActivity(deviceId: string, activityId: string): Promise<boolean> {
-    const result = await withPublicForkWrites(this.db, (tx) =>
-      tx
-        .deleteFrom('push_device_activity')
-        .where('deviceId', '=', deviceId)
-        .where('activityId', '=', activityId)
-        .executeTakeFirst(),
-    );
+    const result = await this.db
+      .transaction()
+      .execute((tx) =>
+        tx
+          .deleteFrom('push_device_activity')
+          .where('deviceId', '=', deviceId)
+          .where('activityId', '=', activityId)
+          .executeTakeFirst(),
+      );
     return Number(result.numDeletedRows) > 0;
   }
-
   async deleteActivitiesByIds(ids: string[]): Promise<void> {
     if (ids.length === 0) {
       return;
     }
-    await withPublicForkWrites(this.db, (tx) =>
-      tx.deleteFrom('push_device_activity').where('id', '=', anyUuid(ids)).execute(),
-    );
+    await this.db
+      .transaction()
+      .execute((tx) => tx.deleteFrom('push_device_activity').where('id', '=', anyUuid(ids)).execute());
   }
-
   async markDelivered(ids: string[]): Promise<void> {
     if (ids.length === 0) {
       return;
     }
-    await withPublicForkWrites(this.db, (tx) =>
+    await this.db.transaction().execute((tx) =>
       tx
         .updateTable('push_device')
         .set({ lastDeliveredAt: sql`now()` })
@@ -226,7 +225,6 @@ export class PushDeviceRepository {
         .execute(),
     );
   }
-
   /**
    * FL-228 privacy (FL-137, FL-212/FL-213): which of these items may be named in a push payload or
    * shown as its thumbnail. Locked items (either lock representation), hidden items (the video half of a
@@ -249,7 +247,6 @@ export class PushDeviceRepository {
       .execute();
     return new Set(rows.map(({ id }) => id));
   }
-
   /**
    * Push devices linked to a phone backup device whose last reported success is older than `cutoff`
    * (never-reported devices have nothing to be stale against), not woken since `wakeCutoff`.
@@ -278,12 +275,11 @@ export class PushDeviceRepository {
       .orderBy('push_device.id')
       .execute() as Promise<StaleBackupWakeTarget[]>;
   }
-
   async markStaleWake(ids: string[]): Promise<void> {
     if (ids.length === 0) {
       return;
     }
-    await withPublicForkWrites(this.db, (tx) =>
+    await this.db.transaction().execute((tx) =>
       tx
         .updateTable('push_device')
         .set({ lastStaleWakeAt: sql`now()` })
@@ -291,11 +287,9 @@ export class PushDeviceRepository {
         .execute(),
     );
   }
-
   private devices() {
     return this.db.selectFrom('push_device').selectAll('push_device');
   }
-
   private async withActivities(devices: PushDevice[]): Promise<PushDeviceWithActivities[]> {
     if (devices.length === 0) {
       return [];

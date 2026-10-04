@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { isDeepStrictEqual } from 'node:util';
-import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { MediaIntegrityResult } from 'src/services/media-integrity.service.js';
 import {
   AssetLockReason,
@@ -16,19 +16,15 @@ import {
   PhysicalFileType,
   UserMetadataKey,
 } from 'src/enum.js';
-import {
-  getForkSchemaPhase,
-  readsForkSidecar,
-  writesForkSidecar,
-  writesLegacy,
-} from 'src/repositories/fork-derived-results.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { AuditAuthority, guardAudit, publishAudit } from 'src/repositories/icloud-audit.repository.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
-
-export type VerifiedMedia = Extract<MediaIntegrityResult, { status: 'healthy' }>;
+export type VerifiedMedia = Extract<
+  MediaIntegrityResult,
+  {
+    status: 'healthy';
+  }
+>;
 export type RecoveryOutcome =
   | 'imported'
   | 'reused'
@@ -38,7 +34,11 @@ export type RecoveryOutcome =
   | 'needs-review'
   | 'retry'
   | 'failed';
-export type RecoveryResult = { outcome: RecoveryOutcome; assetId?: string; reason?: string };
+export type RecoveryResult = {
+  outcome: RecoveryOutcome;
+  assetId?: string;
+  reason?: string;
+};
 export type RecoveryResource = {
   id: string;
   ownerId: string;
@@ -68,7 +68,6 @@ export type RecoveryCandidate = {
   isOffline: boolean;
   hidden: boolean;
   physicalOriginalFileId: string | null;
-  forkPhysicalFileId: string | null;
   sizeInBytes: number | null;
   damaged: boolean;
   matchesContent: boolean;
@@ -85,7 +84,6 @@ export type RecoveryTarget = {
   isExternal: boolean;
   libraryId: string | null;
   physicalOriginalFileId: string | null;
-  forkPhysicalFileId: string | null;
   outcome: 'imported' | 'reused' | 'repaired-missing' | 'repaired-corrupt';
   /**
    * FL-69: an external original with the same content, recorded as evidence only. Recovery never modifies
@@ -100,23 +98,23 @@ export type RecoveryAuthority = {
   includeHidden: boolean;
   audit?: AuditAuthority;
 };
-export type RecoveryReservation = { target: RecoveryTarget; promotedPath: string };
-
+export type RecoveryReservation = {
+  target: RecoveryTarget;
+  promotedPath: string;
+};
 @Injectable()
 export class MediaRecoveryRepository {
   constructor(
-    @InjectKysely() private db: Kysely<DB>,
-    private forkPrivacy: ForkPrivacyRepository,
-    private forkEnrichment: ForkEnrichmentRepository,
+    @InjectKysely()
+    private db: Kysely<DB>,
   ) {}
-
   async getResource(input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
     if (input.audit && !(await guardAudit(this.db, input.audit, input.ownerId))) {
       return;
     }
     const result = await sql<RecoveryResource>`
-      SELECT r.*, r."expectedSize"::float8 AS "expectedSize" FROM immich_fork.icloud_resource r
-      JOIN immich_fork.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
+      SELECT r.*, r."expectedSize"::float8 AS "expectedSize" FROM public.icloud_resource r
+      JOIN public.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
       WHERE r.id = ${input.resourceId}::uuid AND r."ownerId" = ${input.ownerId}::uuid
         AND r."leaseToken" = ${input.leaseToken}::uuid AND r."leaseExpiresAt" > now()
         AND r.status <> 'removed' AND c.state = 'connected'
@@ -124,7 +122,6 @@ export class MediaRecoveryRepository {
     `.execute(this.db);
     return result.rows[0];
   }
-
   async findCandidates(
     ownerId: string,
     verified: Pick<VerifiedMedia, 'sha1' | 'sha256'>,
@@ -132,14 +129,12 @@ export class MediaRecoveryRepository {
   ): Promise<RecoveryCandidate[]> {
     return this.candidates(this.db, ownerId, verified, mappedId);
   }
-
   private async candidates(
     db: Kysely<DB>,
     ownerId: string,
     verified: Pick<VerifiedMedia, 'sha1' | 'sha256'>,
     mappedId?: string | null,
   ) {
-    const phase = await getForkSchemaPhase(db);
     const hidden = await this.hiddenFilter(db, ownerId);
     const rows = await sql<RecoveryCandidate>`
       SELECT a.id, a."ownerId", a."updateId", a."originalPath", a.checksum, a."checksumAlgorithm",
@@ -154,15 +149,14 @@ export class MediaRecoveryRepository {
           WHEN ${ChecksumAlgorithm.sha256File} THEN a.checksum = ${verified.sha256}
           ELSE COALESCE(s.sha1 = ${verified.sha1} AND s.sha256 = ${verified.sha256}, false)
         END AS "matchesContent",
-        (to_jsonb(a)->>'physicalOriginalFileId') AS "physicalOriginalFileId", p."physicalFileId" AS "forkPhysicalFileId", e."fileSizeInByte"::float8 AS "sizeInBytes",
+        a."physicalOriginalFileId", e."fileSizeInByte"::float8 AS "sizeInBytes",
         (EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = a.id) OR ${hidden}) AS hidden,
         (SELECT l.reason FROM public.asset_lock l WHERE l."assetId" = a.id) AS "lockReason",
-        EXISTS (SELECT 1 FROM ${sql.id(readsForkSidecar(phase) ? 'immich_fork' : 'public', 'asset_health')} h
+        EXISTS (SELECT 1 FROM ${sql.id('public', 'asset_health')} h
           WHERE h."assetId" = a.id AND h.category IN ('missing', 'corrupt') AND h."resolvedAt" IS NULL
           AND h.status NOT IN ('resolved', 'relinked', 'trashed')) AS damaged
       FROM public.asset a LEFT JOIN public.asset_exif e ON e."assetId" = a.id
-      LEFT JOIN immich_fork.asset_checksum s ON s."assetId" = a.id
-      LEFT JOIN immich_fork.asset_physical_file p ON p."assetId" = a.id
+      LEFT JOIN public.asset_checksum s ON s."assetId" = a.id
       WHERE a."ownerId" = ${ownerId}::uuid AND a.id IN (
         ${this.contentMatchIds(ownerId, verified)}
         UNION SELECT ${mappedId ?? null}::uuid)
@@ -170,7 +164,6 @@ export class MediaRecoveryRepository {
     `.execute(db);
     return rows.rows;
   }
-
   async commitVerifiedReuse(
     input: RecoveryAuthority & {
       candidate: RecoveryCandidate;
@@ -198,7 +191,6 @@ export class MediaRecoveryRepository {
         isExternal: input.candidate.isExternal,
         libraryId: input.candidate.libraryId,
         physicalOriginalFileId: input.candidate.physicalOriginalFileId,
-        forkPhysicalFileId: input.candidate.forkPhysicalFileId,
         outcome: 'reused',
       };
       const candidate = await this.lockTarget(trx, input, target, input.verified);
@@ -216,14 +208,13 @@ export class MediaRecoveryRepository {
       if (!(await this.lockResource(trx, input))) {
         return { outcome: 'retry', reason: 'lease_expired' };
       }
-      await sql`UPDATE immich_fork.icloud_resource SET
+      await sql`UPDATE public.icloud_resource SET
         status = 'committed',
         path = ${candidate.originalPath}, verification = ${{ outcome: 'reused', identity: final.identity, sizeInBytes: final.sizeInBytes }}::jsonb,
         "lastError" = NULL, "updatedAt" = now() WHERE id = ${input.resourceId}::uuid`.execute(trx);
       return { outcome: 'reused', assetId: candidate.id };
     });
   }
-
   async reserve(
     input: RecoveryAuthority & {
       verified: VerifiedMedia;
@@ -255,7 +246,6 @@ export class MediaRecoveryRepository {
         isExternal: input.candidate?.isExternal ?? false,
         libraryId: input.candidate?.libraryId ?? null,
         physicalOriginalFileId: input.candidate?.physicalOriginalFileId ?? null,
-        forkPhysicalFileId: input.candidate?.forkPhysicalFileId ?? null,
         outcome: input.outcome,
         ...(matchedExternalAssetId && { matchedExternalAssetId }),
       };
@@ -273,8 +263,7 @@ export class MediaRecoveryRepository {
           refreshed.checksumAlgorithm === target.checksumAlgorithm &&
           refreshed.isExternal === target.isExternal &&
           refreshed.libraryId === target.libraryId &&
-          refreshed.physicalOriginalFileId === target.physicalOriginalFileId &&
-          refreshed.forkPhysicalFileId === target.forkPhysicalFileId
+          refreshed.physicalOriginalFileId === target.physicalOriginalFileId
         ) {
           target.updateId = refreshed.updateId;
         }
@@ -286,13 +275,12 @@ export class MediaRecoveryRepository {
       }
       const promotedPath = resource.promotedPath ?? input.proposedPath;
       await this.lockPath(trx, promotedPath);
-      await sql`UPDATE immich_fork.icloud_resource SET "expectedTarget" = ${target}::jsonb,
+      await sql`UPDATE public.icloud_resource SET "expectedTarget" = ${target}::jsonb,
         "promotedPath" = ${promotedPath}, sha1 = ${input.verified.sha1}, sha256 = ${input.verified.sha256},
         "updatedAt" = now() WHERE id = ${input.resourceId}::uuid`.execute(trx);
       return { target, promotedPath };
     });
   }
-
   async commit(
     input: RecoveryAuthority & {
       reservation: RecoveryReservation;
@@ -305,7 +293,7 @@ export class MediaRecoveryRepository {
     },
   ): Promise<RecoveryResult> {
     return this.db.transaction().execute(async (trx) => {
-      const phase = await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
+      await this.lockAuthority(trx, input.ownerId, input.verified.sha256);
       const resource = await this.lockResource(trx, input);
       const { target, promotedPath } = input.reservation;
       if (!resource) {
@@ -428,11 +416,9 @@ export class MediaRecoveryRepository {
               .onConflict((oc) => oc.column('assetId').doNothing())
               .execute();
           }
-          await this.forkPrivacy.mirrorFromLegacy(assetId, trx);
-          await this.forkEnrichment.initialize([assetId], trx);
         }
         const physicalId = randomUUID();
-        if (writesLegacy(phase)) {
+        {
           await trx
             .withSchema('public')
             .insertInto('physical_file')
@@ -446,19 +432,6 @@ export class MediaRecoveryRepository {
             })
             .execute();
         }
-        if (writesForkSidecar(phase)) {
-          await sql`INSERT INTO immich_fork.physical_file (id, "canonicalAssetId", type, checksum, "sizeInBytes", "canonicalPath", "createdAt", "updatedAt")
-            VALUES (${physicalId}::uuid, ${assetId}::uuid, 'original', ${final.sha256}, ${final.sizeInBytes}, ${promotedPath}, now(), now())`.execute(
-            trx,
-          );
-          await sql`INSERT INTO immich_fork.asset_physical_file ("assetId", "physicalFileId", "upstreamPath", "verifiedAt", "updatedAt")
-            VALUES (${assetId}::uuid, ${physicalId}::uuid, ${promotedPath}, now(), now())
-            ON CONFLICT ("assetId") DO UPDATE SET "physicalFileId" = EXCLUDED."physicalFileId", "upstreamPath" = EXCLUDED."upstreamPath",
-              "verifiedAt" = now(), "updatedAt" = now()`.execute(trx);
-        }
-        const legacyColumn = await sql<{ present: boolean }>`SELECT EXISTS (
-          SELECT 1 FROM pg_attribute WHERE attrelid = 'public.asset'::regclass
-            AND attname = 'physicalOriginalFileId' AND NOT attisdropped) AS present`.execute(trx);
         await trx
           .withSchema('public')
           .updateTable('asset')
@@ -469,19 +442,14 @@ export class MediaRecoveryRepository {
             isOffline: false,
             isExternal: false,
             libraryId: null,
-            ...(legacyColumn.rows[0]?.present && { physicalOriginalFileId: writesLegacy(phase) ? physicalId : null }),
+            physicalOriginalFileId: physicalId,
           })
           .where('id', '=', assetId)
           .execute();
-        if (writesLegacy(phase) && target.physicalOriginalFileId) {
+        if (target.physicalOriginalFileId) {
           await sql`UPDATE public.physical_file SET "canonicalAssetId" = (
             SELECT id FROM public.asset WHERE "physicalOriginalFileId" = ${target.physicalOriginalFileId}::uuid ORDER BY id LIMIT 1)
             WHERE id = ${target.physicalOriginalFileId}::uuid AND "canonicalAssetId" = ${assetId}::uuid`.execute(trx);
-        }
-        if (writesForkSidecar(phase) && target.forkPhysicalFileId) {
-          await sql`UPDATE immich_fork.physical_file SET "canonicalAssetId" = (
-            SELECT "assetId" FROM immich_fork.asset_physical_file WHERE "physicalFileId" = ${target.forkPhysicalFileId}::uuid ORDER BY "assetId" LIMIT 1)
-            WHERE id = ${target.forkPhysicalFileId}::uuid AND "canonicalAssetId" = ${assetId}::uuid`.execute(trx);
         }
         await trx
           .withSchema('public')
@@ -492,18 +460,14 @@ export class MediaRecoveryRepository {
       }
       // Every committed asset is managed (FL-69: an external original is never the recovered asset), so
       // these are a managed copy's digests
-      await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
+      await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
         VALUES (${assetId}::uuid, ${final.sha1}, ${final.sha256}, ${final.sizeInBytes}, ARRAY[${promotedPath}]::text[], 1,
           ${{ source: 'icloud-recovery', resourceId: input.resourceId, identity: final.identity }}::jsonb, now(), now())
         ON CONFLICT ("assetId") DO UPDATE SET sha1 = EXCLUDED.sha1, sha256 = EXCLUDED.sha256, "sizeInBytes" = EXCLUDED."sizeInBytes",
           "verifiedPaths" = EXCLUDED."verifiedPaths", evidence = EXCLUDED.evidence, "verifiedAt" = now(), "updatedAt" = now()`.execute(
         trx,
       );
-      for (const schema of [
-        ...(writesLegacy(phase) ? ['public'] : []),
-        ...(writesForkSidecar(phase) ? ['immich_fork'] : []),
-      ]) {
-        await sql`UPDATE ${sql.id(schema, 'asset_health')} SET status = ${MediaHealthStatus.Resolved}, severity = 'info',
+      await sql`UPDATE public.asset_health SET status = ${MediaHealthStatus.Resolved}, severity = 'info',
           "resolvedAt" = now(), "checkedAt" = now(), "dismissedAt" = NULL,
           resolution = resolution || jsonb_build_object('recoveredBy', 'icloud', 'resourceId', ${input.resourceId}::text,
             'previousPath', "originalPath", 'previousEvidence', evidence,
@@ -511,20 +475,19 @@ export class MediaRecoveryRepository {
               'resourceId', ${input.resourceId}::text, 'previousPath', "originalPath", 'evidence', evidence, 'status', status,
               'dismissedAt', "dismissedAt", 'recoveredAt', clock_timestamp()))), "originalPath" = ${promotedPath}
           WHERE "assetId" = ${assetId}::uuid AND category IN ('missing', 'corrupt') AND "resolvedAt" IS NULL`.execute(
-          trx,
-        );
-        await sql`UPDATE ${sql.id(schema, 'asset_health_candidate')} c SET status = 'candidate',
+        trx,
+      );
+      await sql`UPDATE public.asset_health_candidate c SET status = 'candidate',
           resolution = c.resolution || '{"autoRelinkable":false,"invalidatedBy":"icloud-recovery"}'::jsonb
-          FROM ${sql.id(schema, 'asset_health')} h WHERE c."healthId" = h.id AND h."assetId" = ${assetId}::uuid
+          FROM public.asset_health h WHERE c."healthId" = h.id AND h."assetId" = ${assetId}::uuid
             AND h.category IN ('missing', 'corrupt')`.execute(trx);
-      }
       const pendingJobs = reused
         ? []
         : [
             { name: JobName.AssetExtractMetadata, data: { id: assetId, source: 'upload' } },
             { name: JobName.AssetGenerateThumbnails, data: { id: assetId, source: 'upload' } },
           ];
-      await sql`UPDATE immich_fork.icloud_resource SET status = 'committed', "assetId" = ${assetId}::uuid,
+      await sql`UPDATE public.icloud_resource SET status = 'committed', "assetId" = ${assetId}::uuid,
         path = ${promotedPath}, verification = ${{
           outcome: target.outcome,
           identity: final.identity,
@@ -556,7 +519,6 @@ export class MediaRecoveryRepository {
       return { outcome: target.outcome, assetId };
     });
   }
-
   /**
    * Whether an asset other than an external original already holds these bytes. An external match is
    * evidence only (FL-69), so it never stands in the way of importing the managed copy.
@@ -568,14 +530,12 @@ export class MediaRecoveryRepository {
       LIMIT 1`.execute(trx);
     return rows.length > 0;
   }
-
   /** The owner's assets whose own content checksum, or a recorded digest, is one of these digests. */
   private contentMatchIds(ownerId: string, verified: Pick<VerifiedMedia, 'sha1' | 'sha256'>) {
     return sql`SELECT id FROM public.asset WHERE "ownerId" = ${ownerId}::uuid AND checksum IN (${verified.sha1}, ${verified.sha256})
           AND "checksumAlgorithm" IN (${ChecksumAlgorithm.sha1File}, ${ChecksumAlgorithm.sha256File})
-        UNION SELECT "assetId" FROM immich_fork.asset_checksum WHERE sha1 = ${verified.sha1} OR sha256 = ${verified.sha256}`;
+        UNION SELECT "assetId" FROM public.asset_checksum WHERE sha1 = ${verified.sha1} OR sha256 = ${verified.sha256}`;
   }
-
   /** Besides a lock, what hides an owner's asset from a session that is not unlocked: nsfw or suppression. */
   private async hiddenFilter(db: Kysely<DB>, ownerId: string) {
     const preference = await db
@@ -586,7 +546,16 @@ export class MediaRecoveryRepository {
       .forShare()
       .executeTakeFirst();
     const preferences = preference?.value as
-      { privacy?: { suppression?: { tagIds?: string[]; personIds?: string[]; petIds?: string[] } } } | undefined;
+      | {
+          privacy?: {
+            suppression?: {
+              tagIds?: string[];
+              personIds?: string[];
+              petIds?: string[];
+            };
+          };
+        }
+      | undefined;
     const suppression = preferences?.privacy?.suppression;
     return hiddenContentAssetIdExists(sql`a.id`, {
       userId: ownerId,
@@ -597,7 +566,6 @@ export class MediaRecoveryRepository {
       petIds: suppression?.petIds ?? [],
     });
   }
-
   /**
    * FL-69: the protection a managed copy takes from the hidden external original it matches, so a copy
    * never shows what the original hides. A Locked original passes on its lock reason. One hidden by
@@ -611,7 +579,10 @@ export class MediaRecoveryRepository {
     externalAssetId: string,
   ): Promise<AssetLockReason | undefined> {
     const hidden = await this.hiddenFilter(trx, ownerId);
-    const { rows } = await sql<{ lockReason: AssetLockReason | null; hidden: boolean }>`
+    const { rows } = await sql<{
+      lockReason: AssetLockReason | null;
+      hidden: boolean;
+    }>`
       SELECT (SELECT l.reason FROM public.asset_lock l WHERE l."assetId" = a.id) AS "lockReason", ${hidden} AS hidden
       FROM public.asset a WHERE a.id = ${externalAssetId}::uuid AND a."ownerId" = ${ownerId}::uuid FOR SHARE OF a`.execute(
       trx,
@@ -619,33 +590,17 @@ export class MediaRecoveryRepository {
     const row = rows[0];
     return row?.lockReason ?? (row?.hidden ? AssetLockReason.Marked : undefined);
   }
-
-  private async lockAuthority(trx: Kysely<DB>, ownerId: string, checksum: Buffer): Promise<ForkSchemaPhase> {
-    const { rows } = await sql<{
-      phase: ForkSchemaPhase;
-    }>`SELECT phase FROM immich_fork.state WHERE id = 1 FOR SHARE`.execute(trx);
-    const phase = rows[0]?.phase;
-    if (!phase || !['dual-write', 'ready', 'active'].includes(phase)) {
-      throw new Error('recovery_phase_unavailable');
-    }
-    const migrating = await sql`SELECT 1 FROM immich_fork.migration_audit
-      WHERE status = 'running' AND name IN ('fork-return-reconciliation', 'official-handoff-preparation') LIMIT 1`.execute(
-      trx,
-    );
-    if (migrating.rows.length > 0) {
-      throw new Error('recovery_migration_running');
-    }
+  private async lockAuthority(trx: Kysely<DB>, ownerId: string, checksum: Buffer): Promise<void> {
+    await sql`SELECT pg_advisory_xact_lock_shared(${BUDDY_CAPTURE_LOCK}::bigint)`.execute(trx);
     await this.lockPath(trx, `icloud-content:${ownerId}:${checksum.toString('hex')}`);
     await trx.selectFrom('user').select('id').where('id', '=', ownerId).forUpdate().executeTakeFirstOrThrow();
-    return phase;
   }
-
   private async lockResource(trx: Kysely<DB>, input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
     if (input.audit && !(await guardAudit(trx, input.audit, input.ownerId, true))) {
       return;
     }
     const result = await sql<RecoveryResource>`SELECT r.*, r."expectedSize"::float8 AS "expectedSize"
-      FROM immich_fork.icloud_resource r JOIN immich_fork.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
+      FROM public.icloud_resource r JOIN public.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
       WHERE r.id = ${input.resourceId}::uuid AND r."ownerId" = ${input.ownerId}::uuid
         AND r."leaseToken" = ${input.leaseToken}::uuid AND r."leaseExpiresAt" > clock_timestamp()
         AND r.status <> 'removed' AND c.state = 'connected'
@@ -653,7 +608,6 @@ export class MediaRecoveryRepository {
         FOR UPDATE OF r FOR SHARE OF c`.execute(trx);
     return result.rows[0];
   }
-
   private async lockTarget(
     trx: Kysely<DB>,
     input: RecoveryAuthority,
@@ -686,21 +640,6 @@ export class MediaRecoveryRepository {
     ) {
       return;
     }
-    const mapping = await sql<{
-      physicalFileId: string | null;
-    }>`SELECT "physicalFileId" FROM immich_fork.asset_physical_file WHERE "assetId" = ${row.id}::uuid FOR UPDATE`.execute(
-      trx,
-    );
-    if ((mapping.rows[0]?.physicalFileId ?? null) !== target.forkPhysicalFileId) {
-      return;
-    }
-    const reservation =
-      await sql`SELECT 1 FROM immich_fork.asset_storage_reservation WHERE "assetId" = ${row.id}::uuid AND status = 'reserved'`.execute(
-        trx,
-      );
-    if (reservation.rows.length > 0) {
-      return;
-    }
     const candidates = await this.candidates(trx, input.ownerId, verified);
     const candidate = candidates.find(({ id }) => id === row.id);
     if (!candidate?.matchesContent || candidate.identityConflict || (candidate.hidden && !input.includeHidden)) {
@@ -714,9 +653,7 @@ export class MediaRecoveryRepository {
     }
     return candidate;
   }
-
   private async lockPath(trx: Kysely<DB>, path: string): Promise<void> {
-    const key = createHash('sha1').update(path).digest().readBigInt64BE(0);
-    await sql`SELECT pg_advisory_xact_lock(${key.toString()}::bigint)`.execute(trx);
+    await lockFilePath(trx, path);
   }
 }
