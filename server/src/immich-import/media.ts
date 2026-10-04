@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { realpath, stat } from 'node:fs/promises';
+import { BigIntStats, constants } from 'node:fs';
+import { FileHandle, open, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { ImportRefused, MediaRootMap } from './types.js';
 
@@ -28,13 +28,26 @@ export const mapMediaPath = (
   }
   return { source: path, target, root };
 };
-const fileDigest = async (path: string, algorithm = 'sha256'): Promise<string> => {
-  const hash = createHash(algorithm);
-  for await (const chunk of createReadStream(path)) {
-    hash.update(chunk);
+
+export const pathChecksum = (path: string): string => createHash('sha1').update(`path:${path}`).digest('hex');
+const sameFile = (left: BigIntStats, right: BigIntStats): boolean => left.dev === right.dev && left.ino === right.ino;
+const unchanged = (before: BigIntStats, after: BigIntStats): boolean =>
+  sameFile(before, after) &&
+  before.size === after.size &&
+  before.mtimeNs === after.mtimeNs &&
+  before.ctimeNs === after.ctimeNs &&
+  before.nlink === after.nlink;
+const fileDigests = async (file: FileHandle): Promise<{ sha1: string; sha256: string }> => {
+  const sha1 = createHash('sha1');
+  const sha256 = createHash('sha256');
+  for await (const chunk of file.createReadStream({ start: 0, autoClose: false })) {
+    sha1.update(chunk);
+    sha256.update(chunk);
   }
-  return hash.digest('hex');
+  return { sha1: sha1.digest('hex'), sha256: sha256.digest('hex') };
 };
+
+/** Only independently copied destination files can become managed originals. Opens and hashes are read-only. */
 export const verifyMediaFile = async (
   path: string,
   roots: MediaRootMap[],
@@ -42,6 +55,21 @@ export const verifyMediaFile = async (
   algorithm?: string,
 ): Promise<string> => {
   const mapping = mapMediaPath(path, roots);
+  const resolvedRoots = await Promise.all(
+    roots.map(async (root) => ({
+      source: await realpath(root.source),
+      target: await realpath(root.target),
+    })),
+  );
+  // Check every map, including aliases between different maps. Nested roots also allow later storage
+  // operations to enter the source tree, even when this particular file is a distinct inode.
+  if (
+    resolvedRoots.some((target) =>
+      resolvedRoots.some((source) => beneath(source.source, target.target) || beneath(target.target, source.source)),
+    )
+  ) {
+    throw new ImportRefused('DESTINATION_MEDIA_MUST_BE_INDEPENDENT_COPY');
+  }
   const [source, target, sourceRoot, targetRoot] = await Promise.all([
     realpath(mapping.source),
     realpath(mapping.target),
@@ -51,34 +79,59 @@ export const verifyMediaFile = async (
   if (!beneath(sourceRoot, source) || !beneath(targetRoot, target)) {
     throw new ImportRefused('MEDIA_SYMLINK_ESCAPE');
   }
-  const [before, targetBefore] = await Promise.all([stat(source), stat(target)]);
-  if (!before.isFile() || !targetBefore.isFile() || before.size !== targetBefore.size) {
-    throw new ImportRefused('MEDIA_FILE_MISMATCH');
-  }
-  const sourceDigest = await fileDigest(source);
-  const targetDigest = await fileDigest(target);
-  const [after, targetAfter] = await Promise.all([stat(source), stat(target)]);
-  if (
-    sourceDigest !== targetDigest ||
-    before.mtimeMs !== after.mtimeMs ||
-    before.size !== after.size ||
-    targetBefore.mtimeMs !== targetAfter.mtimeMs ||
-    targetBefore.size !== targetAfter.size
-  ) {
-    throw new ImportRefused('MEDIA_CHANGED_OR_MISMATCHED');
-  }
-  if (checksum) {
-    const expected = checksum.replace(/^\\x/u, '');
-    const checksumAlgorithm = algorithm === 'sha256' ? 'sha256' : algorithm === 'sha1' ? 'sha1' : undefined;
-    const actual =
-      algorithm === 'sha1-path'
-        ? createHash('sha1').update(`path:${path}`).digest('hex')
-        : checksumAlgorithm
-          ? await fileDigest(source, checksumAlgorithm)
-          : null;
-    if (actual !== expected) {
-      throw new ImportRefused('ORIGINAL_CHECKSUM_MISMATCH');
+  const sourceFile = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const targetFile = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const [before, targetBefore] = await Promise.all([
+        sourceFile.stat({ bigint: true }),
+        targetFile.stat({ bigint: true }),
+      ]);
+      if (source === target || sameFile(before, targetBefore) || targetBefore.nlink !== 1n) {
+        throw new ImportRefused('DESTINATION_MEDIA_MUST_BE_INDEPENDENT_COPY');
+      }
+      if (!before.isFile() || !targetBefore.isFile() || before.size !== targetBefore.size) {
+        throw new ImportRefused('MEDIA_FILE_MISMATCH');
+      }
+      const [sourceDigest, targetDigest] = await Promise.all([fileDigests(sourceFile), fileDigests(targetFile)]);
+      const [after, targetAfter, sourcePathAfter, targetPathAfter, sourceResolvedAfter, targetResolvedAfter] =
+        await Promise.all([
+          sourceFile.stat({ bigint: true }),
+          targetFile.stat({ bigint: true }),
+          stat(mapping.source, { bigint: true }),
+          stat(mapping.target, { bigint: true }),
+          realpath(mapping.source),
+          realpath(mapping.target),
+        ]);
+      if (
+        sourceDigest.sha256 !== targetDigest.sha256 ||
+        !unchanged(before, after) ||
+        !unchanged(targetBefore, targetAfter) ||
+        !unchanged(before, sourcePathAfter) ||
+        !unchanged(targetBefore, targetPathAfter) ||
+        sourceResolvedAfter !== source ||
+        targetResolvedAfter !== target
+      ) {
+        throw new ImportRefused('MEDIA_CHANGED_OR_MISMATCHED');
+      }
+      if (checksum) {
+        const actual =
+          algorithm === 'sha1-path'
+            ? pathChecksum(path)
+            : algorithm === 'sha1'
+              ? sourceDigest.sha1
+              : algorithm === 'sha256'
+                ? sourceDigest.sha256
+                : null;
+        if (actual !== checksum.replace(/^\\x/u, '')) {
+          throw new ImportRefused('ORIGINAL_CHECKSUM_MISMATCH');
+        }
+      }
+      return mapping.target;
+    } finally {
+      await targetFile.close();
     }
+  } finally {
+    await sourceFile.close();
   }
-  return mapping.target;
 };

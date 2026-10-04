@@ -2,12 +2,12 @@ name: Fork integration
 
 on:
   pull_request:
-    branches: ['fork/main', 'master/frameleaf-implementation']
+    branches: ["fork/main", "master/frameleaf-implementation"]
   workflow_call:
   workflow_dispatch:
     inputs:
       raw_engine:
-        description: Execute actual native RAW camera qualification
+        description: Execute actual native RAW camera validation
         type: choice
         default: none
         options: [none, libraw, darktable]
@@ -29,11 +29,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Retrieve frozen media fixtures
+        working-directory: .
         run: bash scripts/checkout-test-assets.sh
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version-file: '.nvmrc'
+          node-version-file: ".nvmrc"
           cache: pnpm
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
@@ -53,7 +54,7 @@ jobs:
       - name: Set up the pinned NAS renderer Python
         uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
-          python-version: '3.11.15'
+          python-version: "3.11.15"
       - name: Prepare the pinned TrueNAS rendering library
         run: |
           catalog="$RUNNER_TEMP/truenas-catalog"
@@ -72,8 +73,8 @@ jobs:
       - name: Validate NAS package fixtures
         env:
           TRUENAS_LIBRARY: ${{ runner.temp }}/truenas-catalog/ix-dev/community/actual-budget/templates/library/base_v2_3_4
-          FRAMELEAF_REQUIRE_TRUENAS_RENDER: 'true'
-          PYTHONDONTWRITEBYTECODE: '1'
+          FRAMELEAF_REQUIRE_TRUENAS_RENDER: "true"
+          PYTHONDONTWRITEBYTECODE: "1"
         run: node --test --test-concurrency=1 packaging/nas/build.test.cjs
       - name: Install plugin WASM, API generation and ffmpeg tools
         env:
@@ -160,15 +161,15 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: '0.8.15'
-          python-version: '3.12'
+          version: "0.8.15"
+          python-version: "3.12"
       - name: Install locked CPU test dependencies
         run: uv sync --frozen --extra cpu --group test --no-default-groups
       - name: Run ML unit tests without model downloads
         env:
-          HF_HUB_OFFLINE: '1'
-          TRANSFORMERS_OFFLINE: '1'
-          MACHINE_LEARNING_TEST_FULL: 'false'
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          MACHINE_LEARNING_TEST_FULL: "false"
         run: .venv/bin/python -m pytest -q
 
   machine-learning-containers:
@@ -211,13 +212,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Retrieve frozen media fixtures
+        working-directory: .
         run: bash scripts/checkout-test-assets.sh
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
         if: inputs.raw_engine == 'libraw'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         if: inputs.raw_engine == 'libraw'
         with:
-          node-version-file: '.nvmrc'
+          node-version-file: ".nvmrc"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
         if: inputs.raw_engine == 'libraw'
@@ -228,7 +230,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends autoconf automake build-essential jq libtool pkg-config liblcms2-dev libjpeg-dev zlib1g-dev
           sudo bash ./libraw.sh
-      - name: Qualify actual RAW sensor output and preservation
+      - name: Test actual RAW sensor output and preservation
         if: inputs.raw_engine == 'libraw'
         working-directory: server
         run: |
@@ -267,11 +269,11 @@ jobs:
               const tags = await exiftool.read(file);
               const rawTags = await exiftool.readRaw(file, { readArgs: ['-a', '-G1', '-n'] });
               let [width, height] = rawFixtureDimensions(String(tags.Model), rawTags);
-              if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1000 || height < 1000) throw new Error('Missing qualified active sensor dimensions');
+              if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1000 || height < 1000) throw new Error('Missing validated active sensor dimensions');
               if ([5, 6, 7, 8].includes(Number(tags.Orientation)) || /90|270/.test(String(tags.Orientation))) [width, height] = [height, width];
               console.log({ fixture: name, camera: tags.Model, activeSensor: [width, height], cameraImage: [tags.ImageWidth, tags.ImageHeight] });
               const result = spawnSync(process.execPath, ['--experimental-transform-types', 'base-image/verify-raw.mjs', file, String(width), String(height), 'src/utils/raw-renderer.ts'], { stdio: 'inherit' });
-              if (result.error || result.status !== 0) throw result.error ?? new Error('Native RAW qualification failed: ' + name);
+              if (result.error || result.status !== 0) throw result.error ?? new Error('Native RAW validation failed: ' + name);
             }
           } finally { await exiftool.end(); }
           JS
@@ -279,19 +281,19 @@ jobs:
         if: inputs.raw_engine == 'darktable'
         env:
           RAW_PLATFORM: ${{ matrix.platform }}
-          DOCKER_BUILDKIT: '1'
+          DOCKER_BUILDKIT: "1"
         run: |
-          mkdir -p "$RUNNER_TEMP/raw-qualification"
+          mkdir -p "$RUNNER_TEMP/raw-validation"
           docker build --pull --no-cache --platform "$RAW_PLATFORM" \
-            --target native-raw-qualification --file server/Dockerfile \
-            --tag frameleaf-native-raw:qualification .
-          docker image inspect frameleaf-native-raw:qualification > "$RUNNER_TEMP/raw-qualification/image.json"
-          docker create --name native-raw-evidence frameleaf-native-raw:qualification
-          docker cp native-raw-evidence:/usr/local/share/frameleaf/native-darktable.json "$RUNNER_TEMP/raw-qualification/"
-          docker cp native-raw-evidence:/build/darktable-runtime.json "$RUNNER_TEMP/raw-qualification/"
+            --target native-raw-validation --file server/Dockerfile \
+            --tag frameleaf-native-raw:validation .
+          docker image inspect frameleaf-native-raw:validation > "$RUNNER_TEMP/raw-validation/image.json"
+          docker create --name native-raw-evidence frameleaf-native-raw:validation
+          docker cp native-raw-evidence:/usr/local/share/frameleaf/native-darktable.json "$RUNNER_TEMP/raw-validation/"
+          docker cp native-raw-evidence:/build/darktable-runtime.json "$RUNNER_TEMP/raw-validation/"
           docker rm native-raw-evidence
-      - name: Qualify genuine RAW full controls and calibrated lens offline
-        id: native-qualification
+      - name: Test genuine RAW full controls and calibrated lens offline
+        id: native-validation
         if: inputs.raw_engine == 'darktable'
         shell: bash
         run: |
@@ -301,13 +303,13 @@ jobs:
           echo 'f3e703f0461707a16b76a0bfae9a42f90b6ab9019e2c8cea90a17ebbe806c7fd  e2e/test-assets/formats/raw/Canon/EOS_70D.CR2' | sha256sum --strict --check -
           docker run --rm --network none --entrypoint node \
             --mount "type=bind,src=$GITHUB_WORKSPACE/e2e/test-assets/formats/raw,dst=/fixtures,readonly" \
-            frameleaf-native-raw:qualification /build/verify-darktable-develop.mjs \
+            frameleaf-native-raw:validation /build/verify-darktable-develop.mjs \
             /fixtures/Canon/EOS_70D.CR2 5496 3670 /usr/src/app/server/dist/utils/darktable-renderer.js calibrated \
-            2>&1 | tee "$RUNNER_TEMP/raw-qualification/fixture.log"
+            2>&1 | tee "$RUNNER_TEMP/raw-validation/fixture.log"
       - name: Retain native runtime provenance and fixture result
         if: always() && inputs.raw_engine == 'darktable'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: native-raw-${{ matrix.runner }}-${{ github.sha }}
-          path: ${{ runner.temp }}/raw-qualification/
+          path: ${{ runner.temp }}/raw-validation/
           if-no-files-found: error

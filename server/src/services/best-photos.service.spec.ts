@@ -10,13 +10,13 @@ describe(BestPhotosService.name, () => {
   const assetJobRepository = {
     getForBestPhotoScoring: vitest.fn(),
     getForVideoDuplicateFrameJob: vitest.fn(),
-    streamForBestPhotosScoring: vitest.fn(),
+    selectionForBestPhotosScoring: vitest.fn(),
   };
   const bestPhotosRepository = {
     getBestPhotos: vitest.fn(),
     upsertScore: vitest.fn(),
   };
-  const jobRepository = { queueAll: vitest.fn() };
+  const jobRepository = { queueSelection: vitest.fn() };
   const mediaRepository = { scoreThumbnailCandidate: vitest.fn(), transcode: vitest.fn() };
   const configRepository = { getEnv: vitest.fn() };
   const systemMetadataRepository = { get: vitest.fn(), readFile: vitest.fn() };
@@ -200,12 +200,12 @@ describe(BestPhotosService.name, () => {
   });
 
   it('should queue single asset scoring jobs for a backfill', async () => {
-    assetJobRepository.streamForBestPhotosScoring.mockReturnValue([{ id: 'asset-1' }, { id: 'asset-2' }]);
+    assetJobRepository.selectionForBestPhotosScoring.mockReturnValue([{ id: 'asset-1' }, { id: 'asset-2' }]);
 
     await expect(sut.handleQueueAll({ force: true })).resolves.toBe(JobStatus.Success);
-    expect(jobRepository.queueAll).toHaveBeenCalledWith([
-      { name: JobName.BestPhotosScore, data: { id: 'asset-1' } },
-      { name: JobName.BestPhotosScore, data: { id: 'asset-2' } },
-    ]);
+    expect(jobRepository.queueSelection).toHaveBeenCalledWith(
+      JobName.BestPhotosScore,
+      assetJobRepository.selectionForBestPhotosScoring.mock.results[0].value,
+    );
   });
 });

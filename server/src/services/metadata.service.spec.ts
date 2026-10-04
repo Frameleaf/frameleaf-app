@@ -26,7 +26,7 @@ import { videoInfoStub } from 'test/fixtures/media.stub.js';
 import { tagStub } from 'test/fixtures/tag.stub.js';
 import { getForMetadataExtraction, getForSidecarWrite } from 'test/mappers.js';
 import { factory } from 'test/small.factory.js';
-import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const forSidecarJob = (
   asset: {
@@ -148,30 +148,26 @@ describe(MetadataService.name, () => {
   describe('handleQueueMetadataExtraction', () => {
     it('should queue metadata extraction for all assets without exif values', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForMetadataExtraction.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForMetadataExtraction.mockReturnValue({ selected: [asset] } as never);
 
       await expect(sut.handleQueueMetadataExtraction({ force: false })).resolves.toBe(JobStatus.Success);
-      expect(mocks.assetJob.streamForMetadataExtraction).toHaveBeenCalledWith(false);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetExtractMetadata,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForMetadataExtraction).toHaveBeenCalledWith(false);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetExtractMetadata,
+        mocks.assetJob.selectionForMetadataExtraction.mock.results[0].value,
+      );
     });
 
     it('should queue metadata extraction for all assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForMetadataExtraction.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForMetadataExtraction.mockReturnValue({ selected: [asset] } as never);
 
       await expect(sut.handleQueueMetadataExtraction({ force: true })).resolves.toBe(JobStatus.Success);
-      expect(mocks.assetJob.streamForMetadataExtraction).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetExtractMetadata,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForMetadataExtraction).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetExtractMetadata,
+        mocks.assetJob.selectionForMetadataExtraction.mock.results[0].value,
+      );
     });
   });
 
@@ -2212,22 +2208,28 @@ describe(MetadataService.name, () => {
   describe('handleQueueSidecar', () => {
     it('should queue assets with sidecar files', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForSidecar.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForSidecar.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueSidecar({ force: true });
 
-      expect(mocks.assetJob.streamForSidecar).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarCheck, data: { id: asset.id } }]);
+      expect(mocks.assetJob.selectionForSidecar).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.SidecarCheck,
+        mocks.assetJob.selectionForSidecar.mock.results[0].value,
+      );
     });
 
     it('should queue assets without sidecar files', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForSidecar.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForSidecar.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueSidecar({ force: false });
 
-      expect(mocks.assetJob.streamForSidecar).toHaveBeenCalledWith(false);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarCheck, data: { id: asset.id } }]);
+      expect(mocks.assetJob.selectionForSidecar).toHaveBeenCalledWith(false);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.SidecarCheck,
+        mocks.assetJob.selectionForSidecar.mock.results[0].value,
+      );
     });
   });
 

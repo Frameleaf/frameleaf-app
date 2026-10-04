@@ -94,4 +94,39 @@ describe(JobRepository.name, () => {
     );
     expect(enqueue).not.toHaveBeenCalled();
   });
+  it('does not automatically replay metadata, faces or destructive forced CLIP rebuilding', async () => {
+    for (const item of [
+      { name: JobName.AssetExtractMetadata, data: { id: 'asset' } },
+      { name: JobName.AssetDetectFaces, data: { id: 'asset' } },
+      { name: JobName.SmartSearchQueueAll, data: { force: true } },
+    ] as const) {
+      await sut.queue(item);
+      expect(enqueue.mock.lastCall?.[0][0].safeToRetry).toBe(false);
+    }
+  });
+
+  it('delivers observers only after accepted adoption and never when the token was rejected', async () => {
+    const notify = vi.fn();
+    const abort = new AbortController();
+    const claim = {
+      ...context().claim,
+      name: JobName.VersionCheck,
+      queue: QueueName.BackgroundTask,
+      data: {},
+      startedAt: new Date(),
+    };
+    sut['eventRepository'].emit = vi.fn().mockImplementation(async () => {
+      const execution = queueExecution.getStore()!;
+      execution.afterCommit = [notify];
+    });
+    sut['store'].complete = vi.fn().mockResolvedValue(false);
+    await sut['execute'](claim, abort);
+    expect(notify).not.toHaveBeenCalled();
+    sut['store'].complete = vi.fn().mockImplementation(async () => {
+      expect(notify).not.toHaveBeenCalled();
+      return true;
+    });
+    await sut['execute'](claim, abort);
+    expect(notify).toHaveBeenCalledOnce();
+  });
 });

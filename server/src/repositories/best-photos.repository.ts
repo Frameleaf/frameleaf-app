@@ -1,10 +1,10 @@
+import { deferJobAdoption } from 'src/queue/context.js';
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
-import { TableVerification } from 'src/repositories/fork-derived-results.js';
 import { DB } from 'src/schema/index.js';
 import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
@@ -13,9 +13,7 @@ import { isLocked, revealedLockScope } from 'src/utils/locked.js';
 import { paginationHelper } from 'src/utils/pagination.js';
 export type BestPhotoScore = Selectable<AssetBestPhotoScoreTable>;
 export type BestPhotoScoreUpsert = Omit<Insertable<AssetBestPhotoScoreTable>, 'createdAt' | 'updatedAt'>;
-type BestPhotoBackfillTables = {
-  assetBestPhotoScore: TableVerification;
-};
+
 type BestPhotoAssetRow = Selectable<AssetTable> & {
   /** FL-195: a revealed lock reads as `locked` in the response (`effectiveVisibilityOf`) */
   isLocked: boolean;
@@ -46,7 +44,6 @@ export class BestPhotosRepository {
   ) {}
   @GenerateSql({ params: [DummyValue.UUID] })
   async getScore(assetId: string): Promise<BestPhotoScore | undefined> {
-    const phase = await 'legacy';
     return this.db
       .withSchema('public')
       .selectFrom('asset_best_photo_score')
@@ -74,13 +71,23 @@ export class BestPhotosRepository {
     ],
   })
   async upsertScore(score: BestPhotoScoreUpsert): Promise<void> {
-    const phase = await 'legacy';
-    await this.db.transaction().execute(async (trx) => {
-      {
-        await this.upsertInto(trx.withSchema('public'), score);
+    const adopt = async (db: Kysely<DB>) => {
+      const asset = await db
+        .selectFrom('asset')
+        .select('ownerId')
+        .where('id', '=', score.assetId)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      if (asset.ownerId !== score.ownerId) {
+        throw new Error('Best photo score owner mismatch');
       }
-    });
+      await this.upsertInto(db, score);
+    };
+    if (!deferJobAdoption(adopt)) {
+      await this.db.transaction().execute(adopt);
+    }
   }
+
   private async upsertInto(db: Kysely<DB>, score: BestPhotoScoreUpsert): Promise<void> {
     await db
       .insertInto('asset_best_photo_score')
@@ -104,13 +111,7 @@ export class BestPhotosRepository {
       )
       .execute();
   }
-  private async copyExact(db: Kysely<DB>, score: BestPhotoScore): Promise<void> {
-    await db
-      .insertInto('asset_best_photo_score')
-      .values(score)
-      .onConflict((oc) => oc.column('assetId').doUpdateSet(score))
-      .execute();
-  }
+
   @GenerateSql({
     params: [
       {
@@ -123,7 +124,6 @@ export class BestPhotosRepository {
     ],
   })
   async getBestPhotos(options: BestPhotosQueryOptions) {
-    const phase = await 'legacy';
     const scoreSchema = 'public';
     const query = (this.db as Kysely<any>)
       .selectFrom(`${scoreSchema}.asset_best_photo_score as asset_best_photo_score`)
@@ -172,7 +172,6 @@ export class BestPhotosRepository {
     if (assetIds.length === 0) {
       return;
     }
-    const phase = await 'legacy';
     await this.db.transaction().execute(async (trx) => {
       {
         await trx

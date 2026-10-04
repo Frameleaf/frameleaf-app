@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -26,8 +25,8 @@ test("package credentials never reach repository checkout or consumer execution"
     retrieval.if,
     /github\.repository == 'Frameleaf\/frameleaf-app'/,
   );
-  assert.match(retrieval.if, /refs\/heads\/master\/frameleaf-implementation/);
-  assert.match(retrieval.if, /inputs\.candidate_sha == github\.sha/);
+  assert.equal(workflow.on.workflow_call, null);
+  assert.doesNotMatch(retrieval.if, /inputs\.|workflow_dispatch|github\.ref/);
   assert.ok(
     retrieval.steps.every((step) => !step.uses?.startsWith("actions/checkout")),
   );
@@ -61,49 +60,23 @@ test("package credentials never reach repository checkout or consumer execution"
   const entry = load(
     readFileSync(join(root, ".github/workflows/test.yml"), "utf8"),
   );
-  const call = entry.jobs["cloud-consumer-qualification"];
-  assert.match(call.if, /github\.event_name == 'workflow_dispatch'/);
+  const call = entry.jobs["cloud-consumer-tests"];
+  assert.match(call.if, /github\.repository == 'Frameleaf\/frameleaf-app'/);
+  assert.match(call.if, /!inputs\.development_validation/);
+  assert.equal(call.with, undefined);
+  assert.equal(
+    entry.on.workflow_dispatch.inputs.development_validation.type,
+    "boolean",
+  );
+  assert.equal(entry.on.workflow_dispatch.inputs.candidate_sha, undefined);
   assert.equal(call.uses, "./.github/workflows/frameleaf-cloud-consumers.yml");
   assert.equal(call.secrets, undefined);
-  for (const [name, job] of Object.entries(entry.jobs)) {
-    if (!name.startsWith("cloud-consumer-"))
-      assert.match(job.if, /inputs\.candidate_sha == ''/);
+  for (const job of Object.values(entry.jobs)) {
+    assert.doesNotMatch(job.if ?? "", /inputs\.candidate_sha/);
   }
 });
 
-test("invalid qualification requests fail without credentials or source execution", () => {
-  const entry = load(
-    readFileSync(join(root, ".github/workflows/test.yml"), "utf8"),
-  );
-  const validation = entry.jobs["cloud-consumer-request"];
-  assert.deepEqual(validation.permissions, {});
-  assert.equal(validation.steps.length, 1);
-  const step = validation.steps[0];
-  assert.equal(step.uses, undefined);
-  assert.equal(
-    entry.jobs["cloud-consumer-qualification"].needs,
-    "cloud-consumer-request",
-  );
-  const candidate = "a".repeat(40);
-  const environment = {
-    FRAMELEAF_REQUEST_REPOSITORY: "Frameleaf/frameleaf-app",
-    FRAMELEAF_REQUEST_REF: "refs/heads/master/frameleaf-implementation",
-    FRAMELEAF_REQUEST_SHA: candidate,
-    FRAMELEAF_REQUEST_HEAD: candidate,
-  };
-  const run = (changes) =>
-    spawnSync("bash", ["-e", "-c", step.run], {
-      env: { ...process.env, ...environment, ...changes },
-      encoding: "utf8",
-    });
-  assert.equal(run({}).status, 0);
-  for (const changes of [
-    { FRAMELEAF_REQUEST_SHA: "b".repeat(40) },
-    { FRAMELEAF_REQUEST_REF: "refs/heads/fork/main" },
-    { FRAMELEAF_REQUEST_REPOSITORY: "external/contributor" },
-    { FRAMELEAF_REQUEST_SHA: "bad;$(exit 0)" },
-  ])
-    assert.notEqual(run(changes).status, 0);
+test("ordinary consumers retain installed-package and SDK regression coverage", () => {
   const steps = document().jobs.consumers.steps;
   assert.match(
     steps.find((step) => step.name === "Install locked App test dependencies")
@@ -116,8 +89,8 @@ test("invalid qualification requests fail without credentials or source executio
   );
 });
 
-test("retrieval pins the same immutable archive as the consumer receipt", () => {
-  const receipt = JSON.parse(
+test("retrieval pins the same immutable archive as the consumer integrity manifest", () => {
+  const manifest = JSON.parse(
     readFileSync(
       join(root, "server/test/lifecycle/contracts-package-receipt.json"),
       "utf8",
@@ -127,9 +100,9 @@ test("retrieval pins the same immutable archive as the consumer receipt", () => 
     (step) => step.id === "fetch",
   );
   for (const value of [
-    receipt.sha256,
-    receipt.integrity,
-    String(receipt.bytes),
+    manifest.sha256,
+    manifest.integrity,
+    String(manifest.bytes),
   ])
     assert.ok(fetch.run.includes(value));
   const dependencies = JSON.parse(

@@ -1,3 +1,4 @@
+import { afterJobCommit } from 'src/queue/context.js';
 import { JobRunResponseDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { JobItem } from 'src/types.js';
@@ -137,7 +138,7 @@ export class JobService extends BaseService {
       throw error;
     } finally {
       try {
-        await this.eventRepository.emit('JobComplete', queueName, job);
+        await afterJobCommit(() => this.eventRepository.emit('JobComplete', queueName, job));
       } catch {
         this.logger.warn(`Unable to notify completion of ${job.name}`);
       }
@@ -155,7 +156,7 @@ export class JobService extends BaseService {
 
   private async onSuccess(job: JobItem, response: JobStatus | undefined) {
     try {
-      await this.eventRepository.emit('JobSuccess', { job, response });
+      await afterJobCommit(() => this.eventRepository.emit('JobSuccess', { job, response }));
     } catch {
       this.logger.error(`Unable to notify success of ${job.name}`);
     }
@@ -241,7 +242,9 @@ export class JobService extends BaseService {
 
       case JobName.PersonGenerateThumbnail: {
         const { ownerId, personGroupId } = item.data;
-        this.websocketRepository.clientSend('on_person_thumbnail', ownerId, personGroupId);
+        await afterJobCommit(async () => {
+          this.websocketRepository.clientSend('on_person_thumbnail', ownerId, personGroupId);
+        });
         break;
       }
 
@@ -338,74 +341,80 @@ export class JobService extends BaseService {
         }
 
         await this.jobRepository.queueAll(jobs);
-        // a locked upload (FL-34) stays out of every open timeline; the Locked view fetches it itself
-        if (
-          (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive) &&
-          !isLockedRow(asset)
-        ) {
-          // FL-169: an upload trashed before its thumbnails were ready is not announced as a new timeline
-          // item. Clients treat `on_upload_success` as "add this to the timeline", so a trashed (or
-          // permanently deleted, still awaiting removal) asset would reappear in every open timeline.
-          // The v2 event below carries `deletedAt`, so its clients place the asset correctly.
-          if (!asset.deletedAt) {
-            this.websocketRepository.clientSend('on_upload_success', asset.ownerId, mapAsset(asset));
+        await afterJobCommit(async () => {
+          const [asset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([item.data.id]);
+          if (!asset) {
+            return;
           }
-          if (asset.exifInfo) {
-            const exif = asset.exifInfo;
-            this.websocketRepository.clientSend('AssetUploadReadyV2', asset.ownerId, {
-              // TODO remove `on_upload_success` and then modify the query to select only the required fields)
-              asset: {
-                id: asset.id,
-                ownerId: asset.ownerId,
-                originalFileName: asset.originalFileName,
-                thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
-                checksum: hexOrBufferToBase64(asset.checksum),
-                fileCreatedAt: asset.fileCreatedAt,
-                fileModifiedAt: asset.fileModifiedAt,
-                createdAt: asset.createdAt,
-                localDateTime: asset.localDateTime,
-                duration: asset.duration,
-                type: asset.type,
-                deletedAt: asset.deletedAt,
-                isFavorite: asset.isFavorite,
-                visibility: effectiveVisibilityOf(asset),
-                livePhotoVideoId: asset.livePhotoVideoId,
-                stackId: asset.stackId,
-                libraryId: asset.libraryId,
-                width: asset.width,
-                height: asset.height,
-                isEdited: asset.isEdited,
-              },
-              exif: {
-                assetId: exif.assetId,
-                description: exif.description,
-                exifImageWidth: exif.exifImageWidth,
-                exifImageHeight: exif.exifImageHeight,
-                fileSizeInByte: exif.fileSizeInByte,
-                orientation: exif.orientation,
-                dateTimeOriginal: exif.dateTimeOriginal ? new Date(exif.dateTimeOriginal) : null,
-                modifyDate: exif.modifyDate ? new Date(exif.modifyDate) : null,
-                timeZone: exif.timeZone,
-                latitude: exif.latitude,
-                longitude: exif.longitude,
-                projectionType: exif.projectionType,
-                city: exif.city,
-                state: exif.state,
-                country: exif.country,
-                make: exif.make,
-                model: exif.model,
-                lensModel: exif.lensModel,
-                fNumber: exif.fNumber,
-                focalLength: exif.focalLength,
-                iso: exif.iso,
-                exposureTime: exif.exposureTime,
-                profileDescription: exif.profileDescription,
-                rating: exif.rating,
-                fps: exif.fps,
-              },
-            });
+          // a locked upload (FL-34) stays out of every open timeline; the Locked view fetches it itself
+          if (
+            (asset.visibility === AssetVisibility.Timeline || asset.visibility === AssetVisibility.Archive) &&
+            !isLockedRow(asset)
+          ) {
+            // FL-169: an upload trashed before its thumbnails were ready is not announced as a new timeline
+            // item. Clients treat `on_upload_success` as "add this to the timeline", so a trashed (or
+            // permanently deleted, still awaiting removal) asset would reappear in every open timeline.
+            // The v2 event below carries `deletedAt`, so its clients place the asset correctly.
+            if (!asset.deletedAt) {
+              this.websocketRepository.clientSend('on_upload_success', asset.ownerId, mapAsset(asset));
+            }
+            if (asset.exifInfo) {
+              const exif = asset.exifInfo;
+              this.websocketRepository.clientSend('AssetUploadReadyV2', asset.ownerId, {
+                // TODO remove `on_upload_success` and then modify the query to select only the required fields)
+                asset: {
+                  id: asset.id,
+                  ownerId: asset.ownerId,
+                  originalFileName: asset.originalFileName,
+                  thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
+                  checksum: hexOrBufferToBase64(asset.checksum),
+                  fileCreatedAt: asset.fileCreatedAt,
+                  fileModifiedAt: asset.fileModifiedAt,
+                  createdAt: asset.createdAt,
+                  localDateTime: asset.localDateTime,
+                  duration: asset.duration,
+                  type: asset.type,
+                  deletedAt: asset.deletedAt,
+                  isFavorite: asset.isFavorite,
+                  visibility: effectiveVisibilityOf(asset),
+                  livePhotoVideoId: asset.livePhotoVideoId,
+                  stackId: asset.stackId,
+                  libraryId: asset.libraryId,
+                  width: asset.width,
+                  height: asset.height,
+                  isEdited: asset.isEdited,
+                },
+                exif: {
+                  assetId: exif.assetId,
+                  description: exif.description,
+                  exifImageWidth: exif.exifImageWidth,
+                  exifImageHeight: exif.exifImageHeight,
+                  fileSizeInByte: exif.fileSizeInByte,
+                  orientation: exif.orientation,
+                  dateTimeOriginal: exif.dateTimeOriginal ? new Date(exif.dateTimeOriginal) : null,
+                  modifyDate: exif.modifyDate ? new Date(exif.modifyDate) : null,
+                  timeZone: exif.timeZone,
+                  latitude: exif.latitude,
+                  longitude: exif.longitude,
+                  projectionType: exif.projectionType,
+                  city: exif.city,
+                  state: exif.state,
+                  country: exif.country,
+                  make: exif.make,
+                  model: exif.model,
+                  lensModel: exif.lensModel,
+                  fNumber: exif.fNumber,
+                  focalLength: exif.focalLength,
+                  iso: exif.iso,
+                  exposureTime: exif.exposureTime,
+                  profileDescription: exif.profileDescription,
+                  rating: exif.rating,
+                  fps: exif.fps,
+                },
+              });
+            }
           }
-        }
+        });
 
         break;
       }

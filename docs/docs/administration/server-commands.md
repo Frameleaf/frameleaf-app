@@ -156,6 +156,6 @@ Migrations are up to date
 No schema drift detected
 ```
 
-Downgrading to the upstream server
+## Offline Immich import
 
-There is no `frameleaf-admin` command for downgrading to upstream. The previously documented `schema-revert-to-upstream` CLI was removed (several Frameleaf migrations had empty `down()` stubs that reported success while leaving Frameleaf-only tables intact). See [Reverting back to the upstream server](../features/revert-to-upstream.md) for the supported `pg_restore`-from-backup procedure.
+`frameleaf-admin import-immich` (also available through the current `immich-admin` alias) supports `preflight`, `run`, `status`, `resume` and `verify` with `--config /path/config.json`. Use a fresh destination, a stopped read-only supported source and distinct media copies. Follow the [offline import runbook](./import-immich.md) before starting; ordinary API-based server migration is a separate feature.

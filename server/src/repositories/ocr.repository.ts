@@ -3,6 +3,7 @@ import { type Insertable, type Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
+import { deferJobAdoption } from 'src/queue/context.js';
 import { DB } from 'src/schema/index.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { tokenizeForSearch } from 'src/utils/database.js';
@@ -57,23 +58,30 @@ export class OcrRepository {
       DummyValue.STRING,
     ],
   })
-  upsert(assetId: string, ocrDataList: Insertable<AssetOcrTable>[], searchText: string) {
-    let query = this.db.with('deleted_ocr', (db) => db.deleteFrom('asset_ocr').where('assetId', '=', assetId));
-    // eslint-disable-next-line unicorn/prefer-ternary
-    if (ocrDataList.length > 0) {
-      (query as any) = query
-        .with('inserted_ocr', (db) => db.insertInto('asset_ocr').values(ocrDataList))
-        .with('inserted_search', (db) =>
-          db
-            .insertInto('ocr_search')
-            .values({ assetId, text: searchText })
-            .onConflict((oc) => oc.column('assetId').doUpdateSet((eb) => ({ text: eb.ref('excluded.text') }))),
+  async upsert(assetId: string, ocrDataList: Insertable<AssetOcrTable>[], searchText: string) {
+    const adopt = async (db: Kysely<DB>) => {
+      let query = db.with('deleted_ocr', (db) => db.deleteFrom('asset_ocr').where('assetId', '=', assetId));
+      // eslint-disable-next-line unicorn/prefer-ternary
+      if (ocrDataList.length > 0) {
+        (query as any) = query
+          .with('inserted_ocr', (db) => db.insertInto('asset_ocr').values(ocrDataList))
+          .with('inserted_search', (db) =>
+            db
+              .insertInto('ocr_search')
+              .values({ assetId, text: searchText })
+              .onConflict((oc) => oc.column('assetId').doUpdateSet((eb) => ({ text: eb.ref('excluded.text') }))),
+          );
+      } else {
+        (query as any) = query.with('deleted_search', (db) =>
+          db.deleteFrom('ocr_search').where('assetId', '=', assetId),
         );
-    } else {
-      (query as any) = query.with('deleted_search', (db) => db.deleteFrom('ocr_search').where('assetId', '=', assetId));
-    }
+      }
 
-    return query.selectNoFrom(sql`1`.as('dummy')).execute();
+      await query.selectNoFrom(sql`1`.as('dummy')).execute();
+    };
+    if (!deferJobAdoption(adopt)) {
+      await adopt(this.db);
+    }
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [], []] })

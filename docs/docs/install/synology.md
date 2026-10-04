@@ -38,7 +38,7 @@ In the settings of your new project, set "**Project name**" to a name you'll rem
 
 ![Set path](../../static/img/synology-container-manager-set-path.png)
 
-The following screen will give you the option to further customize your `docker-compose.yml` file. Take note of `DB_STORAGE_TYPE: 'HDD'` and uncomment if applicable for your Synology setup.
+The following screen will give you the option to further customize your `docker-compose.yml` file. Keep the canonical PostgreSQL 19 image and parent data mount from the release bundle.
 
 Skip the section asking to set-up a portal for Web Station, and then complete the wizard which will build and start the containers for your project.
 
@@ -137,7 +137,7 @@ If your docker container is running on a different subnet then update accordingl
 
 ## Step 3. Add network to each service
 
-Add the network to each service (immich-server, immich-machine-learning, redis, database):
+Add the network to each service (immich-server, immich-machine-learning, database):
 
 ```yaml
 services:
@@ -147,11 +147,6 @@ services:
       - frameleaf-network
 
   immich-machine-learning:
-    # other config options
-    networks:
-      - frameleaf-network
-
-  redis:
     # other config options
     networks:
       - frameleaf-network

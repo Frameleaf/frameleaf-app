@@ -29,12 +29,11 @@ graph LR
     CORE --> REPO
     REPO -- HTTP --> ML["Machine learning (Python)"]
     REPO --> FS[File system]
-    REPO --> PG[(Postgres)]
-    REPO --> RD[(Redis)]
-    RD -- Queue --> JOBS
+    REPO --> PG[(PostgreSQL 19)]
+    PG -- Durable queue --> JOBS
 ```
 
-The diagram shows clients communicating with the server's API via REST. The server communicates with downstream systems (i.e. Redis, Postgres, Machine Learning, file system) through repository interfaces. Not shown in the diagram, is that the server is split into two separate containers `immich-server` and `frameleaf-microservices`. The microservices container does not handle API requests or schedule cron jobs, but primarily handles incoming job requests from Redis.
+The server uses repository interfaces for PostgreSQL, machine learning and media storage. API and background workers share one canonical PostgreSQL 19 database. Queue claims, deduplication, dependencies, attempts and worker leases are durable rows; PostgreSQL LISTEN/NOTIFY wakes workers and carries Socket.IO broadcasts. Rate counters and token-fenced upload leases use bounded database pools. Transient counters, upload leases, attachment rows and worker memberships are cleared during recovery.
 
 ## Clients
 
@@ -63,8 +62,7 @@ The Frameleaf backend is divided into several services, which are run as individ
 
 1. `immich-server` - Handle and respond to REST API requests, execute background jobs (thumbnail generation, metadata extraction, transcoding, etc.)
 1. `immich-machine-learning` - Execute machine learning models
-1. `postgres` - Persistent data storage
-1. `redis`- Queue management for background jobs
+1. `postgres` - Canonical content, configuration, durable jobs and shared coordination
 
 ### Frameleaf server
 
@@ -123,6 +121,6 @@ Frameleaf persists data in Postgres, which includes information about access and
 See [Database Migrations](./database-migrations.md) for more information about how to modify the database to create an index, modify a table, add a new column, etc.
 :::
 
-### Redis
+### Shared PostgreSQL services
 
-Frameleaf uses [Redis](https://redis.com/) via [BullMQ](https://docs.bullmq.io/) to manage job queues. Some jobs trigger subsequent jobs. For example, Smart Search and Facial Recognition relies on thumbnail generation and automatically run after one is generated.
+The canonical `public` schema contains one migration ledger (`frameleaf_migrations`), durable queue tables, offline-import checkpoints and shared-service coordination. Safe retry is an audited job policy; restoring a database never automatically replays a remote effect whose outcome is uncertain. PostgreSQL pgvector 0.8.7 provides HNSW indexes. A source Immich database is only read by the separate offline importer and never becomes the destination schema.

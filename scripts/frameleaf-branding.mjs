@@ -78,7 +78,7 @@ export const ALLOWLIST = [
   },
   {
     reason:
-      "Developer documentation: the upstream repository address the sync and handoff procedures fetch from",
+      "Developer documentation: frozen source and license attribution for imported code",
     files: /^docs\/docs\/developer\//,
     allow: /(?:https:\/\/)?github\.com\/immich-app\/immich(?:\.git)?\b/g,
   },

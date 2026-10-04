@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { canonicalJson, CONTENT_TABLES, digest, frozenSource } from './adapters.js';
+import { readSourceStructure, verifySourceStructure } from './schema.js';
 import { FrozenSource, ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from './types.js';
 
 export class ImmichSource {
@@ -31,50 +32,19 @@ export class ImmichSource {
     if (elevated.length || writable.length || others.length) {
       throw new ImportRefused('SOURCE_WRITERS_OR_WRITE_AUTHORITY_PRESENT');
     }
+    const [frameleaf] = await this.db.query("SELECT to_regclass('public.frameleaf_migrations') IS NOT NULL AS present");
+    if (frameleaf?.present) throw new ImportRefused('SOURCE_IS_FRAMELEAF');
     const migrations = await this.db.query('SELECT name FROM public.kysely_migrations ORDER BY name');
     if (canonicalJson(migrations.map((row) => row.name)) !== canonicalJson(this.fixture.migrations)) {
       throw new ImportRefused('UNKNOWN_SOURCE_MIGRATIONS');
     }
-    const columns = await this.db.query(`SELECT c.relname AS table_name, a.attname AS column_name,
-      format_type(a.atttypid,a.atttypmod) AS type, a.attnotnull AS not_null
-      FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-      JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped
-      WHERE n.nspname='public' AND c.relkind IN ('r','p') ORDER BY c.relname,a.attname`);
-    const actual: Record<string, string[]> = {};
-    const bookkeeping = new Set(['migrations', 'kysely_migrations', 'kysely_migrations_lock']);
-    for (const column of columns) {
-      const table = String(column.table_name);
-      if (!bookkeeping.has(table)) {
-        (actual[table] ??= []).push(String(column.column_name));
-      }
-    }
-    for (const column of columns) {
-      const expectedType = this.fixture.tables[String(column.table_name)]?.types[String(column.column_name)];
-      const actualType = String(column.type).replace(/^public\./u, '');
-      if (
-        expectedType &&
-        (expectedType === 'vector'
-          ? !/^(?:vectors\.)?vector(?:\(\d+\))?$/u.test(actualType)
-          : expectedType !== actualType)
-      ) {
-        throw new ImportRefused('UNKNOWN_SOURCE_COLUMN_TYPE');
-      }
-    }
-    const expected = Object.fromEntries(
-      Object.entries(this.fixture.tables).map(([table, shape]) => [table, [...shape.columns].sort()]),
-    );
-    if (canonicalJson(actual) !== canonicalJson(expected)) {
-      throw new ImportRefused('UNKNOWN_SOURCE_SCHEMA');
-    }
-    // Types, nullability, constraints and source instance identity are bound to every restart, too.
-    const constraints = await this.db.query(`SELECT c.relname AS table_name, p.conname,
-      pg_get_constraintdef(p.oid) AS definition FROM pg_constraint p JOIN pg_class c ON c.oid=p.conrelid
-      JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' ORDER BY c.relname,p.conname`);
+    const structure = await readSourceStructure(this.db);
+    verifySourceStructure(structure, this.fixture.structure);
     const identity = await this.db.query(`SELECT current_database() AS database,
       (SELECT oid::text FROM pg_database WHERE datname=current_database()) AS database_oid,
       system_identifier::text AS system_identifier FROM pg_control_system()`);
     const hash = createHash('sha256').update(
-      digest({ columns, constraints, identity, migrations, sourceId: this.config.sourceId }),
+      digest({ structure, identity, migrations, sourceId: this.config.sourceId }),
     );
     for (const table of CONTENT_TABLES) {
       if (!this.fixture.tables[table]) {

@@ -1,18 +1,13 @@
-name: Frameleaf Cloud consumer qualification
-'on':
+name: Frameleaf Cloud integration tests
+"on":
   workflow_call:
-    inputs:
-      candidate_sha:
-        description: Reviewed App commit (must equal the workflow commit)
-        required: true
-        type: string
 permissions: {}
 concurrency:
   group: cloud-consumers-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   registry-archive:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/master/frameleaf-implementation' && inputs.candidate_sha == github.sha }}
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -21,7 +16,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          node-version: '24.21.0'
+          node-version: "24.21.0"
       - name: Retrieve and verify immutable registry archive
         id: fetch
         env:
@@ -42,7 +37,7 @@ jobs:
           const sha256 = createHash('sha256').update(bytes).digest('hex');
           const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`;
           if (bytes.length !== 461829 || sha256 !== '05d3c934afd32d726650f7eb0abbbff1b185ad3749443063c803dd602a1ca4cc' || integrity !== 'sha512-4WdS6XX1lENdtJTmhdw6Y21dJ4i+P8qE+EiutTsB4K/QYcnE0sFBjG3jAZfVQMFS4galajLlzSCjqVmgYN12hQ==') {
-            console.error('Registry archive does not match the reviewed contracts 0.0.5 receipt');
+            console.error('Registry archive does not match the pinned contracts 0.0.5 integrity');
             process.exit(1);
           }
           console.log(JSON.stringify({ package: '@frameleaf/cloud-contracts', version: '0.0.5', bytes: bytes.length, sha256, integrity }));
@@ -64,7 +59,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout reviewed candidate
+      - name: Checkout workflow commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
@@ -92,7 +87,7 @@ jobs:
           path: ${{ runner.temp }}/cloud-contracts
       - name: Validate credential isolation and package pins
         run: node --test scripts/frameleaf-cloud-consumer-workflow.test.mjs
-      - name: Qualify actual Library consumers against installed registry bytes
+      - name: Test actual Library consumers against installed registry bytes
         working-directory: server
         env:
           FRAMELEAF_CLOUD_LIFECYCLE_TGZ: ${{ runner.temp }}/cloud-contracts/frameleaf-cloud-contracts-0.0.5.tgz
@@ -103,6 +98,6 @@ jobs:
         run: |
           pnpm test frameleaf-push.spec.ts frameleaf-cloud-push.repository.spec.ts frameleaf-cloud-contracts.spec.ts
           pnpm test cloud-ml-job.service.spec.ts -t 'long-polls a started job|waits out a read'
-      - name: Clean qualification artifacts and dependencies
+      - name: Clean test artifacts and dependencies
         if: ${{ always() }}
         run: rm -rf "$RUNNER_TEMP/cloud-contracts" "$RUNNER_TEMP/cloud-test-dependencies"

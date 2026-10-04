@@ -139,83 +139,31 @@ Both must be positive numbers, and the grace period must end before the deadline
 
 ## Database
 
-| Variable                            | Description                                                                            |  Default   | Containers                     |
-| :---------------------------------- | :------------------------------------------------------------------------------------- | :--------: | :----------------------------- |
-| `DB_URL`                            | Database URL                                                                           |            | server                         |
-| `DB_HOSTNAME`                       | Database host                                                                          | `database` | server                         |
-| `DB_PORT`                           | Database port                                                                          |   `5432`   | server                         |
-| `DB_USERNAME`                       | Database user                                                                          | `postgres` | server, database<sup>\*1</sup> |
-| `DB_PASSWORD`                       | Database password                                                                      | `postgres` | server, database<sup>\*1</sup> |
-| `DB_DATABASE_NAME`                  | Database name                                                                          |  `immich`  | server, database<sup>\*1</sup> |
-| `DB_SSL_MODE`                       | Database SSL mode                                                                      |            | server                         |
-| `DB_VECTOR_EXTENSION`<sup>\*2</sup> | Database vector extension (one of [`vectorchord`, `pgvector`])                         |            | server                         |
-| `DB_SKIP_MIGRATIONS`                | Whether to skip running migrations on startup (one of [`true`, `false`])               |  `false`   | server                         |
-| `DB_STORAGE_TYPE`                   | Optimize concurrent IO on SSDs or sequential IO on HDDs ([`SSD`, `HDD`])<sup>\*3</sup> |   `SSD`    | database                       |
+All Frameleaf workers share one canonical PostgreSQL 19 database with pgvector 0.8.7 and HNSW. The owned image mounts the parent directory at `/var/lib/postgresql`; old major-version clusters must not be reused. Queues, rate limits, upload leases and Socket.IO coordination use this database.
+
+| Variable             | Description                                                              |   Default   | Containers                     |
+| :------------------- | :----------------------------------------------------------------------- | :---------: | :----------------------------- |
+| `DB_URL`             | Database URL                                                             |             | server                         |
+| `DB_HOSTNAME`        | Database host                                                            | `database`  | server                         |
+| `DB_PORT`            | Database port                                                            |   `5432`    | server                         |
+| `DB_USERNAME`        | Database user                                                            | `postgres`  | server, database<sup>\*1</sup> |
+| `DB_PASSWORD`        | Database password                                                        | `postgres`  | server, database<sup>\*1</sup> |
+| `DB_DATABASE_NAME`   | Database name                                                            | `frameleaf` | server, database<sup>\*1</sup> |
+| `DB_SSL_MODE`        | Database SSL mode                                                        |             | server                         |
+| `DB_SKIP_MIGRATIONS` | Whether to skip running migrations on startup (one of [`true`, `false`]) |   `false`   | server                         |
 
 \*1: The values of `DB_USERNAME`, `DB_PASSWORD`, and `DB_DATABASE_NAME` are passed to the Postgres container as the variables `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` in `docker-compose.yml`.
-
-\*2: If not provided, the appropriate extension to use is auto-detected at startup by inspecting the database. When multiple extensions are installed, the order of preference is VectorChord, pgvector.
-
-\*3: Uses either [`postgresql.ssd.conf`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/postgres/postgresql.ssd.conf) or [`postgresql.hdd.conf`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/docker/postgres/postgresql.hdd.conf) from the database image, which mainly controls the Postgres `effective_io_concurrency` setting to allow for concurrent IO on SSDs and sequential IO on HDDs.
 
 :::info
 
 All `DB_` variables must be provided to all Frameleaf workers, including `api` and `microservices`.
 
 `DB_URL` must be in the format `postgresql://dbusername:dbpassword@postgreshost:postgresport/databasename`.
-You can require SSL by adding `?sslmode=require` to the end of the `DB_URL` string, or require SSL and skip certificate verification by adding `?sslmode=require&uselibpqcompat=true`. This allows both Frameleaf and `pg_dumpall` (the utility used for database backups) to [properly connect](https://github.com/brianc/node-postgres/tree/master/packages/pg-connection-string#tcp-connections) to your database.
+You can require SSL by adding `?sslmode=require` to the end of the `DB_URL` string, or require SSL and skip certificate verification by adding `?sslmode=require&uselibpqcompat=true`. This allows both Frameleaf and `pg_dump` (the PostgreSQL 19 client used for database backups) to [properly connect](https://github.com/brianc/node-postgres/tree/master/packages/pg-connection-string#tcp-connections) to your database.
 
 When `DB_URL` is defined, the `DB_HOSTNAME`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` and `DB_DATABASE_NAME` database variables are ignored.
 
 :::
-
-## Redis
-
-| Variable         | Description    | Default | Containers |
-| :--------------- | :------------- | :-----: | :--------- |
-| `REDIS_URL`      | Redis URL      |         | server     |
-| `REDIS_SOCKET`   | Redis socket   |         | server     |
-| `REDIS_HOSTNAME` | Redis host     | `redis` | server     |
-| `REDIS_PORT`     | Redis port     | `6379`  | server     |
-| `REDIS_USERNAME` | Redis username |         | server     |
-| `REDIS_PASSWORD` | Redis password |         | server     |
-| `REDIS_DBINDEX`  | Redis DB index |   `0`   | server     |
-
-:::info
-All `REDIS_` variables must be provided to all Frameleaf workers, including `api` and `microservices`.
-
-`REDIS_URL` must start with `ioredis://` and then include a `base64` encoded JSON string for the configuration.
-More information can be found in the upstream [ioredis] documentation.
-
-When `REDIS_URL` or `REDIS_SOCKET` are defined, the `REDIS_HOSTNAME`, `REDIS_PORT`, `REDIS_USERNAME`, `REDIS_PASSWORD`, and `REDIS_DBINDEX` variables are ignored.
-:::
-
-Redis (Sentinel) URL example JSON before encoding:
-
-<details>
-<summary>JSON</summary>
-
-```json
-{
-  "sentinels": [
-    {
-      "host": "redis-sentinel-node-0",
-      "port": 26379
-    },
-    {
-      "host": "redis-sentinel-node-1",
-      "port": 26379
-    },
-    {
-      "host": "redis-sentinel-node-2",
-      "port": 26379
-    }
-  ],
-  "name": "redis-sentinel"
-}
-```
-
-</details>
 
 ## Machine Learning
 
@@ -346,17 +294,11 @@ To use any of these, either set `CREDENTIALS_DIRECTORY` to a directory that cont
 | `DB_USERNAME`      | `DB_USERNAME_FILE`<sup>\*1</sup>            |
 | `DB_PASSWORD`      | `DB_PASSWORD_FILE`<sup>\*1</sup>            |
 | `DB_URL`           | `DB_URL_FILE`<sup>\*1</sup>                 |
-| `REDIS_PASSWORD`   | `REDIS_PASSWORD_FILE`<sup>\*2</sup>         |
 
 \*1: See the [official documentation][docker-secrets-docs] for
 details on how to use Docker Secrets in the Postgres image.
 
-\*2: See [this comment][docker-secrets-example] for an example of how
-to use a Docker secret for the password in the Redis container.
-
 [tz-list]: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List
-[docker-secrets-example]: https://github.com/docker-library/redis/issues/46#issuecomment-335326234
 [docker-secrets-docs]: https://github.com/docker-library/docs/tree/master/postgres#docker-secrets
 [docker-secrets]: https://docs.docker.com/engine/swarm/secrets/
-[ioredis]: https://ioredis.readthedocs.io/en/latest/README/#connect-to-redis
 [systemd-creds]: https://systemd.io/CREDENTIALS/
