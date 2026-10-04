@@ -746,7 +746,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
   });
 
   it('captures only declared typed boot inputs and stages them privately after loss of the original server', async () => {
-    const declaration = { version: 1, environmentKeys: ['FRAMELEAF_PORT', 'REDIS_PASSWORD'] };
+    const declaration = { version: 1, environmentKeys: ['FRAMELEAF_PORT', 'REDIS_PASSWORD', 'FRAMELEAF_IMPORT_ROOTS'] };
     const checked = BuddySettingsSchema.safeParse({ ...settings, bootConfiguration: declaration });
     // A valid declaration must enter through the real settings contract, never a cast or schema bypass.
     expect(checked.success).toBe(true);
@@ -755,6 +755,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     const undeclared = randomBytes(32).toString('base64url');
     vi.stubEnv('FRAMELEAF_PORT', '2284');
     vi.stubEnv('REDIS_PASSWORD', secret);
+    vi.stubEnv('FRAMELEAF_IMPORT_ROOTS', ' /synthetic/import-one, /synthetic/import-two ');
     vi.stubEnv('BUDDY_UNDECLARED_FIXTURE', undeclared);
     vi.stubEnv('NODE_OPTIONS', 'forbidden-runtime-fixture');
     const historicalIdentity = join(root, 'forbidden-historical-identity');
@@ -803,7 +804,13 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     expect(artifact.snapshotId).toBe(snapshot.id);
     expect((await stat(join(directory, 'boot-configuration.json'))).mode & 0o777).toBe(0o600);
     expect((await stat(directory)).mode & 0o777).toBe(0o700);
-    expect(artifact.entries.map((entry: { key: string }) => entry.key).sort()).toEqual(['FRAMELEAF_PORT', 'REDIS_PASSWORD']);
+    expect(artifact.entries.map((entry: { key: string }) => entry.key).sort()).toEqual([
+      'FRAMELEAF_IMPORT_ROOTS', 'FRAMELEAF_PORT', 'REDIS_PASSWORD',
+    ]);
+    const rootsEntry = artifact.entries.find((entry: { key: string }) => entry.key === 'FRAMELEAF_IMPORT_ROOTS');
+    expect(rootsEntry).toEqual({
+      key: 'FRAMELEAF_IMPORT_ROOTS', state: 'value', value: ['/synthetic/import-one', '/synthetic/import-two'],
+    });
     const portEntry = artifact.entries.find((entry: { key: string }) => entry.key === 'FRAMELEAF_PORT');
     expect(portEntry?.state === 'value' && portEntry.value === 2284).toBe(true);
     const secretEntry = artifact.entries.find((entry: { key: string }) => entry.key === 'REDIS_PASSWORD');
