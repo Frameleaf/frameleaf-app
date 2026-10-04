@@ -1407,7 +1407,7 @@ describe('iCloud exact identity adoption', () => {
             pending.set(queryId, { statement, started: performance.now() });
             return node;
           },
-          async transformResult({ queryId, result }) {
+          transformResult({ queryId, result }) {
             const measurement = pending.get(queryId);
             if (measurement) {
               const duration = performance.now() - measurement.started;
@@ -1417,7 +1417,7 @@ describe('iCloud exact identity adoption', () => {
               timing.maxMs = Math.max(timing.maxMs, duration);
               pending.delete(queryId);
             }
-            return result;
+            return Promise.resolve(result);
           },
         };
       };
