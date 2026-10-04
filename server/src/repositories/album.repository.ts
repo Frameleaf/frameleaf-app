@@ -120,13 +120,15 @@ export class AlbumRepository {
   ): Promise<T> {
     const execute = async (tx: Kysely<DB>) => {
       await lockPublicForkWrites(tx as Transaction<DB>, refusal);
-      await tx
-        .selectFrom('album')
-        .select('id')
-        .where('id', 'in', [...new Set(albumIds)].toSorted())
-        .orderBy('id')
-        .forNoKeyUpdate()
-        .execute();
+      if (albumIds.length > 0) {
+        await tx
+          .selectFrom('album')
+          .select('id')
+          .where('id', 'in', [...new Set(albumIds)].toSorted())
+          .orderBy('id')
+          .forNoKeyUpdate()
+          .execute();
+      }
       return write(tx, new AlbumRepository(tx));
     };
     return this.db.isTransaction ? execute(this.db) : this.db.transaction().execute(execute);
