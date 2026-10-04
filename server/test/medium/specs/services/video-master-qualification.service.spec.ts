@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-import { AssetEditAction, AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import { AssetEditAction, AssetEditActionItem, VideoTrimMode } from 'src/dtos/editing.dto.js';
 import { AssetType, JobStatus, TranscodeHardwareAcceleration } from 'src/enum.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -327,6 +327,104 @@ const assertChannelIdentity = (amplitudes: number[][]) => {
   }
 };
 
+// Three separately identifiable 80 ms events, authored before any native encoder runs.
+const eventStarts = [0.1, 0.6, 1.1];
+const eventWidth = 0.08;
+const eventFixture = (folder: string, delay: number) => {
+  const picture = fixture(folder, 320, 240, 60);
+  const samples = Buffer.alloc(2 * 48_000 * 6 * 4);
+  for (let sample = 0; sample < 2 * 48_000; sample++) {
+    const time = sample / 48_000;
+    for (const [channel, start] of eventStarts.entries()) {
+      if (time >= start && time < start + eventWidth) {
+        samples.writeFloatLE(0.4 * Math.sin(2 * Math.PI * frequencies[channel] * time), (sample * 6 + channel) * 4);
+      }
+    }
+  }
+  const raw = join(folder, 'events.f32le');
+  const source = join(folder, 'events.mp4');
+  writeFileSync(raw, samples);
+  ffmpeg(
+    '-i', picture, '-itsoffset', String(delay), '-f', 'f32le', '-ar', '48000', '-ac', '6',
+    '-channel_layout', '5.1', '-i', raw, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy',
+    '-c:a', 'aac', '-video_track_timescale', '90000', '-output_ts_offset', '5', source,
+  );
+  return source;
+};
+
+type EditClockInterval = { start: number; end: number; rate: number };
+// Recipe oracle: integrate 1/rate on the clipped source domain. Never read the
+// application's timeline, FFmpeg command, output duration or measured event as intent.
+const editClock = (time: number, intervals: EditClockInterval[]) =>
+  intervals.reduce(
+    (elapsed, interval) => elapsed + Math.max(0, Math.min(time, interval.end) - interval.start) / interval.rate,
+    0,
+  );
+const audioEvents = (file: string) => {
+  const samples = pcm(file);
+  expect(samples.length % (6 * 4)).toBe(0);
+  const origin = Number(inspect(file, '-select_streams', 'a:0', '-show_frames').frames[0].best_effort_timestamp_time);
+  expect(Number.isFinite(origin)).toBe(true);
+  return eventStarts.map((_, channel) => {
+    const active: number[] = [];
+    let energy = 0;
+    let moment = 0;
+    // 1 ms RMS windows distinguish authored 0.4-amplitude bursts from silence.
+    // Bound the support as well as its centroid so an extra event cannot hide in an average.
+    for (let first = 0; first + 48 <= samples.length / 24; first += 48) {
+      let square = 0;
+      for (let offset = 0; offset < 48; offset++) {
+        square += samples.readFloatLE(((first + offset) * 6 + channel) * 4) ** 2;
+      }
+      if (Math.sqrt(square / 48) > 0.03) {
+        const time = origin + (first + 24) / 48_000;
+        active.push(time);
+        energy += square;
+        moment += square * time;
+      }
+    }
+    return active.length === 0 ? undefined : { center: moment / energy, start: active[0], end: active.at(-1)! };
+  });
+};
+const assertEventClock = (file: string, delay: number, intervals: EditClockInterval[]) => {
+  const origin = frameTimes(file)[0];
+  const events = audioEvents(file);
+  for (const [channel, start] of eventStarts.entries()) {
+    const sourceStart = start + delay;
+    const sourceEnd = sourceStart + eventWidth;
+    if (sourceEnd <= intervals[0].start || sourceStart >= intervals.at(-1)!.end) {
+      expect(events[channel], `Clipped event ${channel} must be absent`).toBeUndefined();
+      continue;
+    }
+    // These representative events are wholly inside one interval, not clipped bursts.
+    expect(intervals.some((interval) => sourceStart >= interval.start && sourceEnd <= interval.end)).toBe(true);
+    const actual = events[channel];
+    expect(actual, `Authored event ${channel} must survive in its original channel`).toBeDefined();
+    const expectedStart = editClock(sourceStart, intervals);
+    const expectedEnd = editClock(sourceEnd, intervals);
+    expect(
+      Math.abs(actual!.center - origin - (expectedStart + expectedEnd) / 2),
+      `Event ${channel} must follow the recipe clock`,
+    ).toBeLessThanOrEqual(aacTailTolerance);
+    expect(Math.abs(actual!.start - origin - expectedStart)).toBeLessThanOrEqual(aacTailTolerance);
+    expect(Math.abs(actual!.end - origin - expectedEnd)).toBeLessThanOrEqual(aacTailTolerance);
+  }
+};
+const assertPresentationExtent = (file: string, intervals: EditClockInterval[]) => {
+  const actual = presentation(file);
+  const expected = editClock(intervals.at(-1)!.end, intervals);
+  // Include the final frame's duration and retained AAC tail, independently of
+  // frame/event positions. Use only the existing video tick and AAC allowances.
+  expect(
+    Math.abs(actual.videoEnd - actual.videoStart - expected),
+    'Video presentation end must follow the clipped recipe extent',
+  ).toBeLessThanOrEqual(2 * videoTick);
+  expect(
+    Math.abs(actual.audioEnd - actual.videoStart - expected),
+    'Audio presentation end must follow the clipped recipe extent',
+  ).toBeLessThanOrEqual(aacTailTolerance);
+};
+
 describe.sequential('VID-100 production master qualification (FL-16)', () => {
   let db: Kysely<DB>;
   let folder: string;
@@ -489,6 +587,124 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
       await sql<Selection>`SELECT "currentVersionId","requestedVersionId"
         FROM immich_fork.video_edit_selection WHERE "assetId"=${assetId}::uuid`.execute(db)
     ).rows[0];
+
+  const temporalRecipes: Array<{
+    name: string;
+    speed: AssetEditActionItem[];
+    intervals: EditClockInterval[];
+  }> = [
+    { name: 'precise trim', speed: [], intervals: [{ start: 0.2, end: 1.8, rate: 1 }] },
+    {
+      name: 'trim and whole-clip speed',
+      speed: [{ action: AssetEditAction.Speed, parameters: { rate: 2 } }],
+      intervals: [{ start: 0.2, end: 1.8, rate: 2 }],
+    },
+    {
+      name: 'trim and segmented speed',
+      speed: [{ action: AssetEditAction.Speed, parameters: { rate: 2, startMs: 800, endMs: 1200 } }],
+      intervals: [
+        { start: 0.2, end: 0.8, rate: 1 },
+        { start: 0.8, end: 1.2, rate: 2 },
+        { start: 1.2, end: 1.8, rate: 1 },
+      ],
+    },
+  ];
+  it.each(temporalRecipes.flatMap((recipe) => [0, 0.4].map((delay) => ({ ...recipe, delay }))))(
+    'characterizes authored event/frame clock through $name with source delay $delay',
+    async ({ speed, intervals, delay }) => {
+      const source = eventFixture(folder, delay);
+      const before = digest(source);
+      const sourceTimes = frameTimes(source);
+      expect(sourceTimes).toHaveLength(60);
+      expect(sourceTimes[0]).toBeGreaterThan(4);
+      expect(frameIds(source)).toEqual(Array.from({ length: 60 }, (_, index) => index % 12));
+      for (const [index, time] of sourceTimes.entries()) {
+        expect(Math.abs(time - sourceTimes[0] - index / 30)).toBeLessThanOrEqual(2 * videoTick);
+      }
+      assertEventClock(source, delay, [{ start: 0, end: 2.4, rate: 1 }]);
+
+      // Actual production trim/global/segmented graph and native encoder. This is
+      // characterization, not a claim that temporal publication admission is qualified.
+      const output = await master(source, [
+        { action: AssetEditAction.Trim, parameters: { startMs: 200, endMs: 1800, mode: VideoTrimMode.Precise } },
+        ...speed,
+        fullCrop(320, 240),
+      ], 'event-clock');
+      const times = frameTimes(output);
+      expect(frameIds(output), 'Precise trim must retain source frames 6 through 53 in order').toEqual(
+        Array.from({ length: 48 }, (_, index) => (index + 6) % 12),
+      );
+      expect(times).toHaveLength(48);
+      for (const [index, time] of times.entries()) {
+        const expected = editClock((index + 6) / 30, intervals);
+        expect(
+          Math.abs(time - times[0] - expected),
+          `Frame ${index + 6} must follow the recipe clock`,
+        ).toBeLessThanOrEqual(2 * videoTick);
+      }
+      assertEventClock(output, delay, intervals);
+      assertPresentationExtent(output, intervals);
+      expect(digest(source)).toBe(before);
+    },
+    120_000,
+  );
+
+  it('accepts the authored baseline event clock and detects a native shifted candidate', async () => {
+    const source = eventFixture(folder, 0.4);
+    const identity = [{ start: 0, end: 2.4, rate: 1 }];
+    assertEventClock(source, 0.4, identity);
+    const before = digest(source);
+    const output = await master(source, [fullCrop(320, 240)], 'event-baseline');
+    expect(frameIds(output)).toEqual(frameIds(source));
+    assertEventClock(output, 0.4, identity);
+    const shifted = join(folder, 'event-bad-candidate.mp4');
+    ffmpeg(
+      '-copyts', '-i', output, '-itsoffset', '0.25', '-i', output,
+      '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy',
+      '-avoid_negative_ts', 'disabled', '-video_track_timescale', '90000', shifted,
+    );
+    expect(frameIds(shifted)).toEqual(frameIds(output));
+    expect(frameTimes(shifted)).toEqual(frameTimes(output));
+    expect(audioPackets(shifted)).toEqual(audioPackets(output));
+    const expected = audioEvents(output);
+    const actual = audioEvents(shifted);
+    for (const [channel, event] of actual.entries()) {
+      expect(event).toBeDefined();
+      expect(expected[channel]).toBeDefined();
+      expect(Math.abs(event!.center - expected[channel]!.center - 0.25)).toBeLessThanOrEqual(clockTolerance);
+    }
+    // Only the independently measured clock disagreement is the negative control.
+    expect(() => assertEventClock(shifted, 0.4, identity)).toThrow(/recipe clock/);
+    expect(digest(source)).toBe(before);
+  }, 120_000);
+
+  it('detects a retained silent tail despite unchanged video and authored event positions', async () => {
+    const source = eventFixture(folder, 0);
+    const before = digest(source);
+    const identity = [{ start: 0, end: 2, rate: 1 }];
+    assertEventClock(source, 0, identity);
+    assertPresentationExtent(source, identity);
+    const output = await master(source, [fullCrop(320, 240)], 'extent-baseline');
+    assertEventClock(output, 0, identity);
+    assertPresentationExtent(output, identity);
+    const padded = join(folder, 'event-silent-tail.mp4');
+    ffmpeg(
+      '-copyts', '-i', output, '-map', '0:v:0', '-map', '0:a:0', '-c:v', 'copy',
+      '-filter:a', 'apad=pad_dur=0.25', '-c:a', 'aac', '-avoid_negative_ts', 'disabled',
+      '-video_track_timescale', '90000', padded,
+    );
+    expect(frameIds(padded)).toEqual(frameIds(output));
+    expect(frameTimes(padded)).toEqual(frameTimes(output));
+    assertEventClock(padded, 0, identity);
+    const originalPresentation = presentation(output);
+    const paddedPresentation = presentation(padded);
+    expect(paddedPresentation.videoEnd).toBe(originalPresentation.videoEnd);
+    expect(paddedPresentation.audioEnd - originalPresentation.audioEnd).toBeGreaterThan(0.2);
+    // A genuine native silent extension passes the positions oracle; only the
+    // complete retained-end assertion may count as this negative control.
+    expect(() => assertPresentationExtent(padded, identity)).toThrow(/Audio presentation end/);
+    expect(digest(source)).toBe(before);
+  }, 120_000);
 
   it('keeps real 4K frames and authored geometry despite low-resolution proxy policy', async () => {
     const source = fixture(folder, 3840, 2160, 3);
