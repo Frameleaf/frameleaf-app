@@ -409,14 +409,26 @@ describe('atomic initial run admission', () => {
       const fault = vi.spyOn(admissionStore, 'admitRun').mockImplementationOnce(async (...args) => {
         await admit(...args); // Real run, item and job rows exist inside the transaction before authority changes.
         const tx = args[4];
-        if (reason === 'expired')
-          await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second'
+        switch (reason) {
+          case 'expired': {
+            await sql`update job set "leaseExpiresAt" = clock_timestamp() - interval '1 second'
             where id = ${parent.id}::uuid`.execute(tx);
-        else if (reason === 'cancelled')
-          await sql`update job set "cancelRequestedAt" = clock_timestamp() where id = ${parent.id}::uuid`.execute(tx);
-        else if (reason === 'token-replaced')
-          await sql`update job set token = gen_random_uuid() where id = ${parent.id}::uuid`.execute(tx);
-        else if (reason === 'aborted') abort.abort(new Error('parent stopped during admission'));
+            break;
+          }
+          case 'cancelled': {
+            await sql`update job set "cancelRequestedAt" = clock_timestamp() where id = ${parent.id}::uuid`.execute(tx);
+            break;
+          }
+          case 'token-replaced': {
+            await sql`update job set token = gen_random_uuid() where id = ${parent.id}::uuid`.execute(tx);
+            break;
+          }
+          case 'aborted': {
+            abort.abort(new Error('parent stopped during admission'));
+            // No default
+            break;
+          }
+        }
       });
       try {
         await expect(
