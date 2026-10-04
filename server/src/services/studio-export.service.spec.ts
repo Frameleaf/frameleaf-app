@@ -141,6 +141,7 @@ const liveSession = (
     destination: MediaOperationDestination;
     gpuMemoryBytes: string | null;
     codecs: string[] | null;
+    formats: string[] | null;
     colorPrecision: { maxBitDepth: number; hdr10: boolean; dolbyVision: boolean } | null;
     conformanceReportedAt: Date;
   }> = {},
@@ -159,6 +160,7 @@ const liveSession = (
     engineDigest: 'engine-1',
     conformanceReportedAt: overrides.conformanceReportedAt ?? new Date(),
     codecs: overrides.codecs === undefined ? ['h264_nvenc', 'hevc_nvenc'] : overrides.codecs,
+    formats: overrides.formats === undefined ? ['mp4'] : overrides.formats,
     colorPrecision: overrides.colorPrecision ?? null,
     expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     revokedAt: null,
@@ -389,6 +391,67 @@ describe(StudioExportService.name, () => {
       color: 'preserve',
       resolution: '1080p',
     } as never;
+
+    it.each([
+      ['decoder only', ['h264_cuvid'], ['mp4']],
+      ['bare codec name', ['h264'], ['mp4']],
+      ['wrong container', ['webcodecs-avc'], ['webm']],
+      ['missing container', ['webcodecs-avc'], []],
+      ['null container evidence', ['webcodecs-avc'], null],
+    ])('refuses %s before creating an export or render job', async (_name, codecs, formats) => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      renderWorkers.listLiveSessions.mockResolvedValue([liveSession({ codecs, formats })]);
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+
+      await expect(sut.create(auth(), PROJECT, dto)).rejects.toMatchObject({
+        response: { code: 'studio_export_unsupported', reason: 'codec-unavailable' },
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it('refuses split encoder and container evidence before creating any work', async () => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      renderWorkers.listLiveSessions.mockResolvedValue([
+        liveSession({ codecs: ['webcodecs-avc'], formats: ['webm'] }),
+        liveSession({ codecs: ['libaom-av1'], formats: ['mp4'] }),
+      ]);
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+
+      await expect(sut.create(auth(), PROJECT, dto)).rejects.toMatchObject({
+        response: { code: 'studio_export_unsupported', reason: 'codec-unavailable' },
+      });
+      expect(repository.createWithRender).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['webcodecs-avc', 'mp4'],
+      ['WEBCODECS-AVC', 'MP4'],
+      ['LIBX264', 'MP4'],
+    ])('queues an export when one session verified writer %s and container %s', async (codec, container) => {
+      studio.authorizeRevision.mockResolvedValue(authorized());
+      renderWorkers.listLiveSessions.mockResolvedValue([liveSession({ codecs: [codec], formats: [container] })]);
+      repository.createWithRender.mockResolvedValue({
+        operation: operation({ status: MediaOperationStatus.Queued }),
+        version: versionRow({ state: StudioExportVersionState.Rendering }),
+      });
+
+      await expect(sut.create(auth(), PROJECT, dto)).resolves.toMatchObject({
+        version: { id: VERSION, state: StudioExportVersionState.Rendering },
+        operation: { id: RENDER, status: MediaOperationStatus.Queued },
+      });
+      expect(repository.createWithRender).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          settings: { format: 'mp4-h264', color: 'preserve', resolution: '1080p', audio: 'preserve' },
+        }),
+        expect.objectContaining({ projectId: PROJECT, revision: 3 }),
+      );
+    });
 
     it('refuses a reviewer an export before resolving any source for them (FL-280)', async () => {
       studio.requireOwnedProject.mockRejectedValue(
