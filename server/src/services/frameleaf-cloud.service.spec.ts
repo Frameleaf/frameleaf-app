@@ -218,10 +218,6 @@ describe(FrameleafCloudService.name, () => {
       metadata.delete(key);
       return Promise.resolve();
     });
-    mocks.forkSchema.persistConfig.mockImplementation((partial) => {
-      metadata.set(SystemMetadataKey.SystemConfig, partial);
-      return Promise.resolve();
-    });
     mocks.database.withLock.mockImplementation((lock, callback) => {
       const held = heldLocks.getStore() ?? [];
       if (held.includes(lock)) {
@@ -3109,7 +3105,9 @@ describe(FrameleafCloudService.name, () => {
     it('leaves the settings alone when there is no secret to remove', async () => {
       metadata.set(SystemMetadataKey.SystemConfig, { frameleafCloud: { signIn: { buttonText: 'Use Frameleaf' } } });
       await sut.onBootstrap();
-      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(
+        mocks.systemMetadata.set.mock.calls.filter(([key]) => key === SystemMetadataKey.SystemConfig),
+      ).toHaveLength(0);
     });
 
     it('treats secret.rotate as dropping cached tokens and discovery', async () => {

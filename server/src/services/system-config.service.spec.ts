@@ -472,6 +472,11 @@ describe(SystemConfigService.name, () => {
   let sut: SystemConfigService;
   let mocks: ServiceMocks;
 
+  const configWrites = () =>
+    mocks.systemMetadata.set.mock.calls
+      .filter(([key]) => key === SystemMetadataKey.SystemConfig)
+      .map(([, value]) => value);
+
   beforeEach(() => {
     ({ sut, mocks } = newTestService(SystemConfigService));
   });
@@ -911,7 +916,7 @@ describe(SystemConfigService.name, () => {
           },
         },
       });
-      const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1)?.[0] as
+      const persisted = configWrites().at(-1) as
         { frameleafCloud?: { remoteAccess?: Record<string, unknown> } } | undefined;
       // every value stayed the stored default, so nothing of remote access was written
       expect(persisted?.frameleafCloud?.remoteAccess).toBeUndefined();
@@ -1005,9 +1010,9 @@ describe(SystemConfigService.name, () => {
         await sut.updateAdminConfig(newConfig);
         const after = Date.now();
 
-        const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1);
+        const persisted = configWrites().at(-1);
         expect(persisted).toBeDefined();
-        const partial = persisted![0] as {
+        const partial = persisted! as {
           machineLearning?: { imageDescription?: { lastConfigChangeAt?: string | null } };
         };
         const bumped = partial.machineLearning?.imageDescription?.lastConfigChangeAt;
@@ -1028,7 +1033,7 @@ describe(SystemConfigService.name, () => {
           },
         });
 
-        const partial = mocks.forkSchema.persistConfig.mock.calls.at(-1)![0] as {
+        const partial = configWrites().at(-1)! as {
           machineLearning?: {
             imageDescription?: { lastConfigChangeAt?: string | null; videoMomentCaptions?: boolean };
           };
@@ -1067,8 +1072,8 @@ describe(SystemConfigService.name, () => {
         // imageDescription.lastConfigChangeAt different from the stored one
         // (updateConfig diffs against defaults, so the existing 2024 value
         // would be persisted only if it differs from null — which it does).
-        const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1);
-        const partial = persisted![0] as {
+        const persisted = configWrites().at(-1);
+        const partial = persisted! as {
           machineLearning?: { imageDescription?: { lastConfigChangeAt?: string | null } };
         };
         const lastChange = partial.machineLearning?.imageDescription?.lastConfigChangeAt;
@@ -1116,8 +1121,8 @@ describe(SystemConfigService.name, () => {
         const before = Date.now();
         await sut.updateAdminConfig(newConfig);
 
-        const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1);
-        const partial = persisted![0] as {
+        const persisted = configWrites().at(-1);
+        const partial = persisted! as {
           machineLearning?: {
             imageDescription?: { lastConfigChangeAt?: string | null; pendingRequeueAt?: string | null };
           };
@@ -1150,7 +1155,7 @@ describe(SystemConfigService.name, () => {
       oauth?: { clientSecret?: string };
       frameleafCloud?: { cloudBackup?: { s3?: { secretAccessKey?: string } } };
     };
-    const lastPersisted = () => mocks.forkSchema.persistConfig.mock.calls.at(-1)?.[0] as PersistedSecrets | undefined;
+    const lastPersisted = () => configWrites().at(-1) as PersistedSecrets | undefined;
     const storedSecrets = {
       notifications: { smtp: { transport: { password: 'smtp-secret' } } },
       oauth: { clientSecret: 'oauth-secret' },
@@ -1322,7 +1327,7 @@ describe(SystemConfigService.name, () => {
         name: ConfigCredential.OAuthClientSecret,
         configured: false,
       });
-      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(configWrites()).toHaveLength(0);
     });
 
     it('should refuse a credential the validation rejects and keep the stored one', async () => {
@@ -1332,7 +1337,7 @@ describe(SystemConfigService.name, () => {
       await expect(
         sut.setCredential(authStub.admin, ConfigCredential.SmtpPassword, { value: 'wrong' }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(configWrites()).toHaveLength(0);
     });
 
     it('should refuse credential changes while a configuration file is in use', async () => {
@@ -1387,7 +1392,7 @@ describe(SystemConfigService.name, () => {
 
       expect(saved.revision).toBe(getConfigRevision(await sut.getConfig({ withCache: false })));
       expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.SystemConfigUpdate, expect.any(Function));
-      expect(mocks.forkSchema.persistConfig).toHaveBeenCalled();
+      expect(configWrites().length).toBeGreaterThan(0);
       expect(mocks.event.emit).toHaveBeenCalledWith(
         'ConfigUpdate',
         expect.objectContaining({ newConfig: expect.any(Object) }),
@@ -1404,7 +1409,7 @@ describe(SystemConfigService.name, () => {
       await expect(
         sut.updateAdminConfigWithRevision({ config: updatedConfig, expectedRevision: revision }),
       ).rejects.toBeInstanceOf(ConflictException);
-      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(configWrites()).toHaveLength(0);
       expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigUpdate', expect.anything());
     });
 
@@ -1430,7 +1435,7 @@ describe(SystemConfigService.name, () => {
         sut.updateAdminConfigWithRevision({ config: updatedConfig, expectedRevision: revision }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(mocks.event.emit).toHaveBeenCalledWith('ConfigValidate', expect.anything());
-      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(configWrites()).toHaveLength(0);
       expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigUpdate', expect.anything());
     });
 
@@ -1443,7 +1448,7 @@ describe(SystemConfigService.name, () => {
 
       const validations = mocks.event.emit.mock.calls.filter(([name]) => name === 'ConfigValidate');
       expect(validations).toHaveLength(2);
-      expect(mocks.forkSchema.persistConfig).toHaveBeenCalledTimes(1);
+      expect(configWrites()).toHaveLength(1);
     });
 
     it('should keep the re-queue reminder saved in between rather than the one seen at validation', async () => {
@@ -1454,7 +1459,7 @@ describe(SystemConfigService.name, () => {
 
       await sut.updateAdminConfig(cloneDeep(updatedConfig));
 
-      const persisted = mocks.forkSchema.persistConfig.mock.calls.at(-1)![1] as SystemConfig;
+      const persisted = configWrites().at(-1)! as SystemConfig;
       expect(persisted.machineLearning.imageDescription.pendingRequeueAt).toBe('2026-09-23T10:00:00.000Z');
     });
 
@@ -1496,9 +1501,13 @@ describe(SystemConfigService.name, () => {
     const useStatefulStore = (initial: DeepPartial<SystemConfig>) => {
       let stored = cloneDeep(initial);
       let queue: Promise<unknown> = Promise.resolve();
-      mocks.systemMetadata.get.mockImplementation(() => Promise.resolve(cloneDeep(stored)));
-      mocks.forkSchema.persistConfig.mockImplementation((partial: DeepPartial<SystemConfig>) => {
-        stored = cloneDeep(partial);
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve((key === SystemMetadataKey.SystemConfig ? cloneDeep(stored) : null) as never),
+      );
+      mocks.systemMetadata.set.mockImplementation((key, value) => {
+        if (key === SystemMetadataKey.SystemConfig) {
+          stored = cloneDeep(value as DeepPartial<SystemConfig>);
+        }
         return Promise.resolve();
       });
       mocks.database.withLock.mockImplementation((_lock, fn) => {
@@ -1626,16 +1635,22 @@ describe(SystemConfigService.name, () => {
       let config = cloneDeep(initial);
       let history: unknown = null;
       mocks.systemMetadata.get.mockImplementation((key) =>
-        Promise.resolve(cloneDeep(key === SystemMetadataKey.SystemConfigHistory ? history : config) as never),
+        Promise.resolve(
+          cloneDeep(
+            key === SystemMetadataKey.SystemConfigHistory
+              ? history
+              : key === SystemMetadataKey.SystemConfig
+                ? config
+                : null,
+          ) as never,
+        ),
       );
       mocks.systemMetadata.set.mockImplementation((key, value) => {
         if (key === SystemMetadataKey.SystemConfigHistory) {
           history = cloneDeep(value);
+        } else if (key === SystemMetadataKey.SystemConfig) {
+          config = cloneDeep(value as DeepPartial<SystemConfig>);
         }
-        return Promise.resolve();
-      });
-      mocks.forkSchema.persistConfig.mockImplementation((partial: DeepPartial<SystemConfig>) => {
-        config = cloneDeep(partial);
         return Promise.resolve();
       });
       return { history: () => history };
@@ -1713,7 +1728,7 @@ describe(SystemConfigService.name, () => {
           authStub.admin,
         ),
       ).resolves.toEqual(expect.objectContaining({ revision: expect.any(String) }));
-      expect(mocks.forkSchema.persistConfig).toHaveBeenCalled();
+      expect(configWrites().length).toBeGreaterThan(0);
       expect(mocks.logger.error).toHaveBeenCalled();
     });
 
@@ -1830,9 +1845,9 @@ describe(SystemConfigService.name, () => {
 
       // The system-config write that clears pendingRequeueAt should be the
       // most-recent persist call.
-      const persistCalls = mocks.forkSchema.persistConfig.mock.calls;
+      const persistCalls = configWrites();
       expect(persistCalls.length).toBeGreaterThan(0);
-      const latest = persistCalls.at(-1)![0] as {
+      const latest = persistCalls.at(-1)! as {
         machineLearning?: { imageDescription?: { pendingRequeueAt?: string | null } };
       };
       // Confirm the cleared value made it into the persisted partial diff.
@@ -1919,8 +1934,8 @@ describe(SystemConfigService.name, () => {
       await sut.deferDescriptionRequeue();
       const after = Date.now();
 
-      const persistCalls = mocks.forkSchema.persistConfig.mock.calls;
-      const latest = persistCalls.at(-1)![0] as {
+      const persistCalls = configWrites();
+      const latest = persistCalls.at(-1)! as {
         machineLearning?: { imageDescription?: { pendingRequeueAt?: string | null } };
       };
       const written = latest.machineLearning?.imageDescription?.pendingRequeueAt;
