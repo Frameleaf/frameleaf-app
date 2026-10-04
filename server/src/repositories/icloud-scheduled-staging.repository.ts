@@ -12,6 +12,7 @@ import { ICloudResource } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { DB } from 'src/schema/index.js';
 import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
+import { lockICloudItemClaims } from 'src/repositories/icloud-item-claim-lock.js';
 import type { MediaIntegrityIdentity } from 'src/services/media-integrity.service.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import { randomUUID } from 'node:crypto';
@@ -291,6 +292,7 @@ export class ICloudScheduledStagingRepository {
     const copy = record.payload;
     return this.db.transaction().execute(async (db) => {
       await lockPublicForkWrites(db);
+      await lockICloudItemClaims(db, copy.ownerId, [copy.sourceAssetId]);
       await db.selectFrom('user').select('id').where('id','=',input.ownerId).forUpdate().executeTakeFirst();
       const request = (await sql<{ itemClaimId: string; operationId: string; connectionId: string }>`SELECT "itemClaimId","operationId","connectionId"
         FROM immich_fork.icloud_identity_audit WHERE id=${copy.auditRequestId}::uuid AND "ownerId"=${copy.ownerId}::uuid
@@ -306,10 +308,11 @@ export class ICloudScheduledStagingRepository {
         resource.promotedPath !== copy.promotedPath || resource.stagingPath !== copy.stagingPath ||
         resource.expectedTarget?.outcome !== 'imported' || canonicalJson(resource.verification?.auditPrivateCopy) !== canonicalJson(record) ||
         Number(resource.reservedBytes) < copy.reservedCopyBytes) { return false; }
-      const replacement = await sql`SELECT id FROM immich_fork.icloud_claim WHERE "ownerId"=${copy.ownerId}::uuid
-        AND "cplAssetRecordName"=upper(${copy.sourceAssetId}) AND "expiresAt">clock_timestamp()
-        AND id<>${copy.itemClaimId}::uuid FOR SHARE`.execute(db);
-      if (replacement.rows.length) { return false; }
+      // Lock even the expired original row. The shared item fence also excludes inserts when absent.
+      const claims = await sql<{ id: string; live: boolean }>`SELECT id,"expiresAt">clock_timestamp() AS live
+        FROM immich_fork.icloud_claim WHERE "ownerId"=${copy.ownerId}::uuid
+          AND "cplAssetRecordName"=upper(${copy.sourceAssetId}) FOR UPDATE`.execute(db);
+      if (claims.rows.some((claim) => claim.live && claim.id !== copy.itemClaimId)) { return false; }
       for (const path of [copy.temporaryPath, copy.promotedPath].sort()) {
         await lockFilePath(db, path);
         if (await scheduledPrivatePathReferences(db, path, copy.resourceId)) { return false; }
@@ -357,6 +360,7 @@ export class ICloudScheduledStagingRepository {
     catch { return false; }
     return this.db.transaction().execute(async (db) => {
       await lockPublicForkWrites(db);
+      await lockICloudItemClaims(db, input.ownerId, [resource.sourceAssetId]);
       await db.selectFrom('user').select('id').where('id','=',input.ownerId).forUpdate().executeTakeFirst();
       const current = (await sql<ICloudResource>`SELECT * FROM immich_fork.icloud_resource
         WHERE id=${resource.id}::uuid AND "ownerId"=${input.ownerId}::uuid AND status='failed'
@@ -371,9 +375,10 @@ export class ICloudScheduledStagingRepository {
           AND result IN ('failed','stale','cancelled') FOR UPDATE`.execute(db)).rows[0];
       if (!operation || (operation.claimToken !== null && operation.claimToken !== input.authority.operationClaimToken) ||
         !request || request.itemClaimId !== work.payload.itemClaimId) { return false; }
-      if ((await sql`SELECT id FROM immich_fork.icloud_claim WHERE "ownerId"=${input.ownerId}::uuid
-        AND "cplAssetRecordName"=upper(${current.sourceAssetId}) AND "expiresAt">clock_timestamp()
-        AND id IS DISTINCT FROM ${request.itemClaimId}::uuid FOR SHARE`.execute(db)).rows.length) { return false; }
+      const claims = await sql<{ id: string; live: boolean }>`SELECT id,"expiresAt">clock_timestamp() AS live
+        FROM immich_fork.icloud_claim WHERE "ownerId"=${input.ownerId}::uuid
+          AND "cplAssetRecordName"=upper(${current.sourceAssetId}) FOR UPDATE`.execute(db);
+      if (claims.rows.some((claim) => claim.live && claim.id !== request.itemClaimId)) { return false; }
       await lockFilePath(db, resource.stagingPath);
       if (await scheduledPrivatePathReferences(db, resource.stagingPath, resource.id)) { return false; }
       if (!process.getuid) { return false; }
