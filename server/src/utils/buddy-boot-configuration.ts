@@ -22,6 +22,7 @@ export const BuddyBootDeclarationSchema = z.strictObject({
     .refine((values) => new Set(values).size === values.length)
     .refine(hasShutdownContext, 'Declare both shutdown grace and deadline inputs together'),
 });
+export type BuddyBootDeclaration = z.infer<typeof BuddyBootDeclarationSchema>;
 const valueSchema = z.union([z.string(), z.number().finite(), z.boolean(), z.array(z.string())]);
 const configurationSchema = z.strictObject({
   version: z.literal(1),
