@@ -151,7 +151,7 @@ describe('/server', () => {
         nsfwDetection: false,
         nsfwHiding: false,
         passwordLogin: true,
-        physicalDeduplication: false,
+        physicalDeduplication: true,
         realtimeTranscoding: false,
         search: true,
         sidecar: true,
