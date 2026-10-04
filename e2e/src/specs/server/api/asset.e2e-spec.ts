@@ -231,13 +231,21 @@ describe('/asset', () => {
     });
 
     describe('partner assets', () => {
-      it('should get the asset info', async () => {
-        const { status, body } = await request(app)
+      // FL-326: a partner reads their own copy, never the source
+      it("gets the partner's own copy and refuses the source", async () => {
+        const copyId = await utils.waitForPartnerCopy(user2.userId, user1Assets[0].id);
+
+        const source = await request(app)
           .get(`/assets/${user1Assets[0].id}`)
           .set('Authorization', `Bearer ${user2.accessToken}`);
+        expect(source.status).toBe(400);
+
+        const { status, body } = await request(app)
+          .get(`/assets/${copyId}`)
+          .set('Authorization', `Bearer ${user2.accessToken}`);
         expect(status).toBe(200);
-        expect(body).toMatchObject({ id: user1Assets[0].id });
-      });
+        expect(body).toMatchObject({ id: copyId, ownerId: user2.userId, origin: { rootOwnerId: user1.userId } });
+      }, 90_000);
 
       it('disallows viewing archived assets', async () => {
         const asset = await utils.createAsset(user1.accessToken, { visibility: AssetVisibility.Archive });

@@ -249,7 +249,7 @@ export const utils = {
    * delays the next spec's jobs. Queues are paused while they drain, so a finishing job cannot start
    * the follow-up jobs it queues, and resumed afterwards. Calls the queue API with a throwaway
    * session of any admin still in the database; with no admin there is nothing for a job to touch.
-   * Delayed jobs (retry/notification backoff) stay: the API cannot remove them.
+   * The SQL queue API cancels pending/waiting rows, including delayed retries and unadmitted items.
    */
   drainQueues: async () => {
     const db = await utils.connectDatabase();
@@ -723,6 +723,45 @@ export const utils = {
   /** Share the caller's library with `id` (FL-326: the partner receives their own copies). */
   createPartner: (accessToken: string, id: string) =>
     createPartner({ partnerCreateDto: { sharedWithId: id } }, { headers: asBearerAuth(accessToken) }),
+
+  /** Wait for the SQL copy/backfill jobs and the recipient's canonical provenance row (FL-326). */
+  waitForPartnerCopy: async (recipientId: string, sourceAssetId: string, ms = process.env.CI ? 60_000 : 20_000) => {
+    const db = await utils.connectDatabase();
+    const deadline = Date.now() + ms;
+    let jobs: { name: string; state: string }[] = [];
+    while (Date.now() < deadline) {
+      // A matching checksum may be a pre-existing upload, and an origin row is committed before
+      // the job finishes copying faces, tags and lock state. Neither alone proves a finished copy.
+      const { rows } = await db.query<{ id: string | null; jobs: typeof jobs }>(
+        `SELECT copy.id,
+           coalesce((SELECT jsonb_agg(jsonb_build_object('name', job.name, 'state', job.state))
+             FROM public.job job
+             WHERE job."dedupKey" IN (
+               'partner-copy/' || source.id::text || '/' || $2::text,
+               'partner-backfill/' || source."ownerId"::text || '/' || $2::text
+             )), '[]'::jsonb) AS jobs
+         FROM public.asset source
+         LEFT JOIN public.asset_origin origin ON origin."sourceAssetId" = source.id AND origin."ownerId" = $2::uuid
+         LEFT JOIN public.asset copy ON copy.id = origin."assetId" AND copy."ownerId" = $2::uuid
+           AND copy."deletedAt" IS NULL
+         WHERE source.id = $1`,
+        [sourceAssetId, recipientId],
+      );
+      const row = rows[0];
+      jobs = row?.jobs ?? [];
+      const failed = jobs.filter(({ state }) => ['failed', 'needs_attention', 'blocked', 'cancelled'].includes(state));
+      if (failed.length > 0) {
+        throw new Error(`Partner copy of ${sourceAssetId} did not complete: ${JSON.stringify(failed)}`);
+      }
+      if (row?.id && jobs.length > 0 && jobs.every(({ state }) => state === 'completed')) {
+        return row.id;
+      }
+      await setAsyncTimeout(200);
+    }
+    throw new Error(
+      `Timed out waiting for ${recipientId}'s copy of ${sourceAssetId}; SQL jobs: ${JSON.stringify(jobs)}`,
+    );
+  },
 
   updateMyPreferences: (accessToken: string, userPreferencesUpdateDto: UserPreferencesUpdateDto) =>
     updateMyPreferences({ userPreferencesUpdateDto }, { headers: asBearerAuth(accessToken) }),
