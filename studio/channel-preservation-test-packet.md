@@ -345,3 +345,71 @@ helper is mocked. Existing 0056's twelve cases, mono/stereo defaults, attributio
 and the last authenticated 997f source digest remain unchanged. Only the tracked
 0057 patch hash is recomputed. Actual high-rate execution and the broader
 qualification gates still require the root-owned hosted run.
+
+### 0058: demonstrated shared-search miss and bounded correction
+
+After authenticated 0057 source recovery admitted adapted digest
+`486a4d425795af1c68f289897108486cc655cd532b75fde6717642279ba43aa5`,
+run 37218690098 / head 68612350e36b4e7743c84dec07533167e8ba5dae /
+job 111484804537 passed source admission and eight clip-gain cases. Eleven of
+twelve original retiming cases passed; 7.1(wide) speed 2 / pitch ratio 0.5
+failed FLC retained tone amplitude 0.02865983673014473 against the unchanged
+>0.035 assertion. FRC/companion checks in that case and later high-rate / other
+qualification suites were not reached.
+
+Root-owned diagnostic run 37220831449 / head 9a720207 / job 111490646180
+succeeded. Authentic artifact 11310178566 was supplied at
+`/Users/adamtaylor/.codex/handoffs/evidence/fl103-37220831449/observation.zip`,
+ZIP SHA-256 `29bf109edaf4493ddead449d28d9ea857880b7c057c233b30d60dae2b65af692`.
+Data-only review confirmed observation-disabled and observation-enabled runs
+produced exactly 147168 frames with identical PCM SHA-256
+`2245a786a26696d9f57791bd92b36730772871a749b9ee9cc9d22a94642e1d67`
+and the same original failure. The observer preserved genuine quick-selected
+offsets and returned unchanged PCM; it is diagnostic, not DSP qualification.
+
+Within processor output [48000,52800), quick search selected 246 with shared
+score 71696.10440295307, while exhaustive search found 74 with score
+131777.99006216557. At the next boundary, quick selected 173 with score
+64716.100919454606 and FLC normalized alignment -0.5958142658792541;
+exhaustive found 598 with score 145422.9403805622 and normalized alignment 1
+on every plane. This establishes a sparse-search miss, including destructive
+FLC overlap, rather than a need for plane-specific clocks or gain compensation.
+
+Patch 0058 makes Stretch select its existing exhaustive shared search by default
+for more than two planes. Mono/stereo retain their existing quick-search default.
+Every legal offset is evaluated against the same per-plane-summed objective;
+one selected offset, overlap weights, fractional skip, resampling phase and tail
+state still serve all planes. Original correlation arithmetic, overlap and
+processing/export code are unchanged. Existing 0056/0057 tests and thresholds,
+attribution/licenses and default-OFF controls are untouched.
+
+Eight added actual-processor-component regressions test unique impulse overlap
+optima at the first, next and last legal offsets for six/eight planes, with the
+guide on a non-L/R plane and all other planes silent. The genuine quick search
+is an explicit negative control on the same PCM and misses those optima; the
+default multichannel search must find them, with input PCM unchanged. Two
+mono/stereo cases preserve the legacy quick-selected result. No search,
+correlation, FIFO, processor or overlap helper is mocked. Hosted invocation:
+
+```
+./node_modules/.bin/vp test run src/infrastructure/audio/time-stretch-search-completeness.test.ts src/infrastructure/audio/time-stretch-multichannel.test.ts src/features/export/utils/canvas-audio-highrate-retiming.test.ts
+```
+
+The original twelve actual processAudio retiming cases still run first in the
+existing workflow. They remain the behavioral amplitude/timing/companion gate;
+component search completeness alone cannot establish that they pass after this
+correction. Exhaustive work is proportional to seek frames × overlap frames ×
+plane count at each boundary. At 48 kHz / tempo 4 this is 720 × 383 × 8 sample
+products plus allocation/summation costs per boundary. High sample rates and
+long exports increase work substantially. No timeout is enlarged, and no local
+timing or performance result is claimed. Hosted high-rate finite extraction,
+existing timing/phase/plane permutation controls, long-export memory/latency and
+tail/reference qualification remain required; full windowed retiming and encoded
+semantic layout remain unfinished engineering.
+
+Only the new tracked patch hash is computed locally. The manifest adds 0058 but
+retains the last authenticated adapted digest 486a4d42…; the next source gate is
+expected to require a genuine root-owned hosted recovery receipt before a new
+adapted digest can be admitted. No engine reconstruction or source inventory is
+generated locally. GitNexus cannot map the changed Stretch constructor/search
+or new regression; impact coverage remains UNKNOWN, with no HIGH/CRITICAL result.

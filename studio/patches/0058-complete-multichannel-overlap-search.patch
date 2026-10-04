@@ -1,0 +1,76 @@
+Subject: Evaluate every shared overlap candidate for multichannel SoundTouch
+
+SoundTouch JS v0.2.3, LGPL-2.1-or-later, retains its original license and
+copyright header. This selects its existing exhaustive shared WSOLA search;
+it does not introduce independent plane clocks, processors or gain changes.
+
+diff --git a/src/infrastructure/audio/time-stretch.ts b/src/infrastructure/audio/time-stretch.ts
+--- a/src/infrastructure/audio/time-stretch.ts
++++ b/src/infrastructure/audio/time-stretch.ts
+@@ -340,7 +340,10 @@
+ class Stretch extends AbstractFifoSamplePipe {
+   constructor(createBuffers, channels = 2) {
+     super(createBuffers, channels)
+-    this._quickSeek = true
++    // A sparse hierarchical search can miss the common optimum of independent
++    // planes, causing destructive overlap on one plane. Keep the legacy mono /
++    // stereo default; multichannel uses one exhaustive shared-offset objective.
++    this._quickSeek = channels <= 2
+     this.midBufferDirty = false
+     this.midBuffer = null
+     this.overlapLength = 0
+diff --git a/src/infrastructure/audio/time-stretch-search-completeness.test.ts b/src/infrastructure/audio/time-stretch-search-completeness.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/infrastructure/audio/time-stretch-search-completeness.test.ts
+@@ -0,0 +1,49 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { TimeStretchProcessor } from './time-stretch'
++
++// Actual shared Stretch, FIFO and objective. No mocked search, overlap, DSP or
++// reference render. A single matching impulse makes the unique optimum known
++// independently, including legal candidates omitted by hierarchical quick seek.
++function isolatedOverlap(channels: number, offset: number) {
++  const processor = new TimeStretchProcessor(channels, 48_000)
++  processor.tempo = 2
++  processor.pitch = 0.5
++  processor.rate = 1
++  const stretch = processor.stretch
++  const frame = Math.floor(stretch.overlapLength / 2)
++  const plane = channels - 1 // Non-L/R guide for surround; other planes silent.
++  stretch.midBuffer.fill(0)
++  stretch.midBuffer[frame * channels + plane] = 1
++  const frames = stretch.seekLength + stretch.overlapLength + 1
++  const input = new Float32Array(frames * channels)
++  input[(offset + frame) * channels + plane] = 1
++  stretch.inputBuffer.putSamples(input, 0, frames)
++  return stretch
++}
++
++describe('FL-103 complete shared multichannel overlap selection', () => {
++  for (const channels of [6, 8]) {
++    for (const position of ['first', 'next', 'last'] as const) {
++      it(`${channels} planes find the unique ${position} legal shared optimum outside quick search`, () => {
++        const probe = new TimeStretchProcessor(channels, 48_000)
++        probe.tempo = 2
++        probe.pitch = 0.5
++        const offset = position === 'first' ? 0 : position === 'next' ? 1 : probe.stretch.seekLength - 1
++        const stretch = isolatedOverlap(channels, offset)
++        const before = stretch.inputBuffer.vector.slice()
++        expect(stretch.seekBestOverlapPosition()).toBe(offset)
++        expect(stretch.calculateCrossCorrelationStereo(offset * channels, stretch.refMidBuffer)).toBeGreaterThan(0)
++        // Genuine quick search is a negative control on exactly the same PCM:
++        // it misses this narrow unique optimum, rather than just scoring lower.
++        expect(stretch.seekBestOverlapPositionStereoQuick()).not.toBe(offset)
++        expect(stretch.inputBuffer.vector).toEqual(before)
++      })
++    }
++  }
++  for (const channels of [1, 2]) {
++    it(`${channels}-plane legacy default still uses its genuine quick search`, () => {
++      const stretch = isolatedOverlap(channels, 0)
++      expect(stretch.seekBestOverlapPosition()).toBe(stretch.seekBestOverlapPositionStereoQuick())
++      expect(stretch.seekBestOverlapPosition()).not.toBe(0)
++    })
++  }
++})

@@ -289,6 +289,11 @@
       "path": "patches/0057-shared-multichannel-retiming.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "701dc3175f1368bba075165d3f3951df14d2da9ad2cf17ac8dc65c222cc5bd42"
+    },
+    {
+      "path": "patches/0058-complete-multichannel-overlap-search.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2c122ec8d97ba6b70316f8c8656ecd8099868db3119973b32e9b4d5b8c8feb0e"
     }
   ],
   "sourceSha256": "486a4d425795af1c68f289897108486cc655cd532b75fde6717642279ba43aa5"
