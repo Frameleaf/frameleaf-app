@@ -11,6 +11,7 @@ const {
   validateIndex,
   validateImageConfig,
   trustedRun,
+  requireTestQualification,
   chooseTag,
   verifyImage,
   createBundle,
@@ -243,6 +244,262 @@ test("manual releases require a successful canonical exact-SHA Docker run", () =
     { head_repository: { full_name: "attacker/app" } },
   ])
     assert.equal(trustedRun({ ...run, ...patch }, sha), false);
+});
+
+// Names are the resolved Test workflow jobs, including both native runner matrix members.
+// These fixtures model GitHub responses; only the production validator decides qualification.
+const testJobNames = [
+  "Scripts unit tests",
+  "Test & Lint Server",
+  "Unit Test CLI",
+  "Unit Test CLI (Windows)",
+  "Lint Web",
+  "Test Web",
+  "Test i18n",
+  "End-to-End Lint",
+  "Medium Tests (Server)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
+  "End-to-End Tests (Web) (ubuntu-24.04)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm)",
+  "End-to-End Tests Success",
+  "Unit Test ML",
+  ".github Files Formatting",
+  "ShellCheck",
+  "OpenAPI Clients",
+  "SQL Schema Checks",
+];
+function testQualificationFixture() {
+  const run = {
+    id: 42,
+    run_attempt: 2,
+    updated_at: "2026-10-04T04:00:00Z",
+    head_sha: sha,
+    head_branch: "fork/main",
+    head_repository: { full_name: "Frameleaf/frameleaf-app" },
+    event: "push",
+    status: "completed",
+    conclusion: "success",
+    path: ".github/workflows/test.yml",
+  };
+  const jobs = testJobNames.map((name, index) => ({
+    id: 100 + index,
+    run_id: 42,
+    head_sha: sha,
+    head_branch: "fork/main",
+    workflow_name: "Test",
+    name,
+    status: "completed",
+    conclusion: "success",
+  }));
+  const fixture = { run, runs: [run], jobs, finalRun: undefined };
+  fixture.request = async (endpoint) => {
+    if (
+      endpoint === `actions/workflows/test.yml/runs?head_sha=${sha}&per_page=100`
+    )
+      return { total_count: fixture.runs.length, workflow_runs: fixture.runs };
+    if (endpoint === "actions/runs/42") return fixture.finalRun || fixture.run;
+    if (endpoint === "actions/runs/42/attempts/2/jobs?per_page=100")
+      return { total_count: fixture.jobs.length, jobs: fixture.jobs };
+    throw new Error(`Unexpected qualification endpoint: ${endpoint}`);
+  };
+  return fixture;
+}
+test("same-SHA Test qualification requires every real non-mobile job, including all four E2E lanes", async () => {
+  const fixture = testQualificationFixture();
+  const evidence = await requireTestQualification(sha, fixture.request);
+  assert.equal(evidence.runId, 42);
+  assert.equal(evidence.attempt, 2);
+  assert.equal(evidence.jobs.length, 19);
+  assert.deepEqual(
+    evidence.jobs
+      .filter((job) => job.name.startsWith("End-to-End Tests ("))
+      .map((job) => job.name),
+    [
+      "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
+      "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
+      "End-to-End Tests (Web) (ubuntu-24.04)",
+      "End-to-End Tests (Web) (ubuntu-24.04-arm)",
+    ],
+  );
+});
+test("the qualification job catalog covers the non-mobile Test workflow and both runner matrix members", async () => {
+  const source = await fs.readFile(
+    path.join(__dirname, "workflows/test.yml"),
+    "utf8",
+  );
+  const jobs = source
+    .split(/^jobs:\s*$/m)[1]
+    .split(/(?=^  [a-z][a-z0-9-]*:\s*$)/m);
+  const resolved = jobs.flatMap((block) => {
+    const name = /^    name: (.+)$/m.exec(block)?.[1];
+    if (!name) return [];
+    const matrix = /^        runner:\n((?:          - [^\n]+\n)+)/m.exec(
+      block,
+    )?.[1];
+    return matrix
+      ? [...matrix.matchAll(/^          - (.+)$/gm)].map(
+          ([, runner]) => `${name} (${runner})`,
+        )
+      : [name];
+  });
+  assert.deepEqual(resolved.sort(), [...testJobNames].sort());
+});
+test("a green Test rollup cannot qualify missing, failed, skipped or wrong-SHA jobs", async () => {
+  for (const name of testJobNames) {
+    for (const defect of [
+      "missing",
+      "failure",
+      "skipped",
+      "wrong-sha",
+      "older-attempt",
+    ]) {
+      const fixture = testQualificationFixture();
+      const job = fixture.jobs.find((job) => job.name === name);
+      if (defect === "missing")
+        fixture.jobs = fixture.jobs.filter((candidate) => candidate.name !== name);
+      if (["failure", "skipped"].includes(defect)) job.conclusion = defect;
+      if (defect === "wrong-sha") job.head_sha = "b".repeat(40);
+      if (defect === "older-attempt") job.run_attempt = 1;
+      await assert.rejects(
+        requireTestQualification(sha, fixture.request),
+        /Test qualification/,
+      );
+    }
+  }
+});
+test("Test qualification rejects missing, failed, stale and untrusted runs without falling back to old success", async () => {
+  for (const patch of [
+    { head_sha: "b".repeat(40) },
+    { head_branch: "feature" },
+    { head_repository: { full_name: "attacker/app" } },
+    { event: "pull_request" },
+    { status: "in_progress" },
+    { conclusion: "failure" },
+    { conclusion: "skipped" },
+    { path: ".github/workflows/docker.yml" },
+    { run_attempt: 0 },
+  ]) {
+    const fixture = testQualificationFixture();
+    Object.assign(fixture.run, patch);
+    await assert.rejects(
+      requireTestQualification(sha, fixture.request),
+      /Test qualification/,
+    );
+  }
+  const absent = testQualificationFixture();
+  absent.runs = [];
+  await assert.rejects(
+    requireTestQualification(sha, absent.request),
+    /Test qualification/,
+  );
+  const newer = testQualificationFixture();
+  newer.runs.push({ ...newer.run, id: 43, conclusion: "failure" });
+  await assert.rejects(
+    requireTestQualification(sha, newer.request),
+    /Test qualification/,
+  );
+  const rerun = testQualificationFixture();
+  rerun.finalRun = { ...rerun.run, run_attempt: 3 };
+  await assert.rejects(
+    requireTestQualification(sha, rerun.request),
+    /Test qualification/,
+  );
+  const olderRunRerun = testQualificationFixture();
+  olderRunRerun.runs.push({
+    ...olderRunRerun.run,
+    id: 41,
+    updated_at: "2026-10-04T05:00:00Z",
+    conclusion: "failure",
+  });
+  await assert.rejects(
+    requireTestQualification(sha, olderRunRerun.request),
+    /Test qualification/,
+  );
+});
+test("Test qualification rejects untrusted, duplicate and incomplete job evidence", async () => {
+  for (const patch of [
+    { run_id: 41 },
+    { head_branch: "feature" },
+    { workflow_name: "Deploy" },
+    { status: "in_progress" },
+    { id: 0 },
+  ]) {
+    const fixture = testQualificationFixture();
+    Object.assign(fixture.jobs[0], patch);
+    await assert.rejects(
+      requireTestQualification(sha, fixture.request),
+      /Test qualification/,
+    );
+  }
+  const duplicate = testQualificationFixture();
+  duplicate.jobs.push({ ...duplicate.jobs[0], id: 500 });
+  await assert.rejects(
+    requireTestQualification(sha, duplicate.request),
+    /Test qualification/,
+  );
+  const sameIdentity = testQualificationFixture();
+  sameIdentity.jobs[1].id = sameIdentity.jobs[0].id;
+  await assert.rejects(
+    requireTestQualification(sha, sameIdentity.request),
+    /Test qualification/,
+  );
+  const partial = testQualificationFixture();
+  await assert.rejects(
+    requireTestQualification(sha, async (endpoint) => {
+      const response = await partial.request(endpoint);
+      return response.jobs ? { ...response, total_count: 20 } : response;
+    }),
+    /Test qualification/,
+  );
+});
+test("Test qualification rejects a truncated run list that could hide a newer failed older-ID attempt", async () => {
+  const fixture = testQualificationFixture();
+  fixture.runs.push(
+    ...Array.from({ length: 99 }, (_, index) => ({
+      ...fixture.run,
+      id: 43 + index,
+      updated_at: "2026-10-04T03:00:00Z",
+    })),
+  );
+  // The omitted 101st record can be an older run ID rerun after the visible green run.
+  await assert.rejects(
+    requireTestQualification(sha, async (endpoint) => {
+      const response = await fixture.request(endpoint);
+      return response.workflow_runs ? { ...response, total_count: 101 } : response;
+    }),
+    /Test qualification: incomplete runs response/,
+  );
+});
+test("Test qualification rejects missing or malformed run total metadata", async () => {
+  for (const total of [undefined, null, -1, 0, "1", 1.5, Infinity]) {
+    const fixture = testQualificationFixture();
+    await assert.rejects(
+      requireTestQualification(sha, async (endpoint) => {
+        const response = await fixture.request(endpoint);
+        return response.workflow_runs
+          ? { ...response, total_count: total }
+          : response;
+      }),
+      /Test qualification: incomplete runs response/,
+    );
+  }
+});
+test("promotion revalidation rejects a different Test attempt than the captured qualification", async () => {
+  const fixture = testQualificationFixture();
+  await assert.rejects(
+    requireTestQualification(sha, fixture.request, {
+      runId: 42,
+      attempt: 1,
+      jobs: [],
+    }),
+    /Test qualification changed/,
+  );
+  const unchanged = await requireTestQualification(sha, fixture.request);
+  assert.deepEqual(
+    await requireTestQualification(sha, fixture.request, unchanged),
+    unchanged,
+  );
 });
 
 test("release sequence uses existing refs as well as releases and resumes the same source", () => {

@@ -311,6 +311,120 @@ function trustedRun(run, sha, workflow = ".github/workflows/docker.yml") {
     run.path === workflow
   );
 }
+// FL-24: Docker publication does not establish application qualification. The Test workflow must
+// complete every non-mobile lane, including each native E2E matrix member, on the same source.
+const REQUIRED_TEST_JOBS = Object.freeze([
+  "Scripts unit tests",
+  "Test & Lint Server",
+  "Unit Test CLI",
+  "Unit Test CLI (Windows)",
+  "Lint Web",
+  "Test Web",
+  "Test i18n",
+  "End-to-End Lint",
+  "Medium Tests (Server)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04)",
+  "End-to-End Tests (Server & CLI) (ubuntu-24.04-arm)",
+  "End-to-End Tests (Web) (ubuntu-24.04)",
+  "End-to-End Tests (Web) (ubuntu-24.04-arm)",
+  "End-to-End Tests Success",
+  "Unit Test ML",
+  ".github Files Formatting",
+  "ShellCheck",
+  "OpenAPI Clients",
+  "SQL Schema Checks",
+]);
+async function requireTestQualification(sha, request = github, expected) {
+  assert(SHA.test(sha), "Test qualification: invalid source SHA");
+  // Do not filter to success: a newer failed/running run must never fall back to an older green run.
+  const response = await request(
+    `actions/workflows/test.yml/runs?head_sha=${sha}&per_page=100`,
+  );
+  const runs = response.workflow_runs;
+  assert(
+    Array.isArray(runs) && runs.length > 0,
+    "Test qualification: missing run",
+  );
+  assert(
+    Number.isSafeInteger(response.total_count) &&
+      response.total_count === runs.length,
+    "Test qualification: incomplete runs response",
+  );
+  assert(
+    runs.every(
+      (run) =>
+        Number.isSafeInteger(run.id) &&
+        run.id > 0 &&
+        Number.isFinite(Date.parse(run.updated_at)),
+    ),
+    "Test qualification: invalid run identity",
+  );
+  // A rerun of an older run ID can be newer evidence than a later-created run.
+  const run = [...runs].sort(
+    (a, b) =>
+      Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id,
+  )[0];
+  assert(
+    trustedRun(run, sha, ".github/workflows/test.yml") &&
+      Number.isSafeInteger(run.run_attempt) &&
+      run.run_attempt > 0,
+    "Test qualification: latest same-SHA run is not trusted and successful",
+  );
+  const result = await request(
+    `actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`,
+  );
+  // There are 19 required lanes. Fail closed if a response is incomplete instead of certifying a partial page.
+  assert(
+    Array.isArray(result.jobs) &&
+      result.total_count === result.jobs.length &&
+      result.jobs.length < 100,
+    "Test qualification: incomplete jobs response",
+  );
+  const jobs = REQUIRED_TEST_JOBS.map((name) => {
+    const matches = result.jobs.filter((job) => job.name === name);
+    assert.equal(
+      matches.length,
+      1,
+      `Test qualification: missing or duplicate ${name}`,
+    );
+    const job = matches[0];
+    assert(
+      Number.isSafeInteger(job.id) &&
+        job.id > 0 &&
+        job.run_id === run.id &&
+        job.head_sha === sha &&
+        job.head_branch === MAIN &&
+        job.workflow_name === "Test" &&
+        job.status === "completed" &&
+        job.conclusion === "success" &&
+        // GitHub's attempt-specific endpoint is authoritative; reject mismatched attempt metadata if supplied.
+        (job.run_attempt === undefined || job.run_attempt === run.run_attempt),
+      `Test qualification: ${name} is not successful same-SHA attempt evidence`,
+    );
+    return { id: job.id, name };
+  });
+  assert.equal(
+    new Set(jobs.map((job) => job.id)).size,
+    jobs.length,
+    "Test qualification: duplicate job identity",
+  );
+  // A rerun begun while fetching jobs retires this evidence, even if its previous attempt was green.
+  const current = await request(`actions/runs/${run.id}`);
+  assert(
+    trustedRun(current, sha, ".github/workflows/test.yml") &&
+      current.id === run.id &&
+      current.run_attempt === run.run_attempt,
+    "Test qualification: run changed during validation",
+  );
+  const evidence = { runId: run.id, attempt: run.run_attempt, jobs };
+  if (expected)
+    assert.deepEqual(
+      evidence,
+      expected,
+      "Test qualification changed before promotion",
+    );
+  return evidence;
+}
 function chooseTag(version, releases, refs, sha) {
   assert(SHA.test(sha), "Invalid source SHA");
   assert(
@@ -943,6 +1057,7 @@ async function resolveCandidate(
   );
   const run = (Array.isArray(runs) ? runs : []).find((r) => trustedRun(r, sha));
   assert(run, "No successful same-SHA Deploy run qualifies this commit");
+  const testQualification = await requireTestQualification(sha);
   const images = [];
   for (const spec of VARIANTS)
     images.push(await candidateImage(registry, spec, sha));
@@ -950,6 +1065,8 @@ async function resolveCandidate(
   const outputs = {
     sha,
     run: String(run.id),
+    "test-run": String(testQualification.runId),
+    "test-attempt": String(testQualification.attempt),
     "server-image": `${serverImage.image}@${serverImage.digest}`,
     "server-source": serverImage.buildSourceCommit,
     "ml-image": `${mlImage.image}@${mlImage.digest}`,
@@ -1372,6 +1489,7 @@ async function release(env = process.env) {
     "Build run is not trusted",
   );
   assert(await currentMainline(env.SOURCE_SHA), "Stale release candidate");
+  const testQualification = await requireTestQualification(env.SOURCE_SHA);
   const registry = new Registry(env);
   const images = [];
   // Verify every source before creating any release or floating image alias.
@@ -1399,13 +1517,15 @@ async function release(env = process.env) {
     sourceCommit: env.SOURCE_SHA,
     tag,
     certifiedBuildRun: `${SOURCE}/actions/runs/${env.CERTIFIED_RUN_ID}`,
+    certifiedTestRun: `${SOURCE}/actions/runs/${testQualification.runId}/attempts/${testQualification.attempt}`,
+    testQualification,
     images,
     dependencies: [...dependencies].map(([reference, digest]) => ({
       reference,
       digest,
     })),
     certification:
-      "Integration and all three official-container roundtrip lanes passed in the referenced build run; Deploy production's deployment test of this exact candidate passed before promotion.",
+      "All non-mobile Test jobs, including both architectures of server/CLI and web E2E, passed in the referenced Test attempt; integration and all three official-container roundtrip lanes passed in the referenced build run; Deploy production's deployment test of this exact candidate passed before promotion.",
     provenance:
       env.SIGN === "1"
         ? `Image/index revision labels and SHA-256 content verified; every image digest is signed with the Frameleaf cosign key (${COSIGN_PUBLIC_KEY}) and carries this manifest as a ${ATTESTATION_TYPE} attestation.`
@@ -1472,6 +1592,7 @@ async function release(env = process.env) {
     );
     console.log(`Signed and verified ${signed.length} image digests.`);
   }
+  await requireTestQualification(env.SOURCE_SHA, github, testQualification);
   assert(
     await currentMainline(env.SOURCE_SHA),
     "Mainline changed before promotion; draft/version tags retained for inspection",
@@ -1507,6 +1628,7 @@ module.exports = {
   validateIndex,
   validateImageConfig,
   trustedRun,
+  requireTestQualification,
   chooseTag,
   verifyImage,
   createBundle,
