@@ -1,0 +1,38 @@
+name: FL177 API source reconciliation
+on:
+  push:
+    branches: [aj/fl177-api-forward-proof]
+permissions:
+  contents: read
+jobs:
+  generated-api:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - run: pnpm --filter immich install --frozen-lockfile
+      - name: Verify generated API artifacts are tracked
+        run: git ls-files --error-unmatch -- open-api/immich-openapi-specs.json packages/sdk/src/fetch-client.ts
+      - name: Generate actual OpenAPI and TypeScript client
+        run: |
+          mise run //:plugins
+          mise run //server:build
+          mise run //server:sync-open-api
+          mise run //:open-api-typescript
+      - name: Archive exact generated source for reconciliation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fl177-generated-api-${{ github.sha }}
+          path: |
+            open-api/immich-openapi-specs.json
+            packages/sdk/src/fetch-client.ts
+          if-no-files-found: error
+          retention-days: 7
