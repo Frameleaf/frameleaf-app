@@ -32,7 +32,11 @@ function syntheticCliQualification(sha, digest = `sha256:${"2".repeat(64)}`) {
 function syntheticCliRegistry(evidence) {
   const records = new Map();
   const put = (digest, json) => {
-    const record = { digest, json, size: Buffer.byteLength(JSON.stringify(json)) };
+    const record = {
+      digest,
+      json,
+      size: Buffer.byteLength(JSON.stringify(json)),
+    };
     records.set(digest, record);
     return record;
   };
