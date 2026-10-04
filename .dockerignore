@@ -10,6 +10,9 @@
 **/node_modules/
 **/.pnpm-store/
 **/dist/
+# SQL-tools is a frozen owned runtime/type payload, not a local build output.
+!packages/sql-tools/dist/
+!packages/sql-tools/dist/**
 **/coverage/
 **/build/
 
