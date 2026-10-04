@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { BuddyBootDeclarationSchema } from 'src/utils/buddy-boot-configuration.js';
 import {
   BuddyAcceptRequest,
   BuddyInviteRequest,
@@ -30,6 +31,7 @@ export const BuddySettingsSchema = z.strictObject({
   pausedReceiving: z.boolean().default(false),
   includeDerived: z.boolean().default(false),
   configurationFiles: z.array(z.string().min(1).max(4096)).max(32).default([]),
+  bootConfiguration: BuddyBootDeclarationSchema.optional(),
 });
 const run = z.object({
   id: z.string(),
