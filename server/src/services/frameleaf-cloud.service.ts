@@ -103,9 +103,12 @@ import {
   storeAddress,
 } from 'src/utils/frameleaf-cloud.js';
 import { BoundTokenRefusedError, USE_DPOP_NONCE } from 'src/utils/frameleaf-dpop.js';
+import { localConnectionCandidates } from 'src/utils/frameleaf-lan-discovery.js';
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import {
+  MAX_CANDIDATES,
   type RemoteHostname,
+  detectHostAddresses,
   edgeStateCurrent,
   heartbeatEndpoints,
   hostnameProblem,
@@ -1194,14 +1197,35 @@ export class FrameleafCloudService extends BaseService {
         ? await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafRemoteAccess)
         : null;
     const current = edgeStateCurrent(state) && state?.names?.instanceId === link.instanceId;
+    const edge = current && state ? heartbeatEndpoints(state.candidates) : [];
     return {
-      endpoints: current && state ? heartbeatEndpoints(state.candidates) : [],
+      endpoints: link.status === 'linked' ? this.withHomeFallback(edge, config.server.lanDiscovery) : edge,
       remoteAccess: {
         enabled,
         relayConnected: current && !!state?.relay.connected,
         direct: current && settings.mode === 'relay-and-direct' && !!state?.direct.listening,
       },
     };
+  }
+
+  /**
+   * FL-218 (owner decision 2026-10-03): home-network access is every user's; only relay and remote access
+   * need a Frameleaf Cloud subscription. So a linked server whose edge worker reports no `local` candidate
+   * (remote access off, or not enrolled) still publishes its plain-HTTP LAN fallback (the FL-229 candidate
+   * `GET /server/connections` returns), so the apps can reach it at home. The admin's LAN discovery switch
+   * (`server.lanDiscovery`) turns this off together with the DNS-SD broadcast. The cloud's resources API
+   * decides which remote-access candidates an account sees.
+   */
+  private withHomeFallback(edge: Array<{ kind: string; url: string }>, lanDiscovery: boolean) {
+    if (!lanDiscovery || edge.some(({ kind }) => kind === 'local')) {
+      return edge;
+    }
+    const { port, frameleafCloud } = this.configRepository.getEnv();
+    const { lanAddresses } = detectHostAddresses(frameleafCloud.localUrl);
+    const local = heartbeatEndpoints(
+      localConnectionCandidates({ port, addresses: lanAddresses, localUrl: frameleafCloud.localUrl }),
+    );
+    return [...local.slice(0, Math.max(0, MAX_CANDIDATES - edge.length)), ...edge];
   }
 
   /** The exact payload of one check-in. */
