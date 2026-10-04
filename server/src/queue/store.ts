@@ -306,9 +306,46 @@ export class SqlQueueStore {
     });
   }
 
-  async fail(claim: QueueClaim, reason: string, diagnostic?: (tx: Transaction<any>) => Promise<void>) {
+  async fail(
+    claim: QueueClaim,
+    reason: string,
+    diagnostic?: (tx: Transaction<any>) => Promise<void>,
+    options: { expiredRecovery?: boolean } = {},
+  ) {
     return this.db.transaction().execute(async (tx) => {
       await sql`select name from job_queue where name = ${claim.queue} for update`.execute(tx);
+      let unconfirmedStop = false;
+      let operationId: string | null = null;
+      if (options.expiredRecovery) {
+        const {
+          rows: [expired],
+        } = await sql<{
+          stopped: boolean;
+          graceElapsed: boolean;
+          operationId: string | null;
+        }>`select data->>'operationId' "operationId",
+          "leaseExpiresAt" <= clock_timestamp() - interval '30 seconds' "graceElapsed",
+          (exists (select 1 from system_metadata m
+            where m.key = 'frameleaf-attempt-evidence:' || j.token::text
+              and m.value->>'jobId' = j.id::text and m.value ? 'stoppedAt')
+          or exists (select 1 from system_metadata m
+            where m.key = 'frameleaf-worker-stopped:' || j."workerId"::text
+              and m.value->>'workerId' = j."workerId"::text and m.value ? 'stoppedAt')) stopped
+          from job j where id = ${claim.id}::uuid and token = ${claim.token}::uuid
+            and state = 'active' and "leaseExpiresAt" <= clock_timestamp() for update`.execute(tx);
+        if (!expired) return false;
+        operationId = expired.operationId;
+        // Allow one sweep for the independent supervisor's bounded proof write. The expired
+        // token already fences publication. A timestamp alone never permits another executor.
+        if (!expired.stopped && !expired.graceElapsed) {
+          await sql`update job set "cancelRequestedAt" = coalesce("cancelRequestedAt", clock_timestamp()),
+            error = 'Waiting for confirmation that the expired executor has stopped'
+            where id = ${claim.id}::uuid`.execute(tx);
+          return false;
+        }
+        unconfirmedStop = !expired.stopped;
+        if (unconfirmedStop) reason = 'Executor stop could not be confirmed; review the worker before retrying';
+      }
       if (diagnostic) {
         const { rows } = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
           and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
@@ -322,9 +359,9 @@ export class SqlQueueStore {
         if (valid.length === 0) throw new Error('Diagnostic publication lost its claim');
       }
       const { rows } = await sql<{ id: string; state: QueueState; latestPending: QueueIntent | null }>`update job set
-        state = case when not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
+        state = case when ${unconfirmedStop} or not "safeToRetry" then 'needs_attention' when attempt < "retryBaseAttempt" + 2 then 'pending' else 'failed' end,
         "availableAt" = now() + interval '30 seconds', "dependencyReason" = null, token = null, "leaseExpiresAt" = null,
-        "finishedAt" = case when not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
+        "finishedAt" = case when ${unconfirmedStop} or not "safeToRetry" or attempt >= "retryBaseAttempt" + 2 then now() else null end,
         error = case when sensitive then 'Job failed; sensitive details omitted' else ${reason.slice(0, 500)} end,
         data = case when sensitive then '{}'::jsonb else data end
         where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
@@ -334,11 +371,32 @@ export class SqlQueueStore {
       }
       await sql`update job_attempt set outcome = ${rows[0].state}, "finishedAt" = now(),
         error = (select error from job where id = ${claim.id}::uuid) where token = ${claim.token}::uuid`.execute(tx);
+      if (operationId) {
+        if (unconfirmedStop) {
+          // The media-operation dispatcher must not acquire a second retry budget or replay
+          // an executor whose stop is unknown after this queue claim is fenced.
+          await sql`update media_operation set status = 'failed', "finishedAt" = now(),
+            "claimToken" = null, "claimExpiresAt" = null, "claimedBy" = null,
+            "errorCode" = 'executor_stop_unconfirmed', error = ${reason},
+            result = coalesce(result, '{}'::jsonb) || '{"status":"needs_attention"}'::jsonb
+            where id::text = ${operationId} and "claimedBy" = 'job-queue' and "claimToken" is not null`.execute(tx);
+        } else {
+          await sql`update media_operation set "claimExpiresAt" = now()
+            where id::text = ${operationId} and "claimedBy" = 'job-queue' and "claimToken" is not null`.execute(tx);
+        }
+      }
       await this.syncItem(claim.id, tx);
       if (rows[0].state !== 'pending') {
         await finishSelections(tx, claim.id, false);
         await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
-        await this.scheduleLatest(claim.id, rows[0].latestPending, tx, false);
+        const latest = rows[0].latestPending;
+        if (unconfirmedStop && latest) {
+          await sql`update job_run_item set state = 'needs_attention'
+            where "jobId" is null and "runId" = ${latest.runId ?? null}::uuid
+              and "itemKey" = ${latest.itemKey ?? null} and stage = ${latest.name}`.execute(tx);
+        } else {
+          await this.scheduleLatest(claim.id, latest, tx, false);
+        }
       }
       await this.settleDependencies(tx);
       await this.settleRuns(tx);
@@ -405,11 +463,9 @@ export class SqlQueueStore {
       this.db,
     );
     for (const claim of rows) {
-      await this.fail(claim, 'Worker lease expired');
-      await sql`update media_operation set "claimExpiresAt" = now()
-        where id = (select case when data->>'operationId' ~ '^[0-9a-fA-F-]{36}$'
-          then (data->>'operationId')::uuid else null end from job where id = ${claim.id}::uuid)
-        and "claimedBy" = 'job-queue' and "claimToken" is not null`.execute(this.db);
+      await this.fail(claim, 'Worker lease expired after confirmed executor stop', undefined, {
+        expiredRecovery: true,
+      });
     }
     await sql`update job_worker set state = 'lost' where "heartbeatAt" < now() - interval '60 seconds'`.execute(
       this.db,
