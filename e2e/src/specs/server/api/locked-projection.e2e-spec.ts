@@ -225,13 +225,6 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     const link = await utils.createSharedLink(owner.accessToken, { type: SharedLinkType.Album, albumId });
     sharedKey = link.key;
 
-    await utils.createPartner(owner.accessToken, partner.userId);
-    await request(app)
-      .put(`/partners/${owner.userId}`)
-      .set(bearer(partner.accessToken))
-      .send({ inTimeline: true })
-      .expect(200);
-
     for (const user of [owner, admin]) {
       await request(app).post('/auth/pin-code').set(bearer(user.accessToken)).send({ pinCode }).expect(204);
     }
@@ -249,6 +242,13 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     // a detection and an item from the old Locked folder, as the detector and the upgrade write them
     await utils.setAssetLock(detected.id, 'detected');
     await utils.setAssetLock(legacy.id, 'immich-locked-folder');
+
+    // FL-326: shared once every lock and rule is in place, so each copy is inserted as locked as its
+    // source (the locks above are written directly, without the event that re-mirrors existing copies)
+    await utils.createPartner(owner.accessToken, partner.userId);
+    for (const asset of [plain, locked, detected, legacy, ruleMatch]) {
+      await utils.waitForPartnerCopy(partner.userId, asset.id);
+    }
 
     // FL-195: an unlocked owner places a mark and a detection in a Studio project like any other item
     const { body: project } = await request(app)
@@ -660,7 +660,8 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       }
     }
     const { body: server } = await request(app).get('/server/statistics').set(bearer(admin.accessToken)).expect(200);
-    expect(server.photos).toBe(2);
+    // the owner's two visible items and the partner's copy of the plain one; every other copy is locked
+    expect(server.photos).toBe(3);
   });
 });
 

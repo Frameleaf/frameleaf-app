@@ -165,11 +165,13 @@ describe('/map', () => {
     });
   });
 
-  describe('partner revocation and bounds (FL-51)', () => {
-    it("drops a partner's located items from the markers, the counts and the bounds once the partner stops sharing", async () => {
+  // FL-326: a partner's items reach the viewer only as the viewer's own copies, so the partner's own
+  // rows never show on the viewer's map, counts or bounds, shared or not
+  describe('partner items and bounds (FL-51, FL-326)', () => {
+    it("never shows a partner's own located item in the markers, the counts or the bounds", async () => {
       const { id: partnerLocatedId } = await utils.createAsset(partner.accessToken, {
         assetData: {
-          // not the partner's archived thompson-springs.jpg, which the upload would answer as a duplicate
+          // the admin already holds this file (archived), so the partnership makes no copy of it
           bytes: await readFile(join(testAssetDir, 'metadata/dates/datetimeoriginal-gps.jpg')),
           filename: 'datetimeoriginal-gps.jpg',
         },
@@ -190,33 +192,25 @@ describe('/map', () => {
       const bucketsInBounds = async (bbox: string) => {
         const { body } = await request(app)
           .get('/timeline/buckets')
-          .query({ bbox, withPartners: true, visibility: AssetVisibility.Timeline })
+          .query({ bbox, visibility: AssetVisibility.Timeline })
           .set('Authorization', `Bearer ${admin.accessToken}`);
         return body as { count: number }[];
       };
+      const expectOnlyOwn = async () => {
+        expect(await markerIds()).not.toContain(partnerLocatedId);
+        expect(await statistics()).toEqual(expect.objectContaining({ partner: 0 }));
+        // the whole world holds the admin's two located timeline items; an empty sea holds nothing,
+        // and archived items stay out of the bounds as they stay off the timeline
+        expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(2);
+        expect(await bucketsInBounds('-150,-65,-140,-55')).toEqual([]);
+      };
 
-      // the timeline (and so its bounds) shows a partner only once the viewer turns them on
-      const { status: shown } = await request(app)
-        .put(`/partners/${partner.userId}`)
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ inTimeline: true });
-      expect(shown).toBe(200);
-
-      expect(await markerIds()).toContain(partnerLocatedId);
-      expect(await statistics()).toEqual(expect.objectContaining({ partner: 1 }));
-      // the whole world holds the admin's two located timeline items and the partner's one; an empty
-      // sea holds nothing, and archived items stay out of the bounds as they stay off the timeline
-      expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(3);
-      expect(await bucketsInBounds('-150,-65,-140,-55')).toEqual([]);
-
+      await expectOnlyOwn();
       const { status } = await request(app)
         .delete(`/partners/${admin.userId}`)
         .set('Authorization', `Bearer ${partner.accessToken}`);
       expect(status).toBe(204);
-
-      expect(await markerIds()).not.toContain(partnerLocatedId);
-      expect(await statistics()).toEqual(expect.objectContaining({ partner: 0 }));
-      expect(countOf(await bucketsInBounds('-180,-90,180,90'))).toBe(2);
+      await expectOnlyOwn();
     });
   });
 

@@ -58,24 +58,31 @@ test.describe('Bulk actions', () => {
     ({ admin, partner } = await setUpPartner());
   });
 
-  test('skips a partner’s item instead of inferring ownership, and undoes the favorite', async ({ context, page }) => {
+  // FL-326: a partner's item is the viewer's own copy, so the viewer's edit changes the copy, never the source
+  test('favorites the copy of a partner’s item without touching the source, and undoes the favorite', async ({
+    context,
+    page,
+  }) => {
     const own = await utils.createAsset(admin.accessToken);
     const theirs = await utils.createAsset(partner.accessToken);
+    const copyId = await utils.waitForPartnerCopy(admin.userId, theirs.id);
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/photos');
     await select(page, own.id);
-    await select(page, theirs.id);
+    await select(page, copyId);
 
     const bar = page.getByRole('region', { name: 'Selected items' });
     await bar.getByRole('button', { name: 'Favorite', exact: true }).click();
 
-    await expect(page.getByText('Favorite: 1 of 2 updated, 0 failed, 1 skipped')).toBeVisible();
+    await expect(page.getByText('Favorite: 2 of 2 updated, 0 failed, 0 skipped')).toBeVisible();
     await expect.poll(() => isFavorite(admin.accessToken, own.id)).toBe(true);
+    await expect.poll(() => isFavorite(admin.accessToken, copyId)).toBe(true);
     await expect(isFavorite(partner.accessToken, theirs.id)).resolves.toBe(false);
 
     await page.getByRole('button', { name: 'Undo', exact: true }).first().click();
     await expect.poll(() => isFavorite(admin.accessToken, own.id)).toBe(false);
+    await expect.poll(() => isFavorite(admin.accessToken, copyId)).toBe(false);
   });
 
   test('reports an item that went away after it was selected and changes the rest', async ({ context, page }) => {
@@ -126,7 +133,7 @@ test.describe('Bulk actions', () => {
 
 /**
  * FL-32: "Select all n" against the real server. The server counts and freezes the owner's matching
- * Timeline set, a partner's item in the Timeline is never changed by it, and its Undo survives a
+ * Timeline set, a partner's source item is never changed by it, and its Undo survives a
  * reload. A filtered search's Select all never reaches what the filter left out.
  */
 test.describe('Everything matching', () => {
@@ -138,12 +145,14 @@ test.describe('Everything matching', () => {
     ({ admin, partner } = await setUpPartner());
   });
 
-  test('archives the Timeline count the server took, leaves the partner’s item, and undoes it', async ({
+  test('archives the Timeline count the server took, leaves the partner’s source, and undoes it', async ({
     context,
     page,
   }) => {
     const own = await Promise.all([1, 2, 3].map(() => utils.createAsset(admin.accessToken)));
     const theirs = await utils.createAsset(partner.accessToken);
+    // FL-326: the partner's item is in this Timeline as the viewer's own copy, so the count takes it
+    own.push({ ...theirs, id: await utils.waitForPartnerCopy(admin.userId, theirs.id) });
 
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/photos');
@@ -155,8 +164,8 @@ test.describe('Everything matching', () => {
 
     await moreAction(page, 'Archive');
     const confirm = page.getByRole('dialog');
-    // Counted by the server for this account alone: the partner's item is not part of it.
-    await expect(confirm.getByText(/Archive all 3 matching items in your Timeline\?/)).toBeVisible();
+    // Counted by the server for this account alone: the copy is, the partner's source is not.
+    await expect(confirm.getByText(/Archive all 4 matching items in your Timeline\?/)).toBeVisible();
     await confirm.getByRole('button', { name: 'Archive', exact: true }).click();
 
     for (const asset of own) {
