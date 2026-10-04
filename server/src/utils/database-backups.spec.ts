@@ -10,8 +10,8 @@ import {
   isValidDatabaseRoutineBackupName,
 } from 'src/utils/database-backups.js';
 
-const routine = 'immich-db-backup-20261001T101500-v3.1.0-pg14.19.sql.gz';
-const preUpgrade = 'immich-db-backup-20261001T101500-pre-upgrade-v3.2.0-pg14.19.sql.gz';
+const routine = 'frameleaf-db-backup-20261001T101500-v3.1.0-pg19beta4.sql.gz';
+const preUpgrade = 'frameleaf-db-backup-20261001T101500-pre-upgrade-v3.2.0-pg19beta4.sql.gz';
 
 describe('database backup names', () => {
   describe('FL-295 pre-upgrade copy', () => {
@@ -49,12 +49,12 @@ describe('database backup names', () => {
     it.each([
       [routine, true],
       [preUpgrade, true],
-      ['immich-db-backup-1753789649000.sql.gz', true],
+      ['frameleaf-db-backup-1753789649000.sql.gz', true],
       [`${routine}.tmp`, false],
       [`restore-point-${routine}`, false],
       [`uploaded-${routine}`, false],
       [`cloud-backup-${routine}`, false],
-      ['immich-db-backup-1.sql', false],
+      ['frameleaf-db-backup-1.sql', false],
       ['.immich', false],
     ])('%s → %s', (filename, expected) => {
       expect(isDatabaseBackupDumpName(filename)).toBe(expected);
@@ -72,12 +72,12 @@ describe('database backup names', () => {
     });
 
     it('reads the epoch milliseconds in an old-style backup name', () => {
-      expect(getDatabaseBackupTime('immich-db-backup-1753789649000.sql.gz')?.toMillis()).toBe(1_753_789_649_000);
+      expect(getDatabaseBackupTime('frameleaf-db-backup-1753789649000.sql.gz')?.toMillis()).toBe(1_753_789_649_000);
     });
 
     it('returns null when the name has no usable timestamp', () => {
-      expect(getDatabaseBackupTime('immich-db-backup-20261399T999999-v3.1.0-pg14.sql.gz')).toBeNull();
-      expect(getDatabaseBackupTime('immich-db-backup-1.sql.gz')).toBeNull();
+      expect(getDatabaseBackupTime('frameleaf-db-backup-20261399T999999-v3.1.0-pg14.sql.gz')).toBeNull();
+      expect(getDatabaseBackupTime('frameleaf-db-backup-1.sql.gz')).toBeNull();
       expect(getDatabaseBackupTime('something.sql.gz')).toBeNull();
     });
   });

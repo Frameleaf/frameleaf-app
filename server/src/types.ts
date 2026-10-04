@@ -573,7 +573,7 @@ export type JobItem =
   | { name: JobName.AssetDetectFacesQueueAll; data: IBaseJob }
   | { name: JobName.AssetDetectFaces; data: IEntityJob }
   | { name: JobName.FacialRecognitionQueueAll; data: INightlyJob }
-  | { name: JobName.FacialRecognition; data: IDeferrableJob }
+  | { name: JobName.FacialRecognition; data: IDeferrableJob & { force?: boolean } }
   | { name: JobName.PersonGenerateThumbnail; data: IPersonJob }
   | { name: JobName.PersonIdentityRefresh; data: IPersonIdentityRefreshJob }
 
