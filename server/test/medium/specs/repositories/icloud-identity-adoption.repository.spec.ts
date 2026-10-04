@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely, type KyselyPlugin, type QueryId, RawNode, SelectQueryNode, sql, TableNode } from 'kysely';
 import { execFile as execFileCallback } from 'node:child_process';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import {
@@ -1359,6 +1359,75 @@ describe('iCloud exact identity adoption', () => {
       const started = performance.now();
       const concurrency = size > 101 ? 4 : 1;
       const timings = { claimMs: 0, adoptionMs: 0, verificationMs: 0, finalizationMs: 0, waveMs: 0 };
+      const statementTimings = {
+        claimGlobalLock: { started: 0, completed: 0, elapsedMs: 0, maxMs: 0 },
+        claimConnectionLock: { started: 0, completed: 0, elapsedMs: 0, maxMs: 0 },
+        claimCandidate: { started: 0, completed: 0, elapsedMs: 0, maxMs: 0 },
+        claimLocalReservations: { started: 0, completed: 0, elapsedMs: 0, maxMs: 0 },
+        claimGlobalReservations: { started: 0, completed: 0, elapsedMs: 0, maxMs: 0 },
+        claimOther: { started: 0, completed: 0, elapsedMs: 0, maxMs: 0 },
+        adoptionOwnerLock: { started: 0, completed: 0, elapsedMs: 0, maxMs: 0 },
+        adoptionExclusiveAdvisoryLock: { started: 0, completed: 0, elapsedMs: 0, maxMs: 0 },
+        adoptionOther: { started: 0, completed: 0, elapsedMs: 0, maxMs: 0 },
+      };
+      type Statement = keyof typeof statementTimings;
+      const observe = (scope: 'claim' | 'adoption'): KyselyPlugin => {
+        const pending = new WeakMap<QueryId, { statement: Statement; started: number }>();
+        return {
+          transformQuery({ node, queryId }) {
+            let statement: Statement = scope === 'claim' ? 'claimOther' : 'adoptionOther';
+            if (RawNode.is(node)) {
+              // Match only static template fragments, never parameter values or result rows.
+              const template = node.sqlFragments.join('?');
+              if (scope === 'claim') {
+                if (template.includes("hashtextextended('icloud-staging-reservations',0)")) {
+                  statement = 'claimGlobalLock';
+                } else if (template.includes('FROM immich_fork.icloud_connection') && template.includes('FOR UPDATE')) {
+                  statement = 'claimConnectionLock';
+                } else if (template.includes("ORDER BY CASE WHEN status='committed'")) {
+                  statement = 'claimCandidate';
+                } else if (template.includes('sum("reservedBytes")')) {
+                  statement = template.includes('WHERE "connectionId"=')
+                    ? 'claimLocalReservations'
+                    : 'claimGlobalReservations';
+                }
+              } else if (template.includes('pg_advisory_xact_lock(')) {
+                // Digest, metadata and pathname locks are intentionally not relabelled as separate waits.
+                statement = 'adoptionExclusiveAdvisoryLock';
+              }
+            } else if (
+              scope === 'adoption' &&
+              SelectQueryNode.is(node) &&
+              node.endModifiers?.some((modifier) => modifier.modifier === 'ForUpdate') &&
+              node.from?.froms.some((table) => TableNode.is(table) && table.table.identifier.name === 'user')
+            ) {
+              statement = 'adoptionOwnerLock';
+            }
+            statementTimings[statement].started++;
+            pending.set(queryId, { statement, started: performance.now() });
+            return node;
+          },
+          async transformResult({ queryId, result }) {
+            const measurement = pending.get(queryId);
+            if (measurement) {
+              const duration = performance.now() - measurement.started;
+              const timing = statementTimings[measurement.statement];
+              timing.completed++;
+              timing.elapsedMs += duration;
+              timing.maxMs = Math.max(timing.maxMs, duration);
+              pending.delete(queryId);
+            }
+            return result;
+          },
+        };
+      };
+      // withPlugin shares the existing driver and pool. These observers return the exact original
+      // node/result; they add no SQL, alter no authority, and are confined to this large fixture.
+      // Timings include compilation/execution/waiting, not exclusive PostgreSQL lock wait time.
+      // Adopter statement totals overlap across the four concurrent transactions.
+      const measuredSync = size > 101 ? new ICloudSyncRepository(db.withPlugin(observe('claim'))) : sync;
+      const measuredAdoption =
+        size > 101 ? new ICloudIdentityAdoptionRepository(db.withPlugin(observe('adoption'))) : repository;
       const progress = (phase: string, receipts: number) => {
         if (size > 101) {
           console.info('weekly-large-population-qualification', {
@@ -1366,6 +1435,12 @@ describe('iCloud exact identity adoption', () => {
             receipts,
             elapsedMs: Math.round(performance.now() - started),
             ...Object.fromEntries(Object.entries(timings).map(([phase, duration]) => [phase, Math.round(duration)])),
+            statements: Object.fromEntries(
+              Object.entries(statementTimings).map(([statement, timing]) => [
+                statement,
+                { ...timing, elapsedMs: Math.round(timing.elapsedMs), maxMs: Math.round(timing.maxMs) },
+              ]),
+            ),
           });
         }
       };
@@ -1433,7 +1508,7 @@ describe('iCloud exact identity adoption', () => {
           const admitted: ICloudResource[] = [];
           for (let slot = 0; slot < Math.min(concurrency, size - index); slot++) {
             const claimStarted = performance.now();
-            const resource = (await sync.claim(f.connection.id, f.connection.config.stagingBytes))!;
+            const resource = (await measuredSync.claim(f.connection.id, f.connection.config.stagingBytes))!;
             timings.claimMs += performance.now() - claimStarted;
             expect(resource).toBeDefined();
             admitted.push(resource);
@@ -1445,7 +1520,7 @@ describe('iCloud exact identity adoption', () => {
             admitted.map(async (resource) => {
               const adoptionStarted = performance.now();
               expect(
-                await repository.adopt(
+                await measuredAdoption.adopt(
                   { ...f.authority, resourceId: resource.id, resourceLeaseToken: resource.leaseToken! },
                   async (candidate) => {
                     const verificationStarted = performance.now();
