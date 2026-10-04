@@ -57,7 +57,7 @@ Owner decision, 2026-10-03: a Frameleaf Cloud admin share keeps granting server 
   redeems. Apps can show "Linking this Frameleaf account makes you an administrator of this server." before
   confirming.
 - Every promotion from Frameleaf Cloud (link or sign-in) notifies the other administrators with a `SystemMessage`
-  notification ("<name> became an administrator through Frameleaf Cloud"), besides the `admin-granted` audit row.
+  notification (`<name> became an administrator through Frameleaf Cloud`), besides the `admin-granted` audit row.
 - Demotions are unchanged: applied at sign-in, never to the last administrator.
 
 ## Gaps

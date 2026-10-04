@@ -202,12 +202,12 @@ export const removeOpenApi30IncompatibleKeys = (target: unknown): void => {
   delete object.propertyNames;
   delete object.contentEncoding;
   // A tuple (JSON Schema `prefixItems`) is not OpenAPI 3.0: generators such as openapi-generator reject it. Describe
-  // it as a fixed-length array of its item schema (the first one when they differ); validation stays the tuple's.
+  // it as an array of its item schema (the first one when they differ); request validation stays the tuple's and the
+  // schema's description says its shape. No minItems/maxItems are added: the published document never had them, and
+  // adding them reads as a breaking request change to the compatibility check.
   if (Array.isArray(object.prefixItems)) {
     const prefixItems = object.prefixItems as unknown[];
     object.items ??= prefixItems[0];
-    object.minItems ??= prefixItems.length;
-    object.maxItems ??= prefixItems.length;
     delete object.prefixItems;
   }
 
