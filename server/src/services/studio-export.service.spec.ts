@@ -19,6 +19,7 @@ import {
   StudioExportVersionState,
 } from 'src/enum.js';
 import { MediaOperation } from 'src/repositories/media-operation.repository.js';
+import type { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import {
   StudioExportPublished,
   StudioExportRefusal,
@@ -246,7 +247,7 @@ describe(StudioExportService.name, () => {
   let jobs: Record<string, ReturnType<typeof vi.fn>>;
   let renderWorkers: {
     listLiveSessions: ReturnType<typeof vi.fn>;
-    getSessionCapabilities: ReturnType<typeof vi.fn>;
+    getSessionCapabilities: ReturnType<typeof vi.fn<RenderWorkerRepository['getSessionCapabilities']>>;
   };
   let media: { probe: ReturnType<typeof vi.fn> };
   let restorations: { queueExportSmoothMotion: ReturnType<typeof vi.fn> };
@@ -358,7 +359,10 @@ describe(StudioExportService.name, () => {
     };
     crypto = { hashFile: vi.fn().mockResolvedValue(Buffer.from('ab'.repeat(32), 'hex')) };
     jobs = { queue: vi.fn().mockResolvedValue(undefined) };
-    renderWorkers = { listLiveSessions: vi.fn(), getSessionCapabilities: vi.fn() };
+    renderWorkers = {
+      listLiveSessions: vi.fn(),
+      getSessionCapabilities: vi.fn<RenderWorkerRepository['getSessionCapabilities']>(),
+    };
     mockRenderSessions([liveSession()]);
     media = { probe: vi.fn().mockResolvedValue(renderedOutput()) };
     restorations = { queueExportSmoothMotion: vi.fn().mockResolvedValue(null) };
