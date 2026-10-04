@@ -49,12 +49,15 @@ diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/uti
 -    channels: 2, // Stereo
 +    channels: 0, // Established from the first processed source, without guessing a layout
      fps,
-@@ -2730,3 +2730,4 @@
+@@ -2730,6 +2730,7 @@
    // immediately. Keeping every decoded segment alive until the end multiplies
    // memory use on long, multi-clip timelines.
 -  const mixedSamples = createAudioMixBuffer(config)
 +  const mixedSamples: Float32Array[] = []
 +  let sourceChannels = 0
+
+   for (const segment of activeSegments) {
+     if (signal?.aborted) {
 @@ -2755,4 +2755,5 @@
          segment.audioCodec,
        )
