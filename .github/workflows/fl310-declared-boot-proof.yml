@@ -1,0 +1,28 @@
+name: FL310 declared boot regression proof
+on:
+  push:
+    branches: [aj/fl310-declared-boot-proof]
+permissions:
+  contents: read
+jobs:
+  buddy-capture:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - run: mise run //server:install
+      - run: mise run //:plugins
+      - run: mise run //packages/plugin-core:build
+      - working-directory: server
+        run: >-
+          pnpm exec vitest --config test/vitest.config.medium.mjs --run
+          test/medium/specs/repositories/buddy-capture.spec.ts
