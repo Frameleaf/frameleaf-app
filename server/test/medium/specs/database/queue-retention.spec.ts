@@ -135,6 +135,30 @@ describe('bounded PostgreSQL queue history', () => {
     expect(await pruneQueueHistory(db)).toBe(1);
   });
 
+  it('finishes a fixed traversal while new completed work arrives and revisits earlier blocked parents', async () => {
+    await sql`insert into job(id,queue,name,data,state,"safeToRetry","deadlineMs","finishedAt")
+      select md5('parent:' || n)::uuid,${queue},'parent','{}','completed',true,600000,
+        '2026-01-01'::timestamptz from generate_series(1,250) n`.execute(db);
+    await sql`insert into job(id,queue,name,data,state,"safeToRetry","deadlineMs","parentId")
+      select md5('child:' || n)::uuid,${queue},'child','{}','pending',true,600000,
+        md5('parent:' || n)::uuid from generate_series(1,250) n`.execute(db);
+    const arrive = async (page: number) => {
+      await sql`insert into job(id,queue,name,data,state,"safeToRetry","deadlineMs","finishedAt")
+        select md5(${page}::text || ':' || n)::uuid,${queue},'arrival','{}','completed',true,600000,
+          '2026-01-02'::timestamptz + ${page} * interval '1 day' from generate_series(1,250) n`.execute(db);
+    };
+    await arrive(0);
+    expect(await pruneQueueHistory(db)).toBe(0);
+    await arrive(1);
+    expect(await pruneQueueHistory(db)).toBe(250);
+    await sql`delete from job where queue=${queue} and name='child'`.execute(db);
+    await arrive(2);
+    expect(await pruneQueueHistory(db)).toBe(0);
+    expect(await pruneQueueHistory(db)).toBe(250);
+    expect((await sql`select id from job where queue=${queue} and name='parent'`.execute(db)).rows).toEqual([]);
+    expect((await sql`select id from job where queue=${queue}`.execute(db)).rows).toHaveLength(500);
+  });
+
   it.each([50_000, 500_000])(
     'bounds candidate work with %i ineligible retained parents',
     async (size) => {
@@ -157,28 +181,41 @@ describe('bounded PostgreSQL queue history', () => {
           if (event.level === 'query') queries.push(event.query);
         },
       });
+      type Plan = {
+        'Relation Name'?: string;
+        'Actual Rows': number;
+        'Actual Loops': number;
+        'Rows Removed by Filter'?: number;
+        Plans?: Plan[];
+      };
+      const examined = (node: Plan): number =>
+        (node['Relation Name']
+          ? (node['Actual Rows'] + (node['Rows Removed by Filter'] ?? 0)) * node['Actual Loops']
+          : 0) + (node.Plans ?? []).reduce((sum, child) => sum + examined(child), 0);
+      const explain = async (query: CompiledQuery) => {
+        const { rows } = await db.executeQuery<{ 'QUERY PLAN': [{ Plan: Plan }] }>(
+          CompiledQuery.raw(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query.sql}`, [...query.parameters]),
+        );
+        return examined(rows[0]['QUERY PLAN'][0].Plan);
+      };
       try {
-        expect(await pruneQueueHistory(observed)).toBe(0);
-        expect(await pruneQueueHistory(observed)).toBe(0);
+        await db.transaction().execute(async (locker) => {
+          // SKIP LOCKED must not turn the page limit into a scan of every locked parent.
+          await sql`select count(*) from (select id from job where queue=${queue} and name='parent' for update) locked`.execute(
+            locker,
+          );
+          expect(await pruneQueueHistory(observed)).toBe(0);
+          expect(await pruneQueueHistory(observed)).toBe(0);
+          const firstPage = queries.find(({ sql }) => sql.includes('select id, "finishedAt"::text from job'))!;
+          expect(await explain(firstPage)).toBeLessThanOrEqual(250);
+          const locks = queries.filter(
+            ({ sql }) => sql.includes('select id from job') && sql.includes('for update skip locked'),
+          );
+          expect(locks).toHaveLength(2);
+          for (const lock of locks) expect(await explain(lock)).toBeLessThanOrEqual(250);
+        });
         const pages = queries.filter(({ sql }) => sql.includes('select id, "finishedAt"::text from job'));
         expect(pages).toHaveLength(2);
-        type Plan = {
-          'Relation Name'?: string;
-          'Actual Rows': number;
-          'Actual Loops': number;
-          'Rows Removed by Filter'?: number;
-          Plans?: Plan[];
-        };
-        const examined = (node: Plan): number =>
-          (node['Relation Name']
-            ? (node['Actual Rows'] + (node['Rows Removed by Filter'] ?? 0)) * node['Actual Loops']
-            : 0) + (node.Plans ?? []).reduce((sum, child) => sum + examined(child), 0);
-        const explain = async (query: CompiledQuery) => {
-          const { rows } = await db.executeQuery<{ 'QUERY PLAN': [{ Plan: Plan }] }>(
-            CompiledQuery.raw(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query.sql}`, [...query.parameters]),
-          );
-          return examined(rows[0]['QUERY PLAN'][0].Plan);
-        };
         for (const page of pages) expect(await explain(page)).toBeLessThanOrEqual(250);
         // The prior eligibility-first selector must exceed the same physical-work budget.
         const unbounded = sql`select j.id from job j
