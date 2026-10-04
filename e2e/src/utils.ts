@@ -724,6 +724,24 @@ export const utils = {
   createPartner: (accessToken: string, id: string) =>
     createPartner({ partnerCreateDto: { sharedWithId: id } }, { headers: asBearerAuth(accessToken) }),
 
+  /** FL-326: the id of `recipientId`'s own copy of a partner's `sourceAssetId`, once the copy job made it. */
+  waitForPartnerCopy: async (recipientId: string, sourceAssetId: string, ms = process.env.CI ? 60_000 : 20_000) => {
+    const db = await utils.connectDatabase();
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline) {
+      const { rows } = await db.query<{ id: string }>(
+        `SELECT copy.id FROM asset copy JOIN asset source ON source.checksum = copy.checksum
+         WHERE source.id = $1 AND copy."ownerId" = $2 AND copy.id <> source.id`,
+        [sourceAssetId, recipientId],
+      );
+      if (rows[0]) {
+        return rows[0].id;
+      }
+      await setAsyncTimeout(200);
+    }
+    throw new Error(`Timed out waiting for ${recipientId}'s copy of ${sourceAssetId}`);
+  },
+
   updateMyPreferences: (accessToken: string, userPreferencesUpdateDto: UserPreferencesUpdateDto) =>
     updateMyPreferences({ userPreferencesUpdateDto }, { headers: asBearerAuth(accessToken) }),
 
