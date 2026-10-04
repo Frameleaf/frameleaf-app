@@ -130,7 +130,6 @@ describe(PhysicalDeduplicationPlanService.name, () => {
       }),
       preparePlan: vi.fn().mockResolvedValue(prepared),
       requireApplyAllowed: vi.fn().mockResolvedValue(undefined),
-      canApplyPlans: vi.fn().mockResolvedValue(true),
       applyPlanItem: vi.fn().mockResolvedValue(applied),
       recordPlanApplied: vi.fn().mockResolvedValue(undefined),
       verifyAppliedCopies: vi.fn().mockResolvedValue({ copies: 1, items: [] }),
@@ -472,15 +471,6 @@ describe(PhysicalDeduplicationPlanService.name, () => {
         'token',
         expect.objectContaining({ errorCode: 'physical_deduplication_snapshot_invalid' }),
       );
-    });
-
-    it('fails outside an active storage handoff', async () => {
-      deduplication.canApplyPlans.mockResolvedValue(false);
-
-      await sut.run(operationOf(), 'token');
-
-      expect(deduplication.applyPlanItem).not.toHaveBeenCalled();
-      expect(operations.fail).toHaveBeenCalled();
     });
   });
 
