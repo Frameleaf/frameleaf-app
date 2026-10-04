@@ -12,6 +12,7 @@ import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { FORK_HANDOFF_WRITE_REFUSAL } from 'src/repositories/fork-write-guard.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
@@ -89,6 +90,92 @@ beforeAll(async () => {
 });
 
 describe(AlbumSourceService.name, () => {
+  describe('empty album membership writes', () => {
+    it('removes an unlinked asset from all albums without rejecting or changing the asset', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const before = await defaultDatabase
+        .selectFrom('asset')
+        .selectAll()
+        .where('id', '=', asset.id)
+        .executeTakeFirstOrThrow();
+
+      await expect(ctx.get(AlbumRepository).removeAssetsFromAll([asset.id])).resolves.toBeUndefined();
+
+      expect(
+        await defaultDatabase.selectFrom('album_asset').selectAll().where('assetId', '=', asset.id).execute(),
+      ).toEqual([]);
+      expect(
+        await defaultDatabase.selectFrom('asset').selectAll().where('id', '=', asset.id).executeTakeFirstOrThrow(),
+      ).toEqual(before);
+    });
+
+    it('executes and commits a real membership-write callback once when no album locks are needed', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      let callbacks = 0;
+
+      await expect(
+        ctx.get(AlbumRepository).withMembershipWrite([], async (tx) => {
+          callbacks++;
+          await tx
+            .updateTable('asset')
+            .set({ originalFileName: 'empty-album-write.jpg' })
+            .where('id', '=', asset.id)
+            .execute();
+          return 'committed';
+        }),
+      ).resolves.toBe('committed');
+
+      expect(callbacks).toBe(1);
+      expect(
+        await defaultDatabase
+          .selectFrom('asset')
+          .select('originalFileName')
+          .where('id', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ originalFileName: 'empty-album-write.jpg' });
+    });
+
+    it('still refuses an empty-album callback through the real public fork write fence', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const original = asset.originalFileName;
+      const rollback = new Error('rollback empty album fence fixture');
+      let callbacks = 0;
+
+      await expect(
+        defaultDatabase.transaction().execute(async (tx) => {
+          // The same legal inactive state used by fork-schema medium fixtures, isolated by rollback.
+          await sql`UPDATE immich_fork.state SET phase = 'inactive', active = false WHERE id = 1`.execute(tx);
+          await expect(
+            new AlbumRepository(tx).withMembershipWrite([], async (guarded) => {
+              callbacks++;
+              await guarded
+                .updateTable('asset')
+                .set({ originalFileName: 'forbidden-empty-write.jpg' })
+                .where('id', '=', asset.id)
+                .execute();
+            }),
+          ).rejects.toThrow(FORK_HANDOFF_WRITE_REFUSAL);
+          expect(callbacks).toBe(0);
+          throw rollback;
+        }),
+      ).rejects.toBe(rollback);
+
+      expect(
+        await defaultDatabase
+          .selectFrom('asset')
+          .select('originalFileName')
+          .where('id', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ originalFileName: original });
+    });
+  });
+
   describe('resolve', () => {
     it('creates one album per new source and reuses the link afterwards', async () => {
       const { sut, ctx } = setup();
