@@ -38,6 +38,7 @@ import {
   qualifyMetadataOnlyRotation,
   resolveEditedMasterColorPolicy,
   validateAudioMaster,
+  validateFullClipMasterTiming,
   validateVideoMaster,
 } from 'src/utils/media-policy.js';
 import { FRAME_RATE_NTSC_30 } from 'src/utils/rational-time.js';
@@ -57,6 +58,41 @@ const crop: AssetEditActionItem = {
   parameters: { x: 2, y: 4, width: 300, height: 200 },
 };
 const rotate: AssetEditActionItem = { action: AssetEditAction.Rotate, parameters: { angle: 90 } };
+
+describe('full-clip master timing admission', () => {
+  const stream = { timeBaseRational: { num: 1, den: 90_000 } };
+  const packets = {
+    presentation: { startPts: 90_000, endPts: 180_000 },
+    packetCount: 6,
+    totalDuration: 6000,
+    outputFrames: 6,
+    keyframePts: [],
+    keyframeAccDuration: [],
+    keyframeOwnDuration: [],
+  };
+  it('normalizes nonzero origins and compares rational clocks, not summed durations or fps', () => {
+    expect(() =>
+      validateFullClipMasterTiming(stream, { timeBaseRational: { num: 1, den: 30_000 } }, packets, {
+        ...packets,
+        presentation: { startPts: 0, endPts: 30_000 },
+      }),
+    ).not.toThrow();
+  });
+  it.each([
+    null,
+    { ...packets, presentation: null },
+    { ...packets, packetCount: 5 },
+    { ...packets, presentation: { startPts: 0, endPts: 89_997 } },
+    { ...packets, presentation: { startPts: 0, endPts: Number.MAX_SAFE_INTEGER + 1 } },
+  ])('refuses missing, truncated or unsafe measured evidence', (output) => {
+    expect(() => validateFullClipMasterTiming(stream, stream, packets, output)).toThrow();
+  });
+  it('refuses absent or invalid rational clocks', () => {
+    for (const timeBaseRational of [null, { num: 0, den: 90_000 }, { num: 1, den: 0 }, { num: 1.5, den: 90_000 }]) {
+      expect(() => validateFullClipMasterTiming(stream, { timeBaseRational }, packets, packets)).toThrow();
+    }
+  });
+});
 
 describe('assertOriginalPreserved', () => {
   it('throws when the render output is the original file', () => {

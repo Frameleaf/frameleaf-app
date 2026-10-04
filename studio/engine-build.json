@@ -264,7 +264,22 @@
       "path": "patches/0052-microphone-finalization-authority.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "477781b250207c9083fcb9be06895b37e94989ea403647e211ad59c454f3a206"
+    },
+    {
+      "path": "patches/0053-expression-unary-depth.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "940f288a26bc0a3daee238fe15b38d51e34965dc0962a0c50b95a75120cb6205"
+    },
+    {
+      "path": "patches/0054-channel-preservation-tests.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "2659a78ebe3deae8e260a53b586533937f4f90f796457a53e4e6deb2189e67ca"
+    },
+    {
+      "path": "patches/0055-channel-preserving-gain-mix.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8c177c21b6e3cb41aa2420e39988ea71ff914ce042a597226838eb90b5146143"
     }
   ],
-  "sourceSha256": "7f8e1fee3117125038cbcd32a459d4ece5d930d5e281babf36a269bd7156ca22"
+  "sourceSha256": "aaf508828b8881a3314e5b364da5326c6706dffe191fa6a63abe2dff67e4468c"
 }

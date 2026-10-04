@@ -102,6 +102,7 @@ import {
   resolveEditedMasterColorPolicy,
   serializeEditedMasterLineage,
   validateAudioMaster,
+  validateFullClipMasterTiming,
   validateVideoMaster,
 } from 'src/utils/media-policy.js';
 import { BaseConfig, ThumbnailConfig } from 'src/utils/media.js';
@@ -1663,6 +1664,12 @@ export class MediaService extends BaseService {
         outputVideo: masterVideo,
         muted: edits.some((edit) => edit.action === AssetEditAction.Audio && !!edit.parameters.muted),
       });
+      // Only full-clip timing-preserving recipes: trim/speed retain their separate semantics.
+      if (edits.every((edit) => !(edit.action === AssetEditAction.Trim || edit.action === AssetEditAction.Speed))) {
+        const sourcePackets = await this.mediaRepository.probePackets(version.sourcePath, videoStream.index);
+        const masterPackets = await this.mediaRepository.probePackets(master, masterVideo.index);
+        validateFullClipMasterTiming(videoStream, masterVideo, sourcePackets, masterPackets);
+      }
 
       await this.writeEditedMasterLineage({
         masterPath: master,

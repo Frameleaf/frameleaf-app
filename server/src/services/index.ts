@@ -50,8 +50,11 @@ import { ICloudIdentityAdoptionService } from 'src/services/icloud-identity-adop
 import { ICloudIdentityService } from 'src/services/icloud-identity.service.js';
 import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
+import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
+import { ICloudScheduledWorkerService } from 'src/services/icloud-scheduled-worker.service.js';
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
+import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
@@ -143,6 +146,8 @@ import { ZeroShotTaggingService } from 'src/services/zero-shot-tagging.service.j
 
 export const services = [
   ICloudAuditService,
+  ICloudScheduledStagingService,
+  ICloudScheduledWorkerService,
   ICloudIdentityAdoptionService,
   PhotographyWorkspaceService,
   PhotographyWorkflowService,
@@ -174,6 +179,7 @@ export const services = [
   MediaIntegrityService,
   ICloudStagingService,
   ICloudSyncService,
+  ICloudWeeklyService,
   ICloudIdentityService,
   ApiKeyService,
   ArchiveOperationService,

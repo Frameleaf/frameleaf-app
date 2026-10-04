@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { ICloudVerifyDto } from 'src/dtos/icloud-identity.dto.js';
 import { AssetType, JobName, MediaOperationStatus } from 'src/enum.js';
@@ -8,6 +8,7 @@ import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { ICloudScheduledWorkerService } from 'src/services/icloud-scheduled-worker.service.js';
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
@@ -26,6 +27,7 @@ export class ICloudAuditService {
     private recovery: MediaRecoveryService,
     private operations: MediaOperationRepository,
     private jobs: JobRepository,
+    @Optional() private scheduled?: ICloudScheduledWorkerService,
   ) {}
 
   submit(auth: AuthDto, dto: ICloudVerifyDto) {
@@ -33,6 +35,7 @@ export class ICloudAuditService {
   }
 
   async housekeeping() {
+    await this.scheduled?.housekeeping?.();
     await this.repository.housekeeping(async (resource, db) => {
       if (resource.assetId) {
         const asset = await db
@@ -65,7 +68,25 @@ export class ICloudAuditService {
     });
   }
 
+  isAuditOperation(operation: MediaOperation) {
+    return this.repository.operationPurpose(operation.id, operation.ownerId);
+  }
+
   async run(operation: MediaOperation, claimToken: string): Promise<void> {
+    const purpose = await this.repository.operationPurpose(operation.id, operation.ownerId);
+    if (purpose === 'scheduled-weekly' && this.scheduled) {
+      await this.scheduled.run(operation, claimToken);
+      return;
+    }
+    if (purpose && purpose !== 'manual-session') {
+      await this.operations.fail(
+        operation.id,
+        claimToken,
+        { error: 'Invalid iCloud task', errorCode: 'icloud_snapshot_invalid' },
+        { retry: false },
+      );
+      return;
+    }
     const ids = operation.snapshot.auditIds;
     if (
       operation.snapshot.task !== 'identity-audit' ||

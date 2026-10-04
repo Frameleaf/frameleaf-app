@@ -1,0 +1,77 @@
+Subject: Preserve matching decoded planes through gain-only audio mixing
+
+Upstream Freecut source remains MIT licensed; this adaptation retains that license.
+The immutable vendor snapshot is unchanged. SoundTouch stereo retiming policy is retained.
+
+diff --git a/src/features/export/utils/canvas-audio.ts b/src/features/export/utils/canvas-audio.ts
+--- a/src/features/export/utils/canvas-audio.ts
++++ b/src/features/export/utils/canvas-audio.ts
+@@ -2589,3 +2589,4 @@
+     sourceStartTime + requestedFrames / sampleRate,
+   )
++  requireMatchingAudioPlaneCount(decoded.samples.length, mixed.length)
+   const processed = await processAudioWindowChannels(
+@@ -2607,1 +2607,9 @@
++function requireMatchingAudioPlaneCount(actual: number, expected: number): number {
++  if (!Number.isSafeInteger(actual) || actual < 1)
++    throw new Error('Audio decode produced an invalid channel count')
++  if (expected !== 0 && actual !== expected)
++    throw new Error('Mixed audio channel counts require an explicit layout mapping')
++  return actual
++}
++
+ function applyAudioWindowMasterGain(mixed: Float32Array[], masterGain: number): void {
+@@ -2633,3 +2633,3 @@
+   const sampleRate = 48_000
+-  const channels = 2
++  let channels = 0
+   const totalSamples = Math.ceil((durationInFrames / fps) * sampleRate)
+@@ -2644,3 +2644,11 @@
+   const decoderPool = await createWindowedAudioDecoderPool()
+   try {
++    // Admit every active source before yielding even a silent leading window.
++    // Plane counts are not speaker layouts: refuse counts needing a remap.
++    for (const segment of segments) {
++      if (signal?.aborted) throw new DOMException('Audio processing cancelled', 'AbortError')
++      const sourceStart = segment.sourceStartFrame / segment.sourceFps
++      const decoded = await decoderPool.decode(segment, sourceStart, sourceStart + 1 / sampleRate)
++      channels = requireMatchingAudioPlaneCount(decoded.samples.length, channels)
++    }
+     for (let chunkStart = 0; chunkStart < totalSamples; chunkStart += chunkSamples) {
+@@ -2650,4 +2650,4 @@
+       const chunkEnd = chunkStart + chunkLength
+-      const mixed = [new Float32Array(chunkLength), new Float32Array(chunkLength)]
++      const mixed = Array.from({ length: channels }, () => new Float32Array(chunkLength))
+ 
+       for (const segment of segments) {
+@@ -2716,3 +2716,3 @@
+     sampleRate: 48000, // Standard export sample rate
+-    channels: 2, // Stereo
++    channels: 0, // Established from the first processed source, without guessing a layout
+     fps,
+@@ -2730,6 +2730,7 @@
+   // immediately. Keeping every decoded segment alive until the end multiplies
+   // memory use on long, multi-clip timelines.
+-  const mixedSamples = createAudioMixBuffer(config)
++  const mixedSamples: Float32Array[] = []
++  let sourceChannels = 0
+
+   for (const segment of activeSegments) {
+     if (signal?.aborted) {
+@@ -2755,4 +2755,5 @@
+         segment.audioCodec,
+       )
++      sourceChannels = requireMatchingAudioPlaneCount(decoded.samples.length, sourceChannels)
+ 
+       // Process audio channels.
+@@ -2782,2 +2782,10 @@
++      // Normal-speed gain edits retain source planes. SoundTouch's existing
++      // explicit stereo downmix remains a separate, unqualified retiming policy.
++      requireMatchingAudioPlaneCount(processedChannels.length, config.channels)
++      if (config.channels === 0) {
++        config.channels = processedChannels.length
++        mixedSamples.push(...createAudioMixBuffer(config))
++      }
++
+       // Apply per-channel volume, fades, and resampling
+       const fadeInSamples = Math.floor((segment.fadeInFrames / fps) * decoded.sampleRate)

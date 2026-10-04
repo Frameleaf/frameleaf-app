@@ -167,7 +167,7 @@ describe(ICloudSyncService.name, () => {
       operations as never,
       logger as never,
       identities as never,
-      { housekeeping: vi.fn(), run: vi.fn() } as never,
+      { housekeeping: vi.fn(), run: vi.fn(), isAuditOperation: vi.fn() } as never,
       adoption as never,
       {
         status: vi.fn().mockResolvedValue({
@@ -306,6 +306,16 @@ describe(ICloudSyncService.name, () => {
       await sut.run(operation(), 'token');
       expect(staging.download).not.toHaveBeenCalled();
       expect(repository.finish).toHaveBeenCalledWith(resource, 'retry', 'identity_adoption_unavailable');
+      expect(repository.finalize).not.toHaveBeenCalled();
+    });
+
+    it('retains backpressure on an already mapped exact-receipt resource without staging or relabelling it', async () => {
+      recovery.verifyMapped.mockResolvedValue({ outcome: 'retry', reason: 'identity_adoption_unavailable' });
+      await sut.run(operation(), 'token');
+      expect(repository.finish).toHaveBeenCalledWith(resource, 'retry', 'identity_adoption_unavailable');
+      expect(adoption.adopt).not.toHaveBeenCalled();
+      expect(staging.download).not.toHaveBeenCalled();
+      expect(recovery.reconcile).not.toHaveBeenCalled();
       expect(repository.finalize).not.toHaveBeenCalled();
     });
 

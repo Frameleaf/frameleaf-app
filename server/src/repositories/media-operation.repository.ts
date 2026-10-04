@@ -1249,17 +1249,19 @@ export class MediaOperationRepository {
    * `returnAttempt` gives the claim's attempt back, as `settlePause` does: an iCloud sync (FL-68)
    * that hands itself back to wait for the provider or for a backed-off item did not fail, and must
    * not use up the attempts lapse recovery counts.
+   *
+   * `settled` publishes related durable state while the successful UPDATE still holds
+   * the operation row lock. Lock order is operation row, then any state
+   * lock taken by the callback; callers must not enter with a state lock already held.
    */
   async requeue(
     id: string,
     claimToken: string,
-    options: {
-      delayMs: number;
-      returnAttempt?: boolean;
-    },
+    options: { delayMs: number; returnAttempt?: boolean },
+    settled?: (trx: Transaction<DB>) => Promise<void>,
   ): Promise<boolean> {
-    const result = await this.write((db) =>
-      db
+    const result = await this.db.transaction().execute(async (trx) => {
+      const row = await trx
         .updateTable('media_operation')
         .set({
           // A pause asked for during the pass holds the job here rather than at its next claim.
@@ -1275,8 +1277,10 @@ export class MediaOperationRepository {
         .where('status', 'in', WORKING_STATUSES)
         .where('cancelRequestedAt', 'is', null)
         .returning(['id', 'ownerId'])
-        .executeTakeFirst(),
-    );
+        .executeTakeFirst();
+      if (row) await settled?.(trx);
+      return row;
+    });
     this.changed(result);
     return !!result;
   }

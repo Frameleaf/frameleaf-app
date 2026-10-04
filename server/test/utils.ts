@@ -5,7 +5,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { transformException } from '@nestjs/platform-express/multer/multer/multer.utils';
 import { Test } from '@nestjs/testing';
 import { NextFunction } from 'express';
-import { Kysely } from 'kysely';
+import { Kysely, type KyselyConfig } from 'kysely';
 import multer, { memoryStorage } from 'multer';
 import { ClsService } from 'nestjs-cls';
 import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
@@ -610,7 +610,7 @@ const withDatabase = (url: string, name: string) => {
   return target.href;
 };
 
-export const getKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
+export const getKyselyDB = async (suffix?: string, log?: KyselyConfig['log']): Promise<Kysely<DB>> => {
   const testUrl = process.env.IMMICH_TEST_POSTGRES_URL!;
   const connection = { connectionType: 'url', url: withDatabase(testUrl, 'postgres') } as DatabaseConnectionParams;
   const sql = createPostgres({ maxConnections: 1, connection });
@@ -625,11 +625,14 @@ export const getKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
     await sql.end();
   }
 
-  return new Kysely<DB>(getKyselyConfig({ connectionType: 'url', url: withDatabase(testUrl, dbName) }));
+  return new Kysely<DB>({
+    ...getKyselyConfig({ connectionType: 'url', url: withDatabase(testUrl, dbName) }),
+    ...(log !== undefined && { log }),
+  });
 };
 
-export const getActiveForkKyselyDB = async (suffix?: string): Promise<Kysely<DB>> => {
-  const db = await getKyselyDB(suffix);
+export const getActiveForkKyselyDB = async (suffix?: string, log?: KyselyConfig['log']): Promise<Kysely<DB>> => {
+  const db = await getKyselyDB(suffix, log);
   return db;
 };
 

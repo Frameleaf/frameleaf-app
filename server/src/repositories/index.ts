@@ -49,6 +49,8 @@ import { ICloudIdentityAdoptionRepository } from 'src/repositories/icloud-identi
 import { ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudMetadataRepository } from 'src/repositories/icloud-metadata.repository.js';
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
+import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-scheduled-staging.repository.js';
+import { ICloudScheduledWorkerRepository } from 'src/repositories/icloud-scheduled-worker.repository.js';
 import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
@@ -117,6 +119,8 @@ import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 
 export const repositories = [
   ICloudAuditRepository,
+  ICloudScheduledStagingRepository,
+  ICloudScheduledWorkerRepository,
   ICloudIdentityAdoptionRepository,
   AssetUploadResourceRepository,
   BackupDeviceRepository,

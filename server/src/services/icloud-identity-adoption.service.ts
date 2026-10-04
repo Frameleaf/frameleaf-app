@@ -11,6 +11,7 @@ import {
   IdentityAdoptionEvidence,
   IdentityAdoptionResult,
 } from 'src/repositories/icloud-identity-adoption.repository.js';
+import { weeklyIdentityAdoptionActive } from 'src/repositories/icloud-weekly-adoption-authority.js';
 import { identityMatchingEnabled } from 'src/services/icloud-identity.service.js';
 import {
   MediaIntegrityIdentity,
@@ -22,6 +23,7 @@ import { appleFingerprintHash } from 'src/utils/icloud-identity.js';
 /** Prerequisite only: keep OFF until Apple AND mandatory weekly authority/scheduling qualify. */
 export const identityAdoptionEnabled = () =>
   identityMatchingEnabled() &&
+  weeklyIdentityAdoptionActive() &&
   ['true', '1', 'yes', 'on'].includes((process.env.FRAMELEAF_ICLOUD_IDENTITY_ADOPTION ?? '').trim().toLowerCase());
 const fileIdentity = (value: MediaIntegrityIdentity): MediaIntegrityIdentity => ({
   dev: value.dev,

@@ -11,9 +11,13 @@ import {
   AlbumSourceUpdateResponseDto,
   mapAlbumSourceLink,
 } from 'src/dtos/album-source.dto.js';
-import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import { BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
+import { Permission } from 'src/enum.js';
+import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { recordAlbumEdit } from 'src/services/partner-copy.service.js';
 
 const sourceLock = (userId: string, source: { kind: string; sourceId: string; deviceKey: string | null }) =>
   `album-source:${userId}:${source.kind}:${source.deviceKey ?? ''}:${source.sourceId}`;
@@ -85,18 +89,7 @@ export class AlbumSourceService extends BaseService {
    */
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
     const link = await this.findLink(auth, id);
-    return this.albumSourceRepository.withLocks([albumLock(link.albumId)], async (tx) => {
-      const ids = [...new Set(dto.ids)];
-      const recorded = await this.albumSourceRepository.getRecordedAssetIds(tx, link.albumId, ids);
-      const results = await this.albums.addAssets(auth, link.albumId, { ids });
-      const added = results.filter(({ success }) => success).map(({ id }) => id);
-      const syncOwned = results
-        .filter(({ success, error, id }) => !success && error === BulkIdErrorReason.DUPLICATE && recorded.has(id))
-        .map(({ id }) => id);
-      await this.albumSourceRepository.record(tx, link.id, [...added, ...syncOwned]);
-      const owned = new Set(syncOwned);
-      return results.map((result) => (owned.has(result.id) ? { id: result.id, success: true } : result));
-    });
+    return this.albums.addAssets(auth, link.albumId, { ids: [...new Set(dto.ids)] }, id);
   }
 
   /**
@@ -105,21 +98,7 @@ export class AlbumSourceService extends BaseService {
    */
   async removeAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
     const link = await this.findLink(auth, id);
-    return this.albumSourceRepository.withLocks([albumLock(link.albumId)], async (tx) => {
-      const ids = [...new Set(dto.ids)];
-      const mine = await this.albumSourceRepository.getRecordedAssetIds(tx, link.albumId, ids, link.id);
-      await this.albumSourceRepository.unrecord(tx, link.id, [...mine]);
-      const stillRecorded = await this.albumSourceRepository.getRecordedAssetIds(tx, link.albumId, [...mine]);
-      const remove = [...mine.difference(stillRecorded)];
-      if (remove.length > 0) {
-        await this.albums.removeAssets(auth, link.albumId, { ids: remove });
-      }
-      return ids.map((assetId) =>
-        mine.has(assetId)
-          ? { id: assetId, success: true }
-          : { id: assetId, success: false, error: BulkIdErrorReason.NOT_FOUND },
-      );
-    });
+    return this.albums.removeAssets(auth, link.albumId, { ids: [...new Set(dto.ids)] }, id);
   }
 
   /**
@@ -137,7 +116,9 @@ export class AlbumSourceService extends BaseService {
       albumLock(link.albumId),
       ...(sourceId ? [sourceLock(auth.user.id, target)] : []),
     ];
-    return this.albumSourceRepository.withLocks(keys, async (tx) => {
+    await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [link.albumId] });
+    const result = await this.albumSourceRepository.withLocks(keys, async (tx) => {
+      await tx.selectFrom('album').select('id').where('id', '=', link.albumId).forNoKeyUpdate().execute();
       const current = await this.albumSourceRepository.get(tx, auth.user.id, id);
       if (!current || current.albumName === null) {
         throw new NotFoundException('Album source link not found');
@@ -148,14 +129,29 @@ export class AlbumSourceService extends BaseService {
           throw new ConflictException('Another link already holds this source');
         }
       }
-      const renamed = current.albumName === current.lastSourceName && current.albumName !== name;
-      if (renamed) {
-        await this.albums.update(auth, current.albumId, { albumName: name });
-      }
+      const renamed =
+        current.albumName !== name &&
+        (await new AlbumRepository(tx).updateSourceName(current.albumId, current.lastSourceName, name));
       await this.albumSourceRepository.update(tx, id, { lastSourceName: name, sourceId });
       const updated = (await this.albumSourceRepository.get(tx, auth.user.id, id)) as AlbumSourceLink;
       return { ...mapAlbumSourceLink(updated), renamed };
     });
+    if (result.renamed) {
+      await recordAlbumEdit(
+        { partnerOrigin: this.partnerOriginRepository, job: this.jobRepository },
+        [link.albumId],
+        [AlbumOriginField.Title],
+      );
+      const album = await this.albumRepository.getById(link.albumId, { withAssets: false }, auth.user.id);
+      if (album) {
+        await this.eventRepository.emit('AlbumUpdate', {
+          id: link.albumId,
+          userIds: album.albumUsers.map(({ user }) => user.id),
+          recipientIds: [],
+        });
+      }
+    }
+    return result;
   }
 
   /** Unlinks the source and forgets what its sync added. The album and its photos are kept. */
@@ -164,7 +160,13 @@ export class AlbumSourceService extends BaseService {
     if (!link) {
       throw new NotFoundException('Album source link not found');
     }
-    await this.albumSourceRepository.write((tx) => this.albumSourceRepository.delete(tx, id));
+    await this.albumRepository.withMembershipWrite([link.albumId], async (tx) => {
+      const current = await this.albumSourceRepository.get(tx, auth.user.id, id);
+      if (!current) {
+        throw new NotFoundException('Album source link not found');
+      }
+      await this.albumSourceRepository.delete(tx, id);
+    });
   }
 
   private async findLink(auth: AuthDto, id: string): Promise<AlbumSourceLink> {

@@ -259,6 +259,35 @@ describe('Buddy peer fetch authentication (FL-310, FC-100)', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it.each(['ECONNRESET', 'UND_ERR_SOCKET'])(
+    'preserves retry ownership when a response body ends with %s',
+    async (code) => {
+      const { client } = fixture;
+      const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"data":'));
+              controller.error(new TypeError('terminated', { cause: { code } }));
+            },
+          }),
+          { headers: { 'content-type': 'application/vnd.frameleaf.buddy+json' } },
+        ),
+      );
+
+      await expect(client.request('GET', 'handshake')).rejects.toBeInstanceOf(BuddyExecutionError);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(client.connection).toBeNull();
+    },
+  );
+
+  it('keeps malformed complete replies as terminal protocol failures', async () => {
+    const { client } = fixture;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"data":'));
+    await expect(client.request('GET', 'handshake')).rejects.toBeInstanceOf(SyntaxError);
+    expect(client.connection).toBeNull();
+  });
+
   it('sends nothing when the grant has expired', async () => {
     const { client, grant } = fixture;
     vi.setSystemTime(grant.claims.exp * 1000);

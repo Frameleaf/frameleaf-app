@@ -1,18 +1,21 @@
-import { Kysely, sql } from 'kysely';
+import { CompiledQuery, Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { StorageCore } from 'src/cores/storage.core.js';
+import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AssetStatus,
   AssetType,
+  ChecksumAlgorithm,
   JobName,
   MediaHealthCategory,
   MediaHealthSeverity,
   MediaHealthStatus,
 } from 'src/enum.js';
+import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
@@ -24,15 +27,19 @@ import {
 import { MediaRepository } from 'src/repositories/media.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { DB } from 'src/schema/index.js';
+import { BaseService } from 'src/services/base.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
+import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
-// Real PostgreSQL locks/constraints with a focused schema, independent of unrelated ML extensions.
+// Exercise the migrated canonical schema, including identity reuse, privacy and retained edit constraints.
 describe(MediaRecoveryRepository.name, () => {
   let db: Kysely<DB>;
   let sut: MediaRecoveryRepository;
   let health: MediaHealthRepository;
+  let ctx: ReturnType<typeof newMediumService<typeof BaseService>>['ctx'];
+  let captureCompiledQuery: ((query: CompiledQuery) => void) | undefined;
   const bytes = Buffer.from('complete original');
   const verified: VerifiedMedia = {
     status: 'healthy',
@@ -43,91 +50,15 @@ describe(MediaRecoveryRepository.name, () => {
     identity: { dev: 1, ino: 2, size: bytes.length, mtimeMs: 3, ctimeMs: 4 },
   };
   beforeAll(async () => {
-    db = await getKyselyDB();
-    await sql`DROP SCHEMA public CASCADE`.execute(db);
-    const statements = [
-      'CREATE SCHEMA public',
-      `CREATE TABLE public.icloud_connection (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      "ownerId" uuid NOT NULL,
-      label text NOT NULL CHECK (length(label) BETWEEN 1 AND 256),
-      state text NOT NULL DEFAULT 'paused',
-      "encryptedSession" text,
-      config jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(config) = 'object'),
-      "lastError" text,
-      "authAttempts" integer NOT NULL DEFAULT 0 CHECK ("authAttempts" >= 0),
-      "authRetryAt" timestamptz,
-      "nextRunAt" timestamptz,
-      "createdAt" timestamptz NOT NULL DEFAULT now(),
-      "updatedAt" timestamptz NOT NULL DEFAULT now(),
-      UNIQUE (id, "ownerId")
-    )`,
-      `CREATE TABLE public.icloud_resource (
-      "auditRequestId" uuid,
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      "connectionId" uuid NOT NULL,
-      "ownerId" uuid NOT NULL,
-      "libraryKey" text NOT NULL,
-      library jsonb NOT NULL CHECK (jsonb_typeof(library) = 'object'),
-      "sourceAssetId" text NOT NULL,
-      "recordId" text NOT NULL,
-      "resourceKey" text NOT NULL,
-      role text NOT NULL,
-      fingerprint text NOT NULL,
-      source jsonb NOT NULL CHECK (jsonb_typeof(source) = 'object'),
-      "expectedSize" bigint NOT NULL CHECK ("expectedSize" >= 0 AND "expectedSize" <= 9007199254740991),
-      status text NOT NULL DEFAULT 'pending',
-      sha1 bytea CHECK (octet_length(sha1) = 20),
-      sha256 bytea CHECK (octet_length(sha256) = 32),
-      "assetId" uuid,
-      path text,
-      "stagingPath" text,
-      "promotedPath" text,
-      "expectedTarget" jsonb,
-      verification jsonb,
-      "pendingJobs" jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof("pendingJobs") = 'array'),
-      attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-      "nextAttemptAt" timestamptz,
-      "leaseToken" uuid,
-      "leaseExpiresAt" timestamptz,
-      "reservedBytes" bigint NOT NULL DEFAULT 0 CHECK ("reservedBytes" >= 0 AND "reservedBytes" <= 9007199254740991),
-      "lastError" text,
-      "createdAt" timestamptz NOT NULL DEFAULT now(),
-      "updatedAt" timestamptz NOT NULL DEFAULT now(),
-      FOREIGN KEY ("connectionId", "ownerId") REFERENCES public.icloud_connection (id, "ownerId") ON DELETE CASCADE,
-      UNIQUE ("connectionId", "libraryKey", "sourceAssetId", "resourceKey", fingerprint),
-      CHECK (("leaseToken" IS NULL) = ("leaseExpiresAt" IS NULL))
-    )`,
-      'CREATE TABLE public.user (id uuid PRIMARY KEY, "quotaUsageInBytes" bigint DEFAULT 0, "quotaSizeInBytes" bigint)',
-      `CREATE TABLE public.asset (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "ownerId" uuid REFERENCES public.user,
-        "updateId" uuid DEFAULT gen_random_uuid(), "originalPath" text, "originalFileName" text, checksum bytea,
-        "checksumAlgorithm" text, type text, "isExternal" boolean DEFAULT false, "libraryId" uuid, "deletedAt" timestamptz,
-        status text DEFAULT 'active', "isOffline" boolean DEFAULT false, visibility text DEFAULT 'timeline',
-        is_nsfw boolean DEFAULT false, "physicalOriginalFileId" uuid, "fileCreatedAt" timestamptz DEFAULT now(),
-        "fileModifiedAt" timestamptz DEFAULT now(), "localDateTime" timestamptz DEFAULT now(), "isFavorite" boolean DEFAULT false)`,
-      'CREATE UNIQUE INDEX asset_checksum_idx ON public.asset ("ownerId", checksum) WHERE "libraryId" IS NULL',
-      `CREATE FUNCTION public.bump_generation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW."updateId" = gen_random_uuid(); RETURN NEW; END $$`,
-      'CREATE TRIGGER generation BEFORE UPDATE ON public.asset FOR EACH ROW EXECUTE FUNCTION public.bump_generation()',
-      'CREATE TABLE public.asset_exif ("assetId" uuid PRIMARY KEY REFERENCES public.asset, "fileSizeInByte" bigint)',
-      `CREATE TABLE public.asset_lock ("assetId" uuid PRIMARY KEY REFERENCES public.asset ON DELETE CASCADE,
-        reason text NOT NULL, "lockedAt" timestamptz NOT NULL DEFAULT now(), "lockedBy" uuid, "previousVisibility" text)`,
-      'CREATE TABLE public.user_metadata ("userId" uuid, key text, value jsonb)',
-      'CREATE TABLE public.asset_metadata ("assetId" uuid, key text, value jsonb)',
-      'CREATE TABLE public.album_asset ("assetId" uuid, "albumId" uuid)',
-      'CREATE TABLE public.physical_file ("createdAt" timestamptz DEFAULT now(), "updatedAt" timestamptz DEFAULT now(), id uuid PRIMARY KEY, "canonicalAssetId" uuid REFERENCES public.asset, checksum bytea, path text UNIQUE, "sizeInBytes" bigint, type text)',
-      'ALTER TABLE public.asset ADD FOREIGN KEY ("physicalOriginalFileId") REFERENCES public.physical_file',
-      'CREATE TABLE public.asset_checksum ("assetId" uuid PRIMARY KEY, sha1 bytea, sha256 bytea, "sizeInBytes" bigint, "verifiedPaths" text[], "linkCount" integer, evidence jsonb, "verifiedAt" timestamptz, "updatedAt" timestamptz)',
-      `CREATE TABLE public.asset_health (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "assetId" uuid, "runId" uuid, category text,
-        status text, severity text, "originalPath" text, "originalFileName" text, evidence jsonb DEFAULT '{}', resolution jsonb DEFAULT '{}',
-        "checkedAt" timestamptz, "resolvedAt" timestamptz, "dismissedAt" timestamptz, "createdAt" timestamptz DEFAULT now(),
-        "updatedAt" timestamptz DEFAULT now(), UNIQUE("assetId", category))`,
-      'CREATE TABLE public.asset_health_candidate (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "healthId" uuid, status text, resolution jsonb DEFAULT \'{}\')',
-    ];
-    for (const statement of statements) {
-      await sql.raw(statement).execute(db);
-    }
+    db = await getKyselyDB(undefined, (event) => {
+      if (event.level === 'query') captureCompiledQuery?.(event.query);
+    });
+    ctx = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] }).ctx;
     sut = new MediaRecoveryRepository(db);
     health = new MediaHealthRepository(db);
+  });
+  afterEach(() => {
+    captureCompiledQuery = undefined;
   });
   afterAll(async () => {
     await db?.destroy();
@@ -140,9 +71,7 @@ describe(MediaRecoveryRepository.name, () => {
     const resourceId = randomUUID();
     const leaseToken = randomUUID();
     const albumId = randomUUID();
-    await sql`INSERT INTO public.user (id, "quotaUsageInBytes") VALUES (${ownerId}::uuid, ${existing ? bytes.length : 0})`.execute(
-      db,
-    );
+    await ctx.newUser({ id: ownerId, quotaUsageInBytes: existing ? bytes.length : 0 });
     await sql`INSERT INTO public.icloud_connection (id, "ownerId", label, state) VALUES (${connectionId}::uuid, ${ownerId}::uuid, 'Photos', 'connected')`.execute(
       db,
     );
@@ -151,15 +80,22 @@ describe(MediaRecoveryRepository.name, () => {
       VALUES (${resourceId}::uuid, ${connectionId}::uuid, ${ownerId}::uuid, 'private', '{}', 'source', 'record', 'original', 'original', 'v1', '{}',
         ${bytes.length}, '/stage/good.jpg', ${leaseToken}::uuid, now() + interval '1 hour')`.execute(db);
     if (existing) {
-      await sql`INSERT INTO public.asset (id, "ownerId", "originalPath", "originalFileName", checksum, "checksumAlgorithm", type, "isOffline", "isFavorite")
-        VALUES (${assetId}::uuid, ${ownerId}::uuid, '/managed/missing.jpg', 'original.jpg', ${verified.sha1}, 'sha1', 'IMAGE', true, true)`.execute(
-        db,
-      );
-      await sql`INSERT INTO public.asset_exif VALUES (${assetId}::uuid, ${bytes.length})`.execute(db);
-      await sql`INSERT INTO public.album_asset VALUES (${assetId}::uuid, ${albumId}::uuid)`.execute(db);
+      await ctx.newAsset({
+        id: assetId,
+        ownerId,
+        originalPath: '/managed/missing.jpg',
+        originalFileName: 'original.jpg',
+        checksum: verified.sha1,
+        checksumAlgorithm: ChecksumAlgorithm.sha1File,
+        type: AssetType.Image,
+        isOffline: true,
+        isFavorite: true,
+      });
+      await ctx.newExif({ assetId, fileSizeInByte: bytes.length });
+      await ctx.newAlbum({ id: albumId, ownerId }, [assetId]);
       for (const schema of ['public']) {
-        await sql`INSERT INTO ${sql.id(schema, 'asset_health')} ("assetId", category, status, severity, "originalPath", "originalFileName", "dismissedAt", "checkedAt", evidence)
-          VALUES (${assetId}::uuid, 'missing', 'dismissed', 'critical', '/managed/missing.jpg', 'original.jpg', now(), now(), '{"reason":"original_missing"}')`.execute(
+        await sql`INSERT INTO ${sql.id(schema, 'asset_health')} ("assetId", category, status, severity, "originalPath", "originalFileName", "dismissedAt", "checkedAt", evidence, resolution)
+          VALUES (${assetId}::uuid, 'missing', 'dismissed', 'critical', '/managed/missing.jpg', 'original.jpg', now(), now(), '{"reason":"original_missing"}', '{}')`.execute(
           db,
         );
       }
@@ -339,7 +275,8 @@ describe(MediaRecoveryRepository.name, () => {
         sha256: createHash('sha256').update(wrong).digest(),
         sizeInBytes: wrong.length,
       };
-      await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256) VALUES (${context.assetId}::uuid, ${other.sha1}, ${other.sha256})`.execute(
+      await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount")
+        VALUES (${context.assetId}::uuid, ${other.sha1}, ${other.sha256}, ${other.sizeInBytes}, ARRAY['/managed/missing.jpg'], 1)`.execute(
         db,
       );
       const candidate = (await sut.findCandidates(context.authority.ownerId, other))[0];
@@ -355,7 +292,8 @@ describe(MediaRecoveryRepository.name, () => {
     await sql`UPDATE public.asset SET "checksumAlgorithm" = 'sha1-path', checksum = ${Buffer.alloc(20)} WHERE id = ${context.assetId}::uuid`.execute(
       db,
     );
-    await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256) VALUES (${context.assetId}::uuid, ${verified.sha1}, ${verified.sha256})`.execute(
+    await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount")
+        VALUES (${context.assetId}::uuid, ${verified.sha1}, ${verified.sha256}, ${verified.sizeInBytes}, ARRAY['/managed/missing.jpg'], 1)`.execute(
       db,
     );
     expect((await sut.findCandidates(context.authority.ownerId, verified))[0]).toMatchObject({
@@ -381,10 +319,15 @@ describe(MediaRecoveryRepository.name, () => {
       await writeFile(promotedPath, bytes);
       await sql`UPDATE public.icloud_resource SET "stagingPath" = ${stagedPath}, "promotedPath" = ${promotedPath}
         WHERE id = ${context.authority.resourceId}::uuid`.execute(db);
-      await sql`INSERT INTO public.asset (id, "ownerId", "originalPath", "originalFileName", checksum, "checksumAlgorithm", type)
-        VALUES (${context.assetId}::uuid, ${context.authority.ownerId}::uuid, '/upload/winner.jpg', 'original.jpg', ${verified.sha256}, 'sha256', 'IMAGE')`.execute(
-        db,
-      );
+      await ctx.newAsset({
+        id: context.assetId,
+        ownerId: context.authority.ownerId,
+        originalPath: '/upload/winner.jpg',
+        originalFileName: 'original.jpg',
+        checksum: verified.sha256,
+        checksumAlgorithm: ChecksumAlgorithm.sha256File,
+        type: AssetType.Image,
+      });
       const integrity = { validate: vi.fn().mockResolvedValue(verified) };
       const recovery = new MediaRecoveryService(sut, integrity as never);
       expect(
@@ -498,7 +441,7 @@ describe(MediaRecoveryRepository.name, () => {
       expect(await sut.commit({ ...context.commitInput, reservation: reservation! })).toMatchObject({
         outcome: 'reused',
       });
-      await sql`UPDATE public.icloud_resource SET "pendingJobs" = ${pendingJobs}::jsonb WHERE id = ${context.authority.resourceId}::uuid`.execute(
+      await sql`UPDATE public.icloud_resource SET "pendingJobs" = ${JSON.stringify(pendingJobs)}::text::jsonb WHERE id = ${context.authority.resourceId}::uuid`.execute(
         db,
       );
       const current = (await sut.findCandidates(context.authority.ownerId, verified))[0];
@@ -538,6 +481,10 @@ describe(MediaRecoveryRepository.name, () => {
     const external = async () => {
       const context = await arrange();
       const libraryId = randomUUID();
+      await sql`INSERT INTO public.library (id, "ownerId", name, "importPaths", "exclusionPatterns")
+        VALUES (${libraryId}::uuid, ${context.authority.ownerId}::uuid, 'External', ARRAY[]::text[], ARRAY[]::text[])`.execute(
+        db,
+      );
       await db
         .updateTable('asset')
         .set({ isExternal: true, libraryId, isOffline: false })
@@ -676,8 +623,23 @@ describe(MediaRecoveryRepository.name, () => {
   });
   it('imports source-hidden photos as locked instead of exposing them on the timeline', async () => {
     const context = await arrange(false);
+    const publicationQueries: CompiledQuery[] = [];
+    captureCompiledQuery = (query) => {
+      publicationQueries.push(query);
+    };
     const result = await sut.commit({ ...context.commitInput, includeHidden: true, sourceHidden: true });
     expect(result.outcome).toBe('imported');
+    const protectionWrite = publicationQueries.findIndex(
+      (query) => /insert into "asset_lock"/i.test(query.sql) && query.parameters.includes(result.assetId),
+    );
+    const outboxWrite = publicationQueries.findIndex(
+      (query) =>
+        /UPDATE public\.icloud_resource SET status = 'committed'/i.test(query.sql) &&
+        query.sql.includes('"pendingJobs"') &&
+        query.parameters.includes(context.authority.resourceId),
+    );
+    expect(protectionWrite).toBeGreaterThanOrEqual(0);
+    expect(outboxWrite).toBeGreaterThan(protectionWrite);
     // Locked is a lock record on a timeline asset, never a stored visibility (FL-34)
     expect(
       await db.selectFrom('asset').select('visibility').where('id', '=', result.assetId!).executeTakeFirst(),
@@ -783,10 +745,9 @@ describe(MediaRecoveryRepository.name, () => {
         .selectAll()
         .where('id', '=', context.assetId)
         .executeTakeFirstOrThrow();
-      await sql`CREATE TABLE IF NOT EXISTS public.asset_edit ("assetId" uuid PRIMARY KEY, actions jsonb)`.execute(db);
-      await sql`INSERT INTO public.asset_edit VALUES (${context.assetId}::uuid, '[{"action":"rotate","parameters":{"angle":90}}]')`.execute(
-        db,
-      );
+      await new AssetEditRepository(db).replaceAll(context.assetId, [
+        { action: AssetEditAction.Rotate, parameters: { angle: 90 } },
+      ]);
       await sql`UPDATE public.icloud_resource SET "expectedTarget" = NULL, "promotedPath" = NULL,
         "expectedSize" = ${png.length}, "stagingPath" = ${stagedPath}, sha1 = NULL, sha256 = NULL
         WHERE id = ${context.authority.resourceId}::uuid`.execute(db);
@@ -835,10 +796,10 @@ describe(MediaRecoveryRepository.name, () => {
       ).toHaveLength(1);
       expect(
         (
-          await sql<{
-            actions: unknown;
-          }>`SELECT actions FROM public.asset_edit WHERE "assetId" = ${context.assetId}::uuid`.execute(db)
-        ).rows[0].actions,
+          await sql`SELECT action, parameters FROM public.asset_edit WHERE "assetId" = ${context.assetId}::uuid ORDER BY sequence`.execute(
+            db,
+          )
+        ).rows,
       ).toEqual([{ action: 'rotate', parameters: { angle: 90 } }]);
       expect(
         (

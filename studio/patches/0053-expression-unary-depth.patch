@@ -1,0 +1,104 @@
+--- a/src/features/keyframes/utils/property-expression.ts
++++ b/src/features/keyframes/utils/property-expression.ts
+@@ -272,11 +272,11 @@
+   private parseUnary(): ExpressionValue {
+     if (this.current().value === '+') {
+       this.consume('+')
+-      return this.parseUnary()
++      return this.withDepth(() => this.parseUnary())
+     }
+     if (this.current().value === '-') {
+       this.consume('-')
+-      return mapUnary(this.parseUnary(), (value) => -value)
++      return this.withDepth(() => mapUnary(this.parseUnary(), (value) => -value))
+     }
+     return this.parsePrimary()
+   }
+--- /dev/null
++++ b/src/features/keyframes/utils/property-expression-unary-depth.test.ts
+@@ -0,0 +1,85 @@
++// @vitest-environment node
++import { describe, expect, it } from 'vite-plus/test'
++import type { ItemKeyframes } from '@/types/keyframe'
++import type { ShapeItem } from '@/types/timeline'
++import { evaluatePropertyExpression } from './property-expression'
++import { resolveAnimatedTransform, resolveExpressionReferenceValue, resolvePropertyExpressionValue } from './animated-transform-resolver'
++
++const error = 'Expression is too deeply nested'
++const scalar = { preValue: 10, globalFrame: 30, fps: 30, resolveProperty: () => null }
++
++describe('unary recursion shares the existing primary nesting budget', () => {
++  it.each(['+', '-'])('counts every %s sign plus the leaf at the exact boundary', (sign) => {
++    expect(evaluatePropertyExpression(sign.repeat(63) + 'value', scalar)).toEqual({ value: sign === '+' ? 10 : -10 })
++    expect(evaluatePropertyExpression(sign.repeat(64) + 'value', scalar)).toEqual({ value: 10, error })
++  })
++
++  it('counts mixed plus and minus without changing their arithmetic', () => {
++    expect(evaluatePropertyExpression('+'.repeat(31) + '-'.repeat(32) + 'value', scalar)).toEqual({ value: 10 })
++    expect(evaluatePropertyExpression('+'.repeat(32) + '-'.repeat(32) + 'value', scalar)).toEqual({ value: 10, error })
++  })
++
++  it.each(['(1)', 'abs(1)', 'sin(0)'])('combines unary and %s primary nesting', (leaf) => {
++    const value = leaf === 'sin(0)' ? 0 : 1
++    expect(evaluatePropertyExpression('+'.repeat(62) + leaf, scalar)).toEqual({ value })
++    expect(evaluatePropertyExpression('+'.repeat(63) + leaf, scalar)).toEqual({ value: 10, error })
++  })
++
++  it('combines unary and vector nesting and preserves vector fallback', () => {
++    const vector = { ...scalar, preValue: { x: 10, y: 15 } }
++    expect(evaluatePropertyExpression('-'.repeat(62) + '[1,2]', vector)).toEqual({ value: { x: 1, y: 2 } })
++    expect(evaluatePropertyExpression('-'.repeat(63) + '[1,2]', vector)).toEqual({ value: vector.preValue, error })
++    expect(evaluatePropertyExpression('-'.repeat(63) + 'value', vector)).toEqual({ value: { x: -10, y: -15 } })
++    expect(evaluatePropertyExpression('-'.repeat(64) + 'value', vector)).toEqual({ value: vector.preValue, error })
++  })
++
++  it('does not turn sibling signs into cumulative nesting or leak depth into a new evaluation', () => {
++    const term = '+'.repeat(63) + '1'
++    expect(evaluatePropertyExpression(`${term}+${term}`, scalar)).toEqual({ value: 2 })
++    expect(evaluatePropertyExpression('+'.repeat(64) + '1', scalar)).toEqual({ value: 10, error })
++    expect(evaluatePropertyExpression(term, scalar)).toEqual({ value: 1 })
++  })
++
++  it('retains the source and token limits before parsing', () => {
++    expect(evaluatePropertyExpression(' '.repeat(2049), scalar)).toEqual({ value: 10, error: 'Expression is too long' })
++    expect(evaluatePropertyExpression('+'.repeat(512) + '1', scalar)).toEqual({ value: 10, error: 'Expression has too many tokens' })
++  })
++})
++
++describe.each(['x', 'position'] as const)('unary refusal propagates through actual %s references', (property) => {
++  it('preserves authored expressions, pre-values and render fallback while reporting the original error', () => {
++    const shape = (id: string, x: number, y: number): ShapeItem => ({
++      id, type: 'shape', shapeType: 'rectangle', trackId: 'track', from: 0, durationInFrames: 60,
++      label: id, transform: { x, y, width: 100, height: 100 }, fillColor: '#fff', strokeColor: '#fff', strokeWidth: 1,
++    })
++    const items = new Map([['source', shape('source', 20, 30)], ['target', shape('target', 10, 15)]])
++    const bad = '-'.repeat(64) + 'value'
++    const source = `prop("source", "${property}") + 1`
++    const keyframes = new Map<string, ItemKeyframes>([
++      ['source', { itemId: 'source', properties: [], expressions: [{ type: 'expression', targetProperty: property, enabled: true, source: bad }] }],
++      ['target', { itemId: 'target', properties: [], expressions: [{ type: 'expression', targetProperty: property, enabled: true, source }] }],
++    ])
++    const context = { globalFrame: 30, canvas: { width: 1920, height: 1080, fps: 30 },
++      getItem: (id: string) => items.get(id), getKeyframes: (id: string) => keyframes.get(id) }
++    const preValue = property === 'x' ? 10 : { x: 10, y: 15 }
++    const before = structuredClone([...keyframes])
++    for (let repeat = 0; repeat < 2; repeat += 1) {
++      expect(resolvePropertyExpressionValue('target', property, preValue, context)).toEqual({ value: preValue, error })
++      expect(evaluatePropertyExpression(source, { preValue, globalFrame: 30, fps: 30,
++        resolveProperty: (id, referenced, budget) => resolveExpressionReferenceValue(id, referenced, context, budget),
++      })).toEqual({ value: preValue, error })
++      expect(() => resolveExpressionReferenceValue('target', property, context)).toThrow(error)
++      const base = { x: 10, y: 15, width: 100, height: 100, anchorX: 0, anchorY: 0, rotation: 0, opacity: 1, cornerRadius: 0 }
++      expect(resolveAnimatedTransform(base, keyframes.get('target'), 30, context)).toMatchObject({ x: 10, y: 15 })
++    }
++    expect([...keyframes]).toEqual(before)
++
++    // A fresh allowed source still resolves through the same production path.
++    keyframes.get('source')!.expressions![0]!.source = '-'.repeat(63) + 'value'
++    const expected = property === 'x' ? -19 : { x: -19, y: -29 }
++    expect(resolvePropertyExpressionValue('target', property, preValue, context)).toEqual({ value: expected })
++    expect(evaluatePropertyExpression(source, { preValue, globalFrame: 30, fps: 30,
++      resolveProperty: (id, referenced, budget) => resolveExpressionReferenceValue(id, referenced, context, budget),
++    })).toEqual({ value: expected })
++  })
++})

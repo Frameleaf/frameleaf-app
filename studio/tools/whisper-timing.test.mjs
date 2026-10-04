@@ -4,14 +4,16 @@
 // with, so a version change fails here until the real-model run below passes on it and the
 // evidence is re-recorded.
 // STUDIO_WHISPER_TIMING=1: download the approved whisper-tiny revision (about 40 MB, cached under
-// STUDIO_MODEL_CACHE or the OS temp folder) and transcribe the fixture clip with the worker's own
+// a new ephemeral child of STUDIO_MODEL_CACHE or the OS temp folder) and transcribe the fixture clip with the worker's own
 // options; every word must match the recorded timing and no word may run into a measured pause.
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
-import os from 'node:os';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { withEphemeralPipeline } from './lib/ephemeral-pipeline.mjs';
+import { ownerApproval, approvalRowDigest } from '../../scripts/frameleaf-studio-rights.mjs';
 
 const here = import.meta.dirname;
 const engine = path.resolve(here, '../engine');
@@ -52,6 +54,12 @@ const readWav = (file) => {
 };
 
 const ready = existsSync(worker);
+const requested = process.env.STUDIO_WHISPER_TIMING === '1';
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
+test('requested Whisper inference requires the prepared engine', () => {
+  if (requested) assert.ok(ready, 'STUDIO_WHISPER_TIMING=1 requires a prepared engine; qualification cannot skip');
+});
 
 test('the Whisper worker bundles the transformers.js version its timing evidence was recorded with', { skip: !ready && 'engine not prepared' }, () => {
   const { specifier, version } = workerTransformers();
@@ -60,13 +68,48 @@ test('the Whisper worker bundles the transformers.js version its timing evidence
   assert.notEqual(version, evidence.rejected.transformersVersion);
 });
 
-test('real whisper-tiny word timestamps land on the clip\'s words and pauses', { skip: (!ready && 'engine not prepared') || (process.env.STUDIO_WHISPER_TIMING !== '1' && 'set STUDIO_WHISPER_TIMING=1 to download the model') }, async () => {
-  const { packageDir } = workerTransformers();
+test('real whisper-tiny word timestamps land on the clip\'s words and pauses', { skip: !requested && 'set STUDIO_WHISPER_TIMING=1 to download the model' }, async () => {
+  assert.ok(ready, 'Requested real inference cannot skip an unprepared engine');
+  const studio = path.resolve(here, '..');
+  const manifest = JSON.parse(readFileSync(path.join(studio, 'dependency-attribution.json')));
+  const approval = ownerApproval(JSON.parse(readFileSync(path.join(studio, 'rights-approval.json'))), manifest);
+  const ids = [`model:${evidence.model}`, 'runtime:whisper-transformers'];
+  for (const id of ids) {
+    assert.equal(approval?.approved.get(id), true, `Exact reviewed row approval required: ${id}`);
+    for (const use of ['localRuntime', 'hostedUse']) assert.ok(approval.uses.includes(use) && !Object.hasOwn(approval.excluded.get(id) ?? {}, use), `Approval excludes ${use}: ${id}`);
+  }
+  const { requireResource, approvedRevision, pinnedHuggingFaceUrl } = await import(pathToFileURL(path.join(engine, 'src/shared/utils/resource-admission.mjs')).href);
+  for (const id of ids) requireResource(id);
+  assert.equal(approvedRevision(ids[0]), evidence.revision);
+  const { packageDir, version } = workerTransformers();
+  assert.equal(version, evidence.transformersVersion, 'Real inference requires the exact timing-approved runtime');
+  const runtimeRow = manifest.resources.find((row) => row.id === 'runtime:whisper-transformers');
+  for (const file of runtimeRow.files) assert.equal(sha256(readFileSync(path.join(engine, 'node_modules', file.path))), file.sha256, 'Reviewed bundled runtime bytes differ');
   const { pipeline, env } = await import(pathToFileURL(path.join(packageDir, 'dist/transformers.node.mjs')).href);
   env.allowLocalModels = false;
-  env.cacheDir = process.env.STUDIO_MODEL_CACHE ?? path.join(os.tmpdir(), 'frameleaf-whisper-timing');
-  const asr = await pipeline('automatic-speech-recognition', evidence.model, { revision: evidence.revision, dtype: evidence.dtype, device: 'cpu' });
-  const result = await asr(readWav(path.join(here, 'fixtures/whisper-timing.wav')), evidence.options);
+  env.useBrowserCache = false;
+  const originalFetch = globalThis.fetch;
+  const payloads = [];
+  const report = { schemaVersion: 1, kind: 'diagnostic-whisper-timing', status: 'failed', productionAcceptance: 'unqualified-production-transport-diagnostic-only', model: evidence.model, revision: evidence.revision, transformersVersion: evidence.transformersVersion, sourceCommit: process.env.GITHUB_SHA ?? null, run: process.env.GITHUB_RUN_ID ?? null, fixtureSha256: sha256(readFileSync(path.join(here, 'fixtures/whisper-timing.wav'))), evidenceSha256: sha256(readFileSync(path.join(here, 'fixtures/whisper-timing.json'))), nodeRuntimeObservedSha256: sha256(readFileSync(path.join(packageDir, 'dist/transformers.node.mjs'))), approvalRows: ids.map((id) => ({ id, sha256: approvalRowDigest(manifest.resources.find((row) => row.id === id)) })), payloads };
+  globalThis.fetch = async (input, init) => {
+    const url = pinnedHuggingFaceUrl(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
+    const method = String(init?.method ?? input?.method ?? 'GET').toUpperCase();
+    assert.ok(['GET', 'HEAD'].includes(method), 'Fixture audio must never be uploaded');
+    assert.ok(!init?.body && !input?.body, 'Download requests must have no body');
+    assert.ok(url.startsWith(`https://huggingface.co/${evidence.model}/resolve/${evidence.revision}/`) && !new URL(url).search, 'Only exact approved model downloads are permitted');
+    requireResource(url);
+    const response = await originalFetch(url, init);
+    if (method === 'GET' && response.ok) {
+      const bytes = new Uint8Array(await response.clone().arrayBuffer());
+      payloads.push({ origin: url, responseOrigin: new URL(response.url).origin, revision: evidence.revision, bytes: bytes.byteLength, observedSha256: sha256(bytes), approvedPayloadDigest: null });
+    }
+    return response;
+  };
+  try {
+  const result = await withEphemeralPipeline(async (cache) => {
+    env.cacheDir = cache;
+    return pipeline('automatic-speech-recognition', evidence.model, { revision: evidence.revision, dtype: evidence.dtype, device: 'cpu' });
+  }, async (asr) => asr(readWav(path.join(here, 'fixtures/whisper-timing.wav')), evidence.options), process.env.STUDIO_MODEL_CACHE);
   const words = result.chunks.map((chunk) => ({ text: chunk.text.trim().toLowerCase(), timestamp: chunk.timestamp }));
   assert.deepEqual(words.map((word) => word.text), evidence.expected.map((word) => word.text.trim().toLowerCase()));
   const tolerance = 0.06;
@@ -83,5 +126,13 @@ test('real whisper-tiny word timestamps land on the clip\'s words and pauses', {
     }
     const after = words.find((word) => word.timestamp[0] >= start - tolerance);
     assert.ok(after && after.timestamp[0] <= end + 0.2, `the word after the pause ${start}–${end} starts with the speech`);
+  }
+  report.status = 'passed';
+  report.words = words;
+  report.pipelineDisposed = true;
+  report.ephemeralCacheRemoved = true;
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (process.env.STUDIO_WHISPER_REPORT) writeFileSync(process.env.STUDIO_WHISPER_REPORT, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx' });
   }
 });

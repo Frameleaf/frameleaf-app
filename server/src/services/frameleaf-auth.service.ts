@@ -66,6 +66,8 @@ type PendingLink = {
   access: FrameleafAccess | null;
 };
 
+type PendingLinkConfirmation = PendingLink & { authority: string; exp: number };
+
 /** Linking would make (or made) a non-administrator an administrator. */
 const promotes = (user: { isAdmin: boolean } | undefined, role: PendingLink['role']) =>
   !!user && !user.isAdmin && role === 'admin';
@@ -515,6 +517,7 @@ export class FrameleafAuthService extends BaseService {
    */
   async link(auth: AuthDto, dto: FrameleafLinkDto, headers: IncomingHttpHeaders): Promise<FrameleafLinkResponseDto> {
     const config = await this.requireConfig();
+    const authority = dto.preview ? await this.pendingLinkAuthority(config) : null;
     const { profile } = await this.exchange(config, dto, headers);
     const email = profile.email?.trim().toLowerCase();
     if (!email) {
@@ -540,7 +543,7 @@ export class FrameleafAuthService extends BaseService {
         ...mapUserAdmin(user ?? (auth.user as never)),
         linked: false,
         roleChange: promotes(user, claims.role) ? FrameleafLinkRoleChange.GrantedAdmin : FrameleafLinkRoleChange.None,
-        confirmToken: await this.signPendingLink({ ...claims, exp: expiresAt.getTime() }),
+        confirmToken: await this.signPendingLink({ ...claims, authority: authority!, exp: expiresAt.getTime() }),
         confirmExpiresAt: expiresAt.toISOString(),
       };
     }
@@ -553,8 +556,17 @@ export class FrameleafAuthService extends BaseService {
     if (!claims || claims.userId !== auth.user.id || claims.sessionId !== (auth.session?.id ?? null)) {
       throw new BadRequestException('This link confirmation is not valid any more. Sign in with Frameleaf again.');
     }
+    // Resolve account conflicts before taking the authority fence. A revoke may finish while this
+    // lookup waits; the current authority is then checked again under the fence before any write.
     await this.checkLinkable(auth, claims);
-    return this.applyLink(auth, claims);
+    return this.databaseRepository.withLock(DatabaseLock.FrameleafLinkAuthority, async () => {
+      const config = await this.requireConfig();
+      if (claims.authority !== (await this.pendingLinkAuthority(config))) {
+        throw new BadRequestException('This link confirmation is not valid any more. Sign in with Frameleaf again.');
+      }
+      await this.checkLinkable(auth, claims);
+      return this.applyLink(auth, claims);
+    });
   }
 
   private async checkLinkable(auth: AuthDto, claims: Pick<PendingLink, 'sub'>) {
@@ -600,7 +612,7 @@ export class FrameleafAuthService extends BaseService {
   }
 
   /** A preview's claims, signed with this server's own key so a confirm cannot change them. */
-  private async signPendingLink(claims: PendingLink & { exp: number }): Promise<string> {
+  private async signPendingLink(claims: PendingLinkConfirmation): Promise<string> {
     const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
     const mac = await this.cryptoRepository.serverKeyedHash(
       identityDirectory(this.configRepository),
@@ -610,7 +622,7 @@ export class FrameleafAuthService extends BaseService {
     return `${payload}.${mac}`;
   }
 
-  private async verifyPendingLink(token: string): Promise<PendingLink | null> {
+  private async verifyPendingLink(token: string): Promise<PendingLinkConfirmation | null> {
     const [payload, mac, extra] = token.split('.', 3);
     if (!payload || !mac || extra !== undefined) {
       return null;
@@ -624,11 +636,40 @@ export class FrameleafAuthService extends BaseService {
       return null;
     }
     try {
-      const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as PendingLink & { exp: number };
+      const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as PendingLinkConfirmation;
       return typeof claims.exp === 'number' && claims.exp > Date.now() ? claims : null;
     } catch {
       return null;
     }
+  }
+
+  /** Bind a preview to this exact Cloud link generation without putting link credentials in the token. */
+  private async pendingLinkAuthority(config: OAuthConfig): Promise<string> {
+    const { cloudUrl, link, linked } = await readCloudLink({
+      configRepository: this.configRepository,
+      systemMetadataRepository: this.systemMetadataRepository,
+    });
+    if (
+      !linked ||
+      !link?.linkedAt ||
+      link.oidc?.issuer !== config.issuerUrl ||
+      link.oidc?.clientId !== config.clientId
+    ) {
+      throw new BadRequestException('This link confirmation is not valid any more. Sign in with Frameleaf again.');
+    }
+    return this.cryptoRepository.serverKeyedHash(
+      identityDirectory(this.configRepository),
+      LINK_CONFIRM_PURPOSE,
+      JSON.stringify({
+        cloudUrl,
+        instanceId: link.instanceId,
+        accountId: link.accountId ?? null,
+        linkedAt: link.linkedAt,
+        issuer: config.issuerUrl,
+        clientId: config.clientId,
+        scope: config.scope,
+      }),
+    );
   }
 
   /**

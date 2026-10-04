@@ -950,9 +950,9 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
       .push,
     false,
   );
-  assert.equal(
-    publish.steps.find((s) => s.name === "Container tags").with.images,
-    "ghcr.io/frameleaf/frameleaf-cli",
+  assert.match(
+    publish.steps.find((s) => s.name === "Verify and publish only qualified digests").run,
+    /image=ghcr\.io\/frameleaf\/frameleaf-cli/,
   );
   assert.doesNotMatch(
     JSON.stringify(w),
@@ -964,12 +964,40 @@ test("CLI has one opt-in GHCR publisher and read-only no-push PR builds", () => 
   assert.ok(
     guardIndex <
       publish.steps.findIndex(
-        (s) => s.name === "Login to owned GHCR namespace",
+        (s) => s.name === "Verify and publish only qualified digests",
       ),
   );
-  assert.ok(
-    guardIndex < publish.steps.findIndex((s) => s.name === "Set up QEMU"),
-  );
+  assert.ok(guardIndex < publish.steps.findIndex((s) => s.name === "Download both qualified archives"));
+  assert.equal(publish.needs, "build");
+  assert.equal(publish.environment, "production");
+  assert.deepEqual(w.jobs.build.strategy.matrix.include.map(({ runner }) => runner), [
+    "ubuntu-24.04", "ubuntu-24.04-arm",
+  ]);
+  const build = w.jobs.build.steps.find((s) => s.name === "Build without publishing");
+  assert.equal(build.with.platforms, "linux/${{ matrix.architecture }}");
+  assert.match(build.with.outputs, /type=oci/);
+  assert.match(build.with.outputs, /type=docker/);
+  assert.ok(!publish.steps.some((s) => s.uses?.startsWith("docker/build-push-action@")));
+  assert.ok(!JSON.stringify(w).includes("setup-qemu-action"));
+  const smoke = w.jobs.build.steps.find((s) => s.name === "Smoke-test the exact native image and record qualification").run;
+  assert.match(smoke, /docker load --input/);
+  assert.match(smoke, /docker image inspect frameleaf-cli:ci --format '\{\{\.Id\}\}'/);
+  assert.match(smoke, /\.rootfs\.diff_ids==\$runtime\[0\]/);
+  assert.match(smoke, /\.layers\[\]\.digest/);
+  assert.match(smoke, /gzip -dc/);
+  assert.match(smoke, /paste .*oci-layer-digests.*oci-diffids/);
+  assert.match(smoke, /frameleaf-cli:ci --version/);
+  assert.match(smoke, /frameleaf-cli:ci migrate --help/);
+  assert.match(smoke, /if docker run.*invalid-command/);
+  const copy = publish.steps.find((s) => s.name === "Verify and publish only qualified digests").run;
+  for (const binding of [".sourceCommit==$source", ".runId==$run", ".runAttempt==$attempt", ".architecture==$a", ".archiveSha256==$hash"]) {
+    assert.ok(copy.includes(binding), binding);
+  }
+  assert.match(copy, /sha256sum -c SHA256SUMS/);
+  assert.match(copy, /oras cp --from-oci-layout/);
+  assert.match(copy, /cosign verify --key cosign\.pub/);
+  assert.ok(publish.steps.findIndex((s) => s.name === "Attest published build provenance") <
+    publish.steps.findIndex((s) => s.name === "Update latest only after signature and provenance"));
 });
 
 test("CLI release guard rejects a stale tag, wrong checkout or non-SHA input before any publish", () => {

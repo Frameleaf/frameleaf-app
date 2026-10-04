@@ -78,6 +78,10 @@ export const startBuddyTransport = async (root: string, side: BuddySide, instanc
   let checkedProof = false;
   const failures: string[] = [];
   const diagnostics: Array<ReturnType<typeof buddyForwardingDiagnostic>> = [];
+  // A bounded conformance outage is explicit HTTP unavailability, never a hidden forwarding error.
+  let unavailable = false;
+  let unavailableStatus: 429 | 503 = 503;
+  const outages: Array<{ timestamp: string; method: string; category: string; status: number }> = [];
   const [ca, certificate, key] = await Promise.all([
     readFile(join(root, 'tls', 'ca.crt'), 'utf8'),
     readFile(join(root, 'tls', `${side}.crt`), 'utf8'),
@@ -85,6 +89,24 @@ export const startBuddyTransport = async (root: string, side: BuddySide, instanc
   ]);
   const meter = http.createServer((request, response) => {
     const admittedPhase = phase();
+    if (unavailable) {
+      const diagnostic = buddyForwardingDiagnostic(request.method, request.url, undefined, undefined, undefined, {
+        reusedSocket: false,
+        requestAborted: request.aborted,
+        responseDestroyed: response.destroyed,
+        responseFinished: response.writableFinished,
+      });
+      outages.push({
+        timestamp: diagnostic.timestamp,
+        method: diagnostic.method,
+        category: diagnostic.category,
+        status: unavailableStatus,
+      });
+      request.resume();
+      response.writeHead(unavailableStatus, { 'content-length': '0', connection: 'close' });
+      response.end();
+      return;
+    }
     const forward = () => {
       const upstream = http.request(
         {
@@ -272,5 +294,17 @@ export const startBuddyTransport = async (root: string, side: BuddySide, instanc
       request.once('error', reject);
       request.end();
     });
-  return { metrics, failures, diagnostics, refresh, request, close };
+  return {
+    metrics,
+    failures,
+    diagnostics,
+    outages,
+    setUnavailable: (value: boolean, status: 429 | 503 = 503) => {
+      unavailableStatus = status;
+      unavailable = value;
+    },
+    refresh,
+    request,
+    close,
+  };
 };

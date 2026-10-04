@@ -551,7 +551,9 @@
     },
     {
       "id": "model:onnx-community/whisper-tiny_timestamped",
-      "sha256": "7ec15caa875a55edadb70b32d1d88274464a69d0f0433aa6c7d89b13de6d1d75"
+      "sha256": "80e61764717ea2f274fa12ab2e9a9b0bb4fc0e8cb1f41ba9a32ef67279cfc3f5",
+      "approvedOn": "2026-10-03",
+      "source": "Owner (AJ Taylor), 2026-10-03: \"Approve this exact seven-file inventory\" in studio/qualification-evidence/whisper-37164769288-candidates.json; observed run 37164769288, revision 517244293732ee2d58139af5814231b7e6830a0d, report SHA256 63cc58638218ec4c4cb9807a015cd44e0537fa0c190899457ded0ccb67277153."
     },
     {
       "id": "model:supertonic-3",
