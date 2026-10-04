@@ -853,3 +853,61 @@ describe('validateAudioMaster (FL-102)', () => {
     expect(check(undefined, undefined)).not.toThrow();
   });
 });
+
+describe('source-relative edited-master audio presentation (FL-16)', () => {
+  const video = { startTime: 5, duration: 10, frameRate: 30, frameRateRational: { num: 30, den: 1 } };
+  const audio = {
+    codecName: 'aac',
+    channels: 6,
+    channelLayout: '5.1',
+    sampleRate: 48_000,
+    startTime: 5.25,
+    duration: 9.75,
+  };
+  const outputVideo = { ...video, startTime: 0 };
+  const outputAudio = { ...audio, startTime: 0.25 };
+  const validate = (
+    changedAudio = outputAudio,
+    changedVideo = outputVideo,
+    sourceAudio = audio,
+    sourceVideo = video,
+  ) => validateAudioMaster({ source: sourceAudio, sourceVideo, output: changedAudio, outputVideo: changedVideo });
+
+  it('preserves an intentional source delay and end alignment across common nonzero-origin normalization', () => {
+    expect(() => validate()).not.toThrow();
+    expect(() => validate({ ...outputAudio, startTime: 12.25 }, { ...outputVideo, startTime: 12 })).not.toThrow();
+  });
+
+  it('refuses an added delay or removal of an intentional delay despite unchanged stream durations', () => {
+    for (const startTime of [0, 0.5]) {
+      expect(() => validate({ ...outputAudio, startTime })).toThrow('presentation start offset changed');
+    }
+  });
+
+  it('refuses a changed presentation end even when the first presented samples stay aligned', () => {
+    expect(() => validate({ ...outputAudio, duration: 9.5 })).toThrow('presentation end offset changed');
+  });
+
+  it('allows one AAC priming unit and trailing padding without authorizing a 250 ms start shift', () => {
+    const unit = 1024 / 48_000;
+    const alignedSource = { ...audio, startTime: 5 - unit, duration: 10 + unit };
+    expect(() => validate({ ...audio, startTime: 0, duration: 10 + unit }, outputVideo, alignedSource)).not.toThrow();
+    expect(() => validate({ ...audio, startTime: 0.25, duration: 10 + unit }, outputVideo, alignedSource)).toThrow(
+      'presentation start offset changed',
+    );
+    expect(() => validate({ ...outputAudio, duration: outputAudio.duration + 0.25 })).toThrow(
+      'presentation end offset changed',
+    );
+  });
+
+  it.each([undefined, null, NaN, Infinity])('refuses unmeasurable source or result presentation %s', (invalid) => {
+    for (const [sourceAudio, changedAudio] of [
+      [{ ...audio, startTime: invalid }, outputAudio],
+      [audio, { ...outputAudio, startTime: invalid }],
+    ]) {
+      expect(() =>
+        validateAudioMaster({ source: sourceAudio, sourceVideo: video, output: changedAudio, outputVideo }),
+      ).toThrow('presentation timing could not be measured');
+    }
+  });
+});
