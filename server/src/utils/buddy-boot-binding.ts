@@ -182,7 +182,7 @@ const bootEnvironmentOverlay = (
   };
   for (const key of binding.environmentKeys) {
     const aliases = ENV_ALIASES.filter((alias) => alias.current === key).map((alias) => alias.legacy);
-    const existing = Object.hasOwn(helpValues, key) ? helpValues[key] !== undefined : current[key] !== undefined;
+    const existing = (Object.hasOwn(helpValues, key) ? helpValues[key] : current[key]) !== undefined;
     if (binding.mode === 'keep' && existing) continue;
     const entry = configuration.entries.find((entry) => entry.key === key)!;
     for (const name of [key, ...aliases]) delete prospective[name];

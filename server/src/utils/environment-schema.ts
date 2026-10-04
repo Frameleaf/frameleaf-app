@@ -1,6 +1,9 @@
 import z from 'zod';
+// eslint-disable-next-line no-restricted-imports -- The schema loads under plain Node before the application alias graph.
 import { ImmichEnvironmentSchema, LogFormatSchema, LogLevelSchema } from './environment-values.ts';
+// eslint-disable-next-line no-restricted-imports -- The schema loads under plain Node before the application alias graph.
 import { IsIPRange } from './ip-range.ts';
+// eslint-disable-next-line no-restricted-imports -- The schema loads under plain Node before the application alias graph.
 import { DEFAULT_SHUTDOWN_DEADLINE_SECONDS, DEFAULT_SHUTDOWN_GRACE_SECONDS } from './shutdown.ts';
 
 // TODO import from sql-tools once the swagger plugin supports external enums
