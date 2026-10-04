@@ -197,6 +197,29 @@ describe('queue connection recovery and repeated database pressure', () => {
     });
     let interactions = 0;
     let maximumLive = 0;
+    // Calibration only until hosted evidence supports a growth budget. Do not force GC:
+    // RSS includes allocator retention, and heapUsed can rise between ordinary collections.
+    const memoryKeys = ['rss', 'heapTotal', 'heapUsed', 'external', 'arrayBuffers'] as const;
+    const initialMemory = process.memoryUsage();
+    const peakMemory = { ...initialMemory };
+    let warmMemory: NodeJS.MemoryUsage | undefined;
+    let warmPeakMemory: NodeJS.MemoryUsage | undefined;
+    let memorySamples = 0;
+    // Exactly three summaries, never a sample array proportional to selected items or visits.
+    const roundMemory: Array<{ round: number; samples: number; after: NodeJS.MemoryUsage }> = [];
+    const observeQueuePressureMemory = () => {
+      const current = process.memoryUsage();
+      memorySamples++;
+      for (const key of memoryKeys) {
+        peakMemory[key] = Math.max(peakMemory[key], current[key]);
+        if (warmPeakMemory) warmPeakMemory[key] = Math.max(warmPeakMemory[key], current[key]);
+      }
+      return current;
+    };
+    const memoryGrowth = (current: NodeJS.MemoryUsage) => {
+      const baseline = warmMemory;
+      return baseline && Object.fromEntries(memoryKeys.map((key) => [key, current[key] - baseline[key]]));
+    };
     try {
       const { user } = await ctx.newUser();
       const { user: stranger } = await ctx.newUser();
@@ -221,6 +244,7 @@ describe('queue connection recovery and repeated database pressure', () => {
           const claims = await store.claim(queue, worker);
           expect(claims.length).toBeGreaterThan(0);
           expect(claims.length).toBeLessThanOrEqual(64);
+          observeQueuePressureMemory(); // Claimed work is resident; no timer or background sampler.
           const { rows } = await sql<{ count: number }>`select count(*)::int count from job
             where queue = ${queue} and state in ('pending','waiting','active')`.execute(admin);
           maximumLive = Math.max(maximumLive, rows[0].count);
@@ -268,6 +292,7 @@ describe('queue connection recovery and repeated database pressure', () => {
           ]);
           for (const outcome of outcomes) if (outcome.status === 'rejected') throw outcome.reason;
           expect(await store.complete(claims[0], [])).toBe(true);
+          observeQueuePressureMemory(); // The queue and real upload/search operations have settled.
           const { rows: pools } = await sql<{ name: string; count: number; transactions: number }>`
             select application_name name, count(*)::int count,
               count(*) filter(where state = 'idle in transaction')::int transactions from pg_stat_activity
@@ -303,12 +328,51 @@ describe('queue connection recovery and repeated database pressure', () => {
           from job_attempt a join job j on j.id = a."jobId" where j."runId" = ${runId}::uuid`.execute(admin);
         expect(attempts).toEqual([{ count: 1250, highest: 1 }]);
         await store.heartbeat(worker, []);
+        const after = observeQueuePressureMemory();
+        roundMemory.push({ round: round + 1, samples: memorySamples, after });
+        if (round === 0) {
+          // One complete round warms admission, claims, completion, history, uploads and search.
+          warmMemory = after;
+          warmPeakMemory = { ...after };
+        }
       }
       expect(interactions).toBeGreaterThanOrEqual(60);
       expect(maximumLive).toBeGreaterThan(500);
     } finally {
-      await admission.onModuleDestroy();
-      await Promise.all([execution.destroy(), api.destroy()]);
+      let cleanupComplete = false;
+      try {
+        await admission.onModuleDestroy();
+        await Promise.all([execution.destroy(), api.destroy()]);
+        cleanupComplete = true;
+      } finally {
+        const afterCleanup = observeQueuePressureMemory();
+        // One bounded log record, including partial runs on failure. Values are bytes, not an RSS SLA.
+        console.info(
+          'FL333 queue-pressure-memory',
+          JSON.stringify({
+            mode: 'calibration-only',
+            node: process.version,
+            platform: process.platform,
+            arch: process.arch,
+            rounds: 3,
+            itemsPerRound: 1250,
+            claimLimit: 64,
+            connectionLimits: { queue: 1, api: 2, admission: 2 },
+            samples: memorySamples,
+            completedRounds: roundMemory.length,
+            cleanupComplete,
+            initial: initialMemory,
+            warmBaseline: warmMemory,
+            peak: peakMemory,
+            postWarmPeak: warmPeakMemory,
+            roundEnds: roundMemory,
+            afterCleanup,
+            postWarmPeakGrowth: warmPeakMemory && memoryGrowth(warmPeakMemory),
+            roundEndGrowth: roundMemory.slice(1).map(({ round, after }) => ({ round, growth: memoryGrowth(after) })),
+            afterCleanupGrowth: memoryGrowth(afterCleanup),
+          }),
+        );
+      }
     }
     await vi.waitFor(
       async () => {
