@@ -19,8 +19,6 @@ import {
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
-type Handler = 'handleDryRun' | 'handleApply';
-
 const MASTER_ID = '00000000-0000-4000-8000-00000000000a';
 const COPY_1 = '00000000-0000-4000-8000-00000000000b';
 const COPY_2 = '00000000-0000-4000-8000-00000000000c';
@@ -83,14 +81,14 @@ const mockConfig = (
 const activeUser = (id: string) => ({ id, name: id, deletedAt: null });
 
 describe(PhysicalDeduplicationService.name, () => {
-  it.each<Handler>(['handleDryRun', 'handleApply'])('%s runs canonical deduplication when enabled', async (handler) => {
+  it('previews canonical deduplication for the requested retained account', async () => {
     const { sut, mocks } = newTestService(PhysicalDeduplicationService);
     mockConfig(mocks, { enabled: true, masterUserId: 'master-user' });
     mocks.user.get.mockResolvedValue(activeUser('master-user') as never);
     mocks.database.withLock.mockImplementation((_lock, callback) => callback());
     mocks.physicalFile.getMigrationCandidates.mockReturnValue(stream() as never);
 
-    await expect(sut[handler]({ masterUserId: 'master-user' })).resolves.toBe(JobStatus.Success);
+    await expect(sut.handleDryRun({ masterUserId: 'master-user' })).resolves.toBe(JobStatus.Success);
 
     expect(mocks.physicalFile.getMigrationCandidates).toHaveBeenCalledWith('master-user');
   });

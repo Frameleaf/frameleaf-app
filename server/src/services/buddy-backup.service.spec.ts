@@ -410,9 +410,13 @@ describe('Buddy production run controls and checkpoints', () => {
       sequence: 8,
       previous: captured.manifest.previous,
     });
-    expect(operations.complete).toHaveBeenCalledExactlyOnceWith(operation.id, 'replacement-claim', {
-      resultAssetId: null,
-    });
+    expect(operations.complete).toHaveBeenCalledExactlyOnceWith(
+      operation.id,
+      'replacement-claim',
+      { resultAssetId: null },
+      undefined,
+      true,
+    );
     expect(await repository.state()).toMatchObject({
       lastCompleteAt: transport.commits[0].snapshot.createdAt,
       lastSequence: 8,

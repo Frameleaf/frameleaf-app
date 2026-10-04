@@ -1144,17 +1144,21 @@ describe(CloudBackupService.name, () => {
 
     it('removes a dump an earlier run left behind before it makes a new one, and nothing else', async () => {
       mocks.storage.readdir.mockResolvedValue([
-        'cloud-backup-immich-db-backup-20260925T030000-v2.0.0-pg16.4.sql.gz.tmp',
-        'immich-db-backup-20260925T020000-v2.0.0-pg16.4.sql.gz',
+        'cloud-backup-frameleaf-db-backup-20260925T030000-v3.2.0-pg19beta4.sql.gz.tmp',
+        'frameleaf-db-backup-20260925T020000-v3.2.0-pg19beta4.sql.gz',
+        'cloud-backup-immich-db-backup-20260925T030000-v3.2.0-pg16.4.sql.gz.tmp',
       ]);
 
       await sut.run(operationOf(), 'claim-1');
 
       expect(mocks.storage.unlink).toHaveBeenCalledWith(
-        expect.stringContaining('cloud-backup-immich-db-backup-20260925T030000-v2.0.0-pg16.4.sql.gz.tmp'),
+        expect.stringContaining('cloud-backup-frameleaf-db-backup-20260925T030000-v3.2.0-pg19beta4.sql.gz.tmp'),
       );
       expect(mocks.storage.unlink).not.toHaveBeenCalledWith(
-        expect.stringContaining('/immich-db-backup-20260925T020000'),
+        expect.stringContaining('/frameleaf-db-backup-20260925T020000'),
+      );
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(
+        expect.stringContaining('cloud-backup-immich-db-backup-20260925T030000-v3.2.0-pg16.4.sql.gz.tmp'),
       );
       expect(mocks.storage.readdir.mock.invocationCallOrder[0]).toBeLessThan(
         databaseBackup.createDatabaseBackup.mock.invocationCallOrder[0],
@@ -2360,7 +2364,13 @@ describe(CloudBackupService.name, () => {
         expect.stringMatching(/frameleaf\/restore\/restore-1\/asset-1\/original-IMG_1\.jpg$/),
         SHA_A,
       );
-      expect(operations.complete).toHaveBeenCalledWith('restore-1', 'claim-1', { resultAssetId: null });
+      expect(operations.complete).toHaveBeenCalledWith(
+        'restore-1',
+        'claim-1',
+        { resultAssetId: null },
+        undefined,
+        true,
+      );
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
         lastRestore: { operationId: 'restore-1', scope: 'files', status: 'completed', files: 1 },
       });
@@ -2612,7 +2622,13 @@ describe(CloudBackupService.name, () => {
           album,
           memberIds: ['asset-1', 'asset-2'],
         });
-        expect(operations.complete).toHaveBeenCalledWith('restore-1', 'claim-1', { resultAssetId: null });
+        expect(operations.complete).toHaveBeenCalledWith(
+          'restore-1',
+          'claim-1',
+          { resultAssetId: null },
+          undefined,
+          true,
+        );
         expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({
           lastRestore: { scope: 'album', status: 'completed', recreated: 1, detailsRestored: 1 },
         });

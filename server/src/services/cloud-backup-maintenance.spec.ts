@@ -115,8 +115,13 @@ describe(CloudBackupMaintenance.name, () => {
       for (const key of objects.keys()) {
         if (key.startsWith('o/')) objects.set(key, Buffer.alloc(10));
       }
+      // Model completed storage requests on the fake clock; node:timers/promises uses real timers.
       store.head.mockImplementation((_connection, key: string) =>
-        executionDelay(60).then(() => ({ key, size: objects.get(key)!.length, etag: null })),
+        new Promise<void>((resolve) => setTimeout(resolve, 60)).then(() => ({
+          key,
+          size: objects.get(key)!.length,
+          etag: null,
+        })),
       );
       const checkpoint = vi.fn().mockResolvedValue(true);
       const renew = vi.fn().mockResolvedValue(true);
@@ -142,7 +147,7 @@ describe(CloudBackupMaintenance.name, () => {
         objects.set(`db/dump-202609${day}.sql.gz`, Buffer.from('old unreferenced dump'));
       }
       store.delete.mockImplementation((_connection, key: string) =>
-        executionDelay(60).then(() => {
+        new Promise<void>((resolve) => setTimeout(resolve, 60)).then(() => {
           objects.delete(key);
         }),
       );

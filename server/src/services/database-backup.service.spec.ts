@@ -1275,26 +1275,26 @@ describe(DatabaseBackupService.name, () => {
       );
 
       expect(writtenToPsql).toMatchInlineSnapshot(`
-      "
-        -- drop all other database connections
-        SELECT pg_terminate_backend(pid)
-        FROM pg_stat_activity
-        WHERE datname = current_database()
-          AND pid <> pg_backend_pid();
+        "
+          -- drop all other database connections
+          SELECT pg_terminate_backend(pid)
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND pid <> pg_backend_pid();
 
-        -- re-create the default schema
-        DROP SCHEMA public CASCADE;
-        CREATE SCHEMA public;
+          -- re-create the default schema
+          DROP SCHEMA public CASCADE;
+          CREATE SCHEMA public;
 
-        -- restore access to schema
-        GRANT ALL ON SCHEMA public TO "mypg";
-        GRANT ALL ON SCHEMA public TO public;
-      -- Dumped from database version 19beta4
-CREATE TABLE public.frameleaf_migrations (name text, timestamp text);
-SELECT 1;
--- PostgreSQL database dump complete
-"
-    `);
+          -- restore access to schema
+          GRANT ALL ON SCHEMA public TO "mypg";
+          GRANT ALL ON SCHEMA public TO public;
+        -- Dumped from database version 19beta4
+        CREATE TABLE public.frameleaf_migrations (name text, timestamp text);
+        SELECT 1;
+        -- PostgreSQL database dump complete
+        "
+      `);
     });
 
     it('should fail if backup creation fails', async () => {
