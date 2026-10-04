@@ -185,28 +185,38 @@ const isSchema = (schema: string | ReferenceObject | SchemaObject): schema is Sc
   return !(typeof schema === 'string' || '$ref' in schema);
 };
 
+/** Removes or rewrites JSON Schema 2020-12 keywords that OpenAPI 3.0 (this spec's version) does not allow. */
+export const removeOpenApi30IncompatibleKeys = (target: unknown): void => {
+  if (!target || typeof target !== 'object') {
+    return;
+  }
+
+  if (Array.isArray(target)) {
+    for (const item of target) {
+      removeOpenApi30IncompatibleKeys(item);
+    }
+    return;
+  }
+
+  const object = target as Record<string, unknown>;
+  delete object.propertyNames;
+  delete object.contentEncoding;
+  // A tuple (JSON Schema `prefixItems`) is not OpenAPI 3.0: generators such as openapi-generator reject it. Describe
+  // it as a fixed-length array of its item schema (the first one when they differ); validation stays the tuple's.
+  if (Array.isArray(object.prefixItems)) {
+    const prefixItems = object.prefixItems as unknown[];
+    object.items ??= prefixItems[0];
+    object.minItems ??= prefixItems.length;
+    object.maxItems ??= prefixItems.length;
+    delete object.prefixItems;
+  }
+
+  for (const value of Object.values(object)) {
+    removeOpenApi30IncompatibleKeys(value);
+  }
+};
+
 const patchOpenAPI = (document: OpenAPIObject) => {
-  const removeOpenApi30IncompatibleKeys = (target: unknown) => {
-    if (!target || typeof target !== 'object') {
-      return;
-    }
-
-    if (Array.isArray(target)) {
-      for (const item of target) {
-        removeOpenApi30IncompatibleKeys(item);
-      }
-      return;
-    }
-
-    const object = target as Record<string, unknown>;
-    delete object.propertyNames;
-    delete object.contentEncoding;
-
-    for (const value of Object.values(object)) {
-      removeOpenApi30IncompatibleKeys(value);
-    }
-  };
-
   document.paths = sortKeys(document.paths);
   // Allowed in OpenAPI v3.1 (JSON Schema 2020-12), but not in OpenAPI v3.0 (current spec).
   removeOpenApi30IncompatibleKeys(document);
