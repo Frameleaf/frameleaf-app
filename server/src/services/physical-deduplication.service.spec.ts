@@ -25,8 +25,6 @@ const MASTER_ID = '00000000-0000-4000-8000-00000000000a';
 const COPY_1 = '00000000-0000-4000-8000-00000000000b';
 const COPY_2 = '00000000-0000-4000-8000-00000000000c';
 
-const forkSchemaActive = { active: true, phase: 'active' as const, schemaVersion: '1', upstreamVersion: '3.0.3' };
-
 const lastDryRun = {
   mode: 'dry-run' as const,
   masterUserId: 'master-user',
@@ -85,42 +83,8 @@ const mockConfig = (
 const activeUser = (id: string) => ({ id, name: id, deletedAt: null });
 
 describe(PhysicalDeduplicationService.name, () => {
-  const blockedCases: Array<[Handler, 'inactive' | 'failed']> = [
-    ['handleDryRun', 'inactive'],
-    ['handleDryRun', 'failed'],
-    ['handleApply', 'inactive'],
-    ['handleApply', 'failed'],
-  ];
-
-  it.each(blockedCases)('%s refuses to create physical mappings in the %s phase', async (handler, phase) => {
+  it.each<Handler>(['handleDryRun', 'handleApply'])('%s runs canonical deduplication when enabled', async (handler) => {
     const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-    mocks.forkSchema.getState.mockResolvedValue({
-      active: false,
-      phase,
-      schemaVersion: '1',
-      upstreamVersion: '3.0.3',
-    });
-
-    await expect(sut[handler]({})).resolves.toBe(JobStatus.Skipped);
-
-    expect(mocks.physicalFile.getMigrationCandidates).not.toHaveBeenCalled();
-  });
-
-  const allowedCases: Array<[Handler, 'legacy' | 'dual-write' | 'ready' | 'active']> = [
-    ['handleDryRun', 'legacy'],
-    ['handleDryRun', 'dual-write'],
-    ['handleDryRun', 'ready'],
-    ['handleDryRun', 'active'],
-  ];
-
-  it.each(allowedCases)('%s runs deduplication in the %s phase when enabled', async (handler, phase) => {
-    const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-    mocks.forkSchema.getState.mockResolvedValue({
-      active: phase === 'active',
-      phase,
-      schemaVersion: '1',
-      upstreamVersion: '3.0.3',
-    });
     mockConfig(mocks, { enabled: true, masterUserId: 'master-user' });
     mocks.user.get.mockResolvedValue(activeUser('master-user') as never);
     mocks.database.withLock.mockImplementation((_lock, callback) => callback());
@@ -134,7 +98,6 @@ describe(PhysicalDeduplicationService.name, () => {
   describe('handleDryRun', () => {
     const setup = () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mocks.forkSchema.getState.mockResolvedValue(forkSchemaActive);
       mocks.database.withLock.mockImplementation((_lock, callback) => callback());
       mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
       mocks.physicalFile.getGeneratedFiles.mockResolvedValue([]);
@@ -289,7 +252,6 @@ describe(PhysicalDeduplicationService.name, () => {
   describe('handleDryRun fixtures (FL-73)', () => {
     const setup = () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mocks.forkSchema.getState.mockResolvedValue(forkSchemaActive);
       mocks.database.withLock.mockImplementation((_lock, callback) => callback());
       mocks.user.get.mockImplementation((id) => Promise.resolve(activeUser(id) as never));
       mocks.physicalFile.getGeneratedFiles.mockResolvedValue([]);
@@ -368,7 +330,6 @@ describe(PhysicalDeduplicationService.name, () => {
   describe('handleApply', () => {
     it('never applies anything: applying needs a reviewed plan (FL-73)', async () => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mocks.forkSchema.getState.mockResolvedValue(forkSchemaActive);
       mockConfig(mocks, { enabled: true, masterUserId: 'master-user' });
 
       await expect(sut.handleApply({})).resolves.toBe(JobStatus.Skipped);
@@ -430,7 +391,6 @@ describe(PhysicalDeduplicationService.name, () => {
 
     const setup = (rows = [row(MASTER_ID), row(COPY_1), row(COPY_2)]) => {
       const { sut, mocks } = newTestService(PhysicalDeduplicationService);
-      mocks.forkSchema.getState.mockResolvedValue(forkSchemaActive);
       mockConfig(mocks, { enabled: true, masterUserId: 'master-user' }, storedPlan);
       mocks.physicalFile.getPlanEvidence.mockResolvedValue(rows as never);
       mocks.physicalFile.countOriginalReferencesFor.mockResolvedValue(new Map());

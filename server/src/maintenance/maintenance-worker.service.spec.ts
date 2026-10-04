@@ -1,6 +1,6 @@
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { SignJWT } from 'jose';
-import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
+import { DatabaseLock, MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { MaintenanceWebsocketRepository } from 'src/maintenance/maintenance-websocket.repository.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
@@ -10,12 +10,19 @@ import { AutoMocked, ServiceMocks, automock, getMocks } from 'test/utils.js';
 describe(MaintenanceWorkerService.name, () => {
   let sut: MaintenanceWorkerService;
   let mocks: ServiceMocks;
+  let held = {
+    backendPid: 7123,
+    verify: vi.fn().mockResolvedValue(true),
+    release: vi.fn().mockResolvedValue(undefined),
+  };
   let maintenanceWebsocketRepositoryMock: AutoMocked<MaintenanceWebsocketRepository>;
   let maintenanceHealthRepositoryMock: AutoMocked<MaintenanceHealthRepository>;
   let databaseBackupServiceMock: AutoMocked<DatabaseBackupService>;
 
   beforeEach(() => {
     mocks = getMocks();
+    held = { backendPid: 7123, verify: vi.fn().mockResolvedValue(true), release: vi.fn().mockResolvedValue(undefined) };
+    mocks.database.holdLock.mockResolvedValue(held);
     maintenanceWebsocketRepositoryMock = automock(MaintenanceWebsocketRepository, {
       args: [mocks.logger],
       strict: false,
@@ -422,7 +429,7 @@ describe(MaintenanceWorkerService.name, () => {
       databaseBackupServiceMock.restoreDatabaseBackup.mockReturnValue(
         new Promise<void>((resolve) => (finishRestore = resolve)),
       );
-      mocks.database.tryLock.mockResolvedValueOnce(true);
+      mocks.database.holdLock.mockResolvedValueOnce(held);
 
       const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
       sut.claimAction(restore);
@@ -443,7 +450,7 @@ describe(MaintenanceWorkerService.name, () => {
 
     it('allows End and another restore after a restore failed', async () => {
       databaseBackupServiceMock.restoreDatabaseBackup.mockRejectedValue(new Error('Migration failed'));
-      mocks.database.tryLock.mockResolvedValueOnce(true);
+      mocks.database.holdLock.mockResolvedValueOnce(held);
 
       const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
       sut.claimAction(restore);
@@ -454,7 +461,7 @@ describe(MaintenanceWorkerService.name, () => {
     });
 
     it('does not restore when another process holds the maintenance lock, and keeps refusing meanwhile', async () => {
-      mocks.database.tryLock.mockResolvedValueOnce(false);
+      mocks.database.holdLock.mockResolvedValueOnce(null);
 
       const restore = { action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'development-filename.sql' };
       sut.claimAction(restore);
@@ -470,7 +477,7 @@ describe(MaintenanceWorkerService.name, () => {
       databaseBackupServiceMock.restoreDatabaseBackup.mockReturnValue(
         new Promise<void>((resolve) => (finishRestore = resolve)),
       );
-      mocks.database.tryLock.mockResolvedValueOnce(true);
+      mocks.database.holdLock.mockResolvedValueOnce(held);
 
       const running = sut.runAction({
         action: MaintenanceAction.RestoreDatabase,
@@ -533,7 +540,7 @@ describe(MaintenanceWorkerService.name, () => {
 
   describe('action: restore database', () => {
     beforeEach(() => {
-      mocks.database.tryLock.mockResolvedValueOnce(true);
+      mocks.database.holdLock.mockResolvedValueOnce(held);
     });
 
     it('should update maintenance mode state', async () => {
@@ -542,7 +549,7 @@ describe(MaintenanceWorkerService.name, () => {
         restoreBackupFilename: 'filename',
       });
 
-      expect(mocks.database.tryLock).toHaveBeenCalled();
+      expect(mocks.database.holdLock).toHaveBeenCalledWith(DatabaseLock.MaintenanceOperation);
       expect(mocks.logger.log).toHaveBeenCalledWith('Running maintenance action restore_database');
 
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.MaintenanceMode, {
@@ -589,10 +596,10 @@ describe(MaintenanceWorkerService.name, () => {
       expect(databaseBackupServiceMock.restoreDatabaseBackup).toHaveBeenLastCalledWith(
         'development-filename.sql',
         expect.any(Function),
-        { keepSafetyBackup: true },
+        { keepSafetyBackup: true, fence: { backendPid: held.backendPid, assert: expect.any(Function) } },
       );
 
-      mocks.database.tryLock.mockResolvedValueOnce(true);
+      mocks.database.holdLock.mockResolvedValueOnce(held);
       await sut.runAction({
         action: MaintenanceAction.RestoreDatabase,
         restoreBackupFilename: 'development-filename.sql',
@@ -601,7 +608,7 @@ describe(MaintenanceWorkerService.name, () => {
       expect(databaseBackupServiceMock.restoreDatabaseBackup).toHaveBeenLastCalledWith(
         'development-filename.sql',
         expect.any(Function),
-        { keepSafetyBackup: false },
+        { keepSafetyBackup: false, fence: { backendPid: held.backendPid, assert: expect.any(Function) } },
       );
     });
 
@@ -626,6 +633,37 @@ describe(MaintenanceWorkerService.name, () => {
         error: 'Something went wrong, see logs!',
         task: 'error',
       });
+    });
+
+    it('holds and verifies the reserved maintenance session for an ordinary restore', async () => {
+      databaseBackupServiceMock.restoreDatabaseBackup.mockImplementation(async (_filename, _progress, options) => {
+        expect(options?.fence?.backendPid).toBe(held.backendPid);
+        await options?.fence?.assert();
+        expect(held.release).not.toHaveBeenCalled();
+      });
+
+      await sut.runAction({ action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'frameleaf.sql' });
+
+      expect(held.verify).toHaveBeenCalled();
+      expect(held.release).toHaveBeenCalledOnce();
+      expect(mocks.database.tryLock).not.toHaveBeenCalled();
+    });
+
+    it('does not reopen the application after losing the restore reservation', async () => {
+      databaseBackupServiceMock.restoreDatabaseBackup.mockImplementation(async (_filename, _progress, options) => {
+        held.verify.mockResolvedValue(false);
+        await options?.fence?.assert();
+      });
+
+      await sut.runAction({ action: MaintenanceAction.RestoreDatabase, restoreBackupFilename: 'frameleaf.sql' });
+
+      expect(mocks.app.exitApp).not.toHaveBeenCalled();
+      expect(held.release).toHaveBeenCalledOnce();
+      expect(maintenanceWebsocketRepositoryMock.clientSend).toHaveBeenCalledWith(
+        'MaintenanceStatusV1',
+        'private',
+        expect.objectContaining({ task: 'error', error: expect.stringContaining('maintenance lock') }),
+      );
     });
   });
 });
