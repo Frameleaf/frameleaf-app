@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Selectable, type Transaction, type Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { AssetType, AssetVisibility, ClassificationMatchDecision, ClassificationMediaType } from 'src/enum.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import { ClassificationMatchTable } from 'src/schema/tables/classification-match.table.js';
 import { ClassificationRuleTable } from 'src/schema/tables/classification-rule.table.js';
@@ -75,7 +76,9 @@ const jsonb = (value: string[]) => sql<string[]>`${JSON.stringify(value)}::text:
  */
 @Injectable()
 export class ClassificationRepository {
-  constructor(@InjectKysely() private db: Kysely<DB>) {}
+  constructor(@InjectKysely() private db: Kysely<DB>) {
+    this.db = publicationDatabase(this.db);
+  }
 
   /* ---------------- rules ---------------- */
 

@@ -13,6 +13,7 @@ import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { freezeSelection } from 'src/queue/manifest.js';
+import { deliverJobObservers } from 'src/queue/observers.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
@@ -45,6 +46,15 @@ const runSubmission = new AsyncLocalStorage<string>();
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
   JobName.AssetGenerateThumbnails,
+  JobName.AssetGenerateThumbnailsQueueAll,
+  JobName.AssetEditThumbnailGeneration,
+  JobName.OcrQueueAll,
+  JobName.PetRecognitionQueueAll,
+  JobName.PetRecognitionNearest,
+  JobName.SmartSearchPostprocess,
+  JobName.ImageEnrichmentPostprocess,
+  JobName.ImageDescriptionQueueAll,
+  JobName.NsfwDetectionQueueAll,
   JobName.AssetEncodeVideo,
   JobName.SmartSearch,
   JobName.Ocr,
@@ -207,13 +217,9 @@ export class JobRepository {
       });
       if (accepted) {
         // Notification failure cannot change an already committed outcome or replay media work.
-        for (const notify of context.afterCommit ?? []) {
-          try {
-            await notify();
-          } catch {
-            this.logger.warn('Unable to deliver an accepted job notification');
-          }
-        }
+        await deliverJobObservers(context.afterCommit ?? [], () =>
+          this.logger.warn('Accepted job observer delivery unavailable'),
+        );
         const buffer = (this.rollingAvgBuffers[claim.name as JobName] ??= []);
         buffer.push(Date.now() - new Date(claim.startedAt).getTime());
         if (buffer.length > 100) {
@@ -387,7 +393,10 @@ export class JobRepository {
       options: this.getNamedJobOptions(item) ?? undefined,
       safeToRetry:
         !data.operationId &&
-        !(data.force && item.name === JobName.SmartSearchQueueAll) &&
+        !(
+          item.name === JobName.ImageEnrichmentPostprocess &&
+          (data.cloudDescription || (Array.isArray(data.lockedIds) && data.lockedIds.length > 0))
+        ) &&
         REPEATABLE_JOBS.has(item.name) &&
         !JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(item.name) &&
         !JOBS_NOT_RETRIED.has(item.name),
@@ -401,6 +410,30 @@ export class JobRepository {
       rootItemKey: context?.claim.rootItemKey ?? null,
       parentId: context?.buffering ? context.claim.id : undefined,
     };
+  }
+
+  /** Persist small database-only producer setup with its claim. No network or file I/O may enter this callback. */
+  async prepareCheckpoint<T>(key: string, prepare: () => Promise<T>): Promise<T> {
+    const context = queueExecution.getStore();
+    if (!context) return prepare();
+    const { claim } = context;
+    return this.store.db.transaction().execute(async (tx) => {
+      await sql`select name from job_queue order by name for update`.execute(tx);
+      const {
+        rows: [job],
+      } = await sql<{ checkpoints: Record<string, T> | null }>`select data->'_producerCheckpoints' checkpoints
+        from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid and state = 'active'
+        and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(tx);
+      if (!job) throw new Error('Producer checkpoint lost its claim');
+      if (job.checkpoints && Object.hasOwn(job.checkpoints, key)) return job.checkpoints[key];
+      const value = await publicationTransaction.run(tx, prepare);
+      const { rows } = await sql`update job set data = jsonb_set(data, '{_producerCheckpoints}',
+        coalesce(data->'_producerCheckpoints', '{}'::jsonb) || jsonb_build_object(${key}::text, ${JSON.stringify(value)}::jsonb))
+        where id = ${claim.id}::uuid and token = ${claim.token}::uuid and "leaseExpiresAt" > clock_timestamp()
+          and "cancelRequestedAt" is null returning id`.execute(tx);
+      if (!rows.length) throw new Error('Producer checkpoint lost its claim');
+      return value;
+    });
   }
 
   /** Materialize the full selected ID set in PostgreSQL before workers see any item. */
@@ -429,6 +462,7 @@ export class JobRepository {
       } = await sql<{ checksum: Buffer; revision: unknown }>`select a.checksum,
         jsonb_build_object('originalPath', a."originalPath", 'modifiedAt', a."fileModifiedAt", 'ownerId', a."ownerId",
           'visibility', a.visibility, 'deletedAt', a."deletedAt",
+          'lock', (select to_jsonb(l) from asset_lock l where l."assetId" = a.id),
           'files', (select jsonb_agg(jsonb_build_array(f.id, f.path, f.type, f."isEdited") order by f.id)
             from asset_file f where f."assetId" = a.id),
           'edits', (select jsonb_agg(jsonb_build_array(e.sequence, e.action, e.parameters) order by e.sequence, e.id)

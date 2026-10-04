@@ -460,7 +460,8 @@ export class DuplicateService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const frames = [];
+    const frames: Array<{ assetId: string; frameIndex: number; timestampMs: number; path: string; embedding: string }> =
+      [];
     for (const [frameIndex, timestamp] of timestamps.entries()) {
       const path = attemptOutputPath(
         StorageCore.getNestedPath(

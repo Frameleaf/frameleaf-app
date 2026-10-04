@@ -4,6 +4,8 @@ import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { BootstrapEventPriority, ImmichWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
+import { publishJobResult, queueExecution } from 'src/queue/context.js';
+import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { BaseService } from 'src/services/base.service.js';
 import { dot, l2Normalize, parseEmbedding } from 'src/utils/embedding.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -172,7 +174,11 @@ export class SmartAlbumService extends BaseService {
       if (hasTagMatch || hasClipMatch) {
         matchedKinds.add(kind);
         const matchReason = hasTagMatch && hasClipMatch ? 'both' : hasTagMatch ? 'tag' : 'clip';
-        await this.smartAlbumRepository.addAssetToSmartAlbum(smartAlbumId, assetId, matchReason);
+        await publishJobResult(async () => {
+          const excluded = await this.smartAlbumRepository.getExcludedSmartAlbumIds(assetId, [smartAlbumId]);
+          if (!excluded.has(smartAlbumId))
+            await this.smartAlbumRepository.addAssetToSmartAlbum(smartAlbumId, assetId, matchReason);
+        });
       }
     }
 
@@ -189,7 +195,7 @@ export class SmartAlbumService extends BaseService {
       if (!matchedKinds.has(kind)) {
         const smartAlbumId = albumIdByKind.get(kind as BuiltInKind);
         if (smartAlbumId) {
-          await this.smartAlbumRepository.removeAssetFromSmartAlbum(smartAlbumId, assetId);
+          await publishJobResult(() => this.smartAlbumRepository.removeAssetFromSmartAlbum(smartAlbumId, assetId));
         }
       }
     }
@@ -227,6 +233,7 @@ export class SmartAlbumService extends BaseService {
   ): Promise<boolean> {
     const assetVector = await getAssetVector();
     if (!assetVector) {
+      deferJobUntilDependency('source-unavailable');
       return false;
     }
     for (const query of queries) {
@@ -238,6 +245,7 @@ export class SmartAlbumService extends BaseService {
           return true;
         }
       } catch (error) {
+        if (queueExecution.getStore()) throw error;
         this.logger.warn(
           `Smart-album CLIP matching unavailable for query "${sanitizeForLog(query)}": ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -246,10 +254,16 @@ export class SmartAlbumService extends BaseService {
     return false;
   }
 
-  private getClipQueryEmbedding(
+  private async getClipQueryEmbedding(
     clip: SystemConfig['machineLearning']['clip'],
     query: string,
   ): Promise<Float32Array | undefined> {
+    if (queueExecution.getStore()) {
+      const selection = await this.selectRoutedMlDestination({ workload: MlWorkload.Clip });
+      const raw = await this.machineLearningRepository.encodeText(selection, query, { modelName: clip.modelName });
+      const parsed = parseEmbedding(raw);
+      return parsed ? l2Normalize(parsed) : undefined;
+    }
     const cacheKey = `${clip.modelName}\u{0}${query}`;
     const cached = clipQueryCache.get(cacheKey);
     if (cached) {

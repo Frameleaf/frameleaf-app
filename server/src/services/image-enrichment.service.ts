@@ -860,6 +860,7 @@ export class ImageEnrichmentService extends BaseService {
     videoMomentCaptions,
     cloudDescription,
   }: JobOf<JobName.ImageEnrichmentPostprocess>) {
+    await this.jobRepository.guardAssetSource(id);
     await this.afterSensitiveLock(lockedIds ?? []);
     const asset = await this.assetRepository.getById(id);
     if (!asset) {
@@ -871,6 +872,11 @@ export class ImageEnrichmentService extends BaseService {
     }
     if (description) {
       const metadata = await this.getEnrichmentMetadata(id);
+      deferJobAdoption(async () => {
+        if (JSON.stringify(await this.getEnrichmentMetadata(id)) !== JSON.stringify(metadata)) {
+          throw new Error('Enrichment changed before postprocessing publication');
+        }
+      });
       if (metadata.description?.status === 'success') {
         await this.smartAlbumService.evaluate({
           assetId: id,
@@ -881,7 +887,9 @@ export class ImageEnrichmentService extends BaseService {
       }
     }
     if (videoMomentCaptions) {
-      await this.jobRepository.queue({ name: JobName.VideoMomentCaptions, data: { id } });
+      await this.jobRepository.collectFollowups(() =>
+        this.jobRepository.queue({ name: JobName.VideoMomentCaptions, data: { id } }),
+      );
     }
     return JobStatus.Success;
   }

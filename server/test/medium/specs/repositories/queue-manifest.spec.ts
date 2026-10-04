@@ -70,6 +70,52 @@ describe('durable bounded selection manifests', () => {
       .execute(db)
       .then(({ rows }) => rows[0]);
 
+  it('persists database-only producer checkpoints once across a new retry claim', async () => {
+    await store.enqueue([producer()]);
+    const [first] = await store.claim(queue, worker);
+    const prepare = vi.fn().mockResolvedValue([{ ownerId: randomUUID(), id: randomUUID() }]);
+    const checkpoint = (claim: QueueClaim) =>
+      queueExecution.run(
+        {
+          claim,
+          signal: new AbortController().signal,
+          progress: vi.fn(),
+          progressUnits: 0,
+          adoptions: [],
+          followups: [],
+          buffering: false,
+        },
+        () => repository.prepareCheckpoint('pet-runs', prepare),
+      );
+    const original = await checkpoint(first);
+    await store.fail(first, 'producer interrupted');
+    await available(first);
+    const [retry] = await store.claim(queue, worker);
+    expect(await checkpoint(retry)).toEqual(original);
+    expect(prepare).toHaveBeenCalledOnce();
+    await expect(checkpoint(first)).rejects.toThrow('lost its claim');
+  });
+
+  it('freezes per-item producer data into the ledger and forwards it to admitted execution', async () => {
+    const runId = await repository.createRun('person-or-pet', {}, () =>
+      repository.queueSelection(
+        JobName.AssetGenerateThumbnails,
+        db
+          .selectFrom(
+            sql<{
+              id: string;
+              data: object;
+            }>`(select 'asset-a'::text id, '{"runId":"pet-run","ownerId":"owner-a"}'::jsonb data)`.as('selected'),
+          )
+          .select(['id', 'data']),
+      ),
+    );
+    expect(await store.feedManifest(queue)).toBe(1);
+    const [claim] = await store.claim(queue, worker);
+    expect(claim.runId).toBe(runId);
+    expect(claim.data).toEqual({ id: 'asset-a', runId: 'pet-run', ownerId: 'owner-a' });
+  });
+
   it('reuses the exact nightly snapshot on a fresh claim after a crashed no-runId producer', async () => {
     await store.enqueue([producer()]);
     const [first] = await store.claim(queue, worker);
