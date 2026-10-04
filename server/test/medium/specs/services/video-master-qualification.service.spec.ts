@@ -975,6 +975,9 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
     'publishes an original-derived %s audio presentation with nonzero origin and reordered video packets',
     async (mode) => {
       const input = fixture(folder, 320, 240, 36, 1);
+      // Establish the authored input's alignment before copying its AAC packets
+      // into a nonzero-origin container with reordered video packets.
+      assertAVPresentation(presentation(input));
       const reordered = join(folder, 'nonzero-audio-bframes.mp4');
       ffmpeg(
         '-i',
@@ -999,6 +1002,7 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
         '5',
         reordered,
       );
+      expect(audioPackets(reordered)).toEqual(audioPackets(input));
       let source = reordered;
       if (mode === 'delayed') {
         source = join(folder, 'intentional-source-delay.mp4');
@@ -1029,7 +1033,13 @@ describe.sequential('VID-100 production master qualification (FL-16)', () => {
       if (mode === 'delayed') {
         expect(sourceOffset).toBeGreaterThan(0.2);
       } else {
-        assertAVPresentation(sourcePresentation);
+        // Copied AAC priming can become retained presentation at a nonzero MP4
+        // origin. Bound the source with the existing one-AAC-unit plus one-video-
+        // frame allowance; never require this remux to invent a zero start offset.
+        expect(Math.abs(sourceOffset)).toBeLessThanOrEqual(1024 * audioTick + 1 / 30);
+        expect(Math.abs(sourcePresentation.audioEnd - sourcePresentation.videoEnd)).toBeLessThanOrEqual(
+          aacTailTolerance,
+        );
       }
       const packetPts = inspect<{ packets: Array<{ pts: number }> }>(
         source,
