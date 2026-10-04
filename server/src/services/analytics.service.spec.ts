@@ -131,7 +131,7 @@ describe(AnalyticsService.name, () => {
   const jobRepository = { queue: vitest.fn() };
   const configRepository = { getEnv: () => ({ configFile: undefined }) };
   const systemMetadataRepository = { get: vitest.fn() };
-  const forkSchemaRepository = { overlayConfig: (config: unknown) => Promise.resolve(config) };
+  const checksumRepository = {};
 
   let sut: AnalyticsService;
 
@@ -182,7 +182,7 @@ describe(AnalyticsService.name, () => {
       jobRepository as never,
       configRepository as never,
       systemMetadataRepository as never,
-      forkSchemaRepository as never,
+      checksumRepository as never,
     );
   });
 

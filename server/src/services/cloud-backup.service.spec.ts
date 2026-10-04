@@ -184,6 +184,12 @@ describe(CloudBackupService.name, () => {
       details as never,
     );
 
+  const configWrites = () =>
+    mocks.systemMetadata.set.mock.calls
+      .filter(([key]) => key === SystemMetadataKey.SystemConfig)
+      .map(([, value]) => value);
+  const savedConfig = () => sut.readConfigForUpdate();
+
   const uploadedKeys = () => store.uploadFile.mock.calls.map(([, objectKey]) => objectKey as string);
   const manifestOf = (at = 0) => JSON.parse(gunzipSync(streamed[at]).toString());
   type Recorded = { mock: { calls: unknown[][]; invocationCallOrder: number[] } };
@@ -356,7 +362,8 @@ describe(CloudBackupService.name, () => {
       expect(keys.write.mock.invocationCallOrder[0]).toBeLessThan(store.claim.mock.invocationCallOrder[0]);
 
       // the key is never configuration: only the secret access key is, as a write-only credential
-      const [persisted, saved] = mocks.forkSchema.persistConfig.mock.calls.at(-1)!;
+      const persisted = configWrites().at(-1)!;
+      const saved = await savedConfig();
       expect(saved).toMatchObject({
         frameleafCloud: {
           cloudBackup: { enabled: true, target: 'byo-s3', keyMode: 'server', s3: { secretAccessKey: 's3-secret' } },
@@ -413,7 +420,7 @@ describe(CloudBackupService.name, () => {
       await expect(setup()).rejects.toThrow(ConflictException);
       // the key file this setup created goes again
       expect(keys.remove).toHaveBeenCalledWith('/identity', fingerprint);
-      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(configWrites()).toHaveLength(0);
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toBeUndefined();
     });
 
@@ -473,7 +480,7 @@ describe(CloudBackupService.name, () => {
       store.probe.mockRejectedValue(new CloudBackupStoreError('refused', 403, 'AccessDenied'));
       await expect(sut.check({ s3 })).rejects.toThrow('refused these credentials');
       expect(store.claim).not.toHaveBeenCalled();
-      expect(mocks.forkSchema.persistConfig).not.toHaveBeenCalled();
+      expect(configWrites()).toHaveLength(0);
     });
   });
 
@@ -1223,14 +1230,9 @@ describe(CloudBackupService.name, () => {
     });
 
     it('turns cloud backup off and keeps the claim and the key', async () => {
-      // the write is stored, so the history sees what changed
-      mocks.forkSchema.persistConfig.mockImplementation((partial) => {
-        metadata[SystemMetadataKey.SystemConfig] = partial;
-        return Promise.resolve();
-      });
       await sut.turnOff(authStub.admin);
 
-      expect(mocks.forkSchema.persistConfig.mock.calls.at(-1)![1]).toMatchObject({
+      expect(await savedConfig()).toMatchObject({
         frameleafCloud: { cloudBackup: { enabled: false } },
       });
       expect(metadata[SystemMetadataKey.FrameleafCloudBackup]).toMatchObject({ bucketRef: ref });
@@ -1521,7 +1523,7 @@ describe(CloudBackupService.name, () => {
       expect(operations.complete).toHaveBeenCalled();
       const secret = rotated.credentials.secretAccessKey;
       expect(JSON.stringify(metadata)).not.toContain(secret);
-      expect(JSON.stringify(mocks.forkSchema.persistConfig.mock.calls)).not.toContain(secret);
+      expect(JSON.stringify(configWrites())).not.toContain(secret);
       expect(JSON.stringify(mocks.logger.log.mock.calls)).not.toContain(secret);
     });
 
@@ -1723,7 +1725,7 @@ describe(CloudBackupService.name, () => {
           quotaBytes: grant.quotaBytes,
         },
       });
-      const persisted = JSON.stringify(mocks.forkSchema.persistConfig.mock.calls);
+      const persisted = JSON.stringify(configWrites());
       expect(persisted).toContain('"target":"managed"');
       expect(persisted).not.toContain(rotated.credentials.secretAccessKey);
       expect(cloudBackup.putSettings).toHaveBeenCalledWith(expect.anything(), {
@@ -1927,7 +1929,7 @@ describe(CloudBackupService.name, () => {
         expect(sent).not.toContain(key.toString('base64'));
         expect(sent).not.toContain(passphrase);
         expect(status.escrow).toMatchObject({ stored: true });
-        expect(mocks.forkSchema.persistConfig.mock.calls.at(-1)![1]).toMatchObject({
+        expect(await savedConfig()).toMatchObject({
           frameleafCloud: { cloudBackup: { escrow: true } },
         });
       },
