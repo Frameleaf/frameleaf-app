@@ -481,3 +481,36 @@ retains the last authenticated 89143966… source digest. Existing patches 0056
 and 0057, actual high-rate case contents, production audio code, attribution and
 the default-OFF controls remain unchanged. Hosted lock resolution and native
 execution remain prerequisites; the remaining full FL-103 gates remain open.
+
+### Authenticated 0059 source admission after hosted lock resolution
+
+Hosted lock-resolution run 37224692310 supplied genuine lock SHA-256
+`95802b5950cdecaea43be49ac42b86e70af9b1bdfde120f8f5705441e0d13b9a`,
+admitted in source commit 2933f8ee4ca8996038325aeda9c7ff26ff4a6231.
+Normal hosted run 37225023929 / attempt 1 / engine job 111503191229 then
+passed 13 recovery guard tests and reached only the intended source-digest
+refusal; lifecycle passed, while engine behavior remained unrun.
+
+Authentic artifact 11311417756 ZIP SHA-256
+`a133676f9c5926a8b8e65afb3403f48c237fe9054039dc3dab619400f5998f9c`
+contains the source-recovery receipt for exact producer/reviewed head
+`2933f8ee4ca8996038325aeda9c7ff26ff4a6231`, tree
+`dfb92ae571c62ada58f09adf205c398cb3e77685`, parent
+`89c89450f936d43561425b7423f5251973a126b8`, job `engine`.
+Data-only verification matches all 70 explicit committed/live input hashes,
+59 ordered patch bindings, immutable upstream/archive/inventory authority and
+the admitted lock hash. The supplied 2711-file inventory is ordered, unique,
+confined and hashes as recorded to
+`4a929e6b73eecb96f240cd67c1ac73b54f5e29193c9f187061a9ce9cb4d0c5dc`.
+The manifest admits only this authenticated observed digest. Relative to the
+prior 0058 receipt, added inventory paths are the native prerequisite and two
+test configurations; changed paths are package.json, package-lock.json and the
+complete search test. No other source record changes or removals are present.
+
+The 476878-byte receipt records source paths/hashes, not per-file sizes. ZIP
+member size and supplied receipt bytes agree; no engine file-size verification
+or local inventory reconstruction is claimed. The receipt explicitly records
+digestMatched false, enginePublishedAtObservation false and runtimeQualified
+false. This admission is source evidence only, not native-browser/DSP GREEN,
+engine publication, rights attestation or full FL-103 acceptance. The next
+root-owned hosted behavioral qualification and broader gates remain required.
