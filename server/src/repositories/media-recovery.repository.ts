@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
 import type { MediaIntegrityResult } from 'src/services/media-integrity.service.js';
 import {
+  AssetLockReason,
   AssetStatus,
   AssetType,
   AssetVisibility,
@@ -23,6 +24,7 @@ import {
 } from 'src/repositories/fork-derived-results.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { AuditAuthority, guardAudit, publishAudit } from 'src/repositories/icloud-audit.repository.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
 
@@ -71,6 +73,8 @@ export type RecoveryCandidate = {
   damaged: boolean;
   matchesContent: boolean;
   identityConflict: boolean;
+  /** Why the asset is Locked, when it is (FL-34) */
+  lockReason: AssetLockReason | null;
 };
 export type RecoveryTarget = {
   assetId: string;
@@ -83,13 +87,18 @@ export type RecoveryTarget = {
   physicalOriginalFileId: string | null;
   forkPhysicalFileId: string | null;
   outcome: 'imported' | 'reused' | 'repaired-missing' | 'repaired-corrupt';
+  /**
+   * FL-69: an external original with the same content, recorded as evidence only. Recovery never modifies
+   * it and never reuses it: the item is imported as a new managed asset beside it (owner decision).
+   */
+  matchedExternalAssetId?: string;
 };
 export type RecoveryAuthority = {
   resourceId: string;
   leaseToken: string;
   ownerId: string;
   includeHidden: boolean;
-  recoverExternalAsManaged: boolean;
+  audit?: AuditAuthority;
 };
 export type RecoveryReservation = { target: RecoveryTarget; promotedPath: string };
 
@@ -102,12 +111,16 @@ export class MediaRecoveryRepository {
   ) {}
 
   async getResource(input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
+    if (input.audit && !(await guardAudit(this.db, input.audit, input.ownerId))) {
+      return;
+    }
     const result = await sql<RecoveryResource>`
       SELECT r.*, r."expectedSize"::float8 AS "expectedSize" FROM immich_fork.icloud_resource r
       JOIN immich_fork.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
       WHERE r.id = ${input.resourceId}::uuid AND r."ownerId" = ${input.ownerId}::uuid
         AND r."leaseToken" = ${input.leaseToken}::uuid AND r."leaseExpiresAt" > now()
         AND r.status <> 'removed' AND c.state = 'connected'
+        AND r."auditRequestId" IS NOT DISTINCT FROM ${input.audit?.auditRequestId ?? null}::uuid
     `.execute(this.db);
     return result.rows[0];
   }
@@ -127,23 +140,7 @@ export class MediaRecoveryRepository {
     mappedId?: string | null,
   ) {
     const phase = await getForkSchemaPhase(db);
-    const preference = await db
-      .selectFrom('user_metadata')
-      .select('value')
-      .where('userId', '=', ownerId)
-      .where('key', '=', UserMetadataKey.Preferences)
-      .forShare()
-      .executeTakeFirst();
-    const preferences = preference?.value as
-      { privacy?: { suppression?: { tagIds?: string[]; personIds?: string[] } } } | undefined;
-    const suppression = preferences?.privacy?.suppression;
-    const hidden = hiddenContentAssetIdExists(sql`a.id`, {
-      userId: ownerId,
-      scope: 'owned',
-      includeNsfw: true,
-      tagIds: suppression?.tagIds ?? [],
-      personIds: suppression?.personIds ?? [],
-    });
+    const hidden = await this.hiddenFilter(db, ownerId);
     const rows = await sql<RecoveryCandidate>`
       SELECT a.id, a."ownerId", a."updateId", a."originalPath", a.checksum, a."checksumAlgorithm",
         a."originalFileName", a.type, a."isExternal", a."libraryId", a."deletedAt", a.status, a."isOffline",
@@ -158,7 +155,8 @@ export class MediaRecoveryRepository {
           ELSE COALESCE(s.sha1 = ${verified.sha1} AND s.sha256 = ${verified.sha256}, false)
         END AS "matchesContent",
         (to_jsonb(a)->>'physicalOriginalFileId') AS "physicalOriginalFileId", p."physicalFileId" AS "forkPhysicalFileId", e."fileSizeInByte"::float8 AS "sizeInBytes",
-        (a.visibility = 'locked' OR ${hidden}) AS hidden,
+        (EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = a.id) OR ${hidden}) AS hidden,
+        (SELECT l.reason FROM public.asset_lock l WHERE l."assetId" = a.id) AS "lockReason",
         EXISTS (SELECT 1 FROM ${sql.id(readsForkSidecar(phase) ? 'immich_fork' : 'public', 'asset_health')} h
           WHERE h."assetId" = a.id AND h.category IN ('missing', 'corrupt') AND h."resolvedAt" IS NULL
           AND h.status NOT IN ('resolved', 'relinked', 'trashed')) AS damaged
@@ -166,11 +164,9 @@ export class MediaRecoveryRepository {
       LEFT JOIN immich_fork.asset_checksum s ON s."assetId" = a.id
       LEFT JOIN immich_fork.asset_physical_file p ON p."assetId" = a.id
       WHERE a."ownerId" = ${ownerId}::uuid AND a.id IN (
-        SELECT id FROM public.asset WHERE "ownerId" = ${ownerId}::uuid AND checksum IN (${verified.sha1}, ${verified.sha256})
-          AND "checksumAlgorithm" IN (${ChecksumAlgorithm.sha1File}, ${ChecksumAlgorithm.sha256File})
-        UNION SELECT "assetId" FROM immich_fork.asset_checksum WHERE sha1 = ${verified.sha1} OR sha256 = ${verified.sha256}
+        ${this.contentMatchIds(ownerId, verified)}
         UNION SELECT ${mappedId ?? null}::uuid)
-      ORDER BY (a.id = ${mappedId ?? null}::uuid) DESC NULLS LAST, a.id LIMIT 33
+      ORDER BY (a.id = ${mappedId ?? null}::uuid) DESC NULLS LAST, a."isExternal", a.id LIMIT 33
     `.execute(db);
     return rows.rows;
   }
@@ -234,6 +230,7 @@ export class MediaRecoveryRepository {
       candidate?: RecoveryCandidate;
       outcome: RecoveryTarget['outcome'];
       proposedPath: string;
+      matchedExternalAssetId?: string;
     },
   ): Promise<RecoveryReservation | undefined> {
     return this.db.transaction().execute(async (trx) => {
@@ -242,6 +239,13 @@ export class MediaRecoveryRepository {
       if (!resource || ['committed', 'finalized'].includes(resource.status)) {
         return;
       }
+      if (input.audit) {
+        const audit = await guardAudit(trx, input.audit, input.ownerId, true);
+        if (!audit || audit.request.expectedSha256.equals(input.verified.sha256)) {
+          return;
+        }
+      }
+      const matchedExternalAssetId = input.candidate ? undefined : input.matchedExternalAssetId;
       const target: RecoveryTarget = resource.expectedTarget ?? {
         assetId: input.candidate?.id ?? randomUUID(),
         updateId: input.candidate?.updateId ?? null,
@@ -253,6 +257,7 @@ export class MediaRecoveryRepository {
         physicalOriginalFileId: input.candidate?.physicalOriginalFileId ?? null,
         forkPhysicalFileId: input.candidate?.forkPhysicalFileId ?? null,
         outcome: input.outcome,
+        ...(matchedExternalAssetId && { matchedExternalAssetId }),
       };
       if (resource.sha256 && !resource.sha256.equals(input.verified.sha256)) {
         return;
@@ -276,11 +281,8 @@ export class MediaRecoveryRepository {
         if (!(await this.lockTarget(trx, input, target, input.verified))) {
           return;
         }
-      } else {
-        const matches = await this.candidates(trx, input.ownerId, input.verified);
-        if (matches.length > 0) {
-          return;
-        }
+      } else if (await this.hasManagedMatch(trx, input.ownerId, input.verified)) {
+        return;
       }
       const promotedPath = resource.promotedPath ?? input.proposedPath;
       await this.lockPath(trx, promotedPath);
@@ -356,11 +358,8 @@ export class MediaRecoveryRepository {
       if (target.updateId && !candidate) {
         return { outcome: 'retry', reason: 'target_changed' };
       }
-      if (!target.updateId) {
-        const matches = await this.candidates(trx, input.ownerId, input.verified);
-        if (matches.length > 0) {
-          return { outcome: 'retry', reason: 'matching_asset_created' };
-        }
+      if (!target.updateId && (await this.hasManagedMatch(trx, input.ownerId, input.verified))) {
+        return { outcome: 'retry', reason: 'matching_asset_created' };
       }
       const final = await input.verifyFinal();
       if (
@@ -395,6 +394,15 @@ export class MediaRecoveryRepository {
         }
         if (!candidate) {
           const createdAt = input.sourceCreatedAt ?? new Date();
+          const inherited = target.matchedExternalAssetId
+            ? await this.inheritedProtection(trx, input.ownerId, target.matchedExternalAssetId)
+            : undefined;
+          // The worker's preliminary sourceHidden is not publication authority. Tags,
+          // suppression and elevation may have changed before this transaction began.
+          const audit = input.audit ? await guardAudit(trx, input.audit, input.ownerId, true) : undefined;
+          if (input.audit && !audit) {
+            throw new Error('audit_authority_changed');
+          }
           await trx
             .insertInto('asset')
             .values({
@@ -408,10 +416,18 @@ export class MediaRecoveryRepository {
               fileCreatedAt: createdAt,
               fileModifiedAt: createdAt,
               localDateTime: createdAt,
-              visibility: input.sourceHidden ? AssetVisibility.Locked : AssetVisibility.Timeline,
+              // a hidden source arrives locked (FL-34): a lock record, never a stored `locked` visibility
+              visibility: AssetVisibility.Timeline,
               status: AssetStatus.Active,
             })
             .execute();
+          if ((audit ? audit.private : input.sourceHidden) || inherited) {
+            await trx
+              .insertInto('asset_lock')
+              .values({ assetId, reason: inherited ?? AssetLockReason.Marked, lockedBy: null })
+              .onConflict((oc) => oc.column('assetId').doNothing())
+              .execute();
+          }
           await this.forkPrivacy.mirrorFromLegacy(assetId, trx);
           await this.forkEnrichment.initialize([assetId], trx);
         }
@@ -474,6 +490,8 @@ export class MediaRecoveryRepository {
           .onConflict((oc) => oc.column('assetId').doUpdateSet({ fileSizeInByte: final.sizeInBytes }))
           .execute();
       }
+      // Every committed asset is managed (FL-69: an external original is never the recovered asset), so
+      // these are a managed copy's digests
       await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount", evidence, "verifiedAt", "updatedAt")
         VALUES (${assetId}::uuid, ${final.sha1}, ${final.sha256}, ${final.sizeInBytes}, ARRAY[${promotedPath}]::text[], 1,
           ${{ source: 'icloud-recovery', resourceId: input.resourceId, identity: final.identity }}::jsonb, now(), now())
@@ -507,11 +525,99 @@ export class MediaRecoveryRepository {
             { name: JobName.AssetGenerateThumbnails, data: { id: assetId, source: 'upload' } },
           ];
       await sql`UPDATE immich_fork.icloud_resource SET status = 'committed', "assetId" = ${assetId}::uuid,
-        path = ${promotedPath}, verification = ${{ outcome: target.outcome, identity: final.identity, sizeInBytes: final.sizeInBytes }}::jsonb,
+        path = ${promotedPath}, verification = ${{
+          outcome: target.outcome,
+          identity: final.identity,
+          sizeInBytes: final.sizeInBytes,
+          ...(input.audit && {
+            auditStaging: {
+              resourceId: input.resourceId,
+              requestId: input.audit.auditRequestId,
+              ownerId: input.ownerId,
+              stagingPath: resource.stagingPath,
+              sha256: final.sha256.toString('hex'),
+              sizeInBytes: final.sizeInBytes,
+            },
+          }),
+          ...(target.matchedExternalAssetId && { matchedExternalAssetId: target.matchedExternalAssetId }),
+        }}::jsonb,
         "pendingJobs" = ${pendingJobs}::jsonb, "lastError" = NULL, "updatedAt" = now()
         WHERE id = ${input.resourceId}::uuid`.execute(trx);
+      if (input.audit) {
+        await publishAudit(
+          trx,
+          input.audit,
+          input.ownerId,
+          'mismatch',
+          { id: input.resourceId, leaseToken: input.leaseToken },
+          assetId,
+        );
+      }
       return { outcome: target.outcome, assetId };
     });
+  }
+
+  /**
+   * Whether an asset other than an external original already holds these bytes. An external match is
+   * evidence only (FL-69), so it never stands in the way of importing the managed copy.
+   */
+  private async hasManagedMatch(trx: Kysely<DB>, ownerId: string, verified: Pick<VerifiedMedia, 'sha1' | 'sha256'>) {
+    // its own query: the candidate list is capped, and many external copies must not push a managed match out
+    const { rows } = await sql`SELECT 1 FROM public.asset a
+      WHERE a."ownerId" = ${ownerId}::uuid AND NOT a."isExternal" AND a.id IN (${this.contentMatchIds(ownerId, verified)})
+      LIMIT 1`.execute(trx);
+    return rows.length > 0;
+  }
+
+  /** The owner's assets whose own content checksum, or a recorded digest, is one of these digests. */
+  private contentMatchIds(ownerId: string, verified: Pick<VerifiedMedia, 'sha1' | 'sha256'>) {
+    return sql`SELECT id FROM public.asset WHERE "ownerId" = ${ownerId}::uuid AND checksum IN (${verified.sha1}, ${verified.sha256})
+          AND "checksumAlgorithm" IN (${ChecksumAlgorithm.sha1File}, ${ChecksumAlgorithm.sha256File})
+        UNION SELECT "assetId" FROM immich_fork.asset_checksum WHERE sha1 = ${verified.sha1} OR sha256 = ${verified.sha256}`;
+  }
+
+  /** Besides a lock, what hides an owner's asset from a session that is not unlocked: nsfw or suppression. */
+  private async hiddenFilter(db: Kysely<DB>, ownerId: string) {
+    const preference = await db
+      .selectFrom('user_metadata')
+      .select('value')
+      .where('userId', '=', ownerId)
+      .where('key', '=', UserMetadataKey.Preferences)
+      .forShare()
+      .executeTakeFirst();
+    const preferences = preference?.value as
+      { privacy?: { suppression?: { tagIds?: string[]; personIds?: string[]; petIds?: string[] } } } | undefined;
+    const suppression = preferences?.privacy?.suppression;
+    return hiddenContentAssetIdExists(sql`a.id`, {
+      userId: ownerId,
+      scope: 'owned',
+      includeNsfw: true,
+      tagIds: suppression?.tagIds ?? [],
+      personIds: suppression?.personIds ?? [],
+      petIds: suppression?.petIds ?? [],
+    });
+  }
+
+  /**
+   * FL-69: the protection a managed copy takes from the hidden external original it matches, so a copy
+   * never shows what the original hides. A Locked original passes on its lock reason. One hidden by
+   * sensitive content or suppression is locked as marked, since those come from the original's own
+   * detections, tags and people, which a new copy does not have yet. Undefined when the original is
+   * visible or gone.
+   */
+  private async inheritedProtection(
+    trx: Kysely<DB>,
+    ownerId: string,
+    externalAssetId: string,
+  ): Promise<AssetLockReason | undefined> {
+    const hidden = await this.hiddenFilter(trx, ownerId);
+    const { rows } = await sql<{ lockReason: AssetLockReason | null; hidden: boolean }>`
+      SELECT (SELECT l.reason FROM public.asset_lock l WHERE l."assetId" = a.id) AS "lockReason", ${hidden} AS hidden
+      FROM public.asset a WHERE a.id = ${externalAssetId}::uuid AND a."ownerId" = ${ownerId}::uuid FOR SHARE OF a`.execute(
+      trx,
+    );
+    const row = rows[0];
+    return row?.lockReason ?? (row?.hidden ? AssetLockReason.Marked : undefined);
   }
 
   private async lockAuthority(trx: Kysely<DB>, ownerId: string, checksum: Buffer): Promise<ForkSchemaPhase> {
@@ -535,11 +641,16 @@ export class MediaRecoveryRepository {
   }
 
   private async lockResource(trx: Kysely<DB>, input: RecoveryAuthority): Promise<RecoveryResource | undefined> {
+    if (input.audit && !(await guardAudit(trx, input.audit, input.ownerId, true))) {
+      return;
+    }
     const result = await sql<RecoveryResource>`SELECT r.*, r."expectedSize"::float8 AS "expectedSize"
       FROM immich_fork.icloud_resource r JOIN immich_fork.icloud_connection c ON c.id = r."connectionId" AND c."ownerId" = r."ownerId"
       WHERE r.id = ${input.resourceId}::uuid AND r."ownerId" = ${input.ownerId}::uuid
         AND r."leaseToken" = ${input.leaseToken}::uuid AND r."leaseExpiresAt" > clock_timestamp()
-        AND r.status <> 'removed' AND c.state = 'connected' FOR UPDATE OF r FOR SHARE OF c`.execute(trx);
+        AND r.status <> 'removed' AND c.state = 'connected'
+        AND r."auditRequestId" IS NOT DISTINCT FROM ${input.audit?.auditRequestId ?? null}::uuid
+        FOR UPDATE OF r FOR SHARE OF c`.execute(trx);
     return result.rows[0];
   }
 
@@ -569,7 +680,9 @@ export class MediaRecoveryRepository {
       (row.physicalOriginalFileId ?? null) !== target.physicalOriginalFileId ||
       row.deletedAt ||
       row.status !== AssetStatus.Active ||
-      (row.isExternal && target.outcome !== 'reused' && !input.recoverExternalAsManaged)
+      // FL-69 (owner decision): an external original is never reused, repaired or converted by recovery;
+      // a match with one is evidence only, and the item is imported as a new managed asset
+      row.isExternal
     ) {
       return;
     }
@@ -592,6 +705,12 @@ export class MediaRecoveryRepository {
     const candidate = candidates.find(({ id }) => id === row.id);
     if (!candidate?.matchesContent || candidate.identityConflict || (candidate.hidden && !input.includeHidden)) {
       return;
+    }
+    if (input.audit) {
+      const audit = await guardAudit(trx, input.audit, input.ownerId, true);
+      if (!audit || (audit.private && !candidate.hidden)) {
+        return;
+      }
     }
     return candidate;
   }

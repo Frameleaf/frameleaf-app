@@ -17,6 +17,7 @@ import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
+  IntegrityCheckRunsResponseDto,
   IntegrityGetReportDto,
   IntegrityReportResponseDto,
   IntegrityReportSummaryResponseDto,
@@ -66,12 +67,21 @@ import { batched, handlePromiseError } from 'src/utils/misc.js';
 export class IntegrityService extends BaseService {
   private integrityLock = false;
 
+  /**
+   * Library care → "Audit database and file references" (FL-69, settings-catalog.mjs:926-931): the
+   * scheduled missing-file and untracked-file checks are that audit. Each keeps its own switch and
+   * schedule; turning the audit off stops both schedules without losing them. Asking for a check
+   * from the job manager still runs it.
+   */
+  private static referenceAudit(enabled: boolean, config: ArgOf<'ConfigInit'>['newConfig']) {
+    return enabled && config.libraryCare.integrityAudit;
+  }
+
   @OnEvent({ name: 'ConfigInit', workers: [ImmichWorker.Microservices] })
-  async onConfigInit({
-    newConfig: {
+  async onConfigInit({ newConfig }: ArgOf<'ConfigInit'>) {
+    const {
       integrityChecks: { untrackedFiles, missingFiles, checksumFiles },
-    },
-  }: ArgOf<'ConfigInit'>) {
+    } = newConfig;
     this.integrityLock = await this.databaseRepository.tryLock(DatabaseLock.IntegrityCheck);
     if (!this.integrityLock) {
       return;
@@ -85,7 +95,7 @@ export class IntegrityService extends BaseService {
           this.jobRepository.queue({ name: JobName.IntegrityUntrackedFilesQueueAll, data: {} }),
           this.logger,
         ),
-      start: untrackedFiles.enabled,
+      start: IntegrityService.referenceAudit(untrackedFiles.enabled, newConfig),
     });
 
     this.cronRepository.create({
@@ -96,7 +106,7 @@ export class IntegrityService extends BaseService {
           this.jobRepository.queue({ name: JobName.IntegrityMissingFilesQueueAll, data: {} }),
           this.logger,
         ),
-      start: missingFiles.enabled,
+      start: IntegrityService.referenceAudit(missingFiles.enabled, newConfig),
     });
 
     this.cronRepository.create({
@@ -109,25 +119,24 @@ export class IntegrityService extends BaseService {
   }
 
   @OnEvent({ name: 'ConfigUpdate', server: true })
-  onConfigUpdate({
-    newConfig: {
-      integrityChecks: { untrackedFiles, missingFiles, checksumFiles },
-    },
-  }: ArgOf<'ConfigUpdate'>) {
+  onConfigUpdate({ newConfig }: ArgOf<'ConfigUpdate'>) {
     if (!this.integrityLock) {
       return;
     }
+    const {
+      integrityChecks: { untrackedFiles, missingFiles, checksumFiles },
+    } = newConfig;
 
     this.cronRepository.update({
       name: 'integrityUntrackedFiles',
       expression: untrackedFiles.cronExpression,
-      start: untrackedFiles.enabled,
+      start: IntegrityService.referenceAudit(untrackedFiles.enabled, newConfig),
     });
 
     this.cronRepository.update({
       name: 'integrityMissingFiles',
       expression: missingFiles.cronExpression,
-      start: missingFiles.enabled,
+      start: IntegrityService.referenceAudit(missingFiles.enabled, newConfig),
     });
 
     this.cronRepository.update({
@@ -139,6 +148,51 @@ export class IntegrityService extends BaseService {
 
   getIntegrityReportSummary(): Promise<IntegrityReportSummaryResponseDto> {
     return this.integrityRepository.getIntegrityReportSummary();
+  }
+
+  /**
+   * FL-81 (CC-21): when each check last completed a full run, for "Last run …" in Maintenance. The
+   * untracked and missing checks complete when the last of their batches finishes; the checksum
+   * check when a pass has covered every asset (a pass stopped by its time or percentage limit
+   * continues from its checkpoint and is not a completed run yet).
+   */
+  async getIntegrityCheckRuns(): Promise<IntegrityCheckRunsResponseDto> {
+    const runs = (await this.systemMetadataRepository.get(SystemMetadataKey.IntegrityCheckRuns)) ?? {};
+    return {
+      [IntegrityReport.ChecksumFail]: runs[IntegrityReport.ChecksumFail]?.lastRunAt ?? null,
+      [IntegrityReport.MissingFile]: runs[IntegrityReport.MissingFile]?.lastRunAt ?? null,
+      [IntegrityReport.UntrackedFile]: runs[IntegrityReport.UntrackedFile]?.lastRunAt ?? null,
+    };
+  }
+
+  /** A full (not refresh-only) run of `type` begins; its batches carry the returned id. */
+  private async startCheckRun(type: IntegrityReport): Promise<string> {
+    const runId = this.cryptoRepository.randomUUID();
+    await this.systemMetadataRepository.startIntegrityRun(type, {
+      runId,
+      startedAt: new Date().toISOString(),
+      batches: null,
+      done: 0,
+    });
+    return runId;
+  }
+
+  /**
+   * Progress of a run: every batch queued (`batches`) or one batch finished. Whichever update sees
+   * all batches finished completes the run, however the batches and the queueing interleave.
+   */
+  private async progressCheckRun(
+    type: IntegrityReport,
+    runId: string | undefined,
+    progress: { batches?: number; finished?: number },
+  ) {
+    if (!runId) {
+      return;
+    }
+    const run = await this.systemMetadataRepository.updateIntegrityRun(type, runId, progress);
+    if (run && run.batches !== null && run.done >= run.batches) {
+      await this.systemMetadataRepository.completeIntegrityRun(type, runId, new Date());
+    }
   }
 
   getIntegrityReport(dto: IntegrityGetReportDto): Promise<IntegrityReportResponseDto> {
@@ -191,9 +245,11 @@ export class IntegrityService extends BaseService {
     } else if (fileAssetId) {
       await this.assetRepository.deleteFiles([{ id: fileAssetId }]);
     } else {
+      // kept while tracked (fork-only paths such as video duplicate frames), and otherwise only through
+      // the reference-counted guard: a path any row references (a shared original, the file trash) is kept
       const trackedPaths = await this.integrityRepository.getTrackedPaths([path]);
       if (trackedPaths.length === 0) {
-        await this.storageRepository.unlink(path);
+        await this.physicalFileRepository.deleteUnreferencedPath(path, () => this.storageRepository.unlink(path));
       }
       await this.integrityRepository.deleteById(id);
     }
@@ -228,6 +284,7 @@ export class IntegrityService extends BaseService {
     }
 
     this.logger.log(`Scanning for untracked files...`);
+    const runId = await this.startCheckRun(IntegrityReport.UntrackedFile);
 
     const assetPaths = this.storageRepository.walk({
       pathsToCrawl: [StorageFolder.EncodedVideo, StorageFolder.Library, StorageFolder.Upload].map((folder) =>
@@ -254,12 +311,14 @@ export class IntegrityService extends BaseService {
     }
 
     let total = 0;
+    let batches = 0;
     for await (const [batchType, batchPaths] of paths()) {
       await this.jobRepository.queue({
         name: JobName.IntegrityUntrackedFiles,
         data: {
           type: batchType,
           paths: batchPaths,
+          runId,
         },
       });
 
@@ -267,13 +326,21 @@ export class IntegrityService extends BaseService {
       total += count;
 
       this.logger.log(`Queued untracked check of ${count} file(s) (${total} so far)`);
+      batches++;
     }
 
+    await this.progressCheckRun(IntegrityReport.UntrackedFile, runId, { batches });
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.IntegrityUntrackedFiles, queue: QueueName.IntegrityCheck })
-  async handleUntrackedFiles({ type, paths }: IIntegrityUntrackedFilesJob): Promise<JobStatus> {
+  async handleUntrackedFiles({ runId, ...job }: IIntegrityUntrackedFilesJob): Promise<JobStatus> {
+    const status = await this.checkUntrackedFiles(job);
+    await this.progressCheckRun(IntegrityReport.UntrackedFile, runId, { finished: 1 });
+    return status;
+  }
+
+  private async checkUntrackedFiles({ type, paths }: Omit<IIntegrityUntrackedFilesJob, 'runId'>): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${paths.length} files to check if they are untracked.`);
 
     const untrackedFiles = new Set<string>(paths);
@@ -307,6 +374,13 @@ export class IntegrityService extends BaseService {
     // asset_file, so the walk must exempt them explicitly.
     const framePaths = await this.integrityRepository.getVideoDuplicateFramePathsByPaths(paths);
     for (const { path } of framePaths) {
+      untrackedFiles.delete(path);
+    }
+
+    // Develop versions (edited masters, previews, developed files brought back) are tracked by
+    // their version row; they are a person's work, never an orphan to clean up (FL-64).
+    const developPaths = await this.integrityRepository.getDevelopRevisionPathsByPaths(paths);
+    for (const { path } of developPaths) {
       untrackedFiles.delete(path);
     }
 
@@ -386,27 +460,38 @@ export class IntegrityService extends BaseService {
     }
 
     this.logger.log(`Scanning for missing files...`);
+    const runId = await this.startCheckRun(IntegrityReport.MissingFile);
 
     const assetPaths = this.integrityRepository.streamAssetPathsForMissingFiles();
 
     let total = 0;
+    let batches = 0;
     for await (const batchPaths of batched(assetPaths, JOBS_LIBRARY_PAGINATION_SIZE)) {
       await this.jobRepository.queue({
         name: JobName.IntegrityMissingFiles,
         data: {
           items: batchPaths,
+          runId,
         },
       });
+      batches++;
 
       total += batchPaths.length;
       this.logger.log(`Queued missing check of ${batchPaths.length} file(s) (${total} so far)`);
     }
 
+    await this.progressCheckRun(IntegrityReport.MissingFile, runId, { batches });
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.IntegrityMissingFiles, queue: QueueName.IntegrityCheck })
-  async handleMissingFiles({ items }: IIntegrityMissingFilesJob): Promise<JobStatus> {
+  async handleMissingFiles({ runId, ...job }: IIntegrityMissingFilesJob): Promise<JobStatus> {
+    const status = await this.checkMissingFiles(job);
+    await this.progressCheckRun(IntegrityReport.MissingFile, runId, { finished: 1 });
+    return status;
+  }
+
+  private async checkMissingFiles({ items }: Omit<IIntegrityMissingFilesJob, 'runId'>): Promise<JobStatus> {
     this.logger.log(`Processing batch of ${items.length} files to check if they are missing.`);
 
     const results = await Promise.all(
@@ -530,6 +615,10 @@ export class IntegrityService extends BaseService {
     const sha256Hash = createHash('sha256');
     let sizeInBytes = 0;
 
+    let actualSha256: string | null = null;
+    let result: 'passed' | 'mismatched' | 'missing' | 'unreadable';
+    let sha1: Buffer | undefined;
+    let sha256: Buffer | undefined;
     try {
       await pipeline([
         this.storageRepository.createPlainReadStream(originalPath),
@@ -542,42 +631,48 @@ export class IntegrityService extends BaseService {
           },
         }),
       ]);
-
-      const sha1 = sha1Hash.digest();
-      const sha256 = sha256Hash.digest();
-      if (checksum.equals(sha1) || checksum.equals(sha256)) {
-        await this.forkSchemaRepository.recordAssetChecksums({
-          assetId,
-          sha1,
-          sha256,
-          sizeInBytes,
-          path: originalPath,
-          source: 'integrity',
-        });
-
-        if (reportId) {
-          await this.integrityRepository.deleteById(reportId);
-        }
-      } else {
-        throw new Error('File failed checksum');
-      }
+      sha1 = sha1Hash.digest();
+      sha256 = sha256Hash.digest();
+      actualSha256 = sha256.toString('hex');
+      result = checksum.equals(checksumAlgorithm === ChecksumAlgorithm.sha256File ? sha256 : sha1)
+        ? 'passed'
+        : 'mismatched';
     } catch (error) {
-      if ((error as { code?: string }).code === 'ENOENT') {
-        if (reportId) {
-          await this.integrityRepository.deleteById(reportId);
-        }
-
-        // missing file; handled by the missing files job
-        return;
+      result = (error as { code?: string }).code === 'ENOENT' ? 'missing' : 'unreadable';
+      if (result === 'unreadable') {
+        this.logger.warn('Failed to process a file: ' + error);
       }
+    }
 
-      this.logger.warn('Failed to process a file: ' + error);
-      await this.integrityRepository.create({
-        path: originalPath,
-        type: IntegrityReport.ChecksumFail,
+    // Persistence errors are not file failures. Keep successful rechecks separate from the original baseline.
+    const current = await this.integrityRepository.recordVerification({
+      assetId,
+      originalPath,
+      expectedChecksum: checksum,
+      checksumAlgorithm,
+      actualSha256,
+      result,
+    });
+    if (!current) {
+      return;
+    }
+    if (result === 'passed') {
+      await this.forkSchemaRepository.recordAssetChecksums({
         assetId,
+        sha1: sha1!,
+        sha256: sha256!,
+        sizeInBytes,
+        path: originalPath,
+        source: 'integrity',
       });
     }
+    if (result === 'passed' || result === 'missing') {
+      if (reportId) {
+        await this.integrityRepository.deleteById(reportId);
+      }
+      return;
+    }
+    await this.integrityRepository.create({ path: originalPath, type: IntegrityReport.ChecksumFail, assetId });
   }
 
   @OnJob({ name: JobName.IntegrityChecksumFiles, queue: QueueName.IntegrityCheck })
@@ -647,6 +742,10 @@ export class IntegrityService extends BaseService {
       this.logger.log(`Finished checksum job, will continue from ${lastCreatedAt.toISOString()}.`);
     } else {
       this.logger.log(`Finished checksum job, covered all assets.`);
+      // A pass that reached the last asset is a completed run (FL-81); one stopped by its limits
+      // continues from the checkpoint next time and completes then.
+      const runId = await this.startCheckRun(IntegrityReport.ChecksumFail);
+      await this.systemMetadataRepository.completeIntegrityRun(IntegrityReport.ChecksumFail, runId, new Date());
     }
 
     return JobStatus.Success;
@@ -768,11 +867,14 @@ export class IntegrityService extends BaseService {
     if (byPath.length > 0) {
       const tracked = await this.integrityRepository.getTrackedPaths(byPath.map(({ path }) => path));
       const trackedPaths = new Set(tracked.map(({ path }) => path));
-      await Promise.all(
-        byPath
-          .filter(({ path }) => !trackedPaths.has(path))
-          .map(({ path }) => this.storageRepository.unlink(path).catch(() => void 0)),
-      );
+      for (const { path } of byPath) {
+        if (trackedPaths.has(path)) {
+          continue;
+        }
+        await this.physicalFileRepository
+          .deleteUnreferencedPath(path, () => this.storageRepository.unlink(path))
+          .catch(() => void 0);
+      }
       await this.integrityRepository.deleteByIds(byPath.map(({ id }) => id));
     }
 

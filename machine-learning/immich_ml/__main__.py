@@ -4,12 +4,17 @@ import subprocess
 from ipaddress import ip_address
 from pathlib import Path
 
-from .config import log, non_prefixed_settings, settings
+from .config import DEPRECATED_ENV, log, non_prefixed_settings, settings
+from .env_aliases import deprecated_env_warning
 
-if source_ref := os.getenv("IMMICH_SOURCE_REF"):
-    log.info(f"Initializing Immich ML [{source_ref}]")
+if source_ref := os.getenv("FRAMELEAF_SOURCE_REF"):
+    log.info(f"Initializing Frameleaf ML [{source_ref}]")
 else:
-    log.info("Initializing Immich ML")
+    log.info("Initializing Frameleaf ML")
+
+# FL-294: once, in the master process; the gunicorn workers resolve the same names quietly
+if deprecated_warning := deprecated_env_warning(DEPRECATED_ENV):
+    log.warning(deprecated_warning)
 
 module_dir = Path(__file__).parent
 
@@ -21,10 +26,10 @@ def is_ipv6(host: str) -> bool:
         return False
 
 
-bind_host = non_prefixed_settings.immich_host
+bind_host = non_prefixed_settings.frameleaf_host
 if is_ipv6(bind_host):
     bind_host = f"[{bind_host}]"
-bind_address = f"{bind_host}:{non_prefixed_settings.immich_port}"
+bind_address = f"{bind_host}:{non_prefixed_settings.frameleaf_port}"
 
 try:
     with subprocess.Popen(

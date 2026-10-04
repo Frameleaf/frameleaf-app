@@ -1,5 +1,5 @@
 import { AdminConfigDto, SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { AssetFileType, JobName, JobStatus, UserMetadataKey } from 'src/enum.js';
+import { AssetFileType, JobName, JobStatus, NotificationLevel, NotificationType, UserMetadataKey } from 'src/enum.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
 import { AssetFileFactory } from 'test/factories/asset-file.factory.js';
@@ -55,10 +55,67 @@ describe(NotificationService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(NotificationService));
+    // Existing positive fixtures represent a current authorized owner; individual refusals override it.
+    mocks.access.album.checkOwnerAccess.mockImplementation((_user, ids) => Promise.resolve(new Set(ids)));
+    mocks.access.asset.checkOwnerAccess.mockImplementation((_user, ids) => Promise.resolve(new Set(ids)));
   });
 
   it('should work', () => {
     expect(sut).toBeDefined();
+  });
+
+  describe('notifyAdmins (FL-155)', () => {
+    const notice = {
+      type: NotificationType.SystemMessage,
+      level: NotificationLevel.Warning,
+      title: 'This server cannot reach Frameleaf Cloud',
+      description: 'The last 3 check-ins failed.',
+      dedupeKey: 'frameleaf-cloud:heartbeat-failing',
+      dedupeDays: 1,
+    };
+
+    it('notifies every administrator and tags the notice with its dedupe key', async () => {
+      const [first, second] = [UserFactory.create({ isAdmin: true }), UserFactory.create({ isAdmin: true })];
+      mocks.user.getAdmins.mockResolvedValue([first, second] as never);
+      mocks.notification.findRecentByDedupeKey.mockResolvedValue(null);
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+
+      await expect(sut.notifyAdmins(notice)).resolves.toBe(2);
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: first.id, data: { dedupeKey: notice.dedupeKey } }),
+      );
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', second.id, expect.anything());
+    });
+
+    it('skips an administrator who already got the same notice within the window', async () => {
+      const [first, second] = [UserFactory.create({ isAdmin: true }), UserFactory.create({ isAdmin: true })];
+      mocks.user.getAdmins.mockResolvedValue([first, second] as never);
+      mocks.notification.findRecentByDedupeKey.mockImplementation((userId) =>
+        Promise.resolve(userId === first.id ? { id: 'n1' } : null),
+      );
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+
+      await expect(sut.notifyAdmins(notice)).resolves.toBe(1);
+      expect(mocks.notification.create).toHaveBeenCalledTimes(1);
+      const since = mocks.notification.findRecentByDedupeKey.mock.calls[0][2];
+      expect(Date.now() - since.getTime()).toBeGreaterThan(23 * 60 * 60 * 1000);
+      expect(Date.now() - since.getTime()).toBeLessThan(25 * 60 * 60 * 1000);
+    });
+
+    it('caps the window at 30 days and always sends a notice without a key', async () => {
+      mocks.user.getAdmins.mockResolvedValue([UserFactory.create({ isAdmin: true })] as never);
+      mocks.notification.findRecentByDedupeKey.mockResolvedValue(null);
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent as never);
+
+      await sut.notifyAdmins({ ...notice, dedupeDays: 365 });
+      const since = mocks.notification.findRecentByDedupeKey.mock.calls[0][2];
+      expect(Date.now() - since.getTime()).toBeLessThanOrEqual(30 * 24 * 60 * 60 * 1000 + 1000);
+
+      mocks.notification.findRecentByDedupeKey.mockClear();
+      await sut.notifyAdmins({ ...notice, dedupeKey: undefined });
+      expect(mocks.notification.findRecentByDedupeKey).not.toHaveBeenCalled();
+      expect(mocks.notification.create).toHaveBeenLastCalledWith(expect.objectContaining({ data: null }));
+    });
   });
 
   describe('onConfigUpdate', () => {
@@ -122,6 +179,29 @@ describe(NotificationService.name, () => {
     });
   });
 
+  describe('onJobError (FL-71)', () => {
+    beforeEach(() => {
+      mocks.user.getAdmin.mockResolvedValue(UserFactory.create({ isAdmin: true }));
+    });
+
+    it.each([
+      { name: JobName.NotifyUserSignup, data: { id: 'user-1', password: 'hunter2-secret' } },
+      { name: JobName.SendMail, data: { to: 'a@b.c', subject: 's', html: 'hunter2-secret', text: 'hunter2-secret' } },
+    ] as const)('never logs the data of a $name job, which carries a password', async (job) => {
+      await sut.onJobError({ job, error: new Error('smtp down') });
+
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(String), '[redacted]');
+      expect(JSON.stringify(mocks.logger.error.mock.calls)).not.toContain('hunter2-secret');
+    });
+
+    it('still logs the data of other jobs', async () => {
+      const job = { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } } as const;
+      await sut.onJobError({ job, error: new Error('Input file is missing') });
+
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.any(String), expect.any(String), JSON.stringify(job.data));
+    });
+  });
+
   describe('onAssetHide', () => {
     it('should send connected clients an event', () => {
       sut.onAssetHide({ assetId: 'asset-id', userId: 'user-id' });
@@ -179,6 +259,54 @@ describe(NotificationService.name, () => {
         name: JobName.NotifyAlbumInvite,
         data: { id: '', recipientId: '42', senderName: 'foo' },
       });
+    });
+  });
+
+  describe('onSharedSpaceReply', () => {
+    it('tells the author of the answered comment in the app only, never by email', async () => {
+      const album = AlbumFactory.create({ albumName: 'Family' });
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+
+      await sut.onSharedSpaceReply({
+        id: album.id,
+        assetId: null,
+        activityId: 'reply-1',
+        parentActivityId: 'comment-1',
+        userId: '42',
+        senderName: 'Bo',
+      });
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: '42',
+          type: 'SharedSpaceReply',
+          description: 'Bo replied to your comment in Family',
+          data: JSON.stringify({
+            albumId: album.id,
+            assetId: null,
+            activityId: 'reply-1',
+            parentActivityId: 'comment-1',
+          }),
+        }),
+      );
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', '42', expect.anything());
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('does nothing once the space is gone', async () => {
+      mocks.album.getById.mockResolvedValue(void 0);
+
+      await sut.onSharedSpaceReply({
+        id: newUuid(),
+        assetId: null,
+        activityId: 'reply-1',
+        parentActivityId: 'comment-1',
+        userId: '42',
+        senderName: 'Bo',
+      });
+
+      expect(mocks.notification.create).not.toHaveBeenCalled();
     });
   });
 
@@ -263,8 +391,58 @@ describe(NotificationService.name, () => {
       await expect(sut.handleUserSignup({ id: '' })).resolves.toBe(JobStatus.Success);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.SendMail,
-        data: expect.objectContaining({ subject: 'Welcome to Immich' }),
+        data: expect.objectContaining({ subject: 'Welcome to Frameleaf' }),
       });
+    });
+  });
+
+  describe('onItemShare (FL-83 AL-30b)', () => {
+    const event = { ownerId: 'owner-1', userId: 'user-1', senderName: 'Taylor', count: 2, link: 'https://x/sharing' };
+    const withPrefs = (albumInvite: boolean) =>
+      mocks.user.get.mockResolvedValue({
+        ...userStub.user1,
+        metadata: [{ key: UserMetadataKey.Preferences, value: { emailNotifications: { enabled: true, albumInvite } } }],
+      });
+
+    it('notifies the recipient in the app, with the link and no item details', async () => {
+      withPrefs(false);
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+
+      await sut.onItemShare(event);
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-1',
+          type: NotificationType.ItemShare,
+          description: 'Taylor shared 2 items with you',
+          data: JSON.stringify({ ownerId: 'owner-1', count: 2, link: 'https://x/sharing' }),
+        }),
+      );
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_notification', 'user-1', expect.anything());
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('emails the recipient when they allow album invitation emails', async () => {
+      withPrefs(true);
+      mocks.systemMetadata.get.mockResolvedValue({ server: {} });
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+      mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+
+      await sut.onItemShare({ ...event, count: 1 });
+
+      expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ count: 1, link: 'https://x/sharing' }) }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.SendMail,
+        data: expect.objectContaining({ subject: 'Taylor shared an item with you' }),
+      });
+    });
+
+    it('does nothing for a recipient who is gone', async () => {
+      mocks.user.get.mockResolvedValue(void 0);
+      await sut.onItemShare(event);
+      expect(mocks.notification.create).not.toHaveBeenCalled();
     });
   });
 
@@ -408,6 +586,7 @@ describe(NotificationService.name, () => {
           includeNsfw: true,
           tagIds: [],
           personIds: [],
+          petIds: [],
           scope: 'owned',
         },
       });
@@ -598,6 +777,7 @@ describe(NotificationService.name, () => {
           includeNsfw: true,
           tagIds: [],
           personIds: [],
+          petIds: [],
           scope: 'owned',
         },
       });
@@ -654,6 +834,116 @@ describe(NotificationService.name, () => {
 
       await expect(sut.handleSendEmail({ html: '', subject: '', text: '', to: '' })).resolves.toBe(JobStatus.Success);
       expect(mocks.email.sendEmail).toHaveBeenCalledWith(expect.objectContaining({ replyTo: 'demo@immich.app' }));
+    });
+  });
+  describe('queued album current authority (FL-137)', () => {
+    const album = getForAlbum(AlbumFactory.create());
+    const recipient = userStub.user1;
+    const context = { albumId: album.id, recipientId: recipient.id, kind: 'update' as const };
+    const mail = {
+      to: recipient.email,
+      subject: 'New media has been added to an album - private',
+      html: 'old private body',
+      text: 'old private text',
+      albumMailContext: context,
+      imageAttachments: [{ path: '/old/private.webp', filename: 'old.webp', cid: 'album-thumbnail' }],
+    };
+    beforeEach(() => {
+      mocks.album.getById.mockResolvedValue(album);
+      mocks.user.get.mockResolvedValue(recipient);
+      mocks.systemMetadata.get.mockResolvedValue({ notifications: { smtp: { enabled: true } } });
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+      mocks.email.renderEmail.mockResolvedValue({ html: 'current body', text: 'current text' });
+      mocks.email.sendEmail.mockResolvedValue({ messageId: '', response: '' });
+      mocks.access.album.checkOwnerAccess.mockImplementation((_user, ids) => Promise.resolve(new Set(ids)));
+    });
+    it.each(['invite', 'update'] as const)(
+      'refuses a queued %s after membership revocation before notification/render',
+      async (kind) => {
+        mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+        mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+        const result =
+          kind === 'invite'
+            ? await sut.handleAlbumInvite({ id: album.id, recipientId: recipient.id, senderName: 'Owner' })
+            : await sut.handleAlbumUpdate({ id: album.id, recipientId: recipient.id });
+        expect(result).toBe(JobStatus.Skipped);
+        expect(mocks.notification.create).not.toHaveBeenCalled();
+        expect(mocks.email.renderEmail).not.toHaveBeenCalled();
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+      },
+    );
+    it('refuses already prepared album mail after membership revocation', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+      await expect(sut.handleSendEmail(mail)).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.email.sendEmail).not.toHaveBeenCalled();
+    });
+    it('rebuilds prepared mail rather than sending the old body or attachment path', async () => {
+      await expect(sut.handleSendEmail(mail)).resolves.toBe(JobStatus.Success);
+      expect(mocks.email.sendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ html: 'current body', text: 'current text', imageAttachments: undefined }),
+      );
+    });
+    it('rechecks membership after asynchronous rendering before sending', async () => {
+      mocks.email.renderEmail.mockImplementation(() => {
+        mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+        mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+        return Promise.resolve({ html: 'current body', text: 'current text' });
+      });
+      await expect(sut.handleSendEmail(mail)).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.email.sendEmail).not.toHaveBeenCalled();
+    });
+    it('does not read a thumbnail file when actual current access is refused', async () => {
+      const assetFile = AssetFileFactory.create({ type: AssetFileType.Thumbnail });
+      mocks.album.getById.mockResolvedValue({ ...album, albumThumbnailAssetId: assetFile.assetId });
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      await expect(sut.handleAlbumUpdate({ id: album.id, recipientId: recipient.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.assetJob.getAlbumThumbnailFiles).not.toHaveBeenCalled();
+      expect(mocks.job.queue).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ imageAttachments: undefined }) }),
+      );
+    });
+    it('refuses a selected thumbnail locked while its mail is rendering', async () => {
+      const assetFile = AssetFileFactory.create({ type: AssetFileType.Thumbnail });
+      mocks.album.getById.mockResolvedValue({ ...album, albumThumbnailAssetId: assetFile.assetId });
+      mocks.assetJob.getAlbumThumbnailFiles.mockResolvedValue([assetFile]);
+      mocks.email.renderEmail.mockImplementation(() => {
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+        return Promise.resolve({ html: 'current body', text: 'current text' });
+      });
+      await expect(sut.handleSendEmail(mail)).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.email.sendEmail).not.toHaveBeenCalled();
+    });
+    it('rechecks membership after the final attachment lookup', async () => {
+      const assetFile = AssetFileFactory.create({ type: AssetFileType.Thumbnail });
+      mocks.album.getById.mockResolvedValue({ ...album, albumThumbnailAssetId: assetFile.assetId });
+      mocks.assetJob.getAlbumThumbnailFiles.mockResolvedValueOnce([assetFile]).mockImplementationOnce(() => {
+        mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+        mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+        return Promise.resolve([assetFile]);
+      });
+      await expect(sut.handleSendEmail(mail)).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.email.sendEmail).not.toHaveBeenCalled();
+    });
+    it('rechecks actual access after the final attachment lookup', async () => {
+      const assetFile = AssetFileFactory.create({ type: AssetFileType.Thumbnail });
+      mocks.album.getById.mockResolvedValue({ ...album, albumThumbnailAssetId: assetFile.assetId });
+      mocks.assetJob.getAlbumThumbnailFiles.mockResolvedValueOnce([assetFile]).mockImplementationOnce(() => {
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+        return Promise.resolve([assetFile]);
+      });
+      await expect(sut.handleSendEmail(mail)).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.email.sendEmail).not.toHaveBeenCalled();
+    });
+    it.each([
+      { subject: 'You have been added to a shared album - secret' },
+      { subject: 'New media has been added to an album - secret' },
+      { subject: 'old custom album subject', imageAttachments: mail.imageAttachments },
+    ])('fails closed on a known unbound legacy album payload %j', async (legacy) => {
+      await expect(
+        sut.handleSendEmail({ to: recipient.email, html: 'private', text: 'private', ...legacy }),
+      ).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.email.sendEmail).not.toHaveBeenCalled();
     });
   });
 });

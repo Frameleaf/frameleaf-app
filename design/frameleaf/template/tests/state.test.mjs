@@ -207,17 +207,60 @@ test("queued simulation freezes source/recipe/mode/export options and destinatio
     },
     assets[1],
   );
-  const job = createSimulatedJob("AI restoration", assets[1], edit, "runpod");
+  const job = createSimulatedJob("AI restoration", assets[1], edit, "cloud");
   edit.title = "Changed later";
   edit.restorationMode = "Faithful";
   assert.equal(job.snapshot.edit.title, "First title");
   assert.equal(job.snapshot.edit.restorationMode, "Creative");
-  assert.equal(job.destination, "runpod");
+  assert.equal(job.destination, "cloud");
   const restored = read({ jobs: [job] }).jobs[0];
   assert.equal(restored.snapshot.assetId, "2");
   assert.equal(restored.snapshot.edit.exportFormat, "WebM · AV1");
   assert.equal(restored.snapshot.edit.exportColor, "HDR10");
   assert.equal(restored.simulated, true);
+});
+
+test("a saved legacy runpod destination recovers as Frameleaf Cloud", () => {
+  const job = { ...createSimulatedJob("Export", assets[0], initialEdit, "runpod") };
+  const saved = read({ destination: "runpod", jobs: [job] });
+  assert.equal(saved.destination, "cloud");
+  assert.equal(saved.jobs[0].destination, "cloud");
+  assert.equal(read({ destination: "cloud" }).destination, "cloud");
+  assert.equal(read({ destination: "elsewhere" }).destination, "local");
+});
+
+test("cloud job cost facts survive recovery and hostile values are bounded", () => {
+  const job = {
+    ...createSimulatedJob("AI restoration", assets[0], initialEdit, "cloud"),
+    status: "completed",
+    settings: { destination: "runpod", mode: "Faithful" },
+    cloud: {
+      modelId: "realbasicvsr@1",
+      modelName: "RealBasicVSR",
+      quantity: 4,
+      quantityLabel: "4 min",
+      p50: 1.9044,
+      p90: 1.9564,
+      hold: 1.96,
+      gpuClass: "gpu48pro",
+      gpuClassLabel: "48 GB GPU (L40S class)",
+      rate: 0.00130035,
+      startFee: 0.1,
+      workers: 5,
+      workSeconds: 1080,
+      disclosureVersion: "2026-09",
+      consentedAt: "2026-09-25T08:00:00.000Z",
+      settled: true,
+      chargedUsd: 1.09,
+    },
+  };
+  const restored = read({ jobs: [job] }).jobs[0];
+  assert.deepEqual(restored.cloud, job.cloud);
+  assert.equal(restored.settings.destination, "cloud");
+  const hostile = read({ jobs: [{ ...job, cloud: { p50: -4, hold: "lots", settled: "yes", chargedUsd: "1" } }] }).jobs[0];
+  assert.equal(hostile.cloud.p50, 0);
+  assert.equal(hostile.cloud.settled, false);
+  assert.equal(hostile.cloud.chargedUsd, null);
 });
 
 test("asset notes remain separate from pixel recipe reverts and from other assets", () => {
@@ -257,6 +300,28 @@ test("rail preference and search history preserve search modes and criteria acro
   assert.equal(read({ searchBy: "unknown" }).searchBy, "semantic");
 });
 
+test("library layout defaults to Browse and only accepts known layouts", () => {
+  assert.equal(read({}).layout, "browse");
+  assert.equal(read({ layout: "sideways" }).layout, "browse");
+  assert.equal(read({ layout: "work" }).layout, "work");
+  assert.equal(read({ layout: "timeline" }).layout, "timeline");
+});
+
+test("photos have no timeline while videos keep their real duration", () => {
+  const photo = { id: "p", name: "Photo.jpg", type: "photo", duration: 0 };
+  const clip = { id: "v", name: "Clip.mov", type: "video" };
+  assert.equal(normalizeEdit(initialEdit, photo).end, 0);
+  assert.equal(normalizeEdit({ start: 5, end: 9 }, photo).start, 0);
+  assert.equal(normalizeEdit(initialEdit, clip).end, 24);
+  assert.equal(normalizeEdit(initialEdit, assets[1]).end, 15);
+  const saved = parseSavedPrototype(
+    JSON.stringify({ openAssetId: "p", playbackPosition: 12 }),
+    [photo, assets[0]],
+    readView,
+  );
+  assert.equal(saved.playbackPosition, 0);
+});
+
 test("authoritative search URLs cannot inherit unrelated snapshot membership or names", () => {
   const saved = { view, collection: "Saved selection", snapshotIds: ["1"] };
   assert.deepEqual(
@@ -277,4 +342,10 @@ test("authoritative search URLs cannot inherit unrelated snapshot membership or 
     snapshotIds: ["1"],
     collection: "Saved selection",
   });
+});
+
+test("a job keeps when its current stage began across a reload", () => {
+  const job = { ...createSimulatedJob("Export", assets[0], initialEdit, "local"), status: "preparing", stageStartedAt: 1790000000000 };
+  assert.equal(read({ jobs: [job] }).jobs[0].stageStartedAt, 1790000000000);
+  assert.equal("stageStartedAt" in read({ jobs: [{ ...job, stageStartedAt: "soon" }] }).jobs[0], false);
 });

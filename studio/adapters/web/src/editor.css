@@ -1,0 +1,3 @@
+@import "../../../engine/src/index.css";
+/* The prepared engine is generated/ignored, so Tailwind's automatic scan excludes it. */
+@source '../../../engine/src';

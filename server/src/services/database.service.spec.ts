@@ -1,6 +1,7 @@
 import type { VectorExtension } from 'src/types.js';
 import { EXTENSION_NAMES } from 'src/constants.js';
-import { DatabaseExtension, VectorIndex } from 'src/enum.js';
+import { DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
+import { FirstLaunchBackup, FirstLaunchBackupError } from 'src/maintenance/first-launch-backup.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { envData, mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -112,7 +113,7 @@ describe(DatabaseService.name, () => {
         ]);
 
         await expect(sut.onBootstrap()).rejects.toThrow(
-          `The ${extensionName} extension version is ${versionBelowRange}, but Immich only supports ${extensionRange}`,
+          `The ${extensionName} extension version is ${versionBelowRange}, but Frameleaf only supports ${extensionRange}`,
         );
 
         expect(mocks.database.runMigrations).not.toHaveBeenCalled();
@@ -232,7 +233,7 @@ describe(DatabaseService.name, () => {
         ]);
 
         await expect(sut.onBootstrap()).rejects.toThrow(
-          `The ${extensionName} extension version is ${versionAboveRange}, but Immich only supports`,
+          `The ${extensionName} extension version is ${versionAboveRange}, but Frameleaf only supports`,
         );
 
         expect(mocks.database.updateVectorExtension).not.toHaveBeenCalled();
@@ -319,12 +320,19 @@ describe(DatabaseService.name, () => {
       expect(mocks.database.runOfficialMigrations).not.toHaveBeenCalled();
     });
 
-    it.each(['isolated', 'official-origin'] as const)('runs official then fork migrations in %s mode', async (mode) => {
+    it.each([
+      ['isolated', ['official', 'frameleaf', 'fork']],
+      ['official-origin', ['official', 'fork']],
+    ] as const)('runs official then fork migrations in %s mode', async (mode, expected) => {
       const migrationOrder: string[] = [];
       mocks.database.detectMigrationMode.mockResolvedValue(mode);
       mocks.database.runOfficialMigrations.mockImplementation(() => {
         migrationOrder.push('official');
         return Promise.resolve();
+      });
+      mocks.database.applyIsolatedFrameleafMigrations.mockImplementation(() => {
+        migrationOrder.push('frameleaf');
+        return Promise.resolve({ applied: [], pending: [], skipped: null });
       });
       mocks.database.runForkMigrations.mockImplementation(() => {
         migrationOrder.push('fork');
@@ -333,8 +341,240 @@ describe(DatabaseService.name, () => {
 
       await expect(sut.onBootstrap()).resolves.toBeUndefined();
 
-      expect(migrationOrder).toEqual(['official', 'fork']);
+      expect(migrationOrder).toEqual(expected);
       expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
+    it('applies newer Frameleaf migrations to a library past the cutover at startup (FL-180)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+      mocks.database.applyIsolatedFrameleafMigrations.mockResolvedValue({
+        applied: ['2100000000610-AddClassificationRule'],
+        pending: ['2100000000610-AddClassificationRule'],
+        skipped: null,
+      });
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.database.applyIsolatedFrameleafMigrations).toHaveBeenCalledExactlyOnceWith('startup');
+      expect(mocks.logger.log).toHaveBeenCalledWith(
+        'Frameleaf migration "2100000000610-AddClassificationRule" succeeded',
+      );
+    });
+
+    it('leaves newer Frameleaf migrations of a handed-over library to the return (FL-180)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+      mocks.database.applyIsolatedFrameleafMigrations.mockResolvedValue({
+        applied: [],
+        pending: ['2100000000610-AddClassificationRule'],
+        skipped: 'awaiting-return',
+      });
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('fork-handoff prepare-fork'));
+      expect(mocks.database.runForkMigrations).toHaveBeenCalledOnce();
+    });
+
+    it('says a ready library needs activation before its newer Frameleaf migrations run (FL-180)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+      mocks.database.applyIsolatedFrameleafMigrations.mockResolvedValue({
+        applied: [],
+        pending: ['2100000000610-AddClassificationRule'],
+        skipped: 'awaiting-activation',
+      });
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining('ready to active'));
+    });
+
+    it('fails startup before the fork migrations when a Frameleaf migration fails (FL-180)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+      mocks.database.applyIsolatedFrameleafMigrations.mockRejectedValue(new Error('synthetic Frameleaf failure'));
+
+      await expect(sut.onBootstrap()).rejects.toThrow('synthetic Frameleaf failure');
+
+      expect(mocks.database.runForkMigrations).not.toHaveBeenCalled();
+    });
+
+    it.each(['legacy', 'fresh', 'official-origin'] as const)(
+      'never applies Frameleaf migrations outside the ledger in %s mode (FL-180)',
+      async (mode) => {
+        mocks.database.detectMigrationMode.mockResolvedValue(mode);
+
+        await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+        expect(mocks.database.applyIsolatedFrameleafMigrations).not.toHaveBeenCalled();
+      },
+    );
+
+    it('adopts an official-origin library automatically inside the boot migration lock (FL-289)', async () => {
+      let lockHeld = false;
+      mocks.database.withLock.mockImplementation(async (_lock, fn) => {
+        lockHeld = true;
+        try {
+          return await fn();
+        } finally {
+          lockHeld = false;
+        }
+      });
+      const adoptedInsideLock: boolean[] = [];
+      mocks.database.detectMigrationMode.mockResolvedValue('official-origin');
+      mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(true);
+      mocks.database.runForkMigrations.mockResolvedValue();
+      mocks.database.adoptOfficialOrigin.mockImplementation(() => {
+        adoptedInsideLock.push(lockHeld);
+        return Promise.resolve({ adopted: true, applied: ['a', 'b'] });
+      });
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
+      expect(mocks.database.adoptOfficialOrigin).toHaveBeenCalledExactlyOnceWith({ atBoot: true });
+      expect(adoptedInsideLock).toEqual([true]);
+      expect(mocks.database.adoptOfficialOrigin.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mocks.database.runForkMigrations.mock.invocationCallOrder[0] ?? Infinity,
+      );
+      expect(mocks.logger.log).toHaveBeenCalledWith(expect.stringContaining('adopted automatically (2 migrations'));
+      expect(mocks.logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('fork-schema adopt'));
+      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
+    describe('first start on an official library (FL-295)', () => {
+      const officialLibrary = () => {
+        mocks.database.detectMigrationMode.mockResolvedValue('official-origin');
+        mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(true);
+        mocks.database.runForkMigrations.mockResolvedValue();
+        mocks.database.adoptOfficialOrigin.mockResolvedValue({ adopted: true, applied: ['a'] });
+        mocks.database.getExtensionVersions.mockResolvedValue([
+          { name: DatabaseExtension.VectorChord, installedVersion: minVersionInRange, availableVersion: updateInRange },
+        ]);
+      };
+      const mockFirstLaunch = (run: FirstLaunchBackup['run']) => {
+        const firstLaunch = { run: vi.fn(run) };
+        vi.spyOn(sut as unknown as { firstLaunchBackup: () => unknown }, 'firstLaunchBackup').mockReturnValue(
+          firstLaunch,
+        );
+        return firstLaunch;
+      };
+
+      it('takes the safety copy inside the boot migration lock, before any extension change, migration or adoption', async () => {
+        officialLibrary();
+        let lockHeld = false;
+        mocks.database.withLock.mockImplementation(async (_lock, fn) => {
+          lockHeld = true;
+          try {
+            return await fn();
+          } finally {
+            lockHeld = false;
+          }
+        });
+        const copiedInsideLock: boolean[] = [];
+        const firstLaunch = mockFirstLaunch(() => {
+          copiedInsideLock.push(lockHeld);
+          return Promise.resolve({
+            kind: 'created',
+            backup: { filename: 'immich-db-backup-x-pre-upgrade-v3.2.0-pg14.sql.gz', takenAt: '' },
+          });
+        });
+
+        await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+        expect(copiedInsideLock).toEqual([true]);
+        const copiedAt = firstLaunch.run.mock.invocationCallOrder[0];
+        for (const changed of [
+          mocks.database.updateVectorExtension,
+          mocks.database.reindexVectorsIfNeeded,
+          mocks.database.runOfficialMigrations,
+          mocks.database.runForkMigrations,
+          mocks.database.adoptOfficialOrigin,
+        ]) {
+          expect(changed).toHaveBeenCalled();
+          expect(changed.mock.invocationCallOrder[0]).toBeGreaterThan(copiedAt);
+        }
+      });
+
+      it('upgrades nothing when the safety copy fails, and fails the start', async () => {
+        officialLibrary();
+        mockFirstLaunch(() => Promise.reject(new FirstLaunchBackupError('backup-failed', 'The safety copy failed')));
+
+        await expect(sut.onBootstrap()).rejects.toThrow('The safety copy failed');
+
+        for (const untouched of [
+          mocks.database.createExtension,
+          mocks.database.updateVectorExtension,
+          mocks.database.reindexVectorsIfNeeded,
+          mocks.database.dropExtension,
+          mocks.database.runMigrations,
+          mocks.database.runOfficialMigrations,
+          mocks.database.runForkMigrations,
+          mocks.database.adoptOfficialOrigin,
+          mocks.database.applyIsolatedFrameleafMigrations,
+        ]) {
+          expect(untouched).not.toHaveBeenCalled();
+        }
+        expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('Nothing was upgraded'));
+      });
+
+      it('carries on when the copy is not needed or a recent backup made it unnecessary', async () => {
+        officialLibrary();
+        mockFirstLaunch(() =>
+          Promise.resolve({
+            kind: 'skipped',
+            backup: { filename: 'immich-db-backup-20261001T000000-v3.1.0-pg14.sql.gz', takenAt: '' },
+          }),
+        );
+
+        await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+        expect(mocks.database.adoptOfficialOrigin).toHaveBeenCalledOnce();
+      });
+
+      it('builds the copy from the existing database-backup path', () => {
+        const firstLaunch = (sut as unknown as { firstLaunchBackup: () => FirstLaunchBackup }).firstLaunchBackup();
+        expect(firstLaunch).toBeInstanceOf(FirstLaunchBackup);
+      });
+    });
+
+    it('defers a refused automatic adoption with a warning instead of failing startup (FL-289)', async () => {
+      mocks.database.detectMigrationMode.mockResolvedValue('official-origin');
+      mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(true);
+      mocks.database.adoptOfficialOrigin.mockRejectedValue(
+        new Error('Adoption found 1 other database connection(s): immich from 10.0.0.9 (idle in transaction)'),
+      );
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('immich from 10.0.0.9 (idle in transaction)'),
+      );
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('retries automatically at the next start'),
+      );
+      // startup carries on: the schema drift check still runs after the deferred adoption
+      expect(mocks.database.getSchemaDrift).toHaveBeenCalledOnce();
+    });
+
+    it.each(['legacy', 'fresh', 'isolated'] as const)(
+      'does not adopt a %s library that is not awaiting adoption (FL-289)',
+      async (mode) => {
+        mocks.database.detectMigrationMode.mockResolvedValue(mode);
+        mocks.database.applyIsolatedFrameleafMigrations.mockResolvedValue({ applied: [], pending: [], skipped: null });
+        mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(false);
+
+        await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+        expect(mocks.database.adoptOfficialOrigin).not.toHaveBeenCalled();
+      },
+    );
+
+    it('does not adopt when DB_SKIP_MIGRATIONS=true (FL-289)', async () => {
+      mocks.config.getEnv.mockReturnValue(mockEnvData({ database: { ...envData.database, skipMigrations: true } }));
+      mocks.database.isAwaitingOfficialAdoption.mockResolvedValue(true);
+
+      await expect(sut.onBootstrap()).resolves.toBeUndefined();
+
+      expect(mocks.database.adoptOfficialOrigin).not.toHaveBeenCalled();
     });
 
     it('guards an inactive schema version 2 return before either migration provider runs', async () => {

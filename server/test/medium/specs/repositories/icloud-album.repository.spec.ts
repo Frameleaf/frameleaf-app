@@ -22,10 +22,10 @@ describe('iCloud album owner and provenance reconciliation (PostgreSQL)', () => 
       "INSERT INTO immich_fork.state VALUES (1,'dual-write')",
       'CREATE TABLE immich_fork.migration_audit(name text,status text)',
       `CREATE TABLE album (id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"albumName" text,"parentId" uuid REFERENCES album,
-        icon text,"sortOrder" double precision,"deletedAt" timestamptz)`,
+        icon text,"sortOrder" double precision,"deletedAt" timestamptz,kind text NOT NULL DEFAULT 'album')`,
       'CREATE TABLE album_user ("albumId" uuid REFERENCES album,"userId" uuid,role text, PRIMARY KEY("albumId","userId"))',
       'CREATE TABLE album_closure (id_ancestor uuid REFERENCES album,id_descendant uuid REFERENCES album,PRIMARY KEY(id_ancestor,id_descendant))',
-      'CREATE TABLE immich_fork.album_metadata ("albumId" uuid PRIMARY KEY,"parentId" uuid,icon text,"sortOrder" double precision,"updatedAt" timestamptz)',
+      `CREATE TABLE immich_fork.album_metadata ("albumId" uuid PRIMARY KEY,"parentId" uuid,icon text,"sortOrder" double precision,"updatedAt" timestamptz,kind text NOT NULL DEFAULT 'album')`,
       'CREATE TABLE immich_fork.album_closure ("ancestorId" uuid,"descendantId" uuid,PRIMARY KEY("ancestorId","descendantId"))',
       'CREATE TABLE asset (id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)',
       'CREATE TABLE album_asset ("albumId" uuid REFERENCES album,"assetId" uuid REFERENCES asset,PRIMARY KEY("albumId","assetId"))',
@@ -37,6 +37,7 @@ describe('iCloud album owner and provenance reconciliation (PostgreSQL)', () => 
       await sql.raw(statement).execute(db);
     }
     await migration.up(db);
+    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
     service = new ICloudAlbumService(new ICloudAlbumRepository(db));
   });
   afterAll(async () => {

@@ -1,6 +1,8 @@
 import { ModuleRef } from '@nestjs/core';
-import { JobsOptions } from 'bullmq';
-import { JobName, QueueName } from 'src/enum.js';
+import { JobsOptions, WaitingError } from 'bullmq';
+import type { Mock } from 'vitest';
+import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP } from 'src/constants.js';
+import { JobName, QueueJobStatus, QueueName } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository, getForkSchemaBackfillJobOptions } from 'src/repositories/job.repository.js';
@@ -66,6 +68,137 @@ describe(JobRepository.name, () => {
     );
   });
 
+  describe('searchJobs', () => {
+    it("returns each job's attempts and a failed job's last error (FL-71)", async () => {
+      const getJobs = vi.fn().mockResolvedValue([
+        {
+          id: '1',
+          name: JobName.AssetDetectFaces,
+          timestamp: 1000,
+          data: { id: 'asset-1' },
+          attemptsMade: 3,
+          failedReason: 'Machine learning is unreachable',
+        },
+        { id: '2', name: JobName.AssetDetectFaces, timestamp: 2000, data: {}, attemptsMade: 0, failedReason: '' },
+      ]);
+      const moduleRef = { get: vi.fn().mockReturnValue({ getJobs }) } as unknown as ModuleRef;
+      const repository = new JobRepository(
+        moduleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+
+      await expect(repository.searchJobs(QueueName.FaceDetection, { status: [] })).resolves.toEqual([
+        {
+          status: QueueJobStatus.Waiting,
+          id: '1',
+          name: JobName.AssetDetectFaces,
+          timestamp: 1000,
+          data: { id: 'asset-1' },
+          attemptsMade: 3,
+          failedReason: 'Machine learning is unreachable',
+        },
+        {
+          status: QueueJobStatus.Waiting,
+          id: '2',
+          name: JobName.AssetDetectFaces,
+          timestamp: 2000,
+          data: {},
+          attemptsMade: 0,
+        },
+      ]);
+    });
+
+    it('reports the requested status, or infers it from the job when several were asked for (FL-71)', async () => {
+      const job = (overrides: Record<string, unknown>) => ({
+        id: '1',
+        name: JobName.AssetDetectFaces,
+        timestamp: Date.now(),
+        data: {},
+        attemptsMade: 1,
+        delay: 0,
+        ...overrides,
+      });
+      const getJobs = vi
+        .fn()
+        .mockResolvedValue([
+          job({ finishedOn: 1, failedReason: 'boom' }),
+          job({ finishedOn: 1 }),
+          job({ processedOn: 1 }),
+          job({ delay: 60_000 }),
+          job({}),
+        ]);
+      const moduleRef = { get: vi.fn().mockReturnValue({ getJobs }) } as unknown as ModuleRef;
+      const repository = new JobRepository(
+        moduleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+
+      const inferred = await repository.searchJobs(QueueName.FaceDetection, {});
+      expect(inferred.map(({ status }) => status)).toEqual([
+        QueueJobStatus.Failed,
+        QueueJobStatus.Complete,
+        QueueJobStatus.Active,
+        QueueJobStatus.Delayed,
+        QueueJobStatus.Waiting,
+      ]);
+      const requested = await repository.searchJobs(QueueName.FaceDetection, { status: [QueueJobStatus.Paused] });
+      expect(requested.every(({ status }) => status === QueueJobStatus.Paused)).toBe(true);
+      expect(getJobs).toHaveBeenLastCalledWith([QueueJobStatus.Paused], 0, 999);
+    });
+
+    it('cuts a long last error to 500 characters', async () => {
+      const getJobs = vi.fn().mockResolvedValue([
+        {
+          id: '1',
+          name: JobName.AssetDetectFaces,
+          timestamp: 1000,
+          data: {},
+          attemptsMade: 1,
+          failedReason: 'x'.repeat(2000),
+        },
+      ]);
+      const moduleRef = { get: vi.fn().mockReturnValue({ getJobs }) } as unknown as ModuleRef;
+      const repository = new JobRepository(
+        moduleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+
+      const [job] = await repository.searchJobs(QueueName.FaceDetection, { status: [] });
+      expect(job.failedReason).toHaveLength(500);
+    });
+
+    it('never returns the data of a signup notice or its mail, which carry a password (FL-71)', async () => {
+      const getJobs = vi.fn().mockResolvedValue([
+        {
+          id: '1',
+          name: JobName.NotifyUserSignup,
+          timestamp: 1,
+          data: { id: 'u', password: 'secret' },
+          attemptsMade: 1,
+        },
+        { id: '2', name: JobName.SendMail, timestamp: 1, data: { html: 'secret', text: 'secret' }, attemptsMade: 1 },
+        { id: '3', name: JobName.AssetDetectFaces, timestamp: 1, data: { id: 'asset-1' }, attemptsMade: 1 },
+      ]);
+      const moduleRef = { get: vi.fn().mockReturnValue({ getJobs }) } as unknown as ModuleRef;
+      const repository = new JobRepository(
+        moduleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+
+      const jobs = await repository.searchJobs(QueueName.Notification, { status: [QueueJobStatus.Failed] });
+      expect(jobs.map(({ data }) => data)).toEqual([{}, {}, { id: 'asset-1' }]);
+      expect(JSON.stringify(jobs)).not.toContain('secret');
+    });
+  });
+
   it('should use a longer lock for the database backup worker', () => {
     sut.startWorkers();
 
@@ -98,6 +231,77 @@ describe(JobRepository.name, () => {
     });
     expect(getForkSchemaBackfillJobOptions('privacy')).toEqual({
       deduplication: { id: `${JobName.ForkSchemaBackfill}:privacy`, keepLastIfActive: true },
+    });
+    // FL-289: a re-queue that waits out an orphaned claim keeps the per-kind dedup id.
+    expect(
+      getJobOptions({ name: JobName.ForkSchemaBackfill, data: { kind: 'storage', batchSize: 32, delay: 5000 } }),
+    ).toEqual({
+      deduplication: { id: `${JobName.ForkSchemaBackfill}:storage`, keepLastIfActive: true },
+      delay: 5000,
+    });
+  });
+
+  describe('jobs that are never retried (FL-71)', () => {
+    const queueWith = () => {
+      const queue = { add: vi.fn(), addBulk: vi.fn() };
+      const repository = new JobRepository(
+        { get: vi.fn().mockReturnValue(queue) } as unknown as ModuleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        { setContext: vi.fn() } as unknown as LoggingRepository,
+      );
+      // one queue is enough here; the handlers that map a job to its queue are not registered
+      vi.spyOn(repository as unknown as { getQueueName(): QueueName }, 'getQueueName').mockReturnValue(
+        QueueName.BackgroundTask,
+      );
+      return { queue, repository };
+    };
+
+    it('are queued with removeOnFail, so a stalled or failed one is not kept either', async () => {
+      const { queue, repository } = queueWith();
+
+      await repository.queueAll([
+        { name: JobName.NotifyUserSignup, data: { id: 'user-1', password: 'secret' } },
+        { name: JobName.FacialRecognition, data: { id: 'face-1' } },
+        { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1' } },
+      ]);
+
+      expect(queue.addBulk.mock.calls.flatMap(([jobs]) => jobs)).toEqual(
+        expect.arrayContaining([
+          { name: JobName.NotifyUserSignup, data: expect.anything(), opts: { removeOnFail: true } },
+          { name: JobName.FacialRecognition, data: expect.anything(), opts: { removeOnFail: true } },
+          { name: JobName.AssetGenerateThumbnails, data: expect.anything(), opts: undefined },
+        ]),
+      );
+    });
+
+    it('keep their own options next to removeOnFail', async () => {
+      const { queue, repository } = queueWith();
+
+      await repository.queue({ name: JobName.StorageTemplateMigrationSingle, data: { id: 'asset-1' } });
+      await repository.queue({ name: JobName.NotifyAlbumUpdate, data: { id: 'album-1', recipientId: 'user-1' } });
+
+      expect(queue.add).toHaveBeenCalledWith(JobName.StorageTemplateMigrationSingle, expect.anything(), {
+        jobId: 'asset-1',
+        removeOnFail: true,
+      });
+      expect(queue.add).toHaveBeenCalledWith(JobName.NotifyAlbumUpdate, expect.anything(), {
+        jobId: 'album-1/user-1',
+        delay: undefined,
+        removeOnFail: true,
+      });
+    });
+
+    it('queues person thumbnails without a priority, which would hide them from the waiting counts', async () => {
+      const { queue, repository } = queueWith();
+
+      await repository.queueAll([
+        { name: JobName.PersonGenerateThumbnail, data: { ownerId: 'user-1', personGroupId: 'group-1' } },
+      ]);
+
+      expect(queue.addBulk).toHaveBeenCalledWith([
+        { name: JobName.PersonGenerateThumbnail, data: expect.anything(), opts: undefined },
+      ]);
     });
   });
 
@@ -160,6 +364,262 @@ describe(JobRepository.name, () => {
 
       expect(sut.getRollingAvgMs(JobName.ImageDescription)).toBe(1000);
       expect(sut.getRollingAvgMs(JobName.Ocr)).toBe(5000);
+    });
+  });
+
+  describe('stopWorkers (FL-291)', () => {
+    it('guards a subset of the jobs that are never retried', () => {
+      for (const name of JOBS_UNSAFE_TO_RERUN_AFTER_STOP) {
+        expect(JOBS_NOT_RETRIED.has(name)).toBe(true);
+      }
+      expect(JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(JobName.WorkflowAssetTrigger)).toBe(false);
+      expect(JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(JobName.StorageTemplateMigrationSingle)).toBe(false);
+      expect(JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(JobName.SendMail)).toBe(true);
+    });
+
+    type FakeWorker = {
+      name: string;
+      queueName: QueueName;
+      processor: (job: unknown, token?: string) => Promise<void>;
+      on: ReturnType<typeof vi.fn>;
+      pause: ReturnType<typeof vi.fn>;
+      close: ReturnType<typeof vi.fn>;
+    };
+
+    let workers: FakeWorker[];
+    let emit: Mock<(...args: unknown[]) => Promise<void>>;
+    let logger: Record<string, ReturnType<typeof vi.fn>>;
+    let repository: JobRepository;
+    let order: string[];
+
+    const fakeJob = (name: JobName, id = '1') => ({
+      id,
+      name,
+      data: {},
+      moveToWait: vi.fn(() => {
+        order.push(`moveToWait:${id}`);
+        return Promise.resolve(0);
+      }),
+      moveToFailed: vi.fn(() => {
+        order.push(`moveToFailed:${id}`);
+        return Promise.resolve();
+      }),
+    });
+
+    const workerFor = (queueName: QueueName) => workers.find((worker) => worker.queueName === queueName)!;
+
+    /** A handler that runs until released, like a transcode that outlives the grace period. */
+    const holdHandler = () => {
+      let release!: () => void;
+      emit.mockImplementation(() => new Promise<void>((resolve) => (release = resolve)));
+      return () => release();
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      workers = [];
+      order = [];
+      mocks.worker.mockImplementation(function (queueName: QueueName, processor: FakeWorker['processor']) {
+        const worker: FakeWorker = {
+          name: queueName,
+          queueName,
+          processor,
+          on: vi.fn(),
+          pause: vi.fn(() => {
+            order.push(`pause:${queueName}`);
+            return Promise.resolve();
+          }),
+          close: vi.fn(() => {
+            order.push(`close:${queueName}`);
+            return Promise.resolve();
+          }),
+        };
+        workers.push(worker);
+        return worker;
+      } as any);
+      emit = vi.fn<(...args: unknown[]) => Promise<void>>().mockResolvedValue(undefined);
+      logger = { debug: vi.fn(), error: vi.fn(), log: vi.fn(), setContext: vi.fn(), warn: vi.fn() };
+      repository = new JobRepository(
+        {} as ModuleRef,
+        { getEnv: () => ({ bull: { config: { connection: {}, prefix: 'immich_bull' } } }) } as ConfigRepository,
+        { emit } as unknown as EventRepository,
+        logger as unknown as LoggingRepository,
+      );
+      repository.startWorkers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      mocks.worker.mockImplementation(function () {
+        return { on: vi.fn() };
+      } as any);
+    });
+
+    it('lets a short job finish, then closes every worker without handing anything back', async () => {
+      const release = holdHandler();
+      const job = fakeJob(JobName.AssetGenerateThumbnails);
+      const running = workerFor(QueueName.ThumbnailGeneration).processor(job, 'token-1');
+
+      const stopping = repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(1000);
+      for (const worker of workers) {
+        // no new job is taken while the running one finishes
+        expect(worker.pause).toHaveBeenCalledWith(true);
+        expect(worker.close).not.toHaveBeenCalled();
+      }
+
+      release();
+      await expect(running).resolves.toBeUndefined();
+      await stopping;
+
+      expect(job.moveToWait).not.toHaveBeenCalled();
+      expect(job.moveToFailed).not.toHaveBeenCalled();
+      for (const worker of workers) {
+        expect(worker.close).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('reports each step at debug level, so a worker that does not close is the one missing (FL-299)', async () => {
+      workerFor(QueueName.Library).close.mockReturnValue(new Promise(() => {}));
+
+      void repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const messages = logger.debug.mock.calls.map(([message]) => message as string);
+      expect(messages).toContainEqual(expect.stringMatching(/^Stop: \d+ job workers paused after \d+ ms$/));
+      expect(messages).toContainEqual(
+        expect.stringMatching(/^Stop: running jobs finished or handed back after \d+ ms$/),
+      );
+      const closed = messages.filter((message) => /^Stop: job worker \w+ closed after \d+ ms$/.test(message));
+      expect(closed).toHaveLength(workers.length - 1);
+      expect(closed.some((message) => message.includes(` ${QueueName.Library} `))).toBe(false);
+    });
+
+    it('hands a job still running at the end of the grace period back to waiting before closing', async () => {
+      holdHandler();
+      const job = fakeJob(JobName.AssetEncodeVideo, 'video-1');
+      const running = workerFor(QueueName.VideoConversion).processor(job, 'token-1');
+      const outcome = running.catch((error: unknown) => error);
+
+      const stopping = repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(job.moveToWait).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await stopping;
+
+      expect(job.moveToWait).toHaveBeenCalledWith('token-1');
+      // BullMQ leaves a job alone when its processor ends with a WaitingError
+      expect(await outcome).toBeInstanceOf(WaitingError);
+      const handedBack = order.indexOf('moveToWait:video-1');
+      expect(handedBack).toBeGreaterThan(-1);
+      expect(order.findIndex((step) => step.startsWith('close:'))).toBeGreaterThan(handedBack);
+      expect(logger.log).toHaveBeenCalledWith(expect.stringContaining('video-1'));
+    });
+
+    it('does not hand back a job that is unsafe to run again, and records it as failed instead', async () => {
+      holdHandler();
+      const job = fakeJob(JobName.SendMail, 'mail-1');
+      const outcome = workerFor(QueueName.Notification)
+        .processor(job, 'token-1')
+        .catch((error: unknown) => error);
+
+      const stopping = repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+      await stopping;
+
+      expect(job.moveToWait).not.toHaveBeenCalled();
+      expect(job.moveToFailed).toHaveBeenCalledWith(expect.any(Error), 'token-1', false);
+      expect(await outcome).toBeInstanceOf(WaitingError);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('mail-1'));
+    });
+
+    it.each([JobName.WorkflowAssetTrigger, JobName.StorageTemplateMigrationSingle])(
+      'hands back %s, which is never retried but is safe to rerun after a stop',
+      async (name) => {
+        holdHandler();
+        const job = fakeJob(name, 'safe-1');
+        const outcome = workerFor(QueueName.BackgroundTask)
+          .processor(job, 'token-1')
+          .catch((error: unknown) => error);
+
+        const stopping = repository.stopWorkers(5000);
+        await vi.advanceTimersByTimeAsync(5000);
+        await stopping;
+
+        expect(job.moveToWait).toHaveBeenCalledWith('token-1');
+        expect(job.moveToFailed).not.toHaveBeenCalled();
+        expect(await outcome).toBeInstanceOf(WaitingError);
+      },
+    );
+
+    it.each([...JOBS_UNSAFE_TO_RERUN_AFTER_STOP])('records %s as failed instead of handing it back', async (name) => {
+      holdHandler();
+      const job = fakeJob(name, 'unsafe-1');
+      void workerFor(QueueName.BackgroundTask)
+        .processor(job, 'token-1')
+        .catch(() => {});
+
+      const stopping = repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+      await stopping;
+
+      expect(job.moveToWait).not.toHaveBeenCalled();
+      expect(job.moveToFailed).toHaveBeenCalledWith(expect.any(Error), 'token-1', false);
+    });
+
+    it('puts a job picked up after the stop began straight back without running it', async () => {
+      const stopping = repository.stopWorkers(5000);
+      const job = fakeJob(JobName.AssetGenerateThumbnails, 'late-1');
+
+      const outcome = await workerFor(QueueName.ThumbnailGeneration)
+        .processor(job, 'token-9')
+        .catch((error: unknown) => error);
+      await stopping;
+
+      expect(emit).not.toHaveBeenCalled();
+      expect(job.moveToWait).toHaveBeenCalledWith('token-9');
+      expect(outcome).toBeInstanceOf(WaitingError);
+    });
+
+    it('keeps going when a hand-back fails, and still closes the workers', async () => {
+      holdHandler();
+      const job = fakeJob(JobName.AssetEncodeVideo, 'video-2');
+      job.moveToWait.mockRejectedValue(new Error('redis away'));
+      void workerFor(QueueName.VideoConversion)
+        .processor(job, 'token-1')
+        .catch(() => {});
+
+      const stopping = repository.stopWorkers(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+      await stopping;
+
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('video-2'), expect.any(String));
+      for (const worker of workers) {
+        expect(worker.close).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('stops once however often it is asked', async () => {
+      const first = repository.stopWorkers(5000);
+      const second = repository.stopWorkers(5000);
+      await Promise.all([first, second]);
+
+      expect(second).toBe(first);
+      for (const worker of workers) {
+        expect(worker.pause).toHaveBeenCalledTimes(1);
+        expect(worker.close).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('has nothing to stop in a process that runs no workers (the API)', async () => {
+      const api = new JobRepository(
+        {} as ModuleRef,
+        {} as ConfigRepository,
+        {} as EventRepository,
+        logger as unknown as LoggingRepository,
+      );
+
+      await expect(api.stopWorkers(5000)).resolves.toBeUndefined();
     });
   });
 });

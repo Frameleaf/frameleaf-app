@@ -1,0 +1,4 @@
+# Recovered immutable archive and generated build workspace; never install in vendor.
+/vendor/
+/engine/
+/.prepare-*/

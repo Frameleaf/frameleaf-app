@@ -1,0 +1,98 @@
+{
+  "description": "FL-99 / FL-97 declared behaviour of every GPU transition, verified by tools/transition-matrix.browser.mjs. All transitions: finite, deterministic, SDR float route equals the rgba8unorm route, HDR float endpoints are exactly the outgoing/incoming clip. hdrMidpoint: extended = light above reference white survives the midpoint; dip/averaged/edge-on explain why it cannot. mirrorSymmetric: from-right/from-bottom are mirror images of from-left/from-top. sdrEndpointOffset: Freecut's SDR route does not show the clip exactly at progress 0 and 1 (pinned upstream behaviour). sdrParityBudget: channels allowed to differ between SDR routes.",
+  "transitions": {
+    "additiveDissolve": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "blurDissolve": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "chromatic": {
+      "hdrMidpoint": "extended",
+      "mirrorSymmetric": true,
+      "sdrEndpointOffset": true,
+      "semantics": "Channel-split sweep; opposite directions are mirror images. Freecut leaves a split residual at progress 0 and 1 on the SDR route; HDR float endpoints are the clips exactly."
+    },
+    "clockWipe": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "dipToColorDissolve": {
+      "hdrMidpoint": "dip",
+      "semantics": "Dips through the authored colour, which the midpoint shows instead of either clip."
+    },
+    "dissolve": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "fade": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "filmGateSlip": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "flip": {
+      "hdrMidpoint": "edge-on",
+      "mirrorSymmetric": true,
+      "semantics": "The card is edge-on at the midpoint, so it shows neither clip."
+    },
+    "glitch": {
+      "hdrMidpoint": "extended",
+      "sdrParityBudget": 4,
+      "semantics": "Hash-driven glitch bands; quantising the inputs can move up to a few texels across a band edge between the float and rgba8 SDR routes."
+    },
+    "iris": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "lensWarpZoom": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "lightLeakBurn": {
+      "hdrMidpoint": "extended",
+      "sdrEndpointOffset": true,
+      "semantics": "Film light leak; directions are not mirror images because the leak texture is fixed in screen space. Freecut leaves leak light at progress 0 and 1 on the SDR route; HDR float endpoints are the clips exactly."
+    },
+    "liquidDistort": {
+      "hdrMidpoint": "extended",
+      "sdrEndpointOffset": true,
+      "semantics": "Noise-driven liquid warp; directions are not mirror images because the noise field is fixed in screen space. Freecut leaves distortion at progress 0 and 1 on the SDR route; HDR float endpoints are the clips exactly."
+    },
+    "nonAdditiveDissolve": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "pixelate": {
+      "hdrMidpoint": "averaged",
+      "semantics": "Pixel blocks average their source texels at the midpoint; range is preserved by the average."
+    },
+    "radialBlur": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "slide": {
+      "hdrMidpoint": "extended",
+      "mirrorSymmetric": true,
+      "semantics": "Push slide; opposite directions are mirror images."
+    },
+    "smoothCut": {
+      "hdrMidpoint": "extended",
+      "semantics": "Blends or reveals the two clips; extended-range input survives the midpoint in HDR projects."
+    },
+    "sparkles": {
+      "hdrMidpoint": "extended",
+      "sdrEndpointOffset": true,
+      "semantics": "Seeded sparkle field; Freecut leaves sparkles at progress 0 and 1 on the SDR route; HDR float endpoints are the clips exactly."
+    },
+    "wipe": {
+      "hdrMidpoint": "extended",
+      "mirrorSymmetric": true,
+      "semantics": "Hard wipe; opposite directions are mirror images."
+    }
+  }
+}

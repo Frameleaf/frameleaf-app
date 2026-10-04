@@ -39,7 +39,7 @@ export const waitForDrain = (response: Writable) =>
     }
   });
 
-export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values }: CookieResponse) => {
+export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values, rememberMe }: CookieResponse) => {
   const defaults: CookieOptions = {
     path: '/',
     sameSite: 'lax',
@@ -48,20 +48,25 @@ export const respondWithCookie = <T>(res: Response, body: T, { isSecure, values 
     maxAge: Duration.fromObject({ days: 400 }).toMillis(),
   };
 
+  const authentication = { ...defaults, maxAge: rememberMe === false ? undefined : defaults.maxAge };
+
   const cookieOptions: Record<ImmichCookie, CookieOptions> = {
-    [ImmichCookie.AuthType]: defaults,
-    [ImmichCookie.AccessToken]: defaults,
+    [ImmichCookie.AuthType]: authentication,
+    [ImmichCookie.AccessToken]: authentication,
     [ImmichCookie.MaintenanceToken]: { ...defaults, maxAge: Duration.fromObject({ days: 1 }).toMillis() },
     [ImmichCookie.OAuthState]: defaults,
     [ImmichCookie.OAuthCodeVerifier]: defaults,
     // no httpOnly so that the client can know the auth state
-    [ImmichCookie.IsAuthenticated]: { ...defaults, httpOnly: false },
+    [ImmichCookie.IsAuthenticated]: { ...authentication, httpOnly: false },
     [ImmichCookie.SharedLinkToken]: { ...defaults, maxAge: Duration.fromObject({ days: 1 }).toMillis() },
   };
 
   for (const { key, value } of values) {
     const options = cookieOptions[key];
     res.cookie(key, value, options);
+  }
+  if (values.some(({ key }) => key === ImmichCookie.AccessToken)) {
+    clearBrowserCache(res);
   }
 
   return body;
@@ -71,6 +76,18 @@ export const respondWithoutCookie = <T>(res: Response, body: T, cookies: ImmichC
   for (const cookie of cookies) {
     res.clearCookie(cookie);
   }
+  if (cookies.includes(ImmichCookie.AccessToken)) {
+    clearBrowserCache(res);
+  }
 
   return body;
+};
+
+/**
+ * FL-137: whenever someone signs in or out, the browser drops every response it cached for this server.
+ * Thumbnails and originals are cached privately for a day (`CacheControl.PrivateWithCache`), and on a
+ * shared browser the next person signed in must never be answered from the previous person's cache.
+ */
+const clearBrowserCache = (res: Response) => {
+  res.setHeader('Clear-Site-Data', '"cache"');
 };

@@ -4,6 +4,7 @@ name: Docs build
   pull_request:
     branches:
       - fork/main
+      - master/frameleaf-implementation
   push:
     branches:
       - fork/main
@@ -38,4 +39,16 @@ jobs:
         run: pnpm format
       - name: Run build
         run: pnpm build
+      - name: Capture automatic documentation formatting fixes
+        if: failure()
+        run: |
+          timeout 15m pnpm exec prettier --write . || true
+          git diff --binary -- . > "$RUNNER_TEMP/docs-format.patch"
+      - name: Archive automatic documentation formatting fixes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: docs-format-autofix
+          path: ${{ runner.temp }}/docs-format.patch
+          retention-days: 7
     timeout-minutes: 60

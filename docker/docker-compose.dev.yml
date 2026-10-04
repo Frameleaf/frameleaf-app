@@ -8,8 +8,8 @@
 # The compose file on main may not be compatible with the latest release.
 
 # For development see:
-# - https://docs.immich.app/developer/setup
-# - https://docs.immich.app/developer/troubleshooting
+# - https://help.frameleaf.app/developer/setup
+# - https://help.frameleaf.app/developer/troubleshooting
 
 name: immich-dev
 
@@ -70,6 +70,8 @@ services:
       dockerfile: server/Dockerfile.dev
       target: dev
     restart: unless-stopped
+    # must exceed FRAMELEAF_SHUTDOWN_DEADLINE_SECONDS (9 s by default): running jobs finish or go back to waiting first
+    stop_grace_period: 10s
     volumes:
       - ${UPLOAD_LOCATION}/photos:/data
       - /etc/localtime:/etc/localtime:ro
@@ -77,20 +79,20 @@ services:
     env_file:
       - .env
     environment:
-      IMMICH_REPOSITORY: Frameleaf/frameleaf-app
-      IMMICH_REPOSITORY_URL: https://github.com/Frameleaf/frameleaf-app
-      IMMICH_SOURCE_REF: local
-      IMMICH_SOURCE_COMMIT: ""
-      IMMICH_SOURCE_URL: https://github.com/Frameleaf/frameleaf-app
-      IMMICH_BUILD: ""
-      IMMICH_BUILD_URL: https://github.com/Frameleaf/frameleaf-app/actions
-      IMMICH_BUILD_IMAGE: development
-      IMMICH_BUILD_IMAGE_URL: https://github.com/Frameleaf/frameleaf-app/pkgs/container/frameleaf-server
-      IMMICH_THIRD_PARTY_SOURCE_URL: https://github.com/Frameleaf/frameleaf-app/
-      IMMICH_THIRD_PARTY_BUG_FEATURE_URL: https://github.com/Frameleaf/frameleaf-app/issues
-      IMMICH_THIRD_PARTY_DOCUMENTATION_URL: https://github.com/Frameleaf/frameleaf-app/tree/fork/main/docs
-      IMMICH_THIRD_PARTY_SUPPORT_URL: https://github.com/Frameleaf/frameleaf-app/issues
-      IMMICH_HELMET_FILE: "true"
+      FRAMELEAF_REPOSITORY: Frameleaf/frameleaf-app
+      FRAMELEAF_REPOSITORY_URL: https://github.com/Frameleaf/frameleaf-app
+      FRAMELEAF_SOURCE_REF: local
+      FRAMELEAF_SOURCE_COMMIT: ""
+      FRAMELEAF_SOURCE_COMMIT_URL: https://github.com/Frameleaf/frameleaf-app
+      FRAMELEAF_BUILD: ""
+      FRAMELEAF_BUILD_URL: https://github.com/Frameleaf/frameleaf-app/actions
+      FRAMELEAF_BUILD_IMAGE: development
+      FRAMELEAF_BUILD_IMAGE_URL: https://github.com/Frameleaf/frameleaf-app/pkgs/container/frameleaf-server
+      FRAMELEAF_SOURCE_URL: https://github.com/Frameleaf/frameleaf-app/
+      FRAMELEAF_BUG_FEATURE_URL: https://github.com/Frameleaf/frameleaf-app/issues
+      FRAMELEAF_DOCS_URL: https://github.com/Frameleaf/frameleaf-app/tree/fork/main/docs
+      FRAMELEAF_SUPPORT_URL: https://github.com/Frameleaf/frameleaf-app/issues
+      FRAMELEAF_HELMET_FILE: "true"
     ports:
       - 9230:9230
       - 9231:9231
@@ -161,7 +163,11 @@ services:
 
   database:
     container_name: frameleaf_postgres
-    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    image: frameleaf-postgres:local
+    # Built from Frameleaf's own Postgres image source (docker/postgres).
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
     env_file:
       - .env
     environment:

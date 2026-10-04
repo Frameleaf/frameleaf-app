@@ -73,7 +73,7 @@ describe(CliService.name, () => {
 
       mocks.user.getAdmin.mockResolvedValue(admin);
       mocks.user.update.mockResolvedValue(admin);
-      mocks.session.invalidateAll.mockResolvedValue(void 0);
+      mocks.session.invalidateAll.mockResolvedValue(['admin-session']);
 
       const ask = vitest.fn().mockResolvedValue({ newPassword: 'new-password', invalidateSessions: true });
 
@@ -174,7 +174,7 @@ describe(CliService.name, () => {
       });
     });
 
-    const RE_LOGIN_URL = /https:\/\/my.immich.app\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
+    const RE_LOGIN_URL = /(?:^|\s)\/maintenance\?token=([A-Za-z0-9-_]*\.[A-Za-z0-9-_]*\.[A-Za-z0-9-_]*)/;
 
     it('should return a valid login URL', async () => {
       mocks.systemMetadata.get.mockResolvedValue({

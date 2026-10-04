@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ContainerDirectoryItem, ExifDateTime, Tags } from 'exiftool-vendored';
-import { Insertable } from 'kysely';
+import { Insertable, Kysely } from 'kysely';
 import { isUndefined, omitBy, pick } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import { Stats } from 'node:fs';
@@ -9,7 +9,7 @@ import { join, parse } from 'node:path';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { Asset, AssetFile } from 'src/database.js';
+import { Asset, AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AssetFileType,
@@ -27,15 +27,18 @@ import {
 } from 'src/enum.js';
 import { ReverseGeocodeResult } from 'src/repositories/map.repository.js';
 import { ImmichTags } from 'src/repositories/metadata.repository.js';
+import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFiles, linkLivePhotoAssets } from 'src/utils/asset.util.js';
+import { resolveCameraIdentification } from 'src/utils/camera-identification.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { mergeTimeZone } from 'src/utils/date.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { batched, isFaceImportEnabled } from 'src/utils/misc.js';
-import { upsertTags } from 'src/utils/tag.js';
+import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
 import { Tasks } from 'src/utils/tasks.js';
 
 const POSTGRES_INT_MAX = 2_147_483_647;
@@ -116,16 +119,13 @@ const validateRange = (value: number | undefined, min: number, max: number): Non
 };
 
 const getLensModel = (exifTags: ImmichTags): string | null => {
-  const lensModel = String(
-    exifTags.LensID ?? exifTags.LensType ?? exifTags.LensSpec ?? exifTags.LensModel ?? '',
-  ).trim();
-  if (lensModel === '----') {
-    return null;
+  for (const value of [exifTags.LensID, exifTags.LensType, exifTags.LensSpec, exifTags.LensModel]) {
+    const lens = String(value ?? '').trim();
+    if (lens && lens.toLowerCase() !== 'n/a' && lens !== '----' && !lens.startsWith('Unknown')) {
+      return lens;
+    }
   }
-  if (lensModel.startsWith('Unknown')) {
-    return null;
-  }
-  return lensModel || null;
+  return null;
 };
 
 type ImmichTagsWithFaces = ImmichTags & { RegionInfo: NonNullable<ImmichTags['RegionInfo']> };
@@ -225,29 +225,50 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.AssetExtractMetadata, queue: QueueName.MetadataExtraction })
   async handleMetadataExtraction(data: JobOf<JobName.AssetExtractMetadata>) {
-    const [{ metadata, reverseGeocoding }, asset] = await Promise.all([
+    // Snapshot before fetching the file list too: a sidecar created after that fetch must not
+    // leave us applying the original file's older values against a newer EXIF revision (FL-202).
+    // A tag added after this snapshot is never taken for one the file dropped.
+    const [{ metadata, reverseGeocoding }, previous] = await Promise.all([
       this.getConfig({ withCache: true }),
-      this.assetJobRepository.getForMetadataExtraction(data.id),
+      this.assetRepository.getForMetadataExtractionTags(data.id),
     ]);
+    const asset = await this.assetJobRepository.getForMetadataExtraction(data.id);
 
     if (!asset) {
       return;
     }
-
     const [exifResult, stats] = await Promise.all([
       this.getExifTags(asset),
       this.storageRepository.stat(asset.originalPath),
     ]);
-    const { tags: exifTags, audio, video, packets, format } = exifResult;
+    const { tags: exifTags, originalTags, cameraEvidence, audio, video, packets, format } = exifResult;
     this.logger.verbose('Exif Tags', exifTags);
 
     const dates = this.getDates(asset, exifTags, stats);
 
     const { width, height } = this.getImageDimensions(exifTags);
+    // FL-51: coordinates the owner set or removed are locked; the place names then stay as stored
+    // instead of being read from the file's own coordinates
+    const lockedProperties = (await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(asset.id)) ?? [];
+    const locationLocked = lockedProperties.includes('latitude');
+    // Persisted locks can include camera fields beyond the public editable-property union.
+    const cameraLocked = lockedProperties.some((property: string) => property === 'make' || property === 'model');
+    if (
+      !cameraLocked &&
+      asset.type === AssetType.Image &&
+      originalTags.FileType === 'JPEG' &&
+      !cameraEvidence.recorded
+    ) {
+      try {
+        cameraEvidence.suggestion = await this.metadataRepository.readJpegSignature(asset.originalPath);
+      } catch (error) {
+        this.logger.warn(`Unable to read optional JPEG encoding clue for ${asset.id}: ${error}`);
+      }
+    }
     let geo: ReverseGeocodeResult = { country: null, state: null, city: null },
       latitude: number | null = null,
       longitude: number | null = null;
-    if (this.hasGeo(exifTags)) {
+    if (this.hasGeo(exifTags) && !locationLocked) {
       latitude = Number(exifTags.GPSLatitude);
       longitude = Number(exifTags.GPSLongitude);
       if (reverseGeocoding.enabled) {
@@ -268,9 +289,7 @@ export class MetadataService extends BaseService {
       // gps
       latitude,
       longitude,
-      country: geo.country,
-      state: geo.state,
-      city: geo.city,
+      ...(!locationLocked && { country: geo.country, state: geo.state, city: geo.city }),
 
       // image/file
       fileSizeInByte: stats.size,
@@ -282,10 +301,8 @@ export class MetadataService extends BaseService {
       colorspace: exifTags.ColorSpace === undefined ? null : String(exifTags.ColorSpace),
 
       // camera
-      make:
-        exifTags.Make ?? exifTags.Device?.Manufacturer ?? exifTags.AndroidMake ?? (exifTags.DeviceManufacturer || null),
-      model:
-        exifTags.Model ?? exifTags.Device?.ModelName ?? exifTags.AndroidModel ?? (exifTags.DeviceModelName || null),
+      make: cameraEvidence.recorded?.make ?? null,
+      model: cameraEvidence.recorded?.model ?? null,
       fps: video?.frameRate ?? validate(Number(exifTags.VideoFrameRate!)),
       iso: validate(exifTags.ISO) as number,
       exposureTime: exifTags.ExposureTime ?? null,
@@ -296,7 +313,8 @@ export class MetadataService extends BaseService {
       // comments
       description: String(exifTags.ImageDescription || exifTags.Description || '').trim(),
       profileDescription: exifTags.ProfileDescription || null,
-      rating: exifTags.Rating === 0 ? null : validateRange(exifTags.Rating, 1, 5),
+      rating:
+        Number.isSafeInteger(exifTags.Rating) && exifTags.Rating !== 0 ? validateRange(exifTags.Rating, -1, 5) : null,
 
       // grouping
       livePhotoCID: (exifTags.ContentIdentifier || exifTags.MediaGroupUUID) ?? null,
@@ -313,6 +331,10 @@ export class MetadataService extends BaseService {
             index: audio.index,
             profile: audio.profile,
             codecName: audio.codecName,
+            // FL-102: channel-aware audio. Null stays null; it means "not probed", not "stereo".
+            channels: audio.channels ?? null,
+            channelLayout: audio.channelLayout ?? null,
+            sampleRate: audio.sampleRate ?? null,
           }
         : undefined;
 
@@ -374,12 +396,16 @@ export class MetadataService extends BaseService {
       async () => {
         await this.assetRepository.upsertExif({
           exif: exifData,
+          cameraEvidence: cameraLocked ? undefined : cameraEvidence,
           audio: audioData,
           video: videoData,
           keyframes: keyframeData,
           lockedPropertiesBehavior: 'skip',
+          // FL-202: a write can lock AND unlock a property while the file is being read. The
+          // revision check is atomic with this save, so even that interleaving keeps newer values.
+          expectedUpdateId: previous?.updateId ?? null,
         });
-        await this.applyTagList(asset);
+        await this.applyTagList(asset, previous?.tags ?? []);
       },
     );
 
@@ -470,19 +496,24 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.SidecarWrite, queue: QueueName.Sidecar })
   async handleSidecarWrite(job: JobOf<JobName.SidecarWrite>): Promise<JobStatus> {
+    return this.databaseRepository.withAssetSidecarLock(job.id, (kysely) => this.writeSidecar(job, kysely));
+  }
+
+  /** Every query here runs on the sidecar lock's own connection; see `withAssetSidecarLock`. */
+  private async writeSidecar(job: JobOf<JobName.SidecarWrite>, kysely: Kysely<DB>): Promise<JobStatus> {
     const { id } = job;
-    const asset = await this.assetJobRepository.getForSidecarWriteJob(id);
+    const asset = await this.assetJobRepository.getForSidecarWriteJob(id, kysely);
     if (!asset) {
       return JobStatus.Failed;
     }
 
-    const lockedProperties = await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(id);
+    const lockedProperties = await this.assetJobRepository.getLockedPropertiesForMetadataExtraction(id, kysely);
 
     const { sidecarFile } = getAssetFiles(asset.files);
     const sidecarPath =
-      sidecarFile?.path && (await this.canUseExistingSidecarPath(asset, sidecarFile.path))
+      sidecarFile?.path && (await this.canUseExistingSidecarPath(asset, sidecarFile.path, kysely))
         ? sidecarFile.path
-        : await this.getSidecarWritePath(asset);
+        : await this.getSidecarWritePath(asset, kysely);
 
     const { description, dateTimeOriginal, latitude, longitude, rating, tags, timeZone } = pick(
       {
@@ -518,25 +549,49 @@ export class MetadataService extends BaseService {
     await this.metadataRepository.writeTags(sidecarPath, exif);
 
     if (!sidecarFile || sidecarFile.path !== sidecarPath) {
-      await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath });
+      await this.assetRepository.upsertFile({ assetId: id, type: AssetFileType.Sidecar, path: sidecarPath }, kysely);
     }
 
-    await this.assetRepository.unlockProperties(asset.id, lockedProperties);
+    // FL-36 (V-24): the sidecar has no place names, so a typed city, state or country stays locked.
+    // FL-51: a removed location stays locked, so the next metadata read does not bring the original
+    // file's coordinates back
+    const locationRemoved =
+      lockedProperties.includes('latitude') && asset.exifInfo.latitude === null && asset.exifInfo.longitude === null;
+    // Tags set in Frameleaf stay locked too. The sidecar is written by a job that can run behind the tag
+    // edits, so the next metadata read may find an older list in it; unlocked, that read took the
+    // older list as the file's and dropped the tags added since.
+    const keptLocked = new Set<string>([
+      ...placeProperties,
+      'tags',
+      ...(locationRemoved ? ['latitude', 'longitude'] : []),
+    ]);
+    await this.assetRepository.unlockProperties(
+      asset.id,
+      lockedProperties.filter((property) => !keptLocked.has(property)),
+      kysely,
+    );
 
     return JobStatus.Success;
   }
 
-  private async getSidecarWritePath(asset: {
-    id: string;
-    ownerId: string;
-    originalPath: string;
-    physicalOriginalFileId?: string | null;
-  }) {
+  private async getSidecarWritePath(
+    asset: {
+      id: string;
+      ownerId: string;
+      originalPath: string;
+      physicalOriginalFileId?: string | null;
+    },
+    kysely?: Kysely<DB>,
+  ) {
     if (!asset.physicalOriginalFileId) {
       return `${asset.originalPath}.xmp`;
     }
 
-    const isCanonical = await this.physicalFileRepository.isOriginalCanonical(asset.id, asset.physicalOriginalFileId);
+    const isCanonical = await this.physicalFileRepository.isOriginalCanonical(
+      asset.id,
+      asset.physicalOriginalFileId,
+      kysely,
+    );
     if (isCanonical) {
       return `${asset.originalPath}.xmp`;
     }
@@ -547,12 +602,13 @@ export class MetadataService extends BaseService {
   private async canUseExistingSidecarPath(
     asset: { id: string; originalPath: string; physicalOriginalFileId?: string | null },
     path: string,
+    kysely?: Kysely<DB>,
   ) {
     if (!asset.physicalOriginalFileId) {
       return true;
     }
 
-    if (await this.physicalFileRepository.isOriginalCanonical(asset.id, asset.physicalOriginalFileId)) {
+    if (await this.physicalFileRepository.isOriginalCanonical(asset.id, asset.physicalOriginalFileId, kysely)) {
       return true;
     }
 
@@ -631,6 +687,10 @@ export class MetadataService extends BaseService {
       shouldProbe ? this.getVideoTags(asset.originalPath) : null,
     ]);
 
+    // Resolve capture identity before merging sidecar tags or deleting any original fields.
+    const cameraEvidence = resolveCameraIdentification(mediaTags, sidecarTags);
+    const originalTags = { ...mediaTags };
+
     // prefer dates from sidecar tags
     if (sidecarTags) {
       const result = firstDateTime(sidecarTags);
@@ -673,6 +733,8 @@ export class MetadataService extends BaseService {
 
     return {
       tags: { ...mediaTags, ...videoResult?.tags, ...sidecarTags },
+      originalTags,
+      cameraEvidence,
       audio: videoResult?.audio,
       video: videoResult?.video,
       packets: videoResult?.packets,
@@ -706,16 +768,23 @@ export class MetadataService extends BaseService {
     return tags;
   }
 
-  private async applyTagList({ id, ownerId }: { id: string; ownerId: string }) {
+  /**
+   * Applies the file's tag list as a change, not a replacement: the tags it lists are added, and only
+   * those it listed before (`previousTags`) and no longer does are removed. Replacing the asset's whole
+   * tag set here dropped a tag added through the API between this job reading the list and writing it
+   * (a photo tagged right after upload lost the tag, and with it any Locked rule that matched it).
+   */
+  private async applyTagList({ id, ownerId }: { id: string; ownerId: string }, previousTags: string[]) {
     const asset = await this.assetRepository.getForMetadataExtractionTags(id);
-    const results = await upsertTags(this.tagRepository, {
-      userId: ownerId,
-      tags: asset?.tags ?? [],
-    });
-    await this.tagRepository.replaceAssetTags(
-      id,
-      results.map((tag) => tag.id),
+    const tags = asset?.tags ?? [];
+    const results = await upsertTags(this.tagRepository, { userId: ownerId, tags });
+
+    const current = new Set(tags.map((tag) => normalizeTagValue(tag)));
+    const dropped = [...new Set(previousTags.map((tag) => normalizeTagValue(tag)))].filter(
+      (value) => value && !current.has(value),
     );
+    await this.tagRepository.removeAssetTagValues(id, ownerId, dropped);
+    await this.tagRepository.upsertAssetIds(results.map((tag) => ({ tagId: tag.id, assetId: id })));
   }
 
   private isMotionPhoto(asset: { type: AssetType }, tags: ImmichTags): boolean {
@@ -958,6 +1027,8 @@ export class MetadataService extends BaseService {
       clusterGroupId: string;
       faces: { id: string; sourceType: SourceType }[];
       originalPath: string;
+      visibility: AssetVisibility;
+      isLocked?: boolean | null;
     },
     tags: ImmichTags,
   ) {
@@ -1011,7 +1082,11 @@ export class MetadataService extends BaseService {
           clusterGroupId: asset.clusterGroupId,
           name: region.Name,
         });
-        missingWithFaceAsset.push({ personGroupId, ownerId: asset.ownerId, faceAssetId: face.id });
+        // A face on a Locked photo is never a person's thumbnail (FL-53): the person is created without
+        // one and takes another face of theirs later (the missing-thumbnail sweep), or keeps none.
+        if (!isLockedRow(asset)) {
+          missingWithFaceAsset.push({ personGroupId, ownerId: asset.ownerId, faceAssetId: face.id });
+        }
       }
     }
 
@@ -1024,7 +1099,7 @@ export class MetadataService extends BaseService {
         missing.map(({ name, ownerId, personGroupId }) => ({ name, ownerId, personGroupId })),
       );
 
-      const jobs = missing.map(
+      const jobs = missingWithFaceAsset.map(
         ({ personGroupId, ownerId }) =>
           ({ name: JobName.PersonGenerateThumbnail, data: { personGroupId, ownerId } }) as const,
       );

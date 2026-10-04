@@ -1,16 +1,25 @@
 import { getQueueToken } from '@nestjs/bullmq';
 import { Injectable } from '@nestjs/common';
 import { ModuleRef, Reflector } from '@nestjs/core';
-import { Job, JobsOptions, Queue, Worker, type WorkerOptions } from 'bullmq';
-import { setTimeout } from 'node:timers/promises';
+import { Job, JobsOptions, Queue, WaitingError, Worker, type WorkerOptions } from 'bullmq';
+import { setTimeout as sleep } from 'node:timers/promises';
+import type { Redis } from 'ioredis';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
+import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { ImmichWorker, JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
 import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
+
+/** A queue job as bullmq has it, before the Job manager's account and worker are added (FL-71). */
+export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
+  name: JobName;
+  status: QueueJobStatus;
+};
 
 type JobMapItem = {
   jobName: JobName;
@@ -19,8 +28,12 @@ type JobMapItem = {
   label: string;
 };
 
-export const getForkSchemaBackfillJobOptions = (kind: JobOf<JobName.ForkSchemaBackfill>['kind']): JobsOptions => ({
+export const getForkSchemaBackfillJobOptions = (
+  kind: JobOf<JobName.ForkSchemaBackfill>['kind'],
+  delay?: number,
+): JobsOptions => ({
   deduplication: { id: `${JobName.ForkSchemaBackfill}:${kind}`, keepLastIfActive: true },
+  ...(delay && { delay }),
 });
 
 const DATABASE_BACKUP_LOCK_DURATION = 30 * 60_000;
@@ -35,9 +48,100 @@ const DATABASE_BACKUP_LOCK_DURATION = 30 * 60_000;
 const ROLLING_AVG_BUFFER_SIZE = 100;
 const WORKER_WATCH_INTERVAL_MS = 30_000;
 
+/**
+ * How long after a job finishes the worker looks at whether its queue has drained (FL-72). While a
+ * queue is busy the look happens at most this often; after its last job it happens once, this long
+ * after, which is what closes the run.
+ */
+export const QUEUE_RUN_IDLE_CHECK_MS = 2000;
+
+/**
+ * How long a queue must stay empty before its run is over (FL-72). Work often arrives in bursts —
+ * metadata extraction feeds thumbnail generation one asset at a time — and a queue that empties for
+ * a moment between two of them is still the same run: its bar must carry on, not restart at zero.
+ */
+export const QUEUE_RUN_IDLE_GRACE_MS = 10_000;
+
+/** What the running-jobs summary shows for one queue's current run (FL-72). */
+export type QueueRun = {
+  active: number;
+  /** Waiting to start: queued, prioritized, or held by a paused queue. Delayed jobs are not counted. */
+  waiting: number;
+  /** Finished, completed or failed, since the run started. */
+  processed: number;
+  /** When the run was first seen with work in it; null when the queue is idle. */
+  startedAt: Date | null;
+};
+
+/**
+ * One queue's run window, kept in Redis beside the queue itself so the API process that answers the
+ * summary sees what the microservices worker counted (FL-72).
+ *
+ * `processed` only ever goes up: the worker adds one for every job that finishes. `base` is where
+ * the current run started counting from, and `startedAt` when it was first seen with work. A queue
+ * found empty starts its grace period (`idleSince`); once it has stayed empty for the whole grace
+ * period the run closes: `base` catches up with `processed` and `startedAt` is removed, so the next
+ * job to arrive starts a new run at zero. Work arriving during the grace period continues the run.
+ * Everything happens in one script, so two observers — the worker's idle check and an
+ * administrator's poll — can never interleave half an update.
+ *
+ * The clock is Redis's own, so an API process and a worker on different hosts agree on it.
+ *
+ * KEYS[1] the run hash; ARGV[1] active + waiting now; ARGV[2] the grace period in ms.
+ * Returns `{processed in this run, startedAt}`; startedAt is an empty string for a closed run.
+ */
+const QUEUE_RUN_SCRIPT = `
+local key = KEYS[1]
+local pending = tonumber(ARGV[1])
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+local processed = tonumber(redis.call('HGET', key, 'processed') or '0')
+local base = tonumber(redis.call('HGET', key, 'base') or '0')
+if base > processed then
+  base = processed
+  redis.call('HSET', key, 'base', base)
+end
+local startedAt = redis.call('HGET', key, 'startedAt')
+if pending == 0 then
+  if not startedAt then
+    redis.call('HSET', key, 'base', processed)
+    return {0, ''}
+  end
+  local idleSince = tonumber(redis.call('HGET', key, 'idleSince') or '')
+  if not idleSince then
+    redis.call('HSET', key, 'idleSince', now)
+    return {processed - base, startedAt}
+  end
+  if now - idleSince >= tonumber(ARGV[2]) then
+    redis.call('HSET', key, 'base', processed)
+    redis.call('HDEL', key, 'startedAt', 'idleSince')
+    return {0, ''}
+  end
+  return {processed - base, startedAt}
+end
+redis.call('HDEL', key, 'idleSince')
+if not startedAt then
+  startedAt = tostring(now)
+  redis.call('HSET', key, 'startedAt', startedAt)
+end
+return {processed - base, startedAt}
+`;
+
+/** A job this process is running (FL-291): what is needed to hand it back if the server stops. */
+type RunningJob = {
+  queueName: QueueName;
+  job: Job;
+  token?: string;
+  finished: Promise<unknown>;
+  /** Ends the processor with a WaitingError, so BullMQ leaves the handed-back job alone. */
+  release: () => void;
+};
+
 @Injectable()
 export class JobRepository {
   private workers: Partial<Record<QueueName, Worker>> = {};
+  private running = new Set<RunningJob>();
+  private stopping?: Promise<void>;
   private handlers: Partial<Record<JobName, JobMapItem>> = {};
   private workerWatcher?: ReturnType<typeof setInterval>;
   private microservicesPresent = true;
@@ -55,6 +159,9 @@ export class JobRepository {
    *   every completion event it owns, which is good enough for an estimate.
    */
   private rollingAvgBuffers: Partial<Record<JobName, number[]>> = {};
+
+  /** Pending "has this queue drained?" looks, one per queue at most (FL-72). */
+  private queueRunChecks: Partial<Record<QueueName, ReturnType<typeof setTimeout>>> = {};
 
   constructor(
     private moduleRef: ModuleRef,
@@ -121,7 +228,7 @@ export class JobRepository {
       this.logger.debug(`Starting worker for queue: ${queueName}`);
       this.workers[queueName] = new Worker(
         queueName,
-        (job) => this.processJob(queueName, job),
+        (job, token) => this.processJob(queueName, job, token),
         this.getWorkerOptions(queueName, bull.config as WorkerOptions),
       );
       this.registerWorkerEvents(queueName, this.workers[queueName]);
@@ -139,12 +246,99 @@ export class JobRepository {
     return workerOptions;
   }
 
-  private async processJob(queueName: QueueName, job: Job): Promise<void> {
+  private async processJob(queueName: QueueName, job: Job, token?: string): Promise<void> {
+    if (this.stopping) {
+      // FL-291: fetched while the workers were being paused; it goes back untouched
+      await job.moveToWait(token);
+      throw new WaitingError();
+    }
+
+    let release!: () => void;
+    const released = new Promise<never>((_, reject) => (release = () => reject(new WaitingError())));
+    const finished = this.eventRepository.emit('JobRun', queueName, job as JobItem);
+    const entry: RunningJob = { queueName, job, token, finished, release };
+    this.running.add(entry);
+
     try {
-      await this.eventRepository.emit('JobRun', queueName, job as JobItem);
+      await Promise.race([finished, released]);
     } catch (error: any) {
-      this.logger.error(`Unable to process job ${job.name} in queue ${queueName}: ${error}`, error?.stack);
+      if (!(error instanceof WaitingError)) {
+        this.logger.error(`Unable to process job ${job.name} in queue ${queueName}: ${error}`, error?.stack);
+      }
       throw error;
+    } finally {
+      this.running.delete(entry);
+    }
+  }
+
+  /**
+   * FL-291: stop this process's workers for a server stop. No worker takes a new job; running jobs get
+   * `graceMs` to finish. A job still running then goes back to waiting at once, so the next boot runs
+   * it without waiting for BullMQ's stalled-job check — except a job that is unsafe to run again
+   * (JOBS_UNSAFE_TO_RERUN_AFTER_STOP: it may already have sent its mail, notice or push, or made its
+   * partial records), which is recorded as failed instead, as a failed handler would have left it. Then the
+   * workers close. The handler of a job handed back may still be running; the process exits shortly
+   * after and its result is ignored.
+   */
+  stopWorkers(graceMs: number): Promise<void> {
+    this.stopping ??= this.stopWorkersOnce(graceMs);
+    return this.stopping;
+  }
+
+  private async stopWorkersOnce(graceMs: number) {
+    const workers = Object.values(this.workers);
+    if (workers.length === 0) {
+      return;
+    }
+
+    // FL-299: how long each step holds the stop (debug level)
+    const startedAt = performance.now();
+    const elapsed = () => `${Math.round(performance.now() - startedAt)} ms`;
+
+    await Promise.all(
+      workers.map((worker) =>
+        worker.pause(true).catch((error) => this.logger.warn(`Unable to pause worker ${worker.name}: ${error}`)),
+      ),
+    );
+    this.logger.debug(`Stop: ${workers.length} job workers paused after ${elapsed()}`);
+
+    if (this.running.size > 0) {
+      this.logger.log(`Waiting up to ${graceMs / 1000} s for ${this.running.size} running job(s) to finish`);
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        Promise.allSettled([...this.running].map(({ finished }) => finished)),
+        new Promise((resolve) => (timer = setTimeout(resolve, graceMs))),
+      ]);
+      clearTimeout(timer);
+    }
+
+    await Promise.all([...this.running].map((entry) => this.handBack(entry)));
+    this.logger.debug(`Stop: running jobs finished or handed back after ${elapsed()}`);
+
+    await Promise.all(
+      workers.map((worker) =>
+        worker
+          .close()
+          .catch((error) => this.logger.warn(`Unable to close worker ${worker.name}: ${error}`))
+          .then(() => this.logger.debug(`Stop: job worker ${worker.name} closed after ${elapsed()}`)),
+      ),
+    );
+  }
+
+  private async handBack({ queueName, job, token, release }: RunningJob) {
+    const label = `${job.name} (${job.id}) in queue ${queueName}`;
+    try {
+      if (JOBS_UNSAFE_TO_RERUN_AFTER_STOP.has(job.name as JobName)) {
+        await job.moveToFailed(new Error('The server stopped while the job was running'), token as string, false);
+        this.logger.warn(`Job ${label} was still running when the server stopped; not run again`);
+      } else {
+        await job.moveToWait(token);
+        this.logger.log(`Job ${label} was still running when the server stopped; handed back to waiting`);
+      }
+    } catch (error: any) {
+      this.logger.error(`Unable to hand back job ${label}: ${error}`, error?.stack);
+    } finally {
+      release();
     }
   }
 
@@ -155,6 +349,8 @@ export class JobRepository {
 
     worker?.on('failed', (job, error) => {
       this.logger.error(`Job ${job?.name || 'unknown'} failed in queue ${queueName}: ${error}`, error?.stack);
+      // Jobs make one attempt, so a failure is final and counts towards the run like a completion.
+      this.recordQueueRunJob(queueName);
     });
 
     worker?.on('stalled', (jobId, previous) => {
@@ -162,6 +358,8 @@ export class JobRepository {
     });
 
     worker?.on('completed', (job) => {
+      this.recordQueueRunJob(queueName);
+
       // BullMQ sets processedOn when the worker picks the job up and
       // finishedOn when the handler resolves. Both are present on `completed`
       // events; guard defensively to avoid crashing on any future BullMQ
@@ -207,6 +405,86 @@ export class JobRepository {
       sum += sample;
     }
     return sum / buffer.length;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Queue runs (FL-72)                                                  */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Count one finished job towards its queue's run, and make sure somebody looks at whether the
+   * queue has drained shortly afterwards. Called from the worker's own events; a Redis hiccup here
+   * only makes a progress bar less exact, so it is logged and never allowed to fail the job.
+   */
+  private recordQueueRunJob(queueName: QueueName) {
+    // a count that cannot be made (no queue yet, Redis away) never breaks the listener that records it
+    void Promise.try(() => this.queueRunClient(queueName))
+      .then((client) => client.hincrby(this.queueRunKey(queueName), 'processed', 1))
+      .catch((error) => this.logger.debug(`Unable to count a finished ${queueName} job: ${error}`));
+
+    this.scheduleQueueRunCheck(queueName, QUEUE_RUN_IDLE_CHECK_MS);
+  }
+
+  /**
+   * Look at the queue once, `delayMs` from now, unless a look is already pending. A queue found empty
+   * with its run still open is in its grace period, so it is looked at again once that has passed;
+   * that second look is what closes a run nobody is watching.
+   */
+  private scheduleQueueRunCheck(queueName: QueueName, delayMs: number) {
+    this.queueRunChecks[queueName] ??= setTimeout(() => {
+      this.queueRunChecks[queueName] = undefined;
+      this.observeQueueRun(queueName)
+        .then((run) => {
+          if (run.active + run.waiting === 0 && run.startedAt) {
+            this.scheduleQueueRunCheck(queueName, QUEUE_RUN_IDLE_GRACE_MS);
+          }
+        })
+        .catch((error) => this.logger.debug(`Unable to check whether ${queueName} drained: ${error}`));
+    }, delayMs);
+    this.queueRunChecks[queueName]?.unref?.();
+  }
+
+  /**
+   * The queue's current run: how much is active and waiting now, and how much has finished since
+   * the run started. Looking also moves the window: a queue with work and no open run starts one,
+   * and one that has stayed empty through the grace period closes it. `total = processed + active +
+   * waiting` therefore grows as work is added and holds steady as work finishes; it never goes
+   * backwards within a run.
+   */
+  async observeQueueRun(name: QueueName): Promise<QueueRun> {
+    const counts: Record<string, number | undefined> = await this.getQueue(name).getJobCounts(
+      'active',
+      'waiting',
+      'prioritized',
+      'paused',
+    );
+    const active = counts.active ?? 0;
+    const waiting = (counts.waiting ?? 0) + (counts.prioritized ?? 0) + (counts.paused ?? 0);
+
+    const client = await this.queueRunClient(name);
+    const [processed, startedAt] = (await client.eval(
+      QUEUE_RUN_SCRIPT,
+      1,
+      this.queueRunKey(name),
+      String(active + waiting),
+      String(QUEUE_RUN_IDLE_GRACE_MS),
+    )) as [number, string];
+
+    return {
+      active,
+      waiting,
+      processed: Math.max(0, Number(processed) || 0),
+      startedAt: startedAt ? new Date(Number(startedAt)) : null,
+    };
+  }
+
+  private queueRunKey(name: QueueName) {
+    const { bull } = this.configRepository.getEnv();
+    return `${bull.config.prefix ?? 'bull'}:frameleaf:queue-run:${name}`;
+  }
+
+  private queueRunClient(name: QueueName) {
+    return this.getQueue(name).client as unknown as Promise<Redis>;
   }
 
   watchWorkers() {
@@ -290,6 +568,14 @@ export class JobRepository {
     return this.getQueue(name).clean(0, 1000, type);
   }
 
+  /**
+   * FL-71 "Retry failed" (`JobsManager.jsx` 715-727): every failed job of the queue goes back to
+   * waiting (or paused, when the queue is paused) with its saved data, in batches of 1,000.
+   */
+  retryFailed(name: QueueName) {
+    return this.getQueue(name).retryJobs({ state: 'failed', count: 1000 });
+  }
+
   getJobCounts(name: QueueName): Promise<JobCounts> {
     return this.getQueue(name).getJobCounts(
       'active',
@@ -322,7 +608,7 @@ export class JobRepository {
     }
 
     const promises = [];
-    const itemsByQueue = {} as Record<string, (JobItem & { data: any; options: JobsOptions | undefined })[]>;
+    const itemsByQueue = {} as Record<string, { name: JobName; data: any; opts?: JobsOptions }[]>;
     for (const item of items) {
       const queueName = this.getQueueName(item.name);
       const job = {
@@ -336,7 +622,8 @@ export class JobRepository {
         promises.push(this.getQueue(queueName).add(item.name, item.data, job.options));
       } else {
         itemsByQueue[queueName] ||= [];
-        itemsByQueue[queueName].push(job);
+        // addBulk reads a job's options from `opts`
+        itemsByQueue[queueName].push({ name: job.name, data: job.data, opts: job.options });
       }
     }
 
@@ -362,23 +649,58 @@ export class JobRepository {
 
     while (pending.length > 0) {
       this.logger.verbose(`Waiting for ${pending[0]} queue to stop...`);
-      await setTimeout(1000);
+      await sleep(1000);
       pending = await getPending();
     }
   }
 
-  async searchJobs(name: QueueName, dto: QueueJobSearchDto): Promise<QueueJobResponseDto[]> {
-    const jobs = await this.getQueue(name).getJobs(dto.status ?? Object.values(QueueJobStatus), 0, 1000);
+  async searchJobs(name: QueueName, dto: QueueJobSearchDto, limit = 1000): Promise<QueueJobRow[]> {
+    const jobs = await this.getQueue(name).getJobs(dto.status ?? Object.values(QueueJobStatus), 0, limit - 1);
+    const only = dto.status?.length === 1 ? dto.status[0] : undefined;
     return jobs.map((job) => {
-      const { id, name, timestamp, data } = job;
-      return { id, name: name as JobName, timestamp, data };
+      const { id, name, timestamp, data, attemptsMade, failedReason, finishedOn, processedOn, delay } = job;
+      // FL-71: the status decides whether the job's worker is where it ran or where it will run.
+      const status =
+        only ??
+        (finishedOn
+          ? failedReason
+            ? QueueJobStatus.Failed
+            : QueueJobStatus.Complete
+          : processedOn
+            ? QueueJobStatus.Active
+            : delay > 0 && timestamp + delay > Date.now()
+              ? QueueJobStatus.Delayed
+              : QueueJobStatus.Waiting);
+      return {
+        status,
+        id,
+        name: name as JobName,
+        timestamp,
+        // FL-71: the signup notice and its mail carry a password, which the Job manager never shows
+        data: JOBS_WITH_SENSITIVE_DATA.has(name as JobName) ? {} : data,
+        attemptsMade,
+        // FL-71: the Job manager shows a failed job's last error; bullmq keeps it on the job. A
+        // stack-sized message is cut to the 500 characters the manager has room for.
+        ...(failedReason && { failedReason: failedReason.slice(0, 500) }),
+      };
     });
   }
 
   private getJobOptions(item: JobItem): JobsOptions | null {
+    const options = this.getNamedJobOptions(item);
+    // FL-71: a job that must never be retried, or whose data is sensitive, is not kept once it has
+    // failed, however it failed (a handler error is not rethrown for these, but a stalled job still fails)
+    return JOBS_NOT_RETRIED.has(item.name) ? { ...options, removeOnFail: true } : options;
+  }
+
+  private getNamedJobOptions(item: JobItem): JobsOptions | null {
     switch (item.name) {
       case JobName.ICloudSync: {
         return { deduplication: { id: `${JobName.ICloudSync}:${item.data.id}`, keepLastIfActive: true } };
+      }
+      case JobName.LibraryScanRun: {
+        // FL-78: one waiting wake-up is enough; a scan queued while one drains is picked up after it
+        return { deduplication: { id: JobName.LibraryScanRun, keepLastIfActive: true } };
       }
       case JobName.NotifyAlbumUpdate: {
         return {
@@ -386,12 +708,36 @@ export class JobRepository {
           delay: item.data?.delay,
         };
       }
+      case JobName.UniversalStorageMigration: {
+        // FL-326: one batch waiting at a time; the running batch queues the next itself
+        return {
+          deduplication: { id: JobName.UniversalStorageMigration, keepLastIfActive: true },
+          ...(item.data?.delay && { delay: item.data.delay }),
+        };
+      }
       case JobName.StorageTemplateMigrationSingle: {
         return { jobId: item.data.id };
       }
-      case JobName.PersonGenerateThumbnail: {
-        return { priority: 1 };
+      case JobName.StudioHdrProxyGenerate: {
+        // FL-97: every project read asks for missing intermediates; one per video is enough
+        return { deduplication: { id: `${JobName.StudioHdrProxyGenerate}:${item.data.id}` } };
       }
+      case JobName.WorkflowAssetTrigger: {
+        // FL-179: one job per execution, so a replayed run that queues its automatic retry again adds none
+        return item.data.executionId ? { jobId: `workflow-${item.data.executionId}` } : null;
+      }
+      case JobName.PhotographyWorkflowRender: {
+        return {
+          delay: item.data.delay ?? 0,
+          deduplication: { id: `${JobName.PhotographyWorkflowRender}:${item.data.id}`, keepLastIfActive: true },
+        };
+      }
+      case JobName.AssetDevelopRender: {
+        // The automatic retry of a failed render waits before it is claimed (FL-64).
+        return item.data.delay ? { delay: item.data.delay } : null;
+      }
+      // ponytail: no priority for PersonGenerateThumbnail; a BullMQ priority parks jobs in the prioritized set,
+      // behind every unprioritized job and outside the waiting counts (FL-71 review).
       case JobName.FacialRecognitionQueueAll: {
         return { deduplication: { id: JobName.FacialRecognitionQueueAll } };
       }
@@ -399,7 +745,7 @@ export class JobRepository {
         return { deduplication: { id: JobName.ImageDescriptionQueueAll } };
       }
       case JobName.ForkSchemaBackfill: {
-        return getForkSchemaBackfillJobOptions(item.data.kind);
+        return getForkSchemaBackfillJobOptions(item.data.kind, item.data.delay);
       }
       case JobName.SmartAlbumReevaluateAll: {
         // Kind-scoped dispatches get their own dedup namespace so they don't
@@ -410,8 +756,51 @@ export class JobRepository {
         const dedupId = kind ? `${JobName.SmartAlbumReevaluateAll}:${kind}` : JobName.SmartAlbumReevaluateAll;
         return { deduplication: { id: dedupId } };
       }
+      case JobName.AnalyticsCollect: {
+        // FL-79: the nightly run is one per night; its one automatic retry waits a few minutes.
+        return item.data?.attempt
+          ? { delay: ANALYTICS_AUTO_RETRY_DELAY_MS }
+          : { deduplication: { id: JobName.AnalyticsCollect } };
+      }
       case JobName.VersionCheck: {
         return { deduplication: { id: JobName.VersionCheck } };
+      }
+      case JobName.FrameleafHeartbeat: {
+        return { deduplication: { id: JobName.FrameleafHeartbeat } };
+      }
+      case JobName.FrameleafLicenseRefresh: {
+        return { deduplication: { id: JobName.FrameleafLicenseRefresh } };
+      }
+      case JobName.CloudMlDescriptionBatch: {
+        return { deduplication: { id: JobName.CloudMlDescriptionBatch } };
+      }
+      // FL-164: one schedule tick and one verification check at a time
+      case JobName.CloudBackupSchedule: {
+        return { deduplication: { id: JobName.CloudBackupSchedule } };
+      }
+      case JobName.CloudBackupVerify: {
+        return { deduplication: { id: JobName.CloudBackupVerify } };
+      }
+      case JobName.PushDeliver: {
+        // FL-228: a burst about the same thing (photos added one by one) waits and goes out once
+        const { dedupeKey, delayMs } = item.data.notice;
+        if (!dedupeKey && !delayMs) {
+          return null;
+        }
+        return { ...(dedupeKey && { jobId: `push/${dedupeKey}` }), ...(delayMs && { delay: delayMs }) };
+      }
+      // FL-326: one backfill per partnership and one copy per source and library at a time
+      case JobName.PartnerBackfill: {
+        return { deduplication: { id: `partner-backfill/${item.data.sharedById}/${item.data.sharedWithId}` } };
+      }
+      case JobName.PartnerCopyAsset: {
+        return { deduplication: { id: `partner-copy/${item.data.sourceAssetId}/${item.data.targetOwnerId}` } };
+      }
+      case JobName.PartnerCopyAlbum: {
+        return { deduplication: { id: `partner-album/${item.data.sourceAlbumId}/${item.data.targetOwnerId}` } };
+      }
+      case JobName.PushBackupStaleCheck: {
+        return { deduplication: { id: JobName.PushBackupStaleCheck } };
       }
       case JobName.DatabaseBackup: {
         return { deduplication: { id: JobName.DatabaseBackup } };

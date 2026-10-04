@@ -30,11 +30,12 @@
   color: var(--fl-muted, #8b969f);
   max-width: 610px;
 }
+/* matches every other settings page's overline */
 .jm-header .jm-eyebrow {
   font-size: 10px;
-  letter-spacing: 1.6px;
-  color: var(--jm-green);
-  font-weight: 700;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--fl-muted);
 }
 .jm-header-actions {
   display: flex;

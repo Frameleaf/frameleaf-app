@@ -1,9 +1,17 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import sanitize from 'sanitize-filename';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { UploadFile, UploadRequest } from 'src/types.js';
+import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset, AuthSharedLink } from 'src/database.js';
+import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
 import {
   AssetBulkUploadCheckResponseDto,
   AssetMediaResponseDto,
@@ -21,6 +29,7 @@ import {
 import { AssetDownloadOriginalDto } from 'src/dtos/asset.dto.js';
 import {
   AssetFileType,
+  AssetLockReason,
   AssetVisibility,
   CacheControl,
   ChecksumAlgorithm,
@@ -33,9 +42,17 @@ import { BaseService } from 'src/services/base.service.js';
 import { requireUploadAccess } from 'src/utils/access.js';
 import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
+import { moveFileWithin } from 'src/utils/file-trash.js';
 import { ImmichFileResponse, getFileNameWithoutExtension, getFilenameExtension } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
+import {
+  OriginalAsset,
+  OriginalLocationPolicy,
+  OriginalPurpose,
+  getOriginalLocationPolicies,
+} from 'src/utils/partner-location.js';
 import { fromChecksum } from 'src/utils/request.js';
 
 export interface AssetMediaRedirectResponse {
@@ -126,32 +143,26 @@ export class AssetMediaService extends BaseService {
     await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [uploadPath] } });
   }
 
-  async uploadAsset(
-    auth: AuthDto,
-    dto: AssetMediaCreateDto,
-    file: UploadFile,
-    sidecarFile?: UploadFile,
-  ): Promise<AssetMediaResponseDto> {
-    let asset: Asset | undefined;
-    try {
-      await this.requireAccess({
-        auth,
-        permission: Permission.AssetUpload,
-        // do not need an id here, but the interface requires it
-        ids: [auth.user.id],
-      });
+  /** Upload policy and asset values shared by multipart and verified resumable publication. */
+  async prepareUploadAsset(auth: AuthDto, dto: AssetMediaCreateDto, file: UploadFile) {
+    await this.requireAccess({
+      auth,
+      permission: Permission.AssetUpload,
+      // do not need an id here, but the interface requires it
+      ids: [auth.user.id],
+    });
 
-      this.requireQuota(auth, file.size);
+    this.requireQuota(auth, file.size);
 
-      if (dto.livePhotoVideoId) {
-        await onBeforeLink(
-          { asset: this.assetRepository, event: this.eventRepository },
-          { userId: auth.user.id, livePhotoVideoId: dto.livePhotoVideoId },
-        );
-      }
+    if (dto.livePhotoVideoId) {
+      await onBeforeLink(
+        { asset: this.assetRepository, event: this.eventRepository },
+        { userId: auth.user.id, livePhotoVideoId: dto.livePhotoVideoId },
+      );
+    }
 
-      const physicalDeduplication = await this.getPhysicalDeduplicationCandidate(auth.user.id, file);
-      asset = await this.assetRepository.create({
+    return {
+      asset: {
         ownerId: auth.user.id,
         libraryId: null,
 
@@ -166,59 +177,113 @@ export class AssetMediaService extends BaseService {
         type: mimeTypes.assetType(file.originalPath),
         isFavorite: dto.isFavorite,
         duration: dto.duration || null,
-        visibility: dto.visibility ?? AssetVisibility.Timeline,
+        // `locked` is a lock record, never a stored visibility (FL-34): an upload into the Locked view
+        // is stored on the timeline and locked in the same transaction, so nothing lists it unlocked
+        visibility:
+          dto.visibility && dto.visibility !== AssetVisibility.Locked ? dto.visibility : AssetVisibility.Timeline,
         livePhotoVideoId: dto.livePhotoVideoId,
         originalFileName: dto.filename || file.originalName,
+      },
+      lock:
+        dto.visibility === AssetVisibility.Locked
+          ? { reason: AssetLockReason.Marked, lockedBy: auth.user.id }
+          : undefined,
+    };
+  }
+
+  /** Post-publication ingestion is retried against the recorded asset, never another creation. */
+  async finishUploadAsset(
+    auth: AuthDto,
+    dto: AssetMediaCreateDto,
+    file: UploadFile,
+    asset: Asset,
+    sidecarFile?: UploadFile,
+    options: {
+      preparedFile?: boolean;
+      quotaCharged?: boolean;
+      ingestion?: { resourceId: string; token: string; ownerId: string };
+      checkIngestion?: () => Promise<void>;
+    } = {},
+  ) {
+    if (options.quotaCharged && !options.ingestion) {
+      // a resumable upload links to a shared file only under its durable ingestion claim
+      throw new BadRequestException('Durable ingestion claim is required');
+    }
+    await options.checkIngestion?.();
+    if (!options.quotaCharged && dto.metadata?.length) {
+      await this.assetRepository.upsertMetadata(asset.id, dto.metadata);
+    }
+
+    if (sidecarFile) {
+      await this.assetRepository.upsertFile({
+        assetId: asset.id,
+        path: sidecarFile.originalPath,
+        type: AssetFileType.Sidecar,
       });
-
-      if (dto.metadata?.length) {
-        await this.assetRepository.upsertMetadata(asset.id, dto.metadata);
-      }
-
-      if (sidecarFile) {
-        await this.assetRepository.upsertFile({
-          assetId: asset.id,
-          path: sidecarFile.originalPath,
-          type: AssetFileType.Sidecar,
-        });
-        await this.storageRepository.utimes(sidecarFile.originalPath, new Date(), new Date(dto.fileModifiedAt));
-      }
+      await this.storageRepository.utimes(sidecarFile.originalPath, new Date(), new Date(dto.fileModifiedAt));
+    }
+    if (!options.preparedFile) {
       await this.storageRepository.utimes(file.originalPath, new Date(), new Date(dto.fileModifiedAt));
+    }
+    if (!options.quotaCharged) {
       await this.assetRepository.upsertExif({
         exif: { assetId: asset.id, fileSizeInByte: file.size },
         lockedPropertiesBehavior: 'override',
       });
+    }
 
-      if (physicalDeduplication) {
-        await this.physicalFileRepository.linkAssetToOriginalPhysicalFile(asset.id, physicalDeduplication);
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [file.originalPath] } });
-        asset.originalPath = physicalDeduplication.path;
-        asset.physicalOriginalFileId = physicalDeduplication.id;
-      } else {
-        const masterPhysicalFile = await this.ensureMasterPhysicalOriginal(auth.user.id, asset.id);
-        if (masterPhysicalFile) {
-          asset.physicalOriginalFileId = masterPhysicalFile.id;
-        }
-      }
+    // universal storage: one file per content, server-wide. Content another library already holds is
+    // linked to that file and the upload released; new content becomes its own primary file.
+    const stored = await this.physicalFileRepository.linkUploadedOriginal(
+      asset.id,
+      { checksum: file.checksum, sizeInBytes: file.size },
+      {
+        exists: (path) => this.storageRepository.checkFileExists(path),
+        untrash: (from, to) => moveFileWithin(this.storageRepository, from, to),
+        ...(options.quotaCharged && { ingestion: options.ingestion }),
+      },
+    );
+    if (stored?.linked) {
+      await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [file.originalPath] } });
+      asset.originalPath = stored.physicalFile.path;
+    }
+    if (stored) {
+      asset.physicalOriginalFileId = stored.physicalFile.id;
+    }
 
-      if (file.legacyChecksum) {
-        await this.forkSchemaRepository.recordAssetChecksums({
-          assetId: asset.id,
-          sha1: file.legacyChecksum,
-          sha256: file.checksum,
-          sizeInBytes: file.size,
-          path: asset.originalPath,
-          source: 'upload',
-        });
-      }
+    if (!options.quotaCharged && file.legacyChecksum) {
+      await this.forkSchemaRepository.recordAssetChecksums({
+        assetId: asset.id,
+        sha1: file.legacyChecksum,
+        sha256: file.checksum,
+        sizeInBytes: file.size,
+        path: asset.originalPath,
+        source: 'upload',
+      });
+    }
 
-      await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: asset.id, source: 'upload' } });
+    await options.checkIngestion?.();
+    await this.jobRepository.queue({ name: JobName.AssetExtractMetadata, data: { id: asset.id, source: 'upload' } });
 
-      if (auth.sharedLink) {
-        await this.addToSharedLink(auth.sharedLink, asset.id);
-      }
+    if (auth.sharedLink) {
+      await this.addToSharedLink(auth.sharedLink, asset.id);
+    }
 
-      await this.eventRepository.emit('AssetCreate', { asset, file });
+    await options.checkIngestion?.();
+    await this.eventRepository.emit('AssetCreate', { asset, file: options.quotaCharged ? undefined : file });
+  }
+
+  async uploadAsset(
+    auth: AuthDto,
+    dto: AssetMediaCreateDto,
+    file: UploadFile,
+    sidecarFile?: UploadFile,
+  ): Promise<AssetMediaResponseDto> {
+    let asset: Asset | undefined;
+    try {
+      const prepared = await this.prepareUploadAsset(auth, dto, file);
+      asset = await this.assetRepository.create(prepared.asset, prepared.lock);
+      await this.finishUploadAsset(auth, dto, file, asset, sidecarFile);
 
       return { id: asset.id, status: AssetMediaStatus.CREATED };
     } catch (error: any) {
@@ -235,8 +300,10 @@ export class AssetMediaService extends BaseService {
           ? await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, file.checksum, duplicateOptions)
           : await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, file.checksum);
         if (!duplicateId) {
-          if (auth.hideNsfwAssets) {
-            this.logger.debug('Duplicate asset upload rejected while existing asset is hidden by NSFW privacy mode');
+          // the existing asset is hidden from this session: NSFW privacy mode, or Locked media the session
+          // has not unlocked (a shared-link session never has)
+          if (auth.hideNsfwAssets || (await this.isWithheldLockedDuplicate(auth, file.checksum))) {
+            this.logger.debug('Duplicate asset upload rejected while the existing asset is hidden');
             // Return a nil UUID rather than an empty string so clients that
             // strictly type the asset id (e.g. immich-go's AssetResponse.ID)
             // don't crash. The real duplicate id is still withheld, preserving
@@ -273,14 +340,14 @@ export class AssetMediaService extends BaseService {
       dto.edited = true;
     }
 
-    const { originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(
+    const { ownerId, originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(
       id,
       dto.edited ?? false,
     );
 
     const path = editedPath ?? originalPath!;
 
-    return new ImmichFileResponse({
+    return this.withOriginalLocationPolicy(auth, { id, ownerId }, 'download', {
       path,
       fileName: getFileNameWithoutExtension(originalFileName) + getFilenameExtension(path),
       contentType: mimeTypes.lookup(path),
@@ -288,10 +355,55 @@ export class AssetMediaService extends BaseService {
     });
   }
 
+  /**
+   * FL-54: a file served as-is carries its embedded EXIF/XMP/QuickTime location. For playback through a
+   * link that hides metadata serve a verified location-free copy instead; when none can be made, refuse
+   * rather than send the original bytes. A link that hides metadata never downloads (AL-27). Every other
+   * case is the untouched original (FL-326: partners always see locations).
+   */
+  private async withOriginalLocationPolicy(
+    auth: AuthDto,
+    asset: OriginalAsset,
+    purpose: OriginalPurpose,
+    response: ImmichFileResponse,
+  ): Promise<ImmichFileResponse> {
+    const policyFor = getOriginalLocationPolicies({ auth, assets: [asset], purpose });
+
+    switch (policyFor(asset)) {
+      case OriginalLocationPolicy.Serve: {
+        return new ImmichFileResponse(response);
+      }
+
+      case OriginalLocationPolicy.Refuse: {
+        throw new ForbiddenException('Downloads are turned off while metadata is hidden');
+      }
+
+      case OriginalLocationPolicy.RemoveLocation: {
+        const lease = await this.metadataRepository.acquireLocationFreeOriginal(response.path).catch(() => {
+          throw new ForbiddenException('The location of this file could not be removed');
+        });
+        return new ImmichFileResponse({ ...response, path: lease.path, release: lease.release });
+      }
+    }
+  }
+
+  /**
+   * FL-161: whether full-resolution files may go to a request that arrived this way: always, except
+   * through the relay while an administrator has not allowed originals there.
+   */
+  async fullSizeAllowed(via: FrameleafVia | null): Promise<boolean> {
+    if (via !== 'relay') {
+      return true;
+    }
+    const { frameleafCloud } = await this.getConfig({ withCache: true });
+    return frameleafCloud.remoteAccess.allowOriginalsOverRelay;
+  }
+
   async viewThumbnail(
     auth: AuthDto,
     id: string,
     dto: AssetMediaOptionsDto,
+    via: FrameleafVia | null = null,
   ): Promise<ImmichFileResponse | AssetMediaRedirectResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
@@ -304,13 +416,48 @@ export class AssetMediaService extends BaseService {
     }
 
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
-    const { originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
+    const { ownerId, originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
       id,
       size,
       dto.edited ?? false,
     );
 
+    // Develop revisions keep their own files; legacy asset_file edits do not point at them.
+    // Only the owner sees this working version. The face-source request remains on legacy pixels,
+    // and getFaceSource refuses drawing while a develop revision is current.
+    if (
+      !auth.sharedLink &&
+      auth.user.id === ownerId &&
+      dto.edited === true &&
+      !dto.faceSource &&
+      (size === AssetFileType.Preview || size === AssetFileType.FullSize)
+    ) {
+      const current = await this.assetRepository.getCurrentDevelop(id);
+      if (current && current.ownerId === ownerId) {
+        if (current.status !== AssetDevelopRevisionStatus.Rendered) {
+          throw new NotFoundException('Current developed preview is unavailable');
+        }
+        const fullSizeAllowed = size !== AssetFileType.FullSize || (await this.fullSizeAllowed(via));
+        const developedPath =
+          size === AssetFileType.FullSize && fullSizeAllowed ? current.masterPath : current.previewPath;
+        if (!developedPath) {
+          throw new NotFoundException('Current developed preview is unavailable');
+        }
+        return new ImmichFileResponse({
+          fileName: `${getFileNameWithoutExtension(originalFileName)}_develop_${size}${getFilenameExtension(developedPath)}`,
+          path: developedPath,
+          contentType: mimeTypes.lookup(developedPath),
+          cacheControl: CacheControl.PrivateWithoutCache,
+        });
+      }
+    }
+
     if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !dto.edited) {
+      // FL-161: through the relay the original is refused unless an administrator allowed it, so the
+      // viewer gets the preview instead of a redirect it cannot follow
+      if (!(await this.fullSizeAllowed(via))) {
+        return { targetSize: AssetMediaSize.PREVIEW };
+      }
       // use original file for web supported images
       return { targetSize: 'original' };
     }
@@ -328,16 +475,38 @@ export class AssetMediaService extends BaseService {
     const fileNameBase =
       auth.sharedLink && !auth.sharedLink.showExif ? id : getFileNameWithoutExtension(originalFileName);
     const fileName = `${fileNameBase}_${size}${getFilenameExtension(path)}`;
-
-    return new ImmichFileResponse({
+    const response = new ImmichFileResponse({
       fileName,
       path,
       contentType: mimeTypes.lookup(path),
       cacheControl: CacheControl.PrivateWithCache,
     });
+
+    // FL-54: a fullsize preview extracted from a RAW before generation-time stripping still carries the
+    // camera's GPS. Rather than a one-time regeneration job, those files are cleaned lazily: a viewer who
+    // may not see the owner's location gets a verified location-free copy (a clean file is served as is).
+    // Thumbnails and previews are re-encoded without metadata, so only fullsize needs the check.
+    if (size === AssetFileType.FullSize) {
+      return this.withOriginalLocationPolicy(auth, { id, ownerId }, 'playback', response);
+    }
+
+    return response;
   }
 
-  async playbackVideo(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
+  async downloadVideoEditVersion(auth: AuthDto, id: string, versionId: string): Promise<ImmichFileResponse> {
+    await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
+    const version = await this.assetEditRepository.getVideoVersion(id, versionId);
+    if (!version || version.ownerId !== auth.user.id || version.status !== 'ready' || !version.masterPath)
+      throw new NotFoundException('Video version is unavailable');
+    return new ImmichFileResponse({
+      path: version.masterPath,
+      fileName: `${id}-${version.id}.mp4`,
+      contentType: 'video/mp4',
+      cacheControl: CacheControl.PrivateWithCache,
+    });
+  }
+
+  async playbackVideo(auth: AuthDto, id: string, edited = true): Promise<ImmichFileResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
 
     const asset = await this.assetRepository.getForVideo(id);
@@ -346,11 +515,37 @@ export class AssetMediaService extends BaseService {
       throw new NotFoundException('Asset not found or asset is not a video');
     }
 
-    const filepath = asset.editedVideoPath || asset.encodedVideoPath || asset.originalPath;
+    // The unedited source is the owner's working copy in the quick editor (FL-113). Anyone else,
+    // including a shared link or a partner, is always given what the owner published.
+    const unedited = !edited && auth.user?.id === asset.ownerId && !auth.sharedLink;
+    const filepath = (unedited ? null : asset.editedVideoPath) || asset.encodedVideoPath || asset.originalPath;
 
-    return new ImmichFileResponse({
+    return this.withOriginalLocationPolicy(auth, { id, ownerId: asset.ownerId }, 'playback', {
       path: filepath,
       contentType: mimeTypes.lookup(filepath),
+      cacheControl: CacheControl.PrivateWithCache,
+    });
+  }
+
+  /**
+   * FL-97: the Studio HDR intermediate, under exactly the access and location rules of playback
+   * (`playbackVideo`), and never through a shared link. It carries no metadata, but the location
+   * policy is applied as for any file served for playback. It exists only while no edit is
+   * published over the original and the original is the one it was made from.
+   */
+  async playbackStudioHdrVideo(auth: AuthDto, id: string): Promise<ImmichFileResponse> {
+    await this.requireAccess({ auth, permission: Permission.AssetView, ids: [id] });
+    if (auth.sharedLink) {
+      throw new NotFoundException('Asset not found');
+    }
+    const asset = await this.assetRepository.getForVideo(id);
+    const path = asset ? (await this.assetRepository.getCurrentStudioHdrIntermediates([id])).get(id) : undefined;
+    if (!asset || !path) {
+      throw new NotFoundException('No Studio HDR intermediate for this asset yet');
+    }
+    return this.withOriginalLocationPolicy(auth, { id, ownerId: asset.ownerId }, 'playback', {
+      path,
+      contentType: 'video/mp4',
       cacheControl: CacheControl.PrivateWithCache,
     });
   }
@@ -421,39 +616,32 @@ export class AssetMediaService extends BaseService {
     });
   }
 
+  /**
+   * A duplicate lookup names only what this session may see: the caller's hidden-content settings
+   * apply, and a Locked match is named only for the owner's elevated session (FL-34). Left out, the
+   * repository withholds Locked matches.
+   */
+  /**
+   * Whether the owner's copy of this checksum is Locked media the session may not name. Checked
+   * server side only, after the named lookup came back empty; its id never leaves this method.
+   */
+  private async isWithheldLockedDuplicate(auth: AuthDto, checksum: Buffer) {
+    if (getLockedOwnerId(auth)) {
+      return false;
+    }
+
+    const lockedId = await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, checksum, {
+      lockedOwnerId: auth.user.id,
+    });
+    return !!lockedId;
+  }
+
   private getDuplicateCheckOptions(auth: AuthDto) {
-    return auth.hideNsfwAssets ? getHiddenContentQueryOptions(auth) : undefined;
-  }
-
-  private async getPhysicalDeduplicationCandidate(ownerId: string, file: UploadFile) {
-    const { physicalDeduplication } = await this.getConfig({ withCache: true });
-    if (
-      !physicalDeduplication.enabled ||
-      !physicalDeduplication.masterUserId ||
-      ownerId === physicalDeduplication.masterUserId
-    ) {
-      return;
-    }
-
-    const masterAsset = await this.physicalFileRepository.getMasterOriginalCandidate(
-      physicalDeduplication.masterUserId,
-      file.checksum,
-      file.size,
-    );
-    if (!masterAsset) {
-      return;
-    }
-
-    return this.physicalFileRepository.ensureOriginalPhysicalFile(masterAsset.id);
-  }
-
-  private async ensureMasterPhysicalOriginal(ownerId: string, assetId: string) {
-    const { physicalDeduplication } = await this.getConfig({ withCache: true });
-    if (!physicalDeduplication.enabled || ownerId !== physicalDeduplication.masterUserId) {
-      return;
-    }
-
-    return this.physicalFileRepository.ensureOriginalPhysicalFile(assetId);
+    const options = {
+      ...(auth.hideNsfwAssets && getHiddenContentQueryOptions(auth)),
+      ...getLockedVisibilityOptions(auth),
+    };
+    return Object.keys(options).length > 0 ? options : undefined;
   }
 
   private requireQuota(auth: AuthDto, size: number) {

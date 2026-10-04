@@ -10,6 +10,8 @@ import {
   ICloudConnectionUpdateDto,
   ICloudConnectionsResponseDto,
   ICloudControlDto,
+  ICloudIdentityReuseAuthorityDto,
+  ICloudIdentityReuseAuthorityStatusDto,
   ICloudInventoryResponseDto,
 } from 'src/dtos/icloud-sync.dto.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
@@ -20,6 +22,17 @@ import { UUIDParamDto } from 'src/validation.js';
 @Controller('icloud-sync/connections')
 export class ICloudSyncController {
   constructor(private service: ICloudSyncService) {}
+
+  @Patch(':id/identity-reuse-authority')
+  @Authenticated()
+  @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
+  updateICloudIdentityReuseAuthority(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: ICloudIdentityReuseAuthorityDto,
+  ): Promise<ICloudIdentityReuseAuthorityStatusDto> {
+    return this.service.setIdentityReuseAuthority(auth, id, dto);
+  }
 
   @Get()
   @Authenticated()
@@ -85,5 +98,15 @@ export class ICloudSyncController {
   @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
   disconnectICloudConnection(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.disconnect(auth, id);
+  }
+
+  // Remove a disconnected connection and what it recorded about the source (FL-68). Photos it
+  // imported stay in the library.
+  @Post(':id/remove')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Authenticated()
+  @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
+  removeICloudConnection(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.remove(auth, id);
   }
 }

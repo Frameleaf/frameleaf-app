@@ -1,19 +1,66 @@
 # Editing
 
-Immich supports non-destructive editing of photos. This means that any edits you make to an asset do not modify the original file, but instead create a new version of the asset with the edits applied. You can always revert back to the original asset if needed.
+Frameleaf supports non-destructive editing of photos. This means that any edits you make to an asset do not modify the original file, but instead create a new version of the asset with the edits applied. You can always revert back to the original asset if needed.
 
 ## Supported Edits
 
-Currently, Immich supports the following types of edits:
+Currently, Frameleaf supports the following types of edits:
 
 - Cropping
 - Rotation
 - Mirroring
 
-<img src={require('./img/web-edit-interface.webp').default} title="Web edit interface" />
+To edit a photo, open it and select **Edit** in the viewer. Use the **Crop** tools to crop, rotate or mirror it, then save your changes.
+
+## Originals, edited masters and playback copies
+
+Three kinds of file exist for an edited asset, and they are never confused for one another:
+
+- The **original** is what you uploaded. Editing never writes to it, and every render reads from it. Reverting an edit simply stops using the derived files.
+- The **edited master** is a new file rendered from the original plus the edit recipe. It is the highest-quality version of the edit and is what a download or an export gives you. It is never re-edited in place: changing the recipe re-renders from the original, so repeated edits do not stack up generation loss.
+- **Playback copies** — previews, thumbnails and the streaming renditions — are derived from the master, deliberately smaller, and safe to delete. They are regenerated on demand and are never treated as the master.
+
+Each edited master is written alongside a small `.lineage.json` record naming the original it came from, that original's checksum, the exact revision of the edit recipe and the version of the renderer. That record is what lets the server recognise a master that is out of date and re-render it from the original.
+
+### What the master preserves
+
+The general video transcoding settings in the administration panel describe playback copies. They do not cap an edited master, which keeps the original's resolution regardless of the configured target resolution, uses a higher quality target than the playback setting, and ignores the playback bitrate ceiling.
+
+Beyond quality, a rendered master preserves:
+
+- **Timing.** Frame timing is passed through rather than resampled, so a variable-frame-rate recording keeps its original cadence. The output timescale matches the source.
+- **Audio.** The channel layout is kept. An audio track the edit does not touch is copied through untouched; a track the edit does change is re-encoded without being forced down to stereo.
+- **Colour and bit depth.** A 10-bit source stays 10-bit. Colour primaries, transfer and matrix are written explicitly. If a high-dynamic-range source has to be tone mapped, that choice is recorded in the lineage rather than applied silently, and the HDR original remains the reference.
+
+An edit that only turns the picture by a quarter or a half turn does not re-encode at all where the source allows it: the rotation is written into the file's display metadata and every video and audio packet is preserved exactly.
+
+If a source cannot be preserved, the edit is refused before anything is written. The original and any previously rendered master are left intact.
+
+### Video sources the editor accepts
+
+The editor reads the source's actual pixel format, transfer and Dolby Vision configuration, never just the codec name. These sources are in the tested matrix:
+
+| Source           | Details                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| SDR, 8-bit       | 4:2:0, H.264, HEVC, AV1, VP9 or VP8; untagged or Rec. 709 / Rec. 601                         |
+| SDR, 10-bit      | 4:2:0, H.264 High 10, HEVC Main 10, AV1 or VP9                                               |
+| HDR10            | 10-bit 4:2:0 HEVC, AV1 or VP9 with the PQ (SMPTE ST 2084) transfer and Rec. 2020 primaries   |
+| HLG              | 10-bit 4:2:0 HEVC, AV1 or VP9 with the HLG (ARIB STD-B67) transfer                           |
+| Apple ProRes     | 422 and 4444, 10-bit and 12-bit, in SDR, PQ or HLG                                           |
+| Dolby Vision 8.1 | HEVC with an HDR10 base layer; the edit keeps the HDR10 picture and drops the Dolby metadata |
+| Dolby Vision 8.4 | HEVC with an HLG base layer; the edit keeps the HLG picture and drops the Dolby metadata     |
+
+Portrait and anamorphic videos are covered by every row: rotation and pixel aspect are handled separately from decoding.
+
+These sources are refused before editing starts:
+
+- **Dolby Vision profile 5.** It has no usable base layer and needs Dolby reshaping, so it is not treated as ordinary HDR10.
+- **Dolby Vision profile 7**, whose enhancement layer is not supported, and profiles 3, 4, 9 and 10.
+- **Dolby Vision profile 8 without a stated base layer.**
+- **More than 12 bits per component**, and a pixel format the server cannot describe.
+
+A source that decodes but is not in the table, for example 4:2:2 H.264, is still edited, and its lineage record notes that it is outside the tested matrix.
 
 ## Download
 
-When you download an edited asset, Immich provides the edited version of the asset by default. However, you can choose to download the original version if needed.
-
-<img src={require('./img/web-edit-download.webp').default} title="Web edit download" />
+When you download an edited asset, Frameleaf provides the edited version of the asset by default. However, you can choose to download the original version if needed: open the asset, select **More actions**, and choose **Download original** instead of **Download**.

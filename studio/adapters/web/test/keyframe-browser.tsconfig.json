@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["../../../engine/src/*"],
+      "react": ["../../../engine/node_modules/@types/react"],
+      "react-dom": ["../../../engine/node_modules/@types/react-dom"],
+      "react-dom/*": ["../../../engine/node_modules/@types/react-dom/*"],
+      "react/*": ["../../../engine/node_modules/@types/react/*"]
+    },
+    "types": []
+  },
+  "exclude": [],
+  "extends": "../../../engine/tsconfig.json",
+  "include": [
+    "keyframe-render.browser.tsx",
+    "editor-controls.browser.tsx",
+    "boundary-hit.browser.tsx",
+    "linked-edit-axis.browser.tsx",
+    "edge-parity.browser.tsx",
+    "../../../engine/src/**/*.d.ts",
+    "../../../engine/node_modules/@webgpu/types/dist/index.d.ts"
+  ]
+}

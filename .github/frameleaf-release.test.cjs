@@ -14,6 +14,7 @@ const {
   chooseTag,
   verifyImage,
   createBundle,
+  verifyDependencyImages,
   checkedResponse,
   hash,
   Registry,
@@ -86,7 +87,7 @@ function fixture(spec = VARIANTS[0]) {
 }
 
 test("every supported image variant has an explicit native build contract", () => {
-  assert.equal(VARIANTS.length, 8);
+  assert.equal(VARIANTS.length, 7);
   for (const spec of VARIANTS) {
     const env = {
       IMAGE: spec.image,
@@ -118,8 +119,8 @@ test("every supported image variant has an explicit native build contract", () =
       assert.throws(() => validateBuildInput({ ...env, ...patch }));
   }
   assert.equal(
-    VARIANTS.find((v) => v.suffix === "-cuda-runpod").target,
-    "prod-runpod",
+    VARIANTS.some((v) => v.target !== "prod"),
+    false,
   );
 });
 
@@ -302,12 +303,20 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     await fs.mkdir(path.join(root, "server/src/fork-schema"), {
       recursive: true,
     });
+    await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "packaging/nas/certified-sources.json"),
+      '{"officialImmich":[],"priorFrameleaf":[]}',
+    );
     for (const name of INSTALL_FILES) {
-      const text = name.startsWith("docker-compose")
-        ? "image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}\nvolumes: [model-cache]\n"
-        : name === "example.env"
-          ? "IMMICH_VERSION=v3\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres\n"
-          : "services: {}\n";
+      const text =
+        name === "docker-compose.yml"
+          ? `services:\n  server:\n    image: ghcr.io/frameleaf/frameleaf-server:\${FRAMELEAF_VERSION:-\${IMMICH_VERSION:-release}}\n  redis:\n    image: valkey/valkey:9@${digest(1)}\n  database:\n    image: postgres:14@${digest(2)}\nvolumes: [model-cache]\n`
+          : name.startsWith("docker-compose")
+            ? "image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}\nvolumes: [model-cache]\n"
+            : name === "example.env"
+              ? "FRAMELEAF_VERSION=v3\nUPLOAD_LOCATION=./library\nDB_DATA_LOCATION=./postgres\n"
+              : "services: {}\n";
       await fs.writeFile(path.join(root, "docker", name), text);
     }
     await fs.writeFile(
@@ -316,11 +325,35 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
     );
     const dir = path.join(root, "bundle");
     const tag = "frameleaf-v3.1.0-12";
-    const files = await createBundle(dir, root, tag, { sourceCommit: sha });
-    assert.equal(files.length, 8);
+    const files = await createBundle(dir, root, tag, {
+      sourceCommit: sha,
+      images: [
+        {
+          image: "ghcr.io/frameleaf/frameleaf-server",
+          suffix: "",
+          digest: digest(3),
+          platforms: ["linux/amd64", "linux/arm64"],
+        },
+        {
+          image: "ghcr.io/frameleaf/frameleaf-machine-learning",
+          suffix: "",
+          digest: digest(4),
+          platforms: ["linux/amd64", "linux/arm64"],
+        },
+      ],
+    });
+    assert.equal(files.length, 9);
+    const nas = JSON.parse(
+      await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"),
+    );
+    assert.equal(
+      nas.images.server,
+      `ghcr.io/frameleaf/frameleaf-server@${digest(3)}`,
+    );
+    assert.deepEqual(nas.migration.officialImmich, []);
     const env = await fs.readFile(path.join(dir, "example.env"), "utf8");
     assert(
-      env.includes(`IMMICH_VERSION=${tag}\n`) &&
+      env.includes(`FRAMELEAF_VERSION=${tag}\n`) &&
         env.includes("DB_DATA_LOCATION=./postgres"),
     );
     const compose = await fs.readFile(
@@ -328,18 +361,19 @@ test("install bundle pins both Compose fallbacks and env while preserving data c
       "utf8",
     );
     assert(
-      compose.includes("${IMMICH_VERSION:-" + tag + "}") &&
-        compose.includes("model-cache"),
+      compose.includes(
+        "${FRAMELEAF_VERSION:-${IMMICH_VERSION:-" + tag + "}}",
+      ) && compose.includes("model-cache"),
     );
     const original = await fs.readFile(
       path.join(root, "docker/example.env"),
       "utf8",
     );
-    assert(original.includes("IMMICH_VERSION=v3"));
+    assert(original.includes("FRAMELEAF_VERSION=v3"));
     const sums = (await fs.readFile(path.join(dir, "SHA256SUMS"), "utf8"))
       .trim()
       .split("\n");
-    assert.equal(sums.length, 7);
+    assert.equal(sums.length, 8);
     for (const line of sums) {
       const [expected, name] = line.split("  ");
       assert.equal(
@@ -508,4 +542,485 @@ test("reserved release mismatch and existing version conflicts never overwrite a
     }),
     /different content/,
   );
+});
+
+test("qualified unchanged reuse retains immutable build source and rejects altered evidence", async () => {
+  const { verifyReuse } = require("./frameleaf-release.cjs");
+  const f = fixture();
+  f.entries.set(f.result.digest, f.result);
+  const qualified = "b".repeat(40);
+  const manifest = {
+    repository: "Frameleaf/frameleaf-app",
+    tag: "frameleaf-v3.2.0-1",
+    sourceCommit: sha,
+    images: [
+      {
+        image: "ghcr.io/frameleaf/frameleaf-server",
+        suffix: "",
+        sourceCommit: sha,
+        digest: f.result.digest,
+      },
+    ],
+  };
+  const inputs = [];
+  const result = await verifyReuse(
+    f.registry,
+    VARIANTS[0],
+    qualified,
+    manifest,
+    (_spec, built, current) => inputs.push([built, current]),
+  );
+  assert.equal(result.sourceCommit, qualified);
+  assert.equal(result.buildSourceCommit, sha);
+  assert.equal(result.buildDigest, f.result.digest);
+  assert.equal(f.index.annotations["org.opencontainers.image.revision"], sha);
+  assert.deepEqual(inputs, [
+    [sha, qualified],
+    [sha, qualified],
+  ]);
+  await assert.rejects(
+    verifyReuse(f.registry, VARIANTS[0], qualified, manifest, () => {
+      throw Error("Image build inputs changed");
+    }),
+    /inputs changed/,
+  );
+  for (const mutate of [
+    (m) => {
+      m.repository = "foreign/app";
+    },
+    (m) => {
+      m.images[0].sourceCommit = qualified;
+    },
+    (m) => {
+      m.images.push(m.images[0]);
+    },
+    (m) => {
+      m.images[0].buildDigest = "latest";
+    },
+    (m) => {
+      m.images[0].buildSourceCommit = qualified;
+    },
+  ]) {
+    const invalid = clone(manifest);
+    mutate(invalid);
+    await assert.rejects(
+      verifyReuse(f.registry, VARIANTS[0], qualified, invalid, () => {}),
+    );
+  }
+  const config = [...f.entries.values()].find((e) => e.json.config?.Labels);
+  config.json.config.Labels["org.opencontainers.image.source"] =
+    "https://github.com/foreign/app";
+  await assert.rejects(
+    verifyReuse(f.registry, VARIANTS[0], qualified, manifest, () => {}),
+    /source repository/,
+  );
+});
+
+test("reuse compares original inputs and ancestry, including non-obvious Docker inputs", () => {
+  const { identicalBuildInputs } = require("./frameleaf-release.cjs");
+  const calls = [];
+  identicalBuildInputs(VARIANTS[0], sha, "b".repeat(40), (...args) => {
+    calls.push(args);
+    return Buffer.from("");
+  });
+  assert.deepEqual(calls[0], [
+    "merge-base",
+    "--is-ancestor",
+    sha,
+    "b".repeat(40),
+  ]);
+  for (const input of [
+    ".pnpmfile.cjs",
+    "mise.toml",
+    "mise.lock",
+    "LICENSE",
+    ".dockerignore",
+    "packages",
+    ".github/workflows/local-multi-runner-build.yml",
+  ])
+    assert(calls[1].includes(input), input);
+  assert.throws(
+    () =>
+      identicalBuildInputs(VARIANTS[0], sha, "b".repeat(40), (...args) => {
+        if (args[0] === "merge-base") throw Error("Non-ancestor stale source");
+        return Buffer.from("");
+      }),
+    /Non-ancestor/,
+  );
+  assert.throws(
+    () =>
+      identicalBuildInputs(VARIANTS[0], sha, "b".repeat(40), (...args) =>
+        Buffer.from(args[0] === "diff" ? "server/Dockerfile" : ""),
+      ),
+    /inputs changed/,
+  );
+});
+
+test("a reused candidate restates the index annotations validateIndex requires", () => {
+  const release = require("./frameleaf-release.cjs");
+  const spec = release.variant("frameleaf-server", "");
+  const image = {
+    buildSourceCommit: "a".repeat(40),
+    buildDigest: `sha256:${"b".repeat(64)}`,
+  };
+  const args = release.reuseAnnotations(spec, image, {
+    GITHUB_SHA: "c".repeat(40),
+    REUSE_RELEASE: "frameleaf-v1.0.0",
+  });
+  const values = args.filter((_, index) => index % 2 === 1);
+  assert.ok(
+    args.every((arg, index) => index % 2 === 1 || arg === "--annotation"),
+  );
+  assert.deepEqual(values, [
+    `index:org.opencontainers.image.source=${release.SOURCE}`,
+    `index:org.opencontainers.image.revision=${"a".repeat(40)}`,
+    `index:org.frameleaf.build.variant=${spec.device}${spec.suffix}`,
+    `index:org.frameleaf.qualification.revision=${"c".repeat(40)}`,
+    "index:org.frameleaf.qualification.release=frameleaf-v1.0.0",
+    `index:org.frameleaf.build.digest=sha256:${"b".repeat(64)}`,
+  ]);
+});
+
+test("release accepts truthful reused candidate index and rejects changed qualification or children", async () => {
+  const { candidateImage } = require("./frameleaf-release.cjs");
+  const f = fixture();
+  f.entries.set(f.result.digest, f.result);
+  const qualified = "b".repeat(40);
+  const manifest = {
+    repository: "Frameleaf/frameleaf-app",
+    tag: "frameleaf-v3.2.0-1",
+    sourceCommit: sha,
+    images: [
+      {
+        image: "ghcr.io/frameleaf/frameleaf-server",
+        suffix: "",
+        sourceCommit: sha,
+        digest: f.result.digest,
+      },
+    ],
+  };
+  const index = clone(f.index);
+  Object.assign(index.annotations, {
+    "org.frameleaf.qualification.release": manifest.tag,
+    "org.frameleaf.qualification.revision": qualified,
+    "org.frameleaf.build.digest": f.result.digest,
+  });
+  const candidate = {
+    json: index,
+    digest: hash(JSON.stringify(index)),
+    size: JSON.stringify(index).length,
+  };
+  f.entries.set(candidate.digest, candidate);
+  const registry = {
+    read: async (image, reference) =>
+      reference === `commit-${qualified}`
+        ? candidate
+        : f.registry.read(image, reference),
+  };
+  const result = await candidateImage(
+    registry,
+    VARIANTS[0],
+    qualified,
+    async () => manifest,
+    () => {},
+  );
+  assert.equal(result.digest, candidate.digest);
+  assert.equal(result.buildDigest, f.result.digest);
+  assert.equal(result.buildSourceCommit, sha);
+  assert.equal(result.sourceCommit, qualified);
+  index.annotations["org.frameleaf.qualification.revision"] = sha;
+  await assert.rejects(
+    candidateImage(
+      registry,
+      VARIANTS[0],
+      qualified,
+      async () => manifest,
+      () => {},
+    ),
+    /qualification revision/,
+  );
+  index.annotations["org.frameleaf.qualification.revision"] = qualified;
+  index.manifests.pop();
+  await assert.rejects(
+    candidateImage(
+      registry,
+      VARIANTS[0],
+      qualified,
+      async () => manifest,
+      () => {},
+    ),
+    /manifest content/,
+  );
+});
+
+test("manual dispatch rejects existing fresh or reused same-SHA candidates before scheduling builds", async () => {
+  const { planReuse } = require("./frameleaf-release.cjs");
+  const directory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "frameleaf-manual-"),
+  );
+  const output = path.join(directory, "outputs");
+  const env = {
+    GITHUB_REPOSITORY: "Frameleaf/frameleaf-app",
+    GITHUB_REF: "refs/heads/fork/main",
+    GITHUB_SHA: sha,
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_OUTPUT: output,
+  };
+  try {
+    for (const reused of [false, true]) {
+      const f = fixture();
+      if (reused)
+        f.index.annotations["org.frameleaf.qualification.revision"] =
+          "b".repeat(40);
+      await fs.writeFile(output, "");
+      await assert.rejects(
+        planReuse(
+          { ...env, GITHUB_SHA: reused ? "b".repeat(40) : sha },
+          { read: async () => f.result },
+        ),
+        /requires a new source revision/,
+      );
+      assert.equal(await fs.readFile(output, "utf8"), "");
+    }
+    const refs = [];
+    await planReuse(env, {
+      read: async (image, ref) => {
+        refs.push([image, ref]);
+        throw Object.assign(Error("Missing"), { status: 404 });
+      },
+    });
+    assert.equal(refs.length, VARIANTS.length);
+    assert.equal(
+      await fs.readFile(output, "utf8"),
+      "server=true\nserver-release=\nmachine-learning=true\nmachine-learning-release=\n",
+    );
+    await fs.writeFile(output, "");
+    await assert.rejects(
+      planReuse(env, {
+        read: async () => {
+          throw Object.assign(Error("Forbidden"), { status: 403 });
+        },
+      }),
+      /Forbidden/,
+    );
+    assert.equal(await fs.readFile(output, "utf8"), "");
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+// FL-191: the database and CLI images are published separately, so promotion must prove they exist.
+async function dependencyRoot(databaseImage) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "frameleaf-deps-"));
+  await fs.mkdir(path.join(root, "docker"));
+  await fs.mkdir(path.join(root, "server/src/fork-schema"), {
+    recursive: true,
+  });
+  for (const name of INSTALL_FILES) {
+    const text = name.startsWith("docker-compose")
+      ? [
+          "services:",
+          "  immich-server:",
+          "    image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+          "  redis:",
+          `    image: docker.io/valkey/valkey:9@${digest(7)}`,
+          "  database:",
+          `    image: ${databaseImage}`,
+          "",
+        ].join("\n")
+      : name === "example.env"
+        ? "FRAMELEAF_VERSION=release\n"
+        : "services: {}\n";
+    await fs.writeFile(path.join(root, "docker", name), text);
+  }
+  await fs.writeFile(
+    path.join(root, "server/src/fork-schema/supported-versions.json"),
+    "{}",
+  );
+  await fs.mkdir(path.join(root, "packaging/nas"), { recursive: true });
+  await fs.writeFile(
+    path.join(root, "packaging/nas/certified-sources.json"),
+    '{"officialImmich":[],"priorFrameleaf":[]}',
+  );
+  return root;
+}
+const database =
+  "ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0";
+const published = (entries) => ({
+  read: async (image, reference) => {
+    const found = entries[`${image}:${reference}`];
+    if (!found)
+      throw Object.assign(new Error("Remote request failed (404)"), {
+        status: 404,
+      });
+    return { digest: found, json: {}, size: 1 };
+  },
+});
+
+test("promotion refuses a bundle whose database or CLI image is not published", async () => {
+  const root = await dependencyRoot(database);
+  try {
+    await assert.rejects(
+      verifyDependencyImages(
+        published({ "frameleaf-cli:latest": digest(2) }),
+        root,
+      ),
+      /frameleaf-postgres:14-vectorchord0\.4\.3-pgvectors0\.2\.0 is not published/,
+    );
+    await assert.rejects(
+      verifyDependencyImages(
+        published({
+          "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+        }),
+        root,
+      ),
+      /frameleaf-cli:latest is not published/,
+    );
+    const resolved = await verifyDependencyImages(
+      published({
+        "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+        "frameleaf-cli:latest": digest(2),
+      }),
+      root,
+    );
+    assert.equal(resolved.get(database), digest(1));
+    // The bundle pins the verified digest; the source Compose file is left as written.
+    const dir = path.join(root, "bundle");
+    await createBundle(
+      dir,
+      root,
+      "frameleaf-v3.1.0-1",
+      {
+        sourceCommit: sha,
+        images: [
+          {
+            image: "ghcr.io/frameleaf/frameleaf-server",
+            suffix: "",
+            digest: digest(3),
+            platforms: ["linux/amd64"],
+          },
+          {
+            image: "ghcr.io/frameleaf/frameleaf-machine-learning",
+            suffix: "",
+            digest: digest(4),
+            platforms: ["linux/amd64"],
+          },
+        ],
+      },
+      resolved,
+    );
+    const nas = JSON.parse(
+      await fs.readFile(path.join(dir, "nas-manifest.json"), "utf8"),
+    );
+    assert.equal(nas.images.postgres, `${database}@${digest(1)}`);
+    for (const name of ["docker-compose.yml", "docker-compose.rootless.yml"]) {
+      const bundled = await fs.readFile(path.join(dir, name), "utf8");
+      assert(bundled.includes(`image: ${database}@${digest(1)}\n`), name);
+    }
+    await assert.rejects(
+      createBundle(
+        path.join(root, "unverified"),
+        root,
+        "frameleaf-v3.1.0-1",
+        {},
+      ),
+      /was not verified and pinned by digest/,
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("promotion rejects stale pins, upstream images and unpinned third-party images", async () => {
+  for (const [image, pattern] of [
+    [`${database}@${digest(3)}`, /no longer resolves to the pinned digest/],
+    [
+      // Built from parts so the repository-wide upstream-image guard does not match this test.
+      ["ghcr.io", "immich-app", "postgres:14-vectorchord0.4.3"].join("/"),
+      /must not pull upstream images/,
+    ],
+    ["docker.io/library/postgres:14", /must be digest-pinned/],
+    ["ghcr.io/frameleaf/unknown-image:1", /not a known Frameleaf dependency/],
+    // A release-version placeholder never exempts an upstream or third-party image.
+    [
+      [
+        "ghcr.io",
+        "immich-app",
+        "immich-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      ].join("/"),
+      /must not pull upstream images/,
+    ],
+    [
+      "docker.io/example/server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      /only the Frameleaf server and ML images may follow the release version/,
+    ],
+    [
+      "ghcr.io/frameleaf/frameleaf-postgres:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}",
+      /only the Frameleaf server and ML images may follow the release version/,
+    ],
+  ]) {
+    const root = await dependencyRoot(image);
+    try {
+      await assert.rejects(
+        verifyDependencyImages(
+          published({
+            "frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0": digest(1),
+            "frameleaf-cli:latest": digest(2),
+          }),
+          root,
+        ),
+        pattern,
+        image,
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("promotion names private, missing and transient dependency failures separately", async () => {
+  const root = await dependencyRoot(database);
+  const failing = (status, message = "Remote request failed") => ({
+    read: async (image, reference, kind, options) => {
+      assert.deepEqual(options, { anonymous: true });
+      if (image === "frameleaf-cli") return { digest: digest(2), json: {} };
+      throw Object.assign(new Error(message), status ? { status } : {});
+    },
+  });
+  try {
+    for (const [registry, pattern] of [
+      [failing(401), /is not public \(anonymous registry status 401\)/],
+      [failing(403), /is not public \(anonymous registry status 403\)/],
+      [failing(404), /is not published \(registry status 404\)/],
+      [failing(503), /Transient registry failure reading .*status 503/],
+      [
+        failing(undefined, "fetch failed"),
+        /Transient registry failure .*fetch failed/,
+      ],
+    ])
+      await assert.rejects(verifyDependencyImages(registry, root), pattern);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("dependency reads use an anonymous registry token, as an installation would", async (t) => {
+  const body = JSON.stringify({ schemaVersion: 2 });
+  const tokenRequests = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    if (String(url).startsWith("https://ghcr.io/token?")) {
+      tokenRequests.push(init.headers);
+      return new Response(JSON.stringify({ token: "anonymous-token" }));
+    }
+    assert.equal(init.headers.Authorization, "Bearer anonymous-token");
+    return new Response(body, {
+      headers: { "docker-content-digest": hash(body) },
+    });
+  });
+  const client = new Registry({ GITHUB_TOKEN: "job-token", GITHUB_ACTOR: "x" });
+  await client.read("frameleaf-postgres", "latest", "manifests", {
+    anonymous: true,
+  });
+  assert.equal(tokenRequests.length, 1);
+  assert.equal(tokenRequests[0].Authorization, undefined);
 });

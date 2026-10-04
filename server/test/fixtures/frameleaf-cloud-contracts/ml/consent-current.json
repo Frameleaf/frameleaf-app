@@ -1,0 +1,14 @@
+{
+  "requiredVersion": "2026-09-26.1",
+  "recordedVersion": null,
+  "recordedAt": null,
+  "features": {
+    "identityNames": false,
+    "medicalSignals": false,
+    "ocrAddon": false
+  },
+  "summary": "Frameleaf Cloud processes metadata-stripped previews, clips or audio in your account's region, returns the results to your server and deletes everything within 24 hours. Nobody looks at your files and they are never used for training. Names of people and possible medical signals stay off unless you turn them on. Jobs are paid from your AI Wallet by metered GPU time.",
+  "text": "# Frameleaf Cloud AI processing\n\nVersion 2026-09-26.1\n\nWhen you send a job to Frameleaf Cloud, your server uploads what the job needs and nothing else. For descriptions that is a preview of each photo with its metadata removed; for video it is a clip cut from the preview with its metadata removed; for transcription it is the audio track. Originals and RAW files never leave your server.\n\n## What happens to your files\n\n- Files are processed on GPU workers in your account's data region and are encrypted in storage with a key for that job only.\n- Results go back to your server. Frameleaf Cloud deletes the inputs and results as soon as your server confirms it has them, and after 24 hours at the latest.\n- Nobody at Frameleaf looks at your files or results, and they are never used to train or improve models.\n- Logs record only that a job ran, how long it took and what it cost. They never contain your files, results or the text of prompts.\n\n## Choices for descriptions\n\n- **Names of people** (`identityNames`): off unless you turn it on. When it is off, names are left out of what the model is asked and of what it returns.\n- **Possible medical signals** (`medicalSignals`): off unless you turn it on. When it is off, the model isn't asked about medical conditions.\n- Faces are never processed in Frameleaf Cloud; face recognition stays on your server.\n\n## Cost\n\nJobs are paid from your AI Wallet by metered GPU time plus a start fee per worker. You see an estimate before every job, and the wallet holds the upper end of the estimate until the job settles. Jobs that fail on our side cost nothing.\n\n## Changing your mind\n\nYou can withdraw this consent from your server at any time. New cloud jobs stop at once; jobs already running finish and are settled. When this text changes, your server asks you again before the next job.\n",
+  "textSha256": "9de54bf78bb10336c2198853a96988d2b390becbead134ce5ee3cdb3a30c3655",
+  "documentUrl": null
+}

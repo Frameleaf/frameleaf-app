@@ -1,0 +1,45 @@
+--- a/src/infrastructure/gpu-effects/effects/lut.ts
++++ b/src/infrastructure/gpu-effects/effects/lut.ts
+@@ -50,10 +50,8 @@
+   },
+   dataTexture: {
+     dimension: '3d',
+-    // The base64 payload is the texture's identity. Returning the string
+-    // itself (no concatenation) keeps the per-frame key comparison a cheap
+-    // same-reference check for unchanged params.
+-    key: (p) => (typeof p.lutData === 'string' ? p.lutData : ''),
++    // Size also determines whether the payload is valid and must rebuild the texture.
++    key: (p) => `${readLutSize(p)}:${typeof p.lutData === 'string' ? p.lutData : ''}`,
+     build: (p) => {
+       const size = readLutSize(p)
+       const encoded = typeof p.lutData === 'string' ? p.lutData : ''
+--- a/src/infrastructure/gpu-effects/index.test.ts
++++ b/src/infrastructure/gpu-effects/index.test.ts
+@@ -7,6 +7,7 @@
+   getGpuEffectsByCategory,
+ } from './index'
+ import { EFFECT_PRESETS } from '@/types/effects'
++import { createIdentityLutData, encodeLutData } from './lut/cube-lut'
+ 
+ describe('GPU effect registry', () => {
+   it('registers every effect with shader metadata and valid default uniforms', () => {
+@@ -82,6 +83,19 @@
+     expect(uniforms[1]).toBeCloseTo(0x34 / 255, 6)
+     expect(uniforms[2]).toBeCloseTo(0x56 / 255, 6)
+     expect(uniforms[3]).toBeCloseTo(0x80 / 255, 6)
++  })
++
++  it('rebuilds the LUT data texture when its declared size changes', () => {
++    const lut = getGpuEffect('gpu-lut')!
++    const data = encodeLutData(createIdentityLutData(3))
++    const size2 = { lutSize: '2', lutData: data }
++    const size3 = { lutSize: '3', lutData: data }
++
++    expect(lut.dataTexture!.key(size2)).not.toBe(lut.dataTexture!.key(size3))
++    expect(lut.dataTexture!.build(size2)).toMatchObject({ width: 2, height: 2, depth: 2 })
++    expect(lut.dataTexture!.build(size3)).toMatchObject({ width: 3, height: 3, depth: 3 })
++    expect(lut.packUniforms(size2, 1, 1)![1]).toBe(2)
++    expect(lut.packUniforms(size3, 1, 1)![1]).toBe(3)
+   })
+ 
+   it('registers the dither effect with stable default uniforms', () => {

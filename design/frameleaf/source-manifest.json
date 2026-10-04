@@ -1,12 +1,9 @@
 {
   "schemaVersion": 1,
   "capturedAt": "2026-09-20",
-  "sourceState": "Snapshot of the existing uncommitted planning working tree; source hashes, not HEAD, identify these files.",
   "repository": "https://github.com/Frameleaf/frameleaf-app",
   "sourceCheckoutHead": "91d5dfe0f829d15d122c1a8b2bbc474fc195dbaf",
   "packagingBase": "96ce72c00b3fe71cdc9e6187d60c942fce3ba454",
-  "issue": "FL-25",
-  "productionParity": false,
   "files": [
     {
       "source": "design/frameleaf/mark.png",
@@ -1217,6 +1214,5 @@
     "environment/credential files",
     "OS metadata",
     "repository-dependent UI/contract tests"
-  ],
-  "testScope": "18 existing portable state/data test files; original DOM and repository-source contract suites are not represented as portable acceptance."
+  ]
 }

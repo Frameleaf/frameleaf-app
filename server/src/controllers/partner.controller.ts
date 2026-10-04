@@ -2,16 +2,45 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, 
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { PartnerLockedNoticeResponseDto } from 'src/dtos/partner-locked-notice.dto.js';
 import { PartnerCreateDto, PartnerResponseDto, PartnerSearchDto, PartnerUpdateDto } from 'src/dtos/partner.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { PartnerLockedNoticeService } from 'src/services/partner-locked-notice.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Partners)
 @Controller('partners')
 export class PartnerController {
-  constructor(private service: PartnerService) {}
+  constructor(
+    private service: PartnerService,
+    private lockedNoticeService: PartnerLockedNoticeService,
+  ) {}
+
+  // Declared before the `:id` routes so `locked-notice` is never read as a partner id.
+  @Get('locked-notice')
+  @Authenticated({ permission: Permission.PartnerRead })
+  @Endpoint({
+    summary: 'Get the Locked partner items notice',
+    description:
+      'Whether to show the one-time notice that Locked items arrived from a partner and stay hidden until you set a PIN.',
+    history: new HistoryBuilder().added('v2'),
+  })
+  getPartnerLockedNotice(@Auth() auth: AuthDto): Promise<PartnerLockedNoticeResponseDto> {
+    return this.lockedNoticeService.getNotice(auth);
+  }
+
+  @Put('locked-notice')
+  @Authenticated({ permission: Permission.PartnerUpdate })
+  @Endpoint({
+    summary: 'Dismiss the Locked partner items notice',
+    description: 'Dismisses the one-time notice about Locked partner items for good. The items stay locked.',
+    history: new HistoryBuilder().added('v2'),
+  })
+  dismissPartnerLockedNotice(@Auth() auth: AuthDto): Promise<PartnerLockedNoticeResponseDto> {
+    return this.lockedNoticeService.dismiss(auth);
+  }
 
   @Get()
   @Authenticated({ permission: Permission.PartnerRead })
@@ -50,7 +79,8 @@ export class PartnerController {
   @Authenticated({ permission: Permission.PartnerUpdate })
   @Endpoint({
     summary: 'Update a partner',
-    description: "Specify whether a partner's assets should appear in the user's timeline.",
+    description:
+      'A partnership has no settings left (FL-326): partners receive their own copies and locations are always shared. Kept for older clients; returns the partner who shares with the user.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
   updatePartner(

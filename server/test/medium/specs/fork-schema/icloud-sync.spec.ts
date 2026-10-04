@@ -5,6 +5,10 @@ import { getCatalogEvidence, getCatalogTableLocks } from 'src/fork-schema/catalo
 import { assertICloudReferences, reconcileICloudReferences } from 'src/fork-schema/icloud-reconciliation.js';
 import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
+import * as identity from 'src/fork-schema/migrations/0000000000213-ICloudSourceIdentity.js';
+import * as audit from 'src/fork-schema/migrations/0000000000216-ICloudIdentityAudit.js';
+import * as reuse from 'src/fork-schema/migrations/0000000000217-ICloudIdentityReuse.js';
+import * as weekly from 'src/fork-schema/migrations/0000000000218-ICloudWeeklyAuthority.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -30,7 +34,9 @@ describe('fork-owned iCloud state', () => {
     await sql`CREATE SCHEMA public`.execute(db);
     await sql`CREATE SCHEMA immich_fork`.execute(db);
     await sql`CREATE TABLE public.migration_overrides (name text)`.execute(db);
-    await sql`CREATE TABLE public.user (id uuid PRIMARY KEY)`.execute(db);
+    await sql`CREATE TABLE public.user (id uuid PRIMARY KEY,"pinCode" text,"deletedAt" timestamptz)`.execute(db);
+    await sql`CREATE TABLE public.user_metadata ("userId" uuid NOT NULL REFERENCES public.user ON DELETE CASCADE,
+      key text NOT NULL,value jsonb NOT NULL,PRIMARY KEY("userId",key))`.execute(db);
     await sql`CREATE TABLE public.asset (id uuid PRIMARY KEY, "ownerId" uuid NOT NULL)`.execute(db);
     await sql`CREATE TABLE public.album (id uuid PRIMARY KEY)`.execute(db);
     await sql`CREATE TABLE public.album_user ("albumId" uuid REFERENCES public.album ON DELETE CASCADE,"userId" uuid REFERENCES public.user ON DELETE CASCADE,role text,PRIMARY KEY ("albumId","userId"))`.execute(
@@ -39,14 +45,23 @@ describe('fork-owned iCloud state', () => {
     await sql`CREATE TABLE immich_fork.orphaned_records (
       "sourceTable" text, "sourceKey" text, payload jsonb, PRIMARY KEY ("sourceTable", "sourceKey")
     )`.execute(db);
-    await sql`INSERT INTO public.user VALUES (${ownerId}::uuid), (${otherOwnerId}::uuid)`.execute(db);
+    await sql`INSERT INTO public.user(id) VALUES (${ownerId}::uuid), (${otherOwnerId}::uuid)`.execute(db);
     await sql`INSERT INTO public.asset VALUES (${assetId}::uuid, ${ownerId}::uuid)`.execute(db);
     await sql`INSERT INTO public.album VALUES (${albumId}::uuid)`.execute(db);
     await sql`INSERT INTO public.album_user VALUES (${albumId}::uuid,${ownerId}::uuid,'owner')`.execute(db);
     migrator = new Migrator({
       db,
       migrationTableSchema: 'immich_fork',
-      provider: { getMigrations: () => Promise.resolve({ '0000000000090-ICloudSync': migration }) },
+      provider: {
+        getMigrations: () =>
+          Promise.resolve({
+            '0000000000090-ICloudSync': migration,
+            '0000000000213-ICloudSourceIdentity': identity,
+            '0000000000216-ICloudIdentityAudit': audit,
+            '0000000000217-ICloudIdentityReuse': reuse,
+            '0000000000218-ICloudWeeklyAuthority': weekly,
+          }),
+      },
     });
   });
 
@@ -95,9 +110,15 @@ describe('fork-owned iCloud state', () => {
 
     const actual = await getCatalogEvidence(db, { includeForkLedger: false });
     for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-      expect(cloud(actual[kind])).toEqual(cloud(manifest[kind]));
+      expect(cloud(actual[kind])).toEqual(
+        cloud(manifest[kind]).toSorted(
+          (left, right) =>
+            left.identity.localeCompare(right.identity) || left.definition.localeCompare(right.definition),
+        ),
+      );
     }
-    expect(getCatalogTableLocks(manifest).filter((table) => table.startsWith('immich_fork.icloud_'))).toHaveLength(7);
+    // Sync, source identities/claims, audit/reuse receipts, and the three consent foundation tables.
+    expect(getCatalogTableLocks(manifest).filter((table) => table.startsWith('immich_fork.icloud_'))).toHaveLength(14);
     const crossSchema = await sql`
       SELECT 1 FROM pg_constraint constraint_record
       JOIN pg_class source ON source.oid = constraint_record.conrelid
@@ -106,8 +127,10 @@ describe('fork-owned iCloud state', () => {
         AND source.relnamespace <> target.relnamespace
     `.execute(db);
     expect(crossSchema.rows).toEqual([]);
-    const result4 = await migrator.migrateDown();
-    expect(result4.error).toBeUndefined();
+    for (let step = 0; step < 5; step++) {
+      const result4 = await migrator.migrateDown();
+      expect(result4.error).toBeUndefined();
+    }
     const after = await getCatalogEvidence(db, { includeForkLedger: false });
     expect(after.tables.filter(({ identity }) => identity.startsWith('immich_fork.icloud_'))).toEqual([]);
     for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {

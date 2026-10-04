@@ -6,7 +6,7 @@ import { AssetType } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
 import { getMocks } from 'test/utils.js';
 
 const exec = vi.hoisted(() => ({ error: undefined as Error | undefined }));
@@ -19,7 +19,10 @@ vi.mock('node:child_process', async (original) => ({
     callback: (error: Error | undefined, stdout: string, stderr: string) => void,
   ) => callback(exec.error, '', ''),
 }));
-vi.mock('src/utils/raw-renderer.js', () => ({ renderRawWithLibRaw: vi.fn() }));
+vi.mock('src/utils/raw-renderer.js', async (original) => ({
+  ...(await original<typeof import('src/utils/raw-renderer.js')>()),
+  renderRawWithLibRaw: vi.fn(),
+}));
 describe(MediaIntegrityService.name, () => {
   const mocks = getMocks();
   const bytes = Buffer.from('synthetic original bytes');
@@ -27,7 +30,9 @@ describe(MediaIntegrityService.name, () => {
   let input: { path: string; originalFileName: string; type: AssetType };
   let sut: MediaIntegrityService;
   beforeEach(async () => {
+    vi.clearAllMocks();
     exec.error = undefined;
+    vi.mocked(renderRawWithLibRaw).mockReset();
     directory = await mkdtemp(join(tmpdir(), 'integrity-test-'));
     input = { path: join(directory, 'original.jpg'), originalFileName: 'original.jpg', type: AssetType.Image };
     await writeFile(input.path, bytes);
@@ -51,6 +56,31 @@ describe(MediaIntegrityService.name, () => {
       sha256: createHash('sha256').update(bytes).digest(),
       identity: { size: bytes.length, ino: expect.any(Number), dev: expect.any(Number) },
     });
+  });
+  it('refuses immediately on cancellation but settles only after noncooperative decode and retains its slot', async () => {
+    const entered = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    mocks.media.decodeImage.mockImplementation(async () => {
+      entered.resolve();
+      await resume.promise;
+      return { data: bytes, info: {} } as never;
+    });
+    const first = sut.validateWithSettlement({ ...input, deep: true });
+    await entered.promise;
+    first.cancel();
+    expect(await first.result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
+    let settled = false;
+    void first.settled.then(() => {
+      settled = true;
+    });
+    const second = sut.validateWithSettlement({ ...input, deep: true });
+    expect(await sut.validate(input)).toEqual({ status: 'transient', reason: 'validation_busy' });
+    expect(settled).toBe(false);
+    resume.resolve();
+    await Promise.all([first.settled, second.settled]);
+    expect(settled).toBe(true);
+    expect((await sut.validate(input)).status).toBe('healthy');
+    expect(await first.result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
   });
   it('reports missing', async () => {
     await rm(input.path);
@@ -113,6 +143,50 @@ describe(MediaIntegrityService.name, () => {
     expect(mocks.media.decodeImage).toHaveBeenCalledWith(bytes, { colorspace: 'srgb', processInvalidImages: false });
     expect(mocks.media.extract).not.toHaveBeenCalled();
   });
+  it.each([
+    ['unsupported', 'ERR_RAW_UNSUPPORTED', 'unsupported', 'raw_decode_unsupported'],
+    ['dependency_missing', 'ENOENT', 'transient', 'decoder_unavailable'],
+    ['timeout', 'ETIMEDOUT', 'timeout', 'decode_timeout'],
+    ['cancelled', 'ABORT_ERR', 'timeout', 'validation_timeout'],
+    ['resource_limit', 'ERR_RAW_RESOURCE_LIMIT', 'transient', 'decoder_resource_limit'],
+    ['damaged', 'ERR_RAW_DAMAGED', 'transient', 'raw_decode_damaged'],
+    ['io', 'EACCES', 'unreadable', 'access_denied'],
+    ['io', 'EIO', 'transient', 'io_failed'],
+    ['decode_failed', 'ERR_RAW_DECODE', 'transient', 'decode_unverified'],
+  ] as const)('maps typed RAW %s without confirming corruption', async (failure, code, status, reason) => {
+    vi.mocked(renderRawWithLibRaw).mockRejectedValue(new RawRenderError(failure, code));
+    expect(await sut.validate({ ...input, originalFileName: 'original.nef', deep: true })).toEqual({ status, reason });
+    expect(mocks.media.extract).not.toHaveBeenCalled();
+    expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+  });
+
+  it('aborts an active RAW decoder at the validation deadline', async () => {
+    vi.useFakeTimers();
+    const { promise: ready, resolve: started } = Promise.withResolvers<void>();
+    let decoderSignal: AbortSignal | undefined;
+    vi.mocked(renderRawWithLibRaw).mockImplementation((_path, signal) => {
+      decoderSignal = signal;
+      started();
+      return new Promise((_resolve, reject) => {
+        signal!.addEventListener('abort', () => reject(new RawRenderError('cancelled', 'ABORT_ERR')), { once: true });
+      });
+    });
+    const result = sut.validate({ ...input, originalFileName: 'original.nef', deep: true });
+    await ready;
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(await result).toEqual({ status: 'timeout', reason: 'validation_timeout' });
+    expect(decoderSignal?.aborted).toBe(true);
+    expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+  });
+
+  it('preserves layered PSD decoding without treating it as camera sensor data', async () => {
+    expect(await sut.validate({ ...input, originalFileName: 'original.psd', deep: true })).toMatchObject({
+      status: 'healthy',
+    });
+    expect(renderRawWithLibRaw).not.toHaveBeenCalled();
+    expect(mocks.media.decodeImage).toHaveBeenCalledWith(input.path, expect.any(Object));
+  });
+
   it('reports malformed image', async () => {
     mocks.media.decodeImage.mockRejectedValue(new Error('premature end of JPEG'));
     expect(await sut.validate({ ...input, deep: true })).toEqual({ status: 'corrupt', reason: 'decode_failed' });
@@ -132,7 +206,7 @@ describe(MediaIntegrityService.name, () => {
     ['999999999', 86_400_000],
     ['invalid', 120_000],
   ])('bounds configured validation deadline %s', async (setting, deadline) => {
-    vi.stubEnv('IMMICH_MEDIA_VALIDATION_TIMEOUT_MS', setting);
+    vi.stubEnv('FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS', setting);
     vi.useFakeTimers();
     const storage = new StorageRepository(mocks.logger as never);
     vi.spyOn(storage, 'stat').mockImplementation(() => new Promise(() => {}));

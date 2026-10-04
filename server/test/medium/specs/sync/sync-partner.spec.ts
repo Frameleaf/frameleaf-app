@@ -77,27 +77,30 @@ describe(SyncEntityType.PartnerV1, () => {
     const { partner: partner2 } = await ctx.newPartner({ sharedById: user1.id, sharedWithId: user2.id });
 
     const response = await ctx.syncStream(auth, [SyncRequestType.PartnersV1]);
-    expect(response).toEqual([
-      {
-        ack: expect.any(String),
-        data: {
-          inTimeline: partner1.inTimeline,
-          sharedById: partner1.sharedById,
-          sharedWithId: partner1.sharedWithId,
+    expect(response).toHaveLength(3);
+    expect(response).toEqual(
+      expect.arrayContaining([
+        {
+          ack: expect.any(String),
+          data: {
+            inTimeline: partner1.inTimeline,
+            sharedById: partner1.sharedById,
+            sharedWithId: partner1.sharedWithId,
+          },
+          type: 'PartnerV1',
         },
-        type: 'PartnerV1',
-      },
-      {
-        ack: expect.any(String),
-        data: {
-          inTimeline: partner2.inTimeline,
-          sharedById: partner2.sharedById,
-          sharedWithId: partner2.sharedWithId,
+        {
+          ack: expect.any(String),
+          data: {
+            inTimeline: partner2.inTimeline,
+            sharedById: partner2.sharedById,
+            sharedWithId: partner2.sharedWithId,
+          },
+          type: 'PartnerV1',
         },
-        type: 'PartnerV1',
-      },
-      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
-    ]);
+        expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+      ]),
+    );
 
     await ctx.syncAckAll(auth, response);
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.PartnersV1]);
@@ -105,8 +108,6 @@ describe(SyncEntityType.PartnerV1, () => {
 
   it('should sync a partner and then an update to that same partner', async () => {
     const { auth, user: user1, ctx } = await setup();
-
-    const partnerRepo = ctx.get(PartnerRepository);
 
     const { user: user2 } = await ctx.newUser();
     const { partner } = await ctx.newPartner({ sharedById: user2.id, sharedWithId: user1.id });
@@ -127,10 +128,14 @@ describe(SyncEntityType.PartnerV1, () => {
 
     await ctx.syncAckAll(auth, response);
 
-    const updated = await partnerRepo.update(
-      { sharedById: partner.sharedById, sharedWithId: partner.sharedWithId },
-      { inTimeline: true },
-    );
+    // FL-326: no API changes a partnership any more; a direct row update still syncs
+    const updated = await ctx.database
+      .updateTable('partner')
+      .set({ inTimeline: true })
+      .where('sharedById', '=', partner.sharedById)
+      .where('sharedWithId', '=', partner.sharedWithId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
 
     const newResponse = await ctx.syncStream(auth, [SyncRequestType.PartnersV1]);
     expect(newResponse).toEqual([

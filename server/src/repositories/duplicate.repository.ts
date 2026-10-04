@@ -23,6 +23,7 @@ import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
 import { anyUuid, asUuid, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { isLocked } from 'src/utils/locked.js';
 
 // Maximum number of candidate duplicates to return from vector search
 const DUPLICATE_SEARCH_LIMIT = 64;
@@ -59,6 +60,33 @@ type VideoFrameBackfillTables = { assetVideoDuplicateFrame: TableVerification };
 export class DuplicateRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** Read-only owner projection using the same eligibility predicates as getAll. */
+  @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
+  getSyncGroups(userId: string, options: DuplicatePrivacyOptions = {}, groupId?: string) {
+    return (
+      this.db
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .$call((qb) => withDefaultVisibility(qb, options.revealLockedOwnerId))
+        .where('asset.ownerId', '=', asUuid(userId))
+        .where('asset.duplicateId', 'is not', null)
+        .$narrowType<{ duplicateId: NotNull }>()
+        .$if(!!groupId, (qb) => qb.where('asset.duplicateId', '=', asUuid(groupId!)))
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.stackId', 'is', null)
+        .$call((qb) => withHiddenContentFilter(qb, options))
+        .select('asset.duplicateId as groupId')
+        .$narrowType<{ groupId: NotNull }>()
+        .select(sql<string[]>`array_agg(asset.id order by asset.id)`.as('assetIds'))
+        .groupBy('asset.duplicateId')
+        .having((eb) => eb.fn.count('asset.id'), '>', 1)
+        // Keep ordering in PostgreSQL: JS Date would discard sub-millisecond precision.
+        .orderBy(sql`max(asset."localDateTime")`, 'desc')
+        .orderBy('asset.duplicateId', 'desc')
+        .execute()
+    );
+  }
+
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
   getAll(userId: string, options: DuplicatePrivacyOptions = {}) {
     return (
@@ -66,7 +94,8 @@ export class DuplicateRepository {
         .with('duplicates', (qb) =>
           qb
             .selectFrom('asset')
-            .$call(withDefaultVisibility)
+            // FL-195: the owner's own revealed locks group like any other item in an unlocked session
+            .$call((qb) => withDefaultVisibility(qb, options.revealLockedOwnerId))
             // Use innerJoinLateral to build a composite object per asset that includes
             // exifInfo and tags. This "asset2" object is then aggregated via jsonAgg.
             // Tags must be included here (not via separate joins) so they appear in the
@@ -76,6 +105,7 @@ export class DuplicateRepository {
                 qb
                   .selectFrom('asset_exif')
                   .selectAll('asset')
+                  .select(isLocked('asset').as('isLocked'))
                   .select((eb) =>
                     eb.fn
                       .toJson('asset_exif')
@@ -146,7 +176,7 @@ export class DuplicateRepository {
   ): Promise<{ duplicateId: string; assets: MapAsset[] } | undefined> {
     const result = await this.db
       .selectFrom('asset')
-      .$call(withDefaultVisibility)
+      .$call((qb) => withDefaultVisibility(qb, options.revealLockedOwnerId))
       // Use innerJoinLateral to build a composite object per asset that includes
       // exifInfo and tags. This "asset2" object is then aggregated via jsonAgg.
       // Tags must be included here (not via separate joins) so they appear in the
@@ -156,6 +186,7 @@ export class DuplicateRepository {
           qb
             .selectFrom('asset_exif')
             .selectAll('asset')
+            .select(isLocked('asset').as('isLocked'))
             .select((eb) => eb.fn.toJson('asset_exif').as('exifInfo'))
             .select((eb) =>
               jsonArrayFrom(

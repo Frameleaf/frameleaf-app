@@ -7,6 +7,7 @@ import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
+import { onStacksJoined } from 'src/utils/locked-stacks.js';
 
 export type ICloudRelationEvent =
   | { name: 'AssetHide'; assetId: string; userId: string }
@@ -48,12 +49,12 @@ export class ICloudRelationsRepository {
     return sql<Origin>`SELECT DISTINCT ON (o."assetId") o.id,o."assetId",o.source,version.signature
       FROM immich_fork.icloud_resource o JOIN asset a ON a.id=o."assetId"
       CROSS JOIN LATERAL (SELECT md5(coalesce(string_agg(r.id::text || ':' || r.fingerprint || ':' || coalesce(r."assetId"::text,'') || ':' || r.status,',' ORDER BY r.id),'empty')) AS signature
-        FROM immich_fork.icloud_resource r WHERE r."connectionId"=o."connectionId" AND r."ownerId"=${ownerId}::uuid
+        FROM immich_fork.icloud_resource r WHERE r."auditRequestId" IS NULL AND r."connectionId"=o."connectionId" AND r."ownerId"=${ownerId}::uuid
           AND coalesce((r.source->>'current')::boolean,true) AND r.role IN ('original','motion','edited-image','edited-video')
           AND EXISTS(SELECT 1 FROM immich_fork.icloud_resource family WHERE family."connectionId"=o."connectionId"
-            AND family."ownerId"=${ownerId}::uuid AND family."assetId"=o."assetId" AND family.role='original'
+            AND family."auditRequestId" IS NULL AND family."ownerId"=${ownerId}::uuid AND family."assetId"=o."assetId" AND family.role='original'
             AND coalesce((family.source->>'current')::boolean,true) AND family."libraryKey"=r."libraryKey" AND family."sourceAssetId"=r."sourceAssetId")) version
-      WHERE o."connectionId"=${connectionId}::uuid AND o."ownerId"=${ownerId}::uuid AND o.role='original'
+      WHERE o."auditRequestId" IS NULL AND o."connectionId"=${connectionId}::uuid AND o."ownerId"=${ownerId}::uuid AND o.role='original'
         AND coalesce((o.source->>'current')::boolean,true) AND o.status IN ('committed','finalized','reused')
         AND a."ownerId"=${ownerId}::uuid AND a."deletedAt" IS NULL
         AND o.source#>>'{_sync,relations,signature}' IS DISTINCT FROM version.signature
@@ -65,7 +66,7 @@ export class ICloudRelationsRepository {
   private async nextEvent(connectionId: string, ownerId: string, db: Kysely<DB>) {
     return sql<{ id: string; event: ICloudRelationEvent }>`SELECT r.id,r.source#>'{_sync,relations,events,0}' AS event
       FROM immich_fork.icloud_resource r JOIN immich_fork.icloud_connection c ON c.id=r."connectionId"
-      WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND c."ownerId"=${ownerId}::uuid
+      WHERE r."auditRequestId" IS NULL AND r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND c."ownerId"=${ownerId}::uuid
         AND c.state='connected' AND jsonb_array_length(coalesce(r.source#>'{_sync,relations,events}','[]'))>0 ORDER BY r.id LIMIT 1`
       .execute(db)
       .then(({ rows }) => rows[0]);
@@ -142,10 +143,10 @@ export class ICloudRelationsRepository {
       }
       const { rows: resources } =
         await sql<Resource>`SELECT r.id,r."sourceAssetId",r."libraryKey",r.role,r."assetId",r.status,r.source
-        FROM immich_fork.icloud_resource r WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid
+        FROM immich_fork.icloud_resource r WHERE r."auditRequestId" IS NULL AND r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid
           AND coalesce((r.source->>'current')::boolean,true) AND r.role IN ('original','motion','edited-image','edited-video')
           AND EXISTS(SELECT 1 FROM immich_fork.icloud_resource family WHERE family."connectionId"=r."connectionId" AND family."ownerId"=${ownerId}::uuid
-            AND family.role='original' AND family."assetId"=${origin.assetId}::uuid AND coalesce((family.source->>'current')::boolean,true)
+            AND family."auditRequestId" IS NULL AND family.role='original' AND family."assetId"=${origin.assetId}::uuid AND coalesce((family.source->>'current')::boolean,true)
             AND family."libraryKey"=r."libraryKey" AND family."sourceAssetId"=r."sourceAssetId")
         ORDER BY r."updatedAt" DESC,r.id LIMIT 101`.execute(db);
       const previous =
@@ -312,6 +313,8 @@ export class ICloudRelationsRepository {
         .execute(db)
         .then(({ rows }) => rows[0].id);
       await db.updateTable('asset').set({ stackId }).where('id', 'in', ids).where('ownerId', '=', ownerId).execute();
+      // a stack that holds a Locked photo is Locked as a whole (FL-53)
+      await onStacksJoined(db, [stackId]);
       state.stackId = stackId;
       state.memberAssetIds = ids;
       state.appliedPrimaryAssetId = primary;
@@ -335,6 +338,7 @@ export class ICloudRelationsRepository {
       .where('ownerId', '=', ownerId)
       .where('stackId', 'is', null)
       .execute();
+    await onStacksJoined(db, [state.stackId]);
     if (stack.primaryAssetId === state.appliedPrimaryAssetId) {
       await sql`UPDATE stack SET "primaryAssetId"=${primary}::uuid WHERE id=${state.stackId}::uuid AND "ownerId"=${ownerId}::uuid`.execute(
         db,

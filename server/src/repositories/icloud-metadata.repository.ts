@@ -3,7 +3,7 @@ import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
 import type { ForkSchemaPhase } from 'src/repositories/fork-schema.repository.js';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility } from 'src/enum.js';
 import { isForkWriteEnabled } from 'src/fork-schema/authority.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -36,12 +36,12 @@ export class ICloudMetadataRepository {
       FROM immich_fork.icloud_resource r JOIN asset a ON a.id=r."assetId"
       JOIN asset_job_status jobs ON jobs."assetId"=a.id AND jobs."metadataExtractedAt" IS NOT NULL
       CROSS JOIN LATERAL (SELECT md5(coalesce(string_agg(jsonb_build_object('id',s.id,'favorite',s.source->'isFavorite','hidden',s.source->'isHidden','date',s.source->'fileCreatedAt')::text,',' ORDER BY s.id),'') || jobs."metadataExtractedAt"::text) signature
-        FROM immich_fork.icloud_resource s WHERE s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId"
+        FROM immich_fork.icloud_resource s WHERE s."auditRequestId" IS NULL AND s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId"
         AND coalesce((s.source->>'current')::boolean,true) AND s.role<>'motion' AND s.status IN ('committed','finalized','reused')) version
       LEFT JOIN LATERAL (SELECT s.source#>'{_sync,metadata}' previous FROM immich_fork.icloud_resource s
-        WHERE s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId" AND s.source#>'{_sync,metadata}' IS NOT NULL
+        WHERE s."auditRequestId" IS NULL AND s."ownerId"=${ownerId}::uuid AND s."assetId"=r."assetId" AND s.source#>'{_sync,metadata}' IS NOT NULL
         ORDER BY s.source#>>'{_sync,metadata,updatedAt}' DESC,s.id LIMIT 1) baseline ON true
-      WHERE r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND a."ownerId"=${ownerId}::uuid
+      WHERE r."auditRequestId" IS NULL AND r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid AND a."ownerId"=${ownerId}::uuid
         AND a."deletedAt" IS NULL AND r.role<>'motion' AND coalesce((r.source->>'current')::boolean,true)
         AND r.status IN ('committed','finalized','reused') AND baseline.previous->>'signature' IS DISTINCT FROM version.signature
         ${assetId ? sql`AND a.id=${assetId}::uuid` : sql``}
@@ -50,8 +50,11 @@ export class ICloudMetadataRepository {
       .then(({ rows }) => rows[0]);
   }
 
-  /** One destination asset per transaction; at most 100 source descriptors are inspected. */
-  async reconcile(connectionId: string, ownerId: string, assetId?: string): Promise<boolean> {
+  /**
+   * One destination asset per transaction; at most 100 source descriptors are inspected. The ids of
+   * any assets it locks (FL-34) are added to `locked`, for the caller's follow-up once it commits.
+   */
+  async reconcile(connectionId: string, ownerId: string, assetId?: string, locked: string[] = []): Promise<boolean> {
     return this.db.transaction().execute(async (db) => {
       const phase = await sql<{ phase: ForkSchemaPhase }>`SELECT phase FROM immich_fork.state WHERE id=1 FOR SHARE`
         .execute(db)
@@ -93,7 +96,7 @@ export class ICloudMetadataRepository {
       const { rows: resources } = await sql<{
         source: Values;
       }>`SELECT source FROM immich_fork.icloud_resource WHERE "ownerId"=${ownerId}::uuid AND "assetId"=${candidate.assetId}::uuid
-        AND coalesce((source->>'current')::boolean,true) AND role<>'motion' AND status IN ('committed','finalized','reused') ORDER BY id LIMIT 101`.execute(
+        AND "auditRequestId" IS NULL AND coalesce((source->>'current')::boolean,true) AND role<>'motion' AND status IN ('committed','finalized','reused') ORDER BY id LIMIT 101`.execute(
         db,
       );
       const state: Baseline = {
@@ -135,19 +138,16 @@ export class ICloudMetadataRepository {
           }
         }
         // Apple Hidden is private. Immich Hidden is reserved for motion companions;
-        // tighten to Locked and never automatically remove a destination privacy choice.
+        // tighten to Locked (FL-34: a lock record, never a stored visibility) and never
+        // automatically remove a destination privacy choice.
         if (
           state.source.isHidden === true &&
           target.visibility === AssetVisibility.Timeline &&
           !state.overridden.includes('isHidden')
         ) {
           if (candidate.previous?.applied.visibility === undefined) {
-            await db
-              .updateTable('asset')
-              .set({ visibility: AssetVisibility.Locked })
-              .where('id', '=', candidate.assetId)
-              .where('ownerId', '=', ownerId)
-              .execute();
+            // the lock also releases every cover, featured photo and face thumbnail it was (FL-53)
+            locked.push(...(await new AssetRepository(db).lock([candidate.assetId], AssetLockReason.Marked, null)));
             state.applied.visibility = AssetVisibility.Locked;
           } else {
             state.overridden.push('isHidden');
@@ -192,14 +192,17 @@ export class ICloudMetadataRepository {
     });
   }
 
-  async afterExtraction(assetId: string, ownerId: string): Promise<void> {
+  /** Returns the ids of the assets it locked (FL-34). */
+  async afterExtraction(assetId: string, ownerId: string): Promise<string[]> {
+    const locked: string[] = [];
     const { rows } = await sql<{
       connectionId: string;
     }>`SELECT DISTINCT r."connectionId" FROM immich_fork.icloud_resource r
-      JOIN immich_fork.icloud_connection c ON c.id=r."connectionId" WHERE r."assetId"=${assetId}::uuid AND r."ownerId"=${ownerId}::uuid
+      JOIN immich_fork.icloud_connection c ON c.id=r."connectionId" WHERE r."auditRequestId" IS NULL AND r."assetId"=${assetId}::uuid AND r."ownerId"=${ownerId}::uuid
       AND c."ownerId"=${ownerId}::uuid AND c.state='connected' AND r.role<>'motion' LIMIT 100`.execute(this.db);
     for (const { connectionId } of rows) {
-      await this.reconcile(connectionId, ownerId, assetId);
+      await this.reconcile(connectionId, ownerId, assetId, locked);
     }
+    return locked;
   }
 }

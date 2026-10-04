@@ -52,7 +52,9 @@ export class MediaRecoveryService {
       if (candidate.deletedAt || candidate.status !== AssetStatus.Active) {
         return { outcome: 'preserve-trashed', assetId: candidate.id, reason: 'destination_not_active' };
       }
-      if (candidate.isOffline || candidate.damaged) {
+      // An external original is never reused (owner decision, FL-69): the transfer goes on to import the
+      // item as a managed copy, so the server keeps it if the external drive goes away.
+      if (candidate.isOffline || candidate.damaged || candidate.isExternal) {
         return;
       }
       const validate = () =>
@@ -120,12 +122,19 @@ export class MediaRecoveryService {
       if (candidates.some(({ identityConflict }) => identityConflict)) {
         return { outcome: 'needs-review', reason: 'saved_checksum_conflict' };
       }
-      const exact = candidates.filter(({ matchesContent }) => matchesContent);
+      // FL-69 (owner decision): recovery always stores a managed copy. An external original with the same
+      // content is evidence only: it is never reused, repaired or converted, and the item is imported as a
+      // new managed asset beside it.
+      const exact = candidates.filter(({ matchesContent, isExternal }) => matchesContent && !isExternal);
+      const matchedExternal = candidates.find(({ matchesContent, isExternal }) => matchesContent && isExternal);
       const mapped = exact.find(({ id }) => id === resource.assetId);
       if (exact.length > 1 && !mapped) {
         return { outcome: 'needs-review', reason: 'multiple_content_matches' };
       }
       const candidate = mapped ?? exact[0];
+      if (input.audit && input.sourceHidden && candidate && !candidate.hidden) {
+        return { outcome: 'needs-review', reason: 'audit_private_copy_requires_review' };
+      }
       if (candidate && (candidate.deletedAt || candidate.status !== AssetStatus.Active)) {
         return { outcome: 'preserve-trashed', assetId: candidate.id, reason: 'destination_not_active' };
       }
@@ -148,13 +157,6 @@ export class MediaRecoveryService {
         if (['timeout', 'transient', 'unsupported'].includes(current.status)) {
           return { outcome: current.status === 'unsupported' ? 'needs-review' : 'retry', reason: current.reason };
         }
-        if (
-          candidate.isExternal &&
-          (current.status !== 'healthy' || candidate.isOffline) &&
-          !input.recoverExternalAsManaged
-        ) {
-          return { outcome: 'needs-review', reason: 'external_conversion_requires_consent' };
-        }
         outcome =
           current.status === 'healthy' && !candidate.isOffline
             ? 'reused'
@@ -163,6 +165,10 @@ export class MediaRecoveryService {
               : 'repaired-missing';
       }
       const extension = extname(input.originalFileName).toLowerCase();
+      if (input.audit && outcome !== 'imported' && outcome !== 'reused') {
+        // An audit may add or reuse the differing source bytes, never repair another original.
+        return { outcome: 'needs-review', reason: 'audit_existing_copy_unhealthy' };
+      }
       const name = `${randomUUID()}${/^\.[a-z0-9]{1,12}$/.test(extension) ? extension : ''}`;
       // Hidden promotion paths cannot be discovered by the managed untracked-file crawler before commit.
       const proposedPath =
@@ -179,6 +185,7 @@ export class MediaRecoveryService {
         candidate,
         outcome,
         proposedPath,
+        matchedExternalAssetId: candidate ? undefined : matchedExternal?.id,
       });
       if (!reservation) {
         return { outcome: 'retry', reason: 'reservation_changed' };

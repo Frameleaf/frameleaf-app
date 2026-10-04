@@ -22,6 +22,7 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
     await sql`CREATE TABLE immich_fork.migration_audit(name text,status text)`.execute(db);
     await sql`CREATE TABLE asset(id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
     await migration.up(db);
+    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
     repository = new ICloudSyncRepository(db);
   });
   afterAll(async () => {
@@ -30,7 +31,7 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
   beforeEach(async () => {
     vi.unstubAllEnvs();
     await sql`TRUNCATE immich_fork.icloud_connection CASCADE`.execute(db);
-    connection = await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({ concurrency: 4 }));
+    connection = (await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({ concurrency: 4 })))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
   });
   afterEach(() => vi.unstubAllEnvs());
@@ -136,7 +137,7 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
   });
 
   it('reuses an existing reservation above a reduced global budget and leases committed cleanup without byte admission', async () => {
-    vi.stubEnv('IMMICH_ICLOUD_MAX_STAGING_BYTES', '1');
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', '1');
     const staged = await resource('staged', { status: 'validated', reserved: 10, staged: true });
     expect(await repository.claim(connection.id, 1)).toMatchObject({ id: staged.id });
     const committed = await resource('committed', { status: 'committed', current: false, reserved: 100, staged: true });
@@ -152,10 +153,10 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
       reserved: 90,
       staged: true,
     });
-    connection = await repository.create(randomUUID(), 'Other photos', ICloudConfigSchema.parse({}));
+    connection = (await repository.create(randomUUID(), 'Other photos', ICloudConfigSchema.parse({})))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
     await resource('new', { role: 'original' });
-    vi.stubEnv('IMMICH_ICLOUD_MAX_STAGING_BYTES', '95');
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', '95');
     expect(await repository.claim(connection.id, 1000)).toBeUndefined();
     expect(await repository.get(connection.id)).toMatchObject({
       state: 'error',

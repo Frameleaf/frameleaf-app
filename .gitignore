@@ -8,20 +8,17 @@
 .claude/
 .worktrees/
 
+# Local planning and agent work products
+/.superpowers/
+/docs/superpowers/
+/docs/docs/developer/frameleaf-plan/
+
 docker/upload
 docker/library
 uploads
 coverage
 
-mobile/generated
-mobile/gradle.properties
-mobile/*.jks
-mobile/libisar.dylib
-mobile/ios/build
-
 packages/**/build
-mobile/android/fastlane/report.xml
-mobile/ios/fastlane/report.xml
 
 vite.config.js.timestamp-*
 .pnpm-store

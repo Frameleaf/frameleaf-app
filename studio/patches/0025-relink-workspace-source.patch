@@ -1,0 +1,329 @@
+Subject: Restore source and handle state if relink persistence fails
+
+Freecut MIT adaptation. Relinked workspace source bytes and metadata must
+advance together or restore the prior source and handle on failure.
+
+--- a/src/features/media-library/services/media-library-service.ts
++++ b/src/features/media-library/services/media-library-service.ts
+@@ -67,6 +67,8 @@
+   hasMediaSource,
+   readMediaSource,
+   writeMediaSource,
++  replaceMediaSource,
++  deleteHandle,
+ } from '@/features/media-library/deps/storage'
+ import {
+   importFilmstripCache,
+@@ -1902,15 +1904,49 @@
+     // Verify file exists and get basic info
+     const file = await newHandle.getFile()
+ 
+-    // Update metadata with new handle and file info
+-    const updated = await updateMediaDB(mediaId, {
+-      fileHandle: newHandle,
+-      fileName: file.name,
+-      fileSize: file.size,
+-      fileLastModified: file.lastModified,
+-      updatedAt: Date.now(),
+-    })
+-
++    // Keep a reversible workspace fallback until the handle and metadata are
++    // persisted. A failed metadata write must not leave replacement bytes published.
++    const replacement = await replaceMediaSource(mediaId, file, file.name)
++    let updated: MediaMetadata
++    try {
++      updated = await updateMediaDB(mediaId, {
++        fileHandle: newHandle,
++        fileName: file.name,
++        fileSize: file.size,
++        fileLastModified: file.lastModified,
++        updatedAt: Date.now(),
++      })
++    } catch (error) {
++      const rollbackErrors: unknown[] = []
++      try {
++        await replacement.restore()
++      } catch (rollbackError) {
++        rollbackErrors.push(rollbackError)
++      }
++      try {
++        // updateMedia merges fields, so a missing old handle must explicitly
++        // clear a new handle that may already have been saved before failure.
++        await updateMediaDB(mediaId, { ...media, fileHandle: media.fileHandle })
++      } catch (rollbackError) {
++        rollbackErrors.push(rollbackError)
++      }
++      if (!media.fileHandle) {
++        try {
++          // updateMedia treats handle deletion as best-effort. Verify it here.
++          await deleteHandle('media', mediaId)
++        } catch (rollbackError) {
++          rollbackErrors.push(rollbackError)
++        }
++      }
++      if (rollbackErrors.length > 0) {
++        throw new AggregateError(
++          [error, ...rollbackErrors],
++          'Relink failed and the previous media could not be fully restored',
++        )
++      }
++      throw error
++    }
++    await replacement.discard().catch((error) => logger.warn('Failed to remove relink backup:', error))
+     return updated
+   }
+ 
+--- a/src/infrastructure/storage/workspace-fs/media-source.ts
++++ b/src/infrastructure/storage/workspace-fs/media-source.ts
+@@ -17,7 +17,7 @@
+ import { createLogger } from '@/shared/logging/logger'
+ 
+ import { requireWorkspaceRoot } from './root'
+-import { listDirectory, readBlob, writeBlob } from './fs-primitives'
++import { listDirectory, readBlob, removeEntry, writeBlob } from './fs-primitives'
+ import { mediaDir, mediaSourceByFileName } from './paths'
+ 
+ const logger = createLogger('WorkspaceFS:MediaSource')
+@@ -110,3 +110,44 @@
+     if (options?.strict) throw error
+   }
+ }
++
++/** Replace a source while keeping a disk backup until metadata commits. */
++export async function replaceMediaSource(
++  mediaId: string,
++  blob: Blob,
++  fileName: string | undefined,
++): Promise<{ restore: () => Promise<void>; discard: () => Promise<void> }> {
++  const root = requireWorkspaceRoot()
++  const existing = await findSourceSegments(root, mediaId)
++  const previous = existing ? await readBlob(root, existing) : null
++  if (existing && !previous) throw new Error(`Cannot back up media source: ${mediaId}`)
++  const path = existing ?? mediaSourceByFileName(mediaId, fileName ?? 'source.bin')
++  const backup = existing ? [...mediaDir(mediaId), 'cache', `relink-${crypto.randomUUID()}.bak`] : null
++  if (backup && previous) await writeBlob(root, backup, previous)
++  const restore = async () => {
++    if (backup) {
++      const saved = await readBlob(root, backup)
++      if (!saved) throw new Error(`Relink backup missing: ${mediaId}`)
++      await writeBlob(root, path, saved)
++      await removeEntry(root, backup)
++    } else {
++      await removeEntry(root, path)
++    }
++  }
++  try {
++    await writeBlob(root, path, blob)
++  } catch (error) {
++    try {
++      await restore()
++    } catch (rollbackError) {
++      throw new AggregateError([error, rollbackError], 'Media source replacement failed to roll back')
++    }
++    throw error
++  }
++  return {
++    restore,
++    discard: async () => {
++      if (backup) await removeEntry(root, backup)
++    },
++  }
++}
+--- a/src/infrastructure/storage/index.ts
++++ b/src/infrastructure/storage/index.ts
+@@ -112,6 +112,7 @@
+   hasMediaSource,
+   readMediaSource,
+   writeMediaSource,
++  replaceMediaSource,
+ } from '@/infrastructure/storage/workspace-fs/media-source'
+ 
+ // Workspace cache mirror helpers
+--- a/src/features/media-library/deps/storage.ts
++++ b/src/features/media-library/deps/storage.ts
+@@ -29,6 +29,7 @@
+   proxyMetaPath,
+   readAiOutput,
+   readMediaSource,
++  replaceMediaSource,
+   readWorkspaceBlob,
+   removeMediaBatchFromProject,
+   removeMediaFromProject,
+@@ -38,3 +39,5 @@
+   updateMedia,
+   writeMediaSource,
+ } from '@/infrastructure/storage'
++
++export { deleteHandle } from '@/infrastructure/storage/handles-db'
+--- a/src/features/media-library/services/media-library-service.test.ts
++++ b/src/features/media-library/services/media-library-service.test.ts
+@@ -29,6 +29,10 @@
+   hasMediaSource: vi.fn(async () => false),
+   readMediaSource: vi.fn(async () => null),
+   writeMediaSource: vi.fn(async () => undefined),
++  replaceMediaSource: vi.fn(async () => ({
++    restore: async () => undefined,
++    discard: async () => undefined,
++  })),
+ }))
+ 
+ const captionsStorageMocks = {
+@@ -92,6 +96,14 @@
+ }))
+ 
+ vi.mock('@/infrastructure/storage', () => indexedDbMocks)
++
++const handlesDbMocks = vi.hoisted(() => ({
++  deleteHandle: vi.fn(async () => undefined),
++}))
++vi.mock('@/infrastructure/storage/handles-db', async (importOriginal) => ({
++  ...(await importOriginal<typeof import('@/infrastructure/storage/handles-db')>()),
++  ...handlesDbMocks,
++}))
+ 
+ vi.mock('./opfs-service', () => ({
+   opfsService: opfsMocks,
+@@ -1033,6 +1045,55 @@
+       expect(indexedDbMocks.updateMedia).toHaveBeenCalledTimes(1)
+     })
+ 
++    it('restores source and metadata when persistence fails after source replacement', async () => {
++      const media = makeMediaMetadata({ id: 'm1' })
++      indexedDbMocks.getMedia.mockResolvedValue(media)
++      const newFile = new File(['changed'], 'renamed.mp4', { type: 'video/mp4' })
++      const newHandle = makeFileHandle(newFile)
++      const restoreSource = vi.fn(async () => undefined)
++      const discardBackup = vi.fn(async () => undefined)
++      indexedDbMocks.replaceMediaSource.mockResolvedValueOnce({
++        restore: restoreSource,
++        discard: discardBackup,
++      })
++      indexedDbMocks.updateMedia.mockResolvedValue(media)
++      indexedDbMocks.updateMedia.mockRejectedValueOnce(new Error('metadata unavailable'))
++
++      await expect(mediaLibraryService.relinkMediaHandle('m1', newHandle)).rejects.toThrow(
++        'metadata unavailable',
++      )
++      expect(indexedDbMocks.replaceMediaSource).toHaveBeenCalledWith('m1', newFile, newFile.name)
++      expect(restoreSource).toHaveBeenCalledOnce()
++      expect(discardBackup).not.toHaveBeenCalled()
++      expect(indexedDbMocks.updateMedia).toHaveBeenCalledTimes(2)
++      expect(indexedDbMocks.updateMedia).toHaveBeenLastCalledWith('m1', {
++        ...media,
++        fileHandle: undefined,
++      })
++      expect(handlesDbMocks.deleteHandle).toHaveBeenCalledWith('media', 'm1')
++    })
++
++    it('reports a failed handle-store deletion after restoring source and metadata', async () => {
++      const media = makeMediaMetadata({ id: 'm1' })
++      indexedDbMocks.getMedia.mockResolvedValue(media)
++      const newFile = new File(['changed'], 'renamed.mp4', { type: 'video/mp4' })
++      const restoreSource = vi.fn(async () => undefined)
++      indexedDbMocks.replaceMediaSource.mockResolvedValueOnce({
++        restore: restoreSource,
++        discard: vi.fn(),
++      })
++      indexedDbMocks.updateMedia.mockRejectedValueOnce(new Error('metadata unavailable'))
++      indexedDbMocks.updateMedia.mockResolvedValueOnce(media)
++      handlesDbMocks.deleteHandle.mockRejectedValueOnce(new Error('handle deletion failed'))
++
++      await expect(
++        mediaLibraryService.relinkMediaHandle('m1', makeFileHandle(newFile)),
++      ).rejects.toThrow('Relink failed and the previous media could not be fully restored')
++      expect(restoreSource).toHaveBeenCalledOnce()
++      expect(indexedDbMocks.updateMedia).toHaveBeenCalledTimes(2)
++      expect(handlesDbMocks.deleteHandle).toHaveBeenCalledWith('media', 'm1')
++    })
++
+     it('throws when permission denied for new handle', async () => {
+       const media = makeMediaMetadata({ id: 'm1' })
+       indexedDbMocks.getMedia.mockResolvedValue(media)
+--- /dev/null
++++ b/src/infrastructure/storage/workspace-fs/media-source.test.ts
+@@ -0,0 +1,45 @@
++// @vitest-environment node
++
++import { expect, it, vi } from 'vite-plus/test'
++
++const storageMocks = vi.hoisted(() => ({
++  listDirectory: vi.fn(async () => [{ name: 'original.mp4', kind: 'file' }]),
++  readBlob: vi.fn(async () => new Blob(['old!'])),
++  writeBlob: vi.fn(async (_root: unknown, _path: string[], _blob: Blob) => undefined),
++  removeEntry: vi.fn(async () => undefined),
++}))
++
++vi.mock('./root', () => ({ requireWorkspaceRoot: () => ({}) }))
++vi.mock('./fs-primitives', () => storageMocks)
++
++import { replaceMediaSource } from './media-source'
++
++it('restores the previous workspace bytes after a failed relink commit', async () => {
++  const replacement = new Blob(['new!'])
++  const { restore } = await replaceMediaSource('m1', replacement, 'renamed.mp4')
++  await restore()
++
++  expect(storageMocks.writeBlob).toHaveBeenNthCalledWith(
++    1,
++    expect.anything(),
++    ['media', 'm1', 'cache', expect.stringMatching(/^relink-.+\.bak$/)],
++    expect.any(Blob),
++  )
++  expect(storageMocks.writeBlob).toHaveBeenNthCalledWith(
++    2,
++    expect.anything(),
++    ['media', 'm1', 'original.mp4'],
++    replacement,
++  )
++  expect(storageMocks.writeBlob).toHaveBeenNthCalledWith(
++    3,
++    expect.anything(),
++    ['media', 'm1', 'original.mp4'],
++    expect.any(Blob),
++  )
++  expect(await storageMocks.writeBlob.mock.calls[2]![2].text()).toBe('old!')
++  expect(storageMocks.removeEntry).toHaveBeenCalledWith(
++    expect.anything(),
++    storageMocks.writeBlob.mock.calls[0]![1],
++  )
++})
+--- a/src/infrastructure/storage/workspace-fs/media.test.ts
++++ b/src/infrastructure/storage/workspace-fs/media.test.ts
+@@ -103,6 +103,37 @@
+     expect(after!.fileName).toBe('renamed.mp4')
+   })
+ 
++  it('clears a newly saved handle when restoring a snapshot without one', async () => {
++    const root = createRoot()
++    setWorkspaceRoot(asHandle(root))
++    const original = makeMedia('m1', { storageType: 'handle' })
++    const newHandle = { name: 'renamed.mp4' } as FileSystemFileHandle
++    let storedHandle: FileSystemFileHandle | undefined
++    handlesMocks.getHandle.mockImplementation(async () =>
++      storedHandle ? { handle: storedHandle } : null,
++    )
++    handlesMocks.saveHandle.mockImplementation(async (record: { handle: FileSystemFileHandle }) => {
++      storedHandle = record.handle
++    })
++    handlesMocks.deleteHandle.mockImplementation(async () => {
++      storedHandle = undefined
++    })
++
++    try {
++      await createMedia(original)
++      await updateMedia('m1', { fileHandle: newHandle, fileName: newHandle.name })
++      expect((await getMedia('m1'))?.fileHandle).toBe(newHandle)
++
++      await updateMedia('m1', { ...original, fileHandle: original.fileHandle })
++      const restored = await getMedia('m1')
++      expect(restored?.fileHandle).toBeUndefined()
++      expect(restored?.fileName).toBe(original.fileName)
++      expect(storedHandle).toBeUndefined()
++    } finally {
++      handlesMocks.saveHandle.mockReset().mockResolvedValue(undefined)
++    }
++  })
++
+   it('updateMedia throws when missing', async () => {
+     const root = createRoot()
+     setWorkspaceRoot(asHandle(root))

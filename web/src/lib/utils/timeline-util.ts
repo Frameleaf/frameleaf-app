@@ -2,6 +2,7 @@ import { AssetTypeEnum, TimeBucketDateType, type AssetResponseDto } from '@immic
 import { DateTime, type LocaleOptions } from 'luxon';
 import { SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';
+import { getExifRating } from '$lib/frameleaf/rating';
 import type { AssetDescriptor, TimelineAsset, ViewportTopMonth } from '$lib/managers/timeline-manager/types';
 import { locale } from '$lib/stores/preferences.store';
 import { getAssetRatio } from '$lib/utils/asset-utils';
@@ -170,6 +171,9 @@ export const toTimelineAsset = (unknownAsset: AssetResponseDto | TimelineAsset):
     people,
     latitude: assetResponse.exifInfo?.latitude || null,
     longitude: assetResponse.exifInfo?.longitude || null,
+    rating: getExifRating(assetResponse.exifInfo),
+    isOffline: assetResponse.isOffline,
+    originalFileName: assetResponse.originalFileName ?? null,
   };
 };
 

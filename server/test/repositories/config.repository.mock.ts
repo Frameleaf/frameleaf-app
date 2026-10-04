@@ -5,6 +5,7 @@ import { ConfigRepository, EnvData } from 'src/repositories/config.repository.js
 
 export const envData: EnvData = {
   port: 2283,
+  shutdown: { graceMs: 5000, deadlineMs: 9000, workerDeadlineMs: 8000 },
   environment: ImmichEnvironment.Production,
   logFormat: LogFormat.Console,
 
@@ -38,13 +39,9 @@ export const envData: EnvData = {
     config: {},
   },
 
-  licensePublicKey: {
-    client: 'client-public-key',
-    server: 'server-public-key',
-  },
-
   versionCheck: {
-    url: 'https://version.immich.cloud/version',
+    url: 'https://api.frameleaf.cloud/v1/releases/latest',
+    fallbackUrl: 'https://api.github.com/repos/Frameleaf/frameleaf-app/releases',
   },
 
   network: {
@@ -79,6 +76,7 @@ export const envData: EnvData = {
 
   storage: {
     ignoreMountCheckErrors: false,
+    importRoots: [],
   },
 
   telemetry: {
@@ -96,7 +94,21 @@ export const envData: EnvData = {
     },
   },
 
+  appReleases: {},
+  frameleafCloud: {
+    url: null,
+    pushUrl: null,
+    identityDir: null,
+    linkToken: null,
+    setupCode: null,
+    edge: { port: 2443, bind: '0.0.0.0', secret: null, acmeDirectoryUrl: null },
+    localUrl: null,
+    trustedLanCidrs: [],
+    licenseExtraJwksFile: null,
+  },
+
   noColor: false,
+  deprecatedEnv: [],
 };
 
 export const mockEnvData = (config: Partial<EnvData>) => ({ ...envData, ...config });

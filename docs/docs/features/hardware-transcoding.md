@@ -76,7 +76,7 @@ For RKMPP to work:
 5. (Optional) Enable hardware decoding for optimal performance.
 
 <details>
-<summary>immich.json</summary>
+<summary>frameleaf.json</summary>
 
 If you use a [configuration file](/install/config-file.md), use the `accel` option to select the hardware (e.g. `qsv` for Intel or `nvenc` for Nvidia). Set `accelDecode` to `true` if you want hardware decoding.
 
@@ -107,7 +107,7 @@ You can add this to the `immich-server` service instead of extending from `hwacc
 ```yaml
 immich-server:
   container_name: frameleaf_server
-  image: ghcr.io/frameleaf/frameleaf-server:${IMMICH_VERSION:-release}
+  image: ghcr.io/frameleaf/frameleaf-server:${FRAMELEAF_VERSION:-${IMMICH_VERSION:-release}}
   # Note the lack of an `extends` section
   devices:
     - /dev/dri:/dev/dri
@@ -121,7 +121,7 @@ Once this is done, you can continue to step 3 of "Basic Setup".
 
 ##### QSV
 
-1. Unraid > Docker > (Stop) Immich container > Edit
+1. Unraid > Docker > (Stop) Frameleaf container > Edit
 2. Scroll down and select `Add another Path, Port, Variable, Label or Device`
 3. In the drop-down menu, select `Device` and an entry with any name and the value `/dev/dri`.
 4. Continue to step 4 of "Basic Setup".
@@ -139,7 +139,7 @@ Once this is done, you can continue to step 3 of "Basic Setup".
 - While you can use VAAPI with NVIDIA and Intel devices, prefer the more specific APIs since they're more optimized for their respective devices
 - You can confirm the device is being recognized and used by checking its utilization (via `nvtop` for NVIDIA, `intel_gpu_top` for Intel, etc.) when transcoding. A lack of error logs when transcoding also indicates that it's being used.
 
-[hw-file]: https://github.com/immich-app/immich/releases/latest/download/hwaccel.transcoding.yml
+[hw-file]: https://github.com/Frameleaf/frameleaf-app/releases/latest/download/hwaccel.transcoding.yml
 [nvct]: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
 [jellyfin-lp]: https://jellyfin.org/docs/general/post-install/transcoding/hardware-acceleration/intel#low-power-encoding
 [jellyfin-kernel-bug]: https://jellyfin.org/docs/general/post-install/transcoding/hardware-acceleration/intel#known-issues-and-limitations-on-linux

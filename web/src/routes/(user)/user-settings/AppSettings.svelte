@@ -1,22 +1,28 @@
 <script lang="ts">
-  import type { ComboBoxOption } from '$lib/components/shared-components/Combobox.svelte';
-  import SettingCombobox from './SettingCombobox.svelte';
-  import SettingsLanguageSelector from '$lib/components/shared-components/settings/SettingsLanguageSelector.svelte';
+  /**
+   * Your preferences → App settings (FL-71 CC-50): the same device preferences as before, in the
+   * Frameleaf setting rows (`SettingToggle`, `SettingSelect`) instead of the upstream `Field`,
+   * `Switch` and Combobox controls.
+   */
+  import SettingSelect from '$lib/components/frameleaf/settings/SettingSelect.svelte';
+  import SettingToggle from '$lib/components/frameleaf/settings/SettingToggle.svelte';
+  import { invalidateAll } from '$app/navigation';
   import { fallbackLocale, locales } from '$lib/constants';
   import {
     alwaysLoadOriginalFile,
     alwaysLoadOriginalVideo,
     autoPlayVideo,
+    lang,
     locale,
     loopVideo,
     playVideoThumbnailOnHover,
     showDeleteModal,
   } from '$lib/stores/preferences.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
-  import { Field, Switch, Text, Theme, themeManager, ThemePreference } from '@immich/ui';
+  import { convertBCP47, getClosestAvailableLocale, langCodes, langs } from '$lib/utils/i18n';
+  import { Theme, themeManager, ThemePreference } from '@immich/ui';
   import { onMount } from 'svelte';
-  import { t } from 'svelte-i18n';
-  import { fade } from 'svelte/transition';
+  import { locale as i18nLocale, t } from 'svelte-i18n';
 
   let time = $state(new Date());
 
@@ -30,30 +36,21 @@
     };
   });
 
-  const getAllLanguages = (): ComboBoxOption[] => {
-    return locales
-      .filter(({ code }) => Intl.NumberFormat.supportedLocalesOf(code).length > 0)
-      .map((locale) => ({
-        label: locale.name,
-        value: locale.code,
-      }));
+  const languageOptions = langs.map((entry) => ({ text: entry.name, value: convertBCP47(entry.code) }));
+  const language = $derived(getClosestAvailableLocale([$lang], langCodes));
+  const onLanguage = async (value: string | number) => {
+    $lang = String(value);
+    await i18nLocale.set(convertBCP47(String(value)));
+    await invalidateAll();
   };
 
-  const handleToggleLocaleBrowser = () => {
-    $locale = $locale === 'default' ? fallbackLocale.code : 'default';
-  };
+  const localeOptions = locales
+    .filter(({ code }) => Intl.NumberFormat.supportedLocalesOf(code).length > 0)
+    .map(({ name, code }) => ({ text: name, value: code }));
 
-  const handleLocaleChange = (newLocale: string | undefined) => {
-    if (newLocale) {
-      $locale = newLocale;
-    }
-  };
   let editedLocale = $derived(findLocale($locale).code);
   let selectedDate: string = $derived(createDateFormatter(editedLocale).formatDateTime(time));
-  let selectedOption = $derived({
-    value: findLocale(editedLocale).code || fallbackLocale.code,
-    label: findLocale(editedLocale).name || fallbackLocale.name,
-  });
+  const customLocale = $derived(findLocale(editedLocale).code || fallbackLocale.code);
 
   const handleToggleSystemTheme = (checked: boolean) => {
     const current = themeManager.value === Theme.Dark ? ThemePreference.Dark : ThemePreference.Light;
@@ -61,60 +58,79 @@
   };
 </script>
 
-<section class="my-4">
-  <div in:fade={{ duration: 500 }}>
-    <div class="flex flex-col gap-6 sm:ms-8">
-      <Field label={$t('theme_selection')} description={$t('theme_selection_description')}>
-        <Switch
-          checked={themeManager.preference === ThemePreference.System}
-          onCheckedChange={handleToggleSystemTheme}
-        />
-      </Field>
+<section class="app-settings">
+  <SettingToggle
+    title={$t('theme_selection')}
+    subtitle={$t('theme_selection_description')}
+    checked={themeManager.preference === ThemePreference.System}
+    onToggle={handleToggleSystemTheme}
+  />
 
-      <SettingsLanguageSelector showSettingDescription />
+  <SettingSelect
+    label={$t('language')}
+    desc={$t('language_setting_description')}
+    value={language}
+    options={languageOptions}
+    onSelect={onLanguage}
+  />
 
-      <Field label={$t('use_browser_locale')} description={$t('use_browser_locale_description')}>
-        <Switch checked={$locale === 'default'} onCheckedChange={handleToggleLocaleBrowser} />
-        <Text size="small" class="mt-2 font-mono text-sm">{selectedDate}</Text>
-      </Field>
+  <SettingToggle
+    title={$t('use_browser_locale')}
+    subtitle={$t('use_browser_locale_description')}
+    checked={$locale === 'default'}
+    onToggle={(checked) => ($locale = checked ? 'default' : fallbackLocale.code)}
+  >
+    <p class="sample">{selectedDate}</p>
+  </SettingToggle>
 
-      {#if $locale !== 'default'}
-        <SettingCombobox
-          comboboxPlaceholder={$t('searching_locales')}
-          {selectedOption}
-          options={getAllLanguages()}
-          title={$t('custom_locale')}
-          subtitle={$t('custom_locale_description')}
-          onSelect={(combobox) => handleLocaleChange(combobox?.value)}
-        />
-      {/if}
+  {#if $locale !== 'default'}
+    <SettingSelect
+      label={$t('custom_locale')}
+      desc={$t('custom_locale_description')}
+      value={customLocale}
+      options={localeOptions}
+      onSelect={(value) => ($locale = String(value))}
+    />
+  {/if}
 
-      <Field label={$t('display_original_photos')} description={$t('display_original_photos_setting_description')}>
-        <Switch bind:checked={$alwaysLoadOriginalFile} />
-      </Field>
-
-      <Field label={$t('video_hover_setting')} description={$t('video_hover_setting_description')}>
-        <Switch bind:checked={$playVideoThumbnailOnHover} />
-      </Field>
-
-      <Field
-        label={$t('setting_video_viewer_auto_play_title')}
-        description={$t('setting_video_viewer_auto_play_subtitle')}
-      >
-        <Switch bind:checked={$autoPlayVideo} />
-      </Field>
-
-      <Field label={$t('loop_videos')} description={$t('loop_videos_description')}>
-        <Switch bind:checked={$loopVideo} />
-      </Field>
-
-      <Field label={$t('play_original_video')} description={$t('play_original_video_setting_description')}>
-        <Switch bind:checked={$alwaysLoadOriginalVideo} />
-      </Field>
-
-      <Field label={$t('permanent_deletion_warning')} description={$t('permanent_deletion_warning_setting_description')}
-        ><Switch bind:checked={$showDeleteModal} />
-      </Field>
-    </div>
-  </div>
+  <SettingToggle
+    title={$t('display_original_photos')}
+    subtitle={$t('display_original_photos_setting_description')}
+    bind:checked={$alwaysLoadOriginalFile}
+  />
+  <SettingToggle
+    title={$t('video_hover_setting')}
+    subtitle={$t('video_hover_setting_description')}
+    bind:checked={$playVideoThumbnailOnHover}
+  />
+  <SettingToggle
+    title={$t('setting_video_viewer_auto_play_title')}
+    subtitle={$t('setting_video_viewer_auto_play_subtitle')}
+    bind:checked={$autoPlayVideo}
+  />
+  <SettingToggle title={$t('loop_videos')} subtitle={$t('loop_videos_description')} bind:checked={$loopVideo} />
+  <SettingToggle
+    title={$t('play_original_video')}
+    subtitle={$t('play_original_video_setting_description')}
+    bind:checked={$alwaysLoadOriginalVideo}
+  />
+  <SettingToggle
+    title={$t('permanent_deletion_warning')}
+    subtitle={$t('permanent_deletion_warning_setting_description')}
+    bind:checked={$showDeleteModal}
+  />
 </section>
+
+<style>
+  .app-settings {
+    display: grid;
+    gap: 0.25rem;
+    margin: 0.5rem 0;
+  }
+  .sample {
+    margin: 0.375rem 0 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+</style>

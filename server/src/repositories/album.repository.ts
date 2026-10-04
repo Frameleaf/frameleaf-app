@@ -1,19 +1,33 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Kysely, NotNull, Selectable, ShallowDehydrateObject, Updateable, sql } from 'kysely';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import {
+  ExpressionBuilder,
+  Kysely,
+  NotNull,
+  Selectable,
+  ShallowDehydrateObject,
+  Transaction,
+  Updateable,
+  sql,
+} from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable } from 'kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AlbumUserRole } from 'src/enum.js';
 import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
+import { canWriteFork, lockForkWrites } from 'src/repositories/fork-write-guard.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
-import { asUuid, dummy, withDefaultVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { albumCoverCandidates } from 'src/utils/album-cover.js';
+import { albumCoverReplacement, albumNewestCover, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
+import { anyUuid, asUuid, dummy, withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
+import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 export interface AlbumAssetCount {
   albumId: string;
@@ -24,7 +38,13 @@ export interface AlbumAssetCount {
   lastModifiedAssetTimestamp: Date | null;
 }
 
-export interface AlbumInfoOptions extends HiddenContentQueryOptions {
+/**
+ * Privacy options for an album read: the hidden-content (sensitive) filter and, for an elevated
+ * session, the viewer as `lockedOwnerId` so their own Locked media is included. See `withAlbumVisibility`.
+ */
+export type AlbumReadOptions = HiddenContentQueryOptions & LockedVisibilityOptions;
+
+export interface AlbumInfoOptions extends AlbumReadOptions {
   withAssets: boolean;
 }
 
@@ -61,7 +81,7 @@ const withAssets = (options: AlbumInfoOptions) => (eb: ExpressionBuilder<DB, 'al
         .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
         .whereRef('album_asset.albumId', '=', 'album.id')
         .where('asset.deletedAt', 'is', null)
-        .$call(withDefaultVisibility)
+        .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
         .$call((qb) => withHiddenContentFilter(qb, options))
         .orderBy('asset.fileCreatedAt', 'desc')
         .as('asset'),
@@ -78,6 +98,9 @@ const isAlbumOwned = (ownerId: string) => (eb: ExpressionBuilder<DB, 'album'>) =
       .where('album_user.role', '=', AlbumUserRole.Owner)
       .where('album_user.userId', '=', ownerId),
   );
+
+/** One album as a person's directory sees it, for checking a custom order (FL-52). */
+export type DirectoryItem = { id: string; kind: string; parentId: string | null };
 
 @Injectable()
 export class AlbumRepository {
@@ -171,7 +194,7 @@ export class AlbumRepository {
 
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @ChunkedArray()
-  async getMetadataForIds(ids: string[], options: HiddenContentQueryOptions = {}): Promise<AlbumAssetCount[]> {
+  async getMetadataForIds(ids: string[], options: AlbumReadOptions = {}): Promise<AlbumAssetCount[]> {
     // Guard against running invalid query when ids list is empty.
     if (ids.length === 0) {
       return [];
@@ -180,7 +203,7 @@ export class AlbumRepository {
     return (
       this.db
         .selectFrom('asset')
-        .$call(withDefaultVisibility)
+        .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
         .$call((qb) => withHiddenContentFilter(qb, options))
         .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
         .select('album_asset.albumId as albumId')
@@ -264,7 +287,21 @@ export class AlbumRepository {
   }
 
   async softDeleteAll(userId: string): Promise<void> {
-    await this.db.updateTable('album').set({ deletedAt: new Date() }).where(isAlbumOwned(userId)).execute();
+    await this.db.transaction().execute(async (tx) => {
+      // Match derivative publication's album order before the bulk update acquires any row locks.
+      const albums = await tx
+        .selectFrom('album')
+        .select('id')
+        .where(isAlbumOwned(userId))
+        .orderBy('id')
+        .forNoKeyUpdate()
+        .execute();
+      await tx
+        .updateTable('album')
+        .set({ deletedAt: new Date() })
+        .where('id', '=', anyUuid(albums.map(({ id }) => id)))
+        .execute();
+    });
   }
 
   async deleteAll(userId: string): Promise<void> {
@@ -275,6 +312,11 @@ export class AlbumRepository {
         tx,
       );
       await this.smartAlbums.deleteOwner(userId, tx);
+      await this.deletePositions({ albumIds: albums.map(({ id }) => id), userId }, tx);
+      await this.deleteCoverFollowsNewest(
+        albums.map(({ id }) => id),
+        tx,
+      );
       await this.forkMetadata.delete(
         albums.map(({ id }) => id),
         tx,
@@ -360,7 +402,7 @@ export class AlbumRepository {
     const userIds = albumUsers.map((u) => u.userId);
     const roles = albumUsers.map((u) => u.role);
 
-    return this.db.transaction().execute(async (tx) => {
+    const execute = async (tx: Kysely<DB>) => {
       const result = await tx
         .with('album', (db) => db.insertInto('album').values(album).returningAll())
         .with('album_user', (db) =>
@@ -416,7 +458,8 @@ export class AlbumRepository {
       await this.forkMetadata.mirrorFromLegacy([result.id], tx);
 
       return result;
-    });
+    };
+    return this.db.isTransaction ? execute(this.db) : this.db.transaction().execute(execute);
   }
 
   update(id: string, album: Updateable<AlbumTable>, authUserId: string) {
@@ -435,17 +478,76 @@ export class AlbumRepository {
   }
 
   async delete(id: string): Promise<void> {
+    await this.db.transaction().execute((tx) => this.deleteIn(tx, id));
+  }
+
+  /**
+   * FL-146: delete a collection and keep its albums, which move to the collection's own parent (the
+   * top level when it has none), as the prototype does. One transaction: a collection whose delete fails
+   * keeps every album, and no album is left pointing at a collection that is gone.
+   */
+  async deleteCollection(id: string): Promise<void> {
     await this.db.transaction().execute(async (tx) => {
-      const subtree = await tx
-        .selectFrom('album_closure')
-        .select('id_descendant')
-        .where('id_ancestor', '=', id)
-        .execute();
-      const subtreeIds = subtree.length > 0 ? subtree.map(({ id_descendant }) => id_descendant) : [id];
-      await this.smartAlbums.deleteAlbums(subtreeIds, tx);
-      await tx.deleteFrom('album').where('id', '=', id).execute();
-      await this.forkMetadata.delete(subtreeIds, tx);
+      const collection = await tx
+        .selectFrom('album')
+        .select('parentId')
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!collection) {
+        return;
+      }
+      const children = await tx.selectFrom('album').select('id').where('parentId', '=', id).forUpdate().execute();
+      for (const child of children) {
+        await this.reparentIn(tx, child.id, collection.parentId);
+      }
+      await this.deleteIn(tx, id);
     });
+  }
+
+  private async deleteIn(tx: Transaction<DB>, id: string): Promise<void> {
+    const subtree = await tx
+      .selectFrom('album_closure')
+      .select('id_descendant')
+      .where('id_ancestor', '=', id)
+      .execute();
+    const subtreeIds = subtree.length > 0 ? subtree.map(({ id_descendant }) => id_descendant) : [id];
+    await this.smartAlbums.deleteAlbums(subtreeIds, tx);
+    await this.deletePositions({ albumIds: subtreeIds }, tx);
+    await this.deleteCoverFollowsNewest(subtreeIds, tx);
+    await tx.deleteFrom('album').where('id', '=', id).execute();
+    await this.forkMetadata.delete(subtreeIds, tx);
+  }
+
+  /**
+   * FL-52: forget custom-order rows for deleted albums, or for a deleted person. Cleanup never
+   * blocks the delete itself: while the fork schema is not writable (a handoff runs) the rows are
+   * left, and reading the order ignores albums nobody can see any more.
+   */
+  private async deletePositions(
+    { albumIds = [], userId }: { albumIds?: string[]; userId?: string },
+    tx: Transaction<DB>,
+  ): Promise<void> {
+    if ((albumIds.length === 0 && !userId) || !(await canWriteFork(tx))) {
+      return;
+    }
+    await sql`
+      DELETE FROM immich_fork.album_position
+      WHERE "albumId" = ANY(${albumIds}::uuid[]) OR "userId" = ${userId ?? null}::uuid
+    `.execute(tx);
+  }
+
+  /**
+   * FL-83: forget "cover follows the newest item" for deleted albums. Like `deletePositions`, cleanup
+   * never blocks the delete; a row whose album is gone is never read.
+   */
+  private async deleteCoverFollowsNewest(albumIds: string[], tx: Transaction<DB>): Promise<void> {
+    if (albumIds.length === 0 || !(await canWriteFork(tx))) {
+      return;
+    }
+    await sql`
+      DELETE FROM immich_fork.album_cover_follows_newest WHERE "albumId" = ANY(${albumIds}::uuid[])
+    `.execute(tx);
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -457,6 +559,20 @@ export class AlbumRepository {
       .where('id_descendant', '!=', id)
       .execute();
     return new Set(rows.map((r) => r.id_descendant));
+  }
+
+  /** Direct children only (albums whose parent is `id`), in display order. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getChildIds(id: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('album')
+      .select('id')
+      .where('parentId', '=', id)
+      .where('deletedAt', 'is', null)
+      .orderBy('sortOrder', sql`asc nulls last`)
+      .orderBy('createdAt', 'desc')
+      .execute();
+    return rows.map((row) => row.id);
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -498,57 +614,125 @@ export class AlbumRepository {
    * the final backstop and will abort the transaction if a concurrent writer
    * still manages to introduce a cycle.
    */
-  async reparent(id: string, newParentId: string | null): Promise<void> {
-    await this.db.transaction().execute(async (tx) => {
-      const subtree = await tx
+  async reparent(id: string, newParentId: string | null, expectedParentId?: string | null): Promise<void> {
+    await this.db.transaction().execute((tx) => this.reparentIn(tx, id, newParentId, expectedParentId));
+  }
+
+  async reparentIn(
+    tx: Transaction<DB>,
+    id: string,
+    newParentId: string | null,
+    expectedParentId?: string | null,
+  ): Promise<void> {
+    if (expectedParentId !== undefined) {
+      // FL-52: a move made from an outdated directory (the album was moved elsewhere since the
+      // client loaded it) is refused rather than silently undoing the other change.
+      const current = await tx
+        .selectFrom('album')
+        .select('parentId')
+        .where('id', '=', id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!current || current.parentId !== expectedParentId) {
+        throw new ConflictException('The album was moved since the directory was loaded');
+      }
+    }
+    const subtree = await tx
+      .selectFrom('album_closure')
+      .select('id_descendant')
+      .where('id_ancestor', '=', id)
+      .execute();
+    if (newParentId !== null) {
+      const cycle = await tx
         .selectFrom('album_closure')
         .select('id_descendant')
         .where('id_ancestor', '=', id)
-        .execute();
-      if (newParentId !== null) {
-        const cycle = await tx
-          .selectFrom('album_closure')
-          .select('id_descendant')
-          .where('id_ancestor', '=', id)
-          .where('id_descendant', '=', newParentId)
-          .where('id_descendant', '!=', id)
-          .executeTakeFirst();
-        if (cycle) {
-          throw new BadRequestException('Cannot move an album under one of its own descendants');
-        }
+        .where('id_descendant', '=', newParentId)
+        .where('id_descendant', '!=', id)
+        .executeTakeFirst();
+      if (cycle) {
+        throw new BadRequestException('Cannot move an album under one of its own descendants');
       }
+    }
 
-      await tx.updateTable('album').set({ parentId: newParentId }).where('id', '=', id).execute();
+    await tx.updateTable('album').set({ parentId: newParentId }).where('id', '=', id).execute();
 
+    await tx
+      .deleteFrom('album_closure')
+      .where('id_descendant', 'in', (eb) =>
+        eb.selectFrom('album_closure as sub').select('sub.id_descendant').where('sub.id_ancestor', '=', id),
+      )
+      .where('id_ancestor', 'not in', (eb) =>
+        eb.selectFrom('album_closure as sub2').select('sub2.id_descendant').where('sub2.id_ancestor', '=', id),
+      )
+      .execute();
+
+    if (newParentId !== null) {
       await tx
-        .deleteFrom('album_closure')
-        .where('id_descendant', 'in', (eb) =>
-          eb.selectFrom('album_closure as sub').select('sub.id_descendant').where('sub.id_ancestor', '=', id),
-        )
-        .where('id_ancestor', 'not in', (eb) =>
-          eb.selectFrom('album_closure as sub2').select('sub2.id_descendant').where('sub2.id_ancestor', '=', id),
+        .insertInto('album_closure')
+        .columns(['id_ancestor', 'id_descendant'])
+        .expression(
+          tx
+            .selectFrom('album_closure as supertree')
+            .innerJoin('album_closure as subtree', (j) => j.onTrue())
+            .where('supertree.id_descendant', '=', newParentId)
+            .where('subtree.id_ancestor', '=', id)
+            .select(['supertree.id_ancestor as id_ancestor', 'subtree.id_descendant as id_descendant']),
         )
         .execute();
+    }
 
-      if (newParentId !== null) {
-        await tx
-          .insertInto('album_closure')
-          .columns(['id_ancestor', 'id_descendant'])
-          .expression(
-            tx
-              .selectFrom('album_closure as supertree')
-              .innerJoin('album_closure as subtree', (j) => j.onTrue())
-              .where('supertree.id_descendant', '=', newParentId)
-              .where('subtree.id_ancestor', '=', id)
-              .select(['supertree.id_ancestor as id_ancestor', 'subtree.id_descendant as id_descendant']),
+    await this.forkMetadata.mirrorFromLegacy(
+      subtree.map(({ id_descendant }) => id_descendant),
+      tx,
+    );
+  }
+
+  /**
+   * FL-52: the custom order one person gave their album directory, as album id → position. Only
+   * that person's rows are read; an album they can no longer see is simply never looked up.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getPositions(userId: string): Promise<Map<string, number>> {
+    const { rows } = await sql<{ albumId: string; position: number }>`
+      SELECT "albumId"::text AS "albumId", position
+      FROM immich_fork.album_position
+      WHERE "userId" = ${userId}::uuid
+    `.execute(this.db);
+    return new Map(rows.map(({ albumId, position }) => [albumId, position]));
+  }
+
+  /**
+   * FL-52: saves one group of the person's directory in the given order (index = position).
+   * Organization only — no album, membership or access row is touched. Like every fork-owned
+   * writer, it refuses while the fork schema is not writable or a handoff runs.
+   */
+  async setPositions(userId: string, albumIds: string[], validate?: (visible: DirectoryItem[]) => void): Promise<void> {
+    if (albumIds.length === 0) {
+      return;
+    }
+    await this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, 'Album order is unavailable during database handoff');
+      if (validate) {
+        // Everything the person can see, as it is now, locked until the order is written.
+        const rows = await tx
+          .selectFrom('album')
+          .innerJoin('album_user', (join) =>
+            join.onRef('album_user.albumId', '=', 'album.id').on('album_user.userId', '=', userId),
           )
+          .where('album.deletedAt', 'is', null)
+          .select(['album.id', 'album.icon', 'album.parentId', 'album.sortOrder', 'album.kind'])
+          .modifyEnd(sql`FOR SHARE OF album`)
           .execute();
+        validate(await this.forkMetadata.applyReadMetadata(rows, tx));
       }
-
-      await this.forkMetadata.mirrorFromLegacy(
-        subtree.map(({ id_descendant }) => id_descendant),
-        tx,
-      );
+      await sql`
+        INSERT INTO immich_fork.album_position ("userId", "albumId", position)
+        SELECT ${userId}::uuid, ordered.id, (ordered.ordinality - 1)::integer
+        FROM unnest(${albumIds}::uuid[]) WITH ORDINALITY AS ordered(id, ordinality)
+        ON CONFLICT ("userId", "albumId")
+        DO UPDATE SET position = excluded.position, "updatedAt" = clock_timestamp()
+      `.execute(tx);
     });
   }
 
@@ -570,31 +754,38 @@ export class AlbumRepository {
    * - Removing thumbnails from albums without assets
    * - Removing references of thumbnails to assets outside the album
    * - Setting a thumbnail when none is set and the album contains assets
+   * - Replacing a Locked or trashed thumbnail (see `albumCoverCandidates`)
+   *
+   * The replacement is the same picker `releaseLockedCoverReferences` uses when a Locked photo
+   * releases the cover it was (FL-53, `albumCoverReplacement`): a Best Photo first, the highest score
+   * first, then the newest; never Locked or trashed, and never sensitive for an album someone besides
+   * its owner sees (a member, a shared link, or one linked into a shared space). One picker, so an
+   * automatic cover never disagrees with what a Locked or trashed cover falls back to.
    *
    * @returns Amount of updated album thumbnails or undefined when unknown
    */
   async updateThumbnails(): Promise<number | undefined> {
+    // Albums whose cover follows the newest item (FL-83) take it first; the rules below then only
+    // touch albums that have no valid cover.
+    await this.updateNewestCovers();
+
     // Subquery for getting a new thumbnail.
+    const scores = await getBestPhotoScoreTable(this.db);
 
     const result = await this.db
       .updateTable('album')
-      .set((eb) => ({
-        albumThumbnailAssetId: this.updateThumbnailBuilder(eb)
-          .select('album_asset.assetId')
-          .orderBy('asset.fileCreatedAt', 'desc')
-          .limit(sql.lit(1)),
-      }))
+      .set((eb) => ({ albumThumbnailAssetId: albumCoverReplacement(eb, scores) }))
       .where((eb) =>
         eb.or([
           eb.and([
             eb('albumThumbnailAssetId', 'is', null),
-            eb.exists(this.updateThumbnailBuilder(eb).select(sql`1`.as('1'))), // Has assets
+            eb.exists(albumCoverCandidates(eb).select(sql`1`.as('1'))), // Has assets
           ]),
           eb.and([
             eb('albumThumbnailAssetId', 'is not', null),
             eb.not(
               eb.exists(
-                this.updateThumbnailBuilder(eb)
+                albumCoverCandidates(eb)
                   .select(sql`1`.as('1'))
                   .whereRef('album.albumThumbnailAssetId', '=', 'album_asset.assetId'), // Has invalid assets
               ),
@@ -607,26 +798,103 @@ export class AlbumRepository {
     return Number(result[0].numUpdatedRows);
   }
 
-  private updateThumbnailBuilder(eb: ExpressionBuilder<DB, 'album'>) {
-    return eb
-      .selectFrom('album_asset')
-      .innerJoin('asset', (join) =>
-        join.onRef('album_asset.assetId', '=', 'asset.id').on('asset.deletedAt', 'is', null),
+  /**
+   * FL-83 (AL-13): whether the album's cover follows its newest item.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async isCoverFollowingNewest(albumId: string): Promise<boolean> {
+    const { rows } = await sql<{ albumId: string }>`
+      SELECT "albumId" FROM immich_fork.album_cover_follows_newest WHERE "albumId" = ${albumId}::uuid
+    `.execute(this.db);
+    return rows.length > 0;
+  }
+
+  /**
+   * FL-83 (AL-13): turns "Always use the newest item" on or off for an album. Turning it on makes the
+   * newest item the cover straight away; turning it off keeps the current cover. Like every
+   * fork-owned writer, it refuses while the fork schema is not writable or a handoff runs.
+   */
+  async setCoverFollowsNewest(albumId: string, enabled: boolean): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await lockForkWrites(tx, 'Album cover settings are unavailable during database handoff');
+      if (!enabled) {
+        await sql`DELETE FROM immich_fork.album_cover_follows_newest WHERE "albumId" = ${albumId}::uuid`.execute(tx);
+        return;
+      }
+      await sql`
+        INSERT INTO immich_fork.album_cover_follows_newest ("albumId")
+        VALUES (${albumId}::uuid)
+        ON CONFLICT ("albumId") DO UPDATE SET "updatedAt" = clock_timestamp()
+      `.execute(tx);
+      await this.updateNewestCovers([albumId], tx);
+    });
+  }
+
+  /**
+   * FL-83 (AL-13): points every album whose cover follows the newest item (or only `albumIds`) at
+   * its newest item (`albumNewestCover`); an album left without a possible cover gets none. Albums
+   * whose cover is already right are not written.
+   */
+  async updateNewestCovers(albumIds?: string[], kysely: Kysely<DB> = this.db): Promise<void> {
+    if (albumIds?.length === 0) {
+      return;
+    }
+    await kysely
+      .updateTable('album')
+      .set((eb) => ({ albumThumbnailAssetId: albumNewestCover(eb) }))
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom(sql.table('immich_fork.album_cover_follows_newest').as('newest'))
+            .select(sql.lit(1).as('1'))
+            .where(sql.ref('newest.albumId'), '=', sql.ref('album.id')),
+        ),
       )
-      .whereRef('album_asset.albumId', '=', 'album.id');
+      .$if(albumIds !== undefined, (qb) => qb.where('album.id', '=', anyUuid(albumIds!)))
+      .where((eb) => eb('album.albumThumbnailAssetId', 'is distinct from', albumNewestCover(eb)))
+      .execute();
+  }
+
+  /**
+   * The first of `assetIds`, in the given order, that may become an album cover: a Locked item never
+   * does, whoever adds it. Undefined when every candidate is Locked or gone.
+   */
+  async getFirstCoverCandidate(assetIds: string[]): Promise<string | undefined> {
+    if (assetIds.length === 0) {
+      return undefined;
+    }
+
+    const row = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', anyUuid(assetIds))
+      .where('asset.deletedAt', 'is', null)
+      .where(isNotLocked('asset'))
+      .orderBy(sql`array_position(${assetIds}::uuid[], "asset"."id")`)
+      .limit(1)
+      .executeTakeFirst();
+
+    return row?.id;
   }
 
   /**
    * Get per-user asset contribution counts for a single album.
-   * Excludes deleted assets, orders by count desc.
+   * Excludes deleted assets; orders by count desc.
+   *
+   * Hidden items (such as the video half of a Live Photo) still count toward the person who added
+   * them (owner decision, September 22, 2026), so this does not use `withAlbumVisibility`. Locked
+   * media counts only for its owner in an elevated session (`lockedOwnerId`); anyone else's Locked
+   * media never counts, so the numbers never reveal it.
    */
   @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
-  getContributorCounts(id: string, options: HiddenContentQueryOptions = {}) {
+  getContributorCounts(id: string, options: AlbumReadOptions = {}) {
+    const { lockedOwnerId } = options;
     return this.db
       .selectFrom('album_asset')
       .innerJoin('asset', 'asset.id', 'assetId')
       .where('asset.deletedAt', 'is', sql.lit(null))
       .where('album_asset.albumId', '=', id)
+      .where(notLockedOrOwnedBy(lockedOwnerId, 'asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .select('asset.ownerId as userId')
       .select((eb) => eb.fn.countAll<number>().as('assetCount'))

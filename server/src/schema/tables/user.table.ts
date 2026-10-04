@@ -14,6 +14,7 @@ import type { ColumnType } from 'kysely';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { UserAvatarColor, UserStatus } from 'src/enum.js';
 import { user_delete_audit } from 'src/schema/functions.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { ClusterGroupTable } from 'src/schema/tables/cluster-group.table.js';
 
 @Table('user')
@@ -43,6 +44,13 @@ export class UserTable {
 
   @Column({ default: '' })
   profileImagePath!: Generated<string>;
+
+  /**
+   * The photo the profile picture was copied from, when it was copied from one (FL-53). A picture copied
+   * from a photo that later becomes Locked is replaced (`replaceLockedProfileImages`).
+   */
+  @ForeignKeyColumn(() => AssetTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  profileImageAssetId!: string | null;
 
   @Column({ type: 'boolean', default: false })
   isAdmin!: Generated<boolean>;

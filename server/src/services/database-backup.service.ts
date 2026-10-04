@@ -1,16 +1,31 @@
 import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { debounce } from 'lodash-es';
 import { DateTime } from 'luxon';
+import { randomUUID } from 'node:crypto';
 import path, { basename } from 'node:path';
 import { Duplex, PassThrough, Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { coerce, satisfies } from 'semver';
+import { coerce, gt, satisfies } from 'semver';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
-import { DatabaseBackupListResponseDto } from 'src/dtos/database-backup.dto.js';
-import { CacheControl, DatabaseLock, ImmichWorker, JobName, JobStatus, QueueName, StorageFolder } from 'src/enum.js';
+import {
+  BackupRestoreVerificationRecordDto,
+  BackupRestoreVerificationResponseDto,
+  DatabaseBackupListResponseDto,
+} from 'src/dtos/database-backup.dto.js';
+import {
+  CacheControl,
+  DatabaseLock,
+  ImmichWorker,
+  JobName,
+  JobStatus,
+  QueueName,
+  StorageFolder,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
@@ -21,16 +36,49 @@ import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { appendConfigHistory, readConfigHistory, reviewHistoryTitle } from 'src/utils/config-history.js';
 import { getConfig } from 'src/utils/config.js';
 import {
   UnsupportedPostgresError,
   findDatabaseBackupVersion,
+  isCloudBackupDumpName,
   isFailedDatabaseBackupName,
   isValidDatabaseBackupName,
   isValidDatabaseRoutineBackupName,
 } from 'src/utils/database-backups.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { handlePromiseError } from 'src/utils/misc.js';
+
+/** FL-71 (CC-9): how often a backup should be proved to restore before the Overview asks again. */
+export const RESTORE_VERIFICATION_INTERVAL_DAYS = 90;
+
+/**
+ * When the next restore test is due and whether it is overdue: never proved (either part) is due
+ * now; otherwise the older of the two records plus the interval.
+ */
+export const restoreVerificationDue = (
+  record: { metadataVerifiedAt?: string | null; originalsVerifiedAt?: string | null },
+  now: Date,
+): { dueAt: string | null; overdue: boolean } => {
+  if (!record.metadataVerifiedAt || !record.originalsVerifiedAt) {
+    return { dueAt: null, overdue: true };
+  }
+  const oldest = Math.min(Date.parse(record.metadataVerifiedAt), Date.parse(record.originalsVerifiedAt));
+  const dueAt = new Date(oldest + RESTORE_VERIFICATION_INTERVAL_DAYS * 24 * 60 * 60 * 1000);
+  return { dueAt: dueAt.toISOString(), overdue: dueAt.getTime() <= now.getTime() };
+};
+
+/** FL-295: the last line `pg_dump` writes (`pg_dumpall`: "cluster dump complete"), only once the dump finished. */
+const DUMP_COMPLETE = /-- PostgreSQL database (?:cluster )?dump complete/;
+/** Newer `pg_dump` versions write an `unrestrict` meta-command line after it; this much of the end is checked. */
+const DUMP_TAIL_BYTES = 4096;
+
+export class DatabaseBackupVerificationError extends Error {
+  constructor(reason: string) {
+    super(`The backup is not a complete dump: ${reason}`);
+    this.name = 'DatabaseBackupVerificationError';
+  }
+}
 
 @Injectable()
 export class DatabaseBackupService {
@@ -224,15 +272,29 @@ export class DatabaseBackupService {
     };
   }
 
-  async createDatabaseBackup(filenamePrefix: string = ''): Promise<string> {
+  /**
+   * A full `pg_dump` of the database, gzipped into `<media>/backups`, written to a `.tmp` file and renamed
+   * once complete. FL-295: `label` goes between the timestamp and the version (the pre-upgrade copy), and
+   * `verify` checks the temporary file is a complete dump before it is renamed. FL-298: every backup is
+   * verified by default (routine, restore point, cloud dump), so an empty or partial file never counts.
+   */
+  async createDatabaseBackup(
+    filenamePrefix: string = '',
+    { label, verify = true, snapshot }: { label?: string; verify?: boolean; snapshot?: string } = {},
+  ): Promise<string> {
     this.logger.debug(`Database Backup Started`);
 
     const { bin, args, databasePassword, databaseVersion, databaseMajorVersion } =
       await this.buildPostgresLaunchArguments('pg_dump');
+    if (snapshot !== undefined) {
+      if (!/^[\da-f]+-[\da-f]+-\d+$/i.test(snapshot)) throw new Error('Invalid PostgreSQL backup snapshot');
+      args.push(`--snapshot=${snapshot}`);
+    }
 
     this.logger.log(`Database Backup Starting. Database Version: ${databaseMajorVersion}`);
 
-    const filename = `${filenamePrefix}immich-db-backup-${DateTime.now().toFormat("yyyyLLdd'T'HHmmss")}-v${serverVersion.toString()}-pg${databaseVersion.split(' ', 1)[0]}.sql.gz`;
+    const timestamp = DateTime.now().toFormat("yyyyLLdd'T'HHmmss");
+    const filename = `${filenamePrefix}immich-db-backup-${timestamp}${label ? `-${label}` : ''}-v${serverVersion.toString()}-pg${databaseVersion.split(' ', 1)[0]}.sql.gz`;
     const backupFilePath = path.join(StorageCore.getBaseFolder(StorageFolder.Backups), filename);
     const temporaryFilePath = `${backupFilePath}.tmp`;
 
@@ -251,6 +313,9 @@ export class DatabaseBackupService {
       const fileStream = this.storageRepository.createWriteStream(temporaryFilePath);
 
       await pipeline(pgdump, gzip, fileStream);
+      if (verify) {
+        await this.verifyDatabaseBackup(temporaryFilePath);
+      }
       await this.storageRepository.rename(temporaryFilePath, backupFilePath);
     } catch (error) {
       this.logger.error(`Database Backup Failure: ${error}`);
@@ -265,6 +330,44 @@ export class DatabaseBackupService {
 
     this.logger.log(`Database Backup Success`);
     return backupFilePath;
+  }
+
+  /**
+   * FL-295: whether a gzipped dump is complete: not empty, a valid gzip stream to its end, and SQL that
+   * ends with the line `pg_dump` (or `pg_dumpall`) writes once it has finished. Throws
+   * {@link DatabaseBackupVerificationError} saying what is wrong.
+   */
+  async verifyDatabaseBackup(filePath: string): Promise<void> {
+    const { size } = await this.storageRepository.stat(filePath);
+    if (!size) {
+      throw new DatabaseBackupVerificationError(`${basename(filePath)} is empty`);
+    }
+
+    let bytes = 0;
+    let tail = '';
+    try {
+      await pipeline(
+        this.storageRepository.createPlainReadStream(filePath),
+        this.storageRepository.createGunzip(),
+        new Writable({
+          write(chunk: Buffer, _encoding, callback) {
+            bytes += chunk.length;
+            tail = (tail + chunk.toString('latin1')).slice(-DUMP_TAIL_BYTES);
+            callback();
+          },
+        }),
+      );
+    } catch (error) {
+      throw new DatabaseBackupVerificationError(`${basename(filePath)} is not a complete gzip file (${error})`);
+    }
+
+    if (bytes === 0) {
+      throw new DatabaseBackupVerificationError(`${basename(filePath)} is empty once uncompressed`);
+    }
+
+    if (!DUMP_COMPLETE.test(tail)) {
+      throw new DatabaseBackupVerificationError(`${basename(filePath)} does not finish like a complete dump`);
+    }
   }
 
   async uploadBackup(file: Express.Multer.File): Promise<void> {
@@ -293,13 +396,84 @@ export class DatabaseBackupService {
     };
   }
 
+  /** FL-71 (CC-9): the last recorded restore test and whether another is due. Administrators only. */
+  async getRestoreVerification(): Promise<BackupRestoreVerificationResponseDto> {
+    const record = (await this.systemMetadataRepository.get(SystemMetadataKey.BackupRestoreVerification)) ?? {};
+    const verifier = record.verifiedBy ? await this.userRepository.get(record.verifiedBy, { withDeleted: true }) : null;
+    return {
+      metadataVerifiedAt: record.metadataVerifiedAt ?? null,
+      originalsVerifiedAt: record.originalsVerifiedAt ?? null,
+      verifiedBy: verifier ? { id: verifier.id, name: verifier.name } : null,
+      ...restoreVerificationDue(record, new Date()),
+      intervalDays: RESTORE_VERIFICATION_INTERVAL_DAYS,
+    };
+  }
+
+  /**
+   * FL-71 (CC-9): an administrator records that a restore test succeeded for the database, the
+   * original files or both. A part not tested keeps its earlier record.
+   */
+  async recordRestoreVerification(
+    auth: AuthDto,
+    dto: BackupRestoreVerificationRecordDto,
+  ): Promise<BackupRestoreVerificationResponseDto> {
+    const record = (await this.systemMetadataRepository.get(SystemMetadataKey.BackupRestoreVerification)) ?? {};
+    const now = new Date().toISOString();
+    await this.systemMetadataRepository.set(SystemMetadataKey.BackupRestoreVerification, {
+      metadataVerifiedAt: dto.metadata ? now : (record.metadataVerifiedAt ?? null),
+      originalsVerifiedAt: dto.originals ? now : (record.originalsVerifiedAt ?? null),
+      verifiedBy: auth.user.id,
+    });
+    await this.recordReview(auth, 'Recovery readiness', now);
+    return this.getRestoreVerification();
+  }
+
+  /**
+   * FL-71 (CC-10): a review lands in the settings change history as "Reviewed: {title}"
+   * (`CommandCenter.jsx:2495`), with no values. Appended under the settings lock like a save; a
+   * failure is logged and never undoes the review.
+   */
+  private async recordReview(auth: AuthDto, title: string, at: string) {
+    try {
+      await this.databaseRepository.withLock(DatabaseLock.SystemConfigUpdate, async () => {
+        const history = readConfigHistory(
+          await this.systemMetadataRepository.get(SystemMetadataKey.SystemConfigHistory),
+        );
+        await this.systemMetadataRepository.set(
+          SystemMetadataKey.SystemConfigHistory,
+          appendConfigHistory(
+            history,
+            {
+              id: randomUUID(),
+              createdAt: at,
+              actorId: auth.user.id,
+              actorName: auth.user.name,
+              kind: 'review',
+              title: reviewHistoryTitle(title),
+            },
+            [],
+          ),
+        );
+      });
+    } catch (error) {
+      this.logger.error(`Unable to record the review in the change history: ${error}`);
+    }
+  }
+
   async listBackups(): Promise<DatabaseBackupListResponseDto> {
     const backupsFolder = StorageCore.getBaseFolder(StorageFolder.Backups);
-    const files = await this.storageRepository.readdir(backupsFolder);
+    // FL-81: no backups folder yet (nothing was ever backed up) is no backups, not an error.
+    const files = await this.storageRepository.readdir(backupsFolder).catch((error: NodeJS.ErrnoException) => {
+      if (error?.code === 'ENOENT') {
+        return [];
+      }
+      throw error;
+    });
     const timezone = DateTime.local().zoneName;
 
     const validFiles = files
-      .filter((fn) => isValidDatabaseBackupName(fn))
+      // FL-160: a cloud backup run's own temporary dump is never offered for a restore
+      .filter((fn) => isValidDatabaseBackupName(fn) && !isCloudBackupDumpName(fn))
       .toSorted((a, b) => (a.startsWith('uploaded-') === b.startsWith('uploaded-') ? a.localeCompare(b) : 1))
       .toReversed();
 
@@ -361,11 +535,15 @@ export class DatabaseBackupService {
   async restoreDatabaseBackup(
     filename: string,
     progressCb?: (action: 'backup' | 'restore' | 'migrations' | 'rollback', progress: number) => void,
+    { keepSafetyBackup = true, fence }: { keepSafetyBackup?: boolean; fence?: DatabaseRestoreFence } = {},
   ): Promise<void> {
     this.logger.debug(`Database Restore Started`);
 
     let isComplete = false;
     try {
+      await fence?.assert();
+      if (fence && (!Number.isSafeInteger(fence.backendPid) || fence.backendPid <= 0))
+        throw new Error('Invalid restore lock');
       if (!isValidDatabaseBackupName(filename)) {
         throw new Error('Invalid backup file format!');
       }
@@ -375,9 +553,22 @@ export class DatabaseBackupService {
 
       let isPgClusterDump = false;
       const version = findDatabaseBackupVersion(filename);
+
+      // FL-81: migrations only move a database forward, so a backup from a newer server cannot run on
+      // this one. It is refused before the restore point is made or anything is changed.
+      const backupVersion = version ? coerce(version) : null;
+      const runningVersion = coerce(serverVersion.toString());
+      if (backupVersion && runningVersion && gt(backupVersion, runningVersion)) {
+        throw new Error(
+          `This backup was made by a newer server (v${backupVersion.toString()}) than the one running (v${runningVersion.toString()}). Update the server first.`,
+        );
+      }
       if (version && satisfies(version, '<= 2.4')) {
         isPgClusterDump = true;
       }
+      // A cluster dump may drop this database, which cannot preserve its reserved lock connection.
+      if (isPgClusterDump && fence)
+        throw new Error('Convert this legacy cluster dump to a database dump before a locked restore');
 
       const { bin, args, databaseUsername, databasePassword, databaseMajorVersion } =
         await this.buildPostgresLaunchArguments('psql', {
@@ -400,7 +591,7 @@ export class DatabaseBackupService {
         inputStream = this.storageRepository.createPlainReadStream(backupFilePath);
       }
 
-      const sqlStream = Readable.from(sql(inputStream, databaseUsername, isPgClusterDump));
+      const sqlStream = Readable.from(sql(inputStream, databaseUsername, isPgClusterDump, fence));
       const psql = this.processRepository.spawnDuplexStream(bin, args, {
         env: {
           PATH: process.env.PATH,
@@ -420,12 +611,14 @@ export class DatabaseBackupService {
       await pipeline(sqlStream, createSqlOwnerTransformStream(databaseUsername), progressSource, psql, progressSink);
 
       try {
+        await fence?.assert();
         progressCb?.('migrations', 0.9);
 
         if (await this.databaseRepository.isCertifiedReturnStartup()) {
           await this.databaseRepository.assertCertifiedReturnLedger();
         }
         const migrationMode = await this.databaseRepository.detectMigrationMode();
+        await fence?.assert();
         // Mirror the startup routing in DatabaseService: only post-cutover
         // isolated and adopted official-origin databases are certified-upstream.
         // A restored blank/fresh database has no ledger at all and still needs
@@ -436,6 +629,18 @@ export class DatabaseBackupService {
         await (migrationMode === 'isolated' || migrationMode === 'official-origin'
           ? this.databaseRepository.runOfficialMigrations()
           : this.databaseRepository.runMigrations());
+        if (migrationMode === 'isolated') {
+          await fence?.assert();
+          // FL-180: as at startup, a restored library past the certified cutover receives the newer
+          // Frameleaf public migrations before the `immich_fork` migrations that may build on them.
+          const { applied } = await this.databaseRepository.withLock(DatabaseLock.Migrations, () =>
+            this.databaseRepository.applyIsolatedFrameleafMigrations('startup'),
+          );
+          for (const name of applied) {
+            this.logger.log(`Frameleaf migration "${name}" succeeded`);
+          }
+        }
+        await fence?.assert();
         await this.databaseRepository.runForkMigrations();
 
         const hasAdmin = await this.userRepository.hasAdmin();
@@ -444,7 +649,10 @@ export class DatabaseBackupService {
         }
 
         await this.maintenanceHealthRepository.checkApiHealth();
+        await fence?.assert();
       } catch (error) {
+        // A lost fence belongs to another worker; even rollback must not mutate underneath it.
+        await fence?.assert();
         progressCb?.('rollback', 0);
 
         const fileStream = this.storageRepository.createPlainReadStream(restorePointFilePath);
@@ -452,7 +660,7 @@ export class DatabaseBackupService {
         fileStream.pipe(gunzip);
         inputStream = gunzip;
 
-        const sqlStream = Readable.from(sqlRollback(inputStream, databaseUsername));
+        const sqlStream = Readable.from(sqlRollback(inputStream, databaseUsername, fence));
         const psql = this.processRepository.spawnDuplexStream(bin, args, {
           env: {
             PATH: process.env.PATH,
@@ -473,6 +681,15 @@ export class DatabaseBackupService {
 
         throw error;
       }
+
+      // The restore point is always made, for the rollback above. After a successful restore it is
+      // kept as the administrator's safety backup ("Create a safety backup of the current database
+      // first", the template's RestoreDialog) unless they chose not to keep it.
+      if (!keepSafetyBackup) {
+        await this.storageRepository.unlink(restorePointFilePath).catch((error: unknown) => {
+          this.logger.warn(`Could not remove the restore point ${restorePointFilePath}: ${error}`);
+        });
+      }
     } catch (error) {
       this.logger.error(`Database Restore Failure: ${error}`);
       throw error;
@@ -484,12 +701,14 @@ export class DatabaseBackupService {
   }
 }
 
-const SQL_DROP_CONNECTIONS = `
+export type DatabaseRestoreFence = { backendPid: number; assert: () => Promise<void> };
+
+const SQL_DROP_CONNECTIONS = (backendPid = 0) => `
   -- drop all other database connections
   SELECT pg_terminate_backend(pid)
   FROM pg_stat_activity
   WHERE datname = current_database()
-    AND pid <> pg_backend_pid();
+    AND pid <> pg_backend_pid()${backendPid ? ` AND pid <> ${backendPid}` : ''};
 `;
 
 const SQL_RESET_SCHEMA = (username: string) => `
@@ -513,8 +732,14 @@ const SQL_RESET_SCHEMA = (username: string) => `
   GRANT ALL ON SCHEMA public TO public;
 `;
 
-async function* sql(inputStream: Readable, databaseUsername: string, isPgClusterDump: boolean) {
-  yield SQL_DROP_CONNECTIONS;
+async function* sql(
+  inputStream: Readable,
+  databaseUsername: string,
+  isPgClusterDump: boolean,
+  fence?: DatabaseRestoreFence,
+) {
+  await fence?.assert();
+  yield SQL_DROP_CONNECTIONS(fence?.backendPid);
   yield isPgClusterDump
     ? // it is likely the dump contains SQL to try to drop the currently active
       // database to ensure we have a fresh slate; if the `postgres` database exists
@@ -525,17 +750,22 @@ async function* sql(inputStream: Readable, databaseUsername: string, isPgCluster
     : SQL_RESET_SCHEMA(databaseUsername);
 
   for await (const chunk of inputStream) {
+    await fence?.assert();
     yield chunk;
   }
+  await fence?.assert();
 }
 
-async function* sqlRollback(inputStream: Readable, databaseUsername: string) {
-  yield SQL_DROP_CONNECTIONS;
+async function* sqlRollback(inputStream: Readable, databaseUsername: string, fence?: DatabaseRestoreFence) {
+  await fence?.assert();
+  yield SQL_DROP_CONNECTIONS(fence?.backendPid);
   yield SQL_RESET_SCHEMA(databaseUsername);
 
   for await (const chunk of inputStream) {
+    await fence?.assert();
     yield chunk;
   }
+  await fence?.assert();
 }
 
 function createSqlProgressStreams(cb: (progress: number) => void) {

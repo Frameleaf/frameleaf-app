@@ -188,12 +188,6 @@
     display: none;
   }
 }
-.app[data-screen="admin"] .topbar > .locked-control {
-  margin-left: auto;
-}
-.app[data-screen="admin"] .topbar > .profile {
-  margin-left: 0;
-}
 .inspector-heading {
   display: flex;
   justify-content: space-between;
@@ -220,4 +214,29 @@
   .app .results-toolbar .sort select { width: 100%; }
   .app .results-toolbar > button[aria-label="Grid view"] { grid-column: 4; grid-row: 2; }
   .app .results-toolbar > button[aria-label="List view"] { grid-column: 5; grid-row: 2; }
+}
+
+/* FL-326: Library Care's storage migration status (Combining duplicate files) */
+.storage-migration-card {
+  align-items: flex-start;
+  cursor: default;
+}
+.storage-migration-card .fl-bar {
+  margin: 8px 0;
+}
+.storage-migration-stages {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fl-font-small, 13px);
+}
+.storage-migration-stages li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.storage-migration-stages li[data-status="queued"] {
+  color: var(--fl-muted, inherit);
 }

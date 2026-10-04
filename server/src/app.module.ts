@@ -9,6 +9,7 @@ import { commandsAndQuestions } from 'src/commands/index.js';
 import { IWorker } from 'src/constants.js';
 import { controllers } from 'src/controllers/index.js';
 import { ImmichWorker } from 'src/enum.js';
+import { FirstLaunchWorkerService } from 'src/maintenance/first-launch-worker.service.js';
 import { MaintenanceAuthGuard } from 'src/maintenance/maintenance-auth.guard.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
 import { MaintenanceWebsocketRepository } from 'src/maintenance/maintenance-websocket.repository.js';
@@ -19,7 +20,10 @@ import { ErrorInterceptor } from 'src/middleware/error.interceptor.js';
 import { FileUploadInterceptor } from 'src/middleware/file-upload.interceptor.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
 import { LoggingInterceptor } from 'src/middleware/logging.interceptor.js';
+import { RateLimitFailureInterceptor, RateLimitGuard } from 'src/middleware/rate-limit.guard.js';
 import { AppRepository } from 'src/repositories/app.repository.js';
+import { BuddyBackupRepository } from 'src/repositories/buddy-backup.repository.js';
+import { CloudBackupKeyRepository } from 'src/repositories/cloud-backup-key.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -32,6 +36,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { CliService } from 'src/services/cli.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { services } from 'src/services/index.js';
@@ -50,7 +55,15 @@ const commonMiddleware = [
   { provide: APP_INTERCEPTOR, useClass: ErrorInterceptor },
 ];
 
-const apiMiddleware = [FileUploadInterceptor, ...commonMiddleware, { provide: APP_GUARD, useClass: AuthGuard }];
+// FL-161: the rate limits run before authentication, so failed sign-ins and bad credentials count too.
+const apiMiddleware = [
+  FileUploadInterceptor,
+  ...commonMiddleware,
+  { provide: APP_GUARD, useClass: RateLimitGuard },
+  { provide: APP_GUARD, useClass: AuthGuard },
+  // FL-161: counts a failed password (401) against the email or shared link it was tried for
+  { provide: APP_INTERCEPTOR, useClass: RateLimitFailureInterceptor },
+];
 
 const configRepository = new ConfigRepository();
 const { bull, cls, database } = configRepository.getEnv();
@@ -77,13 +90,13 @@ export class BaseModule implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     this.queueService.setServices(services);
 
-    this.websocketRepository.setAuthFn(async (client) =>
-      this.authService.authenticate({
-        headers: client.request.headers,
-        queryParams: {},
-        metadata: { adminRoute: false, sharedLinkRoute: false, uri: '/api/socket.io' },
-      }),
-    );
+    // FL-161: the handshake's origin is checked and its arrival (`frameleafVia`) read before the
+    // session is, so remote access follows the same sign-in rule as every other request.
+    this.websocketRepository.setAuthFn(async (client) => {
+      const { auth, via } = await this.authService.authenticateWebsocket(client.request.headers);
+      client.data.frameleafVia = via;
+      return auth;
+    });
 
     this.eventRepository.setup({ services });
     await this.eventRepository.emit('AppBootstrap');
@@ -117,6 +130,9 @@ export class ApiModule extends BaseModule {}
     MaintenanceWebsocketRepository,
     DatabaseBackupService,
     MaintenanceWorkerService,
+    BuddyBackupRepository,
+    CloudBackupKeyRepository,
+    BuddyBackupRecoveryService,
     ...commonMiddleware,
     { provide: APP_GUARD, useClass: MaintenanceAuthGuard },
     { provide: IWorker, useValue: ImmichWorker.Maintenance },
@@ -133,6 +149,42 @@ export class MaintenanceModule {
 
   async onModuleInit() {
     await this.maintenanceWorkerService.init();
+  }
+}
+
+/**
+ * FL-295: the "Getting Ready…" worker: no controllers, no queues and nothing that writes to the
+ * database. It only takes the safety copy and serves the "Getting Ready…" screen.
+ */
+@Module({
+  imports: [...commonImports],
+  providers: [
+    ConfigRepository,
+    LoggingRepository,
+    StorageRepository,
+    ProcessRepository,
+    DatabaseRepository,
+    UserRepository,
+    SystemMetadataRepository,
+    AppRepository,
+    DatabaseBackupService,
+    FirstLaunchWorkerService,
+    ...commonMiddleware,
+    { provide: IWorker, useValue: ImmichWorker.FirstLaunch },
+  ],
+})
+export class FirstLaunchModule {
+  constructor(
+    @Inject(IWorker) private worker: ImmichWorker,
+    logger: LoggingRepository,
+    private firstLaunchWorkerService: FirstLaunchWorkerService,
+  ) {
+    logger.setAppName(this.worker);
+  }
+
+  onModuleInit() {
+    // not awaited: the screen is served while the copy is made
+    void this.firstLaunchWorkerService.prepare();
   }
 }
 

@@ -23,7 +23,7 @@ describe(AuthController.name, () => {
 
   describe('POST /auth/admin-sign-up', () => {
     const name = 'admin';
-    const email = 'admin@immich.cloud';
+    const email = 'admin@example.com';
     const password = 'password';
 
     it('should require an email address', async () => {
@@ -66,9 +66,12 @@ describe(AuthController.name, () => {
       service.adminSignUp.mockReset();
       const { status } = await request(ctx.getHttpServer())
         .post('/auth/admin-sign-up')
-        .send({ name: 'admin', password: 'password', email: 'aDmIn@IMMICH.cloud' });
+        .send({ name: 'admin', password: 'password', email: 'aDmIn@ExAmPlE.CoM' });
       expect(status).toEqual(201);
-      expect(service.adminSignUp).toHaveBeenCalledWith(expect.objectContaining({ email: 'admin@immich.cloud' }));
+      expect(service.adminSignUp).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'admin@example.com' }),
+        expect.objectContaining({ ip: expect.any(String) }),
+      );
     });
 
     it('should accept an email with a local domain', async () => {
@@ -116,7 +119,7 @@ describe(AuthController.name, () => {
     it(`should not allow null password`, async () => {
       const { status, body } = await request(ctx.getHttpServer())
         .post('/auth/login')
-        .send({ name: 'admin', email: 'admin@immich.cloud', password: null });
+        .send({ name: 'admin', email: 'admin@example.com', password: null });
       expect(status).toBe(400);
       expect(body).toEqual(
         errorDto.validationError([{ path: ['password'], message: 'Invalid input: expected string, received null' }]),
@@ -161,6 +164,31 @@ describe(AuthController.name, () => {
       expect(service.login).toHaveBeenCalledWith(expect.objectContaining({ email: 'admin@local' }), expect.anything());
     });
 
+    it('rejects a non-boolean cookie preference before authentication', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'admin@local', password: 'password', rememberMe: 'false' });
+      expect(status).toBe(400);
+      expect(service.login).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, true, false])('sets login cookie persistence for rememberMe=%s', async (rememberMe) => {
+      service.login.mockResolvedValue(mediumFactory.loginResponse());
+      const { status, headers } = await request(ctx.getHttpServer())
+        .post('/auth/login')
+        .send({ email: 'admin@local', password: 'password', rememberMe });
+
+      expect(status).toBe(201);
+      expect(headers['set-cookie']).toHaveLength(3);
+      for (const cookie of headers['set-cookie']) {
+        expect(cookie.includes('Max-Age=34560000')).toBe(rememberMe !== false);
+        expect(cookie.includes('Expires=')).toBe(rememberMe !== false);
+        expect(cookie.includes('HttpOnly')).toBe(!cookie.startsWith('immich_is_authenticated='));
+        expect(cookie).toContain('SameSite=Lax');
+        expect(cookie).toContain('Path=/');
+      }
+    });
+
     it('should auth cookies on a secure connection', async () => {
       const loginResponse = mediumFactory.loginResponse();
       service.login.mockResolvedValue(loginResponse);
@@ -196,6 +224,26 @@ describe(AuthController.name, () => {
         expect.stringContaining('Expires='),
         'SameSite=Lax',
       ]);
+      // FL-137: the next person signed in on this browser is never answered from an earlier cache
+      expect(headers['clear-site-data']).toBe('"cache"');
+    });
+  });
+
+  describe('POST /auth/logout', () => {
+    it('clears the auth cookies and the browser cache (FL-137)', async () => {
+      service.logout.mockResolvedValue({ successful: true, redirectUri: '/auth/login?autoLaunch=0' });
+      const { status, headers } = await request(ctx.getHttpServer()).post('/auth/logout');
+
+      expect(status).toEqual(200);
+      expect(headers['set-cookie']).toEqual(expect.arrayContaining([expect.stringContaining('immich_access_token=;')]));
+      expect(headers['clear-site-data']).toBe('"cache"');
+    });
+  });
+
+  describe('clearing the browser cache (FL-137)', () => {
+    it('is not sent by requests that do not sign anyone in or out', async () => {
+      const { headers } = await request(ctx.getHttpServer()).post('/auth/validateToken');
+      expect(headers['clear-site-data']).toBeUndefined();
     });
   });
 

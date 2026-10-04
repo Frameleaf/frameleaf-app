@@ -7,6 +7,7 @@ import {
   MapMarkerResponseDto,
   MapReverseGeocodeDto,
   MapReverseGeocodeResponseDto,
+  MapStatisticsResponseDto,
 } from 'src/dtos/map.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -26,6 +27,18 @@ export class MapController {
   })
   getMapMarkers(@Auth() auth: AuthDto, @Query() options: MapMarkerDto): Promise<MapMarkerResponseDto[]> {
     return this.service.getMapMarkers(auth, options);
+  }
+
+  @Get('statistics')
+  @Authenticated({ permission: Permission.MapRead })
+  @Endpoint({
+    summary: 'Retrieve map statistics',
+    description:
+      "Count what the map settings would add: the viewer's own located archived items and the located items of partners who share their locations, under the same date and favorite filters, and the viewer's own items without a location.",
+    history: new HistoryBuilder().added('v3'),
+  })
+  getMapStatistics(@Auth() auth: AuthDto, @Query() options: MapMarkerDto): Promise<MapStatisticsResponseDto> {
+    return this.service.getMapStatistics(auth, options);
   }
 
   @Get('reverse-geocode')

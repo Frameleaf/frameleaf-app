@@ -1,17 +1,22 @@
-import { Kysely, sql } from 'kysely';
+import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
+import * as identity from 'src/fork-schema/migrations/0000000000213-ICloudSourceIdentity.js';
 import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
+import { getKyselyConfig } from 'src/utils/database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 const field = (value: unknown) => ({ value });
+type PlanNode = { 'Node Type': string; 'Actual Rows': number; Plans?: PlanNode[] };
+const nodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap((child) => nodes(child))];
 
 describe(ICloudSyncRepository.name, () => {
   let db: Kysely<DB>;
   let repository: ICloudSyncRepository;
   let connection: ICloudConnection;
+  const captured: CompiledQuery[] = [];
   const library: ICloudLibrary = { area: 'private', zoneID: { zoneName: 'PrimarySync' } };
   const master = {
     recordName: 'master',
@@ -30,6 +35,19 @@ describe(ICloudSyncRepository.name, () => {
 
   beforeAll(async () => {
     db = await getKyselyDB();
+    const { rows } = await sql<{ name: string }>`SELECT current_database() AS name`.execute(db);
+    await db.destroy();
+    db = new Kysely<DB>({
+      ...getKyselyConfig({
+        connectionType: 'url',
+        url: process.env.IMMICH_TEST_POSTGRES_URL!.replace(/\/[^/]+$/, () => `/${rows[0].name}`),
+      }),
+      log: (event) => {
+        if (event.level === 'query') {
+          captured.push(event.query);
+        }
+      },
+    });
     // getKyselyDB clones CI's migrated template; this suite uses its own focused schema.
     await sql`DROP SCHEMA IF EXISTS immich_fork CASCADE`.execute(db);
     await sql`DROP SCHEMA public CASCADE`.execute(db);
@@ -38,7 +56,12 @@ describe(ICloudSyncRepository.name, () => {
     await sql`CREATE TABLE immich_fork.state (id integer PRIMARY KEY,phase text)`.execute(db);
     await sql`INSERT INTO immich_fork.state VALUES (1,'active')`.execute(db);
     await sql`CREATE TABLE immich_fork.migration_audit (name text,status text)`.execute(db);
+    // the library side `counts` reads to tell a disappeared source from a deleted asset
+    await sql`CREATE TABLE asset (id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
     await migration.up(db);
+    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
+    // FL-296: finalize records the source identity
+    await identity.up(db);
     repository = new ICloudSyncRepository(db);
   });
   afterAll(async () => {
@@ -47,7 +70,7 @@ describe(ICloudSyncRepository.name, () => {
   afterEach(() => vi.unstubAllEnvs());
   beforeEach(async () => {
     await sql`TRUNCATE immich_fork.icloud_connection CASCADE`.execute(db);
-    connection = await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({}));
+    connection = (await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({})))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
     connection.state = 'connected';
   });
@@ -80,7 +103,7 @@ describe(ICloudSyncRepository.name, () => {
     });
   });
   it.each(
-    ['IMMICH_ICLOUD_MAX_CONCURRENCY', 'IMMICH_ICLOUD_MAX_STAGING_BYTES'].flatMap((name) =>
+    ['FRAMELEAF_ICLOUD_MAX_CONCURRENCY', 'FRAMELEAF_ICLOUD_MAX_STAGING_BYTES'].flatMap((name) =>
       ['garbage', 'NaN', 'Infinity', '-1', '0', '1.5', '9007199254740992', ''].map((value) => ({ name, value })),
     ),
   )('refuses new admission with invalid $name=$value', async ({ name, value }) => {
@@ -101,8 +124,8 @@ describe(ICloudSyncRepository.name, () => {
     await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
     await repository.materialize(connection, 'library', library);
     await sql`UPDATE immich_fork.icloud_resource SET status='committed'`.execute(db);
-    vi.stubEnv('IMMICH_ICLOUD_MAX_CONCURRENCY', 'NaN');
-    vi.stubEnv('IMMICH_ICLOUD_MAX_STAGING_BYTES', 'NaN');
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY', 'NaN');
+    vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', 'NaN');
     expect(await repository.claim(connection.id, 1000)).toMatchObject({ status: 'committed' });
   });
   it('roundtrips typed JSON, keeps split-page master joins and opaque checkpoints, and materializes idempotently', async () => {
@@ -222,10 +245,24 @@ describe(ICloudSyncRepository.name, () => {
 
   it('keyset-materializes a bounded batch from a 500,000-asset source inventory', async () => {
     await repository.savePage(connection.id, 'assets:library', 'library', [master], null, true);
-    await sql`INSERT INTO immich_fork.icloud_record ("connectionId","libraryKey","recordId","recordType","masterId",fields)
-      SELECT ${connection.id}::uuid,'library',lpad(n::text,6,'0'),'CPLAsset','master',
-      '{"masterRef":{"value":{"recordName":"master"}}}'::jsonb FROM generate_series(1,500000) n`.execute(db);
-    expect(await repository.materialize(connection, 'library', library)).toBe(false);
+    await db.transaction().execute(async (transaction) => {
+      await sql`INSERT INTO immich_fork.icloud_record ("connectionId","libraryKey","recordId","recordType","masterId",fields)
+        SELECT ${connection.id}::uuid,'library',lpad(n::text,6,'0'),'CPLAsset','master',
+        '{"masterRef":{"value":{"recordName":"master"}}}'::jsonb FROM generate_series(1,500000) n`.execute(transaction);
+      // A batch must stay bounded when the planner chooses a hash/merge join too.
+      await sql`SET LOCAL enable_nestloop = off`.execute(transaction);
+      captured.length = 0;
+      expect(await repository.materialize(connection, 'library', library, transaction)).toBe(false);
+      const query = captured.find(({ sql }) => sql.includes('AS "recordName"'))!;
+      const explained = await transaction.executeQuery<{ 'QUERY PLAN': [{ Plan: PlanNode }] }>(
+        CompiledQuery.raw(`EXPLAIN (ANALYZE, FORMAT JSON) ${query.sql}`, [...query.parameters]),
+      );
+      const joins = nodes(explained.rows[0]['QUERY PLAN'][0].Plan).filter((node) => node['Node Type'].endsWith('Join'));
+      expect(joins.length).toBeGreaterThan(0);
+      for (const join of joins) {
+        expect(join['Actual Rows']).toBeLessThanOrEqual(100);
+      }
+    });
     expect(await repository.counts(connection.id)).toMatchObject({ logicalAssets: 100, resources: 100 });
     expect(await repository.checkpoint(connection.id, 'materialize:library')).toMatchObject({
       cursor: '000100',

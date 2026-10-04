@@ -1,0 +1,119 @@
+Subject: Dispose the per-renderer colour output uniform buffer
+
+Freecut MIT adaptation (FL-107). The existing colour output pipeline owns
+a uniform buffer; renderer disposal must release it before GPU teardown.
+The renderer lifecycle regression exercises lazy signal allocation and
+repeated disposal without changing colour, rendering or public APIs.
+
+diff --git a/src/features/export/utils/client-render-engine.ts b/src/features/export/utils/client-render-engine.ts
+--- a/src/features/export/utils/client-render-engine.ts
++++ b/src/features/export/utils/client-render-engine.ts
+@@ -3077,6 +3077,8 @@
+       itemRenderContext.cornerPinWarpCache?.clear()
+
+       hdrVideoSources.dispose()
++      colorOutput?.destroy()
++      colorOutput = null
+       gpu.dispose()
+       frameSceneCache.invalidate()
+       canvasPool.dispose()
+diff --git a/src/features/export/utils/client-render-engine.dispose.test.ts b/src/features/export/utils/client-render-engine.dispose.test.ts
+new file mode 100644
+--- /dev/null
++++ b/src/features/export/utils/client-render-engine.dispose.test.ts
+@@ -0,0 +1,95 @@
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import { createCompositionRenderer } from './client-render-engine'
++
++const resources = vi.hoisted(() => ({ destroyColor: vi.fn(), disposeGpu: vi.fn() }))
++vi.mock('@/infrastructure/gpu-color', () => ({
++  ColorOutputPipeline: class {
++    convert() {}
++    destroy() {
++      resources.destroyColor()
++    }
++  },
++}))
++vi.mock('./frame-compositing', () => ({
++  compositeFrameResults: async ({
++    floatOutput,
++  }: {
++    floatOutput: { capture: (texture: unknown) => Promise<unknown> }
++  }) => floatOutput.capture({ width: 1, height: 1 }),
++}))
++vi.mock('./gpu-pipeline-manager', () => ({
++  GpuPipelineManager: class {
++    effects = {
++      getDevice: () => ({
++        createTexture: () => ({ destroy: vi.fn() }),
++        createBuffer: () => ({
++          destroy: vi.fn(),
++          mapState: 'unmapped',
++          mapAsync: async () => {},
++          getMappedRange: () => new ArrayBuffer(256),
++        }),
++        createCommandEncoder: () => ({ copyTextureToBuffer: vi.fn(), finish: vi.fn() }),
++        queue: { submit: vi.fn() },
++      }),
++    }
++    setWorkingRange() {}
++    ensureEffects() {
++      return Promise.resolve(this.effects)
++    }
++    ensureCompositor() {
++      return false
++    }
++    dispose() {
++      resources.disposeGpu()
++    }
++  },
++}))
++
++class TestCanvas {
++  constructor(
++    public width: number,
++    public height: number,
++  ) {}
++  getContext() {
++    return new Proxy(
++      { canvas: this },
++      { get: (object, key) => (key in object ? object[key as keyof typeof object] : vi.fn()) },
++    )
++  }
++}
++
++afterEach(() => {
++  vi.unstubAllGlobals()
++  vi.clearAllMocks()
++})
++describe('composition renderer disposal', () => {
++  it('releases its lazy color output before GPU teardown and only once', async () => {
++    vi.stubGlobal('OffscreenCanvas', TestCanvas)
++    vi.stubGlobal('GPUTextureUsage', { RENDER_ATTACHMENT: 1, COPY_SRC: 2 })
++    vi.stubGlobal('GPUBufferUsage', { COPY_DST: 1, MAP_READ: 2 })
++    vi.stubGlobal('GPUMapMode', { READ: 1 })
++    const canvas = new OffscreenCanvas(1, 1)
++    const renderer = await createCompositionRenderer(
++      {
++        fps: 24,
++        width: 1,
++        height: 1,
++        durationInFrames: 1,
++        tracks: [],
++        colorManagement: { workingRange: 'hdr' },
++      },
++      canvas,
++      canvas.getContext('2d')!,
++    )
++    // Rendering makes the lazy, per-renderer output pipeline own a resource.
++    await renderer.renderFrameSignal(0, 'pq')
++    expect(resources.destroyColor).not.toHaveBeenCalled()
++    renderer.dispose()
++    expect(resources.destroyColor).toHaveBeenCalledTimes(1)
++    expect(resources.destroyColor.mock.invocationCallOrder[0]).toBeLessThan(
++      resources.disposeGpu.mock.invocationCallOrder[0],
++    )
++    renderer.dispose()
++    expect(resources.destroyColor).toHaveBeenCalledTimes(1)
++  })
++})

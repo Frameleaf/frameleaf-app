@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
-import type { ExpressionBuilder, Insertable, Kysely, NotNull, Updateable } from 'kysely';
+import type { ExpressionBuilder, Insertable, Kysely, NotNull } from 'kysely';
 import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
@@ -52,20 +52,6 @@ export class PartnerRepository {
     return this.db
       .insertInto('partner')
       .values(values)
-      .returningAll()
-      .returning(withSharedBy)
-      .returning(withSharedWith)
-      .$narrowType<{ sharedWith: NotNull; sharedBy: NotNull }>()
-      .executeTakeFirstOrThrow();
-  }
-
-  @GenerateSql({ params: [{ sharedWithId: DummyValue.UUID, sharedById: DummyValue.UUID }, { inTimeline: true }] })
-  update({ sharedWithId, sharedById }: PartnerIds, values: Updateable<PartnerTable>) {
-    return this.db
-      .updateTable('partner')
-      .set(values)
-      .where('sharedWithId', '=', sharedWithId)
-      .where('sharedById', '=', sharedById)
       .returningAll()
       .returning(withSharedBy)
       .returning(withSharedWith)

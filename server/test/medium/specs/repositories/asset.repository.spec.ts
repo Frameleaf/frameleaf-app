@@ -1,5 +1,6 @@
-import { Kysely } from 'kysely';
-import { AssetOrder, AssetOrderBy, AssetVisibility } from 'src/enum.js';
+import { Kysely, sql } from 'kysely';
+import { AssetOrder, AssetOrderBy, AssetVisibility, CalendarHeatmapType } from 'src/enum.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -31,6 +32,10 @@ const audioRow = (assetId: string, n: number) => ({
   index: n,
   profile: n,
   codecName: `codec-${n}`,
+  // FL-102: channel-aware audio is persisted alongside the codec facts.
+  channels: 2 * n,
+  channelLayout: n === 1 ? 'stereo' : '5.1',
+  sampleRate: 48_000 * n,
 });
 
 const videoRow = (assetId: string, n: number) => ({
@@ -293,6 +298,132 @@ describe(AssetRepository.name, () => {
   });
 
   describe('upsertExif', () => {
+    it.each(['make', 'model', null] as const)(
+      'atomically writes evidence with EXIF and respects camera lock %s',
+      async (lock) => {
+        const { ctx, sut } = setup();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        const evidence = {
+          version: 1 as const,
+          recorded: { make: 'A', model: 'one', source: 'original' as const },
+          alternatives: [],
+          suggestion: null,
+        };
+        await sut.upsertExif({
+          exif: { assetId: asset.id, make: 'A', model: 'one' },
+          cameraEvidence: evidence,
+          expectedUpdateId: null,
+          lockedPropertiesBehavior: 'skip',
+        });
+        const previous = await ctx.database
+          .selectFrom('asset_exif')
+          .select('updateId')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow();
+        if (lock) {
+          // Seed persisted camera locks directly: the public edit API exposes a narrower union.
+          await ctx.database
+            .updateTable('asset_exif')
+            .set({ make: null, model: null, lockedProperties: sql`array[${lock}]::varchar[]` })
+            .where('assetId', '=', asset.id)
+            .execute();
+        }
+        const current = await ctx.database
+          .selectFrom('asset_exif')
+          .select('updateId')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow();
+        const newer = { ...evidence, recorded: { ...evidence.recorded, model: 'two' } };
+        await sut.upsertExif({
+          exif: { assetId: asset.id, make: 'A', model: 'two' },
+          cameraEvidence: newer,
+          expectedUpdateId: current.updateId,
+          lockedPropertiesBehavior: 'skip',
+        });
+        expect((await sut.getMetadata(asset.id))[0].value).toEqual(lock ? evidence : newer);
+        if (lock) {
+          expect(
+            await ctx.database
+              .selectFrom('asset_exif')
+              .select(lock)
+              .where('assetId', '=', asset.id)
+              .executeTakeFirstOrThrow(),
+          ).toEqual({ [lock]: null });
+        }
+        // The original revision is stale after either the edit or the successful extraction.
+        await sut.upsertExif({
+          exif: { assetId: asset.id, model: 'stale' },
+          cameraEvidence: { ...newer, recorded: { ...newer.recorded, model: 'stale' } },
+          expectedUpdateId: previous.updateId,
+          lockedPropertiesBehavior: 'skip',
+        });
+        expect((await sut.getMetadata(asset.id))[0].value).toEqual(lock ? evidence : newer);
+      },
+    );
+
+    it('preserves media CTE writes when publishing camera evidence', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await sut.upsertExif({
+        exif: { assetId: asset.id, model: 'recorded' },
+        cameraEvidence: {
+          version: 1,
+          recorded: { make: null, model: 'recorded', source: 'original' },
+          alternatives: [],
+          suggestion: null,
+        },
+        audio: audioRow(asset.id, 1),
+        video: videoRow(asset.id, 1),
+        keyframes: keyframeRow(asset.id, 1),
+        lockedPropertiesBehavior: 'skip',
+        expectedUpdateId: null,
+      });
+      expect(
+        await ctx.database
+          .selectFrom('asset_audio')
+          .selectAll()
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual(audioRow(asset.id, 1));
+      expect(
+        await ctx.database
+          .selectFrom('asset_video')
+          .selectAll()
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual(videoRow(asset.id, 1));
+      expect(
+        await ctx.database
+          .selectFrom('asset_keyframe')
+          .selectAll()
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual(keyframeRow(asset.id, 1));
+    });
+
+    it('rejects stale evidence when an EXIF row was inserted after the empty snapshot', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, model: 'owner edit' });
+      await sut.upsertExif({
+        exif: { assetId: asset.id, model: 'stale' },
+        cameraEvidence: { version: 1, recorded: null, alternatives: [], suggestion: null },
+        expectedUpdateId: null,
+        lockedPropertiesBehavior: 'skip',
+      });
+      expect(await sut.getMetadata(asset.id)).toEqual([]);
+      expect(
+        await ctx.database
+          .selectFrom('asset_exif')
+          .select('model')
+          .where('assetId', '=', asset.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ model: 'owner edit' });
+    });
+
     it('should replace stored audio metadata on a second extraction', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
@@ -506,6 +637,69 @@ describe(AssetRepository.name, () => {
     it('should return an empty array when given an empty input', async () => {
       const { sut } = setup();
       await expect(sut.createAll([])).resolves.toStrictEqual([]);
+    });
+  });
+
+  describe('motion parts of Locked live photos (FL-34)', () => {
+    it('should keep a Locked still’s motion part from partners and ordinary sessions', async () => {
+      const { ctx } = setup();
+      const access = ctx.get(AccessRepository);
+      const { user: owner } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: owner.id, sharedWithId: partner.id });
+      const { asset: motion } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Hidden });
+      const { asset: plainMotion } = await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Hidden });
+      await ctx.newAsset({ ownerId: owner.id, visibility: AssetVisibility.Locked, livePhotoVideoId: motion.id });
+      await ctx.newAsset({ ownerId: owner.id, livePhotoVideoId: plainMotion.id });
+      const ids = new Set([motion.id, plainMotion.id]);
+
+      // FL-326: a partner reaches none of the sharer's rows; they hold their own copies
+      await expect(access.asset.checkOwnerAccess(partner.id, ids, false)).resolves.toEqual(new Set());
+      await expect(access.asset.checkOwnerAccess(owner.id, ids, false)).resolves.toEqual(new Set([plainMotion.id]));
+      await expect(access.asset.checkOwnerAccess(owner.id, ids, true)).resolves.toEqual(ids);
+    });
+  });
+
+  describe('duplicate lookups by checksum', () => {
+    it("should name the owner's Locked media only for their elevated session (FL-34)", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: locked } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Locked });
+
+      await expect(sut.getByChecksums(user.id, [locked.checksum])).resolves.toEqual([]);
+      await expect(sut.getUploadAssetIdByChecksum(user.id, locked.checksum)).resolves.toBeUndefined();
+
+      await expect(sut.getByChecksums(user.id, [locked.checksum], { lockedOwnerId: user.id })).resolves.toEqual([
+        expect.objectContaining({ id: locked.id }),
+      ]);
+      await expect(sut.getUploadAssetIdByChecksum(user.id, locked.checksum, { lockedOwnerId: user.id })).resolves.toBe(
+        locked.id,
+      );
+    });
+  });
+
+  describe('getCalendarHeatmap', () => {
+    it("should count Locked media only for its owner's elevated session (FL-34)", async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const now = new Date();
+      await ctx.newAsset({ ownerId: user.id, createdAt: now });
+      await ctx.newAsset({ ownerId: user.id, createdAt: now, visibility: AssetVisibility.Archive });
+      await ctx.newAsset({ ownerId: user.id, createdAt: now, visibility: AssetVisibility.Locked });
+
+      const range = {
+        from: new Date(now.getTime() - 86_400_000),
+        to: new Date(now.getTime() + 86_400_000),
+        type: CalendarHeatmapType.Upload,
+      };
+      const total = async (lockedOwnerId?: string) => {
+        const days = await sut.getCalendarHeatmap(user.id, { ...range, lockedOwnerId });
+        return days.reduce((sum, day) => sum + Number(day.count), 0);
+      };
+
+      await expect(total()).resolves.toBe(2);
+      await expect(total(factory.uuid())).resolves.toBe(2);
+      await expect(total(user.id)).resolves.toBe(3);
     });
   });
 });

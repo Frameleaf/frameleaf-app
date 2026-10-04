@@ -3,7 +3,10 @@ import * as semver from 'semver';
 import { EXTENSION_NAMES, ErrorMessages, VECTOR_EXTENSIONS } from 'src/constants.js';
 import { OnEvent } from 'src/decorators.js';
 import { BootstrapEventPriority, DatabaseExtension, DatabaseLock, VectorIndex } from 'src/enum.js';
+import { FirstLaunchBackup } from 'src/maintenance/first-launch-backup.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { BaseService } from 'src/services/base.service.js';
+import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { VectorExtension } from 'src/types.js';
 
 type CreateFailedArgs = { name: string; extension: string };
@@ -21,34 +24,34 @@ const messages = {
     The ${name} extension version is ${version}, which means it is a nightly release.
 
     Please run 'DROP EXTENSION IF EXISTS ${extension}' and switch to a release version.
-    See https://docs.immich.app/guides/database-queries for how to query the database.`,
+    See https://help.frameleaf.app/guides/database-queries for how to query the database.`,
   outOfRange: ({ name, version, range }: OutOfRangeArgs) =>
-    `The ${name} extension version is ${version}, but Immich only supports ${range}.
+    `The ${name} extension version is ${version}, but Frameleaf only supports ${range}.
     Please change ${name} to a compatible version in the Postgres instance.`,
   createFailed: ({ name, extension }: CreateFailedArgs) =>
     `Failed to activate ${name} extension.
     Please ensure the Postgres instance has ${name} installed.
 
-    If the Postgres instance already has ${name} installed, Immich may not have the necessary permissions to activate it.
+    If the Postgres instance already has ${name} installed, Frameleaf may not have the necessary permissions to activate it.
     In this case, please run 'CREATE EXTENSION IF NOT EXISTS ${extension} CASCADE' manually as a superuser.
-    See https://docs.immich.app/guides/database-queries for how to query the database.`,
+    See https://help.frameleaf.app/guides/database-queries for how to query the database.`,
   updateFailed: ({ name, extension, availableVersion }: UpdateFailedArgs) =>
     `The ${name} extension can be updated to ${availableVersion}.
-    Immich attempted to update the extension, but failed to do so.
-    This may be because Immich does not have the necessary permissions to update the extension.
+    Frameleaf attempted to update the extension, but failed to do so.
+    This may be because Frameleaf does not have the necessary permissions to update the extension.
 
     Please run 'ALTER EXTENSION ${extension} UPDATE' manually as a superuser.
-    See https://docs.immich.app/guides/database-queries for how to query the database.`,
+    See https://help.frameleaf.app/guides/database-queries for how to query the database.`,
   dropFailed: ({ name, extension }: DropFailedArgs) =>
     `The ${name} extension is no longer needed, but could not be dropped.
-    This may be because Immich does not have the necessary permissions to drop the extension.
+    This may be because Frameleaf does not have the necessary permissions to drop the extension.
 
     Please run 'DROP EXTENSION ${extension};' manually as a superuser.
-    See https://docs.immich.app/guides/database-queries for how to query the database.`,
+    See https://help.frameleaf.app/guides/database-queries for how to query the database.`,
   invalidDowngrade: ({ name, installedVersion, availableVersion }: InvalidDowngradeArgs) =>
     `The database currently has ${name} ${installedVersion} activated, but the Postgres instance only has ${availableVersion} available.
     This most likely means the extension was downgraded.
-    If ${name} ${installedVersion} is compatible with Immich, please ensure the Postgres instance has this available.`,
+    If ${name} ${installedVersion} is compatible with Frameleaf, make sure the Postgres instance has this available.`,
 };
 
 @Injectable()
@@ -65,6 +68,11 @@ export class DatabaseService extends BaseService {
     }
 
     await this.databaseRepository.withLock(DatabaseLock.Migrations, async () => {
+      // FL-295: the first start on a library the official server created takes its safety copy before
+      // anything below changes the database (extensions, migrations, adoption). The "Getting Ready…"
+      // worker normally took it already, and this finds it and skips; a failure stops the start here.
+      await this.takeFirstLaunchBackup();
+
       const extension = await this.databaseRepository.getVectorExtension();
       const name = EXTENSION_NAMES[extension];
       const extensionRange = this.databaseRepository.getExtensionVersionRange(extension);
@@ -128,14 +136,26 @@ export class DatabaseService extends BaseService {
         await (migrationMode === 'isolated' || migrationMode === 'official-origin'
           ? this.databaseRepository.runOfficialMigrations()
           : this.databaseRepository.runMigrations());
+        if (migrationMode === 'isolated') {
+          // FL-180: a library past the certified cutover no longer lists Frameleaf public migrations in
+          // the official ledger, so the official provider above never applies newer ones. They run
+          // here, recorded in `immich_fork.migration_audit`, before the `immich_fork` migrations that
+          // may build on them (the same order as a fresh install).
+          await this.runIsolatedFrameleafMigrations();
+        }
         await this.databaseRepository.runForkMigrations();
+        if (await this.databaseRepository.isAwaitingOfficialAdoption()) {
+          // FL-289: swapping the image is the upgrade. Adoption runs here, inside the boot migration
+          // lock and before any queue worker starts or the API listens.
+          await this.adoptOfficialOriginAtBoot();
+        }
 
         this.logger.log('Checking for schema drift');
         const drift = await this.databaseRepository.getSchemaDrift();
         if (drift.items.length === 0) {
           this.logger.log('No schema drift detected');
         } else {
-          this.logger.warn(`${ErrorMessages.SchemaDrift} or run \`immich-admin schema-check\``);
+          this.logger.warn(`${ErrorMessages.SchemaDrift} or run \`frameleaf-admin schema-check\``);
           for (const warning of drift.asHuman()) {
             this.logger.warn(`  - ${warning}`);
           }
@@ -146,6 +166,96 @@ export class DatabaseService extends BaseService {
         this.databaseRepository.prewarm(VectorIndex.Face),
       ]);
     });
+  }
+
+  /** FL-295: the safety copy, from the existing database-backup path. */
+  protected firstLaunchBackup(): Pick<FirstLaunchBackup, 'run'> {
+    const backups = new DatabaseBackupService(
+      new LoggingRepository(undefined, this.configRepository),
+      this.storageRepository,
+      this.configRepository,
+      this.systemMetadataRepository,
+      this.processRepository,
+      this.databaseRepository,
+      this.userRepository,
+      // only the dump and its verification are used here: no schedule, queue or restore
+      undefined as never,
+      undefined as never,
+      undefined as never,
+    );
+    return new FirstLaunchBackup(
+      {
+        logger: this.logger,
+        database: this.databaseRepository,
+        storage: this.storageRepository,
+        config: this.configRepository,
+      },
+      backups,
+    );
+  }
+
+  private async takeFirstLaunchBackup() {
+    try {
+      await this.firstLaunchBackup().run();
+    } catch (error) {
+      this.logger.error(
+        `${error instanceof Error ? error.message : error}. Nothing was upgraded, so the official server can still use this library. Frameleaf tries again at the next start.`,
+      );
+      throw error;
+    }
+  }
+
+  private async adoptOfficialOriginAtBoot() {
+    try {
+      const { adopted, applied } = await this.databaseRepository.adoptOfficialOrigin({ atBoot: true });
+      if (adopted) {
+        this.logger.log(
+          `This library was created by the official server and was adopted automatically (${applied.length} migrations applied); the Frameleaf backfill starts next`,
+        );
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `This library was created by the official server and could not be adopted yet: ${reason}. ` +
+          'Nothing was changed, so the official server can still read it, and Frameleaf features stay unavailable for now. ' +
+          'Adoption retries automatically at the next start.',
+      );
+    }
+  }
+
+  private async runIsolatedFrameleafMigrations() {
+    const { applied, pending, skipped } = await this.databaseRepository.applyIsolatedFrameleafMigrations('startup');
+    for (const name of applied) {
+      this.logger.log(`Frameleaf migration "${name}" succeeded`);
+    }
+    if (pending.length === 0) {
+      return;
+    }
+    switch (skipped) {
+      case 'awaiting-return': {
+        this.logger.log(
+          `${pending.length} newer Frameleaf migration(s) wait for the return from the official server (frameleaf-admin fork-handoff prepare-fork)`,
+        );
+        break;
+      }
+      case 'awaiting-activation': {
+        this.logger.warn(
+          `${pending.length} newer Frameleaf migration(s) wait until the library is activated (ready to active); until then the next cutover's catalog check will not pass`,
+        );
+        break;
+      }
+      case 'unexpected-phase': {
+        this.logger.warn(
+          `${pending.length} newer Frameleaf migration(s) were not applied because the library is in an unexpected handoff phase; check frameleaf-admin fork-schema status`,
+        );
+        break;
+      }
+      case 'not-cut-over':
+      case 'no-frameleaf-schema':
+      case null: {
+        break;
+      }
+    }
   }
 
   private async createExtension(extension: DatabaseExtension) {

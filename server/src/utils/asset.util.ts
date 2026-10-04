@@ -10,7 +10,6 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
-import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { IBulkAsset, ImmichFile, UploadFile, UploadRequest } from 'src/types.js';
 import { checkAccess } from 'src/utils/access.js';
 
@@ -114,36 +113,6 @@ export const removeAssets = async (
   }
 
   return results;
-};
-
-export type PartnerIdOptions = {
-  userId: string;
-  repository: PartnerRepository;
-  /** only include partners with `inTimeline: true` */
-  timelineEnabled?: boolean;
-};
-export const getMyPartnerIds = async ({ userId, repository, timelineEnabled }: PartnerIdOptions) => {
-  const partnerIds = new Set<string>();
-  const partners = await repository.getAll(userId);
-  for (const partner of partners) {
-    // ignore deleted users
-    if (!partner.sharedBy || !partner.sharedWith) {
-      continue;
-    }
-
-    // wrong direction
-    if (partner.sharedWithId !== userId) {
-      continue;
-    }
-
-    if (timelineEnabled && !partner.inTimeline) {
-      continue;
-    }
-
-    partnerIds.add(partner.sharedById);
-  }
-
-  return [...partnerIds];
 };
 
 export type AssetHookRepositories = { asset: AssetRepository; event: EventRepository };

@@ -158,6 +158,9 @@ const waitForWriterLock = async (
         AND namespace.nspname = 'public'
         AND relation.relname = ${tableName}
         AND NOT lock.granted
+        -- pg_locks shows the queued lock before pg_stat_activity leaves the writer's previous
+        -- ClientRead sample; poll until both report the lock wait, or the evidence is stale
+        AND activity.wait_event_type = 'Lock'
     `.execute(transaction);
     if (waiting.rows[0]) {
       return waiting.rows[0];

@@ -163,4 +163,67 @@ describe('shared cluster group official handoff', () => {
     expect(await db.selectFrom('person').selectAll().execute()).toEqual([]);
     expect(await db.selectFrom('person_group').selectAll().execute()).toEqual([]);
   });
+
+  it("keeps a shared space's linked people through the handoff and drops a link whose person official deleted", async () => {
+    const a = await mediumFactory.userWithClusterGroup(db);
+    const b = mediumFactory.userInsert({ clusterGroupId: a.clusterGroupId });
+    await db.insertInto('user').values([a, b]).execute();
+    const kept = await db
+      .insertInto('person_group')
+      .values({ clusterGroupId: a.clusterGroupId })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    const removed = await db
+      .insertInto('person_group')
+      .values({ clusterGroupId: a.clusterGroupId })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    await db
+      .insertInto('person')
+      .values([
+        { ownerId: a.id, personGroupId: kept.id, name: 'Alice view' },
+        { ownerId: b.id, personGroupId: kept.id, name: 'Bob view' },
+        { ownerId: a.id, personGroupId: removed.id, name: 'Remove while official' },
+      ])
+      .execute();
+    const space = mediumFactory.albumInsert({});
+    await db.insertInto('album').values(space).execute();
+    await sql`
+      INSERT INTO public.shared_space_person ("albumId", "personOwnerId", "personGroupId", name)
+      VALUES (${space.id}::uuid, ${a.id}::uuid, ${kept.id}::uuid, 'Alice in the space'),
+        (${space.id}::uuid, ${b.id}::uuid, ${kept.id}::uuid, 'Bob in the space'),
+        (${space.id}::uuid, ${a.id}::uuid, ${removed.id}::uuid, 'Removed in the space')
+    `.execute(db);
+    const links = () =>
+      sql<{ personOwnerId: string; personGroupId: string; name: string }>`
+        SELECT "personOwnerId", "personGroupId", name FROM public.shared_space_person ORDER BY name
+      `.execute(db);
+
+    await db.transaction().execute((trx) => migration.revert(trx));
+    // each link now names its owner's own official person
+    const official = await sql<{ id: string; ownerId: string; name: string }>`
+      SELECT id, "ownerId", name FROM public.person
+    `.execute(db);
+    const officialId = (name: string) => official.rows.find((person) => person.name === name)!.id;
+    expect((await links()).rows).toEqual([
+      { personOwnerId: a.id, personGroupId: officialId('Alice view'), name: 'Alice in the space' },
+      { personOwnerId: b.id, personGroupId: officialId('Bob view'), name: 'Bob in the space' },
+      { personOwnerId: a.id, personGroupId: officialId('Remove while official'), name: 'Removed in the space' },
+    ]);
+
+    await sql`DELETE FROM public.person WHERE name = 'Remove while official'`.execute(db);
+    await db.transaction().execute((trx) => migration.apply(trx));
+
+    expect((await links()).rows).toEqual([
+      { personOwnerId: a.id, personGroupId: kept.id, name: 'Alice in the space' },
+      { personOwnerId: b.id, personGroupId: kept.id, name: 'Bob in the space' },
+    ]);
+    const foreignKey = await sql<{ definition: string }>`
+      SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conname = 'shared_space_person_personGroupId_fkey'
+    `.execute(db);
+    expect(foreignKey.rows).toEqual([
+      { definition: 'FOREIGN KEY ("personGroupId") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE' },
+    ]);
+  });
 });

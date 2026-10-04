@@ -1,11 +1,18 @@
 import { BadRequestException } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdtemp, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import { Duplex, PassThrough, Readable } from 'node:stream';
+import { createGunzip, createGzip, gzipSync } from 'node:zlib';
+import type { Stats } from 'node:fs';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { ImmichWorker, JobStatus, StorageFolder } from 'src/enum.js';
+import { DatabaseLock, ImmichWorker, JobStatus, StorageFolder, SystemMetadataKey } from 'src/enum.js';
 import { MaintenanceHealthRepository } from 'src/maintenance/maintenance-health.repository.js';
-import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { DatabaseBackupService, restoreVerificationDue } from 'src/services/database-backup.service.js';
+import { authStub } from 'test/fixtures/auth.stub.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
 import { AutoMocked, ServiceMocks, automock, getMocks, mockDuplex, mockSpawn } from 'test/utils.js';
 
@@ -162,14 +169,117 @@ describe(DatabaseBackupService.name, () => {
   });
 
   describe('handleBackupDatabase / createDatabaseBackup', () => {
-    beforeEach(() => {
+    const completeDump =
+      '--\n-- PostgreSQL database dump\n--\nCREATE TABLE a ();\n--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict abc\n';
+
+    // FL-298: the backups folder is a real temporary directory, so a test can prove which files a backup leaves.
+    let folder: string;
+    const local = (file: string) => join(folder, basename(file));
+    const leftFiles = () => readdir(folder);
+
+    beforeEach(async () => {
+      folder = await mkdtemp(join(tmpdir(), 'fl298-backups-'));
       mocks.storage.readdir.mockResolvedValue([]);
       mocks.process.spawn.mockReturnValue(mockSpawn(0, 'data', ''));
-      mocks.process.spawnDuplexStream.mockImplementation(() => mockDuplex()('command', 0, 'data', ''));
-      mocks.storage.rename.mockResolvedValue();
-      mocks.storage.unlink.mockResolvedValue();
+      mocks.process.spawnDuplexStream.mockImplementation((command) =>
+        command === 'gzip' ? createGzip() : mockDuplex()('pg_dump', 0, completeDump, ''),
+      );
+      mocks.storage.createWriteStream.mockImplementation((file) => createWriteStream(local(file)));
+      mocks.storage.rename.mockImplementation((from, to) => rename(local(from), local(to)));
+      mocks.storage.unlink.mockImplementation((file) => unlink(local(file)));
+      mocks.storage.stat.mockImplementation((file) => stat(local(file)));
+      mocks.storage.createPlainReadStream.mockImplementation((file) => createReadStream(local(file)));
+      mocks.storage.createGunzip.mockImplementation(() => createGunzip());
       mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
-      mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
+    });
+
+    afterEach(async () => {
+      await rm(folder, { recursive: true, force: true });
+    });
+
+    it('keeps a verified backup and no temporary file on success (FL-298)', async () => {
+      const path = await sut.createDatabaseBackup();
+
+      expect(await leftFiles()).toEqual([basename(path)]);
+      expect(path).toMatch(/\/immich-db-backup-\d{8}T\d{6}-v[\d.]+-pg[\d.]+\.sql\.gz$/);
+    });
+
+    it('verifies every routine backup before renaming it (FL-298)', async () => {
+      const order: string[] = [];
+      mocks.storage.createPlainReadStream.mockImplementation((file) => {
+        order.push(`verify ${basename(file)}`);
+        return createReadStream(local(file));
+      });
+      mocks.storage.rename.mockImplementation((from, to) => {
+        order.push(`rename ${basename(from)}`);
+        return rename(local(from), local(to));
+      });
+
+      const path = await sut.createDatabaseBackup();
+
+      expect(order).toEqual([`verify ${basename(path)}.tmp`, `rename ${basename(path)}.tmp`]);
+    });
+
+    it('fails and leaves no backup file when the compressor exits 0 with no output (FL-298)', async () => {
+      // Apple gzip rejects --rsyncable, prints its usage and exits 0 without compressing anything
+      mocks.process.spawnDuplexStream.mockImplementation((command) =>
+        command === 'gzip'
+          ? mockDuplex()('gzip', 0, '', 'gzip: unrecognized option `--rsyncable`')
+          : mockDuplex()('pg_dump', 0, completeDump, ''),
+      );
+
+      await expect(sut.handleBackupDatabase()).rejects.toThrow('is empty');
+
+      expect(await leftFiles()).toEqual([]);
+      expect(mocks.logger.error).toHaveBeenCalledWith(expect.stringContaining('Database Backup Failure'));
+    });
+
+    it('fails and leaves no backup file when the compressor fails (FL-298)', async () => {
+      mocks.process.spawnDuplexStream.mockImplementation((command) =>
+        command === 'gzip'
+          ? mockDuplex()('gzip', 1, '', 'gzip: unrecognized option')
+          : mockDuplex()('pg_dump', 0, completeDump, ''),
+      );
+
+      await expect(sut.handleBackupDatabase()).rejects.toThrow('gzip non-zero exit code (1)');
+
+      expect(await leftFiles()).toEqual([]);
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+    });
+
+    it('fails and leaves no backup file when the compressor is stopped by a signal (FL-298)', async () => {
+      mocks.process.spawnDuplexStream.mockImplementation((command) =>
+        command === 'gzip'
+          ? mockDuplex()('gzip', 0, '', '', new Error('gzip was stopped by signal SIGKILL'))
+          : mockDuplex()('pg_dump', 0, completeDump, ''),
+      );
+
+      await expect(sut.handleBackupDatabase()).rejects.toThrow('gzip was stopped by signal SIGKILL');
+
+      expect(await leftFiles()).toEqual([]);
+    });
+
+    it('fails and leaves no backup file when the dump fails (FL-298)', async () => {
+      mocks.process.spawnDuplexStream.mockImplementation((command) =>
+        command === 'gzip' ? createGzip() : mockDuplex()('pg_dump', 1, '', 'pg_dump: error: connection refused'),
+      );
+
+      await expect(sut.handleBackupDatabase()).rejects.toThrow('pg_dump non-zero exit code (1)');
+
+      expect(await leftFiles()).toEqual([]);
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+    });
+
+    it('fails and leaves no backup file when the dump stops before its end (FL-298)', async () => {
+      mocks.process.spawnDuplexStream.mockImplementation((command) =>
+        command === 'gzip'
+          ? createGzip()
+          : mockDuplex()('pg_dump', 0, '--\n-- PostgreSQL database dump\n--\nCREATE TABLE a ();\n', ''),
+      );
+
+      await expect(sut.handleBackupDatabase()).rejects.toThrow('does not finish like a complete dump');
+
+      expect(await leftFiles()).toEqual([]);
     });
 
     it('should sanitize DB_URL (remove uselibpqcompat) before calling pg_dumpall', async () => {
@@ -194,12 +304,6 @@ describe(DatabaseBackupService.name, () => {
         void 0 as never,
       );
 
-      mocks.storage.readdir.mockResolvedValue([]);
-      mocks.process.spawnDuplexStream.mockImplementation(() => mockDuplex()('command', 0, 'data', ''));
-      mocks.storage.rename.mockResolvedValue();
-      mocks.storage.unlink.mockResolvedValue();
-      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
-      mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
       mocks.database.getPostgresVersion.mockResolvedValue('14.10');
 
       await sut.handleBackupDatabase();
@@ -655,6 +759,122 @@ describe(DatabaseBackupService.name, () => {
     });
   });
 
+  describe('FL-295 pre-upgrade copy and verification', () => {
+    const completeDump =
+      '--\n-- PostgreSQL database dump\n--\nCREATE TABLE a ();\n--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict abc\n';
+    const gzipped = (text: string) => Readable.from([gzipSync(Buffer.from(text))]);
+
+    beforeEach(() => {
+      mocks.storage.readdir.mockResolvedValue([]);
+      mocks.process.spawnDuplexStream.mockImplementation(() => mockDuplex()('command', 0, 'data', ''));
+      mocks.storage.rename.mockResolvedValue();
+      mocks.storage.unlink.mockResolvedValue();
+      mocks.storage.createWriteStream.mockReturnValue(new PassThrough());
+      mocks.storage.createGunzip.mockImplementation(() => createGunzip());
+      mocks.storage.stat.mockResolvedValue({ size: 100 } as Stats);
+    });
+
+    it('names the copy pre-upgrade, in the backups folder, with the routine timestamp and versions', async () => {
+      mocks.database.getPostgresVersion.mockResolvedValue('14.19 (Debian 14.19-1.pgdg120+1)');
+      mocks.storage.createPlainReadStream.mockImplementation(() => gzipped(completeDump));
+
+      const path = await sut.createDatabaseBackup('', { label: 'pre-upgrade', verify: true });
+
+      expect(path).toMatch(
+        new RegExp(
+          String.raw`^${StorageCore.getBaseFolder(StorageFolder.Backups)}/immich-db-backup-\d{8}T\d{6}-pre-upgrade-v[\d.]+-pg14\.19\.sql\.gz$`,
+        ),
+      );
+      expect(mocks.storage.createWriteStream).toHaveBeenCalledWith(`${path}.tmp`);
+      expect(mocks.storage.rename).toHaveBeenCalledWith(`${path}.tmp`, path);
+    });
+
+    it('verifies the temporary file before renaming it', async () => {
+      const order: string[] = [];
+      mocks.storage.createPlainReadStream.mockImplementation((file: string) => {
+        order.push(`verify ${file}`);
+        return gzipped(completeDump);
+      });
+      mocks.storage.rename.mockImplementation((from: string) => {
+        order.push(`rename ${from}`);
+        return Promise.resolve();
+      });
+
+      const path = await sut.createDatabaseBackup('', { label: 'pre-upgrade', verify: true });
+
+      expect(order).toEqual([`verify ${path}.tmp`, `rename ${path}.tmp`]);
+    });
+
+    it.each([
+      ['an empty file', () => Readable.from([]), 0, 'empty'],
+      ['a file that is not gzip', () => Readable.from([Buffer.from('plain text')]), 10, 'gzip'],
+      ['a truncated gzip file', () => Readable.from([gzipSync(Buffer.from(completeDump)).subarray(0, 20)]), 20, 'gzip'],
+      [
+        'a dump that did not finish',
+        () => gzipped('--\n-- PostgreSQL database dump\n--\nCREATE TABLE a ();\n'),
+        50,
+        'finish',
+      ],
+      ['a gzip file with no SQL in it', () => gzipped(''), 20, 'empty'],
+    ])('refuses %s, removes the temporary file and keeps no copy', async (_, stream, size, reason) => {
+      mocks.storage.stat.mockResolvedValue({ size } as Stats);
+      mocks.storage.createPlainReadStream.mockImplementation(stream);
+
+      await expect(sut.createDatabaseBackup('', { label: 'pre-upgrade', verify: true })).rejects.toThrow(reason);
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/-pre-upgrade-.*\.sql\.gz\.tmp$/));
+    });
+
+    it('verifies routine backups too (FL-298) and leaves them unlabelled', async () => {
+      mocks.storage.createPlainReadStream.mockImplementation(() => gzipped(completeDump));
+
+      const path = await sut.createDatabaseBackup();
+
+      expect(path).toMatch(/\/immich-db-backup-\d{8}T\d{6}-v[\d.]+-pg/);
+      expect(mocks.storage.createPlainReadStream).toHaveBeenCalledWith(`${path}.tmp`);
+    });
+
+    it('accepts a complete dump in verifyDatabaseBackup, including a cluster dump', async () => {
+      mocks.storage.createPlainReadStream.mockImplementation(() => gzipped(completeDump));
+      await expect(sut.verifyDatabaseBackup('/data/backups/a.sql.gz')).resolves.toBeUndefined();
+
+      mocks.storage.createPlainReadStream.mockImplementation(() =>
+        gzipped('-- PostgreSQL database cluster dump\n\n--\n-- PostgreSQL database cluster dump complete\n--\n\n'),
+      );
+      await expect(sut.verifyDatabaseBackup('/data/backups/b.sql.gz')).resolves.toBeUndefined();
+    });
+
+    it('never rotates the pre-upgrade copy away, however many routine backups there are', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(systemConfigStub.backupEnabled);
+      mocks.storage.readdir.mockResolvedValue([
+        'immich-db-backup-20250101T000000-pre-upgrade-v3.2.0-pg14.19.sql.gz',
+        'immich-db-backup-20250725T110216-v1.234.5-pg14.5.sql.gz',
+        'immich-db-backup-20250727T110116-v1.234.5-pg14.5.sql.gz',
+        'immich-db-backup-20250729T110116-v1.234.5-pg14.5.sql.gz',
+      ]);
+
+      await sut.cleanupDatabaseBackups();
+
+      // keepLastAmount is 1: the two older routine backups go, the pre-upgrade copy stays
+      expect(mocks.storage.unlink).toHaveBeenCalledTimes(2);
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(expect.stringContaining('pre-upgrade'));
+    });
+
+    it('lists the pre-upgrade copy with the other backups', async () => {
+      mocks.storage.readdir.mockResolvedValue([
+        'immich-db-backup-20250101T000000-pre-upgrade-v3.2.0-pg14.19.sql.gz',
+        'immich-db-backup-20250725T110216-v1.234.5-pg14.5.sql.gz',
+      ]);
+
+      const { backups } = await sut.listBackups();
+
+      expect(backups.map(({ filename }) => filename)).toContain(
+        'immich-db-backup-20250101T000000-pre-upgrade-v3.2.0-pg14.19.sql.gz',
+      );
+    });
+  });
+
   describe('listBackups', () => {
     it('should give us all backups', async () => {
       mocks.storage.readdir.mockResolvedValue([
@@ -662,6 +882,8 @@ describe(DatabaseBackupService.name, () => {
         `immich-db-backup-${DateTime.fromISO('2025-07-27T11:01:16Z').toFormat("yyyyLLdd'T'HHmmss")}-v1.234.5-pg14.5.sql.gz`,
         'immich-db-backup-1753789649000.sql.gz',
         `immich-db-backup-${DateTime.fromISO('2025-07-29T11:01:16Z').toFormat("yyyyLLdd'T'HHmmss")}-v1.234.5-pg14.5.sql.gz`,
+        // FL-160: a cloud backup run's leftover dump is not a restore point
+        'cloud-backup-immich-db-backup-20250730T110116-v1.234.5-pg14.5.sql.gz',
       ]);
       mocks.storage.stat.mockResolvedValue({ size: 1024 } as any);
 
@@ -672,6 +894,20 @@ describe(DatabaseBackupService.name, () => {
           { filename: 'immich-db-backup-1753789649000.sql.gz', filesize: 1024 },
         ],
       });
+    });
+
+    // FL-81: a server that never made a backup has no backups folder yet; that is an empty list,
+    // not an error that hides the Maintenance area or the emergency restore flow.
+    it('should list no backups when the backups folder does not exist yet', async () => {
+      mocks.storage.readdir.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+      await expect(sut.listBackups()).resolves.toEqual({ backups: [] });
+    });
+
+    it('should still fail when the backups folder cannot be read', async () => {
+      mocks.storage.readdir.mockRejectedValue(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
+
+      await expect(sut.listBackups()).rejects.toThrow('EACCES');
     });
   });
 
@@ -696,7 +932,7 @@ describe(DatabaseBackupService.name, () => {
       mocks.storage.readdir.mockResolvedValue([]);
       mocks.process.spawn.mockReturnValue(mockSpawn(0, 'data', ''));
       mocks.process.spawnDuplexStream.mockImplementation(() => mockDuplex()('command', 0, 'data', ''));
-      mocks.process.fork.mockImplementation(() => mockSpawn(0, 'Immich Server is listening', ''));
+      mocks.process.fork.mockImplementation(() => mockSpawn(0, 'Frameleaf Server is listening', ''));
       mocks.storage.rename.mockResolvedValue();
       mocks.storage.unlink.mockResolvedValue();
       mocks.storage.createPlainReadStream.mockReturnValue(Readable.from(mockData()));
@@ -735,6 +971,73 @@ describe(DatabaseBackupService.name, () => {
         mocks.job as never,
         maintenanceHealthRepositoryMock,
       );
+      // FL-298: the restore point's own checks are covered under createDatabaseBackup and below
+      vi.spyOn(sut, 'verifyDatabaseBackup').mockResolvedValue();
+    });
+
+    it('verifies the restore point and stops before the restore when it is not a complete dump (FL-298)', async () => {
+      vi.mocked(sut.verifyDatabaseBackup).mockRestore();
+      mocks.storage.stat.mockResolvedValue({ size: 0 } as Stats);
+
+      await expect(sut.restoreDatabaseBackup('development-filename.sql')).rejects.toThrow(
+        'The backup is not a complete dump',
+      );
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/restore-point-.*\.sql\.gz\.tmp$/));
+      // only the restore point's pg_dump and gzip ran; psql never did
+      expect(mocks.process.spawnDuplexStream).toHaveBeenCalledTimes(2);
+      expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalledWith(
+        expect.stringContaining('psql'),
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+    describe('safety backup', () => {
+      const restorePoint = expect.stringContaining('restore-point-');
+
+      it('keeps the restore point by default', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(true);
+
+        await sut.restoreDatabaseBackup('development-filename.sql');
+
+        expect(mocks.storage.unlink).not.toHaveBeenCalledWith(restorePoint);
+      });
+
+      it('removes the restore point after a successful restore when it is not to be kept', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(true);
+
+        await sut.restoreDatabaseBackup('development-filename.sql', undefined, { keepSafetyBackup: false });
+
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(restorePoint);
+      });
+
+      it('keeps the restore point after a failed restore even when it was not to be kept', async () => {
+        mocks.user.hasAdmin.mockResolvedValue(false);
+
+        await expect(
+          sut.restoreDatabaseBackup('development-filename.sql', undefined, { keepSafetyBackup: false }),
+        ).rejects.toThrow('Server health check failed, no admin exists.');
+
+        expect(mocks.storage.unlink).not.toHaveBeenCalledWith(restorePoint);
+      });
+    });
+
+    it('refuses a backup from a newer server before changing anything (FL-81)', async () => {
+      await expect(
+        sut.restoreDatabaseBackup('immich-db-backup-20260101T000000-v999.0.0-pg14.19.sql.gz'),
+      ).rejects.toThrow('This backup was made by a newer server (v999.0.0)');
+
+      expect(mocks.process.spawnDuplexStream).not.toHaveBeenCalled();
+      expect(mocks.storage.createWriteStream).not.toHaveBeenCalled();
+    });
+
+    it('restores a backup from an older server (FL-81)', async () => {
+      mocks.user.hasAdmin.mockResolvedValue(true);
+
+      await expect(
+        sut.restoreDatabaseBackup('immich-db-backup-20260101T000000-v2.5.0-pg14.19.sql.gz'),
+      ).resolves.toBeUndefined();
     });
 
     it('should fail to restore invalid backup', async () => {
@@ -789,33 +1092,33 @@ describe(DatabaseBackupService.name, () => {
       );
 
       expect(writtenToPsql).toMatchInlineSnapshot(`
-        "
-          -- drop all other database connections
-          SELECT pg_terminate_backend(pid)
-          FROM pg_stat_activity
-          WHERE datname = current_database()
-            AND pid <> pg_backend_pid();
+      "
+        -- drop all other database connections
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid();
 
-          -- re-create the default schema
-          DROP SCHEMA public CASCADE;
-          CREATE SCHEMA public;
+        -- re-create the default schema
+        DROP SCHEMA public CASCADE;
+        CREATE SCHEMA public;
 
-          -- The fork's sidecar schema lives outside public, so dropping public alone
-          -- would leave a stale immich_fork behind: its rows would no longer match the
-          -- restored public tables, and its surviving migration ledger would make the
-          -- half-wiped database look 'isolated' to detectMigrationMode — routing the
-          -- restore to the certified official migrator, which omits the migrations
-          -- that create the fork's public tables. A fork backup carries immich_fork in
-          -- the same dump, so it is restored alongside public; restoring an official
-          -- backup correctly yields a fork-free database that runForkMigrations
-          -- re-initialises.
-          DROP SCHEMA IF EXISTS immich_fork CASCADE;
+        -- The fork's sidecar schema lives outside public, so dropping public alone
+        -- would leave a stale immich_fork behind: its rows would no longer match the
+        -- restored public tables, and its surviving migration ledger would make the
+        -- half-wiped database look 'isolated' to detectMigrationMode — routing the
+        -- restore to the certified official migrator, which omits the migrations
+        -- that create the fork's public tables. A fork backup carries immich_fork in
+        -- the same dump, so it is restored alongside public; restoring an official
+        -- backup correctly yields a fork-free database that runForkMigrations
+        -- re-initialises.
+        DROP SCHEMA IF EXISTS immich_fork CASCADE;
 
-          -- restore access to schema
-          GRANT ALL ON SCHEMA public TO "mypg";
-          GRANT ALL ON SCHEMA public TO public;
-        SELECT 1;"
-      `);
+        -- restore access to schema
+        GRANT ALL ON SCHEMA public TO "mypg";
+        GRANT ALL ON SCHEMA public TO public;
+      SELECT 1;"
+    `);
     });
 
     it.each(['legacy', 'fresh'] as const)(
@@ -841,27 +1144,41 @@ describe(DatabaseBackupService.name, () => {
       },
     );
 
-    it.each(['isolated', 'official-origin'] as const)(
-      'runs official then fork migrations when restoring a %s database',
-      async (mode) => {
-        const migrationOrder: string[] = [];
-        mocks.user.hasAdmin.mockResolvedValue(true);
-        mocks.database.detectMigrationMode.mockResolvedValue(mode);
-        mocks.database.runOfficialMigrations.mockImplementation(() => {
-          migrationOrder.push('official');
-          return Promise.resolve();
-        });
-        mocks.database.runForkMigrations.mockImplementation(() => {
-          migrationOrder.push('fork');
-          return Promise.resolve();
-        });
+    it.each([
+      ['isolated', ['official', 'frameleaf', 'fork']],
+      ['official-origin', ['official', 'fork']],
+    ] as const)('runs official then fork migrations when restoring a %s database', async (mode, expected) => {
+      const migrationOrder: string[] = [];
+      mocks.user.hasAdmin.mockResolvedValue(true);
+      mocks.database.detectMigrationMode.mockResolvedValue(mode);
+      mocks.database.runOfficialMigrations.mockImplementation(() => {
+        migrationOrder.push('official');
+        return Promise.resolve();
+      });
+      mocks.database.applyIsolatedFrameleafMigrations.mockImplementation(() => {
+        migrationOrder.push('frameleaf');
+        return Promise.resolve({ applied: [], pending: [], skipped: null });
+      });
+      mocks.database.runForkMigrations.mockImplementation(() => {
+        migrationOrder.push('fork');
+        return Promise.resolve();
+      });
 
-        await sut.restoreDatabaseBackup('development-filename.sql');
+      await sut.restoreDatabaseBackup('development-filename.sql');
 
-        expect(migrationOrder).toEqual(['official', 'fork']);
-        expect(mocks.database.runMigrations).not.toHaveBeenCalled();
-      },
-    );
+      expect(migrationOrder).toEqual(expected);
+      expect(mocks.database.runMigrations).not.toHaveBeenCalled();
+    });
+
+    it('applies newer Frameleaf migrations under the migrations lock when restoring a library past the cutover (FL-180)', async () => {
+      mocks.user.hasAdmin.mockResolvedValue(true);
+      mocks.database.detectMigrationMode.mockResolvedValue('isolated');
+
+      await sut.restoreDatabaseBackup('development-filename.sql');
+
+      expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
+      expect(mocks.database.applyIsolatedFrameleafMigrations).toHaveBeenCalledExactlyOnceWith('startup');
+    });
 
     it('guards an inactive schema version 2 restore before either migration provider runs', async () => {
       mocks.user.hasAdmin.mockResolvedValue(true);
@@ -924,16 +1241,16 @@ describe(DatabaseBackupService.name, () => {
       );
 
       expect(writtenToPsql).toMatchInlineSnapshot(String.raw`
-        "
-          -- drop all other database connections
-          SELECT pg_terminate_backend(pid)
-          FROM pg_stat_activity
-          WHERE datname = current_database()
-            AND pid <> pg_backend_pid();
+      "
+        -- drop all other database connections
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid();
 
-                \c postgres
-              SELECT 1;"
-      `);
+              \c postgres
+            SELECT 1;"
+    `);
     });
 
     it('should fail if backup creation fails', async () => {
@@ -942,9 +1259,9 @@ describe(DatabaseBackupService.name, () => {
       const progress = vitest.fn();
       await expect(sut.restoreDatabaseBackup('development-filename.sql', progress)).rejects
         .toThrowErrorMatchingInlineSnapshot(`
-          [Error: pg_dump non-zero exit code (1)
-          error]
-        `);
+        [Error: pg_dump non-zero exit code (1)
+        error]
+      `);
 
       expect(progress).toHaveBeenCalledWith('backup', 0.05);
     });
@@ -958,9 +1275,9 @@ describe(DatabaseBackupService.name, () => {
       const progress = vitest.fn();
       await expect(sut.restoreDatabaseBackup('development-filename.sql', progress)).rejects
         .toThrowErrorMatchingInlineSnapshot(`
-          [Error: psql non-zero exit code (1)
-          error]
-        `);
+        [Error: psql non-zero exit code (1)
+        error]
+      `);
 
       expect(progress).toHaveBeenCalledWith('backup', 0.05);
     });
@@ -1012,6 +1329,81 @@ describe(DatabaseBackupService.name, () => {
       expect(mocks.user.hasAdmin).toHaveBeenCalled();
       expect(maintenanceHealthRepositoryMock.checkApiHealth).toHaveBeenCalled();
       expect(mocks.process.spawnDuplexStream).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  describe('restore verification (FL-71 CC-9)', () => {
+    const day = 24 * 60 * 60 * 1000;
+    const now = new Date('2026-09-24T12:00:00.000Z');
+
+    it('is due at once while either part has never been proved', () => {
+      expect(restoreVerificationDue({}, now)).toEqual({ dueAt: null, overdue: true });
+      expect(restoreVerificationDue({ metadataVerifiedAt: now.toISOString() }, now)).toEqual({
+        dueAt: null,
+        overdue: true,
+      });
+    });
+
+    it('is due 90 days after the older of the two tests', () => {
+      const recent = new Date(now.getTime() - 10 * day).toISOString();
+      const older = new Date(now.getTime() - 80 * day).toISOString();
+      expect(restoreVerificationDue({ metadataVerifiedAt: recent, originalsVerifiedAt: older }, now)).toEqual({
+        dueAt: new Date(now.getTime() + 10 * day).toISOString(),
+        overdue: false,
+      });
+      const stale = new Date(now.getTime() - 91 * day).toISOString();
+      expect(restoreVerificationDue({ metadataVerifiedAt: recent, originalsVerifiedAt: stale }, now).overdue).toBe(
+        true,
+      );
+    });
+
+    it('reports the record with the administrator who made it', async () => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        metadataVerifiedAt: '2026-09-20T10:00:00.000Z',
+        originalsVerifiedAt: null,
+        verifiedBy: 'admin-id',
+      });
+      mocks.user.get.mockResolvedValue({ id: 'admin-id', name: 'Ada' } as never);
+
+      await expect(sut.getRestoreVerification()).resolves.toEqual({
+        metadataVerifiedAt: '2026-09-20T10:00:00.000Z',
+        originalsVerifiedAt: null,
+        verifiedBy: { id: 'admin-id', name: 'Ada' },
+        overdue: true,
+        dueAt: null,
+        intervalDays: 90,
+      });
+    });
+
+    it('records the tested parts now and keeps the untested part', async () => {
+      mocks.database.withLock.mockImplementation((_lock, fn) => fn());
+      mocks.systemMetadata.get.mockImplementation((key) =>
+        Promise.resolve(
+          (key === SystemMetadataKey.BackupRestoreVerification
+            ? { metadataVerifiedAt: '2026-01-01T00:00:00.000Z' }
+            : null) as never,
+        ),
+      );
+      mocks.user.get.mockResolvedValue(undefined as never);
+
+      await sut.recordRestoreVerification(authStub.admin, { metadata: false, originals: true });
+
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.BackupRestoreVerification, {
+        metadataVerifiedAt: '2026-01-01T00:00:00.000Z',
+        originalsVerifiedAt: expect.any(String),
+        verifiedBy: authStub.admin.user.id,
+      });
+      // FL-71 (CC-10): the review lands in the change history as "Reviewed: Recovery readiness".
+      expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.SystemConfigHistory, {
+        entries: [
+          expect.objectContaining({
+            kind: 'review',
+            title: 'Reviewed: Recovery readiness',
+            actorId: authStub.admin.user.id,
+            changes: [],
+          }),
+        ],
+      });
     });
   });
 });

@@ -1,0 +1,10 @@
+{
+  "language": "en",
+  "length": "standard",
+  "style": "natural",
+  "maxTags": 31,
+  "features": {
+    "identityNames": false,
+    "medicalSignals": false
+  }
+}

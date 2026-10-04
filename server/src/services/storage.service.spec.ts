@@ -2,6 +2,7 @@ import { SystemMetadataKey } from 'src/enum.js';
 import { StorageService } from 'src/services/storage.service.js';
 import { ImmichStartupError } from 'src/utils/misc.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
+import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(StorageService.name, () => {
@@ -24,6 +25,7 @@ describe(StorageService.name, () => {
         mockEnvData({
           storage: {
             ignoreMountCheckErrors: false,
+            importRoots: [],
             mediaLocation: '/data',
           },
         }),
@@ -35,6 +37,7 @@ describe(StorageService.name, () => {
         mountChecks: {
           backups: true,
           'encoded-video': true,
+          exports: true,
           library: true,
           profile: true,
           thumbs: true,
@@ -47,6 +50,12 @@ describe(StorageService.name, () => {
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/thumbs'));
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/upload'));
       expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/backups'));
+      // exports (memory highlights, Studio bundles) live under the media location too
+      expect(mocks.storage.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/data/exports'));
+      expect(mocks.storage.createFile).toHaveBeenCalledWith(
+        expect.stringContaining('/data/exports/.immich'),
+        expect.any(Buffer),
+      );
       expect(mocks.storage.createFile).toHaveBeenCalledWith(
         expect.stringContaining('/data/encoded-video/.immich'),
         expect.any(Buffer),
@@ -78,6 +87,7 @@ describe(StorageService.name, () => {
         mountChecks: {
           backups: false,
           'encoded-video': true,
+          exports: true,
           library: false,
           profile: true,
           thumbs: true,
@@ -89,6 +99,7 @@ describe(StorageService.name, () => {
         mockEnvData({
           storage: {
             ignoreMountCheckErrors: false,
+            importRoots: [],
             mediaLocation: '/data',
           },
         }),
@@ -100,6 +111,7 @@ describe(StorageService.name, () => {
         mountChecks: {
           backups: true,
           'encoded-video': true,
+          exports: true,
           library: true,
           profile: true,
           thumbs: true,
@@ -165,7 +177,7 @@ describe(StorageService.name, () => {
       mocks.systemMetadata.get.mockResolvedValue({ mountChecks: { upload: true } });
       mocks.config.getEnv.mockReturnValue(
         mockEnvData({
-          storage: { ignoreMountCheckErrors: true },
+          storage: { ignoreMountCheckErrors: true, importRoots: [] },
         }),
       );
       mocks.asset.getFileSamples.mockResolvedValue([]);
@@ -208,6 +220,60 @@ describe(StorageService.name, () => {
       expect(mocks.storage.unlink).toHaveBeenCalledWith('path/to/something');
     });
 
+    it('sends an unreferenced original to the file trash instead of unlinking it (universal storage)', async () => {
+      const checksum = Buffer.from('a'.repeat(64), 'hex');
+      mocks.physicalFile.deleteUnreferencedPath.mockImplementation((async (
+        path: string,
+        _unlink: () => Promise<void>,
+        options: { trash?: { move: (from: string, to: string) => Promise<void> } },
+      ) => {
+        await options.trash!.move(path, '/data/file-trash/id/photo.jpg');
+        return { deleted: true, references: 0, trashed: true };
+      }) as never);
+
+      await sut.handleDeleteFiles({
+        files: ['/data/library/user/photo.jpg', '/data/thumbs/user/thumb.webp'],
+        removedAssetId: 'asset-id',
+        original: {
+          path: '/data/library/user/photo.jpg',
+          ownerId: 'user-id',
+          assetId: 'asset-id',
+          originalFileName: 'photo.jpg',
+          checksum: checksum.toString('hex'),
+          sizeInBytes: 42,
+        },
+      });
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        '/data/library/user/photo.jpg',
+        expect.any(Function),
+        {
+          removedAssetId: 'asset-id',
+          trash: {
+            move: expect.any(Function),
+            original: {
+              checksum,
+              sizeInBytes: 42,
+              ownerId: 'user-id',
+              assetId: 'asset-id',
+              originalFileName: 'photo.jpg',
+            },
+          },
+        },
+      );
+      // every path may be a registered original, so every one may go to the trash
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        '/data/thumbs/user/thumb.webp',
+        expect.any(Function),
+        { removedAssetId: 'asset-id', trash: { move: expect.any(Function) } },
+      );
+      expect(mocks.storage.rename).toHaveBeenCalledWith(
+        '/data/library/user/photo.jpg',
+        '/data/file-trash/id/photo.jpg',
+      );
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
     it('should remove the file', async () => {
       await sut.handleDeleteFiles({ files: ['path/to/something'] });
 
@@ -222,6 +288,18 @@ describe(StorageService.name, () => {
       await sut.handleDeleteFiles({ files: ['path/to/shared-original'] });
 
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
+    });
+
+    it('passes the removed asset on, so a job whose removal rolled back keeps every file (FL-169)', async () => {
+      const removedAssetId = newUuid();
+
+      await sut.handleDeleteFiles({ files: ['path/to/frame.jpeg'], removedAssetId });
+
+      expect(mocks.physicalFile.deleteUnreferencedPath).toHaveBeenCalledWith(
+        'path/to/frame.jpeg',
+        expect.any(Function),
+        expect.objectContaining({ removedAssetId }),
+      );
     });
   });
 });

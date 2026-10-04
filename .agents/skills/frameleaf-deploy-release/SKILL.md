@@ -12,7 +12,7 @@ Announce that you are using this skill. Read [AGENTS.md](../../../AGENTS.md) and
 - Use `Frameleaf/frameleaf-app`, literal default branch `fork/main`, and the explicitly verified `frameleaf` remote. Never push to `origin`, the former owner, or upstream.
 - Read and claim every assigned `FL-` issue before implementation. Discover live transitions; do not copy HeroNet's IDs or its `NEEDS REVIEW` status. An existing assigned PR/worktree can be continued. For new work, fetch the verified default branch immediately before creating a worktree from its exact SHA.
 - Use author and committer `AJ Taylor <aj@ajtaylor.net>` without coauthor trailers. Preserve unrelated working-tree changes.
-- For UI work, also follow the [committed design handoff](../../../design/frameleaf/README.md). A prototype is not implementation acceptance.
+- For UI work, also follow the [design instructions](../../../design/AGENTS.md), [approved template](../../../design/frameleaf/template/README.md), and authorized private design requirements. A prototype is not implementation acceptance.
 
 ## Smart Commits are required, not just issue links
 

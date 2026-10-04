@@ -89,10 +89,86 @@ describe('catalog manifests', () => {
     expect(getCatalogTableLocks(originalOfficial)).toEqual(
       [...official.tables, ...forkTables].map(({ identity }) => identity).toSorted(),
     );
-    // 97 public (v3.1.0 + cluster_group, cluster_group_request, person_group,
-    // person_group_audit, workflow_log from the post-certified residue) + fork tables, including seven iCloud tables
-    expect(getCatalogTableLocks(fork)).toHaveLength(114);
-    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(98);
+    // 157 public tables (among them the workflow run steps, FL-179, the Frameleaf Cloud model choices,
+    // FL-186, the cloud backup index, manifests and manifest entries, FL-160, and the push device
+    // registry, FL-228) and the fork tables,
+    // among them the supporter keys (FL-156), Frameleaf account links and Sign in with Frameleaf
+    // sessions (FL-158), the album covers that follow the newest item (FL-83) and items shared with a
+    // person (FL-83 AL-30b), generated Studio resources (FL-111) and Studio project imports (FL-103,
+    // FL-105), Studio HDR intermediates (FL-97), persisted safety proof facts (FL-226), and the used
+    // exchange tokens and ended sign-ins of the Frameleaf token exchange (FL-230), develop artifacts
+    // (FL-233), iCloud source identities, claims, audit and reuse receipts (FL-296),
+    // photography workflows and studio sites (FL-283), the universal storage file trash, and partner copy
+    // origins, backfills and people links (FL-326), in the integrated catalog.
+    expect(getCatalogTableLocks(fork)).toHaveLength(233);
+    expect(getCatalogTableLocks(fork)).toEqual(
+      expect.arrayContaining([
+        'immich_fork.icloud_weekly_grant',
+        'immich_fork.icloud_weekly_cohort',
+        'immich_fork.icloud_weekly_member',
+        'immich_fork.physical_file_trash',
+      ]),
+    );
+    expect(getCatalogTableLocks(fork)).toEqual(
+      expect.arrayContaining([
+        'public.pet_audit',
+        'public.pet_observation_audit',
+        'public.tag_audit',
+        'public.tag_asset_audit',
+        'public.session_tag_sync_state',
+        'public.asset_integrity_verification',
+        'public.asset_backup_deletion',
+        'public.asset_upload_resource',
+        'public.asset_upload_part',
+        'public.backup_device',
+        'public.backup_reconciliation',
+        'public.push_device',
+        'public.push_device_activity',
+        'public.cloud_backup_manifest_original',
+        'public.cloud_backup_object_verification',
+        'immich_fork.video_edit_version',
+        'immich_fork.video_edit_selection',
+        'immich_fork.archive_operation',
+        'immich_fork.archive_operation_item',
+        'immich_fork.person_merge_verdict',
+        'immich_fork.album_position',
+        'immich_fork.recipient_group',
+        'immich_fork.user_preference_history',
+        'immich_fork.face_correction',
+        'immich_fork.pet_recognition_run',
+        'immich_fork.memory_curation',
+        'immich_fork.memory_show_less',
+        'immich_fork.render_worker_session_capability',
+        'immich_fork.studio_generated_resource',
+        'immich_fork.studio_project_import',
+        'immich_fork.studio_hdr_intermediate',
+        'immich_fork.studio_workspace_layout',
+        'immich_fork.utility_activity',
+        'immich_fork.frameleaf_consent',
+        'immich_fork.frameleaf_user_license',
+        'immich_fork.frameleaf_account_link',
+        'immich_fork.frameleaf_session',
+        'immich_fork.frameleaf_exchange_token',
+        'immich_fork.frameleaf_sign_in_revocation',
+        'immich_fork.asset_develop_artifact',
+        'immich_fork.icloud_source_identity',
+        'immich_fork.icloud_claim',
+        'immich_fork.icloud_identity_audit',
+        'immich_fork.icloud_identity_reuse',
+        'immich_fork.album_cover_follows_newest',
+        'immich_fork.asset_user_share',
+        'immich_fork.buddy_backup_reference',
+        'immich_fork.photography_workflow',
+        'immich_fork.photography_studio_site',
+        'immich_fork.asset_origin',
+        'immich_fork.album_origin',
+        'immich_fork.person_origin',
+        'immich_fork.partner_backfill',
+        'immich_fork.partner_person_link',
+      ]),
+    );
+    // 66 v3.1.0 public + every fork table
+    expect(getCatalogTableLocks(originalOfficial)).toHaveLength(142);
   });
 
   it('records the steady-state geodata primary index rebuilt by the runtime importer', () => {

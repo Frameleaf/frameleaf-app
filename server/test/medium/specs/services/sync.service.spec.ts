@@ -1,5 +1,5 @@
 import { schemaFromCode } from '@immich/sql-tools';
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { v4 } from 'uuid';
 import { AssetMetadataKey, UserMetadataKey } from 'src/enum.js';
@@ -224,18 +224,51 @@ describe(SyncService.name, () => {
       expect(after[0].id).toBe(keep.id);
     });
 
-    it('should cleanup every table', async () => {
+    const directAuditTables = [
+      { table: 'tag_audit', columns: ['tagId', 'userId'] },
+      { table: 'tag_asset_audit', columns: ['tagId', 'assetId', 'userId'] },
+      { table: 'pet_audit', columns: ['petId', 'ownerId'] },
+      { table: 'pet_observation_audit', columns: ['observationId', 'petId', 'assetId', 'ownerId'] },
+    ] as const;
+
+    it.each(directAuditTables)('prunes old $table tombstones and retains recent ones', async ({ table, columns }) => {
+      const { sut, ctx } = setup();
+      const recentId = v4();
+      for (const [id, deletedAt] of [
+        [v4(), deletedLongAgo],
+        [recentId, DateTime.now().minus({ days: 1 }).toISO()],
+      ]) {
+        await sql`INSERT INTO ${sql.table(table)}
+          (${sql.join(['id', ...columns, 'deletedAt'].map((column) => sql.ref(column)))})
+          VALUES (${sql.join([id, ...columns.map(() => v4()), deletedAt])})`.execute(ctx.database);
+      }
+
+      await assertTableCount(ctx.database, table, 2);
+      await expect(sut.onAuditTableCleanup()).resolves.toBeUndefined();
+      const { rows } = await sql<{ id: string }>`SELECT id FROM ${sql.table(table)}`.execute(ctx.database);
+      expect(rows).toEqual([{ id: recentId }]);
+    });
+
+    it('should cleanup every table through its respective cleanup path', async () => {
       const { sut } = setup();
 
+      // render_worker_audit is the operator's record of render worker actions, kept like any audit
+      // log; it is not a sync tombstone table and sync never cleans it
+      const notSyncTombstones = new Set(['render_worker_audit']);
       const auditTables = schemaFromCode()
-        .tables.filter((table) => table.name.endsWith('_audit'))
+        .tables.filter((table) => table.name.endsWith('_audit') && !notSyncTombstones.has(table.name))
         .map(({ name }) => name);
+
+      // TagSync prunes these directly; the real-table retention cases above cover that path.
+      const directTables = new Set<string>(directAuditTables.map(({ table }) => table));
+      expect([...directTables].every((table) => auditTables.includes(table))).toBe(true);
+      const baseAuditTables = auditTables.filter((table) => !directTables.has(table));
 
       const auditCleanupSpy = vi.spyOn(BaseSync.prototype as any, 'auditCleanup');
       await expect(sut.onAuditTableCleanup()).resolves.toBeUndefined();
 
-      expect(auditCleanupSpy).toHaveBeenCalledTimes(auditTables.length);
-      for (const table of auditTables) {
+      expect(auditCleanupSpy).toHaveBeenCalledTimes(baseAuditTables.length);
+      for (const table of baseAuditTables) {
         expect(auditCleanupSpy, `Audit table ${table} was not cleaned up`).toHaveBeenCalledWith(table, 31);
       }
     });

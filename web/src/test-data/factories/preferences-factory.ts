@@ -6,6 +6,7 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
     defaultAssetOrder: AssetOrder.Desc,
   },
   cast: {
+    adminDisabled: false,
     gCastEnabled: false,
   },
   download: {
@@ -33,6 +34,7 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   privacy: {
     suppression: {
       personIds: [],
+      petIds: [],
       scope: SuppressionScope.Owned,
       tagIds: [],
     },
@@ -55,4 +57,6 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   recentlyAdded: {
     sidebarWeb: false,
   },
+  revision: 'revision-1',
+  lockedRulesRevealed: true,
 });

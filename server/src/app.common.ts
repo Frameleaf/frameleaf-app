@@ -6,7 +6,9 @@ import helmetMiddleware from 'helmet';
 import { existsSync } from 'node:fs';
 import sirv from 'sirv';
 import { IMMICH_SERVER_START, excludePaths, serverVersion } from 'src/constants.js';
+import { FirstLaunchWorkerService } from 'src/maintenance/first-launch-worker.service.js';
 import { MaintenanceWorkerService } from 'src/maintenance/maintenance-worker.service.js';
+import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
 import { WebSocketAdapter } from 'src/middleware/websocket.adapter.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -28,11 +30,11 @@ export async function configureExpress(
     /**
      * Service to use for server-side rendering
      */
-    ssr: typeof ApiService | typeof MaintenanceWorkerService;
+    ssr: typeof ApiService | typeof MaintenanceWorkerService | typeof FirstLaunchWorkerService;
   },
 ) {
   const configRepository = app.get(ConfigRepository);
-  const { environment, host, port, helmet, resourcePaths, network } = configRepository.getEnv();
+  const { environment, host, port, helmet, resourcePaths, network, frameleafCloud } = configRepository.getEnv();
 
   const logger = await app.resolve(LoggingRepository);
   logger.setContext('Bootstrap');
@@ -47,7 +49,19 @@ export async function configureExpress(
   }
 
   app.use(cookieParser());
-  app.use(json({ limit: '10mb' }));
+  // FL-161: record how the request arrived (vouched for by the edge worker's per-boot secret) and
+  // drop every client-supplied `X-Frameleaf-*` claim before anything else reads the request.
+  app.use(frameleafViaMiddleware(frameleafCloud.edge.secret));
+  app.use(
+    json({
+      limit: '10mb',
+      verify: (req, _res, buffer) => {
+        if (req.url?.split('?', 1)[0] === '/api/photography/payments/stripe') {
+          (req as typeof req & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+        }
+      },
+    }),
+  );
   app.use(urlencoded({ limit: '10mb' }));
 
   if (configRepository.isDev()) {

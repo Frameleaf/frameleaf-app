@@ -1,15 +1,11 @@
-import { authenticate } from '$lib/utils/auth';
-import { getFormatter } from '$lib/utils/i18n';
+import { redirect } from '@sveltejs/kit';
+import { Route } from '$lib/route';
 import type { PageLoad } from './$types';
 
-export const load = (async ({ url }) => {
-  await authenticate(url);
-
-  const $t = await getFormatter();
-
-  return {
-    meta: {
-      title: $t('shared_links'),
-    },
-  };
+/**
+ * The legacy edit page is gone (AL-23): a shared link is edited in the list's Frameleaf form
+ * (`SharedLinkForm`, design `SharedLinks.jsx`), so an old address opens the list with that form.
+ */
+export const load = (({ params }) => {
+  redirect(307, Route.editSharedLink({ id: params.id }));
 }) satisfies PageLoad;
