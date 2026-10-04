@@ -532,7 +532,12 @@ describe('input grants', () => {
 
 describe('evaluateRenderOutput (FL-42)', () => {
   const gib = 1024 ** 3;
-  const sdr = { gpuMemoryBytes: 12 * gib, codecs: ['h264_nvenc', 'hevc_nvenc'], formats: ['mp4'], colorPrecision: null };
+  const sdr = {
+    gpuMemoryBytes: 12 * gib,
+    codecs: ['h264_nvenc', 'hevc_nvenc'],
+    formats: ['mp4'],
+    colorPrecision: null,
+  };
   const hdr = { ...sdr, colorPrecision: { maxBitDepth: 10, hdr10: true, dolbyVision: false } };
   const request = { format: 'mp4-h264', color: 'preserve', resolution: '1080p' };
 
@@ -547,9 +552,9 @@ describe('evaluateRenderOutput (FL-42)', () => {
     const capabilities = { codecs, formats };
     const candidate = { ...sdr, ...capabilities };
 
-    expect(
-      evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: { settings: request } })),
-    ).toEqual({ admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported });
+    expect(evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: { settings: request } }))).toEqual(
+      { admitted: false, reason: RenderWorkerRefusalReason.CodecUnsupported },
+    );
     expect(evaluateRenderOutput([candidate], request)).toEqual({
       supported: false,
       refusal: RenderOutputRefusal.CodecUnavailable,
@@ -593,9 +598,9 @@ describe('evaluateRenderOutput (FL-42)', () => {
     const capabilities = { codecs: [codec], formats: [container] };
     const candidate = { ...sdr, ...capabilities };
     expect(evaluateRenderOutput([candidate], request)).toEqual({ supported: true });
-    expect(
-      evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: { settings: request } })),
-    ).toEqual({ admitted: true });
+    expect(evaluateClaimAdmission(claimInput({ session: { capabilities }, operation: { settings: request } }))).toEqual(
+      { admitted: true },
+    );
   });
 
   it('needs a qualified session at all', () => {
