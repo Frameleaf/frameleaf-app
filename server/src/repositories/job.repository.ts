@@ -12,7 +12,7 @@ import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
-import { freezeSelection } from 'src/queue/manifest.js';
+import { attachProducerRun, freezeSelection } from 'src/queue/manifest.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
@@ -416,6 +416,19 @@ export class JobRepository {
     };
   }
 
+  /** Give setup checkpoints a retained canonical outcome before any domain setup can commit. */
+  async ensureProducerRun(): Promise<string | undefined> {
+    const context = queueExecution.getStore();
+    if (!context) return;
+    const result = await this.store.db.transaction().execute(async (tx) => {
+      await sql`select name from job_queue order by name for update`.execute(tx);
+      return attachProducerRun(tx, context.claim);
+    });
+    context.claim.runId = result.runId;
+    context.claim.itemKey = result.producerItemKey;
+    return result.runId;
+  }
+
   /** Persist small database-only producer setup with its claim. No network or file I/O may enter this callback. */
   async prepareCheckpoint<T>(key: string, prepare: () => Promise<T>): Promise<T> {
     const context = queueExecution.getStore();
@@ -509,9 +522,10 @@ export class JobRepository {
   }
 
   /** Database-only producer already holding its domain claim; admission commits with that publication. */
-  async queueInTransaction(tx: Transaction<any>, item: JobItem): Promise<void> {
+  async queueInTransaction(tx: Transaction<any>, item: JobItem, runId?: string): Promise<void> {
     if (queueExecution.getStore()) throw new Error('Queue-owned producers must use their completion transaction');
-    await this.store.enqueue([this.intent(item)], tx);
+    const intent = runId ? runSubmission.run(runId, () => this.intent(item)) : this.intent(item);
+    await this.store.enqueue([intent], tx);
   }
 
   async queueAll(items: JobItem[]): Promise<void> {

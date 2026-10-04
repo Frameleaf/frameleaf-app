@@ -165,9 +165,13 @@ export class PetRecognitionService {
 
   /** The owner asked to look through their library again. A running run is replaced. */
   async startRun(ownerId: string, destinationKind: MlDestinationKind | null): Promise<PetRecognitionRun> {
-    const run = await this.petRepository.startRun(ownerId, destinationKind);
-    await this.jobRepository.queue({ name: JobName.PetRecognitionQueueAll, data: { userId: ownerId } });
-    return run;
+    return this.petRepository.startRun(ownerId, destinationKind, (tx, runId) =>
+      this.jobRepository.queueInTransaction(
+        tx,
+        { name: JobName.PetRecognitionQueueAll, data: { userId: ownerId } },
+        runId,
+      ),
+    );
   }
 
   cancelRun(ownerId: string): Promise<PetRecognitionRun | undefined> {
@@ -176,6 +180,7 @@ export class PetRecognitionService {
 
   @OnJob({ name: JobName.PetRecognitionQueueAll, queue: QueueName.PetRecognition })
   async handleQueueAll({ userId }: JobOf<JobName.PetRecognitionQueueAll>): Promise<JobStatus> {
+    const queueRunId = await this.jobRepository.ensureProducerRun();
     const { machineLearning } = await this.config(false);
     if (!isSmartSearchEnabled(machineLearning)) {
       deferJobUntilDependency('workload-disabled');
@@ -187,9 +192,12 @@ export class PetRecognitionService {
       const prepared: Array<{ ownerId: string; id: string }> = [];
       for (const ownerId of owners) {
         const run = userId
-          ? await this.petRepository.getRun(ownerId)
+          ? await this.petRepository.getRun(ownerId, queueRunId)
           : await this.petRepository.startRun(ownerId, null);
-        if (run && (await this.petRepository.isRunActive(run.id))) prepared.push({ ownerId, id: run.id });
+        if (run && (await this.petRepository.isRunActive(run.id))) {
+          if (queueRunId) await this.petRepository.linkRun(run.id, queueRunId);
+          prepared.push({ ownerId, id: run.id });
+        }
       }
       return prepared;
     });
@@ -197,7 +205,6 @@ export class PetRecognitionService {
       JobName.PetRecognition,
       this.petRepository.selectionForPetRecognition(runs),
     );
-    const queueRunId = queueExecution.getStore()?.claim.runId;
     if (queueRunId)
       await publishJobResult(async () => {
         for (const run of runs) await this.petRepository.setSelectedRunAssets(run.id, queueRunId);

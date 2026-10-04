@@ -99,6 +99,7 @@ describe(PetRecognitionService.name, () => {
       Promise.resolve(asText(axis(promptAxis(text)))),
     );
     pets = {
+      linkRun: vi.fn(),
       getRun: vi.fn().mockResolvedValue(undefined),
       hasConfirmedObservations: vi.fn().mockResolvedValue(true),
       getRecognitionAsset: vi.fn().mockResolvedValue(recognitionAsset()),
@@ -365,6 +366,32 @@ describe(PetRecognitionService.name, () => {
   });
 
   describe('runs', () => {
+    it('admits an explicit run inside the domain transaction with its canonical identity', async () => {
+      const tx = {} as never;
+      pets.startRun.mockImplementation(async (_owner, _destination, enqueue) => {
+        await enqueue(tx, runId);
+        return { id: runId, ownerId, status: PetRecognitionRunStatus.Queued };
+      });
+      await sut.startRun(ownerId, MlDestinationKind.Local);
+      expect(mocks.job.queueInTransaction).toHaveBeenCalledWith(
+        tx,
+        { name: JobName.PetRecognitionQueueAll, data: { userId: ownerId } },
+        runId,
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('links checkpoint setup to the canonical run before freezing its selection', async () => {
+      mocks.job.ensureProducerRun.mockResolvedValue('canonical-run');
+      pets.getRun.mockResolvedValue({ id: runId, ownerId, status: PetRecognitionRunStatus.Queued });
+      await sut.handleQueueAll({ userId: ownerId });
+      expect(pets.getRun).toHaveBeenCalledWith(ownerId, 'canonical-run');
+      expect(pets.linkRun).toHaveBeenCalledWith(runId, 'canonical-run');
+      expect(pets.linkRun.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.job.queueSelection.mock.invocationCallOrder[0],
+      );
+    });
+
     it('queues the owner’s photos with the run id', async () => {
       pets.getRun.mockResolvedValue({ id: runId, ownerId, status: PetRecognitionRunStatus.Queued });
 

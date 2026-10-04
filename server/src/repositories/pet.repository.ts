@@ -4,7 +4,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { AssetVisibility } from 'src/enum.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
-import { PetObservationState, PetRecognitionRunStatus, PetSpecies } from 'src/enum.js';
+import { JobName, PetObservationState, PetRecognitionRunStatus, PetSpecies } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -800,17 +800,47 @@ export class PetRepository {
     });
   }
   // ---------------------------------------------------------- recognition runs (FL-58)
-  getRun(ownerId: string): Promise<PetRecognitionRun | undefined> {
+  async getRun(ownerId: string, requestedQueueRunId?: string): Promise<PetRecognitionRun | undefined> {
+    // Only retained terminal evidence may settle a live domain run. Queue retries, pauses and
+    // dependency deferrals remain authoritative; this read never enqueues or resets anything.
+    await sql`update public.pet_recognition_run p set
+      status = case when exists (select 1 from job_run_item i where i."runId" = r.id
+        and i.state in ('failed', 'needs_attention', 'blocked')) then ${PetRecognitionRunStatus.Failed}
+        when exists (select 1 from job_run_item i where i."runId" = r.id and i.state = 'cancelled')
+          then ${PetRecognitionRunStatus.Cancelled} else ${PetRecognitionRunStatus.Completed} end,
+      error = case when exists (select 1 from job_run_item i where i."runId" = r.id
+        and i.state in ('failed', 'needs_attention', 'blocked'))
+          then 'Pet recognition queue run ended with errors; review the job run before retrying.' else null end,
+      "finishedAt" = r."finishedAt", "updatedAt" = clock_timestamp()
+      from system_metadata m join job_run r on r.id = (m.value->>'queueRunId')::uuid
+      where p."ownerId" = ${ownerId}::uuid and m.key = ${'frameleaf-pet-run:' + ownerId}
+        and m.value->>'petRunId' = p.id::text
+        and p.status in (${PetRecognitionRunStatus.Queued}, ${PetRecognitionRunStatus.Running})
+        and r."enumerationDone" and r."finishedAt" is not null
+        and exists (select 1 from job_run_item i where i."runId" = r.id)
+        and not exists (select 1 from job_run_item i where i."runId" = r.id
+          and i.state in ('pending', 'waiting', 'active'))`.execute(this.db);
     return sql<PetRecognitionRun>`
-      SELECT * FROM public.pet_recognition_run WHERE "ownerId" = ${ownerId}
+      SELECT p.* FROM public.pet_recognition_run p WHERE p."ownerId" = ${ownerId}
+        and (${requestedQueueRunId ?? null}::uuid is null or exists (
+          select 1 from job_run r where r.id = ${requestedQueueRunId ?? null}::uuid
+            and r.selection->>'petRunId' = p.id::text and r.selection->>'ownerId' = p."ownerId"::text))
     `
       .execute(this.db)
       .then(({ rows }) => rows[0]);
   }
   /** Start (or restart) the owner's run: a new run id, so jobs of an earlier run stop counting. */
-  startRun(ownerId: string, destinationKind: string | null): Promise<PetRecognitionRun> {
-    return this.forkWrite((tx) =>
-      sql<PetRecognitionRun>`
+  startRun(
+    ownerId: string,
+    destinationKind: string | null,
+    enqueue?: (tx: Transaction<DB>, runId: string) => Promise<void>,
+  ): Promise<PetRecognitionRun> {
+    return this.forkWrite(async (tx) => {
+      // Admission and producer checkpoints take catalogue locks before any pet domain locks.
+      if (enqueue) await sql`select name from job_queue order by name for update`.execute(tx);
+      const {
+        rows: [run],
+      } = await sql<PetRecognitionRun>`
       INSERT INTO public.pet_recognition_run ("ownerId", id, status, "destinationKind")
       VALUES (${ownerId}, gen_random_uuid(), ${PetRecognitionRunStatus.Queued}, ${destinationKind})
       ON CONFLICT ("ownerId") DO UPDATE SET
@@ -825,10 +855,27 @@ export class PetRepository {
         "updatedAt" = clock_timestamp(),
         "finishedAt" = NULL
       RETURNING *
-    `
-        .execute(tx)
-        .then(({ rows }) => rows[0]),
-    );
+    `.execute(tx);
+      await sql`delete from system_metadata where key = ${'frameleaf-pet-run:' + ownerId}`.execute(tx);
+      if (enqueue) {
+        await sql`insert into job_run(id, kind, selection)
+          values (${run.id}::uuid, ${JobName.PetRecognitionQueueAll}, ${JSON.stringify({ ownerId, petRunId: run.id })}::jsonb)`.execute(
+          tx,
+        );
+        await this.linkRun(run.id, run.id, tx);
+        await enqueue(tx, run.id);
+      }
+      return run;
+    });
+  }
+
+  /** One bounded association per owner, replaced atomically with that owner's domain run. */
+  async linkRun(runId: string, queueRunId: string, db: Kysely<DB> = this.db): Promise<void> {
+    await sql`insert into system_metadata(key, value)
+      select 'frameleaf-pet-run:' || "ownerId"::text,
+        jsonb_build_object('petRunId', id::text, 'queueRunId', ${queueRunId}::text)
+      from public.pet_recognition_run where id = ${runId}::uuid
+      on conflict (key) do update set value = excluded.value`.execute(db);
   }
   /**
    * Every pet_recognition_run write takes the fork-state lock first (as face_correction writes do),
