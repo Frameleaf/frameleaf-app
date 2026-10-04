@@ -2023,6 +2023,8 @@ describe(ImageEnrichmentService.name, () => {
     });
 
     it('persists a skipped status with video-frames-unavailable when no frames can be had', async () => {
+      moments.getIndex.mockResolvedValue(undefined);
+      moments.getFrames.mockResolvedValue([]);
       moments.getVideoSource.mockResolvedValue(undefined);
 
       await expect(sut.handleImageDescription({ id: videoAssetId })).resolves.toBe(JobStatus.Skipped);
@@ -2082,21 +2084,18 @@ describe(ImageEnrichmentService.name, () => {
     });
 
     it('publishes nothing when the original is replaced while the model is working', async () => {
-      moments.getFingerprints
-        .mockResolvedValueOnce(new Map([[videoAssetId, fingerprint]]))
-        .mockResolvedValueOnce(new Map([[videoAssetId, 'replaced']]));
-      mocks.machineLearning.describeImage.mockResolvedValue(describedAs);
+      mocks.machineLearning.describeImage.mockImplementation(() => {
+        moments.getFingerprints.mockResolvedValue(new Map([[videoAssetId, 'replaced']]));
+        return Promise.resolve(describedAs);
+      });
 
       await expect(sut.describeAsset(videoAssetId)).resolves.toEqual({
         status: JobStatus.Skipped,
         reasonKey: 'source-changed',
       });
 
-      const published = mocks.asset.upsertMetadata.mock.calls.some(
-        (call) =>
-          (call[1][0]?.value as { description?: { status?: string } } | undefined)?.description?.status === 'success',
-      );
-      expect(published).toBe(false);
+      expect(mocks.machineLearning.describeImage).toHaveBeenCalledOnce();
+      expect(mocks.asset.upsertMetadata).not.toHaveBeenCalled();
       expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
     });
 

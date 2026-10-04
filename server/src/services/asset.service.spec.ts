@@ -54,6 +54,7 @@ describe(AssetService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(AssetService));
+    mocks.mediaOperation.create.mockResolvedValue({ id: 'op-1' } as never);
     mocks.partner.getAll.mockResolvedValue([]);
     mocks.duplicateRepository.getVideoDuplicateFrames.mockResolvedValue([]);
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
@@ -1691,7 +1692,7 @@ describe(AssetService.name, () => {
       expect(mocks.assetEdit.createVideoExport).toHaveBeenCalledWith('asset-1', authStub.admin.user.id);
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.AssetVideoEditGeneration,
-        data: { id: 'asset-1', versionId: 'version-1' },
+        data: { id: 'asset-1', versionId: 'version-1', operationId: 'op-1' },
       });
     });
 
@@ -1758,7 +1759,7 @@ describe(AssetService.name, () => {
       expect(mocks.asset.deleteFiles).not.toHaveBeenCalled();
       expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({
         name: JobName.AssetVideoEditGeneration,
-        data: { id: 'asset-1' },
+        data: { id: 'asset-1', operationId: 'op-1' },
       });
     });
   });
@@ -2074,7 +2075,7 @@ describe(AssetService.name, () => {
       expect(mocks.assetEdit.replaceAll).toHaveBeenCalledWith('asset-1', [edit], 'save');
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.AssetVideoEditGeneration,
-        data: { id: 'asset-1' },
+        data: { id: 'asset-1', operationId: 'op-1' },
       });
     });
 
@@ -2251,7 +2252,7 @@ describe(AssetService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.AssetVideoEditGeneration,
-        data: { id: 'asset-1' },
+        data: { id: 'asset-1', operationId: 'op-1' },
       });
     });
 
