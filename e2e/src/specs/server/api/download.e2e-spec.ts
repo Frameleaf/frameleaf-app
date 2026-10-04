@@ -89,7 +89,8 @@ describe('/download', () => {
       expect(archive.status).toBe(400);
     });
 
-    it("refuses a partner's items once the partner stops sharing", async () => {
+    // FL-326: a partner downloads their own copy, never the source, and keeps the copy after unsharing
+    it("refuses a partner's source item and keeps the recipient's copy once the partner stops sharing", async () => {
       const partner = await utils.userSetup(admin.accessToken, {
         email: 'download-partner@example.com',
         name: 'Download Partner',
@@ -97,22 +98,43 @@ describe('/download', () => {
       });
       const partnerAsset = await utils.createAsset(partner.accessToken);
       await utils.createPartner(partner.accessToken, admin.userId);
+      const copyId = await utils.waitForPartnerCopy(admin.userId, partnerAsset.id);
 
-      const shared = await request(app)
-        .post('/download/info')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ assetIds: [partnerAsset.id] });
-      expect(shared.status).toBe(201);
+      const info = (assetIds: string[]) =>
+        request(app).post('/download/info').set('Authorization', `Bearer ${admin.accessToken}`).send({ assetIds });
+      const expectOnlyCopy = async () => {
+        const source = await info([partnerAsset.id]);
+        expect(source.status).toBe(400);
+        expect(JSON.stringify(source.body)).not.toContain('example.png');
+        const copy = await info([copyId]);
+        expect(copy.status).toBe(201);
+        expect(copy.body.archives).toEqual([expect.objectContaining({ assetIds: [copyId] })]);
+        expect(copy.body.totalSize).toBeGreaterThan(0);
+        const original = await request(app)
+          .get(`/assets/${copyId}/original`)
+          .set('Authorization', `Bearer ${admin.accessToken}`)
+          .expect(200);
+        const sourceOriginal = await request(app)
+          .get(`/assets/${partnerAsset.id}/original`)
+          .set('Authorization', `Bearer ${partner.accessToken}`)
+          .expect(200);
+        expect(Buffer.isBuffer(original.body)).toBe(true);
+        expect(original.body.length).toBeGreaterThan(0);
+        expect(original.body).toEqual(sourceOriginal.body);
+        await request(app)
+          .get(`/assets/${partnerAsset.id}/original`)
+          .set('Authorization', `Bearer ${admin.accessToken}`)
+          // Media's sendFile wrapper conceals unauthorized originals as not found.
+          .expect(404);
+      };
 
-      await request(app).delete(`/partners/${admin.userId}`).set('Authorization', `Bearer ${partner.accessToken}`);
-
-      const revoked = await request(app)
-        .post('/download/info')
-        .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send({ assetIds: [partnerAsset.id] });
-      expect(revoked.status).toBe(400);
-      expect(JSON.stringify(revoked.body)).not.toContain('example.png');
-    });
+      await expectOnlyCopy();
+      await request(app)
+        .delete(`/partners/${admin.userId}`)
+        .set('Authorization', `Bearer ${partner.accessToken}`)
+        .expect(204);
+      await expectOnlyCopy();
+    }, 90_000);
 
     it('refuses a public link that does not allow downloads, before naming any file', async () => {
       const closed = await utils.createSharedLink(admin.accessToken, {

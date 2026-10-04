@@ -3,12 +3,13 @@ import { BrowserContext, expect, test } from '@playwright/test';
 import { setupBaseMockApiRoutes } from 'src/ui/mock-network/base-network.js';
 
 /**
- * Storage → Physical deduplication (FL-73), the design template's `PhysicalDedupManager.jsx`,
+ * Library Care → Physical deduplication (FL-73), the design template's `PhysicalDedupManager.jsx`,
  * against a mocked server: applying can only start from the plan on screen once the server has
  * reviewed it, a stale plan is refused and never applied, preparing is blocked by a configuration
  * error, and a finished apply is verified with what can and cannot be undone said plainly.
  */
-const page_ = '/user-settings?area=storage&section=deduplication';
+// universal storage (FL-326): deduplication moved from Storage to Library Care
+const page_ = '/user-settings?area=care&section=deduplication';
 const taylor = 'a0000000-0000-4000-8000-000000000001';
 const jamie = 'a0000000-0000-4000-8000-000000000002';
 const fingerprint = 'ab'.repeat(32);

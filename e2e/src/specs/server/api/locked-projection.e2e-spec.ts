@@ -79,6 +79,7 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
   // ...and one visible item brings it back, counted without the hidden one.
   const mixedTag = 'FL-34 on both';
   const tagIds: Record<string, string> = {};
+  const partnerCopyIds: Record<string, string> = {};
   const tripTag = 'FL-195 trip';
 
   const ownerReads = (): Read[] => [
@@ -225,14 +226,7 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     const link = await utils.createSharedLink(owner.accessToken, { type: SharedLinkType.Album, albumId });
     sharedKey = link.key;
 
-    await utils.createPartner(owner.accessToken, partner.userId);
-    await request(app)
-      .put(`/partners/${owner.userId}`)
-      .set(bearer(partner.accessToken))
-      .send({ inTimeline: true })
-      .expect(200);
-
-    for (const user of [owner, admin]) {
+    for (const user of [owner, admin, partner]) {
       await request(app).post('/auth/pin-code').set(bearer(user.accessToken)).send({ pinCode }).expect(204);
     }
     await unlock(owner.accessToken);
@@ -249,6 +243,13 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
     // a detection and an item from the old Locked folder, as the detector and the upgrade write them
     await utils.setAssetLock(detected.id, 'detected');
     await utils.setAssetLock(legacy.id, 'immich-locked-folder');
+
+    // FL-326: shared once every lock and rule is in place, so each copy is inserted as locked as its
+    // source (the locks above are written directly, without the event that re-mirrors existing copies)
+    await utils.createPartner(owner.accessToken, partner.userId);
+    for (const asset of [plain, locked, detected, legacy, ruleMatch]) {
+      partnerCopyIds[asset.id] = await utils.waitForPartnerCopy(partner.userId, asset.id);
+    }
 
     // FL-195: an unlocked owner places a mark and a detection in a Studio project like any other item
     const { body: project } = await request(app)
@@ -275,7 +276,7 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       });
     expect(project.id, JSON.stringify(project)).toBeDefined();
     projectId = project.id;
-  });
+  }, 90_000);
 
   it("lists the owner's locks and Locked-rule matches in the Locked view of an unlocked session", async () => {
     await unlock(owner.accessToken);
@@ -563,8 +564,21 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
 
   it('never shows a Locked item to a partner, an album member or a shared link', async () => {
     await unlock(owner.accessToken);
+    await lock(partner.accessToken);
+    const hiddenCopyIds = hiddenIds().map((id) => partnerCopyIds[id]);
+    const { body: plainCopy } = await request(app)
+      .get(`/assets/${partnerCopyIds[plain.id]}`)
+      .set(bearer(partner.accessToken))
+      .expect(200);
+    expect(plainCopy).toMatchObject({ id: partnerCopyIds[plain.id], ownerId: partner.userId });
     const partnerAnswers = await readAll(
       [
+        { name: 'own buckets', path: '/timeline/buckets', query: { visibility: 'timeline' } },
+        {
+          name: 'own bucket',
+          path: '/timeline/bucket',
+          query: { visibility: 'timeline', timeBucket: '2021-06-01' },
+        },
         { name: 'partner buckets', path: '/timeline/buckets', query: { userId: owner.userId, visibility: 'timeline' } },
         {
           name: 'partner bucket',
@@ -588,10 +602,38 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
         { name: 'partner statistics', method: 'post', path: '/search/statistics', body: { visibility: 'timeline' } },
         ...oneItemReads(locked.id),
         ...oneItemReads(detected.id),
+        ...hiddenCopyIds.flatMap((id) => oneItemReads(id)),
       ],
       bearer(partner.accessToken),
     );
-    expectNoTrace(partnerAnswers, [locked.id, detected.id, legacy.id, 'locked-secret', 'detected-secret']);
+    expectNoTrace(partnerAnswers, [
+      ...hiddenIds(),
+      ...hiddenCopyIds,
+      'locked-secret',
+      'detected-secret',
+      'legacy-secret',
+      'rule-secret',
+    ]);
+    for (const id of hiddenCopyIds) {
+      for (const read of oneItemReads(id)) {
+        expect(partnerAnswers.find(({ name }) => name === read.name)!.status, read.name).toBeGreaterThanOrEqual(400);
+      }
+    }
+    expect(JSON.parse(partnerAnswers.find(({ name }) => name === 'own buckets')!.text)).toEqual([
+      { timeBucket: '2021-06-01', count: 1 },
+    ]);
+    expect(partnerAnswers.find(({ name }) => name === 'own bucket')!.text).toContain(partnerCopyIds[plain.id]);
+
+    // The recipient's PIN reveals their copies, and never grants access to the source rows.
+    await unlock(partner.accessToken);
+    for (const id of hiddenCopyIds) {
+      const { body } = await request(app).get(`/assets/${id}`).set(bearer(partner.accessToken)).expect(200);
+      expect(body).toMatchObject({ id, ownerId: partner.userId });
+    }
+    for (const id of hiddenIds()) {
+      await request(app).get(`/assets/${id}`).set(bearer(partner.accessToken)).expect(400);
+    }
+    await lock(partner.accessToken);
 
     const memberAnswers = await readAll(
       [
@@ -660,7 +702,8 @@ describe('Locked projection over the API (FL-34, FL-195)', () => {
       }
     }
     const { body: server } = await request(app).get('/server/statistics').set(bearer(admin.accessToken)).expect(200);
-    expect(server.photos).toBe(2);
+    // the owner's two visible items and the partner's copy of the plain one; every other copy is locked
+    expect(server.photos).toBe(3);
   });
 });
 

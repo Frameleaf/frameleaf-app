@@ -205,7 +205,9 @@ test.describe('Detail Panel', () => {
       await expect(section.getByText('No tags yet.')).toBeVisible();
     });
 
-    test("names the owner of a partner's item", async ({ context, page }) => {
+    // FL-326: a partner's item arrives as the viewer's own copy, which names the library it came from
+    test("names the library a partner's copy came from", async ({ context, page }) => {
+      test.setTimeout(90_000);
       const partner = await utils.userSetup(admin.accessToken, {
         email: 'owner-line@example.com',
         name: 'Avery Partner',
@@ -213,12 +215,14 @@ test.describe('Detail Panel', () => {
       });
       const partnerAsset = await utils.createAsset(partner.accessToken);
       await utils.createPartner(partner.accessToken, admin.userId);
+      const copyId = await utils.waitForPartnerCopy(admin.userId, partnerAsset.id);
 
       await utils.setAuthCookies(context, admin.accessToken);
-      await page.goto(`/photos/${partnerAsset.id}`);
+      await page.goto(`/photos/${copyId}`);
       await page.waitForSelector('#immich-asset-viewer');
       await page.getByRole('button', { name: 'Information', exact: true }).click();
-      await expect(page.getByTestId('detail-panel-owner')).toHaveText('Owned by Avery Partner');
+      await expect(page.getByTestId('detail-panel-origin')).toHaveText("From Avery Partner's library");
+      await expect(page.getByTestId('detail-panel-owner')).toHaveCount(0);
     });
   });
 
