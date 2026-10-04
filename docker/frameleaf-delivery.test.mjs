@@ -416,7 +416,10 @@ test("Compose resolves all deployment files and hardware overlays without a daem
         result.services["immich-server"].container_name,
         "frameleaf_server",
       );
-      assert.equal(result.services.database.environment.POSTGRES_DB, "immich");
+      assert.equal(
+        result.services.database.environment.POSTGRES_DB,
+        "frameleaf",
+      );
       if (!filename.includes(".dev.") && !filename.includes(".prod.")) {
         assert.equal(
           result.services["immich-server"].image,

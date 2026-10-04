@@ -244,3 +244,101 @@ test("the upstream logo list is present and not what Frameleaf ships", () => {
   );
   assert.equal(UPSTREAM_LOGOS.has(sha256(Buffer.from("frameleaf"))), false);
 });
+
+test("offline source-import wording is permitted only in its named context", () => {
+  const passages = [
+    [
+      "docs/docs/administration/import-immich.md",
+      "The importer copies content from a stopped Immich installation into a fresh canonical Frameleaf PostgreSQL 19 database.",
+    ],
+    [
+      "docs/docs/install/upgrading.md",
+      "Do not replace an Immich server image with Frameleaf while pointing it at the original Immich database.",
+    ],
+    [
+      "docs/docs/developer/fork-integration.md",
+      "Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../administration/import-immich.md).",
+    ],
+    [
+      "server/src/immich-import/types.ts",
+      "super(`Immich import refused: ${code}`);",
+    ],
+    [
+      "server/src/commands/import-immich.command.ts",
+      "console.error('Immich import connection cleanup failed.');",
+    ],
+    [
+      "server/src/services/database-backup.service.ts",
+      "This is not a canonical Frameleaf backup. Use import-immich for a supported Immich library.",
+    ],
+    [
+      "server/src/repositories/database.repository.ts",
+      "Frameleaf requires an empty PostgreSQL 19 database. Use import-immich with a separate read-only source; existing Immich or legacy Frameleaf databases cannot be adopted.",
+    ],
+  ];
+  for (const [file, passage] of passages) {
+    assert.deepEqual(
+      scanText(passage, [NAME, SITES, STORES], { file }),
+      [],
+      file,
+    );
+    assert.ok(
+      scanText(passage, [NAME, SITES, STORES], {
+        file: "web/src/lib/components/frameleaf/Welcome.svelte",
+      }).length > 0,
+      `import context cannot authorize product copy: ${file}`,
+    );
+    assert.deepEqual(
+      scanText(`${passage} Welcome to Immich`, [NAME], { file }).map(
+        ({ match }) => match,
+      ),
+      ["Immich"],
+      `an allowed passage cannot hide adjacent branding: ${file}`,
+    );
+    assert.equal(
+      scanText("Visit https://immich.app", [SITES], { file }).length,
+      1,
+      `import context cannot authorize upstream service links: ${file}`,
+    );
+  }
+  assert.equal(
+    scanText(
+      "Supported sources are stable Immich 3.x through 3.2.5; prereleases and later versions are rejected.",
+      [NAME],
+      {
+        file: "docs/docs/administration/import-immich.md",
+      },
+    ).length,
+    1,
+    "changing supported source versions requires explicit review",
+  );
+});
+
+test("source provenance does not authorize arbitrary developer links or deleted migrations", () => {
+  for (const file of [
+    "docs/docs/developer/setup.md",
+    "docs/docs/developer/fork-integration.md",
+    "docs/docs/developer/architecture.mdx",
+  ]) {
+    assert.equal(
+      scanText(
+        "Download https://github.com/immich-app/immich/releases/latest",
+        [SITES],
+        { file },
+      ).length,
+      1,
+      file,
+    );
+    assert.equal(
+      scanText("Welcome to Immich", [NAME], { file }).length,
+      1,
+      file,
+    );
+  }
+  assert.equal(
+    scanText("downgrade to upstream Immich.", [NAME], {
+      file: "server/src/schema/migrations/1779400000000-UpdateWorkflowTables.ts",
+    }).length,
+    1,
+  );
+});

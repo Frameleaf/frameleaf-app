@@ -123,7 +123,7 @@ Unlike the Frameleaf developer setup based on Docker Compose which uses `.env` f
     "UPLOAD_LOCATION": "${localEnv:UPLOAD_LOCATION:./Library}",
     "DB_PASSWORD": "${localEnv:DB_PASSWORD:postgres}",
     "DB_USERNAME": "${localEnv:DB_USERNAME:postgres}",
-    "DB_DATABASE_NAME": "${localEnv:DB_DATABASE_NAME:immich}"
+    "DB_DATABASE_NAME": "${localEnv:DB_DATABASE_NAME:frameleaf}"
 }
 ```
 
@@ -152,7 +152,7 @@ These variables have sensible defaults (for development) but can be customized:
 | ------------------ | ---------- | ------------------- |
 | `DB_PASSWORD`      | `postgres` | PostgreSQL password |
 | `DB_USERNAME`      | `postgres` | PostgreSQL username |
-| `DB_DATABASE_NAME` | `immich`   | Database name       |
+| `DB_DATABASE_NAME` | `frameleaf` | Database name       |
 
 ### Setting Environment Variables
 
