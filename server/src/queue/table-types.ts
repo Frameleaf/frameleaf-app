@@ -24,6 +24,7 @@ export interface JobRunTable {
 export interface JobRunItemTable {
   runId: string;
   itemKey: string;
+  rootItemKey: string | null;
   stage: string;
   selection: Record<string, unknown>;
   state: Generated<QueueState>;
@@ -45,6 +46,7 @@ export interface JobTable {
   retryBaseAttempt: Generated<number>;
   runId: string | null;
   itemKey: string | null;
+  rootItemKey: string | null;
   parentId: string | null;
   token: string | null;
   workerId: string | null;

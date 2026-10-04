@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import type { QueueExecution } from 'src/queue/types.js';
 import type { Mock } from 'vitest';
 import { defaults } from 'src/dtos/config.dto.js';
 import {
@@ -13,6 +14,7 @@ import {
   PetRecognitionUnavailableReason,
   PetSpecies,
 } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import {
   PetRecognitionService,
@@ -142,6 +144,38 @@ describe(PetRecognitionService.name, () => {
     for (const refusal of Object.values(MlAdmissionRefusal)) {
       expect(Object.values(PetRecognitionUnavailableReason)).toContain(asUnavailableReason(refusal));
     }
+  });
+
+  it('re-reads owner answers at accepted publication and never overwrites observations', async () => {
+    const execution: QueueExecution = {
+      claim: {
+        id: 'fixture',
+        queue: 'fixture',
+        name: JobName.PetRecognition,
+        data: {},
+        token: 'fixture',
+        workerId: 'fixture',
+        attempt: 1,
+        runId: null,
+        itemKey: null,
+        deadlineMs: 600000,
+        startedAt: new Date(),
+      },
+      signal: new AbortController().signal,
+      progress: vi.fn(),
+      progressUnits: 0,
+      adoptions: [],
+      followups: [],
+      buffering: false,
+    };
+    await queueExecution.run(execution, () => sut.handleRecognize({ id: assetId }));
+    expect(pets.replaceDetections).not.toHaveBeenCalled();
+    pets.getDecisionsForAsset.mockResolvedValue([{ petId: catId }, { petId: dogId }]);
+    await execution.adoptions[0]({} as never);
+    expect(pets.replaceDetections).toHaveBeenCalledOnce();
+    expect(pets.upsertCandidates).not.toHaveBeenCalled();
+    expect(pets.upsertObservation).not.toHaveBeenCalled();
+    expect(pets.deleteObservation).not.toHaveBeenCalled();
   });
 
   describe('getStatus', () => {

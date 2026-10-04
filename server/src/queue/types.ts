@@ -1,4 +1,5 @@
 import type { Transaction } from 'kysely';
+import { readQueueDeadlineProfiles } from 'src/queue/configuration.js';
 import type { JobItem } from 'src/types.js';
 
 export const QUEUE_TIMING = {
@@ -6,10 +7,7 @@ export const QUEUE_TIMING = {
   lease: 60_000,
   sweep: 30_000,
   scan: 5000,
-  opaqueDeadline: 10 * 60_000,
-  mlDeadline: 30 * 60_000,
-  noProgressDeadline: 10 * 60_000,
-  cancelGrace: 10_000,
+  ...readQueueDeadlineProfiles(),
   retryDelay: 30_000,
 } as const;
 export const QUEUE_BATCH = 250;
@@ -33,6 +31,7 @@ export type QueueIntent = {
   deadlineMs: number;
   runId?: string;
   itemKey?: string;
+  rootItemKey?: string | null;
   parentId?: string;
 };
 export type QueueClaim = {
@@ -45,6 +44,7 @@ export type QueueClaim = {
   attempt: number;
   runId: string | null;
   itemKey: string | null;
+  rootItemKey?: string | null;
   deadlineMs: number;
   startedAt: Date;
 };
@@ -55,6 +55,7 @@ export type QueueExecution = {
   progress: (units: number) => void;
   followups: QueueIntent[];
   adoptions: Array<(tx: Transaction<any>) => Promise<void>>;
+  failureDiagnostics?: Array<(tx: Transaction<any>) => Promise<void>>;
   afterCommit?: Array<() => Promise<void>>;
   buffering: boolean;
   progressUnits: number;

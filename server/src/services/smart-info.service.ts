@@ -3,7 +3,6 @@ import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
-
 import { AssetVisibility, DatabaseLock, ImmichWorker, JobName, JobStatus, MlWorkload, QueueName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { ClassificationService } from 'src/services/classification.service.js';
@@ -110,6 +109,7 @@ export class SmartInfoService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForClipEncoding(id);
     if (!asset || asset.files.length !== 1) {
       return JobStatus.Failed;

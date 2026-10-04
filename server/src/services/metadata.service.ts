@@ -86,7 +86,7 @@ export function firstDateTime(tags: ImmichTags) {
   }
 }
 
-const validate = <T>(value: T): NonNullable<T> | null => {
+const validate = <T,>(value: T): NonNullable<T> | null => {
   // handle lists of numbers
   if (Array.isArray(value)) {
     value = value[0];
@@ -868,11 +868,13 @@ export class MetadataService extends BaseService {
         libraryId: asset.libraryId ?? undefined,
         checksum,
       });
-      if (
-        existing?.id === asset.livePhotoVideoId &&
-        (await this.storageRepository.checkFileExists(existing.originalPath))
-      ) {
-        return;
+      if (existing) {
+        if (!(await this.storageRepository.checkFileExists(existing.originalPath))) {
+          throw new Error('Existing motion video original is missing; repair is required before extracting metadata');
+        }
+        if (existing.id === asset.livePhotoVideoId) {
+          return;
+        }
       }
       const motionAssetId = this.cryptoRepository.randomUUID();
       const outputPath = attemptOutputPath(StorageCore.getAndroidMotionPath(asset, motionAssetId));
