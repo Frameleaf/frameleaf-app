@@ -27680,6 +27680,33 @@
           "synchronize": true
         },
         {
+          "name": "job_live_queue",
+          "definition": "CREATE INDEX job_live_queue ON public.job USING btree (queue, state, \"createdAt\", id) WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "tableName": "job",
+          "columnNames": [
+            "queue",
+            "state",
+            "createdAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_dependency_pending",
+          "definition": "CREATE INDEX job_dependency_pending ON public.job USING btree (\"parentId\") WHERE ((\"parentId\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])))",
+          "tableName": "job",
+          "columnNames": [
+            "parentId"
+          ],
+          "using": "btree",
+          "where": "((\"parentId\" IS NOT NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text])))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "job_parent",
           "definition": "CREATE INDEX job_parent ON public.job USING btree (\"parentId\") WHERE (\"parentId\" IS NOT NULL)",
           "tableName": "job",
@@ -28245,11 +28272,37 @@
       ],
       "indexes": [
         {
+          "name": "job_unadmitted_queue",
+          "definition": "CREATE INDEX job_unadmitted_queue ON public.job_run_item USING btree (queue) WHERE ((\"jobId\" IS NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "queue"
+          ],
+          "using": "btree",
+          "where": "((\"jobId\" IS NULL) AND (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text])))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
           "name": "job_manifest_pending",
           "definition": "CREATE INDEX job_manifest_pending ON public.job_run_item USING btree (\"selectionId\", \"itemKey\") WHERE ((\"jobId\" IS NULL) AND (state = 'pending'::text))",
           "tableName": "job_run_item",
           "columnNames": [
             "selectionId",
+            "itemKey"
+          ],
+          "using": "btree",
+          "where": "((\"jobId\" IS NULL) AND (state = 'pending'::text))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_manifest_source_pending",
+          "definition": "CREATE INDEX job_manifest_source_pending ON public.job_run_item USING btree (\"selectionId\", \"runId\", \"itemKey\") WHERE ((\"jobId\" IS NULL) AND (state = 'pending'::text))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId",
+            "runId",
             "itemKey"
           ],
           "using": "btree",
@@ -28278,6 +28331,32 @@
             "rootItemKey"
           ],
           "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_selection_membership",
+          "definition": "CREATE INDEX job_selection_membership ON public.job_run_item USING btree (\"selectionId\", \"itemKey\", stage) WHERE (\"selectionId\" IS NOT NULL)",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "selectionId",
+            "itemKey",
+            "stage"
+          ],
+          "using": "btree",
+          "where": "(\"selectionId\" IS NOT NULL)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_run_unfinished",
+          "definition": "CREATE INDEX job_run_unfinished ON public.job_run_item USING btree (\"runId\") WHERE (state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
+          "tableName": "job_run_item",
+          "columnNames": [
+            "runId"
+          ],
+          "using": "btree",
+          "where": "(state = ANY (ARRAY['pending'::text, 'waiting'::text, 'active'::text]))",
           "unique": false,
           "synchronize": true
         }
@@ -28452,7 +28531,34 @@
           "synchronize": true
         }
       ],
-      "indexes": [],
+      "indexes": [
+        {
+          "name": "job_selection_feed",
+          "definition": "CREATE INDEX job_selection_feed ON public.job_selection USING btree (queue, \"createdAt\", id) WHERE (state = 'ready'::text)",
+          "tableName": "job_selection",
+          "columnNames": [
+            "queue",
+            "createdAt",
+            "id"
+          ],
+          "using": "btree",
+          "where": "(state = 'ready'::text)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "job_selection_enumerating",
+          "definition": "CREATE INDEX job_selection_enumerating ON public.job_selection USING btree (queue) WHERE (state = 'enumerating'::text)",
+          "tableName": "job_selection",
+          "columnNames": [
+            "queue"
+          ],
+          "using": "btree",
+          "where": "(state = 'enumerating'::text)",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
       "triggers": [],
       "constraints": [
         {
