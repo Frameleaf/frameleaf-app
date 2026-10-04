@@ -234,18 +234,21 @@ export class JobRepository {
       if (context.outcome === 'failed') {
         throw new Error('Handler returned Failed');
       }
-      const accepted = await admission.publication.run(abort.signal, () =>
-        this.store.complete(claim, context.followups, async (tx) => {
-          await publicationTransaction.run(tx, () =>
-            queueExecution.run(context, async () => {
+      const accepted = await queueExecution.run(context, () =>
+        this.store.complete(
+          claim,
+          context.followups,
+          async (tx) => {
+            await publicationTransaction.run(tx, async () => {
               context.buffering = true;
               for (const adopt of context.adoptions) {
                 await adopt(tx);
               }
               abort.signal.throwIfAborted();
-            }),
-          );
-        }),
+            });
+          },
+          (publish) => admission.publication.run(abort.signal, publish),
+        ),
       );
       if (accepted) {
         // Notification failure cannot change an already committed outcome or replay media work.
@@ -260,24 +263,28 @@ export class JobRepository {
       }
     } catch (error) {
       try {
-        await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), async () => {
-          if (!started || context.dependencyReason) {
-            // No handler ran on an admission refusal, even for unsafe/operation-owned jobs.
-            // A rejected fence remains active for existing lease recovery; never invent a new claim.
-            await this.store.defer(claim, context.dependencyReason ?? 'local-capacity');
-            return;
-          }
-          await this.store.fail(
-            claim,
-            error instanceof Error ? error.message : 'Job failed',
-            context.failureDiagnostics?.length
-              ? async (tx) =>
-                  publicationTransaction.run(tx, async () => {
-                    for (const publish of context.failureDiagnostics!) await publish(tx);
-                  })
-              : undefined,
+        if (!started || context.dependencyReason) {
+          // No handler ran on an admission refusal, even for unsafe/operation-owned jobs.
+          // A rejected fence remains active for existing lease recovery; never invent a new claim.
+          await admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), () =>
+            this.store.defer(claim, context.dependencyReason ?? 'local-capacity'),
           );
-        });
+          return;
+        }
+        await this.store.fail(
+          claim,
+          error instanceof Error ? error.message : 'Job failed',
+          context.failureDiagnostics?.length
+            ? async (tx) =>
+                publicationTransaction.run(tx, async () => {
+                  for (const publish of context.failureDiagnostics!) await publish(tx);
+                })
+            : undefined,
+          {
+            publication: (publish) =>
+              admission.publication.run(AbortSignal.timeout(DATABASE_ACQUIRE_TIMEOUT_MS), publish),
+          },
+        );
       } catch {
         // No successful database outcome was observed. Lease recovery owns this claim.
         this.logger.error('Could not persist job outcome; lease recovery is pending');
@@ -402,7 +409,7 @@ export class JobRepository {
     } else {
       await this.store.db.transaction().execute(async (tx) => {
         // Keep the established queue -> parent job -> run/item lock order across every captured batch.
-        await sql`select name from job_queue order by name for update`.execute(tx);
+        await sql`select name from job_queue order by name for no key update`.execute(tx);
         if (context) {
           const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
             and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()
@@ -476,7 +483,7 @@ export class JobRepository {
     const context = queueExecution.getStore();
     if (!context) return;
     const result = await this.store.db.transaction().execute(async (tx) => {
-      await sql`select name from job_queue order by name for update`.execute(tx);
+      await sql`select name from job_queue order by name for no key update`.execute(tx);
       return attachProducerRun(tx, context.claim);
     });
     context.claim.runId = result.runId;
@@ -490,7 +497,7 @@ export class JobRepository {
     if (!context) return prepare();
     const { claim } = context;
     return this.store.db.transaction().execute(async (tx) => {
-      await sql`select name from job_queue order by name for update`.execute(tx);
+      await sql`select name from job_queue order by name for no key update`.execute(tx);
       const {
         rows: [job],
       } = await sql<{ checkpoints: Record<string, T> | null }>`select data->'_producerCheckpoints' checkpoints
@@ -607,7 +614,7 @@ export class JobRepository {
         const batch = intents.slice(offset, offset + 250);
         await this.store.db.transaction().execute(async (tx) => {
           for (const queue of [...new Set(batch.map((item) => item.queue))].sort()) {
-            await sql`select name from job_queue where name = ${queue} for update`.execute(tx);
+            await sql`select name from job_queue where name = ${queue} for no key update`.execute(tx);
           }
           const { rows } = await sql`select id from job where id = ${context.claim.id}::uuid
             and token = ${context.claim.token}::uuid and state = 'active' and "leaseExpiresAt" > clock_timestamp()

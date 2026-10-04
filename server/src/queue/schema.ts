@@ -21,12 +21,21 @@ export async function createQueueSchema(db: Kysely<any>) {
       id uuid primary key, "runId" uuid not null references job_run(id), "producerId" uuid,
       stage text not null, queue text not null references job_queue(name),
       "safeToRetry" boolean not null, sensitive boolean not null, "deadlineMs" integer not null,
-      state text not null check (state in ('enumerating','ready','needs_attention')),
-      "createdAt" timestamptz not null default now(), unique ("runId", stage), unique ("producerId", stage)
+      state text not null check (state in ('enumerating','ready','needs_attention','cancelled')),
+      "createdAt" timestamptz not null default now(), "capturedAt" timestamptz, unique ("runId", stage), unique ("producerId", stage)
     );
+    create table job_selection_run (
+      "runId" uuid not null references job_run(id) on delete cascade,
+      "selectionId" uuid not null references job_selection(id) on delete cascade,
+      "copyAfter" text, "copyComplete" boolean not null default false,
+      primary key ("runId", "selectionId")
+    );
+    create index job_selection_run_selection on job_selection_run("selectionId", "runId");
+    create index job_selection_run_copy on job_selection_run("selectionId", "runId") where not "copyComplete";
     create table job_run_item (
       "runId" uuid not null references job_run(id), "itemKey" text not null, "rootItemKey" text, stage text not null, queue text not null references job_queue(name),
       selection jsonb not null, "selectionId" uuid references job_selection(id), "jobId" uuid, state text not null default 'pending',
+      "selectionVersion" integer not null default 0,
       primary key ("runId", "itemKey", stage),
       check (state in ('pending','waiting','active','completed','failed','needs_attention','cancelled','blocked'))
     );
@@ -52,10 +61,14 @@ export async function createQueueSchema(db: Kysely<any>) {
     create index job_manifest_pending on job_run_item("selectionId", "itemKey") where "jobId" is null and state = 'pending';
     create index job_manifest_source_pending on job_run_item("selectionId", "runId", "itemKey") where "jobId" is null and state = 'pending';
     create index job_selection_membership on job_run_item("selectionId", "itemKey", stage) where "selectionId" is not null;
+    create index job_selection_source on job_run_item("selectionId", "runId", "itemKey") where "selectionId" is not null;
     create index job_run_unfinished on job_run_item("runId") where state in ('pending','waiting','active');
+    create index job_run_unfinished_execution on job_run_item("runId") where state in ('pending','waiting','active') and ("selectionId" is null or "jobId" is not null);
     create index job_unadmitted_queue on job_run_item(queue) where "jobId" is null and state in ('pending','waiting','active');
+    create index job_unadmitted_execution_queue on job_run_item(queue) where "jobId" is null and "selectionId" is null and state in ('pending','waiting','active');
     create index job_selection_feed on job_selection(queue, "createdAt", id) where state = 'ready';
     create index job_selection_enumerating on job_selection(queue) where state = 'enumerating';
+    create index job_selection_live on job_selection(queue, id) where state in ('ready','enumerating');
     create index job_live_queue on job(queue, state, "createdAt", id) where state in ('pending','waiting','active');
     create unique index job_dedup_live on job(queue, "dedupKey")
       where "dedupKey" is not null and state in ('pending','waiting','active');
