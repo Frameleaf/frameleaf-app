@@ -1,9 +1,6 @@
 import { ConflictException } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { AssetLockReason, AssetVisibility, Permission, UserMetadataKey } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as migration from 'src/fork-schema/migrations/0000000000206-AssetUserShares.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -16,6 +13,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { ITEM_SHARE_HIDDEN, ITEM_SHARE_LOCKED, ItemShareService } from 'src/services/item-share.service.js';
 import { checkAccess } from 'src/utils/access.js';
 import { lockAssetRowsInOrder } from 'src/utils/locked-stacks.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -24,7 +22,6 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   await db?.destroy();
@@ -44,21 +41,8 @@ const lock = (assetId: string) =>
 
 const unlock = (assetId: string) => db.deleteFrom('asset_lock').where('assetId', '=', assetId).execute();
 
-const isTable = (entry: { identity: string }) => entry.identity.startsWith('immich_fork.asset_user_share');
-
-it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    expect(before[kind].filter((entry) => isTable(entry))).toEqual(manifest[kind].filter((entry) => isTable(entry)));
-  }
-  await migration.down(db);
-  await migration.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-  }
+it('installs feature tables in the real canonical baseline', async () => {
+  await expectCanonicalTables(db, ['asset_user_share']);
 });
 
 it('creates each share once, lists it for the owner and the recipient, and revokes it', async () => {

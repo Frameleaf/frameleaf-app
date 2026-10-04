@@ -1,8 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
-import * as icloud from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
-import * as identity from 'src/fork-schema/migrations/0000000000213-ICloudSourceIdentity.js';
 import {
   ICloudIdentityRepository,
   recordSyncIdentity,
@@ -10,13 +8,14 @@ import {
 } from 'src/repositories/icloud-identity.repository.js';
 import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
+import { seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 const field = (value: unknown) => ({ value });
 const ASSET = '32A01DD9-75DF-41B2-8773-80C153D73A5A';
 const MASTER = 'AQohY6yKZR0+tXlMi9FUQ82zySGo';
 
-/** FL-296: iCloud source identities, written by the sync and read by the app's lookup (fork migration 0213). */
+/** FL-296: iCloud source identities, written by the sync and read by the app's lookup (canonical source identity). */
 describe(ICloudIdentityRepository.name, () => {
   let db: Kysely<DB>;
   let sync: ICloudSyncRepository;
@@ -47,9 +46,9 @@ describe(ICloudIdentityRepository.name, () => {
 
   /** Mark the resource of `role` imported as `assetId` with `sha256`, as the sync's commit does. */
   const commit = async (role: string, assetId: string, sha256: Buffer) => {
-    await sql`INSERT INTO asset (id, "ownerId") VALUES (${assetId}::uuid, ${connection.ownerId}::uuid)`.execute(db);
+    await seedCanonicalAsset(db, { id: assetId, ownerId: connection.ownerId });
     const { rows } = await sql<{ id: string }>`
-      UPDATE immich_fork.icloud_resource SET status = 'committed', "assetId" = ${assetId}::uuid, sha256 = ${sha256}
+      UPDATE public.icloud_resource SET status = 'committed', "assetId" = ${assetId}::uuid, sha256 = ${sha256}
       WHERE "connectionId" = ${connection.id}::uuid AND role = ${role} RETURNING id
     `.execute(db);
     return rows[0].id;
@@ -57,19 +56,7 @@ describe(ICloudIdentityRepository.name, () => {
 
   beforeAll(async () => {
     db = await getKyselyDB();
-    // a focused schema, as the iCloud sync repository spec uses
-    await sql`DROP SCHEMA IF EXISTS immich_fork CASCADE`.execute(db);
-    await sql`DROP SCHEMA public CASCADE`.execute(db);
-    await sql`CREATE SCHEMA public`.execute(db);
-    await sql`CREATE SCHEMA immich_fork`.execute(db);
-    await sql`CREATE TABLE immich_fork.state (id integer PRIMARY KEY,phase text)`.execute(db);
-    await sql`INSERT INTO immich_fork.state VALUES (1,'active')`.execute(db);
-    await sql`CREATE TABLE immich_fork.migration_audit (name text,status text)`.execute(db);
-    await sql`CREATE TABLE asset (id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
-    await sql`CREATE TABLE backup_device ("ownerId" uuid,"deviceKey" uuid,"deletedAt" timestamptz)`.execute(db);
-    await icloud.up(db);
-    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
-    await identity.up(db);
+
     sync = new ICloudSyncRepository(db);
     sut = new ICloudIdentityRepository(db);
   });
@@ -77,9 +64,9 @@ describe(ICloudIdentityRepository.name, () => {
     await db.destroy();
   });
   beforeEach(async () => {
-    await sql`TRUNCATE immich_fork.icloud_connection, immich_fork.icloud_source_identity, immich_fork.icloud_claim,
+    await sql`TRUNCATE public.icloud_connection, public.icloud_source_identity, public.icloud_claim,
       asset, backup_device CASCADE`.execute(db);
-    connection = (await sync.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({})))!;
+    connection = (await sync.create((await seedCanonicalUser(db)).id, 'Photos', ICloudConfigSchema.parse({})))!;
     await sync.update(connection.id, connection.ownerId, { state: 'connected', accountHint: 'a•••@icloud.com' });
     connection.state = 'connected';
     await sync.savePage(connection.id, 'assets:library', 'library', [master, asset()], null, true);
@@ -125,13 +112,11 @@ describe(ICloudIdentityRepository.name, () => {
       const assetId = randomUUID();
       const resourceId = await commit('original', assetId, Buffer.alloc(32, 1));
       await recordSyncIdentity(db, resourceId);
-      await sql`UPDATE immich_fork.icloud_source_identity
+      await sql`UPDATE public.icloud_source_identity
         SET "lastVerifiedAt" = '2026-06-01T10:00:00Z', "lastAuditResult" = ${result}, "appleFingerprint" = 'old-proof'
         WHERE "assetId" = ${assetId}::uuid`.execute(db);
       const replacement = Buffer.alloc(32, 2);
-      await sql`UPDATE immich_fork.icloud_resource SET sha256 = ${replacement} WHERE id = ${resourceId}::uuid`.execute(
-        db,
-      );
+      await sql`UPDATE public.icloud_resource SET sha256 = ${replacement} WHERE id = ${resourceId}::uuid`.execute(db);
       await recordSyncIdentity(db, resourceId);
       expect(await sut.identities(connection.ownerId, [ASSET])).toEqual([
         expect.objectContaining({
@@ -150,7 +135,7 @@ describe(ICloudIdentityRepository.name, () => {
       const assetId = randomUUID();
       const resourceId = await commit('original', assetId, Buffer.alloc(32, 1));
       await recordSyncIdentity(db, resourceId);
-      await sql`UPDATE immich_fork.icloud_source_identity
+      await sql`UPDATE public.icloud_source_identity
         SET "lastVerifiedAt" = '2026-06-01T10:00:00Z', "lastAuditResult" = ${result}, "appleFingerprint" = 'same-proof'
         WHERE "assetId" = ${assetId}::uuid`.execute(db);
       const before = await sut.identities(connection.ownerId, [ASSET]);
@@ -163,15 +148,15 @@ describe(ICloudIdentityRepository.name, () => {
     const assetId = randomUUID();
     const resourceId = await commit('original', assetId, Buffer.alloc(32, 1));
     await recordSyncIdentity(db, resourceId);
-    await sql`UPDATE immich_fork.icloud_source_identity
+    await sql`UPDATE public.icloud_source_identity
       SET "lastVerifiedAt" = '2026-06-01T10:00:00Z', "lastAuditResult" = 'match', "appleFingerprint" = 'same-proof'
       WHERE "assetId" = ${assetId}::uuid`.execute(db);
     const before = await sut.identities(connection.ownerId, [ASSET]);
-    await sql`UPDATE immich_fork.icloud_resource SET sha256 = NULL WHERE id = ${resourceId}::uuid`.execute(db);
+    await sql`UPDATE public.icloud_resource SET sha256 = NULL WHERE id = ${resourceId}::uuid`.execute(db);
     await recordSyncIdentity(db, resourceId);
     expect(await sut.identities(connection.ownerId, [ASSET])).toEqual(before);
     await expect(
-      sql`UPDATE immich_fork.icloud_source_identity SET sha256 = NULL WHERE "assetId" = ${assetId}::uuid`.execute(db),
+      sql`UPDATE public.icloud_source_identity SET sha256 = NULL WHERE "assetId" = ${assetId}::uuid`.execute(db),
     ).rejects.toMatchObject({ code: '23502' });
     expect(await sut.identities(connection.ownerId, [ASSET])).toEqual(before);
   });
@@ -200,9 +185,9 @@ describe(ICloudIdentityRepository.name, () => {
   it('stops calling a role pending once it is finalized, or failed for good', async () => {
     await commit('original', randomUUID(), Buffer.alloc(32, 1));
     // committed is still the worker's to finish; finalized is done
-    await sql`UPDATE immich_fork.icloud_resource SET status = 'finalized'
+    await sql`UPDATE public.icloud_resource SET status = 'finalized'
       WHERE "connectionId" = ${connection.id}::uuid AND role = 'original'`.execute(db);
-    await sql`UPDATE immich_fork.icloud_resource SET status = 'failed'
+    await sql`UPDATE public.icloud_resource SET status = 'failed'
       WHERE "connectionId" = ${connection.id}::uuid AND role = 'motion'`.execute(db);
     const [item] = await sut.inventory(connection.ownerId, [ASSET]);
     expect(item.pendingRoles).not.toContain('original');
@@ -216,11 +201,11 @@ describe(ICloudIdentityRepository.name, () => {
     // a duplicate in iCloud, imported before identities existed, reused the same asset
     const twin = '0B0B0B0B-75DF-41B2-8773-80C153D73A5A';
     await sql`
-      INSERT INTO immich_fork.icloud_resource ("connectionId", "ownerId", "libraryKey", library, "sourceAssetId",
+      INSERT INTO public.icloud_resource ("connectionId", "ownerId", "libraryKey", library, "sourceAssetId",
         "recordId", "resourceKey", role, fingerprint, source, "expectedSize", status, "assetId", sha256)
       SELECT "connectionId", "ownerId", "libraryKey", library, ${twin}, "recordId", "resourceKey", role, fingerprint,
         source, "expectedSize", status, "assetId", sha256
-      FROM immich_fork.icloud_resource WHERE "connectionId" = ${connection.id}::uuid AND role = 'original'
+      FROM public.icloud_resource WHERE "connectionId" = ${connection.id}::uuid AND role = 'original'
     `.execute(db);
     await expect(sut.backfill()).resolves.toBe(1);
     await expect(sut.identities(connection.ownerId, [twin])).resolves.toEqual([
@@ -265,7 +250,7 @@ describe(ICloudIdentityRepository.name, () => {
       const [elsewhere] = await sut.claim(randomUUID(), [ASSET], device('b'), 600);
       expect(elsewhere.holder).toBe(device('b'));
 
-      await sql`UPDATE immich_fork.icloud_claim SET "expiresAt" = now() - interval '1 second'`.execute(db);
+      await sql`UPDATE public.icloud_claim SET "expiresAt" = now() - interval '1 second'`.execute(db);
       const [taken] = await sut.claim(connection.ownerId, [ASSET], device('b'), 600);
       expect(taken.holder).toBe(device('b'));
       expect(taken.id).not.toBe(first.id);
@@ -276,7 +261,7 @@ describe(ICloudIdentityRepository.name, () => {
 
     it("renews up to four hours from the first claim, and releases only the holder's own", async () => {
       const [claim] = await sut.claim(connection.ownerId, [ASSET], device('a'), 600);
-      await sql`UPDATE immich_fork.icloud_claim SET "createdAt" = now() - interval '3 hours 59 minutes'`.execute(db);
+      await sql`UPDATE public.icloud_claim SET "createdAt" = now() - interval '3 hours 59 minutes'`.execute(db);
       const [renewed] = await sut.renew(connection.ownerId, [claim.id], device('a'), 600);
       expect(renewed.expiresAt.getTime() - Date.now()).toBeLessThan(120_000);
       await expect(sut.renew(connection.ownerId, [claim.id], device('b'), 600)).resolves.toEqual([]);
@@ -289,14 +274,14 @@ describe(ICloudIdentityRepository.name, () => {
       await expect(sut.claimForSync(connection.ownerId, ASSET.toLowerCase(), connection.id)).resolves.toBeInstanceOf(
         Date,
       );
-      await sql`DELETE FROM immich_fork.icloud_claim`.execute(db);
+      await sql`DELETE FROM public.icloud_claim`.execute(db);
       await expect(sut.claimForSync(connection.ownerId, ASSET, connection.id)).resolves.toBeNull();
 
       // the item has an original, a Live Photo motion and an edit: the claim stays until all three are done
       const resourceId = await commit('original', randomUUID(), Buffer.alloc(32, 1));
       await releaseSyncClaim(db, resourceId);
       await expect(sut.claims(connection.ownerId, [ASSET])).resolves.toHaveLength(1);
-      await sql`UPDATE immich_fork.icloud_resource SET status = 'finalized' WHERE "connectionId" = ${connection.id}::uuid`.execute(
+      await sql`UPDATE public.icloud_resource SET status = 'finalized' WHERE "connectionId" = ${connection.id}::uuid`.execute(
         db,
       );
       await releaseSyncClaim(db, resourceId);
@@ -305,7 +290,7 @@ describe(ICloudIdentityRepository.name, () => {
 
     it('parks a resource the device holds without counting an attempt', async () => {
       const { rows } = await sql<{ id: string }>`
-        UPDATE immich_fork.icloud_resource SET status = 'staging', "leaseToken" = gen_random_uuid(),
+        UPDATE public.icloud_resource SET status = 'staging', "leaseToken" = gen_random_uuid(),
           "leaseExpiresAt" = now() + interval '1 minute' WHERE role = 'original' RETURNING id
       `.execute(db);
       const resource = (await sync.resource(rows[0].id))!;
@@ -323,7 +308,7 @@ describe(ICloudIdentityRepository.name, () => {
       const [claim] = await sut.claim(connection.ownerId, [ASSET], device('a'), 600);
       const upload = async (role: 'original' | 'raw-alternate', byte: number) => {
         const assetId = randomUUID();
-        await sql`INSERT INTO asset (id, "ownerId") VALUES (${assetId}::uuid, ${connection.ownerId}::uuid)`.execute(db);
+        await seedCanonicalAsset(db, { id: assetId, ownerId: connection.ownerId });
         const input = {
           ownerId: connection.ownerId,
           assetId,
@@ -354,7 +339,9 @@ describe(ICloudIdentityRepository.name, () => {
 
     it("knows the owner's backup devices", async () => {
       const key = randomUUID();
-      await sql`INSERT INTO backup_device VALUES (${connection.ownerId}::uuid, ${key}::uuid, NULL)`.execute(db);
+      await sql`INSERT INTO backup_device ("ownerId","deviceKey","displayName",model,platform,"appVersion","pendingCount") VALUES (${connection.ownerId}::uuid, ${key}::uuid, 'Phone','Test','ios','1',0)`.execute(
+        db,
+      );
       await expect(sut.ownsDevice(connection.ownerId, key)).resolves.toBe(true);
       await expect(sut.ownsDevice(randomUUID(), key)).resolves.toBe(false);
     });

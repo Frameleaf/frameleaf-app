@@ -1,17 +1,16 @@
 import { Kysely, sql } from 'kysely';
 import { createHash } from 'node:crypto';
-import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import { AssetLockReason, AssetStatus, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
-import * as migration from 'src/schema/migrations/2100000000725-OwnerBackupDeletionFacts.js';
 import { BaseService } from 'src/services/base.service.js';
 import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { ownerBackupHistoryPage } from 'src/utils/cloud-backup-owner.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
+import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 
 let db: Kysely<DB>;
 const checksum = (text: string) => createHash('sha256').update(text).digest();
@@ -27,16 +26,14 @@ afterAll(async () => {
 });
 
 describe('FL234 physical deletion capture and current owner history', () => {
-  it('applies down/up without old-row backfill and preserves the existing core audit trigger', async () => {
+  it('captures deletion in the canonical baseline and preserves the core audit trigger', async () => {
     const { ctx } = setup();
     const { user } = await ctx.newUser();
     const { asset: asset } = await ctx.newAsset({ ownerId: user.id });
-    await migration.down(db);
     await db.deleteFrom('asset').where('id', '=', asset.id).execute();
-    await migration.up(db);
-    expect(await db.selectFrom('asset_backup_deletion').selectAll().where('assetId', '=', asset.id).execute()).toEqual(
-      [],
-    );
+    expect(
+      await db.selectFrom('asset_backup_deletion').selectAll().where('assetId', '=', asset.id).execute(),
+    ).toHaveLength(1);
     expect(await db.selectFrom('asset_audit').selectAll().where('assetId', '=', asset.id).execute()).toHaveLength(1);
   });
   it('captures actual SHA identity and timestamp; survives audit pruning and refreshes only on actual redelete', async () => {

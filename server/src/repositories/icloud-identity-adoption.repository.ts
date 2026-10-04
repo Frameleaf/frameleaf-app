@@ -13,6 +13,7 @@ import { resourcesForICloudAsset } from 'src/utils/icloud-records.js';
 import { isNotLocked } from 'src/utils/locked.js';
 import { getPreferences } from 'src/utils/preferences.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+
 export type IdentityAdoptionAuthority = {
   ownerId: string;
   connectionId: string;

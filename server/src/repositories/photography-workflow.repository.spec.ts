@@ -2,17 +2,18 @@ import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { PostgresJSDialect } from 'kysely-postgres-js';
 import { randomUUID } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
 import postgres from 'postgres';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
+import { expectCanonicalTables, seedCanonicalUser, seedCanonicalAlbum } from 'test/fixtures/canonical-database.js';
+import { getMocks } from 'test/utils.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DB } from 'src/schema/index.js';
 import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import * as migration from 'src/fork-schema/migrations/0000000000215-PhotographyWorkflow.js';
-import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 
 // Runnable isolated PostgreSQL check. Set PHOTOGRAPHY_TEST_PG_SOCKET to a disposable local test socket.
-describe.runIf(!!process.env.PHOTOGRAPHY_TEST_PG_SOCKET)('photography persisted CAS and rollback', () => {
+describe.runIf(!!process.env.PHOTOGRAPHY_TEST_PG_SOCKET)('photography persisted canonical CAS', () => {
   let db: Kysely<DB>;
   const databaseName = `photography_${randomUUID().replaceAll('-', '')}`;
   const admin = postgres({
@@ -43,31 +44,17 @@ describe.runIf(!!process.env.PHOTOGRAPHY_TEST_PG_SOCKET)('photography persisted 
         }),
       }),
     });
-    await sql`CREATE SCHEMA immich_fork;
-      CREATE TABLE immich_fork.state(id integer PRIMARY KEY,phase text); INSERT INTO immich_fork.state VALUES(1,'dual-write');
-      CREATE TABLE immich_fork.migration_audit(name text,status text);
-      CREATE TABLE public.migration_overrides(name text);
-      CREATE TABLE public."user"(id uuid PRIMARY KEY,"deletedAt" timestamptz,status text);
-      CREATE TABLE public.album(id uuid PRIMARY KEY,"deletedAt" timestamptz);
-      CREATE TABLE public.album_user("albumId" uuid,"userId" uuid,role text);
-    `.execute(db);
-    await migration.up(db);
-    await sql`INSERT INTO public."user" VALUES(${ownerId}::uuid,NULL,'active')`.execute(db);
-    await sql`INSERT INTO public.album VALUES(${albumId}::uuid,NULL)`.execute(db);
-    await sql`INSERT INTO public.album_user VALUES(${albumId}::uuid,${ownerId}::uuid,'owner')`.execute(db);
+    await new DatabaseRepository(db, getMocks().logger as never, new ConfigRepository()).runMigrations();
+    await seedCanonicalUser(db, { id: ownerId });
+    await seedCanonicalAlbum(db, { id: albumId, ownerId });
   });
   afterAll(async () => {
     await db?.destroy();
     await admin.unsafe(`DROP DATABASE "${databaseName}"`);
     await admin.end();
   });
-  it('has no upstream foreign keys and records exact private catalog evidence', async () => {
-    const evidence = await getCatalogEvidence(db, { includeForkLedger: false });
-    const ours = (identity: string) => identity.startsWith('immich_fork.photography_');
-    expect(evidence.constraints.filter((c) => ours(c.identity) && c.definition.includes('FOREIGN KEY'))).toEqual([]);
-    await writeFile('/tmp/photography-workflow-catalog.json', JSON.stringify(evidence));
-    await db.transaction().execute((tx) => migration.down(tx));
-    await migration.up(db);
+  it('installs the canonical workflow and site tables', async () => {
+    await expectCanonicalTables(db, ['photography_workflow', 'photography_studio_site']);
   });
   it('admits exactly one competing initial write, retains its value and rejects a foreign owner', async () => {
     const repository = new PhotographyWorkflowRepository(db);
@@ -119,7 +106,7 @@ describe.runIf(!!process.env.PHOTOGRAPHY_TEST_PG_SOCKET)('photography persisted 
     const repository = new PhotographyWorkflowRepository(db);
     const existing = (await repository.site(ownerId))!;
     // Exact legacy flat record is wrapped without changing its website projection.
-    await sql`UPDATE immich_fork.photography_studio_site SET value=${JSON.stringify(existing.value)}::text::jsonb WHERE "ownerId"=${ownerId}::uuid`.execute(
+    await sql`UPDATE public.photography_studio_site SET value=${JSON.stringify(existing.value)}::text::jsonb WHERE "ownerId"=${ownerId}::uuid`.execute(
       db,
     );
     const presetId = randomUUID();
@@ -130,8 +117,7 @@ describe.runIf(!!process.env.PHOTOGRAPHY_TEST_PG_SOCKET)('photography persisted 
     expect((await repository.studioPresets(ownerId)).presets[0].id).toBe(presetId);
     const secondShootId = randomUUID(),
       secondAlbumId = randomUUID();
-    await sql`INSERT INTO public.album VALUES(${secondAlbumId}::uuid,NULL)`.execute(db);
-    await sql`INSERT INTO public.album_user VALUES(${secondAlbumId}::uuid,${ownerId}::uuid,'owner')`.execute(db);
+    await seedCanonicalAlbum(db, { id: secondAlbumId, ownerId });
     await repository.mutate(secondShootId, ownerId, secondAlbumId, null, initial, async (value, tx) => {
       value.config = (await repository.pinnedStudioPreset(tx, ownerId, saved.revision, presetId)).config;
     });
@@ -178,20 +164,22 @@ describe.runIf(!!process.env.PHOTOGRAPHY_TEST_PG_SOCKET)('photography persisted 
     await update;
     expect((await repository.get(shootId))?.value.config.title).toBe('Changed setup');
   });
-  it('holds rollback behind an in-flight writer and refuses nonempty history', async () => {
+  it('serializes competing writes without replacing committed history', async () => {
     const repository = new PhotographyWorkflowRepository(db);
     const { promise: writing, resolve: entered } = Promise.withResolvers<void>();
     const { promise: continueWrite, resolve: release } = Promise.withResolvers<void>();
+    const revision = (await repository.get(shootId))!.revision;
     const writer = repository.mutate(shootId, ownerId, albumId, undefined, initial, async (value) => {
       entered();
       await continueWrite;
       value.ordering = 'manual';
     });
     await writing;
-    const rollback = db.transaction().execute((tx) => migration.down(tx));
+    const competing = repository.mutate(shootId, ownerId, albumId, revision, initial, () => {});
+    void competing.catch(() => {});
     release();
     await writer;
-    await expect(rollback).rejects.toThrow('Photography history must be retained');
+    await expect(competing).rejects.toBeInstanceOf(ConflictException);
     expect((await repository.get(shootId))?.value.ordering).toBe('manual');
   });
 });

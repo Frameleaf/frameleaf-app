@@ -1,4 +1,4 @@
-import { ImportDatabase, ImportRefused } from './types.js';
+import { ImportDatabase, ImportRefused } from 'src/immich-import/types.js';
 
 // Included in the canonical Frameleaf bootstrap by the integration owner. Never run on the source.
 export const IMMICH_IMPORT_SCHEMA_SQL = `

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { BigIntStats, constants } from 'node:fs';
 import { FileHandle, open, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { ImportRefused, MediaRootMap } from './types.js';
+import { ImportRefused, MediaRootMap } from 'src/immich-import/types.js';
 
 const beneath = (root: string, candidate: string): boolean => {
   const path = relative(root, candidate);

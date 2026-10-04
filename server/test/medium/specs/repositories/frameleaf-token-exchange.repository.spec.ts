@@ -1,11 +1,9 @@
 import { Kysely, sql } from 'kysely';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as exchange from 'src/fork-schema/migrations/0000000000210-FrameleafTokenExchange.js';
 import { FrameleafAccountRepository } from 'src/repositories/frameleaf-account.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -14,7 +12,6 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   await db?.destroy();
@@ -25,10 +22,6 @@ const setup = () => {
   return { sut: ctx.get(FrameleafAccountRepository) };
 };
 
-const isOurs = (entry: { identity: string }) =>
-  entry.identity.startsWith('immich_fork.frameleaf_exchange_token') ||
-  entry.identity.startsWith('immich_fork.frameleaf_sign_in_revocation');
-
 const token = (overrides: Partial<Parameters<FrameleafAccountRepository['redeemExchangeToken']>[0]> = {}) => ({
   jti: `jti-${newUuid()}`,
   sub: `sub-${newUuid()}`,
@@ -38,22 +31,8 @@ const token = (overrides: Partial<Parameters<FrameleafAccountRepository['redeemE
   ...overrides,
 });
 
-it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    const ours = before[kind].filter((entry) => isOurs(entry));
-    expect(ours.length).toBeGreaterThan(0);
-    expect(ours).toEqual(manifest[kind].filter((entry) => isOurs(entry)));
-  }
-  await exchange.down(db);
-  await exchange.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-    expect(after[kind].filter((entry) => isOurs(entry))).toEqual(before[kind].filter((entry) => isOurs(entry)));
-  }
+it('installs feature tables in the real canonical baseline', async () => {
+  await expectCanonicalTables(db, ['frameleaf_exchange_token', 'frameleaf_sign_in_revocation']);
 });
 
 it('takes an exchange token once, even when two copies arrive together', async () => {
@@ -73,7 +52,7 @@ it('forgets a token once it could no longer be accepted', async () => {
   await expect(sut.redeemExchangeToken(old)).resolves.toBe('ok');
   // the next redemption sweeps expired rows; the token itself is refused as expired before it gets here
   await sut.redeemExchangeToken(token());
-  const { rows } = await sql`SELECT 1 FROM immich_fork.frameleaf_exchange_token WHERE jti = ${old.jti}`.execute(db);
+  const { rows } = await sql`SELECT 1 FROM public.frameleaf_exchange_token WHERE jti = ${old.jti}`.execute(db);
   expect(rows).toHaveLength(0);
 });
 
@@ -109,15 +88,4 @@ it('tells whether a sign-in was ended after a token was minted', async () => {
   await expect(sut.isSignInRevoked({ sub, sid, issuedAt: before })).resolves.toBe(true);
   await expect(sut.isSignInRevoked({ sub, sid: null, issuedAt: before })).resolves.toBe(false);
   await expect(sut.isSignInRevoked({ sub, sid, issuedAt: new Date(Date.now() + 1000) })).resolves.toBe(false);
-});
-
-it('refuses writes while the server is being handed over', async () => {
-  const { sut } = setup();
-  await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
-  try {
-    await expect(sut.redeemExchangeToken(token())).rejects.toThrow(/handed over/);
-    await expect(sut.revokeSignIns({ sub: 'someone' }, new Date())).rejects.toThrow(/handed over/);
-  } finally {
-    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
-  }
 });

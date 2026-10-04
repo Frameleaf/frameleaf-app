@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import type { Mock } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import { AssetVisibility, MediaOperationKind, MediaOperationStatus } from 'src/enum.js';
@@ -21,6 +20,7 @@ import {
 } from 'src/utils/preservation.js';
 import { newUuid, newUuidV7 } from 'test/small.factory.js';
 import { getMocks } from 'test/utils.js';
+import type { Mock } from 'vitest';
 
 type Mocked = Record<string, Mock<(...args: any[]) => any>>;
 
@@ -38,7 +38,6 @@ describe(PreservationWorkerService.name, () => {
   let albums: Mocked;
   let stacks: Mocked;
   let tags: Mocked;
-  let enrichment: Mocked;
   let albumRepository: Mocked;
   const ownerId = newUuid();
 
@@ -191,7 +190,6 @@ describe(PreservationWorkerService.name, () => {
     albums = { addAssets: vi.fn() };
     stacks = { create: vi.fn() };
     tags = { upsertValue: vi.fn(), upsertAssetIds: vi.fn() };
-    enrichment = { shouldReadSidecar: vi.fn().mockResolvedValue(false), get: vi.fn() };
     albumRepository = { create: vi.fn() };
 
     sut = new PreservationWorkerService(
@@ -202,7 +200,6 @@ describe(PreservationWorkerService.name, () => {
       users as never,
       albumRepository as never,
       tags as never,
-      enrichment as never,
       assetMedia as never,
       assets as never,
       albums as never,

@@ -1,15 +1,9 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as capabilities from 'src/fork-schema/migrations/0000000000181-RenderWorkerSessionCapabilities.js';
-import * as workspace from 'src/fork-schema/migrations/0000000000182-StudioWorkspaceLayout.js';
-import * as generated from 'src/fork-schema/migrations/0000000000207-StudioGeneratedResources.js';
-import * as imports from 'src/fork-schema/migrations/0000000000208-StudioProjectImports.js';
-import * as hdrIntermediates from 'src/fork-schema/migrations/0000000000209-StudioHdrIntermediates.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { DB } from 'src/schema/index.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 /**
@@ -20,35 +14,27 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 
 const catalog = manifest as unknown as Record<string, Array<{ identity: string }>>;
 
 describe.each([
-  ['immich_fork.render_worker_session_capability', capabilities],
-  ['immich_fork.studio_workspace_layout', workspace],
-  ['immich_fork.studio_generated_resource', generated],
-  ['immich_fork.studio_project_import', imports],
-  ['immich_fork.studio_hdr_intermediate', hdrIntermediates],
+  ['public.render_worker_session_capability', capabilities],
+  ['public.studio_workspace_layout', workspace],
+  ['public.studio_generated_resource', generated],
+  ['public.studio_project_import', imports],
+  ['public.studio_hdr_intermediate', hdrIntermediates],
 ])('%s', (table, migration) => {
   const owned = (entry: { identity: string }) => entry.identity === table || entry.identity.startsWith(`${table}.`);
 
-  it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-    const before = await getCatalogEvidence(db);
-    for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-      expect(before[kind].filter((entry) => owned(entry))).toEqual(catalog[kind].filter((entry) => owned(entry)));
-    }
-    expect(before.tables.filter((entry) => owned(entry))).toHaveLength(1);
-
-    await migration.down(db);
-    await migration.up(db);
-    const after = await getCatalogEvidence(db);
-    for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-      expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-        before[kind].filter((entry) => entry.identity.startsWith('public.')),
-      );
-    }
+  it('installs feature tables in the real canonical baseline', async () => {
+    await expectCanonicalTables(db, [
+      'render_worker_session_capability',
+      'studio_workspace_layout',
+      'studio_generated_resource',
+      'studio_project_import',
+      'studio_hdr_intermediate',
+    ]);
   });
 });
 

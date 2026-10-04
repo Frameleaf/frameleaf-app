@@ -11,11 +11,11 @@ import {
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { DB } from 'src/schema/index.js';
-import { up as migrateRetryIndex } from 'src/schema/migrations/2100000000590-HardenMediaOperationRetryAndCheckpoints.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit, JOB_QUEUE_CLAIMANT, editOperationCreate } from 'src/utils/edit-operation.js';
+import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -88,6 +88,213 @@ describe(MediaOperationRepository.name, () => {
         .where('id', '=', stream.id)
         .executeTakeFirstOrThrow();
       expect(stored.type).toBe('object');
+    });
+  });
+
+  describe('restored execution state', () => {
+    const restoredClaim = {
+      status: MediaOperationStatus.Rendering,
+      claimToken: '0195e2a0-0000-7000-8000-0000000000bb',
+      claimedBy: 'worker-from-backup',
+      claimExpiresAt: new Date(Date.now() + LEASE_MS),
+      heartbeatAt: new Date(),
+      attemptStartedAt: new Date(),
+      attempt: 1,
+    };
+
+    it('revokes safe work once and keeps completed checkpoints and publication results', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const claim = await sut.claimNext({
+        kinds: [MediaOperationKind.StudioExport],
+        workerId: 'worker-a',
+        leaseMs: LEASE_MS,
+      });
+      await sut.upsertCheckpoint(operation.id, claim!.claimToken, {
+        operationId: operation.id,
+        sequence: 0,
+        chunkKey: 'kept-chunk',
+        inputDigest: 'source',
+        historyDigest: 'history',
+        configDigest: 'config',
+        timebase: '1/30',
+        startTicks: '0',
+        endTicks: '30',
+      });
+      await sut.completeCheckpoint(operation.id, claim!.claimToken, {
+        sequence: 0,
+        chunkKey: 'kept-chunk',
+        outputPath: '/backups/render/kept-chunk',
+        outputChecksum: Buffer.from('abcd', 'hex'),
+        sizeInBytes: 4,
+      });
+      await ctx.database
+        .updateTable('media_operation')
+        .set({ result: { committedChunks: 1 } })
+        .where('id', '=', operation.id)
+        .execute();
+      const checkpoints = await ctx.database
+        .selectFrom('media_operation_checkpoint')
+        .selectAll()
+        .where('operationId', '=', operation.id)
+        .execute();
+
+      await ctx.database.transaction().execute(resetMediaOperationsAfterRestore);
+      const first = await sut.getForOwner(operation.id, user.id);
+      expect(first).toMatchObject({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 1,
+        claimToken: null,
+        claimedBy: null,
+        claimExpiresAt: null,
+        heartbeatAt: null,
+        attemptStartedAt: null,
+        result: { committedChunks: 1 },
+        snapshot: operation.snapshot,
+        destination: operation.destination,
+        errorCode: 'restore_retry',
+      });
+      expect(first!.retryAt!.getTime() - Date.now()).toBeGreaterThan(20_000);
+      await expect(sut.complete(operation.id, claim!.claimToken, { resultAssetId: null })).resolves.toBe(false);
+      await expect(
+        ctx.database
+          .selectFrom('media_operation_checkpoint')
+          .selectAll()
+          .where('operationId', '=', operation.id)
+          .execute(),
+      ).resolves.toEqual(checkpoints);
+
+      // Repeating restore cleanup in the same restored database does not spend another retry.
+      await ctx.database.transaction().execute(resetMediaOperationsAfterRestore);
+      expect(await sut.getForOwner(operation.id, user.id)).toMatchObject({ autoRetries: 1, retryAt: first!.retryAt });
+    });
+
+    it('reports an interrupted attempt whose one automatic retry was already used', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      await ctx.database
+        .updateTable('media_operation')
+        .set({ ...restoredClaim, autoRetries: 1 })
+        .where('id', '=', operation.id)
+        .execute();
+
+      await ctx.database.transaction().execute(resetMediaOperationsAfterRestore);
+
+      expect(await sut.getForOwner(operation.id, user.id)).toMatchObject({
+        status: MediaOperationStatus.Failed,
+        autoRetries: 1,
+        claimToken: null,
+        retryAt: null,
+        errorCode: 'restore_needs_attention',
+        finishedAt: expect.any(Date),
+      });
+    });
+
+    it('preserves remote identity and leaves external effects for attention without an invented acknowledgement', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id, {
+        destination: MediaOperationDestination.FrameleafCloud,
+        destinationDetail: 'chosen-endpoint',
+        remoteJobId: 'paid-remote-job',
+      });
+      await ctx.database
+        .updateTable('media_operation')
+        .set({ ...restoredClaim, cancelRequestedAt: new Date() })
+        .where('id', '=', operation.id)
+        .execute();
+      const queuedUnsafe = await newOperation(sut, user.id, { kind: MediaOperationKind.PhysicalDeduplication });
+
+      await ctx.database.transaction().execute(resetMediaOperationsAfterRestore);
+
+      expect(await sut.getForOwner(operation.id, user.id)).toMatchObject({
+        status: MediaOperationStatus.Failed,
+        destination: MediaOperationDestination.FrameleafCloud,
+        destinationDetail: 'chosen-endpoint',
+        remoteJobId: 'paid-remote-job',
+        cancelAcknowledgedAt: null,
+        remoteReleasedAt: null,
+        autoRetries: 0,
+        claimToken: null,
+        errorCode: 'restore_needs_attention',
+      });
+      expect(await sut.getForOwner(queuedUnsafe.id, user.id)).toMatchObject({
+        status: MediaOperationStatus.Failed,
+        autoRetries: 0,
+        errorCode: 'restore_needs_attention',
+      });
+    });
+
+    it('honours pauses and cancellation, and leaves untouched safe queued work eligible', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const paused = await newOperation(sut, user.id);
+      const cancelled = await newOperation(sut, user.id);
+      const queued = await newOperation(sut, user.id);
+      await ctx.database
+        .updateTable('media_operation')
+        .set({ ...restoredClaim, pauseRequestedAt: new Date() })
+        .where('id', '=', paused.id)
+        .execute();
+      await ctx.database
+        .updateTable('media_operation')
+        .set({ ...restoredClaim, cancelRequestedAt: new Date() })
+        .where('id', '=', cancelled.id)
+        .execute();
+
+      await ctx.database.transaction().execute(resetMediaOperationsAfterRestore);
+
+      expect(await sut.getForOwner(paused.id, user.id)).toMatchObject({
+        status: MediaOperationStatus.Paused,
+        autoRetries: 0,
+        claimToken: null,
+        retryAt: null,
+      });
+      expect(await sut.getForOwner(cancelled.id, user.id)).toMatchObject({
+        status: MediaOperationStatus.Cancelled,
+        autoRetries: 0,
+        claimToken: null,
+        cancelAcknowledgedAt: null,
+        retryAt: null,
+      });
+      expect(await sut.getForOwner(queued.id, user.id)).toMatchObject({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 0,
+        retryAt: null,
+      });
+    });
+
+    it('retains terminal facts while clearing historical lease fields', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const operation = await newOperation(sut, user.id);
+      const finishedAt = new Date('2026-10-01T12:00:00Z');
+      await ctx.database
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Completed,
+          finishedAt,
+          progress: 100,
+          heartbeatAt: new Date(),
+          attemptStartedAt: new Date(),
+          result: { output: 'committed' },
+        })
+        .where('id', '=', operation.id)
+        .execute();
+
+      await ctx.database.transaction().execute(resetMediaOperationsAfterRestore);
+
+      expect(await sut.getForOwner(operation.id, user.id)).toMatchObject({
+        status: MediaOperationStatus.Completed,
+        finishedAt,
+        progress: 100,
+        autoRetries: 0,
+        result: { output: 'committed' },
+        heartbeatAt: null,
+        attemptStartedAt: null,
+      });
     });
   });
 
@@ -302,7 +509,7 @@ describe(MediaOperationRepository.name, () => {
   });
 
   describe('recoverExpiredClaims', () => {
-    it('requeues a job with attempts left, retries one without once, and fails one that already retried', async () => {
+    it('uses one retry for safe work regardless of maxAttempts and fails work that already retried', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       const resumable = await newOperation(sut, user.id, { maxAttempts: 3 });
@@ -329,12 +536,12 @@ describe(MediaOperationRepository.name, () => {
         error: 'The worker stopped responding',
       });
 
-      expect(result).toEqual({ requeued: 1, retried: 1, failed: 1, abandonedCancels: 0, paused: 0 });
+      expect(result).toEqual({ requeued: 0, retried: 2, failed: 1, abandonedCancels: 0, paused: 0 });
       await expect(sut.getForOwner(resumable.id, user.id)).resolves.toMatchObject({
         status: MediaOperationStatus.Queued,
         claimToken: null,
-        autoRetries: 0,
-        retryAt: null,
+        autoRetries: 1,
+        retryAt: expect.any(Date),
       });
       const retrying = await sut.getForOwner(exhausted.id, user.id);
       expect(retrying).toMatchObject({
@@ -972,10 +1179,11 @@ describe(MediaOperationRepository.name, () => {
       const recovered = await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
 
       // Other tests' rows may share the database, so only this owner's two are counted on.
-      expect(recovered.requeued).toBeGreaterThanOrEqual(2);
+      expect(recovered.retried).toBeGreaterThanOrEqual(1);
+      expect(recovered.failed).toBeGreaterThanOrEqual(1);
       const { items } = await sut.list({ ownerId: user.id, take: 10, skip: 0 });
       const byKind = Object.fromEntries(items.map((item) => [item.kind, item.status]));
-      expect(byKind[MediaOperationKind.Bulk]).toBe(MediaOperationStatus.Queued);
+      expect(byKind[MediaOperationKind.Bulk]).toBe(MediaOperationStatus.Failed);
       expect(byKind[MediaOperationKind.StudioExport]).toBe(MediaOperationStatus.Queued);
     });
   });
@@ -1109,14 +1317,14 @@ describe(MediaOperationRepository.name, () => {
       await expect(unreleasedIds(sut, operation.id)).resolves.toHaveLength(0);
     });
 
-    it('resumes a lost claim of a resumable job twice, then retries it once, then reports it', async () => {
+    it('resumes a lost claim once even when maxAttempts requests a larger retry budget', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
-      // Even a job that asks for more claims gets two resumes (owner decision, September 22, 2026).
+      // Checkpoint reuse does not grant an independent budget for additional lost claims.
       const operation = await newOperation(sut, user.id, { maxAttempts: 20 });
       const statuses: string[] = [];
 
-      for (let lost = 0; lost < 4; lost++) {
+      for (let lost = 0; lost < 2; lost++) {
         await skipRetryDelay(ctx, operation.id);
         const claim = await claimKind(sut, MediaOperationKind.StudioExport, `worker-${lost}`);
         expect(claim?.operation.id).toBe(operation.id);
@@ -1126,19 +1334,19 @@ describe(MediaOperationRepository.name, () => {
         statuses.push(`${after!.status}:${after!.autoRetries}`);
       }
 
-      expect(statuses).toEqual(['queued:0', 'queued:0', 'queued:1', 'failed:1']);
+      expect(statuses).toEqual(['queued:1', 'failed:1']);
     });
 
     it('treats a lost claim of a job that cannot resume as its one automatic retry, then reports it', async () => {
       const { ctx, sut } = setup();
       const { user } = await ctx.newUser();
       // A preview starts again from nothing on a new claim, so a lost claim is simply a failure.
-      const operation = await newOperation(sut, user.id, { kind: MediaOperationKind.RestorationPreview });
+      const operation = await newOperation(sut, user.id, { kind: MediaOperationKind.StudioPreview });
       const statuses: string[] = [];
 
       for (let lost = 0; lost < 2; lost++) {
         await skipRetryDelay(ctx, operation.id);
-        await claimKind(sut, MediaOperationKind.RestorationPreview, `worker-${lost}`);
+        await claimKind(sut, MediaOperationKind.StudioPreview, `worker-${lost}`);
         await lapse(ctx, operation.id);
         await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
         const after = await sut.getForOwner(operation.id, user.id);
@@ -1161,13 +1369,13 @@ describe(MediaOperationRepository.name, () => {
         );
       }
 
-      // So the next lost claim still resumes rather than using the automatic retry.
+      // The first actual loss consumes the single retry, independent of graceful handbacks.
       await claimKind(sut, MediaOperationKind.StudioExport, 'worker-after-restart');
       await lapse(ctx, operation.id);
       await sut.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'gone' });
       await expect(sut.getForOwner(operation.id, user.id)).resolves.toMatchObject({
         status: MediaOperationStatus.Queued,
-        autoRetries: 0,
+        autoRetries: 1,
         attempt: 1,
       });
     });
@@ -1354,160 +1562,6 @@ describe(MediaOperationRepository.name, () => {
       });
     });
 
-    describe('retry index migration (2100000000590)', () => {
-      it('cancels duplicate unfinished retries so the unique index can be built', async () => {
-        const database = await getKyselyDB();
-        try {
-          const { ctx, sut } = setup(database);
-          const { user } = await ctx.newUser();
-          const failed = await newOperation(sut, user.id);
-          await database
-            .updateTable('media_operation')
-            .set({ status: MediaOperationStatus.Failed })
-            .where('id', '=', failed.id)
-            .execute();
-          await sql`DROP INDEX "media_operation_retryOfId_active_uq"`.execute(database);
-
-          const retry = (label: string, status: MediaOperationStatus, claimToken: string | null = null) =>
-            sut
-              .create({
-                ownerId: user.id,
-                kind: MediaOperationKind.StudioExport,
-                destination: MediaOperationDestination.Local,
-                label,
-                retryOfId: failed.id,
-                snapshot: {},
-                settings: {},
-              })
-              .then(async (operation) => {
-                await database
-                  .updateTable('media_operation')
-                  .set({ status, claimToken, claimedBy: claimToken ? 'worker-a' : null })
-                  .where('id', '=', operation.id)
-                  .execute();
-                return operation;
-              });
-          const olderQueued = await retry('older queued', MediaOperationStatus.Queued);
-          const rendering = await retry(
-            'rendering',
-            MediaOperationStatus.Rendering,
-            '0195e2a0-0000-7000-8000-00000000c1a1',
-          );
-          const laterQueued = await retry('later queued', MediaOperationStatus.Queued);
-          const finished = await retry('finished', MediaOperationStatus.Completed);
-
-          await migrateRetryIndex(database);
-
-          const rows = await database
-            .selectFrom('media_operation')
-            .select(['id', 'status', 'claimToken', 'cancelAcknowledgedAt', 'finishedAt'])
-            .where('retryOfId', '=', failed.id)
-            .execute();
-          const byId = new Map(rows.map((row) => [row.id, row]));
-          // The claimed retry is kept over the older queued one; the rest are cancelled.
-          expect(byId.get(rendering.id)).toMatchObject({ status: MediaOperationStatus.Rendering });
-          expect(byId.get(olderQueued.id)).toMatchObject({ status: MediaOperationStatus.Cancelled, claimToken: null });
-          expect(byId.get(olderQueued.id)!.cancelAcknowledgedAt).not.toBeNull();
-          expect(byId.get(laterQueued.id)).toMatchObject({ status: MediaOperationStatus.Cancelled });
-          expect(byId.get(finished.id)).toMatchObject({ status: MediaOperationStatus.Completed });
-
-          const index = await sql<{ indexname: string }>`
-            SELECT indexname FROM pg_indexes WHERE indexname = 'media_operation_retryOfId_active_uq'
-          `.execute(database);
-          expect(index.rows).toHaveLength(1);
-        } finally {
-          await database.destroy();
-        }
-      });
-
-      it('keeps a live retry over an older one that is already being cancelled', async () => {
-        const database = await getKyselyDB();
-        try {
-          const { ctx, sut } = setup(database);
-          const { user } = await ctx.newUser();
-          const failed = await newOperation(sut, user.id);
-          await sql`DROP INDEX "media_operation_retryOfId_active_uq"`.execute(database);
-          const input = {
-            ownerId: user.id,
-            kind: MediaOperationKind.StudioExport,
-            destination: MediaOperationDestination.Local,
-            label: 'retry',
-            retryOfId: failed.id,
-            snapshot: {},
-            settings: {},
-          };
-          const cancelling = await sut.create(input);
-          const rendering = await sut.create(input);
-          await database
-            .updateTable('media_operation')
-            .set({ status: MediaOperationStatus.Cancelling, cancelRequestedAt: new Date() })
-            .where('id', '=', cancelling.id)
-            .execute();
-          await database
-            .updateTable('media_operation')
-            .set({ status: MediaOperationStatus.Rendering })
-            .where('id', '=', rendering.id)
-            .execute();
-
-          await migrateRetryIndex(database);
-
-          const rows = await database
-            .selectFrom('media_operation')
-            .select(['id', 'status'])
-            .where('id', 'in', [cancelling.id, rendering.id])
-            .execute();
-          expect(Object.fromEntries(rows.map((row) => [row.id, row.status]))).toEqual({
-            [rendering.id]: MediaOperationStatus.Rendering,
-            [cancelling.id]: MediaOperationStatus.Cancelled,
-          });
-        } finally {
-          await database.destroy();
-        }
-      });
-
-      it('cancels a claimed duplicate without acknowledging it, so remote cleanup still runs', async () => {
-        const database = await getKyselyDB();
-        try {
-          const { ctx, sut } = setup(database);
-          const { user } = await ctx.newUser();
-          const failed = await newOperation(sut, user.id);
-          await sql`DROP INDEX "media_operation_retryOfId_active_uq"`.execute(database);
-          const input = {
-            ownerId: user.id,
-            kind: MediaOperationKind.StudioExport,
-            destination: MediaOperationDestination.Local,
-            label: 'retry',
-            retryOfId: failed.id,
-            snapshot: {},
-            settings: {},
-          };
-          const first = await sut.create(input);
-          const second = await sut.create(input);
-          await database
-            .updateTable('media_operation')
-            .set({ status: MediaOperationStatus.Rendering, claimToken: '0195e2a0-0000-7000-8000-00000000c1a2' })
-            .where('id', 'in', [first.id, second.id])
-            .execute();
-
-          await migrateRetryIndex(database);
-
-          const loser = await database
-            .selectFrom('media_operation')
-            .selectAll()
-            .where('id', '=', second.id)
-            .executeTakeFirstOrThrow();
-          expect(loser).toMatchObject({
-            status: MediaOperationStatus.Cancelled,
-            claimToken: null,
-            cancelAcknowledgedAt: null,
-          });
-          expect(loser.cancelRequestedAt).not.toBeNull();
-        } finally {
-          await database.destroy();
-        }
-      });
-    });
-
     describe('checkpoints after worker loss', () => {
       it('refuses a chunk from a worker whose claim lapsed and was recovered', async () => {
         const { ctx, sut } = setup();
@@ -1540,6 +1594,7 @@ describe(MediaOperationRepository.name, () => {
           }),
         ).resolves.toBe(false);
 
+        await skipRetryDelay(ctx, operation.id);
         const replacement = await claimKind(sut, MediaOperationKind.StudioExport, 'worker-b');
         await expect(sut.upsertCheckpoint(operation.id, replacement!.claimToken, chunk)).resolves.toBe(true);
         await expect(

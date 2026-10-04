@@ -1,5 +1,5 @@
-import { canonicalJson } from './adapters.js';
-import { ImportDatabase, ImportRefused } from './types.js';
+import { canonicalJson } from 'src/immich-import/adapters.js';
+import { ImportDatabase, ImportRefused } from 'src/immich-import/types.js';
 
 export type ColumnStructure = {
   type: string;

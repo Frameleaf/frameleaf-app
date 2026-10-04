@@ -19,7 +19,6 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import {
   ICloudIdentityAdoptionRepository,
   IdentityAdoptionAuthority,
@@ -621,16 +620,16 @@ describe('iCloud exact identity adoption', () => {
 
   it('refuses publication and replay after the actual classification writer wins metadata authority', async () => {
     const fixture = await arrange();
-    const privacy = new ForkPrivacyRepository(db);
+    const privacy = new AssetRepository(db);
     const database = new DatabaseRepository(db, getMocks().logger as never, new ConfigRepository());
-    await privacy.saveClassification(fixture.asset.id, false, null, db);
+    await privacy.updateIsNsfw(fixture.asset.id, false, db);
     const entered = Promise.withResolvers<number>();
     const resume = Promise.withResolvers<void>();
     const classifying = database.withAssetMetadataLock(fixture.asset.id, async (transaction) => {
       const pid = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(transaction);
       entered.resolve(pid.rows[0].pid);
       await resume.promise;
-      await privacy.saveClassification(fixture.asset.id, true, null, transaction);
+      await privacy.updateIsNsfw(fixture.asset.id, true, transaction);
     });
     const classifierPid = await entered.promise;
     const running = service.adopt(fixture.authority);
@@ -661,9 +660,9 @@ describe('iCloud exact identity adoption', () => {
 
   it('holds classification authority across the final real file check and refuses subsequently classified replay', async () => {
     const fixture = await arrange();
-    const privacy = new ForkPrivacyRepository(db);
+    const privacy = new AssetRepository(db);
     const database = new DatabaseRepository(db, getMocks().logger as never, new ConfigRepository());
-    await privacy.saveClassification(fixture.asset.id, false, null, db);
+    await privacy.updateIsNsfw(fixture.asset.id, false, db);
     const entered = Promise.withResolvers<void>();
     const resume = Promise.withResolvers<void>();
     const adopt = repository.adopt.bind(repository);
@@ -696,7 +695,7 @@ describe('iCloud exact identity adoption', () => {
           AND objid=(hashtext(${fixture.asset.id})::bigint & 4294967295)::oid AND objsubid=2`.execute(db);
       expect(holder.rows).toHaveLength(1);
       classifying = database.withAssetMetadataLock(fixture.asset.id, async (transaction) => {
-        await privacy.saveClassification(fixture.asset.id, true, null, transaction);
+        await privacy.updateIsNsfw(fixture.asset.id, true, transaction);
       });
       void classifying.catch(() => {});
       await expect

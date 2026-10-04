@@ -1,10 +1,8 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
@@ -24,7 +22,6 @@ import { BuddyBackupMetadataRepository } from 'src/repositories/buddy-backup-met
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
-import { ForkAlbumMetadataRepository } from 'src/repositories/fork-album-metadata.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -41,7 +38,9 @@ import { CloudBackupDetailsService } from 'src/services/cloud-backup-details.ser
 import { buddyLibraryForOwner, readBuddyMetadata, selectBuddyAlbumIds } from 'src/utils/buddy-backup-metadata.js';
 import { ownerRestoreHash } from 'src/utils/cloud-backup-owner-restore.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
 
 // Metadata-only API coverage still runs the real filesystem preflight. CI's temporary disk can be below its 1 GiB reserve.
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -58,7 +57,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 let database: Kysely<DB>;
 const temporaryRoots: string[] = [];
 beforeAll(async () => {
-  database = await getActiveForkKyselyDB();
+  database = await getKyselyDB();
 });
 afterAll(async () => {
   await database?.destroy();
@@ -304,7 +303,7 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
         environment: {},
         storageRoot: root,
         storageRoots: [root],
-        settings: { system: {}, fork: [], users: [] },
+        settings: { system: {}, users: [] },
       };
       const operations = new MediaOperationRepository(database);
       const logger = LoggingRepository.create();
@@ -872,56 +871,37 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
     });
   });
 
-  it.each(['parent', 'kind', 'closure'] as const)(
-    'refuses divergent legacy %s atomically during Keep without replacing authoritative fork structure',
+  it.each(['parent', 'kind', 'name'] as const)(
+    'refuses a concurrent canonical album %s change atomically without replacing current structure',
     async (conflict) => {
       const { ctx, metadata } = setup();
       const { user: owner } = await ctx.newUser();
       const { album: parent } = await ctx.newAlbum({ ownerId: owner.id, kind: AlbumKind.Collection });
-      const { album } = await ctx.newAlbum({
-        ownerId: owner.id,
-        albumName: 'Backup name',
-        kind: conflict === 'kind' ? AlbumKind.Space : AlbumKind.Album,
-        parentId: conflict === 'kind' ? null : parent.id,
-      });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id, albumName: 'Backup name', parentId: parent.id });
       const captured = await metadata.capture([]);
-      await database.updateTable('album').set({ albumName: 'Current name' }).where('id', '=', album.id).execute();
-      if (conflict === 'parent') {
-        await database.updateTable('album').set({ parentId: null }).where('id', '=', album.id).execute();
-      } else if (conflict === 'kind') {
-        await database.updateTable('album').set({ kind: AlbumKind.Album }).where('id', '=', album.id).execute();
-      }
-      if (conflict !== 'kind') {
-        await database
-          .deleteFrom('album_closure')
-          .where('id_ancestor', '=', parent.id)
-          .where('id_descendant', '=', album.id)
-          .execute();
-      }
-      const authoritative = await new AlbumRepository(database).getById(album.id, { withAssets: false });
-      expect(authoritative).toMatchObject({
-        albumName: 'Current name',
-        parentId: conflict === 'kind' ? null : parent.id,
-        kind: conflict === 'kind' ? AlbumKind.Space : AlbumKind.Album,
-      });
-      const legacy = await database
+      const plan = await metadata.plan(captured, [album.id], 'keep');
+      await database
+        .updateTable('album')
+        .set(
+          conflict === 'parent'
+            ? { parentId: null }
+            : conflict === 'kind'
+              ? { kind: AlbumKind.Space, parentId: null }
+              : { albumName: 'Current name' },
+        )
+        .where('id', '=', album.id)
+        .execute();
+      const current = await database
         .selectFrom('album')
         .selectAll()
         .where('id', '=', album.id)
         .executeTakeFirstOrThrow();
-      const legacyClosure = await database
+      const closure = await database
         .selectFrom('album_closure')
         .selectAll()
         .where('id_descendant', '=', album.id)
         .orderBy('id_ancestor')
         .execute();
-      const fork = await sql`SELECT * FROM immich_fork.album_metadata WHERE "albumId" = ${album.id}::uuid`.execute(
-        database,
-      );
-      const forkClosure = await sql`
-        SELECT * FROM immich_fork.album_closure WHERE "descendantId" = ${album.id}::uuid ORDER BY "ancestorId"
-      `.execute(database);
-      const plan = await metadata.plan(captured, [album.id], 'keep');
       const authority = await claim(ctx, owner.id);
       await expect(
         metadata.withRestore(
@@ -931,10 +911,10 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
           () => Promise.resolve(),
           (db) => new BuddyBackupMetadataRepository(db).publish(plan, owner.id, false),
         ),
-      ).rejects.toThrow('Buddy restore album representation unavailable');
+      ).rejects.toThrow(conflict === 'kind' ? 'Buddy restore album unavailable' : 'Buddy restore album changed');
       expect(
         await database.selectFrom('album').selectAll().where('id', '=', album.id).executeTakeFirstOrThrow(),
-      ).toEqual(legacy);
+      ).toEqual(current);
       expect(
         await database
           .selectFrom('album_closure')
@@ -942,19 +922,7 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
           .where('id_descendant', '=', album.id)
           .orderBy('id_ancestor')
           .execute(),
-      ).toEqual(legacyClosure);
-      expect(
-        (await sql`SELECT * FROM immich_fork.album_metadata WHERE "albumId" = ${album.id}::uuid`.execute(database))
-          .rows,
-      ).toEqual(fork.rows);
-      expect(
-        (
-          await sql`
-        SELECT * FROM immich_fork.album_closure WHERE "descendantId" = ${album.id}::uuid ORDER BY "ancestorId"
-      `.execute(database)
-        ).rows,
-      ).toEqual(forkClosure.rows);
-      expect(await new AlbumRepository(database).getById(album.id, { withAssets: false })).toEqual(authoritative);
+      ).toEqual(closure);
     },
   );
 
@@ -1043,12 +1011,11 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
       await database.updateTable('album').set({ deletedAt: new Date() }).where('id', '=', album.id).execute();
     } else {
       await database.updateTable('album').set({ kind: AlbumKind.Space }).where('id', '=', album.id).execute();
-      await new ForkAlbumMetadataRepository(database).mirrorFromLegacy([album.id]);
     }
     await expect(metadata.plan(saved, [album.id], 'replace')).rejects.toThrow('Buddy restore album unavailable');
   });
 
-  it('refuses an ordinary owner publishing foreign album metadata or a fork handoff', async () => {
+  it('refuses an ordinary owner publishing foreign album metadata ', async () => {
     const { ctx, metadata } = setup();
     const { user: owner } = await ctx.newUser();
     const { user: foreign } = await ctx.newUser();
@@ -1065,20 +1032,6 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
         (db) => new BuddyBackupMetadataRepository(db).publish(plan, owner.id, false),
       ),
     ).rejects.toThrow('Buddy restore album unavailable');
-    await sql`UPDATE immich_fork.state SET phase = 'failed' WHERE id = 1`.execute(database);
-    try {
-      await expect(
-        metadata.withRestore(
-          authority.owner,
-          authority.lease,
-          false,
-          () => Promise.resolve(),
-          (db) => new BuddyBackupMetadataRepository(db).publish({ version: 1, albums: {} }, owner.id, false),
-        ),
-      ).rejects.toThrow('Buddy metadata is unavailable during database handoff');
-    } finally {
-      await sql`UPDATE immich_fork.state SET phase = 'active' WHERE id = 1`.execute(database);
-    }
   });
 
   it.each([
@@ -1241,10 +1194,6 @@ describe('Buddy owner-specific people and metadata-only albums (FL-310)', () => 
     expect(await database.selectFrom('album').select('id').where('id', '=', id).execute()).toEqual([]);
     expect(
       await database.selectFrom('album_closure').select('id_descendant').where('id_descendant', '=', id).execute(),
-    ).toEqual([]);
-    expect(
-      (await sql`SELECT "albumId" FROM immich_fork.album_metadata WHERE "albumId" = ${id}::uuid`.execute(database))
-        .rows,
     ).toEqual([]);
   });
 

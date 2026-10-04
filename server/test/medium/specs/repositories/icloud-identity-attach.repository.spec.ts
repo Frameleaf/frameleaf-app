@@ -59,7 +59,7 @@ describe('owner and byte-validated iCloud identity attachment', () => {
     const { sut, auth, input, asset } = await setup();
     expect(await sut.attachDevice(auth, input)).toBe(true);
     await sql`
-      UPDATE immich_fork.icloud_source_identity SET "lastVerifiedAt" = now(), "lastAuditResult" = 'match'
+      UPDATE public.icloud_source_identity SET "lastVerifiedAt" = now(), "lastAuditResult" = 'match'
       WHERE "assetId" = ${asset.id}::uuid
     `.execute(db);
     const before = await sut.identities(input.ownerId, [input.parsed.cplAssetRecordName]);
@@ -144,7 +144,7 @@ describe('owner and byte-validated iCloud identity attachment', () => {
     await replacement;
     expect(await attachment).toBe(false);
     expect(
-      await sql`SELECT id FROM immich_fork.icloud_source_identity WHERE "assetId" = ${asset.id}::uuid`.execute(db),
+      await sql`SELECT id FROM public.icloud_source_identity WHERE "assetId" = ${asset.id}::uuid`.execute(db),
     ).toMatchObject({ rows: [] });
   });
 });

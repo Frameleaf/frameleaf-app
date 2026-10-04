@@ -1,11 +1,9 @@
-import { Kysely, sql } from 'kysely';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as migration from 'src/fork-schema/migrations/0000000000150-AlbumPositions.js';
+import { Kysely } from 'kysely';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -13,7 +11,6 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   await db?.destroy();
@@ -24,23 +21,8 @@ const setup = () => {
   return { ctx, sut: ctx.get(AlbumRepository) };
 };
 
-const isAlbumPosition = (entry: { identity: string }) => entry.identity.startsWith('immich_fork.album_position');
-
-it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    expect(before[kind].filter((entry) => isAlbumPosition(entry))).toEqual(
-      manifest[kind].filter((entry) => isAlbumPosition(entry)),
-    );
-  }
-  await migration.down(db);
-  await migration.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-  }
+it('installs feature tables in the real canonical baseline', async () => {
+  await expectCanonicalTables(db, ['album_position']);
 });
 
 it('saves one person’s order per group and replaces it when the group is arranged again', async () => {
@@ -69,20 +51,6 @@ it('saves one person’s order per group and replaces it when the group is arran
   await expect(sut.getPositions(other.id)).resolves.toEqual(new Map());
 });
 
-it('refuses to write while the fork schema is not writable', async () => {
-  const { ctx, sut } = setup();
-  const { user } = await ctx.newUser();
-  const { album } = await ctx.newAlbum({ ownerId: user.id });
-  await sql`UPDATE immich_fork.state SET phase='failed' WHERE id=1`.execute(db);
-  try {
-    await expect(sut.setPositions(user.id, [album.id])).rejects.toThrow(
-      'Album order is unavailable during database handoff',
-    );
-  } finally {
-    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
-  }
-});
-
 it('forgets positions when an album or its owner is deleted (FL-52)', async () => {
   const { ctx, sut } = setup();
   const { user } = await ctx.newUser();
@@ -103,15 +71,10 @@ it('forgets positions when an album or its owner is deleted (FL-52)', async () =
   await expect(sut.getPositions(viewer.id)).resolves.toEqual(new Map());
 });
 
-it('never blocks an album delete while the fork schema is not writable', async () => {
+it('deletes an album and its canonical position row', async () => {
   const { ctx, sut } = setup();
   const { user } = await ctx.newUser();
   const { album } = await ctx.newAlbum({ ownerId: user.id });
   await sut.setPositions(user.id, [album.id]);
-  await sql`UPDATE immich_fork.state SET phase='failed' WHERE id=1`.execute(db);
-  try {
-    await expect(sut.delete(album.id)).resolves.toBeUndefined();
-  } finally {
-    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
-  }
+  await expect(sut.delete(album.id)).resolves.toBeUndefined();
 });

@@ -1,5 +1,5 @@
-import { CONTENT_TABLES, clusterId, frozenSource, transformRow, vectorCompatible } from './adapters.js';
-import { EmbeddingTransferEvidence } from './embeddings.js';
+import { CONTENT_TABLES, clusterId, frozenSource, transformRow, vectorCompatible } from 'src/immich-import/adapters.js';
+import { EmbeddingTransferEvidence } from 'src/immich-import/embeddings.js';
 
 describe('frozen Immich adapters', () => {
   it.each(['3.0.0', '3.0.1', '3.0.2', '3.0.3', '3.1.0', '3.2.0', '3.2.1', '3.2.2', '3.2.3', '3.2.4'])(
@@ -49,7 +49,7 @@ describe('frozen Immich adapters', () => {
   });
 
   it('keeps modern shared clusters and privacy fields intact', () => {
-    const row = { id: 'asset', visibility: 'locked', ownerId: 'owner', deletedAt: null, checksum: '\\x1234' };
+    const row = { id: 'asset', visibility: 'locked', ownerId: 'owner', deletedAt: null, checksum: String.raw`\x1234` };
     expect(transformRow('asset', row, false)).toEqual(row);
     expect(frozenSource('3.0.0').tables.person.columns).toContain('id');
     expect(frozenSource('3.2.4').tables.person.columns).toContain('personGroupId');

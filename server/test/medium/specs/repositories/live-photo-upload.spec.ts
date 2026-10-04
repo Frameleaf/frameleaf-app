@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
-import type { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetLockReason, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -9,13 +8,14 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
+import type { AssetUploadResource } from 'src/repositories/asset-upload-resource.repository.js';
 
 let db: Kysely<DB>;
 let uploads: AssetUploadResourceRepository;
 let assets: AssetRepository;
 beforeAll(async () => {
-  db = await getActiveForkKyselyDB();
+  db = await getKyselyDB();
   uploads = new AssetUploadResourceRepository(db);
   assets = new AssetRepository(db);
 });
@@ -124,7 +124,7 @@ describe('atomic Live Photo verified-resource publication', () => {
       ]);
       const evidence = await sql<{
         sha256: Buffer;
-      }>`SELECT sha256 FROM immich_fork.asset_checksum WHERE "assetId" = ${row.resultAssetId}::uuid`.execute(db);
+      }>`SELECT sha256 FROM public.asset_checksum WHERE "assetId" = ${row.resultAssetId}::uuid`.execute(db);
       expect(evidence.rows[0].sha256).toEqual(row.verifiedChecksum);
     }
     const before = await h.state();
@@ -141,7 +141,7 @@ describe('atomic Live Photo verified-resource publication', () => {
     await expect(h.commit()).rejects.toBeInstanceOf(ConflictException);
     expect(await h.state()).toEqual(before);
     expect(
-      (await sql`SELECT * FROM immich_fork.asset_checksum WHERE sha256 = ${h.video.verifiedChecksum}`.execute(db)).rows,
+      (await sql`SELECT * FROM public.asset_checksum WHERE sha256 = ${h.video.verifiedChecksum}`.execute(db)).rows,
     ).toEqual([]);
   });
 
@@ -321,17 +321,7 @@ describe('atomic Live Photo verified-resource publication', () => {
     ).rejects.toBeInstanceOf(ConflictException);
     expect(await h.state()).toEqual(before);
   });
-  it('refuses pair publication while public fork writes are blocked', async () => {
-    const h = await setup();
-    const before = await h.state();
-    await sql`UPDATE immich_fork.state SET phase='failed' WHERE id=1`.execute(db);
-    try {
-      await expect(h.commit()).rejects.toBeInstanceOf(ConflictException);
-    } finally {
-      await sql`UPDATE immich_fork.state SET phase='active' WHERE id=1`.execute(db);
-    }
-    expect(await h.state()).toEqual(before);
-  });
+
   it('recovers only pair-finalizing and retains existing expiry cleanup for held private halves', async () => {
     const h = await setup();
     expect((await uploads.recoverable()).some((row) => row.id === h.still.id)).toBe(false);

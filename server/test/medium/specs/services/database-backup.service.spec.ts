@@ -15,6 +15,7 @@ import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { DB } from 'src/schema/index.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 /**
@@ -29,7 +30,7 @@ const ROUTINE = /^immich-db-backup-\d{8}T\d{6}-v[\d.]+-pg[\d.]+\.sql\.gz$/;
 const currentDatabase = async (db: Kysely<DB>) =>
   (await sql<{ name: string }>`SELECT current_database() AS name`.execute(db)).rows[0]!.name;
 
-const urlFor = (database: string) => process.env.IMMICH_TEST_POSTGRES_URL!.replace('/mich', () => `/${database}`);
+const urlFor = (database: string) => canonicalDatabaseUrl(process.env.IMMICH_TEST_POSTGRES_URL!, database);
 
 const gunzipText = async (file: string) => {
   let text = '';
@@ -71,6 +72,7 @@ describe('routine database backup with a real dump (FL-298)', { timeout: 120_000
     db = await getKyselyDB('fl298_backup');
     database = await currentDatabase(db);
     await sql`CREATE TABLE fl298_sentinel (note text)`.execute(db);
+
     await sql`INSERT INTO fl298_sentinel VALUES ('kept by the backup')`.execute(db);
 
     mediaLocation = await mkdtemp(join(tmpdir(), 'frameleaf-fl298-'));

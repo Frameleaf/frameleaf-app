@@ -17,8 +17,6 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
@@ -43,12 +41,7 @@ const setup = (db?: Kysely<DB>) => {
   const database = db || defaultDatabase;
   const { ctx } = newMediumService(BaseService, { database, real: [], mock: [LoggingRepository] });
   const privacy = new DerivativePrivacyRepository(database);
-  const sut = new StudioExportRepository(
-    database,
-    privacy,
-    new ForkPrivacyRepository(database),
-    new ForkEnrichmentRepository(database),
-  );
+  const sut = new StudioExportRepository(database, privacy);
   return { ctx, sut, privacy, projects: ctx.get(StudioProjectRepository), assets: ctx.get(AssetRepository) };
 };
 
@@ -70,9 +63,6 @@ afterEach(async () => {
   await defaultDatabase.deleteFrom('studio_export_version').execute();
   await defaultDatabase.deleteFrom('media_operation').execute();
   await defaultDatabase.deleteFrom('studio_project').execute();
-  await sql`DELETE FROM immich_fork.migration_audit WHERE name = 'official-handoff-preparation'`.execute(
-    defaultDatabase,
-  );
 });
 
 /** A project whose export rendered and staged, waiting for publication: the state FL-95 leaves it in. */
@@ -791,7 +781,7 @@ describe(StudioExportRepository.name, () => {
         const revocation = defaultDatabase.transaction().execute(async (tx) => {
           if (grant === 'share') {
             // The same granting row deleted by ItemShareRepository.remove, held until the test commits.
-            await sql`DELETE FROM immich_fork.asset_user_share
+            await sql`DELETE FROM public.asset_user_share
             WHERE "ownerId" = ${owner.id}::uuid AND "assetId" = ${shared.id}::uuid
               AND "sharedWithId" = ${recipient.id}::uuid`.execute(tx);
           } else {
@@ -1094,7 +1084,7 @@ describe(StudioExportRepository.name, () => {
     });
   });
 
-  describe('publish: owner, project and handoff', () => {
+  describe('publish: owner and project', () => {
     it('refuses for an owner being deleted, and the export is orphaned', async () => {
       const context = setup();
       const { user } = await context.ctx.newUser();
@@ -1148,21 +1138,6 @@ describe(StudioExportRepository.name, () => {
       await context.projects.trash(staged.projectId, new Date(Date.now() + 86_400_000));
 
       await expectRefusal(context.sut.publish(publication(staged, sources)), 'project-unavailable');
-    });
-
-    it('publishes nothing while a handover is being prepared', async () => {
-      const context = setup();
-      const { user } = await context.ctx.newUser();
-      const sources = [await ownSource(context.ctx, user.id)];
-      const staged = await stagedExport(context, user.id, sources);
-      await sql`INSERT INTO immich_fork.migration_audit (name, phase, status, details)
-        VALUES ('official-handoff-preparation', 'ready', 'running', '{}'::jsonb)`.execute(defaultDatabase);
-
-      await expectRefusal(context.sut.publish(publication(staged, sources)), 'handoff-in-progress');
-      expect(await context.sut.handoffInProgress()).toBe(true);
-      expect(await context.sut.listOrphanedWork()).toEqual([
-        expect.objectContaining({ id: staged.version.id, orphanReason: 'handoff-in-progress' }),
-      ]);
     });
   });
 

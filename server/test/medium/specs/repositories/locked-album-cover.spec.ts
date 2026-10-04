@@ -3,8 +3,8 @@ import { AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
-import { up as clearLockedAlbumCovers } from 'src/schema/migrations/2100000000290-ClearLockedAlbumCovers.js';
 import { BaseService } from 'src/services/base.service.js';
+import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -145,7 +145,7 @@ describe('Locked album covers (FL-53)', () => {
     });
   });
 
-  describe('migration 2100000000290-ClearLockedAlbumCovers', () => {
+  describe('canonical locked-cover cleanup', () => {
     it('repairs albums whose saved cover is already Locked and leaves the others alone', async () => {
       const context = setup();
       const { ctx } = context;
@@ -163,7 +163,7 @@ describe('Locked album covers (FL-53)', () => {
         .execute();
       await expect(coverOf(ctx.database, ownAlbum.id)).resolves.toBe(cover.id);
 
-      await clearLockedAlbumCovers(ctx.database);
+      await releaseLockedCoverReferences(ctx.database, [cover.id, alreadyLocked.id]);
 
       await expect(coverOf(ctx.database, ownAlbum.id)).resolves.toBe(fallback.id);
       await expect(coverOf(ctx.database, otherAlbum.id)).resolves.toBeNull();

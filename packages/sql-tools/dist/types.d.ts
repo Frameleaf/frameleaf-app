@@ -320,7 +320,21 @@ export declare enum ActionType {
 }
 export type ColumnStorage = 'default' | 'external' | 'extended' | 'main';
 export type ColumnType = 'bigint' | 'boolean' | 'bytea' | 'character' | 'character varying' | 'date' | 'double precision' | '"char"' | 'smallint' | 'integer' | 'jsonb' | 'polygon' | 'text' | 'time' | 'time with time zone' | 'time without time zone' | 'timestamp' | 'timestamp with time zone' | 'timestamp without time zone' | 'uuid' | 'vector' | 'enum' | 'serial' | 'real';
+export type DatabaseSequence = {
+    name: string;
+    dataType: 'smallint' | 'integer' | 'bigint';
+    start: string;
+    min: string;
+    max: string;
+    increment: string;
+    cache: string;
+    cycle: boolean;
+    identity: boolean;
+    owner?: { tableName: string; columnName: string };
+    synchronize: boolean;
+};
 export type DatabaseSchema = {
+    sequences?: DatabaseSequence[];
     databaseName: string;
     schemaName: string;
     functions: DatabaseFunction[];
@@ -386,6 +400,7 @@ export type DatabaseColumn = {
     length?: number;
     storage?: ColumnStorage;
     identity?: boolean;
+    identityMode?: 'always' | 'by default';
     enumName?: string;
     numericPrecision?: number;
     numericScale?: number;
@@ -397,6 +412,8 @@ export type ColumnChanges = {
     storage?: ColumnStorage;
 };
 type ColumBasedConstraint = {
+    /** Exact pg_get_constraintdef output for catalog-owned constraints. */
+    definition?: string;
     name: string;
     tableName: string;
     columnNames: string[];
@@ -422,6 +439,7 @@ export type DatabaseForeignKeyConstraint = ColumBasedConstraint & {
     synchronize: boolean;
 };
 export type DatabaseCheckConstraint = {
+    definition?: string;
     type: ConstraintType.CHECK;
     name: string;
     tableName: string;
@@ -429,6 +447,8 @@ export type DatabaseCheckConstraint = {
     synchronize: boolean;
 };
 export type DatabaseTrigger = {
+    /** Exact pg_get_triggerdef output, including UPDATE OF and WHEN. */
+    definition?: string;
     name: string;
     tableName: string;
     timing: TriggerTiming;
@@ -445,6 +465,8 @@ export type TriggerTiming = 'before' | 'after' | 'instead of';
 export type TriggerAction = 'insert' | 'update' | 'delete' | 'truncate';
 export type TriggerScope = 'row' | 'statement';
 export type DatabaseIndex = {
+    /** Exact pg_get_indexdef output, including operator classes, ordering and expressions. */
+    definition?: string;
     name: string;
     tableName: string;
     columnNames?: string[];
@@ -457,6 +479,9 @@ export type DatabaseIndex = {
     synchronize: boolean;
 };
 export type SchemaItem = {
+    type: 'SequenceCreate' | 'SequenceAlter' | 'SequenceDrop' | 'SequenceOwnership';
+    object: DatabaseSequence;
+} | {
     type: 'ExtensionCreate';
     object: DatabaseExtension;
 } | {

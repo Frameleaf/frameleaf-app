@@ -1,11 +1,9 @@
-import { Kysely, sql } from 'kysely';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as migration from 'src/fork-schema/migrations/0000000000204-FrameleafUserLicenses.js';
+import { Kysely } from 'kysely';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -14,7 +12,6 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   await db?.destroy();
@@ -25,8 +22,6 @@ const setup = () => {
   return { ctx, sut: ctx.get(FrameleafUserLicenseRepository) };
 };
 
-const isUserLicense = (entry: { identity: string }) => entry.identity.startsWith('immich_fork.frameleaf_user_license');
-
 const row = (userId: string, keySha256: string) => ({
   userId,
   keyHint: '8ELH',
@@ -36,21 +31,8 @@ const row = (userId: string, keySha256: string) => ({
   activationId: 'act-1',
 });
 
-it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    expect(before[kind].filter((entry) => isUserLicense(entry))).toEqual(
-      manifest[kind].filter((entry) => isUserLicense(entry)),
-    );
-  }
-  await migration.down(db);
-  await migration.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-  }
+it('installs feature tables in the real canonical baseline', async () => {
+  await expectCanonicalTables(db, ['frameleaf_user_license']);
 });
 
 it('keeps one key per account and one account per key, and replaces an account’s key', async () => {

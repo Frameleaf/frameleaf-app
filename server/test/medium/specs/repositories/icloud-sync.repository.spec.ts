@@ -1,11 +1,10 @@
 import { CompiledQuery, Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
-import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
-import * as identity from 'src/fork-schema/migrations/0000000000213-ICloudSourceIdentity.js';
 import { ICloudConnection, ICloudLibrary, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getKyselyConfig } from 'src/utils/database.js';
+import { seedCanonicalUser, canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 const field = (value: unknown) => ({ value });
@@ -40,7 +39,7 @@ describe(ICloudSyncRepository.name, () => {
     db = new Kysely<DB>({
       ...getKyselyConfig({
         connectionType: 'url',
-        url: process.env.IMMICH_TEST_POSTGRES_URL!.replace(/\/[^/]+$/, () => `/${rows[0].name}`),
+        url: canonicalDatabaseUrl(process.env.IMMICH_TEST_POSTGRES_URL!, rows[0].name),
       }),
       log: (event) => {
         if (event.level === 'query') {
@@ -48,20 +47,11 @@ describe(ICloudSyncRepository.name, () => {
         }
       },
     });
-    // getKyselyDB clones CI's migrated template; this suite uses its own focused schema.
-    await sql`DROP SCHEMA IF EXISTS immich_fork CASCADE`.execute(db);
-    await sql`DROP SCHEMA public CASCADE`.execute(db);
-    await sql`CREATE SCHEMA public`.execute(db);
-    await sql`CREATE SCHEMA immich_fork`.execute(db);
-    await sql`CREATE TABLE immich_fork.state (id integer PRIMARY KEY,phase text)`.execute(db);
-    await sql`INSERT INTO immich_fork.state VALUES (1,'active')`.execute(db);
-    await sql`CREATE TABLE immich_fork.migration_audit (name text,status text)`.execute(db);
+
     // the library side `counts` reads to tell a disappeared source from a deleted asset
-    await sql`CREATE TABLE asset (id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
-    await migration.up(db);
-    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
+
     // FL-296: finalize records the source identity
-    await identity.up(db);
+
     repository = new ICloudSyncRepository(db);
   });
   afterAll(async () => {
@@ -69,8 +59,8 @@ describe(ICloudSyncRepository.name, () => {
   });
   afterEach(() => vi.unstubAllEnvs());
   beforeEach(async () => {
-    await sql`TRUNCATE immich_fork.icloud_connection CASCADE`.execute(db);
-    connection = (await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({})))!;
+    await sql`TRUNCATE public.icloud_connection CASCADE`.execute(db);
+    connection = (await repository.create((await seedCanonicalUser(db)).id, 'Photos', ICloudConfigSchema.parse({})))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
     connection.state = 'connected';
   });
@@ -92,9 +82,7 @@ describe(ICloudSyncRepository.name, () => {
       complete: true,
     });
     expect(await repository.materialize(connection, 'library', library)).toBe(true);
-    const count = await sql<{ count: number }>`SELECT count(*)::int AS count FROM immich_fork.icloud_resource`.execute(
-      db,
-    );
+    const count = await sql<{ count: number }>`SELECT count(*)::int AS count FROM public.icloud_resource`.execute(db);
     expect(count.rows[0].count).toBe(101);
     expect(await repository.materialize(connection, 'empty', library)).toBe(true);
     expect(await repository.checkpoint(connection.id, 'materialize:empty')).toMatchObject({
@@ -115,15 +103,13 @@ describe(ICloudSyncRepository.name, () => {
       status: string;
       reservedBytes: number;
       leaseToken: string | null;
-    }>`SELECT status,"reservedBytes"::float8 AS "reservedBytes","leaseToken" FROM immich_fork.icloud_resource`.execute(
-      db,
-    );
+    }>`SELECT status,"reservedBytes"::float8 AS "reservedBytes","leaseToken" FROM public.icloud_resource`.execute(db);
     expect(rows.rows[0]).toMatchObject({ status: 'pending', reservedBytes: 0, leaseToken: null });
   });
   it('allows committed cleanup even when administrator limit settings are malformed', async () => {
     await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
     await repository.materialize(connection, 'library', library);
-    await sql`UPDATE immich_fork.icloud_resource SET status='committed'`.execute(db);
+    await sql`UPDATE public.icloud_resource SET status='committed'`.execute(db);
     vi.stubEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY', 'NaN');
     vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', 'NaN');
     expect(await repository.claim(connection.id, 1000)).toMatchObject({ status: 'committed' });
@@ -141,7 +127,7 @@ describe(ICloudSyncRepository.name, () => {
     const { rows } = await sql<{
       source: Record<string, unknown>;
       library: ICloudLibrary;
-    }>`SELECT source,library FROM immich_fork.icloud_resource`.execute(db);
+    }>`SELECT source,library FROM public.icloud_resource`.execute(db);
     expect(rows).toHaveLength(1);
     expect(rows[0].source).toMatchObject({ originalFileName: 'moved-and-renamed.JPG', current: true });
     expect(rows[0].library).toEqual(library);
@@ -219,7 +205,7 @@ describe(ICloudSyncRepository.name, () => {
     await repository.saveMembershipPage(connection.id, 'library', 'album', [asset], first, true);
     await repository.saveMembershipPage(connection.id, 'library', 'album', [], second, false);
     const present = () =>
-      sql<{ sourcePresent: boolean }>`SELECT "sourcePresent" FROM immich_fork.icloud_membership`
+      sql<{ sourcePresent: boolean }>`SELECT "sourcePresent" FROM public.icloud_membership`
         .execute(db)
         .then(({ rows }) => rows[0].sourcePresent);
     expect(await present()).toBe(true);
@@ -231,7 +217,7 @@ describe(ICloudSyncRepository.name, () => {
       fields: { albumNameEnc: { value: 'Original name', type: 'STRING' } },
     };
     await repository.saveAlbums(connection.id, 'library', [sourceAlbum]);
-    await sql`UPDATE immich_fork.icloud_album SET source=source || '{"_sync":{"name":"manual baseline"}}'::jsonb`.execute(
+    await sql`UPDATE public.icloud_album SET source=source || '{"_sync":{"name":"manual baseline"}}'::jsonb`.execute(
       db,
     );
     await repository.saveAlbums(connection.id, 'library', [
@@ -239,14 +225,14 @@ describe(ICloudSyncRepository.name, () => {
     ]);
     const { rows } = await sql<{
       source: Record<string, unknown>;
-    }>`SELECT source FROM immich_fork.icloud_album`.execute(db);
+    }>`SELECT source FROM public.icloud_album`.execute(db);
     expect(rows[0].source._sync).toEqual({ name: 'manual baseline' });
   });
 
   it('keyset-materializes a bounded batch from a 500,000-asset source inventory', async () => {
     await repository.savePage(connection.id, 'assets:library', 'library', [master], null, true);
     await db.transaction().execute(async (transaction) => {
-      await sql`INSERT INTO immich_fork.icloud_record ("connectionId","libraryKey","recordId","recordType","masterId",fields)
+      await sql`INSERT INTO public.icloud_record ("connectionId","libraryKey","recordId","recordType","masterId",fields)
         SELECT ${connection.id}::uuid,'library',lpad(n::text,6,'0'),'CPLAsset','master',
         '{"masterRef":{"value":{"recordName":"master"}}}'::jsonb FROM generate_series(1,500000) n`.execute(transaction);
       // A batch must stay bounded when the planner chooses a hash/merge join too.
@@ -284,9 +270,7 @@ describe(ICloudSyncRepository.name, () => {
     expect(await repository.checkpoint(connection.id, 'changes:other')).toMatchObject({ cursor: { token: 'keep' } });
     expect(await repository.checkpoint(connection.id, 'albums:library')).toBeDefined();
     expect(await repository.get(connection.id)).toMatchObject({ state: 'connected', lastError: 'resource_changed' });
-    const { rows } = await sql<{ counts: Record<string, number> }>`SELECT counts FROM immich_fork.icloud_run`.execute(
-      db,
-    );
+    const { rows } = await sql<{ counts: Record<string, number> }>`SELECT counts FROM public.icloud_run`.execute(db);
     expect(rows[0].counts.cursorResets).toBeUndefined();
   });
   it.each(['retry', 'rescan'])(
@@ -297,8 +281,8 @@ describe(ICloudSyncRepository.name, () => {
       await repository.materialize(connection, 'library', library);
       const resource = (await repository.claim(connection.id, 1000))!;
       const jobs = [{ name: 'asset-generate-thumbnails', data: { id: randomUUID() } }];
-      await sql`UPDATE immich_fork.icloud_run SET counts='{"cursorResets":3,"transportAttempts":8}'::jsonb`.execute(db);
-      await sql`UPDATE immich_fork.icloud_resource SET status='committed',attempts=7,"pendingJobs"=${jobs}::jsonb,
+      await sql`UPDATE public.icloud_run SET counts='{"cursorResets":3,"transportAttempts":8}'::jsonb`.execute(db);
+      await sql`UPDATE public.icloud_resource SET status='committed',attempts=7,"pendingJobs"=${jobs}::jsonb,
       source=source || '{"_sync":{"relations":{"status":"needs-review","signature":"old"}}}'::jsonb`.execute(db);
       await repository.finish(resource, 'committed', 'icloud_transfer_failed');
       expect(await repository.get(connection.id)).toMatchObject({
@@ -319,9 +303,7 @@ describe(ICloudSyncRepository.name, () => {
       expect(saved).toMatchObject({ status: 'committed', attempts: 0, pendingJobs: jobs });
       expect(saved.source).toHaveProperty('_sync.relations.status', 'needs-review');
       expect(saved.source).not.toHaveProperty('_sync.relations.signature');
-      const { rows } = await sql<{ counts: Record<string, number> }>`SELECT counts FROM immich_fork.icloud_run`.execute(
-        db,
-      );
+      const { rows } = await sql<{ counts: Record<string, number> }>`SELECT counts FROM public.icloud_run`.execute(db);
       expect(rows[0].counts).toEqual({});
     },
   );

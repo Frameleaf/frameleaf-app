@@ -20,10 +20,10 @@ describe('Immich import PostgreSQL restart boundaries', () => {
   beforeAll(async () => {
     const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
     url.pathname = '/postgres';
-    admin = postgres(url.toString(), { max: 1, onnotice: () => {} });
+    admin = postgres(url.href, { max: 1, onnotice: () => {} });
     await admin.unsafe(`CREATE DATABASE "${name}"`);
     url.pathname = `/${name}`;
-    connection = connectImportDatabase(url.toString(), false);
+    connection = connectImportDatabase(url.href, false);
     await connection.db.query(IMMICH_IMPORT_SCHEMA_SQL);
     await connection.db.query(`CREATE TABLE public.cluster_group(id uuid PRIMARY KEY);
       CREATE TABLE public."user"(id uuid PRIMARY KEY,email text UNIQUE NOT NULL,password text,

@@ -56,7 +56,7 @@ describe('PostgreSQL shared services', () => {
     }
     child = undefined;
     if (server) {
-      await new Promise<void>((resolve) => server!.close(() => resolve()));
+      await new Promise<void>((resolve) => void server!.close(() => resolve()));
       server = undefined;
     }
     await transport?.close();
@@ -112,7 +112,7 @@ describe('PostgreSQL shared services', () => {
     expect(lease.rows[0].ttl).toBeGreaterThan(895);
     expect(lease.rows[0].ttl).toBeLessThanOrEqual(900);
     await workers[0].onModuleDestroy();
-    repositories.splice(0, 1);
+    repositories.shift();
     await expect(workers[1].claimUploadStream('resource', 'replacement')).resolves.toBe(false);
     await database.query(
       `UPDATE public.frameleaf_upload_lease SET expires_at = clock_timestamp() - interval '1 second' WHERE key = $1`,

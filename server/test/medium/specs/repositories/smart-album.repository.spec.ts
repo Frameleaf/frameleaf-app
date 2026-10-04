@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { AssetType } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
@@ -44,9 +44,7 @@ beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
 
-beforeEach(async () => {
-  await sql`UPDATE immich_fork.state SET phase = 'legacy', active = true WHERE id = 1`.execute(defaultDatabase);
-});
+beforeEach(async () => {});
 
 describe(SmartAlbumRepository.name, () => {
   describe('ensureForUser', () => {

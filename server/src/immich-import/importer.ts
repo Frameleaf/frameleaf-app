@@ -6,12 +6,12 @@ import {
   digest,
   transformRow,
   vectorCompatible,
-} from './adapters.js';
-import { EmbeddingAdmission, inspectEmbeddingAdmission } from './embeddings.js';
-import { mapMediaPath, pathChecksum, verifyMediaFile } from './media.js';
-import { ImmichSource } from './source.js';
-import { getImmichImportState } from './state.js';
-import { ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from './types.js';
+} from 'src/immich-import/adapters.js';
+import { EmbeddingAdmission, inspectEmbeddingAdmission } from 'src/immich-import/embeddings.js';
+import { mapMediaPath, pathChecksum, verifyMediaFile } from 'src/immich-import/media.js';
+import { ImmichSource } from 'src/immich-import/source.js';
+import { getImmichImportState } from 'src/immich-import/state.js';
+import { ImportConfig, ImportDatabase, ImportRefused, ImportRow, quote } from 'src/immich-import/types.js';
 
 const IMPORT_LOCK = '7482923371154301';
 const BOOTSTRAP_TABLES = new Set([
@@ -119,7 +119,7 @@ export class ImmichImportService {
       const incomplete = await this.destination.query(
         'SELECT 1 FROM public.frameleaf_immich_import_checkpoint WHERE NOT complete LIMIT 1',
       );
-      if (incomplete.length) {
+      if (incomplete.length > 0) {
         throw new ImportRefused('INCOMPLETE_CHECKPOINTS');
       }
       for (const table of CONTENT_TABLES) {
@@ -197,7 +197,7 @@ export class ImmichImportService {
       throw new ImportRefused('SOURCE_IS_DESTINATION');
     }
     const [version] = await this.destination.query("SELECT current_setting('server_version_num')::int AS version");
-    if (Number(version.version) < 190000 || Number(version.version) >= 200000) {
+    if (Number(version.version) < 190_000 || Number(version.version) >= 200_000) {
       throw new ImportRefused('DESTINATION_REQUIRES_POSTGRES_19');
     }
     const extensions = await this.destination.query(
@@ -225,13 +225,13 @@ export class ImmichImportService {
       const table = String(row.tablename);
       if (!BOOTSTRAP_TABLES.has(table)) {
         const records = await this.destination.query(`SELECT 1 FROM public.${quote(table)} LIMIT 1`);
-        if (records.length) {
+        if (records.length > 0) {
           throw new ImportRefused('DESTINATION_NOT_FRESH');
         }
       }
     }
     for (const table of ['frameleaf_immich_import_checkpoint', 'frameleaf_immich_import_work']) {
-      if ((await this.destination.query(`SELECT 1 FROM public.${quote(table)} LIMIT 1`)).length) {
+      if ((await this.destination.query(`SELECT 1 FROM public.${quote(table)} LIMIT 1`)).length > 0) {
         throw new ImportRefused('ORPHANED_IMPORT_JOURNAL');
       }
     }
@@ -246,7 +246,7 @@ export class ImmichImportService {
       return;
     }
     for await (const batch of this.source.batches(table, (checkpoint?.cursor as string[] | null) ?? null)) {
-      const mapped = [];
+      const mapped: { row: ImportRow; mapped: ImportRow | null }[] = [];
       for (const item of batch) {
         mapped.push({ ...item, mapped: await this.mapRow(table, item.row) });
       }
@@ -328,7 +328,7 @@ export class ImmichImportService {
         throw new ImportRefused('PATH_CHECKSUM_REQUIRES_EXTERNAL_LIBRARY_ASSET');
       }
       // Source verification used the upstream path. Destination identity must use its mapped path.
-      row.checksum = `\\x${pathChecksum(row.originalPath)}`;
+      row.checksum = String.raw`\x${pathChecksum(row.originalPath)}`;
     }
     if (table === 'library') {
       row.importPaths = (row.importPaths as string[]).map((path) => mapMediaPath(path, this.config.mediaRoots).target);
@@ -339,8 +339,8 @@ export class ImmichImportService {
   private async insert(db: ImportDatabase, table: string, row: ImportRow): Promise<void> {
     const columns = Object.keys(row).filter((column) => !localColumns.has(column));
     await db.query(
-      `INSERT INTO public.${quote(table)} (${columns.map(quote).join(',')})
-      SELECT ${columns.map(quote).join(',')} FROM jsonb_populate_record(NULL::public.${quote(table)},$1::jsonb)`,
+      `INSERT INTO public.${quote(table)} (${columns.map((column) => quote(column)).join(',')})
+      SELECT ${columns.map((column) => quote(column)).join(',')} FROM jsonb_populate_record(NULL::public.${quote(table)},$1::jsonb)`,
       [JSON.stringify(row)],
     );
   }
@@ -396,7 +396,7 @@ export class ImmichImportService {
         WHERE ${child.map((column) => `c.${quote(column)} IS NOT NULL`).join(' AND ')}
         AND NOT EXISTS (SELECT 1 FROM public.${quote(String(constraint.parent))} p
           WHERE ${child.map((column, i) => `p.${quote(parent[i])}=c.${quote(column)}`).join(' AND ')}) LIMIT 1`);
-      if (invalid.length) {
+      if (invalid.length > 0) {
         throw new ImportRefused('DESTINATION_RELATIONSHIP_MISMATCH');
       }
     }

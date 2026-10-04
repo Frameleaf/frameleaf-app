@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { AssetVisibility } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -26,13 +26,8 @@ const setup = (db?: Kysely<DB>) => {
   return { ctx, sut: ctx.get(AlbumRepository) };
 };
 
-/** The fork schema phase decides where the sensitive flag and Best Photos scores are read. */
-const setForkPhase = (db: Kysely<DB>, phase: string) =>
-  sql`UPDATE immich_fork.state SET phase = ${phase} WHERE id = 1`.execute(db);
-
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
-  await setForkPhase(defaultDatabase, 'legacy');
 });
 
 /** Marks a photo as a Best Photo (score 0.9 and up). */

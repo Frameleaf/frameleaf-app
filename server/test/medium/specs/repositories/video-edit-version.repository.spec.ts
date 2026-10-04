@@ -1,9 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetFileType, AssetType, JobName, JobStatus } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as migration from 'src/fork-schema/migrations/0000000000120-VideoEditVersions.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
@@ -21,6 +18,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -28,7 +26,6 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   await db?.destroy();
@@ -62,21 +59,8 @@ const rendered = (assetId: string, label: string) => ({
   ],
 });
 
-it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    expect(before[kind].filter((entry) => entry.identity.startsWith('immich_fork.video_edit_'))).toEqual(
-      manifest[kind].filter((entry) => entry.identity.startsWith('immich_fork.video_edit_')),
-    );
-  }
-  await migration.down(db);
-  await migration.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-  }
+it('installs feature tables in the real canonical baseline', async () => {
+  await expectCanonicalTables(db, ['video_edit_version', 'video_edit_selection']);
 });
 
 it('stores original-derived recipes and publishes only the requested version while retaining history', async () => {
@@ -92,7 +76,7 @@ it('stores original-derived recipes and publishes only the requested version whi
   expect(await publish(sut, second, rendered(asset.id, 'duplicate'))).toBe(false);
   const files = await db.selectFrom('asset_file').selectAll().where('assetId', '=', asset.id).execute();
   expect(files[0].path).toBe(`/derived/${second.id}.proxy.mp4`);
-  const history = await sql`SELECT * FROM immich_fork.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
+  const history = await sql`SELECT * FROM public.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
   expect(history.rows).toHaveLength(2);
   await sut.replaceAll(asset.id, []);
   const original = (await sut.getRequestedVideoVersion(asset.id))!;
@@ -101,13 +85,13 @@ it('stores original-derived recipes and publishes only the requested version whi
   );
   const retained = await sql<{
     path: string;
-  }>`SELECT "masterPath" as path FROM immich_fork.video_edit_version WHERE id=${second.id}::uuid`.execute(db);
+  }>`SELECT "masterPath" as path FROM public.video_edit_version WHERE id=${second.id}::uuid`.execute(db);
   expect(retained.rows[0].path).toBe(`/derived/${second.id}.master.mp4`);
   const unchanged = await db.selectFrom('asset').select('originalPath').where('id', '=', asset.id).executeTakeFirst();
   expect(unchanged?.originalPath).toBe(asset.originalPath);
 });
 
-it('rejects content changes, original-path publication and a handoff fence', async () => {
+it('rejects content changes, original-path publication', async () => {
   const { asset, sut } = await setup();
   await sut.replaceAll(asset.id, recipe);
   const version = (await sut.getRequestedVideoVersion(asset.id))!;
@@ -126,13 +110,8 @@ it('rejects content changes, original-path publication and a handoff fence', asy
   expect(await sut.getVideoVersion(asset.id, version.id)).toBeUndefined();
   const failed = await sql<{
     status: string;
-  }>`SELECT status FROM immich_fork.video_edit_version WHERE id=${version.id}::uuid`.execute(db);
+  }>`SELECT status FROM public.video_edit_version WHERE id=${version.id}::uuid`.execute(db);
   expect(failed.rows[0].status).toBe('failed');
-  await sql`INSERT INTO immich_fork.migration_audit(name,phase,status) VALUES('official-handoff-preparation','ready','running')`.execute(
-    db,
-  );
-  await expect(sut.replaceAll(asset.id, recipe)).rejects.toThrow('handoff');
-  await sql`DELETE FROM immich_fork.migration_audit WHERE name='official-handoff-preparation'`.execute(db);
 });
 
 it('keeps exports independent and prunes only unselected, unreferenced version files', async () => {
@@ -167,7 +146,7 @@ it('serializes concurrent saves and admits only the current request', async () =
   expect(results.filter(Boolean)).toHaveLength(1);
 });
 
-it('protects retained and handoff-archived masters from the shared deletion worker', async () => {
+it('protects retained masters until their last version reference is pruned', async () => {
   const { asset, sut } = await setup();
   await sut.replaceAll(asset.id, recipe);
   const version = (await sut.getRequestedVideoVersion(asset.id))!;
@@ -185,16 +164,7 @@ it('protects retained and handoff-archived masters from the shared deletion work
   const unlink = vi.fn(async () => {});
   expect(await physical.deleteUnreferencedPath(output.masterPath, unlink)).toMatchObject({ deleted: false });
   expect(unlink).not.toHaveBeenCalled();
-  await sql`INSERT INTO immich_fork.orphaned_records ("sourceTable","sourceKey",payload)
-    SELECT 'video_edit_version',id::text,to_jsonb(v) FROM immich_fork.video_edit_version v WHERE id=${version.id}::uuid`.execute(
-    db,
-  );
   await sut.pruneVideoVersion(asset.id, version.id, asset.ownerId);
-  expect(await physical.deleteUnreferencedPath(output.masterPath, unlink)).toMatchObject({ deleted: false });
-  expect(unlink).not.toHaveBeenCalled();
-  await sql`DELETE FROM immich_fork.orphaned_records WHERE "sourceTable"='video_edit_version' AND "sourceKey"=${version.id}`.execute(
-    db,
-  );
   expect(await physical.deleteUnreferencedPath(output.masterPath, unlink)).toEqual({ deleted: true, references: 0 });
   expect(unlink).toHaveBeenCalledOnce();
 });
@@ -265,9 +235,8 @@ it('permanently deletes version state and queues all derived paths while protect
   const shared = rendered(asset.id, first.id).masterPath;
   const { asset: alias } = await ctx.newAsset({ ownerId: user.id, originalPath: shared });
   expect(await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true })).toBe(JobStatus.Success);
-  const selections =
-    await sql`SELECT * FROM immich_fork.video_edit_selection WHERE "assetId"=${asset.id}::uuid`.execute(db);
-  const history = await sql`SELECT * FROM immich_fork.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
+  const selections = await sql`SELECT * FROM public.video_edit_selection WHERE "assetId"=${asset.id}::uuid`.execute(db);
+  const history = await sql`SELECT * FROM public.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
   expect(selections.rows).toEqual([]);
   expect(history.rows).toEqual([]);
   const files = ctx
@@ -355,10 +324,6 @@ it('releases private version references during account asset teardown', async ()
   await sut.replaceAll(asset.id, recipe);
   const version = (await sut.getRequestedVideoVersion(asset.id))!;
   await sut.publishVideoVersion(version, rendered(asset.id, version.id));
-  await sql`INSERT INTO immich_fork.orphaned_records ("sourceTable","sourceKey",payload)
-    SELECT 'video_edit_version',id::text,to_jsonb(v) FROM immich_fork.video_edit_version v WHERE id=${version.id}::uuid`.execute(
-    db,
-  );
   await ctx.get(AssetRepository).deleteAll(asset.ownerId);
   // Teardown leaves retained versions to the orphan release, which queues their files.
   expect(await sut.releaseOrphanedVideoVersions()).toEqual(
@@ -368,11 +333,8 @@ it('releases private version references during account asset teardown', async ()
       `/derived/${version.id}.proxy.mp4`,
     ]),
   );
-  const privateRows = await sql`SELECT 1 FROM immich_fork.video_edit_selection WHERE "assetId"=${asset.id}::uuid
-    UNION ALL SELECT 1 FROM immich_fork.video_edit_version WHERE "assetId"=${asset.id}::uuid
-    UNION ALL SELECT 1 FROM immich_fork.orphaned_records WHERE "sourceTable"='video_edit_version' AND payload->>'assetId'=${asset.id}`.execute(
-    db,
-  );
+  const privateRows = await sql`SELECT 1 FROM public.video_edit_selection WHERE "assetId"=${asset.id}::uuid
+    UNION ALL SELECT 1 FROM public.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
   expect(privateRows.rows).toEqual([]);
 });
 
@@ -434,42 +396,20 @@ it('marks a superseded pending save failed as soon as a newer one is requested',
   expect(await sut.getVideoVersion(asset.id, first.id)).toMatchObject({ status: 'failed' });
 });
 
-it('leaves versions as orphans while fork writes are disabled and reclaims them afterwards', async () => {
-  const { asset, ctx, sut } = await setup();
+it('reclaims orphaned versions after their original asset is removed', async () => {
+  const { asset, sut } = await setup();
   await sut.replaceAll(asset.id, recipe);
   const version = (await sut.getRequestedVideoVersion(asset.id))!;
   await sut.publishVideoVersion(version, rendered(asset.id, version.id));
-  await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
-  try {
-    await expect(ctx.get(AssetRepository).remove({ id: asset.id })).resolves.toMatchObject({
-      originalPath: asset.originalPath,
-    });
-    expect(await sut.releaseOrphanedVideoVersions()).toEqual([]);
-  } finally {
-    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
-  }
-  const left = await sql`SELECT 1 FROM immich_fork.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
+  await db.deleteFrom('asset').where('id', '=', asset.id).execute();
+  const left = await sql`SELECT 1 FROM public.video_edit_version WHERE "assetId"=${asset.id}::uuid`.execute(db);
   expect(left.rows).toHaveLength(1);
   expect(await sut.releaseOrphanedVideoVersions()).toEqual(
     expect.arrayContaining([`/derived/${version.id}.master.mp4`, `/derived/${version.id}.proxy.mp4`]),
   );
-  const gone = await sql`SELECT 1 FROM immich_fork.video_edit_version WHERE "assetId"=${asset.id}::uuid
-    UNION ALL SELECT 1 FROM immich_fork.video_edit_selection WHERE "assetId"=${asset.id}::uuid`.execute(db);
+  const gone = await sql`SELECT 1 FROM public.video_edit_version WHERE "assetId"=${asset.id}::uuid
+    UNION ALL SELECT 1 FROM public.video_edit_selection WHERE "assetId"=${asset.id}::uuid`.execute(db);
   expect(gone.rows).toEqual([]);
-});
-
-it('does not block photo edits during a handoff', async () => {
-  const { ctx, sut } = await setup();
-  const { user } = await ctx.newUser();
-  const { asset: photo } = await ctx.newAsset({ ownerId: user.id, type: AssetType.Image });
-  await sql`INSERT INTO immich_fork.migration_audit(name,phase,status) VALUES('official-handoff-preparation','ready','running')`.execute(
-    db,
-  );
-  try {
-    await expect(sut.replaceAll(photo.id, recipe)).resolves.toHaveLength(1);
-  } finally {
-    await sql`DELETE FROM immich_fork.migration_audit WHERE name='official-handoff-preparation'`.execute(db);
-  }
 });
 
 it('exempts version files and master lineage sidecars from the untracked-file scan', async () => {

@@ -1,4 +1,3 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DatabaseLock,
   JobName,
@@ -13,6 +12,7 @@ import {
   createStorageMigrationState,
   storageMigrationStatus,
 } from 'src/utils/storage-migration.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const checksum = Buffer.from('aa'.repeat(20), 'hex');
 
@@ -54,7 +54,6 @@ const setup = () => {
   const mocks = {
     logger: { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() },
     databaseRepository: { withLock: vi.fn((_lock: DatabaseLock, work: () => Promise<unknown>) => work()) },
-    forkSchemaRepository: { getState: vi.fn().mockResolvedValue({ phase: 'active' }) },
     jobRepository: { queue: vi.fn() },
     mediaHealthRepository: {
       createRun: vi.fn().mockResolvedValue({ id: 'run-1' }),
@@ -97,7 +96,6 @@ const setup = () => {
   const service = new StorageMigrationService(
     mocks.logger as never,
     mocks.databaseRepository as never,
-    mocks.forkSchemaRepository as never,
     mocks.jobRepository as never,
     mocks.mediaHealthRepository as never,
     mocks.physicalFileRepository as never,
@@ -149,17 +147,6 @@ describe(StorageMigrationService.name, () => {
   });
 
   describe('handleBatch', () => {
-    it('waits while the fork-schema backfill is still running', async () => {
-      sut.mocks.forkSchemaRepository.getState.mockResolvedValue({ phase: 'dual-write' });
-      sut.setState({});
-      await expect(sut.service.handleBatch()).resolves.toBe(JobStatus.Skipped);
-      expect(sut.mocks.storageMigrationRepository.getAssetPage).not.toHaveBeenCalled();
-      expect(sut.mocks.jobRepository.queue).toHaveBeenCalledWith({
-        name: JobName.UniversalStorageMigration,
-        data: { delay: 60_000 },
-      });
-    });
-
     it('runs a batch under the migration lock and queues the next one', async () => {
       sut.setState({});
       await expect(sut.service.handleBatch()).resolves.toBe(JobStatus.Success);

@@ -1,10 +1,11 @@
 import { Kysely, RawBuilder, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
+import { AssetType } from 'src/enum.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { ICloudRelationsRepository } from 'src/repositories/icloud-relations.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ICloudRelationsService } from 'src/services/icloud-relations.service.js';
+import { seedCanonicalAsset, seedCanonicalUser, seedCanonicalAlbum } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)', () => {
@@ -13,25 +14,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
   const emit = vi.fn().mockResolvedValue(undefined);
   beforeAll(async () => {
     db = await getKyselyDB();
-    await sql`DROP SCHEMA public CASCADE`.execute(db);
-    await sql`DROP SCHEMA IF EXISTS immich_fork CASCADE`.execute(db);
-    for (const statement of [
-      'CREATE SCHEMA public',
-      'CREATE SCHEMA immich_fork',
-      'CREATE TABLE migration_overrides(name text)',
-      'CREATE TABLE immich_fork.state(id integer PRIMARY KEY,phase text)',
-      "INSERT INTO immich_fork.state VALUES(1,'active')",
-      'CREATE TABLE immich_fork.migration_audit(name text,status text)',
-      `CREATE TABLE asset(id uuid PRIMARY KEY,"ownerId" uuid,type text,visibility text DEFAULT 'timeline',"stackId" uuid,"livePhotoVideoId" uuid,"deletedAt" timestamptz,"originalPath" text DEFAULT '/original/immutable')`,
-      `CREATE TABLE stack(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"ownerId" uuid,"primaryAssetId" uuid UNIQUE REFERENCES asset)`,
-      'ALTER TABLE asset ADD FOREIGN KEY("stackId") REFERENCES stack',
-      `CREATE TABLE asset_lock("assetId" uuid PRIMARY KEY REFERENCES asset ON DELETE CASCADE,reason text NOT NULL,"lockedAt" timestamptz NOT NULL DEFAULT now(),"lockedBy" uuid,"previousVisibility" text,inherited boolean NOT NULL DEFAULT false)`,
-      'CREATE TABLE album_asset("albumId" uuid,"assetId" uuid REFERENCES asset,PRIMARY KEY("albumId","assetId"))',
-    ]) {
-      await sql.raw(statement).execute(db);
-    }
-    await migration.up(db);
-    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
+
     service = new ICloudRelationsService(new ICloudRelationsRepository(db), { emit } as unknown as EventRepository);
   });
   afterAll(async () => {
@@ -40,19 +23,20 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
   beforeEach(() => {
     emit.mockClear();
   });
-  const rows = <T>(query: RawBuilder<T>) => query.execute(db).then((result) => result.rows);
-  const first = <T>(query: RawBuilder<T>) => rows(query).then((result) => result[0]);
+  const rows = <T,>(query: RawBuilder<T>) => query.execute(db).then((result) => result.rows);
+  const first = <T,>(query: RawBuilder<T>) => rows(query).then((result) => result[0]);
   async function context() {
     const connectionId = randomUUID(),
       ownerId = randomUUID();
-    await sql`INSERT INTO immich_fork.icloud_connection(id,"ownerId",label,state) VALUES(${connectionId}::uuid,${ownerId}::uuid,'Photos','connected')`.execute(
+    await seedCanonicalUser(db, { id: ownerId });
+    await sql`INSERT INTO public.icloud_connection(id,"ownerId",label,state) VALUES(${connectionId}::uuid,${ownerId}::uuid,'Photos','connected')`.execute(
       db,
     );
     return { connectionId, ownerId };
   }
   async function asset(ownerId: string, type = 'IMAGE') {
     const id = randomUUID();
-    await sql`INSERT INTO asset(id,"ownerId",type) VALUES(${id}::uuid,${ownerId}::uuid,${type})`.execute(db);
+    await seedCanonicalAsset(db, { id, ownerId, type: type as AssetType, originalPath: '/original/immutable' });
     return id;
   }
   async function resource(
@@ -62,7 +46,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     logical = 'logical',
   ) {
     const id = randomUUID();
-    await sql`INSERT INTO immich_fork.icloud_resource(id,"connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize",status,"assetId")
+    await sql`INSERT INTO public.icloud_resource(id,"connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize",status,"assetId")
       VALUES(${id}::uuid,${ctx.connectionId}::uuid,${ctx.ownerId}::uuid,'private','{}',${logical},${logical},${role},${role},${id},${{ current: true }}::jsonb,3,'finalized',${assetId}::uuid)`.execute(
       db,
     );
@@ -97,7 +81,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     expect(created.primaryAssetId).toBe(ctx.edited);
     expect(await rows(sql`SELECT id FROM asset WHERE "stackId"=${created.id}::uuid`)).toHaveLength(2);
     const newer = await asset(ctx.ownerId);
-    await sql`UPDATE immich_fork.icloud_resource SET source=jsonb_set(source,'{current}','false') WHERE id=${ctx.editResource}::uuid`.execute(
+    await sql`UPDATE public.icloud_resource SET source=jsonb_set(source,'{current}','false') WHERE id=${ctx.editResource}::uuid`.execute(
       db,
     );
     const newerResource = await resource(ctx, 'edited-image', newer);
@@ -106,7 +90,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
       primaryAssetId: newer,
     });
     expect(await rows(sql`SELECT id FROM asset WHERE "stackId"=${created.id}::uuid`)).toHaveLength(3);
-    await sql`UPDATE immich_fork.icloud_resource SET source=jsonb_set(source,'{current}','false') WHERE id=${newerResource}::uuid`.execute(
+    await sql`UPDATE public.icloud_resource SET source=jsonb_set(source,'{current}','false') WHERE id=${newerResource}::uuid`.execute(
       db,
     );
     await finish(ctx);
@@ -126,7 +110,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     await finish(ctx);
     const stack = await first(sql<{ id: string }>`SELECT id FROM stack WHERE "ownerId"=${ctx.ownerId}::uuid`);
     await sql`UPDATE stack SET "primaryAssetId"=${ctx.original}::uuid WHERE id=${stack.id}::uuid`.execute(db);
-    await sql`UPDATE immich_fork.icloud_resource SET source=jsonb_set(source,'{current}','false') WHERE id=${ctx.editResource}::uuid`.execute(
+    await sql`UPDATE public.icloud_resource SET source=jsonb_set(source,'{current}','false') WHERE id=${ctx.editResource}::uuid`.execute(
       db,
     );
     const newer = await asset(ctx.ownerId);
@@ -147,12 +131,12 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     expect(await rows(sql`SELECT id FROM asset WHERE "stackId"=${stack.id}::uuid`)).toHaveLength(3);
     expect(
       await rows(
-        sql`SELECT DISTINCT "sourceAssetId" FROM immich_fork.icloud_resource WHERE "connectionId"=${ctx.connectionId}::uuid`,
+        sql`SELECT DISTINCT "sourceAssetId" FROM public.icloud_resource WHERE "connectionId"=${ctx.connectionId}::uuid`,
       ),
     ).toHaveLength(2);
     expect(
       await rows(
-        sql`SELECT id FROM immich_fork.icloud_resource WHERE "connectionId"=${ctx.connectionId}::uuid AND source#>>'{_sync,relations,stackId}'=${stack.id}`,
+        sql`SELECT id FROM public.icloud_resource WHERE "connectionId"=${ctx.connectionId}::uuid AND source#>>'{_sync,relations,stackId}'=${stack.id}`,
       ),
     ).toHaveLength(2);
   });
@@ -182,7 +166,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     await sql`UPDATE asset SET "stackId"=${manual.id}::uuid WHERE id=${ctx.original}::uuid`.execute(db);
     const motion = await asset(ctx.ownerId, 'VIDEO');
     await resource(ctx, 'motion', motion);
-    await sql`INSERT INTO album_asset VALUES(${randomUUID()}::uuid,${motion}::uuid)`.execute(db);
+    await seedCanonicalAlbum(db, { ownerId: ctx.ownerId }, [motion]);
     await finish(ctx);
     expect(await first(sql`SELECT "livePhotoVideoId" FROM asset WHERE id=${ctx.original}::uuid`)).toEqual({
       livePhotoVideoId: null,
@@ -190,7 +174,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     expect(await rows(sql`SELECT 1 FROM album_asset WHERE "assetId"=${motion}::uuid`)).toHaveLength(1);
     expect(
       await first(
-        sql`SELECT source#>>'{_sync,relations,status}' AS status FROM immich_fork.icloud_resource WHERE id=${ctx.originalResource}::uuid`,
+        sql`SELECT source#>>'{_sync,relations,status}' AS status FROM public.icloud_resource WHERE id=${ctx.originalResource}::uuid`,
       ),
     ).toEqual({ status: 'needs-review' });
     expect(await rows(sql`SELECT id FROM stack WHERE "ownerId"=${ctx.ownerId}::uuid`)).toHaveLength(1);
@@ -205,7 +189,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     expect(await rows(sql`SELECT id FROM stack WHERE "ownerId"=${ctx.ownerId}::uuid`)).toHaveLength(1);
     expect(
       await first(
-        sql`SELECT source#>'{_sync,relations,events}' AS events FROM immich_fork.icloud_resource WHERE id=${ctx.originalResource}::uuid`,
+        sql`SELECT source#>'{_sync,relations,events}' AS events FROM public.icloud_resource WHERE id=${ctx.originalResource}::uuid`,
       ),
     ).toEqual({ events: [] });
   });
@@ -221,7 +205,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     });
     expect(
       await first(
-        sql`SELECT source#>>'{_sync,relations,reason}' AS reason FROM immich_fork.icloud_resource WHERE id=${originalResource}::uuid`,
+        sql`SELECT source#>>'{_sync,relations,reason}' AS reason FROM public.icloud_resource WHERE id=${originalResource}::uuid`,
       ),
     ).toEqual({ reason: 'resource_owner_or_trash_changed' });
     await expect(service.reconcile(ctx.connectionId, randomUUID())).rejects.toThrow('icloud_connection_not_found');
@@ -230,7 +214,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     'does not let a %s rendition starve other families',
     async (status) => {
       const ctx = await setup();
-      await sql`UPDATE immich_fork.icloud_resource SET status=${status},"assetId"=NULL WHERE id=${ctx.editResource}::uuid`.execute(
+      await sql`UPDATE public.icloud_resource SET status=${status},"assetId"=NULL WHERE id=${ctx.editResource}::uuid`.execute(
         db,
       );
       const otherOriginal = await asset(ctx.ownerId),
@@ -241,7 +225,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
       const terminal = !['pending', 'retry'].includes(status);
       expect(
         await first(
-          sql`SELECT source#>>'{_sync,relations,status}' AS status FROM immich_fork.icloud_resource WHERE id=${ctx.originalResource}::uuid`,
+          sql`SELECT source#>>'{_sync,relations,status}' AS status FROM public.icloud_resource WHERE id=${ctx.originalResource}::uuid`,
         ),
       ).toEqual({ status: terminal ? 'needs-review' : 'pending' });
       expect(await rows(sql`SELECT id FROM stack WHERE "ownerId"=${ctx.ownerId}::uuid`)).toHaveLength(1);
@@ -261,7 +245,7 @@ describe('iCloud source-owned Stack and Live Photo reconciliation (PostgreSQL)',
     });
     expect(
       await first(
-        sql`SELECT source#>>'{_sync,relations,reason}' AS reason FROM immich_fork.icloud_resource WHERE id=${originalResource}::uuid`,
+        sql`SELECT source#>>'{_sync,relations,reason}' AS reason FROM public.icloud_resource WHERE id=${originalResource}::uuid`,
       ),
     ).toEqual({ reason: 'motion_visibility_override' });
     expect(emit).not.toHaveBeenCalled();

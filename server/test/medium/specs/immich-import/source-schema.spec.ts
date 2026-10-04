@@ -14,12 +14,12 @@ describe('frozen Immich structural catalog on PostgreSQL', () => {
   beforeAll(async () => {
     const url = new URL(process.env.IMMICH_TEST_POSTGRES_URL!);
     url.pathname = '/postgres';
-    admin = postgres(url.toString(), { max: 1, onnotice: () => {} });
+    admin = postgres(url.href, { max: 1, onnotice: () => {} });
     await admin.unsafe(`CREATE DATABASE "${name}"`);
     url.pathname = `/${name}`;
-    connection = connectImportDatabase(url.toString(), false);
+    connection = connectImportDatabase(url.href, false);
     const [version] = await connection.db.query("SELECT current_setting('server_version_num')::int AS version");
-    expect(Number(version.version)).toBeGreaterThanOrEqual(190000);
+    expect(Number(version.version)).toBeGreaterThanOrEqual(190_000);
   });
   afterAll(async () => {
     await connection?.close();

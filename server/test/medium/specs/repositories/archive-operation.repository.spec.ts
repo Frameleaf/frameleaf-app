@@ -26,7 +26,6 @@ describe(ArchiveOperationRepository.name, () => {
     db = await getKyselyDB();
     repo = new ArchiveOperationRepository(db);
     context = new MediumTestContext(AssetService, { database: db, real: [], mock: [LoggingRepository] });
-    await sql`UPDATE immich_fork.state SET phase = 'dual-write' WHERE id = 1`.execute(db);
   });
 
   beforeEach(async () => {
@@ -169,7 +168,7 @@ describe(ArchiveOperationRepository.name, () => {
     await asset();
     const expiredKey = randomUUID();
     const expired = await repo.prepareMatching(auth, expiredKey);
-    await sql`UPDATE immich_fork.archive_operation SET "expiresAt" = now() - interval '1 minute' WHERE id = ${expired}::uuid`.execute(
+    await sql`UPDATE public.archive_operation SET "expiresAt" = now() - interval '1 minute' WHERE id = ${expired}::uuid`.execute(
       db,
     );
     await expect(repo.confirm(auth, expired, expiredKey)).rejects.toThrow('expired');
@@ -180,14 +179,6 @@ describe(ArchiveOperationRepository.name, () => {
     await expect(repo.confirm(auth, unlocked, unlockedKey)).rejects.toThrow('Unlock again');
   });
 
-  it('writes nothing while the fork schema is inactive (a handoff to official Immich)', async () => {
-    await sql`UPDATE immich_fork.state SET phase = 'inactive' WHERE id = 1`.execute(db);
-    try {
-      await expect(repo.createSelected(auth, randomUUID(), [await asset()])).rejects.toThrow('handoff');
-    } finally {
-      await sql`UPDATE immich_fork.state SET phase = 'dual-write' WHERE id = 1`.execute(db);
-    }
-  });
   it('leaves out unreached items that are Locked now, and nothing else', async () => {
     const [open, locked] = [await asset(), await asset()];
     const key = randomUUID();
@@ -206,11 +197,11 @@ describe(ArchiveOperationRepository.name, () => {
   it('prunes expired selections and old operations whose jobs finished, keeping the rest', async () => {
     await asset();
     const expired = await repo.prepareMatching(auth, randomUUID());
-    await sql`UPDATE immich_fork.archive_operation SET "expiresAt" = now() - interval '1 minute' WHERE id = ${expired}::uuid`.execute(
+    await sql`UPDATE public.archive_operation SET "expiresAt" = now() - interval '1 minute' WHERE id = ${expired}::uuid`.execute(
       db,
     );
     const old = await confirmSelected([await asset()]);
-    await sql`UPDATE immich_fork.archive_operation SET "createdAt" = now() - interval '40 days' WHERE id = ${old}::uuid`.execute(
+    await sql`UPDATE public.archive_operation SET "createdAt" = now() - interval '40 days' WHERE id = ${old}::uuid`.execute(
       db,
     );
     const recent = await confirmSelected([await asset()]);

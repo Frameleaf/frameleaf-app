@@ -7,11 +7,11 @@ import { dirname, join } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import { MediaHealthStatus, SystemMetadataKey } from 'src/enum.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
-import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
@@ -28,7 +28,7 @@ import { StorageMigrationService } from 'src/services/storage-migration.service.
 import { clearConfigCache } from 'src/utils/config.js';
 import { StorageMigrationState, storageMigrationStatus } from 'src/utils/storage-migration.js';
 import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
 
 /**
  * FL-326 (spec §3.6, Review Focus 5): the universal storage upgrade migration on a seeded library, with
@@ -41,13 +41,9 @@ let previousMediaLocation: string | undefined;
 
 beforeAll(async () => {
   database = await getKyselyDB();
-  await sql`
-    INSERT INTO immich_fork.config (key, value)
-    VALUES
-      ('frameleafCloud', ${JSON.stringify(defaults.frameleafCloud)}::jsonb),
-      ('smartAlbums', ${JSON.stringify(defaults.smartAlbums)}::jsonb)
-    ON CONFLICT (key) DO NOTHING
-  `.execute(database);
+  await sql`INSERT INTO public.system_metadata (key, value)
+    VALUES ('system-config', ${JSON.stringify({ frameleafCloud: defaults.frameleafCloud, smartAlbums: defaults.smartAlbums })}::jsonb)
+    ON CONFLICT (key) DO NOTHING`.execute(database);
   try {
     previousMediaLocation = StorageCore.getMediaLocation();
   } catch {
@@ -250,7 +246,7 @@ describe('StorageMigrationService on a seeded library (FL-326)', () => {
     // the copy's own file went to the file trash, exactly once, never unlinked
     expect(existsSync(copy.originalPath)).toBe(false);
     const trashed = await sql<{ lastAssetId: string; path: string }>`
-      SELECT "lastAssetId", path FROM immich_fork.physical_file_trash WHERE "lastAssetId" = ${copy.id}::uuid
+      SELECT "lastAssetId", path FROM public.physical_file_trash WHERE "lastAssetId" = ${copy.id}::uuid
     `.execute(database);
     expect(trashed.rows).toHaveLength(1);
     expect(existsSync(trashed.rows[0].path)).toBe(true);
