@@ -37,12 +37,12 @@ It is designed for users who want to keep the workflows they already know, while
 - A "Best Photos" view for locally ranked high-quality images
 - **Server-to-server migration** that moves a user's whole library between servers, resumably, and audits the result
 
-Frameleaf is actively maintained and kept up to date with the upstream project while preserving the additional features documented below.
+Frameleaf is independently maintained, with its own database architecture, job processing and release process.
 
 > [!CAUTION]
 > Frameleaf is not the upstream project. It includes database changes and Frameleaf-only features that the upstream project does not have.
 >
-> Compatibility-certified 3.x releases can hand a converted database to the exact matching official upstream image and later return to a compatible Frameleaf release while Frameleaf-owned sidecars remain dormant. Official plugin and workflow rows stay in the official tables and are not migrated by Frameleaf. See [Switching between Frameleaf and the upstream server](docs/docs/features/switching-between-fork-and-official.md) for the versioned procedure and required release gates. Always back up both the database and media library before switching.
+> Start with a fresh Frameleaf PostgreSQL 19 database and data volume. A stopped upstream library from the frozen stable 3.x releases through 3.2.4 can be copied once with the [offline importer](docs/docs/administration/import-immich.md). Keep the source database and media as the recovery copy and use independent, verified destination media copies. The import is one-way; ongoing synchronization and switching a Frameleaf database back to the upstream server are unsupported. Read the [upgrade guide](docs/docs/install/upgrading.md) before changing releases.
 
 > [!IMPORTANT]
 > **Before upgrading,** read [Configurable Descriptions, Identity, Videos, and Smart Albums](docs/docs/features/descriptions-and-smart-albums.md). The ML description pipeline in Frameleaf has a recommended setup order, a dependency on Enhanced Video Duplicate Detection for video descriptions, and a curated model dropdown that may not include your existing model. Following the guide saves you from re-queueing your whole library more than once. New in this release: video descriptions via composite frame grids, a free-form "custom instructions" prompt field, and stronger identity-injection wording that names every detected person.
@@ -51,7 +51,7 @@ Start with the [Frameleaf privacy suite guide](docs/docs/features/fork-privacy-s
 
 ## Frameleaf container installation
 
-Use a [published Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases) and its matching Compose files. Application images are `ghcr.io/frameleaf/frameleaf-server` and `ghcr.io/frameleaf/frameleaf-machine-learning`; stable channels use `release`/`latest`, and development builds use `edge`. The release bundle pins its exact version. Follow the [container installation and migration notes](docker/README.md) to retain existing database/media paths, service names and environment settings when displayed container names change to `frameleaf_*`.
+Use a [published Frameleaf release](https://github.com/Frameleaf/frameleaf-app/releases) and its matching Compose files. Application images are `ghcr.io/frameleaf/frameleaf-server` and `ghcr.io/frameleaf/frameleaf-machine-learning`; stable channels use `release`/`latest`, and development builds use `edge`. The release bundle pins its exact version. Follow the [container installation notes](docker/README.md) for a fresh canonical database. When updating an existing canonical Frameleaf installation, retain its database/media paths, service names and environment settings.
 
 For contributing, read [CONTRIBUTING.md](CONTRIBUTING.md).
 

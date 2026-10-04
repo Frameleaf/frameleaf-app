@@ -30,14 +30,13 @@ questions:
       type: dict
       attrs:
         - variable: postgres_image_selector
-          label: Postgres Image (CAUTION)
+          label: Frameleaf PostgreSQL Image
           description: |
-            If you are changing this after the postgres directory has been initialized,</br>
-            STOP! and make sure you have a backup of your data.</br>
-            Changing this will trigger an one way database upgrade.</br>
-            You can only select newer versions of postgres.</br>
-            Selecting an older version will refuse to start.</br>
-            If something goes wrong, you will have to restore from backup.
+            This package requires the pinned PostgreSQL 19 image with pgvector.</br>
+            A new installation requires a fresh canonical Frameleaf database and data volume.</br>
+            Changing an image does not convert an older PostgreSQL cluster.</br>
+            Import supported source libraries once into the fresh destination.</br>
+            Back up the database and media before updating an existing canonical installation.
           schema:
             type: string
             default: pgvector_19_image

@@ -127,7 +127,7 @@ The redirect URI for the mobile app is `app.immich:///oauth-callback`, which is 
 
 With these steps in place, you should be able to use OAuth from the [Mobile App](/features/mobile-app.mdx) without a custom scheme redirect URI.
 
-::info
+:::info
 Frameleaf has a route (`/api/oauth/mobile-redirect`) that is already configured to forward requests to `app.immich:///oauth-callback`, and can be used for step 1.
 :::
 

@@ -409,7 +409,7 @@ cap_drop:
 Data for Frameleaf comes in two forms:
 
 1. **Metadata** stored in a Postgres database, stored in the `DB_DATA_LOCATION` folder (previously `pg_data` Docker volume).
-2. **Files** (originals, thumbs, profile, etc.), stored in the `UPLOAD_LOCATION` folder, more [info](/administration/backup-and-restore#asset-types-and-storage-locations).
+2. **Files** (originals, thumbs, profile, etc.), stored in the `UPLOAD_LOCATION` folder. Include external-library media roots in your backup as well; see [what to preserve](/administration/backup-and-restore#what-to-preserve).
 
 :::warning
 This will destroy your database and reset your instance, meaning that you start from scratch.

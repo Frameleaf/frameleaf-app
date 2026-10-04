@@ -1,6 +1,6 @@
 name: Frameleaf Unraid installation guide
 
-# The canonical Docker + Fork Release workflows own every published image tag.
+# The canonical Docker and Deploy production workflows own published image tags.
 # This manual entry deliberately has no registry credentials or build steps.
 on:
   workflow_dispatch:
@@ -18,4 +18,6 @@ jobs:
           echo 'Download the Compose, environment and hardware files from a Frameleaf release.' >> "$GITHUB_STEP_SUMMARY"
           echo 'https://github.com/Frameleaf/frameleaf-app/releases' >> "$GITHUB_STEP_SUMMARY"
           echo 'Use the release version consistently for the server and the selected ML variant. OpenVINO uses the -openvino suffix.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Preserve your existing upload/database mounts, service names, environment settings and named volumes.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Create a fresh canonical PostgreSQL 19 database and data volume for a new installation.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Import supported source libraries once, offline, into that destination with independent verified media copies: docs/docs/administration/import-immich.md.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'When updating an existing canonical Frameleaf installation, preserve its upload/database mounts, service names, environment settings and named volumes.' >> "$GITHUB_STEP_SUMMARY"
