@@ -35,10 +35,12 @@ import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetLockReason,
   AssetPathType,
+  AssetStatus,
   AssetType,
   AssetVisibility,
   ChecksumAlgorithm,
   MediaOperationKind,
+  PhysicalFileType,
   UserMetadataKey,
 } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -57,6 +59,7 @@ import {
   guardScheduledAudit,
   scheduledAuditFinalFence,
 } from 'src/repositories/icloud-scheduled-authority.js';
+import { publishScheduledAudit } from 'src/repositories/icloud-scheduled-publication.js';
 import {
   ICloudScheduledStagingRepository,
   ScheduledFreshPayload,
@@ -1663,10 +1666,8 @@ describe('iCloud exact identity adoption', () => {
             week: string;
           }>`SELECT date_trunc('week',clock_timestamp() AT TIME ZONE 'UTC')::date::text AS week`.execute(db)
         ).rows[0];
-        const week =
-          (cohort.weekStart as unknown) instanceof Date
-            ? (cohort.weekStart as unknown as Date).toISOString().slice(0, 10)
-            : cohort.weekStart.slice(0, 10);
+        expect(typeof cohort.weekStart).toBe('string');
+        const week = cohort.weekStart;
         expect(week).toBe(clock.week);
         const ranked = frozen
           .map((member) => ({
@@ -2914,7 +2915,10 @@ describe('iCloud exact identity adoption', () => {
           const reached = Promise.withResolvers<void>();
           const resume = Promise.withResolvers<void>();
           // Save the real crypto implementation; binding the mock recurses when spyOn replaces it.
-          const decode = fixture.transport.decodeSession.getMockImplementation()!;
+          const decode = fixture.transport.decodeSession.getMockImplementation();
+          if (!decode) {
+            throw new Error('actual_session_decoder_required');
+          }
           const barrier = vi.spyOn(fixture.transport, 'decodeSession').mockImplementation(async (scope, encrypted) => {
             const payload = await decode(scope, encrypted);
             if (scope.startsWith('icloud-scheduled-private-copy:')) {
@@ -2932,13 +2936,15 @@ describe('iCloud exact identity adoption', () => {
             copy.payload.generation = randomUUID();
             await sql`UPDATE public.icloud_resource SET verification=verification||jsonb_build_object('auditPrivateCopy',${JSON.stringify(copy)}::text::jsonb)
               WHERE id=${fixture.resource.id}::uuid`.execute(db);
-          } finally {
             resume.resolve();
-          }
-          try {
             await cleanup;
           } finally {
-            barrier.mockRestore();
+            resume.resolve();
+            try {
+              await cleanup;
+            } finally {
+              barrier.mockRestore();
+            }
           }
           expect(await fixture.state()).toMatchObject({ status: 'failed', reservedBytes: 2 * fixture.f.bytes.length });
           expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
@@ -3225,7 +3231,7 @@ describe('iCloud exact identity adoption', () => {
           expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
         });
 
-        it('refuses a forced match-as-mismatch reservation after real destination decode before any publication', async () => {
+        it('rolls back a duplicate reservation at the real owner/checksum constraint after actual destination decode', async () => {
           // Negative reservation test only. This is not a genuine same-descriptor weekly mismatch.
           const fixture = await createStageFixture(true);
           const fresh = await fixture.staging.download(fixture.input);
@@ -3258,6 +3264,11 @@ describe('iCloud exact identity adoption', () => {
           captureCompiledQuery = (query) => {
             publicationQueries.push(query);
           };
+          const quotaBefore = await db
+            .selectFrom('user')
+            .select('quotaUsageInBytes')
+            .where('id', '=', fixture.f.user.id)
+            .executeTakeFirstOrThrow();
           const repository = new MediaRecoveryRepository(db, fixture.repository);
           let files: Awaited<ReturnType<ICloudScheduledStagingService['holdPublicationFiles']>> | undefined;
           const publication = {
@@ -3266,8 +3277,9 @@ describe('iCloud exact identity adoption', () => {
             paths: [] as string[],
             current: () => Promise.resolve(false),
           };
+          let duplicateGate: { mockRestore: () => void } | undefined;
           try {
-            await expect(
+            const commit = () =>
               repository.commit({
                 ownerId: fixture.f.user.id,
                 resourceId: fixture.resource.id,
@@ -3293,10 +3305,26 @@ describe('iCloud exact identity adoption', () => {
                   publication.validation = files.validation;
                   return result.verified;
                 },
-              }),
-            ).resolves.toEqual({ outcome: 'retry', reason: 'matching_asset_created' });
-          } finally {
+              });
+            // The real original still owns these bytes. Keep the production guard as a positive control.
+            expect(await commit()).toEqual({ outcome: 'retry', reason: 'matching_asset_created' });
             await files?.release();
+            files = undefined;
+            // Isolated uniqueness rollback: bypass only the earlier duplicate short-circuit.
+            // Frozen identity, live authority, actual decode and authenticated proof remain real.
+            duplicateGate = vi
+              .spyOn(repository as unknown as { hasManagedMatch: () => Promise<boolean> }, 'hasManagedMatch')
+              .mockResolvedValue(false);
+            await expect(commit()).rejects.toMatchObject({
+              code: '23505',
+              constraint_name: 'UQ_assets_owner_checksum',
+            });
+          } finally {
+            try {
+              await files?.release();
+            } finally {
+              duplicateGate?.mockRestore();
+            }
           }
           // The existing same-byte original forbids an imported replacement before protection or outbox writes.
           expect(files).toBeDefined();
@@ -3311,12 +3339,141 @@ describe('iCloud exact identity adoption', () => {
           );
           expect(protectionWrite).toBe(-1);
           expect(outboxWrite).toBe(-1);
+          expect(
+            await db
+              .selectFrom('user')
+              .select('quotaUsageInBytes')
+              .where('id', '=', fixture.f.user.id)
+              .executeTakeFirstOrThrow(),
+          ).toEqual(quotaBefore);
           expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
           expect(await readFile(promotedPath)).toEqual(fixture.f.bytes);
           expect(await db.selectFrom('asset').select('id').where('id', '=', assetId).execute()).toEqual([]);
           expect(
             (await sql`SELECT 1 FROM public.physical_file WHERE "canonicalAssetId"=${assetId}::uuid`.execute(db)).rows,
           ).toEqual([]);
+          expect((await fixture.repository.read(fixture.input))!.resource.pendingJobs).toEqual([]);
+          expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
+          // Two genuine destination decode/publication attempts need their own bounded test budget.
+        }, 10_000);
+
+        it('rejects a matching receipt published as mismatch and rolls back test-only privacy sentinel writes', async () => {
+          const fixture = await createStageFixture(true);
+          const fresh = await fixture.staging.download(fixture.input);
+          const validation = await fixture.staging.validate(fixture.input);
+          const staged = await validation.result;
+          await validation.settled;
+          expect(staged.status).toBe('validated');
+          if (staged.status !== 'validated') {
+            throw new Error('actual_validation_required');
+          }
+          expect(await fixture.repository.authenticateReceipt(fixture.input, fresh)).toBe(true);
+          expect(await fixture.repository.authenticateDeepValidation(fixture.input, staged.validation)).toBe(true);
+          const sentinelId = randomUUID();
+          const physicalId = randomUUID();
+          // Metadata-only transaction sentinel: not a decoded recovery destination,
+          // authored proof, production commit privacy path or genuine worker mismatch.
+          const sentinelChecksum = createHash('sha256').update(`writer-sentinel:${sentinelId}`).digest();
+          const sentinelPath = join(dirname(fixture.f.originalPath), `writer-sentinel-${sentinelId}.jpg`);
+          const before = await sql<{ state: unknown }>`SELECT jsonb_build_object(
+            'original', (SELECT to_jsonb(a) FROM public.asset a WHERE id=${fixture.f.asset.id}::uuid),
+            'identity', (SELECT to_jsonb(i) FROM public.icloud_source_identity i WHERE id=${fixture.f.identityId}::uuid),
+            'cohort', (SELECT to_jsonb(c) FROM public.icloud_weekly_cohort c WHERE id=${fixture.cohort.id}::uuid),
+            'request', (SELECT to_jsonb(r) FROM public.icloud_identity_audit r WHERE id=${fixture.authority.auditRequestId}::uuid),
+            'quota', (SELECT "quotaUsageInBytes" FROM public."user" WHERE id=${fixture.f.user.id}::uuid)
+          ) AS state`.execute(db);
+          const files = await fixture.staging.holdPublicationFiles(fixture.input);
+          try {
+            expect(files.receipt).toEqual(fresh);
+            expect(files.validation).toEqual(staged.validation);
+            expect(await files.current()).toBe(true);
+            await expect(
+              db.transaction().execute(async (tx) => {
+                const guarded = await guardScheduledAudit(tx, fixture.authority, fixture.f.user.id, {
+                  resource: fixture.resource,
+                });
+                expect(guarded?.private).toBe(true);
+                if (!guarded) {
+                  throw new Error('actual_authority_required');
+                }
+                expect(fresh.payload.sha256).toBe(guarded.request.expectedSha256.toString('hex'));
+                expect(sentinelChecksum.equals(guarded.request.expectedSha256)).toBe(false);
+                const createdAt = new Date();
+                await tx
+                  .insertInto('asset')
+                  .values({
+                    id: sentinelId,
+                    ownerId: fixture.f.user.id,
+                    originalPath: sentinelPath,
+                    originalFileName: 'writer-sentinel.jpg',
+                    type: AssetType.Image,
+                    checksum: sentinelChecksum,
+                    checksumAlgorithm: ChecksumAlgorithm.sha256File,
+                    fileCreatedAt: createdAt,
+                    fileModifiedAt: createdAt,
+                    localDateTime: createdAt,
+                    visibility: AssetVisibility.Timeline,
+                    status: AssetStatus.Active,
+                  })
+                  .execute();
+                await tx
+                  .insertInto('asset_lock')
+                  .values({ assetId: sentinelId, reason: AssetLockReason.Marked, lockedBy: null })
+                  .execute();
+                expect(
+                  await tx.selectFrom('asset_lock').select('assetId').where('assetId', '=', sentinelId).execute(),
+                ).toHaveLength(1);
+                expect(
+                  (
+                    await sql<{ pendingJobs: unknown[] }>`SELECT "pendingJobs" FROM public.icloud_resource
+                    WHERE id=${fixture.resource.id}::uuid`.execute(tx)
+                  ).rows[0].pendingJobs,
+                ).toEqual([]);
+                await tx
+                  .insertInto('physical_file')
+                  .values({
+                    id: physicalId,
+                    canonicalAssetId: sentinelId,
+                    checksum: sentinelChecksum,
+                    path: sentinelPath,
+                    sizeInBytes: 1,
+                    type: PhysicalFileType.Original,
+                  })
+                  .execute();
+                await tx
+                  .updateTable('user')
+                  .set({ quotaUsageInBytes: sql`"quotaUsageInBytes" + 1` })
+                  .where('id', '=', fixture.f.user.id)
+                  .execute();
+                // Call the actual transaction-only writer with genuine authenticated
+                // match evidence and deliberately false result; no worker/commit seam.
+                await publishScheduledAudit(
+                  tx,
+                  fixture.authority,
+                  guarded,
+                  fixture.resource,
+                  files,
+                  'mismatch',
+                  sentinelId,
+                );
+              }),
+            ).rejects.toThrow('scheduled_audit_result_invalid');
+          } finally {
+            await files.release();
+          }
+          expect(await db.selectFrom('asset').select('id').where('id', '=', sentinelId).execute()).toEqual([]);
+          expect(
+            await db.selectFrom('asset_lock').select('assetId').where('assetId', '=', sentinelId).execute(),
+          ).toEqual([]);
+          expect(await db.selectFrom('physical_file').select('id').where('id', '=', physicalId).execute()).toEqual([]);
+          const after = await sql<{ state: unknown }>`SELECT jsonb_build_object(
+            'original', (SELECT to_jsonb(a) FROM public.asset a WHERE id=${fixture.f.asset.id}::uuid),
+            'identity', (SELECT to_jsonb(i) FROM public.icloud_source_identity i WHERE id=${fixture.f.identityId}::uuid),
+            'cohort', (SELECT to_jsonb(c) FROM public.icloud_weekly_cohort c WHERE id=${fixture.cohort.id}::uuid),
+            'request', (SELECT to_jsonb(r) FROM public.icloud_identity_audit r WHERE id=${fixture.authority.auditRequestId}::uuid),
+            'quota', (SELECT "quotaUsageInBytes" FROM public."user" WHERE id=${fixture.f.user.id}::uuid)
+          ) AS state`.execute(db);
+          expect(after.rows).toEqual(before.rows);
           expect((await fixture.repository.read(fixture.input))!.resource.pendingJobs).toEqual([]);
           expect((await members(fixture.cohort.id))[0].outcome).toBe('pending');
         });
