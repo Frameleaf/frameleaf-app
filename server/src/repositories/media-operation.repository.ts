@@ -26,7 +26,6 @@ import {
 } from 'src/utils/media-operation.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
-export const MEDIA_OPERATION_HANDOFF_REFUSAL = 'Media operations are unavailable during database handoff';
 export type MediaOperation = Selectable<MediaOperationTable>;
 /** One unfinished retry per job (migration 2100000000590, FL-43). */
 export const MEDIA_OPERATION_ACTIVE_RETRY_CONSTRAINT = 'media_operation_retryOfId_active_uq';

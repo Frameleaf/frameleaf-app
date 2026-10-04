@@ -65,7 +65,7 @@ export class FrameleafAccountRepository {
     private db: Kysely<DB>,
   ) {}
   /** Run each account write in a database transaction. */
-  private write<T>(message: string, work: (trx: Kysely<DB>) => Promise<T>): Promise<T> {
+  private write<T>(work: (trx: Kysely<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (trx) => {
       return work(trx);
     });
@@ -130,7 +130,7 @@ export class FrameleafAccountRepository {
       access?: FrameleafAccess | null;
     },
   ) {
-    return this.write('A sign-in cannot be recorded while the server is being handed over', async (trx) => {
+    return this.write(async (trx) => {
       await sql`
         UPDATE public.frameleaf_account_link
         SET email = ${update.email}, "emailVerified" = ${update.emailVerified}, role = ${update.role},
@@ -149,7 +149,7 @@ export class FrameleafAccountRepository {
   }
   /** Every link, for an unlink or revoke of the whole server. Returns the people unlinked. */
   async deleteAllLinks(): Promise<FrameleafAccountLinkRow[]> {
-    return this.write('Frameleaf accounts cannot be unlinked while the server is being handed over', async (trx) => {
+    return this.write(async (trx) => {
       const result = await sql<FrameleafAccountLinkRow>`
         DELETE FROM public.frameleaf_account_link RETURNING *
       `.execute(trx);
@@ -158,7 +158,7 @@ export class FrameleafAccountRepository {
   }
   // ------------------------------------------------------------------ sessions
   async tagSession(row: { sessionId: string; userId: string; sid: string | null; sub: string; authTime: Date | null }) {
-    return this.write('A sign-in cannot be recorded while the server is being handed over', async (trx) => {
+    return this.write(async (trx) => {
       await sql`
         INSERT INTO public.frameleaf_session ("sessionId", "userId", sid, sub, "authTime")
         VALUES (${row.sessionId}::uuid, ${row.userId}::uuid, ${row.sid}, ${row.sub}, ${row.authTime})
@@ -187,7 +187,7 @@ export class FrameleafAccountRepository {
     return result.rows;
   }
   async deleteSessions(sessionIds: string[]) {
-    return this.write('Sessions cannot be ended here while the server is being handed over', async (trx) => {
+    return this.write(async (trx) => {
       if (sessionIds.length === 0) {
         return;
       }
@@ -198,7 +198,7 @@ export class FrameleafAccountRepository {
   }
   /** Every tagged session, for an unlink or revoke of the whole server. */
   async deleteAllSessions(): Promise<string[]> {
-    return this.write('Sessions cannot be ended here while the server is being handed over', async (trx) => {
+    return this.write(async (trx) => {
       const result = await sql<{
         sessionId: string;
       }>`
@@ -209,7 +209,7 @@ export class FrameleafAccountRepository {
   }
   /** Put a single-use handoff code (its hash) on a tagged session. */
   async setHandoff(sessionId: string, codeHash: string, expiresAt: Date) {
-    return this.write('A sign-in cannot be handed over while the server is being handed over', async (trx) => {
+    return this.write(async (trx) => {
       await sql`
         UPDATE public.frameleaf_session
         SET "handoffCodeHash" = ${codeHash}, "handoffExpiresAt" = ${expiresAt}
@@ -219,7 +219,7 @@ export class FrameleafAccountRepository {
   }
   /** Take a handoff code once: returns its session and clears it, whether or not it expired. */
   async takeHandoff(codeHash: string): Promise<FrameleafSessionRow | undefined> {
-    return this.write('A sign-in cannot be handed over while the server is being handed over', async (trx) => {
+    return this.write(async (trx) => {
       const result = await sql<FrameleafSessionRow>`
         UPDATE public.frameleaf_session AS s
         SET "handoffCodeHash" = NULL, "handoffExpiresAt" = NULL
@@ -244,7 +244,7 @@ export class FrameleafAccountRepository {
     issuedAt: Date;
     expiresAt: Date;
   }): Promise<'ok' | 'replayed' | 'revoked'> {
-    return this.write('A sign-in cannot be recorded while the server is being handed over', async (trx) => {
+    return this.write(async (trx) => {
       await sql`DELETE FROM public.frameleaf_exchange_token WHERE "expiresAt" < clock_timestamp()`.execute(trx);
       if (await signInRevoked(trx, token)) {
         return 'revoked';
@@ -286,7 +286,7 @@ export class FrameleafAccountRepository {
     if (entries.length === 0) {
       return;
     }
-    return this.write('A sign-out cannot be recorded while the server is being handed over', async (trx) => {
+    return this.write(async (trx) => {
       await sql`
         DELETE FROM public.frameleaf_sign_in_revocation WHERE "expiresAt" < clock_timestamp()
       `.execute(trx);

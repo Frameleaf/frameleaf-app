@@ -1,6 +1,6 @@
 import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { AssetUploadResourceRepository } from 'src/repositories/asset-upload-resource.repository.js';
-import { forkGuardAnswer, scriptedKysely } from 'test/scripted-kysely.js';
+import { scriptedKysely } from 'test/scripted-kysely.js';
 
 describe('native upload schema and ownership read boundary', () => {
   it('refuses the optional stream when its schema is absent without reading any private resource', async () => {
@@ -27,10 +27,6 @@ describe('native upload schema and ownership read boundary', () => {
   it('stores declared pair resources in a receiving state that an older standalone writer cannot complete', async () => {
     const ownerId = '11111111-1111-4111-8111-111111111111';
     const { db, queries } = scriptedKysely((query) => {
-      const guard = forkGuardAnswer({ phase: 'active' })(query);
-      if (guard) {
-        return guard;
-      }
       if (query.sql.includes('to_regclass')) {
         return { rows: [{ ready: true }] };
       }

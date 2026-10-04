@@ -14,8 +14,6 @@ import {
 } from 'src/schema/tables/preservation.table.js';
 import { anyUuid, searchAssetBuilder } from 'src/utils/database.js';
 import { isLocked, isNotLocked } from 'src/utils/locked.js';
-/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
-export const PRESERVATION_HANDOFF_REFUSAL = 'Preservation packages are unavailable during database handoff';
 export type PreservationPackage = Selectable<PreservationPackageTable>;
 export type PreservationItem = Selectable<PreservationItemTable>;
 export type PreservationRestore = Selectable<PreservationRestoreTable>;
