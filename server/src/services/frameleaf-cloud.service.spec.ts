@@ -1116,6 +1116,247 @@ describe(FrameleafCloudService.name, () => {
       expect(waitSeconds()).toBeLessThanOrEqual(330);
     });
 
+    it('refreshes a custom hostname after services change and notifies administrators once for a new failure (FC-27)', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        frameleafCloud: {
+          remoteAccess: {
+            publicUrl: 'custom',
+            customHostname: {
+              host: 'photos.example.com',
+              status: 'verified',
+              checkedAt: '2026-10-03T14:00:00.000Z',
+            },
+          },
+        },
+      });
+      clearConfigCache();
+      const hostname = {
+        hostname: 'photos.example.com',
+        state: 'failing',
+        records: [
+          { name: 'photos.example.com', type: 'CNAME', value: 'r.u225vlzhsdlhwh4l.frameleaf.net' },
+          {
+            name: '_acme-challenge.photos.example.com',
+            type: 'CNAME',
+            value: '_acme-challenge.u225vlzhsdlhwh4l.frameleaf.net',
+          },
+        ],
+        checkedAt: '2026-10-03T15:00:00.000Z',
+        verifiedAt: '2026-09-24T09:10:00.000Z',
+        failureReason: 'cname_mismatch',
+      };
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: { servicesChanged: true } }));
+      cloud.on('GET /api/v1/remote/hostnames', () => ({ status: 200, body: { hostnames: [hostname] } }));
+      const customHostnameNotices = () =>
+        vi
+          .mocked(mocks.event.emit)
+          .mock.calls.filter(
+            ([name, notice]) =>
+              name === 'AdminNotify' &&
+              (notice as { dedupeKey?: string }).dedupeKey?.startsWith(
+                'frameleaf-cloud:custom-hostname-failing:photos.example.com:',
+              ),
+          );
+
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      expect(pathsCalled()).toContain('GET /api/v1/remote/hostnames');
+      const hostnameList = cloud.requests.find(({ path }) => path === '/api/v1/remote/hostnames')!;
+      expect(hostnameList.dpop).toMatchObject({
+        claims: { htm: 'GET', htu: `${cloud.url}/api/v1/remote/hostnames`, ath: expect.any(String) },
+      });
+      expect(tokenNameOf(hostnameList)).toBe('api-token');
+      const remoteAccess = (
+        metadata.get(SystemMetadataKey.SystemConfig) as {
+          frameleafCloud?: { remoteAccess?: Record<string, unknown> };
+        }
+      ).frameleafCloud?.remoteAccess;
+      expect(remoteAccess).toMatchObject({
+        publicUrl: 'custom',
+        customHostname: {
+          host: 'photos.example.com',
+          status: 'verified',
+          checkedAt: '2026-10-03T15:00:00.000Z',
+        },
+      });
+      expect(customHostnameNotices()).toHaveLength(1);
+      expect(customHostnameNotices()[0]).toEqual([
+        'AdminNotify',
+        expect.objectContaining({
+          level: NotificationLevel.Warning,
+          title: 'Custom hostname needs attention',
+          description: expect.stringContaining('photos.example.com'),
+          dedupeDays: 30,
+        }),
+      ]);
+
+      cloud.requests.length = 0;
+      vi.mocked(mocks.event.emit).mockClear();
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      expect(pathsCalled()).toContain('GET /api/v1/remote/hostnames');
+      expect(customHostnameNotices()).toHaveLength(0);
+    });
+
+    it('falls back and notifies when services change and the configured hostname is missing at the cloud (FC-27)', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        frameleafCloud: {
+          remoteAccess: {
+            publicUrl: 'custom',
+            customHostname: {
+              host: 'photos.example.com',
+              status: 'verified',
+              checkedAt: '2026-10-03T14:00:00.000Z',
+            },
+          },
+        },
+      });
+      clearConfigCache();
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: { servicesChanged: true } }));
+      cloud.on('GET /api/v1/remote/hostnames', () => ({ status: 200, body: { hostnames: [] } }));
+
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      const mergedConfig = await (
+        sut as unknown as {
+          getConfig(options: { withCache: boolean }): Promise<{
+            frameleafCloud: { remoteAccess: Record<string, unknown> };
+          }>;
+        }
+      ).getConfig({ withCache: false });
+      expect(mergedConfig.frameleafCloud.remoteAccess).toMatchObject({
+        publicUrl: 'frameleaf',
+        customHostname: {
+          host: 'photos.example.com',
+          status: 'pending',
+        },
+      });
+      expect(mocks.event.emit).toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({
+          dedupeKey: expect.stringMatching(/^frameleaf-cloud:custom-hostname-failing:photos\.example\.com:/),
+          description: expect.stringContaining('no longer lists photos.example.com'),
+        }),
+      );
+    });
+
+    it('does not notify or remember a hostname failure if the hostname changes during refresh (FC-27)', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        frameleafCloud: {
+          remoteAccess: {
+            publicUrl: 'custom',
+            customHostname: {
+              host: 'photos.example.com',
+              status: 'verified',
+              checkedAt: '2026-10-03T14:00:00.000Z',
+            },
+          },
+        },
+      });
+      clearConfigCache();
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: { servicesChanged: true } }));
+      cloud.on('GET /api/v1/remote/hostnames', () => {
+        metadata.set(SystemMetadataKey.SystemConfig, {
+          frameleafCloud: {
+            remoteAccess: {
+              publicUrl: 'frameleaf',
+              customHostname: { host: 'family.example.org', status: 'pending', checkedAt: null },
+            },
+          },
+        });
+        clearConfigCache();
+        return {
+          status: 200,
+          body: {
+            hostnames: [
+              {
+                hostname: 'photos.example.com',
+                state: 'failing',
+                records: [{ name: 'photos.example.com', type: 'CNAME', value: 'r.u225vlzhsdlhwh4l.frameleaf.net' }],
+                checkedAt: '2026-10-03T15:00:00.000Z',
+                verifiedAt: '2026-09-24T09:10:00.000Z',
+                failureReason: 'cname_mismatch',
+              },
+            ],
+          },
+        };
+      });
+
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.event.emit).not.toHaveBeenCalledWith(
+        'AdminNotify',
+        expect.objectContaining({
+          dedupeKey: expect.stringMatching(/^frameleaf-cloud:custom-hostname-failing:photos\.example\.com:/),
+        }),
+      );
+      expect(storedLink()?.heartbeat?.customHostnameFailure).toBeUndefined();
+    });
+
+    it('notifies again when a custom hostname recovers and later fails again (FC-27)', async () => {
+      metadata.set(SystemMetadataKey.SystemConfig, {
+        frameleafCloud: {
+          remoteAccess: {
+            publicUrl: 'custom',
+            customHostname: {
+              host: 'photos.example.com',
+              status: 'verified',
+              checkedAt: '2026-10-03T14:00:00.000Z',
+            },
+          },
+        },
+      });
+      clearConfigCache();
+      let state: 'verified' | 'failing' = 'failing';
+      let checkedAt = '2026-10-03T15:00:00.000Z';
+      cloud.on('POST /api/v1/instance/heartbeat', () => ({ status: 200, body: { servicesChanged: true } }));
+      cloud.on('GET /api/v1/remote/hostnames', () => ({
+        status: 200,
+        body: {
+          hostnames: [
+            {
+              hostname: 'photos.example.com',
+              state,
+              records: [{ name: 'photos.example.com', type: 'CNAME', value: 'r.u225vlzhsdlhwh4l.frameleaf.net' }],
+              checkedAt,
+              verifiedAt: state === 'verified' ? checkedAt : '2026-09-24T09:10:00.000Z',
+              failureReason: state === 'failing' ? 'cname_missing' : null,
+            },
+          ],
+        },
+      }));
+      const customHostnameNotices = () =>
+        vi
+          .mocked(mocks.event.emit)
+          .mock.calls.filter(
+            ([name, notice]) =>
+              name === 'AdminNotify' &&
+              (notice as { dedupeKey?: string }).dedupeKey?.startsWith(
+                'frameleaf-cloud:custom-hostname-failing:photos.example.com:',
+              ),
+          );
+
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(customHostnameNotices()).toHaveLength(1);
+
+      state = 'verified';
+      checkedAt = '2026-10-03T16:00:00.000Z';
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(customHostnameNotices()).toHaveLength(1);
+
+      state = 'failing';
+      checkedAt = '2026-10-03T17:00:00.000Z';
+      makeDue();
+      await expect(sut.handleHeartbeat()).resolves.toBe(JobStatus.Success);
+      expect(customHostnameNotices()).toHaveLength(2);
+    });
+
     it('shows each notice once by its exact id, and one that cannot be dismissed once a day (FC-62)', async () => {
       const uuid = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
       let notices: unknown[] = [

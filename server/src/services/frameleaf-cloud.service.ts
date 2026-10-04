@@ -107,9 +107,14 @@ import { localConnectionCandidates } from 'src/utils/frameleaf-lan-discovery.js'
 import { acceptPublishedPricing } from 'src/utils/frameleaf-license.js';
 import {
   MAX_CANDIDATES,
+  type RemoteHostname,
   detectHostAddresses,
   edgeStateCurrent,
   heartbeatEndpoints,
+  hostnameProblem,
+  hostnameStatus,
+  remoteEndpoints,
+  remoteHostnameListSchema,
 } from 'src/utils/frameleaf-remote-access.js';
 import { type SetupClient, setupRefusal, withSetupProof } from 'src/utils/frameleaf-setup-gate.js';
 import { handlePromiseError } from 'src/utils/misc.js';
@@ -143,6 +148,12 @@ export const INSTANCE_CAPABILITIES: readonly string[] = [
  * turning this off never turns enforcement off again (only a relink resets capabilities).
  */
 export const HEARTBEAT_REPORTS_CAPABILITIES: boolean = true;
+
+type RemoteHostnameFailureState = Extract<RemoteHostname['state'], 'failing' | 'failed' | 'caa_blocked'>;
+
+const HOSTNAME_FAILURE_STATES = new Set<RemoteHostnameFailureState>(['failing', 'failed', 'caa_blocked']);
+const isHostnameFailureState = (state: RemoteHostname['state']): state is RemoteHostnameFailureState =>
+  HOSTNAME_FAILURE_STATES.has(state as RemoteHostnameFailureState);
 
 /** FL-175: the least time between two recovery rotations after a damaged key (the cloud allows 3 an hour). */
 const KEY_RECOVERY_RETRY_MS = 20 * 60 * 1000;
@@ -1359,6 +1370,7 @@ export class FrameleafCloudService extends BaseService {
     };
     if (response.servicesChanged) {
       this.frameleafCloudRepository.forget();
+      next = await this.refreshCustomHostnameAfterServicesChanged(cloudUrl, next, now);
     }
     await this.followCloneSuspicion(cloudUrl, document, link, response);
     // FC-62: dedupe by the exact id, remembered for the life of a notice; the notification's own
@@ -1412,6 +1424,145 @@ export class FrameleafCloudService extends BaseService {
     await this.removeRetiredKey();
     await this.saveLink(next, 'link');
     return JobStatus.Success;
+  }
+
+  /**
+   * FC-27: `servicesChanged` means cloud-side remote access state may have moved without an admin
+   * pressing "Check again". Refresh the custom hostname locally and warn once per failure episode.
+   */
+  private async refreshCustomHostnameAfterServicesChanged(
+    cloudUrl: string,
+    link: FrameleafCloudLink,
+    now: number,
+  ): Promise<FrameleafCloudLink> {
+    const config = await this.getConfig({ withCache: false });
+    const host = config.frameleafCloud.remoteAccess.customHostname.host;
+    if (!host) {
+      return this.clearCustomHostnameFailure(link);
+    }
+    try {
+      const { document, token } = await this.apiToken(cloudUrl, link);
+      const answer = await this.frameleafCloudRepository.requestJson(remoteHostnameListSchema, {
+        method: 'GET',
+        url: remoteEndpoints(document).hostnames,
+        dpop: token,
+      });
+      const hostname = answer.hostnames.find((candidate) => candidate.hostname === host);
+      if (!hostname) {
+        return (await this.saveMissingCustomHostnameFromCloud(host, now))
+          ? this.trackCustomHostnameFailure(link, host, 'missing', now, {
+              problem: `Frameleaf Cloud no longer lists ${host}. Add it again once its DNS records are back.`,
+            })
+          : link;
+      }
+      return (await this.saveCustomHostnameFromCloud(hostname, host, now))
+        ? this.trackCustomHostnameFailure(link, hostname.hostname, hostname.state, now, {
+            checkedAt: hostname.checkedAt,
+            problem: hostnameProblem(hostname) ?? 'Check its DNS records in remote access settings.',
+          })
+        : link;
+    } catch (error) {
+      this.logger.warn(`Could not refresh the custom hostname after Frameleaf Cloud services changed: ${error}`);
+      return link;
+    }
+  }
+
+  /** Keep what Frameleaf Cloud said about the hostname without changing the administrator's choice. */
+  private async saveCustomHostnameFromCloud(answer: RemoteHostname, host: string, now: number) {
+    const status = hostnameStatus(answer.state);
+    const checkedAt = answer.checkedAt ?? new Date(now).toISOString();
+    let saved = false;
+    const { oldConfig, newConfig } = await this.updateConfigExclusively(
+      (config) => {
+        const remote = config.frameleafCloud.remoteAccess;
+        if (remote.customHostname.host !== host) {
+          return;
+        }
+        saved = true;
+        config.frameleafCloud.remoteAccess = {
+          ...remote,
+          publicUrl: status === 'verified' ? remote.publicUrl : 'frameleaf',
+          customHostname: {
+            host: answer.hostname,
+            status,
+            checkedAt,
+          },
+        };
+      },
+      { source: 'frameleaf-cloud' },
+    );
+    if (saved) {
+      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+    }
+    return saved;
+  }
+
+  private async saveMissingCustomHostnameFromCloud(host: string, now: number) {
+    let saved = false;
+    const { oldConfig, newConfig } = await this.updateConfigExclusively(
+      (config) => {
+        const remote = config.frameleafCloud.remoteAccess;
+        if (remote.customHostname.host !== host) {
+          return;
+        }
+        saved = true;
+        config.frameleafCloud.remoteAccess = {
+          ...remote,
+          publicUrl: 'frameleaf',
+          customHostname: {
+            host,
+            status: 'pending',
+            checkedAt: new Date(now).toISOString(),
+          },
+        };
+      },
+      { source: 'frameleaf-cloud' },
+    );
+    if (saved) {
+      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+    }
+    return saved;
+  }
+
+  private trackCustomHostnameFailure(
+    link: FrameleafCloudLink,
+    host: string,
+    state: RemoteHostname['state'] | 'missing',
+    now: number,
+    detail: { checkedAt?: string | null; problem: string },
+  ) {
+    if (state !== 'missing' && !isHostnameFailureState(state)) {
+      return this.clearCustomHostnameFailure(link, host);
+    }
+    const current = link.heartbeat?.customHostnameFailure;
+    if (current?.host === host) {
+      return link;
+    }
+    const noticedAt = detail.checkedAt ?? new Date(now).toISOString();
+    this.notify({
+      level: NotificationLevel.Warning,
+      title: 'Custom hostname needs attention',
+      description: `${host} is not fully verified by Frameleaf Cloud. ${detail.problem}`,
+      dedupeKey: `frameleaf-cloud:custom-hostname-failing:${host}:${noticedAt}`,
+      dedupeDays: 30,
+    });
+    return {
+      ...link,
+      heartbeat: {
+        ...link.heartbeat!,
+        customHostnameFailure: { host, state, noticedAt },
+      },
+    };
+  }
+
+  private clearCustomHostnameFailure(link: FrameleafCloudLink, host?: string): FrameleafCloudLink {
+    const current = link.heartbeat?.customHostnameFailure;
+    if (!current || (host && current.host !== host)) {
+      return link;
+    }
+    const heartbeat = { ...link.heartbeat! };
+    delete heartbeat.customHostnameFailure;
+    return { ...link, heartbeat };
   }
 
   /**
