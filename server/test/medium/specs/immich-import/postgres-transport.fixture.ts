@@ -175,6 +175,23 @@ export class PostgresImportFixture {
       [this.asset, this.owner, this.sourcePath, createHash('sha1').update(this.original).digest()],
     );
     await db.query(
+      `INSERT INTO public.asset_audio("assetId",bitrate,index,profile,"codecName")
+      VALUES ($1,192000,1,NULL,'aac')`,
+      [this.asset],
+    );
+    await db.query(
+      `INSERT INTO public.asset_video("assetId",bitrate,"frameCount","timeBase",index,profile,level,
+      "colorPrimaries","colorTransfer","colorMatrix","dvProfile","dvLevel","dvBlSignalCompatibilityId",
+      "codecName","formatName","formatLongName","pixelFormat")
+      VALUES ($1,4000000,300,15360,0,100,41,1,1,1,NULL,NULL,NULL,'h264','mov','QuickTime / MOV','yuv420p')`,
+      [this.asset],
+    );
+    await db.query(
+      `INSERT INTO public.asset_keyframe("assetId",pts,"accDuration","ownDuration","totalDuration","packetCount","outputFrames")
+      VALUES ($1,ARRAY[0,15360],ARRAY[0,1000],ARRAY[1000,1000],2000,60,60)`,
+      [this.asset],
+    );
+    await db.query(
       `INSERT INTO public.album(id,"albumName","albumThumbnailAssetId",description,"isActivityEnabled")
       VALUES ($1,'Shared album',$2,'Preserve relationships',false)`,
       [this.album, this.asset],

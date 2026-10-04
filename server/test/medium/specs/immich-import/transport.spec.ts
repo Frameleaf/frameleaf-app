@@ -147,7 +147,12 @@ describe('offline Immich import over PostgreSQL source and destination connectio
       await expect(f.importer().preflight()).resolves.toMatchObject({ status: 'fresh' });
       const writer = f.connect(f.sourceName, false);
       try {
-        await writer.db.query('SELECT 1'); // Actually connect; lazy client construction is not a stopped-writer test.
+        const [session] = await writer.db.query('SELECT pg_backend_pid() AS pid');
+        // The reader must refuse this live session even though its least-privilege role cannot
+        // see the other role's backend type. Granting monitoring rights would mask the failure.
+        expect(
+          await f.source.db.query('SELECT backend_type FROM pg_stat_activity WHERE pid=$1', [session.pid]),
+        ).toEqual([{ backend_type: null }]);
         if (kind === 'uncommitted writer') {
           await writer.db.query('BEGIN');
           await writer.db.query('UPDATE public."user" SET name=\'pending writer\' WHERE id=$1', [f.owner]);
@@ -316,6 +321,15 @@ describe('offline Immich import over PostgreSQL source and destination connectio
           'SELECT key,value,jsonb_typeof(value) AS type FROM public.asset_metadata ORDER BY key',
         ),
       ).toEqual(metadata);
+      for (const table of ['asset_audio', 'asset_video', 'asset_keyframe']) {
+        const rows = await f.source.db.query(`SELECT * FROM public.${quote(table)}`);
+        expect(rows).toHaveLength(1);
+        expect(await f.destination.db.query(`SELECT * FROM public.${quote(table)}`)).toEqual(
+          rows.map((row) =>
+            table === 'asset_audio' ? { ...row, channels: null, channelLayout: null, sampleRate: null } : row,
+          ),
+        );
+      }
       const [metadataCheckpoint] = await f.destination.db.query(
         "SELECT cursor,jsonb_typeof(cursor) AS type,row_count::text AS count,complete FROM public.frameleaf_immich_import_checkpoint WHERE table_name='asset_metadata'",
       );
@@ -334,6 +348,10 @@ describe('offline Immich import over PostgreSQL source and destination connectio
       await expect(importer.verify(dispatch)).rejects.toThrow('DESTINATION_ROW_OR_PERMISSION_MISMATCH');
       expect(dispatch).not.toHaveBeenCalled();
       await f.destination.db.query('UPDATE public.album_user SET role=\'viewer\' WHERE "userId"=$1', [f.reader]);
+      await f.destination.db.query('UPDATE public.asset_keyframe SET pts=ARRAY[99]');
+      await expect(importer.verify(dispatch)).rejects.toThrow('DESTINATION_ROW_OR_PERMISSION_MISMATCH');
+      expect(dispatch).not.toHaveBeenCalled();
+      await f.destination.db.query('UPDATE public.asset_keyframe SET pts=ARRAY[0,15360]');
       // A JSON string containing the same serialized object is still corrupted destination data.
       const objectValue = JSON.stringify(metadata.find((row) => row.type === 'object')!.value);
       await f.destination.db.query(
