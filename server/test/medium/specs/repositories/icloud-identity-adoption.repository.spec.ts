@@ -1,11 +1,16 @@
 import { Kysely, sql } from 'kysely';
 import { execFile as execFileCallback } from 'node:child_process';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import { access, lstat, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdtemp, open, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
+import { Readable } from 'node:stream';
+import { ICloudScheduledStagingRepository, ScheduledFreshPayload } from 'src/repositories/icloud-scheduled-staging.repository.js';
+import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
+import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
+import { encryptICloudSession, decryptICloudSession } from 'src/utils/icloud-sync.js';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetLockReason,
@@ -1605,6 +1610,246 @@ describe('iCloud exact identity adoption', () => {
         }
         await classifying;
         expect(await admission).toBeDefined();
+      });
+
+
+      describe('fresh scheduled stream provenance and real decoder ownership', () => {
+        async function createStageFixture(protectedOriginal = false, decoder?: MediaIntegrityService) {
+          const fixture = await scheduledAuthorityFixture(protectedOriginal);
+          const input = { ownerId: fixture.f.user.id, authority: fixture.authority, resource: fixture.resource };
+          const root = join(await realpath(dirname(fixture.f.originalPath)), 'scheduled-stage');
+          vi.stubEnv('FRAMELEAF_ICLOUD_STAGING_PATH', root);
+          vi.stubEnv('FRAMELEAF_ICLOUD_FREE_SPACE_BYTES', '0');
+          const key = Buffer.alloc(32, 77); // Test-only key; no actual secret or provider request.
+          const probe = await open(fixture.f.originalPath, 'r');
+          const syncSpy = vi.spyOn(Object.getPrototypeOf(probe), 'sync');
+          await probe.close();
+          let completed = false;
+          const transport = {
+            decodeSession: vi.fn(async (scope: string, encrypted: string) => encrypted === 'fixture-session'
+              ? { version: 1 } : decryptICloudSession(key, scope, encrypted)),
+            encodeSession: vi.fn(async (scope: string, payload: unknown) => {
+              if (scope.startsWith('icloud-audit-fresh-download:')) {
+                const receipt = payload as ScheduledFreshPayload;
+                // This observes actual pipeline completion, actual file/directory sync and exact
+                // persisted-file identity BEFORE the producer creates authenticated evidence.
+                expect(completed).toBe(true);
+                expect(syncSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+                expect(await readFile(receipt.path)).toEqual(fixture.f.bytes);
+                const stat = await lstat(receipt.path);
+                expect(receipt.identity).toEqual({ dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs });
+                expect(receipt.sha256).toBe(createHash('sha256').update(fixture.f.bytes).digest('hex'));
+              }
+              return encryptICloudSession(key, scope, payload);
+            }),
+            download: vi.fn(async () => ({
+              stream: Readable.from((async function* () {
+                yield fixture.f.bytes.subarray(0, 1);
+                yield fixture.f.bytes.subarray(1);
+                completed = true;
+              })()), session: { version: 1 }, fingerprint: fixture.f.resource.fingerprint, size: fixture.f.bytes.length,
+            })),
+          };
+          const repository = new ICloudScheduledStagingRepository(db, transport as never);
+          const stored = vi.spyOn(repository, 'storeFreshDownload');
+          const withSession = vi.spyOn(sync, 'withSession');
+          const ordinary = new ICloudStagingService(sync, transport as never, { getAll: async () => [] } as never);
+          const staging = new ICloudScheduledStagingService(repository, ordinary, transport as never, decoder ?? integrity);
+          return { ...fixture, input, root, key, repository, stored, withSession, ordinary, staging, transport };
+        }
+
+        it.each([false, true])('creates only actual completed stream evidence, resumes same obligation and validates real private bytes; protected=%s', async (protectedOriginal) => {
+          const fixture = await createStageFixture(protectedOriginal);
+          const { f, input, staging, transport, stored, withSession, repository, key } = fixture;
+          const receipt = await staging.download(input);
+          expect(transport.download).toHaveBeenCalledTimes(1);
+          expect(stored).toHaveBeenCalledTimes(1);
+          expect(receipt.payload.binding).toMatchObject({ ownerId: f.user.id, connectionId: f.connection.id,
+            auditRequestId: input.authority.auditRequestId, resourceId: input.resource.id, cohortId: fixture.cohort.id,
+            sourceResourceId: f.resource.id, grantGeneration: Number(fixture.cohort.grantGeneration) });
+          expect(() => decryptICloudSession(key, f.connection.id, receipt.seal)).toThrow('icloud_session_invalid');
+          expect((await repository.read(input))!.resource.verification?.auditFreshDownload).toEqual(receipt);
+          expect(await staging.download(input)).toEqual(receipt);
+          expect(transport.download).toHaveBeenCalledTimes(1);
+          expect(stored).toHaveBeenCalledTimes(1);
+          const validation = await staging.validate(input);
+          const outcome = await validation.result;
+          expect(outcome).toMatchObject({ status: 'validated', verified: { status: 'healthy', sha256: f.sha256 } });
+          await validation.settled;
+          expect((await readdir(join(fixture.root, input.resource.id))).filter((name) => name.startsWith('.validation-'))).toEqual([]);
+          expect(withSession).not.toHaveBeenCalled();
+          const { rows } = await sql<{ result: string; verifiedAt: Date | null }>`SELECT result,"verifiedAt"
+            FROM immich_fork.icloud_identity_audit WHERE id=${input.authority.auditRequestId}::uuid`.execute(db);
+          expect(rows[0]).toEqual({ result: 'queued', verifiedAt: null });
+          expect(await db.selectFrom('asset_integrity_verification').select('assetId').where('assetId', '=', f.asset.id).execute()).toEqual([]);
+          await staging.onShutdown();
+        });
+
+        it.each(['missing', 'forged', 'altered', 'wrong-obligation'] as const)('refuses %s cached provenance without a new transport or stamp', async (kind) => {
+          const fixture = await createStageFixture();
+          const receipt = await fixture.staging.download(fixture.input);
+          if (kind === 'missing') {
+            await sql`UPDATE immich_fork.icloud_resource SET verification=NULL WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          } else {
+            const changed = kind === 'forged' ? { ...receipt, seal: 'manually-authored-json' }
+              : { ...receipt, payload: { ...receipt.payload, binding: { ...receipt.payload.binding,
+                ...(kind === 'altered' ? { sourceRevision: 'invented' } : { auditRequestId: randomUUID() }) } } };
+            await sql`UPDATE immich_fork.icloud_resource SET verification=${{ auditFreshDownload: changed }}::jsonb
+              WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          }
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.transport.download).toHaveBeenCalledTimes(1);
+          expect(fixture.stored).toHaveBeenCalledTimes(1);
+        });
+
+        it('refuses directly authored JSON before any persisted fresh evidence can change', async () => {
+          const fixture = await createStageFixture();
+          const receipt = await fixture.staging.download(fixture.input);
+          expect(await fixture.repository.storeFreshDownload(fixture.input,
+            { ...receipt, seal: 'manually-authored-json' })).toBe(false);
+          expect((await fixture.repository.read(fixture.input))!.resource.verification?.auditFreshDownload).toEqual(receipt);
+        });
+
+        it('refuses an ordinary complete file even when its bytes match the expected digest', async () => {
+          const fixture = await createStageFixture();
+          const owned = (await sync.resource(fixture.resource.id))!;
+          const complete = await fixture.ordinary.download(fixture.f.connection, owned, async () => true);
+          expect(await readFile(complete)).toEqual(fixture.f.bytes);
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.stored).not.toHaveBeenCalled();
+          expect(fixture.transport.download).toHaveBeenCalledTimes(1);
+        });
+
+        it.each(['bytes', 'inode', 'grant'] as const)('refuses changed %s after a genuine cached receipt', async (kind) => {
+          const fixture = await createStageFixture();
+          const receipt = await fixture.staging.download(fixture.input);
+          if (kind === 'bytes') { await writeFile(receipt.payload.path, Buffer.alloc(fixture.f.bytes.length)); }
+          else if (kind === 'inode') {
+            await rename(receipt.payload.path, `${receipt.payload.path}.old`);
+            await writeFile(receipt.payload.path, fixture.f.bytes, { mode: 0o600 });
+          } else {
+            await weekly().setAuthority(fixture.auth, fixture.f.connection.id, { enabled: false, includeProtected: false, requestKey: randomUUID() });
+          }
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.transport.download).toHaveBeenCalledTimes(1);
+          expect(fixture.stored).toHaveBeenCalledTimes(1);
+        });
+
+        it('never revives terminal resource ownership even when a malformed row retains a live lease', async () => {
+          const fixture = await createStageFixture();
+          await sql`UPDATE immich_fork.icloud_resource SET status='committed' WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          expect(await fixture.repository.heartbeat(fixture.input, join(fixture.root, fixture.resource.id, 'complete'))).toBeUndefined();
+          expect((await sync.resource(fixture.resource.id))!.status).toBe('committed');
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.transport.download).not.toHaveBeenCalled();
+        });
+
+        it('refuses an audit resource whose provider zone no longer matches the frozen source', async () => {
+          const fixture = await createStageFixture();
+          await sql`UPDATE immich_fork.icloud_resource SET library='{"area":"private","zoneID":{"zoneName":"foreign-zone"}}'::jsonb
+            WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.transport.download).not.toHaveBeenCalled();
+          expect(fixture.stored).not.toHaveBeenCalled();
+        });
+
+        it.each(['short', 'oversize', 'descriptor', 'fingerprint'] as const)('cannot create provenance from %s stream failure', async (kind) => {
+          const fixture = await createStageFixture();
+          const bytes = kind === 'short' ? fixture.f.bytes.subarray(1) : kind === 'oversize'
+            ? Buffer.concat([fixture.f.bytes, Buffer.from('extra')]) : kind === 'fingerprint' ? Buffer.alloc(fixture.f.bytes.length) : fixture.f.bytes;
+          fixture.transport.download.mockImplementationOnce(async () => ({ stream: Readable.from([bytes]), session: { version: 1 },
+            fingerprint: kind === 'descriptor' ? 'changed' : fixture.f.resource.fingerprint, size: fixture.f.bytes.length }));
+          await expect(fixture.staging.download(fixture.input)).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.stored).not.toHaveBeenCalled();
+          expect((await fixture.repository.read(fixture.input))!.resource.verification).toBeNull();
+          expect(fixture.transport.encodeSession.mock.calls.some(([scope]) => scope.startsWith('icloud-audit-fresh-download:'))).toBe(false);
+        });
+
+        it('revokes consent during actual streaming without a connection transaction spanning the request', async () => {
+          const fixture = await createStageFixture();
+          const entered = Promise.withResolvers<void>();
+          const release = Promise.withResolvers<void>();
+          fixture.transport.download.mockImplementationOnce(async () => ({ stream: Readable.from((async function* () {
+            yield fixture.f.bytes.subarray(0, 1); entered.resolve(); await release.promise; yield fixture.f.bytes.subarray(1);
+          })()), session: { version: 1 }, fingerprint: fixture.f.resource.fingerprint, size: fixture.f.bytes.length }));
+          const downloading = fixture.staging.download(fixture.input);
+          void downloading.catch(() => {});
+          try {
+            await entered.promise;
+            // Real owner consent update must commit while the network stream is still admitted.
+            await weekly().setAuthority(fixture.auth, fixture.f.connection.id,
+              { enabled: false, includeProtected: false, requestKey: randomUUID() });
+          } finally { release.resolve(); }
+          await expect(downloading).rejects.toThrow('scheduled_audit_unavailable');
+          expect(fixture.stored).not.toHaveBeenCalled();
+          expect(fixture.withSession).not.toHaveBeenCalled();
+        });
+
+        it('owns the private decoder input through actual noncooperative failure and then cleans it', async () => {
+          const entered = Promise.withResolvers<string>();
+          const release = Promise.withResolvers<void>();
+          const decoder = new MediaIntegrityService(new StorageRepository(getMocks().logger as never), new CryptoRepository(), {
+            decodeImage: async (path: string) => { entered.resolve(path); await release.promise; throw new Error('native_decode_failed'); },
+          } as never);
+          const fixture = await createStageFixture(false, decoder);
+          await fixture.staging.download(fixture.input);
+          const validation = await fixture.staging.validate(fixture.input);
+          const path = await entered.promise;
+          try {
+            expect(await readFile(path)).toEqual(fixture.f.bytes);
+          } finally { release.resolve(); }
+          expect(await validation.result).toEqual({ status: 'unavailable' });
+          await validation.settled;
+          await expect(access(path)).rejects.toMatchObject({ code: 'ENOENT' });
+          await fixture.staging.onShutdown();
+        });
+
+        it.each(['cancel', 'timeout', 'revoke'] as const)('retains noncooperative decoder input after %s refusal, then cleans at actual settlement', async (kind) => {
+          const entered = Promise.withResolvers<string>();
+          const release = Promise.withResolvers<void>();
+          vi.stubEnv('FRAMELEAF_MEDIA_VALIDATION_TIMEOUT_MS', '10000');
+          const decoder = new MediaIntegrityService(new StorageRepository(getMocks().logger as never), new CryptoRepository(), {
+            decodeImage: async (path: string) => { entered.resolve(path); await release.promise; return {} as never; },
+          } as never);
+          const fixture = await createStageFixture(false, decoder);
+          await fixture.staging.download(fixture.input);
+          let timeout!: () => void;
+          const actualTimer = globalThis.setTimeout;
+          vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void, delay?: number, ...args: unknown[]) => {
+            if (delay === 10_000) { timeout = callback; }
+            return actualTimer(callback, delay, ...args);
+          }) as never);
+          let heartbeat!: () => void;
+          const actualInterval = globalThis.setInterval;
+          vi.spyOn(globalThis, 'setInterval').mockImplementation(((callback: () => void, delay?: number, ...args: unknown[]) => {
+            if (delay === 15_000) { heartbeat = callback; }
+            return actualInterval(callback, delay, ...args);
+          }) as never);
+          const controller = new AbortController();
+          const validation = await fixture.staging.validate(fixture.input, controller.signal);
+          const path = await entered.promise;
+          let settled = false;
+          void validation.settled.then(() => { settled = true; });
+          try {
+            if (kind === 'timeout') { timeout(); }
+            else if (kind === 'revoke') {
+              await weekly().setAuthority(fixture.auth, fixture.f.connection.id,
+                { enabled: false, includeProtected: false, requestKey: randomUUID() });
+              heartbeat(); // Exercise actual admission revocation, without waiting/polling a timer.
+            } else { controller.abort(); }
+            expect(await validation.result).toEqual({ status: 'unavailable' });
+            expect(settled).toBe(false);
+            expect(await readFile(path)).toEqual(fixture.f.bytes);
+            const resource = (await sync.resource(fixture.resource.id))!;
+            // Owned staging cleanup is credential-independent and cannot remove the decoder copy.
+            await fixture.ordinary.cleanup(resource);
+            expect(await readFile(path)).toEqual(fixture.f.bytes);
+            const { rows } = await sql<{ verifiedAt: Date | null }>`SELECT "verifiedAt" FROM immich_fork.icloud_identity_audit
+              WHERE id=${fixture.authority.auditRequestId}::uuid`.execute(db);
+            expect(rows[0].verifiedAt).toBeNull();
+          } finally { release.resolve(); await validation.settled; await fixture.staging.onShutdown(); }
+          await expect(access(path)).rejects.toMatchObject({ code: 'ENOENT' });
+        });
       });
 
       it('keeps manual integrity privacy filters while scheduled structural lookup requires separate authority', async () => {
