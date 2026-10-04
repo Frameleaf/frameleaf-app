@@ -71,7 +71,12 @@ describe('studio rights (FL-86)', () => {
       source: expect.stringContaining('FL-146'),
     });
     for (const [id, rights] of rows) {
-      expect(rights.approvedOn, id).toBe(REAPPROVED.has(id) || isPinned(id) ? '2026-09-29' : '2026-09-25');
+      if (id === 'model:onnx-community/whisper-tiny_timestamped') {
+        // The owner approved this exact seven-file model inventory again on October 3.
+        expect(rights.approvedOn, id).toBe('2026-10-03');
+      } else {
+        expect(rights.approvedOn, id).toBe(REAPPROVED.has(id) || isPinned(id) ? '2026-09-29' : '2026-09-25');
+      }
       expect(checkStudioRights(id, StudioRightsUse.LocalRuntime)).toEqual({ allowed: true, id });
       if (id !== MUSICGEN) {
         expect(checkStudioRights(id, StudioRightsUse.HostedUse)).toEqual({ allowed: true, id });
