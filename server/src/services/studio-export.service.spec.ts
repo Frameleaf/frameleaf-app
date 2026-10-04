@@ -265,6 +265,11 @@ describe(StudioExportService.name, () => {
         .fn()
         .mockImplementation((id) => Promise.resolve(versionRow({ id, state: StudioExportVersionState.Cancelled }))),
       publish: vi.fn(),
+      publicationFollowups: vi
+        .fn()
+        .mockResolvedValue({ revision: 1, metadataAccepted: true, notification: 'accepted', smoothMotion: 'accepted' }),
+      transitionPublicationFollowup: vi.fn().mockResolvedValue(true),
+      publicationNeedsAttention: vi.fn().mockResolvedValue(undefined),
       listOrphanedWork: vi.fn().mockResolvedValue([]),
       listSettledWork: vi.fn().mockResolvedValue([]),
       listRemovableOutputs: vi.fn().mockResolvedValue([]),
@@ -333,10 +338,14 @@ describe(StudioExportService.name, () => {
       unlinkDir: vi.fn().mockResolvedValue(undefined),
     };
     crypto = { hashFile: vi.fn().mockResolvedValue(Buffer.from('ab'.repeat(32), 'hex')) };
-    jobs = { queue: vi.fn().mockResolvedValue(undefined) };
+    jobs = { queue: vi.fn().mockResolvedValue(undefined), queueInTransaction: vi.fn().mockResolvedValue(undefined) };
     renderWorkers = { listLiveSessions: vi.fn().mockResolvedValue([liveSession()]) };
     media = { probe: vi.fn().mockResolvedValue(renderedOutput()) };
-    restorations = { queueExportSmoothMotion: vi.fn().mockResolvedValue(null) };
+    restorations = {
+      queueExportSmoothMotion: vi
+        .fn()
+        .mockResolvedValue({ id: 'restoration-1', previewOperationId: 'preview-operation-1' }),
+    };
     events = { emit: vi.fn().mockResolvedValue(undefined) };
     mlDestinations = {
       getById: vi
@@ -917,28 +926,41 @@ describe(StudioExportService.name, () => {
 
       expect(crypto.hashFile).toHaveBeenCalledWith(finalPath, 'sha256');
       expect(storage.rename).toHaveBeenCalledExactlyOnceWith(staged, finalPath);
-      expect(operations.complete).toHaveBeenCalledExactlyOnceWith(PUBLISH, 'replacement-claim', {
-        resultAssetId: 'asset-new',
-      });
+      expect(operations.complete).toHaveBeenCalledExactlyOnceWith(
+        PUBLISH,
+        'replacement-claim',
+        {
+          resultAssetId: 'asset-new',
+        },
+        undefined,
+        true,
+      );
       expect(operations.fail).not.toHaveBeenCalled();
       expect(operations.requestCancel).not.toHaveBeenCalled();
     });
 
-    it('tells the owner by push that the render finished, previewing only what may be shown (FL-228)', async () => {
-      repository.publish.mockResolvedValue(published());
-
+    it('admits the render-finished notification inside the publication transaction', async () => {
+      const tx = { isTransaction: true };
+      repository.publish.mockImplementation(async (_input, _metadata, notification) => {
+        await notification(tx, published().version, 'Lake trip');
+        return published();
+      });
       await sut.run(job());
-
-      expect(events.emit).toHaveBeenCalledWith(
-        'PushNotify',
-        expect.objectContaining({
-          type: PushEventType.RenderFinished,
-          userIds: [OWNER],
-          assetIds: ['asset-new'],
-          data: expect.objectContaining({ versionId: VERSION, status: 'published' }),
-        }),
+      expect(jobs.queueInTransaction).toHaveBeenCalledWith(tx, {
+        name: JobName.PushDeliver,
+        data: {
+          notice: expect.objectContaining({
+            type: PushEventType.RenderFinished,
+            userIds: [OWNER],
+            assetIds: ['asset-new'],
+            data: expect.objectContaining({ versionId: VERSION, status: 'published' }),
+          }),
+        },
+      });
+      expect(events.emit).not.toHaveBeenCalled();
+      expect(jobs.queueInTransaction.mock.invocationCallOrder[0]).toBeLessThan(
+        operations.complete.mock.invocationCallOrder[0],
       );
-      expect(operations.complete.mock.invocationCallOrder[0]).toBeLessThan(events.emit.mock.invocationCallOrder[0]);
     });
 
     it('tells the owner by push that the render failed (FL-228)', async () => {
@@ -958,6 +980,7 @@ describe(StudioExportService.name, () => {
     });
 
     it('queues Smooth motion of the published video as its own job, only after publication (FL-162)', async () => {
+      repository.publicationFollowups.mockResolvedValue({ notification: 'accepted', smoothMotion: 'pending' });
       repository.publish.mockResolvedValue(published());
       const smooth = job();
       (smooth.operation.snapshot as Record<string, unknown>).smoothMotion = {
@@ -981,8 +1004,8 @@ describe(StudioExportService.name, () => {
         factor: 4,
         destinationId: SMOOTH_DESTINATION,
       });
-      expect(operations.complete.mock.invocationCallOrder[0]).toBeLessThan(
-        restorations.queueExportSmoothMotion.mock.invocationCallOrder[0],
+      expect(restorations.queueExportSmoothMotion.mock.invocationCallOrder[0]).toBeLessThan(
+        operations.complete.mock.invocationCallOrder[0],
       );
     });
 
@@ -1006,7 +1029,10 @@ describe(StudioExportService.name, () => {
     });
 
     it('verifies the file, moves it into the library and publishes it with the sources re-checked', async () => {
-      repository.publish.mockResolvedValue(published());
+      repository.publish.mockImplementation(async (_input, metadata) => {
+        await metadata({ isTransaction: true }, 'asset-new');
+        return published();
+      });
 
       await sut.run(job());
 
@@ -1026,10 +1052,13 @@ describe(StudioExportService.name, () => {
       );
       expect(input.path).toContain('/upload/');
       expect(storage.rename).toHaveBeenCalledWith(staged, input.path);
-      expect(jobs.queue).toHaveBeenCalledWith({
-        name: JobName.AssetExtractMetadata,
-        data: { id: 'asset-new', source: 'upload' },
-      });
+      expect(jobs.queueInTransaction).toHaveBeenCalledWith(
+        { isTransaction: true },
+        {
+          name: JobName.AssetExtractMetadata,
+          data: { id: 'asset-new', source: 'upload' },
+        },
+      );
       expect(operations.complete).toHaveBeenCalledWith(
         PUBLISH,
         'claim-p',
@@ -1181,20 +1210,110 @@ describe(StudioExportService.name, () => {
       expect(jobs.queue).not.toHaveBeenCalled();
     });
 
-    it('never restores staging after publication committed but metadata dispatch failed', async () => {
-      jobs.queue.mockRejectedValue(new Error('queue unavailable after commit'));
+    it('keeps the accepted output when replay scheduling fails and uses only the operation retry', async () => {
+      repository.publish.mockResolvedValue(published());
+      repository.publicationFollowups.mockRejectedValue(new Error('database unavailable after commit'));
       await sut.run(job());
       expect(repository.publish).toHaveBeenCalledOnce();
-      // The only rename is preparation into the final location. No reverse rename may unpublish it.
       expect(storage.rename).toHaveBeenCalledTimes(1);
-      expect(operations.fail).not.toHaveBeenCalled();
-      expect(operations.complete).toHaveBeenCalledWith(
+      expect(repository.markFailed).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenCalledWith(
         PUBLISH,
         'claim-p',
-        { resultAssetId: 'asset-new' },
-        undefined,
-        true,
+        expect.objectContaining({ error: 'database unavailable after commit' }),
       );
+      expect(operations.complete).not.toHaveBeenCalled();
+    });
+
+    it.each(['dispatching', 'needs_attention'])(
+      'does not repeat a %s Smooth motion attempt after a crash',
+      async (state) => {
+        repository.getById.mockResolvedValue(published().version);
+        repository.publicationFollowups.mockResolvedValue({ notification: 'accepted', smoothMotion: state });
+        const replay = job();
+        replay.operation.snapshot.smoothMotion = { factor: 4, destinationId: SMOOTH_DESTINATION };
+        await sut.run(replay);
+        expect(restorations.queueExportSmoothMotion).not.toHaveBeenCalled();
+        expect(repository.publish).not.toHaveBeenCalled();
+        expect(storage.rename).not.toHaveBeenCalled();
+        expect(operations.complete).not.toHaveBeenCalled();
+        expect(repository.publicationNeedsAttention).toHaveBeenCalledWith(PUBLISH, 'claim-p');
+        expect(operations.fail).toHaveBeenCalledWith(
+          PUBLISH,
+          'claim-p',
+          expect.objectContaining({ errorCode: 'studio_export_followup_needs_attention' }),
+          { retry: false },
+        );
+      },
+    );
+
+    it('resumes a pending Smooth motion intent with its exact destination after a lost commit acknowledgement', async () => {
+      repository.publish.mockRejectedValue(new Error('lost commit acknowledgement'));
+      repository.getById
+        .mockResolvedValueOnce(versionRow({ outputPath: staged }))
+        .mockResolvedValue(published().version);
+      repository.publicationFollowups.mockResolvedValue({ notification: 'accepted', smoothMotion: 'pending' });
+      const replay = job();
+      replay.operation.snapshot.smoothMotion = { factor: 8, destinationId: SMOOTH_DESTINATION };
+      await sut.run(replay);
+      expect(restorations.queueExportSmoothMotion).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ factor: 8, destinationId: SMOOTH_DESTINATION }),
+      );
+      expect(repository.transitionPublicationFollowup).toHaveBeenNthCalledWith(
+        1,
+        PUBLISH,
+        'claim-p',
+        'smoothMotion',
+        'pending',
+        'dispatching',
+      );
+      expect(repository.transitionPublicationFollowup).toHaveBeenNthCalledWith(
+        2,
+        PUBLISH,
+        'claim-p',
+        'smoothMotion',
+        'dispatching',
+        'accepted',
+        { restorationId: 'restoration-1', operationId: 'preview-operation-1' },
+      );
+      expect(operations.complete).toHaveBeenCalledOnce();
+      expect(storage.rename).toHaveBeenCalledTimes(1);
+    });
+
+    it('exposes cloud confirmation or unconfirmed submission without silently completing or retrying', async () => {
+      repository.getById.mockResolvedValue(published().version);
+      repository.publicationFollowups.mockResolvedValue({ notification: 'accepted', smoothMotion: 'pending' });
+      restorations.queueExportSmoothMotion.mockResolvedValue(null);
+      const replay = job();
+      replay.operation.snapshot.smoothMotion = { factor: 2, destinationId: SMOOTH_DESTINATION };
+      await sut.run(replay);
+      expect(operations.complete).not.toHaveBeenCalled();
+      expect(repository.transitionPublicationFollowup).toHaveBeenLastCalledWith(
+        PUBLISH,
+        'claim-p',
+        'smoothMotion',
+        'dispatching',
+        'needs_attention',
+        undefined,
+      );
+      expect(operations.fail).toHaveBeenCalledWith(PUBLISH, 'claim-p', expect.anything(), { retry: false });
+    });
+
+    it('does not dispatch twice when the external acknowledgement cannot be checkpointed', async () => {
+      repository.getById.mockResolvedValue(published().version);
+      repository.publicationFollowups.mockResolvedValue({ notification: 'accepted', smoothMotion: 'pending' });
+      repository.transitionPublicationFollowup
+        .mockResolvedValueOnce(true)
+        .mockRejectedValueOnce(new Error('lost acknowledgement'));
+      const replay = job();
+      replay.operation.snapshot.smoothMotion = { factor: 2, destinationId: SMOOTH_DESTINATION };
+      await sut.run(replay);
+      expect(operations.complete).not.toHaveBeenCalled();
+      repository.publicationFollowups.mockResolvedValue({ notification: 'accepted', smoothMotion: 'dispatching' });
+      await sut.run({ ...replay, claimToken: 'replacement' });
+      expect(restorations.queueExportSmoothMotion).toHaveBeenCalledTimes(1);
+      expect(repository.publish).not.toHaveBeenCalled();
+      expect(operations.fail).toHaveBeenLastCalledWith(PUBLISH, 'replacement', expect.anything(), { retry: false });
     });
 
     it('cancels, without publishing, when the project went to the trash', async () => {
@@ -1307,7 +1426,7 @@ describe(StudioExportService.name, () => {
       expect(operations.acknowledgeCancel).toHaveBeenCalledWith(PUBLISH, 'claim-p', { released: true });
     });
 
-    it('finishes only the job when an earlier attempt already published', async () => {
+    it('resumes durable follow-ups without republishing when an earlier attempt already published', async () => {
       repository.getById.mockResolvedValue(
         versionRow({ state: StudioExportVersionState.Published, version: 2, resultAssetId: 'asset-new' }),
       );

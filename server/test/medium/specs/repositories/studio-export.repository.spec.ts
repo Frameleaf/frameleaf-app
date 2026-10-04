@@ -1,9 +1,10 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely, sql, Transaction } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import {
   AssetLockReason,
   AssetType,
   AssetVisibility,
+  JobName,
   MediaOperationDestination,
   MediaOperationKind,
   MediaOperationStatus,
@@ -13,12 +14,14 @@ import {
   StudioExportVersionState,
   UserMetadataKey,
 } from 'src/enum.js';
+import { SqlQueueStore } from 'src/queue/store.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PetRepository } from 'src/repositories/pet.repository.js';
 import {
@@ -209,6 +212,250 @@ const expectRefusal = async (promise: Promise<unknown>, code: string) => {
 };
 
 describe(StudioExportRepository.name, () => {
+  describe('durable publication follow-ups', () => {
+    const schedule = (name: JobName) => async (tx: Transaction<DB>, assetId: string) => {
+      await new SqlQueueStore(defaultDatabase).enqueue(
+        [
+          {
+            queue: 'studio-publication-test',
+            name,
+            data: { id: assetId },
+            safeToRetry: name === JobName.AssetExtractMetadata,
+            sensitive: false,
+            deadlineMs: 60_000,
+          },
+        ],
+        tx,
+      );
+    };
+    const queued = async (assetId: string) =>
+      (
+        await sql<{ name: string }>`select name from job
+      where data->>'id' = ${assetId} order by name`.execute(defaultDatabase)
+      ).rows.map((row) => row.name);
+    const state = async (id: string) =>
+      defaultDatabase
+        .selectFrom('media_operation')
+        .select(['result', 'status', 'autoRetries'])
+        .where('id', '=', id)
+        .executeTakeFirstOrThrow();
+    const metadata = schedule(JobName.AssetExtractMetadata);
+    const notify = async (tx: Transaction<DB>, version: StudioExportVersion) =>
+      schedule(JobName.PushDeliver)(tx, version.resultAssetId!);
+
+    afterEach(async () => {
+      await sql`delete from job where queue = 'studio-publication-test'`.execute(defaultDatabase);
+    });
+
+    it('rolls back the version, asset, quota and admitted metadata if notification admission fails', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const source = await ownSource(context.ctx, user.id);
+      const staged = await stagedExport(context, user.id, [source]);
+      const before = await defaultDatabase
+        .selectFrom('user')
+        .select('quotaUsageInBytes')
+        .where('id', '=', user.id)
+        .executeTakeFirstOrThrow();
+      let allocated = '';
+      await expect(
+        context.sut.publish(
+          publication(staged, [source]),
+          async (tx, id) => {
+            allocated = id;
+            await metadata(tx, id);
+          },
+          async (tx, version) => {
+            await notify(tx, version);
+            throw new Error('admission failed');
+          },
+        ),
+      ).rejects.toThrow('admission failed');
+      expect(await queued(allocated)).toEqual([]);
+      expect(await context.sut.getById(staged.version.id)).toMatchObject({
+        state: StudioExportVersionState.Staged,
+        resultAssetId: null,
+      });
+      expect((await state(staged.publishId)).result).toBeNull();
+      expect(
+        await defaultDatabase.selectFrom('asset').select('id').where('id', '=', allocated).executeTakeFirst(),
+      ).toBeUndefined();
+      expect(
+        await defaultDatabase
+          .selectFrom('user')
+          .select('quotaUsageInBytes')
+          .where('id', '=', user.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual(before);
+    });
+
+    it('rolls back admitted work if its claim expires while waiting on the queue', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const source = await ownSource(context.ctx, user.id);
+      const staged = await stagedExport(context, user.id, [source]);
+      let assetId = '';
+      await expectRefusal(
+        context.sut.publish(
+          publication(staged, [source]),
+          async (tx, id) => {
+            assetId = id;
+            await metadata(tx, id);
+            await tx
+              .updateTable('media_operation')
+              .set({ claimExpiresAt: sql<Date>`clock_timestamp() - interval '1 second'` })
+              .where('id', '=', staged.publishId)
+              .execute();
+          },
+          notify,
+        ),
+        'claim-lost',
+      );
+      expect(await queued(assetId)).toHaveLength(0);
+      expect((await context.sut.getById(staged.version.id))?.state).toBe(StudioExportVersionState.Staged);
+      expect((await state(staged.publishId)).result).toBeNull();
+    });
+
+    it('commits both queue entries with publication and never re-admits them after acknowledgement loss', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const source = await ownSource(context.ctx, user.id);
+      const staged = await stagedExport(context, user.id, [source]);
+      const accepted = await context.sut.publish(publication(staged, [source]), metadata, notify);
+      const version = accepted.version.version;
+      expect(await queued(accepted.createdAssetId!)).toEqual(
+        [JobName.AssetExtractMetadata, JobName.PushDeliver].sort(),
+      );
+      expect((await state(staged.publishId)).result).toMatchObject({
+        studioPublication: {
+          revision: 1,
+          metadataAccepted: true,
+          notification: 'accepted',
+          smoothMotion: 'accepted',
+        },
+      });
+      const forbidden = vi.fn(async () => {
+        throw new Error('must not re-admit');
+      });
+      await context.sut.publish(publication(staged, [source]), forbidden, forbidden);
+      await context.sut.publicationFollowups(staged.publishId, staged.claimToken, forbidden, forbidden);
+      expect(forbidden).not.toHaveBeenCalled();
+      expect((await context.sut.getById(staged.version.id))?.version).toBe(version);
+      expect(await queued(accepted.createdAssetId!)).toHaveLength(2);
+    });
+
+    it('resumes unadmitted durable intents atomically, without reconstructing an already accepted notification', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const source = await ownSource(context.ctx, user.id);
+      const staged = await stagedExport(context, user.id, [source]);
+      const accepted = await context.sut.publish(publication(staged, [source]));
+      const failing = async (tx: Transaction<DB>, version: StudioExportVersion) => {
+        await notify(tx, version);
+        throw new Error('recovery admission failed');
+      };
+      await expect(
+        context.sut.publicationFollowups(staged.publishId, staged.claimToken, metadata, failing),
+      ).rejects.toThrow('recovery admission failed');
+      expect(await queued(accepted.createdAssetId!)).toHaveLength(0);
+      expect((await state(staged.publishId)).result).toMatchObject({
+        studioPublication: { metadataAccepted: false, notification: 'pending' },
+      });
+      await context.sut.publicationFollowups(staged.publishId, staged.claimToken, metadata, notify);
+      await context.sut.publicationFollowups(staged.publishId, staged.claimToken, metadata, notify);
+      expect(await queued(accepted.createdAssetId!)).toHaveLength(2);
+    });
+
+    it('uses one operation recovery budget and fences the expired external attempt after a crash', async () => {
+      const context = setup();
+      const { user } = await context.ctx.newUser();
+      const source = await ownSource(context.ctx, user.id);
+      const staged = await stagedExport(context, user.id, [source]);
+      const operations = context.ctx.get(MediaOperationRepository);
+      const frozen = {
+        kind: 'studio-export-publish',
+        versionId: staged.version.id,
+        smoothMotion: { factor: 4, destinationId: randomUUID() },
+      };
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ snapshot: frozen })
+        .where('id', '=', staged.publishId)
+        .execute();
+      await context.sut.publish(publication(staged, [source]), metadata, notify);
+      const attempts = await Promise.all(
+        [1, 2].map(() =>
+          context.sut.transitionPublicationFollowup(
+            staged.publishId,
+            staged.claimToken,
+            'smoothMotion',
+            'pending',
+            'dispatching',
+          ),
+        ),
+      );
+      expect(attempts.filter(Boolean)).toHaveLength(1);
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ claimExpiresAt: sql<Date>`clock_timestamp() - interval '1 second'` })
+        .where('id', '=', staged.publishId)
+        .execute();
+      await operations.recoverExpiredClaims({ errorCode: 'test_crash', error: 'publication process stopped' });
+      expect(await state(staged.publishId)).toMatchObject({
+        status: MediaOperationStatus.Queued,
+        autoRetries: 1,
+        result: { studioPublication: { smoothMotion: 'dispatching' } },
+      });
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ retryAt: null })
+        .where('id', '=', staged.publishId)
+        .execute();
+      const replacement = await operations.claimNext({
+        kinds: [MediaOperationKind.StudioExportPublish],
+        workerId: 'recovery',
+        leaseMs: 60_000,
+      });
+      expect(replacement?.operation.id).toBe(staged.publishId);
+      expect(replacement?.operation.snapshot).toEqual(frozen);
+      await operations.beginValidation(staged.publishId, replacement!.claimToken, true);
+      expect(
+        await context.sut.transitionPublicationFollowup(
+          staged.publishId,
+          staged.claimToken,
+          'smoothMotion',
+          'dispatching',
+          'accepted',
+        ),
+      ).toBe(false);
+      expect(
+        await context.sut.publicationFollowups(staged.publishId, replacement!.claimToken, metadata, notify),
+      ).toMatchObject({ smoothMotion: 'dispatching' });
+      expect(
+        await context.sut.transitionPublicationFollowup(
+          staged.publishId,
+          replacement!.claimToken,
+          'smoothMotion',
+          'dispatching',
+          'needs_attention',
+        ),
+      ).toBe(true);
+      // A second lost process consumes no new budget and cannot turn uncertainty into a new submission.
+      await defaultDatabase
+        .updateTable('media_operation')
+        .set({ claimExpiresAt: sql<Date>`clock_timestamp() - interval '1 second'` })
+        .where('id', '=', staged.publishId)
+        .execute();
+      await operations.recoverExpiredClaims({ errorCode: 'test_crash', error: 'replacement stopped' });
+      expect(await state(staged.publishId)).toMatchObject({
+        status: MediaOperationStatus.Failed,
+        autoRetries: 1,
+        result: { studioPublication: { smoothMotion: 'needs_attention' } },
+      });
+      expect((await context.sut.getById(staged.version.id))?.state).toBe(StudioExportVersionState.Published);
+    });
+  });
+
   describe('claim fencing', () => {
     it('refuses an expired publication token before recovery clears it', async () => {
       const context = setup();

@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { Transaction } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -54,11 +55,13 @@ import {
   StudioExportVersion,
   StudioExportVersionSource,
   StudioExportVisibility,
+  StudioPublicationFollowups,
   StudioSourceMediaFacts,
 } from 'src/repositories/studio-export.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import type { DB } from 'src/schema/index.js';
 import { AssetRestorationService } from 'src/services/asset-restoration.service.js';
 import { mapOperation } from 'src/services/media-operation.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
@@ -865,8 +868,17 @@ export class StudioExportService {
     }
 
     if (version.state === StudioExportVersionState.Published) {
-      // Published by an earlier attempt whose acknowledgement was lost; finish the job only.
-      await this.finishJob(operation, claimToken, version.resultAssetId);
+      // Resume accepted intents, including a commit whose acknowledgement was lost.
+      if (!(await this.operations.beginValidation(operation.id, claimToken, true))) return;
+      try {
+        await this.resumePublished(version, operation, claimToken, snapshot);
+      } catch (error) {
+        if (!(await settleOperationStop(this.operations, operation, claimToken))) {
+          if (!(error instanceof StudioExportRefusal && error.code === 'claim-lost')) {
+            await this.failJob(operation, claimToken, error);
+          }
+        }
+      }
       return;
     }
     if (version.state !== StudioExportVersionState.Staged) {
@@ -884,12 +896,9 @@ export class StudioExportService {
       prepared = await this.prepare(version, snapshot.retain === 'project', snapshot.contract ?? null);
       assertExecutionActive();
       published = await this.publishAcknowledged(version, operation, claimToken, prepared);
-      // Publication committed under the claim lock. Later cleanup cannot revoke or move that output.
-      await settleOperationExecution();
+      // Cleanup only touches staging or the unused duplicate, never the accepted original.
       await this.afterPublished(published, prepared);
-      await this.finishJob(operation, claimToken, published.version.resultAssetId);
-      await this.notifyRenderFinished(version, 'published', published.version.resultAssetId, operation.label);
-      await this.queueSmoothMotion(snapshot, published.version.resultAssetId, version.ownerId, operation.label);
+      await this.resumePublished(published.version, operation, claimToken, snapshot);
       this.logger.log(
         `Studio export ${version.id} published as version ${published.version.version} (${published.privacy.scope}${
           published.privacy.lockReason ? `, locked: ${published.privacy.lockReason}` : ''
@@ -898,8 +907,10 @@ export class StudioExportService {
     } catch (error) {
       if (await settleOperationStop(this.operations, operation, claimToken)) return;
       if (published) {
-        this.logger.warn(`Studio export ${version.id} published; follow-up cleanup remains pending`);
-        await this.finishJob(operation, claimToken, published.version.resultAssetId);
+        // The operation owns the sole retry budget. Its durable intents survive this failure.
+        if (!(error instanceof StudioExportRefusal && error.code === 'claim-lost')) {
+          await this.failJob(operation, claimToken, error);
+        }
         return;
       }
       if (error instanceof StudioExportRefusal && error.code === 'claim-lost') {
@@ -1089,22 +1100,26 @@ export class StudioExportService {
     prepared: PreparedPublication,
   ): Promise<StudioExportPublished> {
     return settleStudioExportPublication(this.repository, version.id, operation.id, () =>
-      this.repository.publish({
-        versionId: version.id,
-        operationId: operation.id,
-        claimToken,
-        ownerId: version.ownerId,
-        sources: prepared.sources,
-        expectedScope: prepared.expectedScope,
-        retainInProject: prepared.retainInProject,
-        nsfwHiding: prepared.nsfwHiding,
-        path: prepared.finalPath,
-        checksum: Buffer.from(version.outputChecksum!),
-        sizeInBytes: Number(version.outputSizeInBytes),
-        contentType: prepared.contentType,
-        assetType: prepared.assetType,
-        originalFileName: prepared.originalFileName,
-      }),
+      this.repository.publish(
+        {
+          versionId: version.id,
+          operationId: operation.id,
+          claimToken,
+          ownerId: version.ownerId,
+          sources: prepared.sources,
+          expectedScope: prepared.expectedScope,
+          retainInProject: prepared.retainInProject,
+          nsfwHiding: prepared.nsfwHiding,
+          path: prepared.finalPath,
+          checksum: Buffer.from(version.outputChecksum!),
+          sizeInBytes: Number(version.outputSizeInBytes),
+          contentType: prepared.contentType,
+          assetType: prepared.assetType,
+          originalFileName: prepared.originalFileName,
+        },
+        (tx, assetId) => this.schedulePublishedMetadata(tx, assetId),
+        (tx, published, label) => this.schedulePublishedNotification(tx, published, label),
+      ),
     );
   }
 
@@ -1113,39 +1128,133 @@ export class StudioExportService {
       // The owner already had these bytes; the moved copy is referenced by nothing.
       await this.storage.unlink(prepared.finalPath).catch(() => {});
     }
-    if (published.createdAssetId) {
-      await this.jobs.queue({
-        name: JobName.AssetExtractMetadata,
-        data: { id: published.createdAssetId, source: 'upload' },
-      });
-    }
     await this.storage.unlinkDir(prepared.stagingFolder, { recursive: true, force: true }).catch(() => {});
   }
 
-  /**
-   * FL-162: once the export is a video in the owner's library, its Smooth motion runs as a job of its
-   * own, preview first. A result kept with its project (made with shared media) has no library video to
-   * work on, and says so in the log instead.
-   */
-  private async queueSmoothMotion(
-    snapshot: StudioExportPublishSnapshot,
-    resultAssetId: string | null,
-    ownerId: string,
-    exportName: string,
+  private schedulePublishedMetadata(tx: Transaction<DB>, assetId: string): Promise<void> {
+    return this.jobs.queueInTransaction(tx, {
+      name: JobName.AssetExtractMetadata,
+      data: { id: assetId, source: 'upload' },
+    });
+  }
+
+  private schedulePublishedNotification(
+    tx: Transaction<DB>,
+    version: StudioExportVersion,
+    label: string,
   ): Promise<void> {
-    const smoothMotion = snapshot.smoothMotion;
-    if (!smoothMotion) {
-      return;
+    return this.jobs.queueInTransaction(tx, {
+      name: JobName.PushDeliver,
+      data: {
+        notice: {
+          type: PushEventType.RenderFinished,
+          userIds: [version.ownerId],
+          title: 'Render finished',
+          body: `${label.trim() || 'Your Studio export'} is ready`,
+          data: { versionId: version.id, projectId: version.projectId, status: 'published' },
+          assetIds: version.resultAssetId ? [version.resultAssetId] : [],
+        },
+      },
+    });
+  }
+
+  private async resumePublished(
+    version: StudioExportVersion,
+    operation: MediaOperation,
+    claimToken: string,
+    snapshot: StudioExportPublishSnapshot,
+  ): Promise<void> {
+    const followups = await this.repository.publicationFollowups(
+      operation.id,
+      claimToken,
+      (tx, assetId) => this.schedulePublishedMetadata(tx, assetId),
+      (tx, published, label) => this.schedulePublishedNotification(tx, published, label),
+    );
+    let needsAttention = !followups;
+    if (followups) {
+      for (const effect of ['smoothMotion'] as const) {
+        const state = followups[effect];
+        if (state === 'accepted') continue;
+        if (state !== 'pending') {
+          needsAttention = true;
+          if (state === 'dispatching') {
+            await this.repository.transitionPublicationFollowup(
+              operation.id,
+              claimToken,
+              effect,
+              state,
+              'needs_attention',
+            );
+          }
+          continue;
+        }
+        assertExecutionActive();
+        if (
+          !(await this.repository.transitionPublicationFollowup(
+            operation.id,
+            claimToken,
+            effect,
+            'pending',
+            'dispatching',
+          ))
+        ) {
+          throw new StudioExportRefusal('claim-lost', 'The publication follow-up claim changed');
+        }
+        let accepted = false;
+        let receipt: StudioPublicationFollowups['smoothMotionReceipt'];
+        try {
+          assertExecutionActive();
+          if (snapshot.smoothMotion && version.resultAssetId) {
+            // Destination and factor are the immutable user request. No replacement or paid fallback.
+            const queued = await this.restorations.queueExportSmoothMotion({
+              ownerId: version.ownerId,
+              assetId: version.resultAssetId,
+              exportName: operation.label,
+              ...snapshot.smoothMotion,
+            });
+            if (queued?.id && queued.previewOperationId) {
+              receipt = { restorationId: queued.id, operationId: queued.previewOperationId };
+              accepted = true;
+            }
+          }
+          assertExecutionActive();
+        } catch (error) {
+          accepted = false;
+          this.logger.warn(`Studio export ${version.id} ${effect} needs attention: ${errorMessage(error)}`);
+        }
+        const next = accepted ? 'accepted' : 'needs_attention';
+        if (
+          !(await this.repository.transitionPublicationFollowup(
+            operation.id,
+            claimToken,
+            effect,
+            'dispatching',
+            next,
+            receipt,
+          ))
+        ) {
+          throw new StudioExportRefusal('claim-lost', 'The publication follow-up acknowledgement lost its claim');
+        }
+        needsAttention ||= !accepted;
+      }
     }
-    if (!resultAssetId) {
-      this.logger.log(`Studio export ${snapshot.versionId} stays with its project; Smooth motion was not queued`);
-      return;
-    }
-    await this.restorations
-      .queueExportSmoothMotion({ ownerId, assetId: resultAssetId, exportName, ...smoothMotion })
-      .catch((error: unknown) =>
-        this.logger.warn(`Smooth motion after Studio export ${snapshot.versionId}: ${errorMessage(error)}`),
+    needsAttention ||= !!followups && followups.notification !== 'accepted';
+    if (needsAttention) {
+      await this.repository.publicationNeedsAttention(operation.id, claimToken);
+      await this.operations.fail(
+        operation.id,
+        claimToken,
+        {
+          errorCode: 'studio_export_followup_needs_attention',
+          error:
+            'Your export is published. A notification or requested Smooth motion could not be confirmed. Check the export and its Enhance panel before starting another request.',
+        },
+        { retry: false },
       );
+    } else {
+      await this.finishJob(operation, claimToken, version.resultAssetId);
+    }
+    await settleOperationExecution();
   }
 
   /** The Smooth motion asked for with an export: a destination that exists and may run interpolation. */
