@@ -50,12 +50,20 @@ export async function createQueueSchema(db: Kysely<any>) {
     );
     alter table job_selection add foreign key ("producerId") references job(id) on delete set null;
     create index job_manifest_pending on job_run_item("selectionId", "itemKey") where "jobId" is null and state = 'pending';
+    create index job_manifest_source_pending on job_run_item("selectionId", "runId", "itemKey") where "jobId" is null and state = 'pending';
+    create index job_selection_membership on job_run_item("selectionId", "itemKey", stage) where "selectionId" is not null;
+    create index job_run_unfinished on job_run_item("runId") where state in ('pending','waiting','active');
+    create index job_unadmitted_queue on job_run_item(queue) where "jobId" is null and state in ('pending','waiting','active');
+    create index job_selection_feed on job_selection(queue, "createdAt", id) where state = 'ready';
+    create index job_selection_enumerating on job_selection(queue) where state = 'enumerating';
+    create index job_live_queue on job(queue, state, "createdAt", id) where state in ('pending','waiting','active');
     create unique index job_dedup_live on job(queue, "dedupKey")
       where "dedupKey" is not null and state in ('pending','waiting','active');
     create unique index job_run_stage on job("runId", "itemKey", name) where "runId" is not null;
     create index job_claim on job(queue, "availableAt", "createdAt") where state in ('pending','waiting');
     create index job_lease on job("leaseExpiresAt") where state = 'active';
     create index job_parent on job("parentId") where "parentId" is not null;
+    create index job_dependency_pending on job("parentId") where "parentId" is not null and state in ('pending','waiting');
     create index job_retention on job("finishedAt", id)
       where state in ('completed','failed','cancelled','blocked') and "latestPending" is null;
     create table job_attempt (

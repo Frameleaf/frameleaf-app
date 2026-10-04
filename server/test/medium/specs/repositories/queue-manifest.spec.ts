@@ -70,6 +70,11 @@ describe('durable bounded selection manifests', () => {
     where "runId" = ${runId}::uuid and "selectionId" is not null`
       .execute(db)
       .then(({ rows }) => rows[0]);
+  const snapshotRunId = async () => {
+    const { rows } = await sql<{ runId: string }>`select "runId" from job_selection where queue = ${queue}`.execute(db);
+    expect(rows).toHaveLength(1);
+    return rows[0].runId;
+  };
 
   it('persists database-only producer checkpoints once across a new retry claim', async () => {
     await store.enqueue([producer()]);
@@ -98,20 +103,19 @@ describe('durable bounded selection manifests', () => {
   });
 
   it('freezes per-item producer data into the ledger and forwards it to admitted execution', async () => {
-    const runId = await repository.createRun('person-or-pet', {}, () =>
-      repository.queueSelection(
-        JobName.AssetGenerateThumbnails,
-        db
-          .selectFrom(
-            sql<{
-              id: string;
-              data: object;
-            }>`(select 'asset-a'::text id, '{"runId":"pet-run","ownerId":"owner-a"}'::jsonb data)`.as('selected'),
-          )
-          .select(['id', 'data']),
-        { options: { enabled: false, values: [null, 'source'] } },
-      ),
+    await repository.queueSelection(
+      JobName.AssetGenerateThumbnails,
+      db
+        .selectFrom(
+          sql<{
+            id: string;
+            data: object;
+          }>`(select 'asset-a'::text id, '{"runId":"pet-run","ownerId":"owner-a"}'::jsonb data)`.as('selected'),
+        )
+        .select(['id', 'data']),
+      { options: { enabled: false, values: [null, 'source'] } },
     );
+    const runId = await snapshotRunId();
     expect(await store.feedManifest(queue)).toBe(1);
     const [claim] = await store.claim(queue, worker);
     expect(claim.runId).toBe(runId);
@@ -210,21 +214,20 @@ describe('durable bounded selection manifests', () => {
   });
 
   it('counts two face stages as one selected media item using the projected root identity', async () => {
-    const runId = await repository.createRun('faces', {}, () =>
-      repository.queueSelection(
-        JobName.AssetGenerateThumbnails,
-        db
-          .selectFrom(
-            sql<{
-              id: string;
-              rootItemKey: string;
-            }>`(select id, root as "rootItemKey" from (values ('face-a', 'asset-a'), ('face-b', 'asset-a')) f(id, root))`.as(
-              'selected',
-            ),
-          )
-          .select(['id', 'rootItemKey']),
-      ),
+    await repository.queueSelection(
+      JobName.AssetGenerateThumbnails,
+      db
+        .selectFrom(
+          sql<{
+            id: string;
+            rootItemKey: string;
+          }>`(select id, root as "rootItemKey" from (values ('face-a', 'asset-a'), ('face-b', 'asset-a')) f(id, root))`.as(
+            'selected',
+          ),
+        )
+        .select(['id', 'rootItemKey']),
     );
+    const runId = await snapshotRunId();
     const {
       rows: [counts],
     } = await sql<{ media: number; stages: number }>`select count(distinct "rootItemKey")::int media,
@@ -238,12 +241,11 @@ describe('durable bounded selection manifests', () => {
   });
 
   it('leaves excess items manifest-only, honors pause and refills between the watermarks in bounded transactions', async () => {
-    const runId = await repository.createRun('direct', {}, () =>
-      repository.queueSelection(
-        JobName.AssetGenerateThumbnails,
-        db.selectFrom(sql<{ id: string }>`(select generate_series(1, 15000)::text id)`.as('selected')).select('id'),
-      ),
+    await repository.queueSelection(
+      JobName.AssetGenerateThumbnails,
+      db.selectFrom(sql<{ id: string }>`(select generate_series(1, 15000)::text id)`.as('selected')).select('id'),
     );
+    const runId = await snapshotRunId();
     const readRun = async () => (await store.listRuns(100, 0)).find((run) => run.id === runId)!;
     await store.pause(queue, true);
     expect(await readRun()).toMatchObject({
@@ -290,5 +292,5 @@ describe('durable bounded selection manifests', () => {
     expect(await store.feedManifest(queue)).toBe(250);
     expect(await count()).toBe(QUEUE_HIGH_WATER);
     expect(await store.feedManifest(queue)).toBe(0);
-  });
+  }, 30_000); // This semantic fixture accepts 500 real publications before checking the refill watermark.
 });

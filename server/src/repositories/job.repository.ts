@@ -605,11 +605,7 @@ export class JobRepository {
   }
 
   async waitForQueueCompletion(...queues: QueueName[]): Promise<void> {
-    while (
-      (await Promise.all(queues.map((queue) => this.store.counts(queue)))).some(
-        (counts) => counts.active + counts.waiting + counts.paused + counts.delayed > 0,
-      )
-    ) {
+    while ((await Promise.all(queues.map((queue) => this.store.hasUnfinishedWork(queue)))).some(Boolean)) {
       queueExecution.getStore()?.signal.throwIfAborted();
       await sleep(QUEUE_TIMING.scan);
     }

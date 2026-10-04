@@ -91,7 +91,10 @@ export class SqlQueueStore {
                 db,
               );
               await this.finishSupersededProducers(superseded, db);
-              await this.settleRuns(db);
+              await this.settleRuns(
+                db,
+                superseded.map((item) => item.runId),
+              );
               continue;
             }
             // Pending replacement transfers ownership to the newest run. Older requests
@@ -110,7 +113,10 @@ export class SqlQueueStore {
                 "availableAt" = now() + ${intent.options.delay ?? 0} * interval '1 millisecond'
                 where id = ${existing.id}::uuid`.execute(db);
             await this.finishSupersededProducers(superseded, db);
-            await this.settleRuns(db);
+            await this.settleRuns(
+              db,
+              superseded.map((item) => item.runId),
+            );
           }
           // Runs must never count a deduplicated selection as silently absent.
           if (intent.runId && intent.itemKey) {
@@ -200,14 +206,14 @@ export class SqlQueueStore {
     await sql`update job_run set "enumerationDone" = true where id = ${id}::uuid and not exists (
       select 1 from job_run_item where "runId" = ${id}::uuid and "rootItemKey" is null
       and state in ('pending','waiting','active'))`.execute(tx);
-    await this.settleRuns(tx);
+    await this.settleRuns(tx, [id]);
   }
 
   /** Enumeration uses keyset pages supplied by the producer, never a held SQL cursor. */
   async finishEnumeration(runId: string) {
     await this.db.transaction().execute(async (tx) => {
       await sql`update job_run set "enumerationDone" = true where id = ${runId}::uuid`.execute(tx);
-      await this.settleRuns(tx);
+      await this.settleRuns(tx, [runId]);
     });
   }
 
@@ -230,7 +236,7 @@ export class SqlQueueStore {
       } = await sql<{ active: number; ready: number }>`
         select count(*) filter (where state = 'active')::int active,
           count(*) filter (where state in ('waiting','active'))::int ready
-        from job where queue = ${queue}
+        from job where queue = ${queue} and state in ('waiting','active')
       `.execute(tx);
       if (counts.ready <= QUEUE_LOW_WATER) {
         // Keep the ready + active set bounded even for a 15,000-item selection.
@@ -314,7 +320,7 @@ export class SqlQueueStore {
       await sql`update job_attempt set outcome = 'completed', "finishedAt" = now() where token = ${claim.token}::uuid`.execute(
         tx,
       );
-      await this.syncItem(claim.id, tx);
+      const affectedRuns = await this.syncItem(claim.id, tx);
       const { rows: lineage } = await sql<{
         runId: string;
         itemKey: string;
@@ -341,9 +347,9 @@ export class SqlQueueStore {
         }));
       });
       await this.enqueue(inherited, tx);
-      await this.scheduleLatest(claim.id, job.latestPending, tx);
+      const latest = await this.scheduleLatest(claim.id, job.latestPending, tx);
       await finishSelections(tx, claim.id, true);
-      await this.settleRuns(tx);
+      await this.settleRuns(tx, [...affectedRuns, ...latest.runIds]);
       return true;
     });
   }
@@ -445,8 +451,9 @@ export class SqlQueueStore {
             where id::text = ${operationId} and "claimedBy" = 'job-queue' and "claimToken" is not null`.execute(tx);
         }
       }
-      await this.syncItem(claim.id, tx);
+      const affectedRuns = await this.syncItem(claim.id, tx);
       if (rows[0].state !== 'pending') {
+        const terminalParents = [claim.id];
         await finishSelections(tx, claim.id, false);
         await sql`update job set "latestPending" = null where id = ${claim.id}::uuid`.execute(tx);
         const latest = rows[0].latestPending;
@@ -454,12 +461,15 @@ export class SqlQueueStore {
           await sql`update job_run_item set state = 'needs_attention'
             where "jobId" is null and "runId" = ${latest.runId ?? null}::uuid
               and "itemKey" = ${latest.itemKey ?? null} and stage = ${latest.name}`.execute(tx);
+          if (latest.runId) affectedRuns.push(latest.runId);
         } else {
-          await this.scheduleLatest(claim.id, latest, tx, false);
+          const scheduled = await this.scheduleLatest(claim.id, latest, tx, false);
+          affectedRuns.push(...scheduled.runIds);
+          terminalParents.push(...scheduled.terminalIds);
         }
+        affectedRuns.push(...(await this.settleDependencies(tx, terminalParents)));
       }
-      await this.settleDependencies(tx);
-      await this.settleRuns(tx);
+      await this.settleRuns(tx, affectedRuns);
       return true;
     });
   }
@@ -470,8 +480,9 @@ export class SqlQueueStore {
     tx: Executor,
     predecessorSucceeded = true,
   ) {
+    const affected = { runIds: latest?.runId ? [latest.runId] : [], terminalIds: [] as string[] };
     if (!latest) {
-      return;
+      return affected;
     }
     // A repeated item/stage in one run retains its ledger row and monotonic attempt audit.
     const { rows } = await sql`update job set state = 'pending', data = ${JSON.stringify(latest.data)}::text::jsonb,
@@ -482,7 +493,7 @@ export class SqlQueueStore {
       where id = ${previousId}::uuid and "runId" = ${latest.runId ?? null}::uuid
       and "itemKey" = ${latest.itemKey ?? null} and name = ${latest.name} returning id`.execute(tx);
     if (rows.length > 0) {
-      await this.syncItem(previousId, tx);
+      affected.runIds.push(...(await this.syncItem(previousId, tx)));
     } else {
       // A fresh safe request is not a dependency on the predecessor's success.
       await this.enqueue([{ ...latest, parentId: latest.parentId === previousId ? undefined : latest.parentId }], tx);
@@ -499,9 +510,11 @@ export class SqlQueueStore {
         tx,
       );
       for (const item of blocked) {
-        await this.syncItem(item.id, tx);
+        affected.runIds.push(...(await this.syncItem(item.id, tx)));
+        affected.terminalIds.push(item.id);
       }
     }
+    return affected;
   }
 
   /** Only the coordinator observes persisted deadlines; no handler event-loop timer is trusted. */
@@ -533,29 +546,37 @@ export class SqlQueueStore {
   }
 
   private async syncItem(jobId: string, tx: Executor) {
-    await sql`update job_run_item i set state = j.state from job j
-      where j.id = ${jobId}::uuid and i."jobId" = j.id`.execute(tx);
+    const { rows } = await sql<{ runId: string }>`update job_run_item i set state = j.state from job j
+      where j.id = ${jobId}::uuid and i."jobId" = j.id returning i."runId"`.execute(tx);
+    return rows.map((item) => item.runId);
   }
 
-  private async settleDependencies(tx: Executor) {
-    // Recursive closure settles every descendant, including branches never admitted to ready work.
-    const { rows: blockedProducers } = await sql<{ jobId: string }>`with recursive blocked as (
+  private async settleDependencies(tx: Executor, parentIds: string[]) {
+    if (parentIds.length === 0) return [];
+    // Walk outward from this transaction's terminal parents, never all retained dependencies.
+    const { rows: blockedMemberships } = await sql<{ jobId: string; runId: string }>`with recursive blocked as (
       select c.id from job c join job p on p.id = c."parentId"
-      where c.state in ('pending','waiting') and p.state in ('failed','needs_attention','cancelled','blocked')
-      union select c.id from job c join blocked b on c."parentId" = b.id where c.state in ('pending','waiting')
+      where c."parentId" is not null and c."parentId" = any(${parentIds}::uuid[]) and c.state in ('pending','waiting')
+        and p.state in ('failed','needs_attention','cancelled','blocked')
+      union select c.id from job c join blocked b on c."parentId" = b.id
+        where c."parentId" is not null and c.state in ('pending','waiting')
     ), changed as (
       update job set state = 'blocked', error = 'Dependency did not succeed', "finishedAt" = now()
       where id in (select id from blocked) returning id, "runId", "itemKey", name
     ) update job_run_item i set state = 'blocked' from changed c
-      where i."jobId" = c.id returning i."jobId"`.execute(tx);
-    for (const { jobId } of blockedProducers) await finishSelections(tx, jobId, false);
+      where i."jobId" = c.id returning i."jobId", i."runId"`.execute(tx);
+    for (const jobId of new Set(blockedMemberships.map((item) => item.jobId))) {
+      await finishSelections(tx, jobId, false);
+    }
+    return blockedMemberships.map((item) => item.runId);
   }
 
-  private async settleRuns(tx: Executor) {
+  private async settleRuns(tx: Executor, runIds: string[]) {
+    if (runIds.length === 0) return;
     await sql`update job_run r set "finishedAt" = now()
-      where "enumerationDone" and "finishedAt" is null and not exists (
-        select 1 from job_run_item i where i."runId" = r.id and i.state not in
-        ('completed','failed','needs_attention','cancelled','blocked'))`.execute(tx);
+      where r.id = any(${[...new Set(runIds)]}::uuid[]) and "enumerationDone" and "finishedAt" is null
+      and not exists (select 1 from job_run_item i where i."runId" = r.id
+        and i.state in ('pending','waiting','active'))`.execute(tx);
   }
 
   async setConcurrency(name: string, concurrency: number) {
@@ -602,6 +623,20 @@ export class SqlQueueStore {
     return rows.length > 0;
   }
 
+  /** A drained execution buffer is not a completed durable selection. Paused work still counts. */
+  async hasUnfinishedWork(queue: string) {
+    const {
+      rows: [row],
+    } = await sql<{ unfinished: boolean }>`select
+      exists (select 1 from job where queue = ${queue} and state in ('pending','waiting','active'))
+      or exists (select 1 from job_run_item where queue = ${queue} and "jobId" is null
+        and state in ('pending','waiting','active'))
+      or exists (select 1 from job_selection where queue = ${queue} and state = 'enumerating') unfinished`.execute(
+      this.db,
+    );
+    return row.unfinished;
+  }
+
   listRuns(take: number, skip: number) {
     return listRuns(this.db, take, skip);
   }
@@ -623,20 +658,31 @@ export class SqlQueueStore {
         select 1 from job j where j.queue = ${queue} and j.state = any(${states}::text[]) and j.state != 'active'
         and j."latestPending" ->> 'runId' = i."runId"::text and j."latestPending" ->> 'itemKey' = i."itemKey"
         and j."latestPending" ->> 'name' = i.stage) returning i."runId", i."rootItemKey"`.execute(tx);
+      const affectedRuns = cancelledLatest.map((item) => item.runId);
       if (states.includes('pending') || states.includes('waiting')) {
-        await sql`update job_run_item set state = 'cancelled' where queue = ${queue}
-          and "selectionId" is not null and "jobId" is null and state = 'pending'`.execute(tx);
+        const { rows: cancelled } = await sql<{
+          runId: string;
+        }>`with cancelled as (
+          update job_run_item set state = 'cancelled' where queue = ${queue}
+            and "selectionId" is not null and "jobId" is null and state = 'pending' returning "runId"
+        ) select distinct "runId" from cancelled`.execute(tx);
+        affectedRuns.push(...cancelled.map((item) => item.runId));
       }
       const { rows } = await sql<{ id: string }>`update job set state = 'cancelled', data = '{}'::jsonb,
         "latestPending" = null, "finishedAt" = now() where queue = ${queue} and state = any(${states}::text[])
         and state != 'active' returning id`.execute(tx);
       for (const { id } of rows) {
-        await this.syncItem(id, tx);
+        affectedRuns.push(...(await this.syncItem(id, tx)));
         await finishSelections(tx, id, false);
       }
-      await this.settleDependencies(tx);
+      affectedRuns.push(
+        ...(await this.settleDependencies(
+          tx,
+          rows.map((item) => item.id),
+        )),
+      );
       await this.finishSupersededProducers(cancelledLatest, tx);
-      await this.settleRuns(tx);
+      await this.settleRuns(tx, affectedRuns);
     });
   }
 
@@ -654,10 +700,10 @@ export class SqlQueueStore {
           ) and ("dedupKey" is null or not exists (select 1 from job d where d.queue = j.queue and d."dedupKey" = j."dedupKey"
             and d.state in ('pending','waiting','active'))) returning id, "runId"`.execute(tx);
         for (const row of rows) {
-          await this.syncItem(row.id, tx);
+          const affectedRuns = await this.syncItem(row.id, tx);
           await resumeSelections(tx, row.id);
-          if (row.runId) {
-            await sql`update job_run set "finishedAt" = null where id = ${row.runId}::uuid`.execute(tx);
+          if (affectedRuns.length > 0) {
+            await sql`update job_run set "finishedAt" = null where id = any(${affectedRuns}::uuid[])`.execute(tx);
           }
         }
         return rows.length;
