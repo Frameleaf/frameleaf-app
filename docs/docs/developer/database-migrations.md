@@ -1,31 +1,17 @@
-# Database Migrations
+# Database migrations
 
-After making any changes in the `server/src/schema`, a database migration need to run in order to register the changes in the database. Follow the steps below to create a new migration.
+Frameleaf owns a canonical PostgreSQL 19 schema in `public`. A fresh database starts at `server/src/schema/migrations/0000000000000-FrameleafBaseline.ts`. `server/src/schema/migrations/ORDER` defines the current migration order. The only migration ledger is `public.frameleaf_migrations`; `public.frameleaf_migrations_lock` serializes migration execution.
 
-1. Run the command
+The baseline includes content tables, Frameleaf features formerly kept in a separate schema, durable job queues, the import journal and transient shared-service tables. The schema catalog generator captures all canonical database objects, including SQL helpers that are not represented by decorated model definitions. Source import copies selected data; it does not copy an Immich migration history or indexes.
 
-```bash
-mise //server:migrations generate <migration-name>
+Use the vendored `@frameleaf/sql-tools` workspace runtime and CLI. It has no separate build step and does not fetch a maintained upstream tool at runtime. From an installed source checkout with `DB_URL` pointing to a disposable PostgreSQL 19 database:
+
+```sh
+pnpm --dir server migrations:run
+pnpm --dir server migrations:verify-order
+pnpm --dir server exec tsx scripts/snapshot-frameleaf-schema-catalog.ts /absolute/path/frameleaf-schema-catalog.json
 ```
 
-2. Check if the migration file makes sense.
-3. Move the migration file to folder `./server/src/schema/migrations` in your code editor.
-4. Run the command
+Keep migration names and released SQL stable. New schema changes need a new migration and an updated ORDER file, plus generated query/catalog changes where applicable. CI verifies the canonical migration order and generated SQL. Use an isolated database for generation; schema-reset commands destroy the selected schema.
 
-```bash
-mise //server:migrations sync-order
-```
-
-The last step adds the migration to the `ORDER` manifest, which records the order migrations run in. It is committed so that two branches adding a migration conflict in git instead of silently merging out of order, which would stop the server from starting for anyone who ran them in the wrong order.
-
-The server will automatically detect `*.ts` file changes and restart. Part of the server start-up process includes running any new migrations, so it will be applied immediately.
-
-## Reverting a Migration
-
-If you need to undo the most recently applied migration—for example, when developing or testing on schema changes—run:
-
-```bash
-mise //server:migrations revert
-```
-
-This command rolls back the latest migration and brings the database schema back to its previous state.
+Do not revert the canonical baseline in a live installation or edit ledger rows to bypass a mismatch. Restore a matching backup into a fresh database when recovery is required. Review generated changes and hosted diagnostics before adopting them; a generated catalog alone is not a successful migration or recovery check.

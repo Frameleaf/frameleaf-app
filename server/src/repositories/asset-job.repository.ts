@@ -223,6 +223,10 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [], stream: true })
   streamForSearchDuplicates(force?: boolean) {
+    return this.selectionForSearchDuplicates(force).stream();
+  }
+
+  selectionForSearchDuplicates(force?: boolean) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id'])
@@ -233,12 +237,15 @@ export class AssetJobRepository {
         qb
           .innerJoin('asset_job_status as job_status', 'job_status.assetId', 'asset.id')
           .where('job_status.duplicatesDetectedAt', 'is', null),
-      )
-      .stream();
+      );
   }
 
   @GenerateSql({ params: [{ force: false, frameCount: 4 }], stream: true })
   streamForVideoDuplicateFrames(options: { force?: boolean; frameCount: number }) {
+    return this.selectionForVideoDuplicateFrames(options).stream();
+  }
+
+  selectionForVideoDuplicateFrames(options: { force?: boolean; frameCount: number }) {
     return this.db
       .selectFrom('asset')
       .leftJoin('asset_video_duplicate_frame as frame', 'frame.assetId', 'asset.id')
@@ -248,8 +255,7 @@ export class AssetJobRepository {
       .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
       .where(isNotLocked('asset'))
       .groupBy('asset.id')
-      .$if(!options.force, (qb) => qb.having((eb) => eb.fn.count('frame.assetId'), '<', options.frameCount))
-      .stream();
+      .$if(!options.force, (qb) => qb.having((eb) => eb.fn.count('frame.assetId'), '<', options.frameCount));
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -268,12 +274,15 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [], stream: true })
   streamForEncodeClip(force?: boolean) {
+    return this.selectionForEncodeClip(force).stream();
+  }
+
+  selectionForEncodeClip(force?: boolean) {
     return this.assetsWithPreviews()
       .select(['asset.id'])
       .$if(!force, (qb) =>
         qb.where((eb) => eb.not((eb) => eb.exists(eb.selectFrom('smart_search').whereRef('assetId', '=', 'asset.id')))),
-      )
-      .stream();
+      );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -331,6 +340,10 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [{ force: false, scoreVersion: 1 }], stream: true })
   streamForBestPhotosScoring(options: { force?: boolean; scoreVersion: number }) {
+    return this.selectionForBestPhotosScoring(options).stream();
+  }
+
+  selectionForBestPhotosScoring(options: { force?: boolean; scoreVersion: number }) {
     return (
       this.db
         .selectFrom('asset')
@@ -365,7 +378,6 @@ export class AssetJobRepository {
             ]),
           ),
         )
-        .stream()
     );
   }
 
@@ -512,6 +524,10 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [], stream: true })
   streamForMetadataExtraction(force?: boolean) {
+    return this.selectionForMetadataExtraction(force).stream();
+  }
+
+  selectionForMetadataExtraction(force?: boolean) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id'])
@@ -522,8 +538,7 @@ export class AssetJobRepository {
             eb.or([eb('asset_job_status.metadataExtractedAt', 'is', null), eb('asset_job_status.assetId', 'is', null)]),
           ),
       )
-      .where('asset.deletedAt', 'is', null)
-      .stream();
+      .where('asset.deletedAt', 'is', null);
   }
 
   private storageTemplateAssetQuery() {
@@ -576,6 +591,10 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [], stream: true })
   streamForSidecar(force?: boolean) {
+    return this.selectionForSidecar(force).stream();
+  }
+
+  selectionForSidecar(force?: boolean) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id'])
@@ -592,21 +611,27 @@ export class AssetJobRepository {
             ),
           ),
         ),
-      )
-      .stream();
+      );
   }
 
   @GenerateSql({ params: [], stream: true })
   streamForDetectFacesJob(force?: boolean) {
+    return this.selectionForDetectFacesJob(force).stream();
+  }
+
+  selectionForDetectFacesJob(force?: boolean) {
     return this.assetsWithPreviews()
       .$if(force === false, (qb) => qb.where('job_status.facesRecognizedAt', 'is', null))
       .select(['asset.id'])
-      .orderBy('asset.fileCreatedAt', 'desc')
-      .stream();
+      .orderBy('asset.fileCreatedAt', 'desc');
   }
 
   @GenerateSql({ params: [], stream: true })
   streamForOcrJob(force?: boolean) {
+    return this.selectionForOcrJob(force).stream();
+  }
+
+  selectionForOcrJob(force?: boolean) {
     return this.db
       .selectFrom('asset')
       .select(['asset.id'])
@@ -616,11 +641,10 @@ export class AssetJobRepository {
           .where('asset_job_status.ocrAt', 'is', null),
       )
       .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', '!=', AssetVisibility.Hidden)
-      .stream();
+      .where('asset.visibility', '!=', AssetVisibility.Hidden);
   }
 
-  private streamForImageEnrichmentTask(force: boolean | undefined, task: 'description' | 'nsfwDetection') {
+  private selectionForImageEnrichmentTask(force: boolean | undefined, task: 'description' | 'nsfwDetection') {
     return (
       this.assetsWithPreviews()
         .select(['asset.id'])
@@ -642,12 +666,15 @@ export class AssetJobRepository {
           ),
         )
         .orderBy('asset.fileCreatedAt', 'desc')
-        .stream()
     );
   }
 
   @GenerateSql({ params: [], stream: true })
   streamForImageDescriptionJob(force?: boolean) {
+    return this.selectionForImageDescriptionJob(force).stream();
+  }
+
+  selectionForImageDescriptionJob(force?: boolean) {
     // Image descriptions run on photos and videos. A video is described from its reusable moment
     // frames (FL-59), which the description job cuts itself when the video has none yet; duplicate
     // detection is no longer a prerequisite, so videos are not filtered on its frames here.
@@ -672,7 +699,6 @@ export class AssetJobRepository {
           ),
         )
         .orderBy('asset.fileCreatedAt', 'desc')
-        .stream()
     );
   }
 
@@ -721,7 +747,11 @@ export class AssetJobRepository {
 
   @GenerateSql({ params: [], stream: true })
   streamForNsfwDetectionJob(force?: boolean) {
-    return this.streamForImageEnrichmentTask(force, 'nsfwDetection');
+    return this.selectionForNsfwDetectionJob(force).stream();
+  }
+
+  selectionForNsfwDetectionJob(force?: boolean) {
+    return this.selectionForImageEnrichmentTask(force, 'nsfwDetection');
   }
 
   @GenerateSql({ params: [DummyValue.DATE], stream: true })

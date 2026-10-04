@@ -2,7 +2,7 @@ import { AssetFileType, AssetVisibility, ImmichWorker, JobName, JobStatus } from
 import { OcrService } from 'src/services/ocr.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { systemConfigStub } from 'test/fixtures/system-config.stub.js';
-import { ServiceMocks, makeStream, newTestService } from 'test/utils.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(OcrService.name, () => {
   let sut: OcrService;
@@ -42,22 +42,28 @@ describe(OcrService.name, () => {
 
     it('should queue the assets without ocr', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForOcrJob.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForOcrJob.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueOcr({ force: false });
 
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.Ocr, data: { id: asset.id } }]);
-      expect(mocks.assetJob.streamForOcrJob).toHaveBeenCalledWith(false);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.Ocr,
+        mocks.assetJob.selectionForOcrJob.mock.results[0].value,
+      );
+      expect(mocks.assetJob.selectionForOcrJob).toHaveBeenCalledWith(false);
     });
 
     it('should queue all the assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForOcrJob.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForOcrJob.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueOcr({ force: true });
 
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.Ocr, data: { id: asset.id } }]);
-      expect(mocks.assetJob.streamForOcrJob).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.Ocr,
+        mocks.assetJob.selectionForOcrJob.mock.results[0].value,
+      );
+      expect(mocks.assetJob.selectionForOcrJob).toHaveBeenCalledWith(true);
     });
   });
 

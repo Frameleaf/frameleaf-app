@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto';
+import { link, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { digest } from './adapters.js';
 import { ImmichImportService } from './importer.js';
 import { ImportConfig, ImportDatabase, ImportRow } from './types.js';
@@ -34,7 +38,7 @@ const createImporter = (run?: ImportRow, populated = false) => {
     },
     transaction: async (body) => body(destination),
   };
-  const importer = new ImmichImportService(destination, source, config);
+  const importer = new ImmichImportService(destination, source, { ...config });
   vi.spyOn(importer.source, 'preflight').mockResolvedValue('same-source');
   return { importer, statements };
 };
@@ -83,5 +87,98 @@ describe('import admission and activation gates', () => {
     await expect(importer.verify(dispatch)).rejects.toThrow('DESTINATION_ROW_OR_PERMISSION_MISMATCH');
     expect(dispatch).not.toHaveBeenCalled();
     expect(statements.some((statement) => statement.includes("SET status='activated'"))).toBe(false);
+  });
+});
+
+describe('mapped external originals', () => {
+  let directory: string;
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'import-external-'));
+    await mkdir(join(directory, 'source'));
+    await mkdir(join(directory, 'target'));
+  });
+  afterEach(async () => rm(directory, { recursive: true, force: true }));
+
+  it('writes the checksum of the mapped external path while verifying the original source path hash', async () => {
+    const sourcePath = join(directory, 'source', 'photo.jpg');
+    const targetPath = join(directory, 'target', 'photo.jpg');
+    await writeFile(sourcePath, 'photo');
+    await writeFile(targetPath, 'photo');
+    const statements: { sql: string; values: unknown[] }[] = [];
+    const db: ImportDatabase = {
+      query: async (sql, values = []) => {
+        statements.push({ sql, values });
+        return sql.includes('pg_try_advisory_lock') ? [{ acquired: true }] : [];
+      },
+      transaction: async (body) => body(db),
+    };
+    const importer = new ImmichImportService(db, db, {
+      ...config,
+      mediaRoots: [{ source: join(directory, 'source'), target: join(directory, 'target') }],
+    });
+    vi.spyOn(importer, 'preflight').mockResolvedValue({
+      sourceVersion: '3.2.4',
+      sourceCommit: 'fixture',
+      fingerprint: 'same',
+      status: 'fresh',
+      embeddings: [],
+    });
+    vi.spyOn(importer.source, 'batches').mockImplementation(async function* (table) {
+      if (table === 'asset')
+        yield [
+          {
+            row: {
+              id: 'asset',
+              originalPath: sourcePath,
+              isExternal: true,
+              libraryId: 'library',
+              checksumAlgorithm: 'sha1-path',
+              checksum: `\\x${createHash('sha1').update(`path:${sourcePath}`).digest('hex')}`,
+            },
+            cursor: ['asset'],
+          },
+        ];
+    });
+    await importer.run();
+    const inserted = statements.find(({ sql }) => sql.startsWith('INSERT INTO public."asset"'))!;
+    expect(JSON.parse(String(inserted.values[0]))).toMatchObject({
+      originalPath: targetPath,
+      checksum: `\\x${createHash('sha1').update(`path:${targetPath}`).digest('hex')}`,
+      checksumAlgorithm: 'sha1-path',
+    });
+  });
+
+  it('rechecks independent copy ownership before dispatch or activation', async () => {
+    const sourcePath = join(directory, 'source', 'photo.jpg');
+    const targetPath = join(directory, 'target', 'photo.jpg');
+    await writeFile(sourcePath, 'photo');
+    await link(sourcePath, targetPath);
+    const { importer, statements } = createImporter();
+    importer.config.mediaRoots = [{ source: join(directory, 'source'), target: join(directory, 'target') }];
+    vi.spyOn(importer, 'preflight').mockResolvedValue({
+      sourceVersion: '3.2.4',
+      sourceCommit: 'fixture',
+      fingerprint: 'same',
+      status: 'verifying',
+      embeddings: [],
+    });
+    vi.spyOn(importer.source, 'batches').mockImplementation(async function* (table) {
+      if (table === 'asset')
+        yield [
+          {
+            row: {
+              id: 'asset',
+              originalPath: sourcePath,
+              checksumAlgorithm: 'sha1',
+              checksum: createHash('sha1').update('photo').digest('hex'),
+            },
+            cursor: ['asset'],
+          },
+        ];
+    });
+    const dispatch = vi.fn();
+    await expect(importer.verify(dispatch)).rejects.toThrow('INDEPENDENT_COPY');
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(statements.some((sql) => sql.includes("status='activated'"))).toBe(false);
   });
 });

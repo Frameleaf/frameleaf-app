@@ -1,5 +1,7 @@
 # Server-to-server migration
 
+This page covers API-based media transfer between servers. A full one-time offline Immich database/content import into a fresh canonical Frameleaf database has a separate [import runbook](./import-immich.md).
+
 Moving a person's library from one server to another is done with the
 resumable migration command of the command-line tool. It runs on a computer
 you control, copies over the API, and finishes with an audit you review in
@@ -190,7 +192,7 @@ Album sharing, activity, comments and anything owned by another account are not
 migrated. Thumbnails, faces, smart search and places are rebuilt by the
 destination's own jobs.
 
-:::caution Evidence, not certification
+:::caution Recovery evidence
 The report proves what reached the destination for this run. It does not
 certify a server version or compatibility release; those gates are separate.
 :::

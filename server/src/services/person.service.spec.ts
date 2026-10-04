@@ -1149,25 +1149,23 @@ describe(PersonService.name, () => {
 
     it('should queue missing assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForDetectFacesJob.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueDetectFaces({ force: false });
 
-      expect(mocks.assetJob.streamForDetectFacesJob).toHaveBeenCalledWith(false);
+      expect(mocks.assetJob.selectionForDetectFacesJob).toHaveBeenCalledWith(false);
       expect(mocks.person.vacuum).not.toHaveBeenCalled();
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetDetectFaces,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetDetectFaces,
+        mocks.assetJob.selectionForDetectFacesJob.mock.results[0].value,
+      );
     });
 
     it('should queue all assets', async () => {
       const asset = AssetFactory.create();
       const person = PersonFactory.create();
 
-      mocks.assetJob.streamForDetectFacesJob.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue({ selected: [asset] } as never);
       mocks.person.getAllWithoutFaces.mockResolvedValue([person]);
       mocks.person.delete.mockResolvedValue([person]);
 
@@ -1178,18 +1176,16 @@ describe(PersonService.name, () => {
       expect(mocks.person.deleteEmptyGroups).toHaveBeenCalledWith();
       expect(mocks.person.vacuum).toHaveBeenCalledWith({ reindexVectors: true });
       expect(mocks.storage.unlink).toHaveBeenCalledWith(person.thumbnailPath);
-      expect(mocks.assetJob.streamForDetectFacesJob).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetDetectFaces,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForDetectFacesJob).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetDetectFaces,
+        mocks.assetJob.selectionForDetectFacesJob.mock.results[0].value,
+      );
     });
 
     it('should refresh all assets', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.streamForDetectFacesJob.mockReturnValue(makeStream([asset]));
+      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue({ selected: [asset] } as never);
 
       await sut.handleQueueDetectFaces({ force: undefined });
 
@@ -1197,13 +1193,11 @@ describe(PersonService.name, () => {
       expect(mocks.person.deleteFaces).not.toHaveBeenCalled();
       expect(mocks.person.vacuum).not.toHaveBeenCalled();
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
-      expect(mocks.assetJob.streamForDetectFacesJob).toHaveBeenCalledWith(undefined);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetDetectFaces,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForDetectFacesJob).toHaveBeenCalledWith(undefined);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetDetectFaces,
+        mocks.assetJob.selectionForDetectFacesJob.mock.results[0].value,
+      );
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.PersonCleanup });
     });
 
@@ -1213,21 +1207,21 @@ describe(PersonService.name, () => {
       const person = PersonFactory.create();
 
       mocks.person.getAll.mockReturnValue(makeStream([face.person!, person]));
-      mocks.person.getAllFaces.mockReturnValue(makeStream([face]));
-      mocks.assetJob.streamForDetectFacesJob.mockReturnValue(makeStream([asset]));
+      mocks.person.selectionForFaces.mockReturnValue({
+        clearSelect: () => ({ select: () => ({ selected: [face] }) }),
+      } as never);
+      mocks.assetJob.selectionForDetectFacesJob.mockReturnValue({ selected: [asset] } as never);
       mocks.person.getAllWithoutFaces.mockResolvedValue([person]);
       mocks.person.delete.mockResolvedValue([person]);
       mocks.person.deleteFaces.mockResolvedValue();
 
       await sut.handleQueueDetectFaces({ force: true });
 
-      expect(mocks.assetJob.streamForDetectFacesJob).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.AssetDetectFaces,
-          data: { id: asset.id },
-        },
-      ]);
+      expect(mocks.assetJob.selectionForDetectFacesJob).toHaveBeenCalledWith(true);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(
+        JobName.AssetDetectFaces,
+        mocks.assetJob.selectionForDetectFacesJob.mock.results[0].value,
+      );
       expect(mocks.person.delete).toHaveBeenCalledWith([person.personGroupId], undefined);
       expect(mocks.person.deleteEmptyGroups).toHaveBeenCalledWith();
       expect(mocks.storage.unlink).toHaveBeenCalledWith(person.thumbnailPath);
@@ -1278,21 +1272,20 @@ describe(PersonService.name, () => {
         failed: 0,
         delayed: 0,
       });
-      mocks.person.getAllFaces.mockReturnValue(makeStream([face]));
+      mocks.person.selectionForFaces.mockReturnValue({
+        clearSelect: () => ({ select: () => ({ selected: [face] }) }),
+      } as never);
       mocks.person.getAllWithoutFaces.mockResolvedValue([]);
 
       await sut.handleQueueRecognizeFaces({});
 
-      expect(mocks.person.getAllFaces).toHaveBeenCalledWith({
+      expect(mocks.person.selectionForFaces).toHaveBeenCalledWith({
         personGroupId: null,
         sourceType: SourceType.MachineLearning,
       });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.FacialRecognition,
-          data: { id: face.id, deferred: false },
-        },
-      ]);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.FacialRecognition, expect.anything(), {
+        deferred: false,
+      });
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.FacialRecognitionState, {
         lastRun: expect.any(String),
       });
@@ -1310,18 +1303,17 @@ describe(PersonService.name, () => {
         delayed: 0,
       });
       mocks.person.getAll.mockReturnValue(makeStream());
-      mocks.person.getAllFaces.mockReturnValue(makeStream([face]));
+      mocks.person.selectionForFaces.mockReturnValue({
+        clearSelect: () => ({ select: () => ({ selected: [face] }) }),
+      } as never);
       mocks.person.getAllWithoutFaces.mockResolvedValue([]);
 
       await sut.handleQueueRecognizeFaces({ force: true });
 
-      expect(mocks.person.getAllFaces).toHaveBeenCalledWith({ clusterGroupId: undefined, sourceType: undefined });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.FacialRecognition,
-          data: { id: face.id, deferred: false },
-        },
-      ]);
+      expect(mocks.person.selectionForFaces).toHaveBeenCalledWith({ clusterGroupId: undefined, sourceType: undefined });
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.FacialRecognition, expect.anything(), {
+        deferred: false,
+      });
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.FacialRecognitionState, {
         lastRun: expect.any(String),
       });
@@ -1331,7 +1323,9 @@ describe(PersonService.name, () => {
     it('should run nightly if new face has been added since last run', async () => {
       const face = AssetFaceFactory.create();
       mocks.person.getLatestFaceDate.mockResolvedValue(new Date().toISOString());
-      mocks.person.getAllFaces.mockReturnValue(makeStream([face]));
+      mocks.person.selectionForFaces.mockReturnValue({
+        clearSelect: () => ({ select: () => ({ selected: [face] }) }),
+      } as never);
       mocks.job.getJobCounts.mockResolvedValue({
         active: 1,
         waiting: 0,
@@ -1341,7 +1335,9 @@ describe(PersonService.name, () => {
         delayed: 0,
       });
       mocks.person.getAll.mockReturnValue(makeStream());
-      mocks.person.getAllFaces.mockReturnValue(makeStream([face]));
+      mocks.person.selectionForFaces.mockReturnValue({
+        clearSelect: () => ({ select: () => ({ selected: [face] }) }),
+      } as never);
       mocks.person.getAllWithoutFaces.mockResolvedValue([]);
       mocks.person.unassignFaces.mockResolvedValue();
 
@@ -1349,16 +1345,13 @@ describe(PersonService.name, () => {
 
       expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.FacialRecognitionState);
       expect(mocks.person.getLatestFaceDate).toHaveBeenCalledOnce();
-      expect(mocks.person.getAllFaces).toHaveBeenCalledWith({
+      expect(mocks.person.selectionForFaces).toHaveBeenCalledWith({
         personGroupId: null,
         sourceType: SourceType.MachineLearning,
       });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.FacialRecognition,
-          data: { id: face.id, deferred: false },
-        },
-      ]);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.FacialRecognition, expect.anything(), {
+        deferred: false,
+      });
       expect(mocks.systemMetadata.set).toHaveBeenCalledWith(SystemMetadataKey.FacialRecognitionState, {
         lastRun: expect.any(String),
       });
@@ -1370,14 +1363,16 @@ describe(PersonService.name, () => {
 
       mocks.systemMetadata.get.mockResolvedValue({ lastRun: lastRun.toISOString() });
       mocks.person.getLatestFaceDate.mockResolvedValue(new Date(lastRun.getTime() - 1).toISOString());
-      mocks.person.getAllFaces.mockReturnValue(makeStream([AssetFaceFactory.create()]));
+      mocks.person.selectionForFaces.mockReturnValue({
+        clearSelect: () => ({ select: () => ({ selected: [AssetFaceFactory.create()] }) }),
+      } as never);
       mocks.person.getAllWithoutFaces.mockResolvedValue([]);
 
       await sut.handleQueueRecognizeFaces({ force: true, nightly: true });
 
       expect(mocks.systemMetadata.get).toHaveBeenCalledWith(SystemMetadataKey.FacialRecognitionState);
       expect(mocks.person.getLatestFaceDate).toHaveBeenCalledOnce();
-      expect(mocks.person.getAllFaces).not.toHaveBeenCalled();
+      expect(mocks.person.selectionForFaces).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
       expect(mocks.systemMetadata.set).not.toHaveBeenCalled();
       expect(mocks.person.vacuum).not.toHaveBeenCalled();
@@ -1396,7 +1391,9 @@ describe(PersonService.name, () => {
         delayed: 0,
       });
       mocks.person.getAll.mockReturnValue(makeStream([face.person!, person]));
-      mocks.person.getAllFaces.mockReturnValue(makeStream([face]));
+      mocks.person.selectionForFaces.mockReturnValue({
+        clearSelect: () => ({ select: () => ({ selected: [face] }) }),
+      } as never);
       mocks.person.getAllWithoutFaces.mockResolvedValue([person]);
       mocks.person.delete.mockResolvedValue([person]);
       mocks.person.unassignFaces.mockResolvedValue();
@@ -1405,12 +1402,9 @@ describe(PersonService.name, () => {
 
       expect(mocks.person.deleteFaces).not.toHaveBeenCalled();
       expect(mocks.person.unassignFaces).toHaveBeenCalledWith({ sourceType: SourceType.MachineLearning });
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        {
-          name: JobName.FacialRecognition,
-          data: { id: face.id, deferred: false },
-        },
-      ]);
+      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.FacialRecognition, expect.anything(), {
+        deferred: false,
+      });
       expect(mocks.person.delete).toHaveBeenCalledWith([person.personGroupId], undefined);
       expect(mocks.person.deleteEmptyGroups).toHaveBeenCalledWith();
       expect(mocks.storage.unlink).toHaveBeenCalledWith(person.thumbnailPath);

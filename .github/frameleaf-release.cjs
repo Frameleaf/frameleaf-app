@@ -481,7 +481,7 @@ async function verifyImage(
     buildDigest: index.digest,
   };
 }
-// Keep the original build identity. Qualification may advance without rebuilding.
+// Keep the original build identity. Release provenance may advance without rebuilding.
 const BUILD_INPUTS = {
   "frameleaf-server": [
     "server",
@@ -542,7 +542,11 @@ async function releaseEvidence(tag = "latest") {
   const manifest = await github(`releases/assets/${asset.id}`, {
     headers: { Accept: "application/octet-stream" },
   });
-  assert.equal(manifest.schemaVersion, 3, "Unsupported release manifest version");
+  assert.equal(
+    manifest.schemaVersion,
+    3,
+    "Unsupported release manifest version",
+  );
   assert.equal(manifest.repository, REPOSITORY, "Foreign reuse repository");
   assert.equal(manifest.tag, record.tag_name, "Reuse release tag differs");
   assert.equal(
@@ -567,7 +571,11 @@ async function verifyReuse(
   manifest,
   checkInputs = identicalBuildInputs,
 ) {
-  assert.equal(manifest.schemaVersion, 3, "Unsupported release manifest version");
+  assert.equal(
+    manifest.schemaVersion,
+    3,
+    "Unsupported release manifest version",
+  );
   assert.equal(manifest.repository, REPOSITORY, "Foreign reuse repository");
   assert(SHA.test(manifest.sourceCommit), "Invalid qualified source");
   checkInputs(spec, manifest.sourceCommit, sha);

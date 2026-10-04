@@ -55,7 +55,6 @@ The Dev Container environment consists of the following services:
 | ---------------- | ------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Server & Web     | `immich-server`           | Runs both API server and web frontend in development mode | 2283 (API)<br/>3000 (Web)<br/>9230 (Workers Debug)<br/>9231 (API Debug) |
 | Database         | `database`                | PostgreSQL database                                       | 5432                                                                    |
-| Cache            | `redis`                   | Valkey cache server                                       | 6379                                                                    |
 | Machine Learning | `immich-machine-learning` | Frameleaf ML model inference server                       | 3003                                                                    |
 
 ## Getting Started
@@ -419,7 +418,7 @@ Add extensions to `.devcontainer/devcontainer.json`:
 
 ### Additional Services
 
-To add services (e.g., Redis Commander), modify:
+To add optional development services, modify:
 
 1. `/docker/docker-compose.dev.yml` - Add service definition
 2. `/.devcontainer/server/container-compose-overrides.yml` - Add overrides if needed

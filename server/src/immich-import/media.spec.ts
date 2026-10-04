@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mapMediaPath, verifyMediaFile } from './media.js';
@@ -24,6 +24,50 @@ describe('offline media verification', () => {
     await expect(verifyMediaFile(source, roots, '0'.repeat(40), 'sha1')).rejects.toThrow('ORIGINAL_CHECKSUM_MISMATCH');
     await writeFile(target, 'modified bytes');
     await expect(verifyMediaFile(source, roots)).rejects.toThrow('MEDIA_CHANGED_OR_MISMATCHED');
+  });
+
+  it('refuses same paths, symlink root aliases, and hardlinked destination files', async () => {
+    const sourceRoot = join(directory, 'source');
+    const targetRoot = join(directory, 'target');
+    const source = join(sourceRoot, 'photo.jpg');
+    await writeFile(source, 'photo');
+    await expect(verifyMediaFile(source, [{ source: sourceRoot, target: sourceRoot }])).rejects.toThrow(
+      'INDEPENDENT_COPY',
+    );
+    await symlink(sourceRoot, join(directory, 'alias'));
+    await expect(verifyMediaFile(source, [{ source: sourceRoot, target: join(directory, 'alias') }])).rejects.toThrow(
+      'INDEPENDENT_COPY',
+    );
+    await link(source, join(targetRoot, 'photo.jpg'));
+    await expect(verifyMediaFile(source, [{ source: sourceRoot, target: targetRoot }])).rejects.toThrow(
+      'INDEPENDENT_COPY',
+    );
+    expect(await readFile(source, 'utf8')).toBe('photo');
+  });
+
+  it('refuses a destination hardlink to a different source file with identical bytes', async () => {
+    const sourceRoot = join(directory, 'source');
+    const targetRoot = join(directory, 'target');
+    await writeFile(join(sourceRoot, 'photo.jpg'), 'photo');
+    await writeFile(join(sourceRoot, 'other.jpg'), 'photo');
+    await link(join(sourceRoot, 'other.jpg'), join(targetRoot, 'photo.jpg'));
+    await expect(
+      verifyMediaFile(join(sourceRoot, 'photo.jpg'), [{ source: sourceRoot, target: targetRoot }]),
+    ).rejects.toThrow('INDEPENDENT_COPY');
+  });
+
+  it('refuses target roots nested inside any source root, including another mapping', async () => {
+    const sourceRoot = join(directory, 'source');
+    const targetRoot = join(directory, 'target');
+    await mkdir(join(sourceRoot, 'nested'));
+    await writeFile(join(sourceRoot, 'photo.jpg'), 'photo');
+    await writeFile(join(targetRoot, 'photo.jpg'), 'photo');
+    await expect(
+      verifyMediaFile(join(sourceRoot, 'photo.jpg'), [
+        { source: sourceRoot, target: targetRoot },
+        { source: targetRoot, target: join(sourceRoot, 'nested') },
+      ]),
+    ).rejects.toThrow('INDEPENDENT_COPY');
   });
 
   it('checks legacy external path hashes using the original upstream path', async () => {

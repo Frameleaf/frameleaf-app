@@ -1,3 +1,4 @@
+import type { SourceStructure } from './schema.js';
 export type ImportRow = Record<string, unknown>;
 export interface ImportDatabase {
   query(sql: string, parameters?: unknown[]): Promise<ImportRow[]>;
@@ -9,11 +10,16 @@ export type ImportConfig = {
   sourceId: string;
   writersStopped: boolean;
   mediaRoots: MediaRootMap[];
-  // Exact model identifiers, not only vector dimensions. Omit to regenerate.
+  // Retained for configuration compatibility only. Operator claims never authorize embedding transfer.
   embeddings?: { sourceClipModel: string; targetClipModel: string; sourceFaceModel: string; targetFaceModel: string };
 };
 export type TableShape = { columns: string[]; key: string[]; types: Record<string, string> };
-export type FrozenSource = { commit: string; tables: Record<string, TableShape>; migrations: string[] };
+export type FrozenSource = {
+  commit: string;
+  structure: SourceStructure;
+  tables: Record<string, TableShape>;
+  migrations: string[];
+};
 export const quote = (identifier: string): string => `"${identifier.replaceAll('"', '""')}"`;
 export class ImportRefused extends Error {
   constructor(public readonly code: string) {

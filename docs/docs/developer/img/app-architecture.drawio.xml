@@ -60,7 +60,7 @@
             <mxPoint x="620" y="350" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="skFinV3TG75uy4JOHTMt-60" value="Redis" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f8cecc;strokeColor=#b85450;fontFamily=Overpass;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DOverpass;rounded=0;" vertex="1" parent="1">
+        <mxCell id="skFinV3TG75uy4JOHTMt-60" value="Job tables (same PostgreSQL 19)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#f8cecc;strokeColor=#b85450;fontFamily=Overpass;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DOverpass;rounded=0;" vertex="1" parent="1">
           <mxGeometry x="745" y="380" width="60" height="80" as="geometry" />
         </mxCell>
         <mxCell id="skFinV3TG75uy4JOHTMt-67" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;edgeStyle=orthogonalEdgeStyle;strokeWidth=1;dashed=1;endArrow=none;endFill=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fillColor=#ffff88;strokeColor=#000000;fontFamily=Overpass;fontSource=https%3A%2F%2Ffonts.googleapis.com%2Fcss%3Ffamily%3DOverpass;" edge="1" parent="1" source="skFinV3TG75uy4JOHTMt-74" target="skFinV3TG75uy4JOHTMt-84">

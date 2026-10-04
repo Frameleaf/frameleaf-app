@@ -1,169 +1,23 @@
----
-sidebar_position: 95
----
+# Upgrading Frameleaf
 
-# Upgrading
+Frameleaf releases use the canonical PostgreSQL 19 database with pgvector 0.8.7 and HNSW. The database, server and optional workers come from Frameleaf-owned release assets. Keep the Compose bundle and release manifest together; the manifest records immutable image digests and ordinary build provenance.
 
-:::tip Breaking changes
-Breaking changes are listed in the [release notes][releases].
-:::
+## Before updating
 
-When a new version of Frameleaf is [released][releases], you should read the release notes and account for any breaking changes noted (as mentioned above).
-If you use `FRAMELEAF_VERSION` in your `.env` file, it will need to be updated to the latest or desired version.
-After that, the application can be upgraded and restarted with the following commands, run in the directory with the `docker-compose.yml` file:
+1. Read the Frameleaf release notes and supported architecture requirements.
+2. Create a [database and media backup](../administration/backup-and-restore.md), including connector encryption keys and deployment configuration. Check a recovery copy before discarding your previous recovery point.
+3. Stop uploads and other writers for changes that require a maintenance window. Preserve shared mounts and use the same database URL for every process.
+4. Download the matching Frameleaf release bundle and review configuration changes. Keep your own secrets and storage paths; do not overwrite them with examples.
+5. Pull the digest-pinned images and start the installation using that release's Compose bundle. Confirm database health, migration completion, API access and representative media behavior.
 
-```bash title="Upgrade and restart Frameleaf"
-docker compose pull && docker compose up -d
-```
+Automatic schema migration uses `public.frameleaf_migrations`. Do not rename or remove its rows to force an upgrade. If migration fails, keep the logs and backup, stop writers and diagnose the failure before trying another version.
 
-To clean up disk space, the old version's obsolete container images can be deleted with the following command:
+## Fresh canonical installations and source import
 
-```bash title="Clean up unused Docker images"
-docker image prune
-```
+Do not replace an Immich server image with Frameleaf while pointing it at the original Immich database. Create a separate, empty PostgreSQL 19 database and distinct media copies, then follow the [one-time offline import](../administration/import-immich.md). The importer reads supported stable Immich 3.x through 3.2.4, preserves content and access controls, and requires verification before activation.
 
-[watchtower]: https://containrrr.dev/watchtower/
-[releases]: https://github.com/Frameleaf/frameleaf-app/releases
+An older PostgreSQL data directory cannot be opened merely by changing its image to PostgreSQL 19. Frameleaf has no in-place legacy vector-extension conversion or database handoff/return mode. A Frameleaf backup must contain the canonical ledger to be restored as a Frameleaf database.
 
-## Frameleaf upgrade notes
+## Recovery
 
-- **Index on generated file paths.** The first start after upgrading builds an index on the paths of generated files (`asset_file_path_frameleaf_idx`). The server is ready once it is built, and saving generated files waits until then, so on a large library that start takes longer than usual. Let it finish; nothing else is needed.
-- **Model downloads.** Smart search, face recognition and text recognition (OCR) models now download from the Frameleaf model mirror (`https://models.frameleaf.cloud`, `frameleaf/<model>`). If you already set `HF_ENDPOINT` to a mirror of your own, it is still used; `MACHINE_LEARNING_MODEL_SOURCE_URL` takes precedence over both. The order is `MACHINE_LEARNING_MODEL_SOURCE_URL`, then `HF_ENDPOINT`, then the Frameleaf mirror, and the machine learning log names the source at startup. A mirror must serve the models under the `frameleaf` organisation. See [environment variables](/install/environment-variables#machine-learning).
-- **After a certified handoff.** A database after the cutover does not receive new Frameleaf database changes. Frameleaf keeps working without them: workflows run as before, but a run interrupted by a worker restart starts again from its first step, and moving files is slower.
-
-## Verifying the images
-
-Every image of a Frameleaf release is signed. To check an image before you run it, install [cosign](https://docs.sigstore.dev/cosign/system_config/installation/), download Frameleaf's public key, [`cosign.pub`](https://github.com/Frameleaf/frameleaf-app/blob/fork/main/cosign.pub), and verify the image by the digest in the release's `release-manifest.json`, or by its tag:
-
-```bash title="Verify a Frameleaf image"
-cosign verify --key cosign.pub ghcr.io/frameleaf/frameleaf-server:<release tag>
-cosign verify-attestation --key cosign.pub --type https://frameleaf.app/attestations/release-manifest/v2 ghcr.io/frameleaf/frameleaf-server:<release tag>
-```
-
-The first command checks the image's signature; the second checks the attached release manifest, which names the source commit and the build and deployment runs that qualified it. Releases published before signing began carry no signature.
-
-## Staged releases and withdrawn releases
-
-A new release can be offered to servers in stages: the update notice in About reaches a growing share of servers over a few days, so one server may see it before another. Each server's place in the order is a random value it keeps to itself; nothing identifying is sent. You can always upgrade as soon as a release is published.
-
-If a serious problem is found, the release is **withdrawn**: servers stop offering it, its release notes start with `withdrawn:` and the reason, and the `release` and `latest` image tags point at the previous release again.
-
-### Going back to the previous release
-
-Frameleaf does not support running an older version on a database a newer version has upgraded. To go back after a withdrawn release:
-
-1. Stop Frameleaf: `docker compose down`.
-2. Restore the database backup taken before the upgrade (see [Backup and restore](/administration/backup-and-restore)). Photos and videos in the library are not changed by an upgrade.
-3. Set `FRAMELEAF_VERSION` in `.env` to the release you ran before (for example `frameleaf-v3.2.0-15`), or use that release's installation files.
-4. Start Frameleaf: `docker compose pull && docker compose up -d`.
-
-Skip step 2 only when the withdrawal notice says the release did not change the database. Files uploaded between the upgrade and the restore stay in the library folder but are not in the restored database; upload them again.
-
-## Versioning Policy
-
-Frameleaf follows [semantic versioning][semver], which tags releases in the format `<major>.<minor>.<patch>`.
-We intend for breaking changes, including those to the API or deployment, to be limited to major version releases.
-You can configure your Docker image to point to the current major version by using a metatag, such as `:v3`. These metatags do not follow release candidates.
-
-Frameleaf's native iOS and Android apps are built and released from their own repositories, not from the server's releases. The mobile app is typically compatible with the current and prior major version. However, the server is only compatible with the matching major version.
-Thus, we recommend upgrading all mobile clients before upgrading the server to ensure compatibility.
-
-We do not backport patches to earlier versions. We encourage all users to run the most recent stable release of Frameleaf.
-Downgrading to an earlier version, even within the same minor version, is not supported.
-
-[semver]: https://semver.org/
-
-## Migrating to VectorChord
-
-:::info
-If you deploy Frameleaf using Docker Compose, see a `database` image tag containing `vectorchord` (such as `ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0`) in the `docker-compose.yml` file and have not explicitly set the `DB_VECTOR_EXTENSION` environmental variable, your Frameleaf database is already using VectorChord and this section does not apply to you.
-:::
-
-:::important
-If you do not deploy Frameleaf using Docker Compose and see a deprecation warning for pgvecto.rs on server startup, you should refer to the maintainers of your distribution for guidance (if using a turnkey solution) or adapt the instructions for your specific setup.
-:::
-
-Frameleaf has migrated off of the deprecated pgvecto.rs database extension to its successor, [VectorChord](https://github.com/tensorchord/VectorChord), which comes with performance improvements in almost every aspect. This section will guide you on how to make this change in a Docker Compose setup.
-
-Before making any changes, please [back up your database](/administration/backup-and-restore). While every effort has been made to make this migration as smooth as possible, there’s always a chance that something can go wrong.
-
-After making a backup, please modify your `docker-compose.yml` file with the following information.
-
-```diff
-  [...]
-
-  database:
-    container_name: frameleaf_postgres
--   image: docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0@sha256:739cdd626151ff1f796dc95a6591b55a714f341c737e27f045019ceabf8e8c52
-+   image: ghcr.io/frameleaf/frameleaf-postgres:14-vectorchord0.4.3-pgvectors0.2.0
-    environment:
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_USER: ${DB_USERNAME}
-      POSTGRES_DB: ${DB_DATABASE_NAME}
-      POSTGRES_INITDB_ARGS: '--data-checksums'
-+     # Uncomment the DB_STORAGE_TYPE: 'HDD' var if your database isn't stored on SSDs
-+     # DB_STORAGE_TYPE: 'HDD'
-    volumes:
-      # Do not edit the next line. If you want to change the database storage location on your system, edit the value of DB_DATA_LOCATION in the .env file
-      - ${DB_DATA_LOCATION}:/var/lib/postgresql/data
--   healthcheck:
--     test: >-
--       pg_isready --dbname="$${POSTGRES_DB}" --username="$${POSTGRES_USER}" || exit 1;
--       Chksum="$$(psql --dbname="$${POSTGRES_DB}" --username="$${POSTGRES_USER}" --tuples-only --no-align
--       --command='SELECT COALESCE(SUM(checksum_failures), 0) FROM pg_stat_database')";
--       echo "checksum failure count is $$Chksum";
--       [ "$$Chksum" = '0' ] || exit 1
--     interval: 5m
--     start_interval: 30s
--     start_period: 5m
--   command: >-
--     postgres
--     -c shared_preload_libraries=vectors.so
--     -c 'search_path="$$user", public, vectors'
--     -c logging_collector=on
--     -c max_wal_size=2GB
--     -c shared_buffers=512MB
--     -c wal_compression=on
-+   shm_size: 128mb
-    restart: always
-
-    [...]
-```
-
-:::important
-If you deviated from the defaults of pg14 or pgvectors0.2.0, you must adjust the pg major version and pgvecto.rs version. If you are still using the default `docker.io/tensorchord/pgvecto-rs:pg14-v0.2.0` image, you can just follow the changes above. Frameleaf publishes one database image, for PostgreSQL 14 with pgvecto.rs 0.2.0. It can't open a database from another PostgreSQL major version, so if the previous image is another combination, such as `docker.io/tensorchord/pgvecto-rs:pg16-v0.3.0`, follow the [standalone PostgreSQL migration](/administration/postgres-standalone#migrating-to-vectorchord) instead of the diff.
-:::
-
-After making these changes, you can start Frameleaf as normal. Frameleaf will make some changes to the DB during startup, which can take seconds to minutes to finish, depending on hardware and library size. In particular, it’s normal for the server logs to be seemingly stuck at `Reindexing clip_index` and `Reindexing face_index` for some time if you have over 100k assets in Frameleaf and/or Frameleaf is on a relatively weak server. If you see these logs and there are no errors, just give it time.
-
-:::danger
-After switching to VectorChord, you should not downgrade Frameleaf below 1.133.0.
-:::
-
-If you encounter migration issues, contact us on [GitHub](https://github.com/Frameleaf/frameleaf-app/discussions).
-
-### VectorChord FAQ
-
-#### I have a separate PostgreSQL instance shared with multiple services. How can I switch to VectorChord?
-
-See the [standalone PostgreSQL documentation](/administration/postgres-standalone#migrating-to-vectorchord) for migration instructions. The migration path will be different depending on whether you’re currently using pgvecto.rs or pgvector, as well as whether Frameleaf has superuser DB permissions.
-
-#### Why are so many lines removed from the `docker-compose.yml` file? Does this mean the health check is removed?
-
-These lines are now incorporated into the image itself along with some additional tuning.
-
-#### What does this change mean for my existing DB backups?
-
-The new DB image includes pgvector and pgvecto.rs in addition to VectorChord, so you can use this image to restore from existing backups that used either of these extensions. However, backups made after switching to VectorChord require an image containing VectorChord to restore successfully.
-
-#### Do I still need pgvecto.rs installed after migrating to VectorChord?
-
-pgvecto.rs only needs to be available during the migration, or if you need to restore from a backup that used pgvecto.rs. Frameleaf's database image keeps pgvecto.rs installed so that older backups still restore; there is no separate variant without it.
-
-#### Why does it matter whether my database is on an SSD or an HDD?
-
-These storage mediums have different performance characteristics. As a result, the optimal settings for an SSD are not the same as those for an HDD. Either configuration is compatible with SSD and HDD, but using the right configuration will make Frameleaf snappier. As a general tip, we recommend users store the database on an SSD whenever possible.
-
-#### Can I use the new database image as a general PostgreSQL image outside of Frameleaf?
-
-It’s a standard PostgreSQL container image that additionally contains the VectorChord, pgvector, and (optionally) pgvecto.rs extensions. If you were using the previous pgvecto.rs image for other purposes, you can similarly do so with this image.
+Rollback means restoring the matched database and media recovery point with the matching Frameleaf release. Downgrading an image against a schema already changed by a newer release is not a recovery procedure. See [Backup and restore](../administration/backup-and-restore.md).

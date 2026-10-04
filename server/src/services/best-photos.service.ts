@@ -3,8 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { JobItem, JobOf } from 'src/types.js';
-import { JOBS_ASSET_PAGINATION_SIZE } from 'src/constants.js';
+import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
@@ -93,21 +92,13 @@ export class BestPhotosService {
 
   @OnJob({ name: JobName.BestPhotosScoreQueueAll, queue: QueueName.BackgroundTask })
   async handleQueueAll({ force }: JobOf<JobName.BestPhotosScoreQueueAll>): Promise<JobStatus> {
-    let jobs: JobItem[] = [];
-
-    for await (const asset of this.assetJobRepository.streamForBestPhotosScoring({
-      force,
-      scoreVersion: BEST_PHOTO_SCORE_VERSION,
-    })) {
-      jobs.push({ name: JobName.BestPhotosScore, data: { id: asset.id } });
-
-      if (jobs.length >= JOBS_ASSET_PAGINATION_SIZE) {
-        await this.jobRepository.queueAll(jobs);
-        jobs = [];
-      }
-    }
-
-    await this.jobRepository.queueAll(jobs);
+    await this.jobRepository.queueSelection(
+      JobName.BestPhotosScore,
+      this.assetJobRepository.selectionForBestPhotosScoring({
+        force,
+        scoreVersion: BEST_PHOTO_SCORE_VERSION,
+      }),
+    );
     return JobStatus.Success;
   }
 

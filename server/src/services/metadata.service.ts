@@ -37,7 +37,7 @@ import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { mergeTimeZone } from 'src/utils/date.js';
 import { isLockedRow } from 'src/utils/locked.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
-import { batched, isFaceImportEnabled } from 'src/utils/misc.js';
+import { isFaceImportEnabled } from 'src/utils/misc.js';
 import { normalizeTagValue, upsertTags } from 'src/utils/tag.js';
 import { Tasks } from 'src/utils/tasks.js';
 
@@ -214,11 +214,10 @@ export class MetadataService extends BaseService {
   async handleQueueMetadataExtraction(job: JobOf<JobName.AssetExtractMetadataQueueAll>): Promise<JobStatus> {
     const { force } = job;
 
-    for await (const assets of batched(this.assetJobRepository.streamForMetadataExtraction(force))) {
-      await this.jobRepository.queueAll(
-        assets.map((asset) => ({ name: JobName.AssetExtractMetadata, data: { id: asset.id } })),
-      );
-    }
+    await this.jobRepository.queueSelection(
+      JobName.AssetExtractMetadata,
+      this.assetJobRepository.selectionForMetadataExtraction(force),
+    );
 
     return JobStatus.Success;
   }
@@ -434,11 +433,7 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.SidecarQueueAll, queue: QueueName.Sidecar })
   async handleQueueSidecar({ force }: JobOf<JobName.SidecarQueueAll>): Promise<JobStatus> {
-    for await (const assets of batched(this.assetJobRepository.streamForSidecar(force))) {
-      await this.jobRepository.queueAll(
-        assets.map((asset) => ({ name: JobName.SidecarCheck, data: { id: asset.id } })),
-      );
-    }
+    await this.jobRepository.queueSelection(JobName.SidecarCheck, this.assetJobRepository.selectionForSidecar(force));
 
     return JobStatus.Success;
   }

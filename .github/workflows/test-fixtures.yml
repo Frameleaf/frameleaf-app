@@ -13,6 +13,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Retrieve the frozen attributed fixture source
+        working-directory: .
         run: bash scripts/checkout-test-assets.sh
       - name: Archive the owned fixture input with checksums
         run: |

@@ -7,7 +7,7 @@ const { load } = createRequire(resolve(__dirname, "../server/package.json"))(
   "js-yaml",
 );
 
-test("host pnpm setup and cache run only for the LibRaw qualification path", () => {
+test("host pnpm setup and cache run only for the LibRaw validation path", () => {
   const workflow = load(
     readFileSync(resolve(__dirname, "workflows/fork-integration.yml"), "utf8"),
   );
@@ -35,7 +35,7 @@ test("host pnpm setup and cache run only for the LibRaw qualification path", () 
   assert.equal(node.with.cache, "pnpm", "LibRaw retains its dependency cache");
 });
 
-test("manual full RAW qualification builds candidate production native runtime on both architectures", () => {
+test("manual full RAW validation builds candidate production native runtime on both architectures", () => {
   const workflow = load(
     readFileSync(resolve(__dirname, "workflows/fork-integration.yml"), "utf8"),
   );
@@ -51,7 +51,7 @@ test("manual full RAW qualification builds candidate production native runtime o
     ({ if: condition }) => condition === "inputs.raw_engine == 'darktable'",
   );
   const commands = steps.map(({ run }) => run || "").join("\n");
-  assert.match(commands, /--target native-raw-qualification/);
+  assert.match(commands, /--target native-raw-validation/);
   assert.match(commands, /--platform "\$RAW_PLATFORM"/);
   assert.match(commands, /--no-cache/);
   assert.doesNotMatch(commands, /AppImage|vitest.config.darktable/);
@@ -67,9 +67,9 @@ test("manual full RAW qualification builds candidate production native runtime o
     "utf8",
   );
   const stage = dockerfile
-    .split("FROM base-server-prod AS native-raw-qualification")[1]
+    .split("FROM base-server-prod AS native-raw-validation")[1]
     ?.split("\nFROM ")[0];
-  assert.ok(stage, "Qualification must use the production runtime base");
+  assert.ok(stage, "Validation must use the production runtime base");
   assert.match(stage, /COPY --from=server \/output\/server-pruned \.\/server/);
   assert.match(stage, /verify-darktable\.mjs verify \/usr\/local/);
   assert.match(stage, /import.*darktable-renderer\.js/);

@@ -1,9 +1,13 @@
+import type { EmbeddingTransferEvidence } from './embeddings.js';
 import { createHash } from 'node:crypto';
 import frozen from './fixtures/frozen-sources.json' with { type: 'json' };
-import { FrozenSource, ImportConfig, ImportRefused, ImportRow, TableShape } from './types.js';
+import structure30 from './fixtures/structure/3.0.0.json' with { type: 'json' };
+import structure31 from './fixtures/structure/3.1.0.json' with { type: 'json' };
+import structure32 from './fixtures/structure/3.2.0.json' with { type: 'json' };
+import { FrozenSource, ImportRefused, ImportRow, TableShape } from './types.js';
 
 const fixtures = frozen as {
-  versions: Record<string, { commit: string; schema: string; migrations: string }>;
+  versions: Record<string, { commit: string; schema: string; migrations: string; structure: string }>;
   schemas: Record<string, Record<string, TableShape>>;
   migrations: Record<string, string[]>;
 };
@@ -61,6 +65,9 @@ export const frozenSource = (version: string): FrozenSource => {
   }
   return {
     commit: selected.commit,
+    structure: (
+      { '3.0.0': structure30, '3.1.0': structure31, '3.2.0': structure32 } as Record<string, FrozenSource['structure']>
+    )[selected.structure],
     tables: fixtures.schemas[selected.schema],
     migrations: fixtures.migrations[selected.migrations],
   };
@@ -95,24 +102,23 @@ export const transformRow = (table: string, source: ImportRow, legacyPeople: boo
   }
   return row;
 };
-export const vectorCompatible = (table: string, value: unknown, config: ImportConfig): boolean => {
-  const models = config.embeddings;
-  if (!models || typeof value !== 'string') {
+export const vectorCompatible = (value: unknown, evidence?: EmbeddingTransferEvidence): boolean => {
+  if (!evidence || typeof value !== 'string') return false;
+  const { sourceDimensions, destinationDimensions, producingModel, sourceConfiguredModel, destinationConfiguredModel } =
+    evidence;
+  if (
+    !producingModel ||
+    producingModel !== sourceConfiguredModel ||
+    producingModel !== destinationConfiguredModel ||
+    !sourceDimensions ||
+    sourceDimensions !== destinationDimensions
+  )
     return false;
-  }
-  const matches =
-    table === 'smart_search'
-      ? models.sourceClipModel === models.targetClipModel
-      : models.sourceFaceModel === models.targetFaceModel;
-  const sourceModel = table === 'smart_search' ? models.sourceClipModel : models.sourceFaceModel;
-  if (!matches || typeof sourceModel !== 'string' || sourceModel.length === 0) {
-    return false;
-  }
   try {
     const vector: unknown = JSON.parse(value);
     return (
       Array.isArray(vector) &&
-      vector.length === 512 &&
+      vector.length === destinationDimensions &&
       vector.every((item) => typeof item === 'number' && Number.isFinite(item))
     );
   } catch {

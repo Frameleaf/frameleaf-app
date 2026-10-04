@@ -9,7 +9,7 @@
 # 2026-09-27): the build is an OCI archive on its runner; it is pushed, byte for byte, only after the
 # deployment test ran it with the release Compose file on both architectures. It never writes the
 # release pipeline's tags (latest, release, edge, frameleaf-v*, commit-*) or its build cache,
-# and it is not a release: nothing promotes, qualifies or advertises this image.
+# and it is not a release: nothing promotes or advertises this image.
 #
 # Owner decision 2026-09-27: this is the only workflow that sets the build argument
 # FRAMELEAF_BUILD_CHANNEL=integration, which compiles the integration channel into the server so it
@@ -194,7 +194,7 @@ jobs:
       # The machine-learning image of the latest published release, from its verified manifest.
       - name: Resolve the images under test
         env:
-          SERVER_BUILT: 'true'
+          SERVER_BUILT: "true"
           ML_BUILT: released
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs deploy-test-images
