@@ -4,7 +4,7 @@ import {
   resumeMediaOperation,
   updateQueue,
   type QueueName,
-  type RunningJobsResponseDto,
+  type DurableRunningJobs,
 } from '@immich/sdk';
 import { buildRunningJobRows, countActiveRunningJobs, type RunningJobRow } from '$lib/frameleaf/running-jobs';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -33,12 +33,12 @@ export const RUNNING_POLL_MS = 2500;
 /** When everything has settled and the panel is closed. */
 export const IDLE_POLL_MS = 30_000;
 
-const EMPTY: RunningJobsResponseDto = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
+const EMPTY: DurableRunningJobs = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
 
 const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
 
 export class RunningJobsSession {
-  summary = $state<RunningJobsResponseDto>(EMPTY);
+  summary = $state<DurableRunningJobs>(EMPTY);
   /** True until the first answer, so the panel can say it is loading instead of "nothing". */
   loading = $state(true);
   /** The last request failed. The rows stay; they are stale, not gone. */
@@ -50,6 +50,7 @@ export class RunningJobsSession {
   /** Rows actually doing something; paused work does not count. What the bell's badge shows. */
   activeCount = $derived(countActiveRunningJobs(this.rows));
 
+  #epoch = 0;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #subscribers = 0;
   #inFlight: Promise<void> | null = null;
@@ -64,14 +65,39 @@ export class RunningJobsSession {
   }
 
   async #load(): Promise<void> {
+    const epoch = this.#epoch;
     try {
-      this.summary = (await getRunningJobs()) ?? EMPTY;
-      this.unreachable = false;
+      const next = ((await getRunningJobs()) ?? EMPTY) as DurableRunningJobs;
+      if (epoch !== this.#epoch) {
+        return;
+      }
+      this.summary = {
+        ...next,
+        queues: next.queues.map((queue) => {
+          const previous = this.summary.queues.find((row) => row.name === queue.name);
+          return queue.unavailable && previous
+            ? {
+                ...queue,
+                active: previous.active,
+                waiting: previous.waiting,
+                processed: previous.processed,
+                total: previous.total,
+                startedAt: previous.startedAt,
+              }
+            : queue;
+        }),
+        durableRuns: next.canReadJobRuns && next.durableRunsUnavailable ? this.summary.durableRuns : next.durableRuns,
+      };
+      this.unreachable = !!next.durableRunsUnavailable || next.queues.some((queue) => queue.unavailable);
     } catch {
       // Keep the last answer on screen: the jobs are unaffected by this tab losing the server.
-      this.unreachable = true;
+      if (epoch === this.#epoch) {
+        this.unreachable = true;
+      }
     } finally {
-      this.loading = false;
+      if (epoch === this.#epoch) {
+        this.loading = false;
+      }
     }
   }
 
@@ -140,6 +166,8 @@ export class RunningJobsSession {
   #listen() {
     const offAuth = eventManager.on({
       AuthLogout: () => {
+        this.#epoch++;
+        this.unreachable = false;
         this.summary = EMPTY;
         this.loading = true;
       },
@@ -204,7 +232,7 @@ export class RunningJobsSession {
     return updated;
   }
 
-  #applyOperation(updated: RunningJobsResponseDto['operations'][number]) {
+  #applyOperation(updated: DurableRunningJobs['operations'][number]) {
     this.summary = {
       ...this.summary,
       operations: this.summary.operations.map((operation) => (operation.id === updated.id ? updated : operation)),

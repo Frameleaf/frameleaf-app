@@ -5,7 +5,7 @@ import { InjectKysely } from 'nestjs-kysely';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { MessageChannel, Worker, parentPort } from 'node:worker_threads';
+import { MessageChannel, parentPort, Worker } from 'node:worker_threads';
 import type { JobCounts, JobItem, JobOf } from 'src/types.js';
 import { JOBS_NOT_RETRIED, JOBS_UNSAFE_TO_RERUN_AFTER_STOP, JOBS_WITH_SENSITIVE_DATA } from 'src/constants.js';
 import { JobConfig } from 'src/decorators.js';
@@ -28,7 +28,7 @@ import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { ANALYTICS_AUTO_RETRY_DELAY_MS } from 'src/utils/analytics.js';
-import { ImmichStartupError, getKeyByValue, getMethodNames } from 'src/utils/misc.js';
+import { getKeyByValue, getMethodNames, ImmichStartupError } from 'src/utils/misc.js';
 
 export type QueueJobRow = Omit<QueueJobResponseDto, 'name' | 'account' | 'worker'> & {
   name: JobName;
@@ -40,7 +40,7 @@ type JobMapItem = {
   handler: (job: JobOf<any>) => Promise<JobStatus>;
   label: string;
 };
-export type QueueRun = { active: number; waiting: number; processed: number; startedAt: Date | null };
+export type QueueRun = Awaited<ReturnType<SqlQueueStore['observeQueueRun']>>;
 const runSubmission = new AsyncLocalStorage<string>();
 // Explicitly audited repeatable jobs. Unclassified external effects fail closed after an ambiguous stop.
 const REPEATABLE_JOBS = new Set<JobName>([
@@ -340,20 +340,8 @@ export class JobRepository {
     return (this.handlers[name] as JobMapItem).queueName;
   }
 
-  async observeQueueRun(name: QueueName): Promise<QueueRun> {
-    const counts = await this.store.counts(name);
-    const {
-      rows: [run],
-    } = await sql<{ startedAt: Date | null; processed: number }>`
-      select min(j."createdAt") "startedAt", count(*) filter (where j.state in ('completed','failed','needs_attention','blocked','cancelled'))::int processed
-      from job j join job_run r on r.id = j."runId" where j.queue = ${name} and r."finishedAt" is null
-    `.execute(this.store.db);
-    return {
-      active: counts.active,
-      waiting: counts.waiting + counts.paused + counts.delayed,
-      processed: run.processed,
-      startedAt: run.startedAt,
-    };
+  observeQueueRun(name: QueueName): Promise<QueueRun> {
+    return this.store.observeQueueRun(name);
   }
 
   async createRun(kind: string, selection: Record<string, unknown>, enqueue: () => Promise<void>) {
@@ -372,6 +360,10 @@ export class JobRepository {
 
   listRuns(take: number, skip: number) {
     return this.store.listRuns(take, skip);
+  }
+
+  listRunItems(runId: string, take: number, skip: number) {
+    return this.store.listRunItems(runId, take, skip);
   }
 
   private intent(item: JobItem): QueueIntent {

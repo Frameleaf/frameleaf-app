@@ -5,10 +5,13 @@ import {
   QueueName,
   type MediaOperationDto,
   type RunningJobsResponseDto,
+  type DurableRunningJobs,
 } from '@immich/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { durableRun } from '$lib/__mocks__/durable-runs.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { IDLE_POLL_MS, RUNNING_POLL_MS, RunningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -206,5 +209,71 @@ describe('RunningJobsSession', () => {
       queueUpdateDto: { isPaused: true },
     });
     expect(session.rows[0]).toMatchObject({ paused: true, control: { kind: 'resume' } });
+  });
+  it('retains last durable progress on a partial status failure and clears it when authority is removed', async () => {
+    const previous: DurableRunningJobs = { ...summary(), canReadJobRuns: true, durableRuns: [durableRun()] };
+    sdkMock.getRunningJobs.mockResolvedValueOnce(previous);
+    const session = new RunningJobsSession();
+    await session.refresh();
+    sdkMock.getRunningJobs.mockResolvedValueOnce({ ...previous, durableRuns: [], durableRunsUnavailable: true });
+    await session.refresh();
+    expect(session.summary.durableRuns).toHaveLength(1);
+    expect(session.unreachable).toBe(true);
+    sdkMock.getRunningJobs.mockResolvedValueOnce({ ...summary(), canReadJobRuns: false, durableRuns: [] });
+    await session.refresh();
+    expect(session.summary.durableRuns).toEqual([]);
+    expect(session.rows).toEqual([]);
+  });
+
+  it('does not restore administrator run data from a request that finishes after logout', async () => {
+    let resolve!: (value: DurableRunningJobs) => void;
+    sdkMock.getRunningJobs.mockReturnValue(
+      new Promise<DurableRunningJobs>((done) => {
+        resolve = done;
+      }),
+    );
+    const session = new RunningJobsSession();
+    const stop = session.watch();
+    eventManager.emit('AuthLogout');
+    resolve({ ...summary(), canReadJobRuns: true, durableRuns: [durableRun()] });
+    await session.refresh();
+    expect(session.rows).toEqual([]);
+    expect(session.summary.canReadJobRuns).toBeUndefined();
+    stop();
+  });
+
+  it('retains queue progress when that queue alone cannot be read', async () => {
+    const queue = {
+      name: QueueName.Ocr,
+      isPaused: false,
+      canPause: true,
+      active: 2,
+      waiting: 8,
+      processed: 10,
+      total: 20,
+      startedAt: '2026-10-04T10:00:00.000Z',
+    };
+    sdkMock.getRunningJobs.mockResolvedValueOnce(summary({ queues: [queue], canManageQueues: true }));
+    const session = new RunningJobsSession();
+    await session.refresh();
+    sdkMock.getRunningJobs.mockResolvedValueOnce({
+      ...summary({ canManageQueues: true }),
+      queues: [
+        {
+          ...queue,
+          active: 0,
+          waiting: 0,
+          processed: 0,
+          total: 0,
+          unavailable: true,
+          state: 'unavailable',
+          canPause: false,
+        },
+      ],
+    } as DurableRunningJobs);
+    await session.refresh();
+    expect(session.summary.queues[0]).toMatchObject({ total: 20, processed: 10, unavailable: true });
+    expect(session.rows[0]).toMatchObject({ percent: null, statusKey: 'frameleaf_job_runs_state_unavailable' });
+    expect(session.unreachable).toBe(true);
   });
 });

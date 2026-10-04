@@ -1,8 +1,8 @@
-import { JobRunResponseDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { JobRunIdParamDto, JobRunItemPageDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
 import { QueueResponseLegacyDto, QueuesResponseLegacyDto } from 'src/dtos/queue-legacy.dto.js';
 import { QueueCommandDto, QueueNameParamDto } from 'src/dtos/queue.dto.js';
@@ -25,8 +25,15 @@ export class JobController {
   @Get('runs')
   @Authenticated({ permission: Permission.JobRead, admin: true })
   @Endpoint({ summary: 'List durable job runs', history: new HistoryBuilder().added('v3').alpha('v3') })
-  getJobRuns(@Query() dto: JobRunSearchDto): Promise<JobRunResponseDto[]> {
+  getJobRuns(@Query() dto: JobRunSearchDto): Promise<JobRunPageDto> {
     return this.service.getRuns(dto);
+  }
+
+  @Get('runs/:id/items')
+  @Authenticated({ permission: Permission.JobRead, admin: true })
+  @Endpoint({ summary: 'Inspect selected job run items', history: new HistoryBuilder().added('v3').alpha('v3') })
+  getJobRunItems(@Param() { id }: JobRunIdParamDto, @Query() dto: JobRunSearchDto): Promise<JobRunItemPageDto> {
+    return this.service.getRunItems(id, dto);
   }
 
   @Get()

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import DurableRuns from '$lib/components/frameleaf/jobs/DurableRuns.svelte';
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -388,6 +389,8 @@
       </Button>
     </div>
   {/if}
+
+  {#if isAdmin}<DurableRuns {filter} />{/if}
 
   {#if activitySession.loading && items.length === 0}
     <p class="fla-empty" role="status" aria-busy="true">{$t('loading')}</p>

@@ -2,11 +2,14 @@ import {
   MemoryExportStatus,
   type QueueName,
   type MemoryExportResponseDto,
-  type QueueRunDto,
+  type DurableQueueRun,
+  type DurableJobRun,
+  type DurableRunningJobs,
   type RunningJobsResponseDto,
 } from '@immich/sdk';
 import type { Translations } from 'svelte-i18n';
 import { fromMediaOperation, type ActivityTone } from '$lib/frameleaf/activity';
+import { isRunSettled, runStateKey, runTone, settledItems } from '$lib/frameleaf/durable-runs';
 import { Route } from '$lib/route';
 
 /**
@@ -29,7 +32,7 @@ import { Route } from '$lib/route';
  * Nothing here invents a number. A total the server does not know is an indeterminate bar.
  */
 
-export type RunningJobSource = 'operation' | 'memoryExport' | 'queue';
+export type RunningJobSource = 'operation' | 'memoryExport' | 'queue' | 'run';
 
 /** What the row's pause/play control does, if anything. */
 export type RunningJobControl =
@@ -75,6 +78,7 @@ export type RunningJobRow = {
   waiting?: number;
   /** Sort key: newest first within a source. */
   startedAt: number;
+  reasonKey?: Translations;
 };
 
 const percentOf = (done: number | null, total: number | null): number | null => {
@@ -159,7 +163,7 @@ export const memoryExportRow = (run: MemoryExportResponseDto): RunningJobRow => 
 };
 
 /** One server queue's current run. Administrators only; the server sends none to anybody else. */
-export const queueRow = (queue: QueueRunDto): RunningJobRow => {
+export const queueRow = (queue: DurableQueueRun): RunningJobRow => {
   // The server's own sum, but never less than what is visibly in hand right now.
   const total = Math.max(queue.total, queue.processed + queue.active + queue.waiting);
   const done = Math.min(queue.processed, total);
@@ -169,29 +173,54 @@ export const queueRow = (queue: QueueRunDto): RunningJobRow => {
     source: 'queue',
     queueName: queue.name,
     kindKey: 'frameleaf_running_kind_queue',
-    statusKey: queue.isPaused
-      ? 'frameleaf_activity_status_paused'
-      : queue.active > 0
-        ? 'frameleaf_activity_bulk_running'
-        : 'frameleaf_activity_status_queued',
-    tone: queue.isPaused ? 'warning' : queue.active > 0 ? 'info' : 'neutral',
+    statusKey: queue.state
+      ? runStateKey(queue.state)
+      : queue.isPaused
+        ? 'frameleaf_activity_status_paused'
+        : queue.active > 0
+          ? 'frameleaf_activity_bulk_running'
+          : 'frameleaf_activity_status_queued',
+    tone: queue.state ? runTone(queue.state) : queue.isPaused ? 'warning' : queue.active > 0 ? 'info' : 'neutral',
     live: !queue.isPaused && queue.active > 0,
-    done: total > 0 ? done : null,
-    total: total > 0 ? total : null,
-    percent: percentOf(done, total),
+    done: !queue.unavailable && total > 0 ? done : null,
+    total: !queue.unavailable && total > 0 ? total : null,
+    percent: queue.unavailable ? null : percentOf(done, total),
     paused: queue.isPaused,
     pausing: false,
-    control: queue.isPaused
-      ? { kind: 'resume' }
-      : queue.canPause
-        ? { kind: 'pause' }
-        : { kind: 'unavailable', reasonKey: 'frameleaf_running_pause_unavailable_queue' },
+    control: queue.unavailable
+      ? { kind: 'unavailable', reasonKey: 'frameleaf_job_runs_reason_worker_unavailable' }
+      : queue.isPaused
+        ? { kind: 'resume' }
+        : queue.canPause
+          ? { kind: 'pause' }
+          : { kind: 'unavailable', reasonKey: 'frameleaf_running_pause_unavailable_queue' },
     href: Route.viewQueue({ name: queue.name }),
     active: queue.active,
     waiting: queue.waiting,
     startedAt: timeOf(queue.startedAt),
+    ...(queue.noDispatchBacklog && { reasonKey: 'frameleaf_job_runs_reason_no_dispatch_backlog' }),
   };
 };
+
+/** Counts selected media once across stages; the queue rows remain stage/job counts. */
+export const durableRunRow = (run: DurableJobRun): RunningJobRow => ({
+  id: `run:${run.id}`,
+  source: 'run',
+  titleKey: 'frameleaf_job_runs_server_work',
+  kindKey: 'frameleaf_job_runs_selected_items',
+  statusKey: runStateKey(run.state),
+  tone: runTone(run.state),
+  live: run.state === 'running' || run.state === 'retrying',
+  done: settledItems(run),
+  total: run.total,
+  percent: run.enumerationDone ? percentOf(settledItems(run), run.total) : null,
+  paused: run.state === 'paused',
+  pausing: false,
+  control: { kind: 'unavailable', reasonKey: 'frameleaf_running_pause_unavailable_kind' },
+  href: Route.activity({ filter: 'running' }),
+  startedAt: timeOf(run.createdAt),
+  ...(run.noDispatchBacklog && { reasonKey: 'frameleaf_job_runs_reason_no_dispatch_backlog' }),
+});
 
 /**
  * Every row, the viewer's own work first — it is what they came to look at — then the server's
@@ -208,13 +237,18 @@ export const buildRunningJobRows = (summary: RunningJobsResponseDto | null | und
     ...summary.memoryExports.map((run) => memoryExportRow(run)),
   ].sort(byNewest);
   // The server lists queues in their declared order, which is also the admin page's order.
+  const durable = summary as DurableRunningJobs;
+  const runs = durable.canReadJobRuns
+    ? (durable.durableRuns ?? []).filter((run) => !isRunSettled(run)).map(durableRunRow)
+    : [];
   const queues = summary.canManageQueues ? summary.queues.map((queue) => queueRow(queue)) : [];
 
-  return [...own, ...queues];
+  return [...own, ...runs, ...queues];
 };
 
 /**
  * How many rows are actually doing something. Paused work is not counted: the bell's running badge
  * should go quiet when everything is on hold.
  */
-export const countActiveRunningJobs = (rows: readonly RunningJobRow[]) => rows.filter((row) => !row.paused).length;
+export const countActiveRunningJobs = (rows: readonly RunningJobRow[]) =>
+  rows.filter((row) => !row.paused && row.statusKey !== 'frameleaf_job_runs_state_unavailable').length;

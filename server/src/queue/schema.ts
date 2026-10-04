@@ -56,6 +56,8 @@ export async function createQueueSchema(db: Kysely<any>) {
     create index job_claim on job(queue, "availableAt", "createdAt") where state in ('pending','waiting');
     create index job_lease on job("leaseExpiresAt") where state = 'active';
     create index job_parent on job("parentId") where "parentId" is not null;
+    create index job_retention on job("finishedAt", id)
+      where state in ('completed','failed','cancelled','blocked') and "latestPending" is null;
     create table job_attempt (
       "jobId" uuid not null references job(id) on delete cascade, attempt integer not null,
       token uuid not null unique, "workerId" uuid not null references job_worker(id),

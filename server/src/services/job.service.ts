@@ -1,8 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { JobItem } from 'src/types.js';
 import { OnEvent } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
-import { JobRunResponseDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
+import { JobRunItemPageDto, JobRunPageDto, JobRunSearchDto } from 'src/dtos/job-run.dto.js';
 import { JobCreateDto } from 'src/dtos/job.dto.js';
 import { AssetType, AssetVisibility, IntegrityReport, JobName, JobStatus, ManualJobName } from 'src/enum.js';
 import { afterJobCommit } from 'src/queue/context.js';
@@ -99,14 +99,53 @@ const asJobItem = (dto: JobCreateDto): JobItem => {
 
 @Injectable()
 export class JobService extends BaseService {
-  async getRuns({ take, skip }: JobRunSearchDto): Promise<JobRunResponseDto[]> {
-    const rows = await this.jobRepository.listRuns(take, skip);
-    return rows.map((row) => ({
-      ...row,
-      createdAt: row.createdAt.toISOString(),
-      finishedAt: row.finishedAt?.toISOString() ?? null,
-      state: row.state as JobRunResponseDto['state'],
-    }));
+  async getRuns({ take, skip }: JobRunSearchDto): Promise<JobRunPageDto> {
+    const rows = await this.jobRepository.listRuns(take + 1, skip);
+    return {
+      items: rows.slice(0, take).map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        createdAt: row.createdAt.toISOString(),
+        finishedAt: row.finishedAt?.toISOString() ?? null,
+        enumerationDone: row.enumerationDone,
+        total: row.total,
+        completed: row.completed,
+        failed: row.failed,
+        needsAttention: row.needsAttention,
+        cancelled: row.cancelled,
+        active: row.active,
+        retrying: row.retrying,
+        delayed: row.delayed,
+        paused: row.paused,
+        waiting: row.waiting,
+        blocked: row.blocked,
+        stageTotals: row.stageTotals,
+        state: row.state,
+        lastProgressAt: row.lastProgressAt?.toISOString() ?? null,
+        lastStage: row.lastStage,
+        reasons: row.reasons,
+        noDispatchBacklog: row.noDispatchBacklog,
+      })),
+      hasNextPage: rows.length > take,
+    };
+  }
+
+  async getRunItems(id: string, { take, skip }: JobRunSearchDto): Promise<JobRunItemPageDto> {
+    const rows = await this.jobRepository.listRunItems(id, take + 1, skip);
+    if (!rows) {
+      throw new NotFoundException('Job run not found');
+    }
+    return {
+      items: rows.slice(0, take).map((row) => ({
+        id: row.id,
+        outcome: row.outcome,
+        stageTotals: row.stageTotals,
+        lastProgressAt: row.lastProgressAt?.toISOString() ?? null,
+        lastStage: row.lastStage,
+        reasons: row.reasons,
+      })),
+      hasNextPage: rows.length > take,
+    };
   }
 
   async create(dto: JobCreateDto): Promise<void> {

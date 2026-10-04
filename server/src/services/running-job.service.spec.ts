@@ -13,7 +13,7 @@ import { RUNNING_OPERATIONS_LIMIT, RunningJobService } from 'src/services/runnin
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newUuid } from 'test/small.factory.js';
-import { ServiceMocks, getMocks } from 'test/utils.js';
+import { getMocks, ServiceMocks } from 'test/utils.js';
 
 const operationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation =>
   ({
@@ -82,7 +82,19 @@ const exportRun = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const idle = { active: 0, waiting: 0, processed: 0, startedAt: null };
+const idle = {
+  active: 0,
+  waiting: 0,
+  processed: 0,
+  startedAt: null,
+  lastProgressAt: null,
+  workerAvailable: true,
+  delayed: 0,
+  paused: 0,
+  blocked: 0,
+  retrying: 0,
+  noDispatchBacklog: false,
+};
 
 describe(RunningJobService.name, () => {
   let sut: RunningJobService;
@@ -196,7 +208,7 @@ describe(RunningJobService.name, () => {
       mocks.job.observeQueueRun.mockImplementation((name: QueueName) =>
         Promise.resolve(
           name === QueueName.ThumbnailGeneration
-            ? { active: 4, waiting: 96, processed: 300, startedAt: new Date('2026-09-23T09:40:00.000Z') }
+            ? { ...idle, active: 4, waiting: 96, processed: 300, startedAt: new Date('2026-09-23T09:40:00.000Z') }
             : idle,
         ),
       );
@@ -214,6 +226,10 @@ describe(RunningJobService.name, () => {
           processed: 300,
           total: 400,
           startedAt: '2026-09-23T09:40:00.000Z',
+          unavailable: false,
+          state: 'running',
+          noDispatchBacklog: false,
+          lastProgressAt: null,
         },
       ]);
       expect(mocks.job.observeQueueRun).toHaveBeenCalledTimes(Object.values(QueueName).length);
@@ -240,16 +256,47 @@ describe(RunningJobService.name, () => {
       expect(result.queues).toEqual([expect.objectContaining({ name: QueueName.BackgroundTask, canPause: false })]);
     });
 
-    it('leaves out a queue it cannot read instead of losing the whole answer', async () => {
+    it('reports an unavailable queue without losing the viewer’s other work', async () => {
       vi.mocked(operations.list).mockResolvedValue({ items: [operationStub()], total: 1 });
       mocks.job.observeQueueRun.mockImplementation((name: QueueName) =>
-        name === QueueName.Ocr ? Promise.reject(new Error('redis went away')) : Promise.resolve(idle),
+        name === QueueName.Ocr ? Promise.reject(new Error('private database diagnostic')) : Promise.resolve(idle),
       );
 
       const result = await sut.getRunning(authStub.admin);
 
-      expect(result.queues).toEqual([]);
+      expect(result.queues).toEqual([
+        expect.objectContaining({ name: QueueName.Ocr, unavailable: true, state: 'unavailable', canPause: false }),
+      ]);
       expect(result.operations).toHaveLength(1);
+      expect(JSON.stringify(result)).not.toContain('private database diagnostic');
+    });
+  });
+  describe('durable run authority is separate from queue authority', () => {
+    it('never reads runs for another account or an administrator key without JobRead', async () => {
+      await sut.getRunning(authStub.user1);
+      const auth = { ...authStub.admin, apiKey: { id: 'key', permissions: [Permission.QueueRead] } } as never;
+      const result = await sut.getRunning(auth);
+      expect(result.canManageQueues).toBe(true);
+      expect(result.canReadJobRuns).toBe(false);
+      expect(result.durableRuns).toEqual([]);
+      expect(mocks.job.listRuns).not.toHaveBeenCalled();
+    });
+    it('reads durable summaries for JobRead without reading queues for a key lacking QueueRead', async () => {
+      const auth = { ...authStub.admin, apiKey: { id: 'key', permissions: [Permission.JobRead] } } as never;
+      const result = await sut.getRunning(auth);
+      expect(result.canReadJobRuns).toBe(true);
+      expect(result.canManageQueues).toBe(false);
+      expect(mocks.job.listRuns).toHaveBeenCalledWith(25, 0);
+      expect(mocks.job.observeQueueRun).not.toHaveBeenCalled();
+    });
+    it('keeps own work when the durable history lookup fails and does not expose diagnostics', async () => {
+      vi.mocked(operations.list).mockResolvedValue({ items: [operationStub()], total: 1 });
+      mocks.job.listRuns.mockRejectedValue(new Error('secret payload diagnostics'));
+      const result = await sut.getRunning(authStub.admin);
+      expect(result.operations).toHaveLength(1);
+      expect(result.durableRunsUnavailable).toBe(true);
+      expect(result.canReadJobRuns).toBe(true);
+      expect(JSON.stringify([result, mocks.logger.warn.mock.calls])).not.toContain('secret payload diagnostics');
     });
   });
 });

@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { JobRunResponseSchema, JobRunStateSchema } from 'src/dtos/job-run.dto.js';
 import { MediaOperationSchema } from 'src/dtos/media-operation.dto.js';
 import { MemoryExportResponseSchema } from 'src/dtos/memory.dto.js';
 import { QueueNameSchema } from 'src/enum.js';
@@ -15,6 +16,10 @@ import { QueueNameSchema } from 'src/enum.js';
 const QueueRunSchema = z
   .object({
     name: QueueNameSchema,
+    unavailable: z.boolean().optional().describe('Status could not be read; zero counts are unknown, not idle'),
+    state: JobRunStateSchema.optional(),
+    noDispatchBacklog: z.boolean().optional(),
+    lastProgressAt: z.iso.datetime().nullable().optional(),
     isPaused: z.boolean().describe('Whether the queue is paused'),
     canPause: z.boolean().describe('Whether this queue can be paused; background tasks cannot'),
     active: z.int().min(0).describe('Jobs running now'),
@@ -39,6 +44,12 @@ const RunningJobsResponseSchema = z
     operations: z.array(MediaOperationSchema),
     memoryExports: z.array(MemoryExportResponseSchema),
     queues: z.array(QueueRunSchema).describe('Server job queues with work; always empty for non-administrators'),
+    durableRuns: z
+      .array(JobRunResponseSchema)
+      .optional()
+      .describe('Operational summaries; JobRead administrators only'),
+    canReadJobRuns: z.boolean().optional(),
+    durableRunsUnavailable: z.boolean().optional(),
     canManageQueues: z.boolean().describe('Whether the viewer may see and pause the server job queues'),
   })
   .meta({ id: 'RunningJobsResponseDto' });

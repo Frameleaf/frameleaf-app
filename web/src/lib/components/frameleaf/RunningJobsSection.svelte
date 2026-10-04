@@ -167,6 +167,7 @@
                 </span>
               </span>
               <span class="fl-job-meta">{metaOf(row)}</span>
+              {#if row.reasonKey}<span class="fl-job-meta">{$t(row.reasonKey)}</span>{/if}
             </span>
           </a>
 

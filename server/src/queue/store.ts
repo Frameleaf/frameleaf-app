@@ -1,6 +1,7 @@
-import { Kysely, Transaction, sql } from 'kysely';
+import { Kysely, sql, Transaction } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { feedManifest, finishSelections, resumeSelections, shareSelections } from 'src/queue/manifest.js';
+import { listRunItems, listRuns, observeQueueRun } from 'src/queue/run-query.js';
 import {
   JobDependencyReason,
   QUEUE_BATCH,
@@ -485,34 +486,16 @@ export class SqlQueueStore {
     return rows.length > 0;
   }
 
-  async listRuns(take: number, skip: number) {
-    const { rows } = await sql<{
-      id: string;
-      kind: string;
-      createdAt: Date;
-      finishedAt: Date | null;
-      enumerationDone: boolean;
-      total: number;
-      completed: number;
-      failed: number;
-      active: number;
-      waiting: number;
-      state: string;
-    }>`select r.id, r.kind, r."createdAt", r."finishedAt", r."enumerationDone",
-      count(i.*)::int total, count(i.*) filter (where i.state = 'completed')::int completed,
-      count(i.*) filter (where i.state in ('failed','needs_attention','blocked','cancelled'))::int failed,
-      count(i.*) filter (where i.state = 'active')::int active,
-      count(i.*) filter (where i.state in ('pending','waiting'))::int waiting,
-      case when bool_or(i.state = 'needs_attention') then 'needs_attention'
-        when r."finishedAt" is not null and bool_or(i.state in ('failed','blocked','cancelled')) then 'failed'
-        when r."finishedAt" is not null then 'completed'
-        when not exists (select 1 from job_worker where state = 'running' and "heartbeatAt" > now() - interval '60 seconds') then 'unavailable'
-        when bool_or(i.state in ('pending','waiting')) and not bool_or(i.state = 'active') then 'blocked'
-        else 'running' end state
-      from (select * from job_run order by "createdAt" desc, id desc limit ${take} offset ${skip}) r
-      left join job_run_item i on i."runId" = r.id group by r.id, r.kind, r."createdAt", r."finishedAt", r."enumerationDone"
-      order by r."createdAt" desc, r.id desc`.execute(this.db);
-    return rows;
+  listRuns(take: number, skip: number) {
+    return listRuns(this.db, take, skip);
+  }
+
+  listRunItems(runId: string, take: number, skip: number) {
+    return listRunItems(this.db, runId, take, skip);
+  }
+
+  observeQueueRun(name: string) {
+    return observeQueueRun(this.db, name);
   }
 
   async clear(queue: string, states: QueueState[]) {
