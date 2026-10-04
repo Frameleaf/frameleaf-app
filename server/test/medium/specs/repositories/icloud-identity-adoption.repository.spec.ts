@@ -41,12 +41,14 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
 import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
+import { lockPublicForkWrites } from 'src/repositories/fork-write-guard.js';
 import { ICloudAuditRepository, guardAuditAuthority, publishAudit } from 'src/repositories/icloud-audit.repository.js';
 import {
   ICloudIdentityAdoptionRepository,
   IdentityAdoptionAuthority,
 } from 'src/repositories/icloud-identity-adoption.repository.js';
 import { ICLOUD_SYNC_CLAIM_SEC, ICloudIdentityRepository } from 'src/repositories/icloud-identity.repository.js';
+import { iCloudItemClaimLockKey } from 'src/repositories/icloud-item-claim-lock.js';
 import {
   ScheduledAuditAuthority,
   guardScheduledAudit,
@@ -77,6 +79,7 @@ import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { MediaIntegrityService } from 'src/services/media-integrity.service.js';
 import { MediaRecoveryService } from 'src/services/media-recovery.service.js';
 import { appleFingerprintHash, identityRoleOf } from 'src/utils/icloud-identity.js';
+import * as privateCopyFiles from 'src/utils/icloud-private-copy.js';
 import { decryptICloudSession, encryptICloudSession } from 'src/utils/icloud-sync.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -2380,7 +2383,7 @@ describe('iCloud exact identity adoption', () => {
             new ForkEnrichmentRepository(db),
             fixture.repository,
           );
-          const recovery = new MediaRecoveryService(recoveryRepository, decoder ?? integrity);
+          const recovery = new MediaRecoveryService(recoveryRepository, decoder ?? integrity, fixture.staging);
           const transport = { ...fixture.transport, enabled: () => true };
           const worker = new ICloudScheduledWorkerService(
             workerRepository,
@@ -2418,6 +2421,290 @@ describe('iCloud exact identity adoption', () => {
           ).rows[0];
           return { cohort, request, identity };
         }
+
+        // A private-copy/disposition fixture, NOT evidence of a genuine source-descriptor mismatch.
+        // The byte producer, owner admission, crypto, PostgreSQL and filesystem operations are real.
+        async function createDispositionFixture() {
+          const fixture = await createStageFixture();
+          const fresh = await fixture.staging.download(fixture.input);
+          const validation = await fixture.staging.validate(fixture.input);
+          expect((await validation.result).status).toBe('validated'); await validation.settled;
+          const promotedPath = join(dirname(fixture.f.originalPath), '.icloud-recovery', `${randomUUID()}.jpg`);
+          await mkdir(dirname(promotedPath), { mode: 0o700 });
+          const target = { assetId: randomUUID(), updateId: null, originalPath: null, checksumHex: null, checksumAlgorithm: null,
+            isExternal: false, libraryId: null, physicalOriginalFileId: null, forkPhysicalFileId: null, outcome: 'imported' };
+          await db.transaction().execute(async (tx) => {
+            await lockPublicForkWrites(tx);
+            await sql`SELECT pg_advisory_xact_lock(hashtextextended('icloud-staging-reservations',0))`.execute(tx);
+            await sql`UPDATE immich_fork.icloud_resource SET "promotedPath"=${promotedPath},"expectedTarget"=${target}::jsonb,
+              verification=verification||'{"retained0217Field":"unchanged"}'::jsonb WHERE id=${fixture.resource.id}::uuid`.execute(tx);
+            expect(await fixture.repository.planPrivateCopy(tx, fixture.input, promotedPath)).toBe(true);
+          });
+          const state = async () => (await sql<ICloudResource>`SELECT *,"reservedBytes"::float8 AS "reservedBytes"
+            FROM immich_fork.icloud_resource WHERE id=${fixture.resource.id}::uuid`.execute(db)).rows[0];
+          expect((await state()).reservedBytes).toBe(2 * fixture.f.bytes.length);
+          const retire = async () => expect(await new ICloudScheduledWorkerRepository(db, fixture.repository)
+            .settleUnavailable(fixture.authority, fixture.f.user.id, 'unavailable')).toBe(true);
+          return { ...fixture, fresh, promotedPath, target, state, retire };
+        }
+
+        it('disposes only the actual owned pair after settlement, preserves original/0217 fields and resumes after credential loss', async () => {
+          const fixture = await createDispositionFixture();
+          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath);
+          const before = await fixture.state();
+          const copy = before.verification?.auditPrivateCopy;
+          expect(privateCopyFiles.validPrivateCopy(copy)).toBe(true);
+          if (!privateCopyFiles.validPrivateCopy(copy)) { throw new Error('actual_owned_copy_required'); }
+          expect(copy.payload).toMatchObject({ settled: true, promoted: true,
+            identity: privateCopyFiles.privateCopyIdentity(await lstat(fixture.promotedPath)) });
+          await fixture.retire();
+          await sync.update(fixture.f.connection.id, fixture.f.user.id, { state: 'disconnected', encryptedSession: null });
+          await db.deleteFrom('session').where('id','=',fixture.auth.session!.id).execute();
+          const restarted = new ICloudScheduledStagingService(new ICloudScheduledStagingRepository(db, fixture.transport as never),
+            fixture.ordinary, fixture.transport as never, integrity);
+          await restarted.housekeeping();
+          expect(await fixture.state()).toMatchObject({ status: 'removed', reservedBytes: 0, promotedPath: null, stagingPath: null, pendingJobs: [] });
+          expect((await fixture.state()).verification?.retained0217Field).toBe('unchanged');
+          await expect(access(fixture.promotedPath)).rejects.toMatchObject({ code: 'ENOENT' });
+          await expect(access(fixture.fresh.payload.path)).rejects.toMatchObject({ code: 'ENOENT' });
+          expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
+          expect((await new ICloudAuditRepository(db).get(fixture.authority.auditRequestId, fixture.f.user.id))?.result).toBe('failed');
+          await restarted.housekeeping(); // Idempotent retry neither releases twice nor publishes proof.
+          expect((await fixture.state()).reservedBytes).toBe(0);
+        });
+
+        it('never adopts an EEXIST destination; only its real private partial/source copies can be disposed', async () => {
+          const fixture = await createDispositionFixture();
+          const existing = Buffer.from('preexisting unowned destination');
+          await writeFile(fixture.promotedPath, existing, { mode: 0o600, flag: 'wx' });
+          await expect(fixture.staging.copyRecovery(fixture.input, fixture.promotedPath)).rejects.toMatchObject({ code: 'EEXIST' });
+          const copy = (await fixture.state()).verification?.auditPrivateCopy;
+          expect(privateCopyFiles.validPrivateCopy(copy) && copy.payload.promoted).toBe(false);
+          await fixture.retire(); await fixture.staging.cleanupRetired(fixture.input);
+          expect(await readFile(fixture.promotedPath)).toEqual(existing);
+          expect(await fixture.state()).toMatchObject({ status: 'removed', reservedBytes: 0 });
+          expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
+        });
+
+        it.each(['owner-forgery','generation-forgery','inode-replacement','operation-replacement','item-replacement','outbox','asset-reference','physical-reference','storage-reservation','legacy'] as const)
+        ('retains private charged copies under %s rather than borrowing cleanup authority', async (kind) => {
+          const fixture = await createDispositionFixture();
+          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath); await fixture.retire();
+          const before = await fixture.state();
+          if (kind === 'owner-forgery' || kind === 'generation-forgery') {
+            const copy = structuredClone(before.verification!.auditPrivateCopy) as privateCopyFiles.ScheduledPrivateCopyRecord;
+            if (kind === 'owner-forgery') { copy.payload.ownerId = randomUUID(); } else { copy.payload.generation = randomUUID(); }
+            await sql`UPDATE immich_fork.icloud_resource SET verification=verification||jsonb_build_object('auditPrivateCopy',${copy}::jsonb)
+              WHERE id=${fixture.resource.id}::uuid`.execute(db); // Old server seal cannot authenticate authored JSON.
+          } else if (kind === 'inode-replacement') {
+            await rename(fixture.promotedPath, `${fixture.promotedPath}.original-inode`);
+            await writeFile(fixture.promotedPath, fixture.f.bytes, { mode: 0o600, flag: 'wx' });
+          } else if (kind === 'operation-replacement') {
+            await sql`UPDATE public.media_operation SET "claimToken"=${randomUUID()}::uuid
+              WHERE id=${fixture.authority.operationId}::uuid`.execute(db);
+          } else if (kind === 'item-replacement') {
+            await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
+              WHERE id=${fixture.claim.id}::uuid`.execute(db);
+            await identities.claim(fixture.f.user.id, [fixture.f.resource.sourceAssetId.toUpperCase()], `device:${randomUUID()}`, 1800);
+          } else if (kind === 'outbox') {
+            await sql`UPDATE immich_fork.icloud_resource SET "pendingJobs"=${[{ name: 'metadataExtraction', data: { id: fixture.target.assetId } }]}::jsonb
+              WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          } else if (kind === 'asset-reference') {
+            await db.updateTable('asset').set({ originalPath: fixture.promotedPath }).where('id','=',fixture.f.asset.id).execute();
+          } else if (kind === 'physical-reference') {
+            await sql`INSERT INTO immich_fork.physical_file (id,type,checksum,"canonicalPath","sizeInBytes","createdAt","updatedAt")
+              VALUES (${randomUUID()}::uuid,'original',${fixture.f.sha256},${fixture.promotedPath},${fixture.f.bytes.length},clock_timestamp(),clock_timestamp())`.execute(db);
+          } else if (kind === 'storage-reservation') {
+            await sql`INSERT INTO immich_fork.asset_storage_reservation
+              ("assetId",token,"sourcePath","upstreamPath","temporaryPath",status)
+              VALUES (${fixture.f.asset.id}::uuid,${randomUUID()}::uuid,${fixture.f.originalPath},${fixture.promotedPath},
+                ${`${fixture.promotedPath}.storage-temporary`},'reserved')`.execute(db);
+          } else {
+            await sql`UPDATE immich_fork.icloud_resource SET verification=verification-'auditPrivateCopy'
+              WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          }
+          await fixture.staging.cleanupRetired(fixture.input);
+          expect((await fixture.state()).reservedBytes).toBe(before.reservedBytes);
+          expect((await fixture.state()).status).toBe('failed');
+          expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
+          expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
+          expect((await fixture.state()).pendingJobs).toEqual(kind === 'outbox' ? [{ name: 'metadataExtraction', data: { id: fixture.target.assetId } }] : []);
+        });
+
+        it('keeps actual late decoder work pending across a restarted cleanup and deletes only after true settlement', async () => {
+          const fixture = await createDispositionFixture();
+          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath);
+          const decoderDone = Promise.withResolvers<void>();
+          const decoding = vi.spyOn(integrity, 'validateWithSettlement').mockReturnValueOnce({
+            result: Promise.resolve({ status: 'timeout', reason: 'forced-parent-timeout' }), settled: decoderDone.promise, cancel: vi.fn(),
+          });
+          const validation = await fixture.staging.validate(fixture.input, undefined, fixture.promotedPath);
+          expect(await validation.result).toEqual({ status: 'unavailable' });
+          await fixture.retire();
+          const restarted = new ICloudScheduledStagingService(fixture.repository, fixture.ordinary, fixture.transport as never, integrity);
+          const cleanup = fixture.staging.cleanupRetired(fixture.input);
+          try {
+            await restarted.housekeeping();
+            expect((await fixture.state()).lastError).toBe('scheduled_private_copy_retained_pending-settlement');
+            expect((await fixture.state()).reservedBytes).toBe(2 * fixture.f.bytes.length);
+            expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
+          } finally { decoderDone.resolve(); decoding.mockRestore(); }
+          await validation.settled; await cleanup;
+          expect(await fixture.state()).toMatchObject({ status: 'removed', reservedBytes: 0 });
+          expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
+        });
+
+        it('refuses a replacement JSON generation between authenticated read and terminal cleanup locks', async () => {
+          const fixture = await createDispositionFixture();
+          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath); await fixture.retire();
+          const reached = Promise.withResolvers<void>(); const resume = Promise.withResolvers<void>();
+          const decode = fixture.transport.decodeSession.bind(fixture.transport);
+          const barrier = vi.spyOn(fixture.transport, 'decodeSession').mockImplementation(async (scope, encrypted) => {
+            const payload = await decode(scope, encrypted);
+            if (scope.startsWith('icloud-scheduled-private-copy:')) { reached.resolve(); await resume.promise; }
+            return payload;
+          });
+          const cleanup = fixture.staging.cleanupRetired(fixture.input);
+          try {
+            await reached.promise;
+            const copy = structuredClone((await fixture.state()).verification!.auditPrivateCopy) as privateCopyFiles.ScheduledPrivateCopyRecord;
+            copy.payload.generation = randomUUID();
+            await sql`UPDATE immich_fork.icloud_resource SET verification=verification||jsonb_build_object('auditPrivateCopy',${copy}::jsonb)
+              WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          } finally { resume.resolve(); }
+          try { await cleanup; } finally { barrier.mockRestore(); }
+          expect(await fixture.state()).toMatchObject({ status: 'failed', reservedBytes: 2 * fixture.f.bytes.length });
+          expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
+          expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
+        });
+
+        it.each([
+          { disposition: 'copy', absent: false }, { disposition: 'copy', absent: true },
+          { disposition: 'staging', absent: false }, { disposition: 'staging', absent: true },
+        ] as const)('fences whole-item reclaim through actual $disposition unlink/settlement; absent=$absent', async ({ disposition, absent }) => {
+          const fixture = await createDispositionFixture();
+          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath); await fixture.retire();
+          if (disposition === 'staging') { expect(await fixture.repository.disposePrivateCopy(fixture.input)).toBe(true); }
+          await sql`UPDATE immich_fork.icloud_claim SET "expiresAt"=clock_timestamp()-interval '1 second'
+            WHERE id=${fixture.claim.id}::uuid`.execute(db);
+          if (absent) { expect(await identities.release(fixture.f.user.id, [fixture.claim.id], fixture.claim.holder)).toEqual([fixture.claim.id]); }
+
+          const path = disposition === 'copy' ? fixture.promotedPath : fixture.fresh.payload.path;
+          const entered = Promise.withResolvers<void>(); const resume = Promise.withResolvers<void>();
+          const unlink = privateCopyFiles.unlinkOwnedPrivateCopy;
+          let paused = false;
+          const barrier = vi.spyOn(privateCopyFiles, 'unlinkOwnedPrivateCopy').mockImplementation(async (named, identity) => {
+            if (named === path && !paused) { paused = true; entered.resolve(); await resume.promise; }
+            await unlink(named, identity); // Real NOFOLLOW inode checks and unlink, never a fake freed-byte result.
+          });
+          const disposing = disposition === 'copy' ? fixture.repository.disposePrivateCopy(fixture.input) : fixture.repository.disposeRefusedStaging(fixture.input);
+          void disposing.catch(() => {});
+          let reclaimed = false;
+          let reclaiming: ReturnType<typeof identities.claim> | undefined;
+          try {
+            await entered.promise; // Paused after the real claim/refcount authority checks, before actual unlink.
+            const key = iCloudItemClaimLockKey(fixture.f.user.id, fixture.f.resource.sourceAssetId);
+            const holder = (await sql<{ pid: number }>`WITH fence AS (SELECT hashtextextended(${key},0) AS key)
+              SELECT l.pid FROM pg_locks l,fence WHERE l.locktype='advisory' AND l.granted AND l.objsubid=1
+                AND l.classid::bigint=((fence.key>>32)&4294967295::bigint)
+                AND l.objid::bigint=(fence.key&4294967295::bigint)`.execute(db)).rows;
+            expect(holder).toHaveLength(1);
+            reclaiming = identities.claim(fixture.f.user.id, [fixture.f.resource.sourceAssetId.toLowerCase()], `device:${randomUUID()}`, 1800)
+              .then((claims) => { reclaimed = true; return claims; });
+            void reclaiming.catch(() => {});
+            // Backend lock ownership is the witness. Elapsed time or a still-pending JS promise is not proof.
+            await expect.poll(async () => (await sql`SELECT waiting.pid FROM pg_stat_activity waiting
+              WHERE waiting.wait_event_type='Lock' AND ${holder[0].pid}::int=ANY(pg_blocking_pids(waiting.pid))
+                AND waiting.query LIKE '%pg_advisory_xact_lock%'`.execute(db)).rows.length, { timeout: 1000 }).toBe(1);
+            expect(reclaimed).toBe(false);
+            expect(await readFile(path)).toEqual(fixture.f.bytes);
+            expect((await fixture.state()).reservedBytes).toBe((disposition === 'copy' ? 2 : 1) * fixture.f.bytes.length);
+          } finally {
+            resume.resolve(); await Promise.allSettled([disposing, ...(reclaiming ? [reclaiming] : [])]); barrier.mockRestore();
+          }
+          expect(await disposing).toBe(true);
+          expect(await access(path).then(() => true, () => false)).toBe(false);
+          const [replacement] = await reclaiming!;
+          expect(replacement.cplAssetRecordName).toBe(fixture.f.resource.sourceAssetId.toUpperCase());
+          expect(replacement.id).not.toBe(fixture.claim.id);
+          expect(await fixture.state()).toMatchObject({ reservedBytes: disposition === 'copy' ? fixture.f.bytes.length : 0,
+            status: disposition === 'copy' ? 'failed' : 'removed', pendingJobs: [] });
+          expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
+        });
+
+        it('does not authenticate authored work-generation JSON when a late decoder finally settles', async () => {
+          const fixture = await createDispositionFixture();
+          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath);
+          const done = Promise.withResolvers<void>();
+          const decoder = vi.spyOn(integrity, 'validateWithSettlement').mockReturnValueOnce({
+            result: Promise.resolve({ status: 'timeout', reason: 'forced-parent-timeout' }), settled: done.promise, cancel: vi.fn(),
+          });
+          const validation = await fixture.staging.validate(fixture.input, undefined, fixture.promotedPath);
+          const work = structuredClone((await fixture.state()).verification!.auditOwnedWork) as privateCopyFiles.ScheduledPrivateWorkRecord;
+          work.payload.generation = randomUUID(); // Old server seal authenticates neither this generation nor its settlement.
+          await sql`UPDATE immich_fork.icloud_resource SET verification=verification||jsonb_build_object('auditOwnedWork',${work}::jsonb)
+            WHERE id=${fixture.resource.id}::uuid`.execute(db);
+          await fixture.retire(); done.resolve(); decoder.mockRestore(); await validation.settled;
+          await fixture.staging.cleanupRetired(fixture.input);
+          expect(await fixture.state()).toMatchObject({ status: 'failed', reservedBytes: 2 * fixture.f.bytes.length });
+          expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
+          expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
+        });
+
+        it('retains charge after an injected unlink fault and resumes the same sealed generation', async () => {
+          const fixture = await createDispositionFixture();
+          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath); await fixture.retire();
+          const fault = vi.spyOn(privateCopyFiles, 'unlinkOwnedPrivateCopy').mockRejectedValueOnce(Object.assign(new Error('forced-unlink-fault'), { code: 'EIO' }));
+          await fixture.staging.cleanupRetired(fixture.input); fault.mockRestore();
+          expect((await fixture.state()).reservedBytes).toBe(2 * fixture.f.bytes.length);
+          expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
+          await fixture.staging.housekeeping();
+          expect(await fixture.state()).toMatchObject({ status: 'removed', reservedBytes: 0 });
+        });
+
+        it('retains charge when the actual unlink succeeds but PostgreSQL rolls back, then retries the same generation', async () => {
+          const fixture = await createDispositionFixture();
+          await fixture.staging.copyRecovery(fixture.input, fixture.promotedPath); await fixture.retire();
+          const before = await fixture.state();
+          await sql`CREATE FUNCTION public.private_disposition_test_rollback() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN
+            IF OLD."promotedPath" IS NOT NULL AND NEW."promotedPath" IS NULL
+              AND NEW."lastError"='scheduled_private_copy_disposed' THEN
+              RAISE EXCEPTION 'private_disposition_test_rollback';
+            END IF;
+            RETURN NEW;
+          END $$`.execute(db);
+          try {
+            await sql`CREATE TRIGGER private_disposition_test_rollback BEFORE UPDATE ON immich_fork.icloud_resource
+              FOR EACH ROW EXECUTE FUNCTION public.private_disposition_test_rollback()`.execute(db);
+            await fixture.staging.cleanupRetired(fixture.input);
+            expect(await access(fixture.promotedPath).then(() => true, () => false)).toBe(false);
+            expect(await fixture.state()).toMatchObject({ status: 'failed', reservedBytes: before.reservedBytes, promotedPath: fixture.promotedPath, pendingJobs: [] });
+            expect((await fixture.state()).verification).toEqual(before.verification);
+            expect(await readFile(fixture.fresh.payload.path)).toEqual(fixture.f.bytes);
+          } finally {
+            await sql`DROP TRIGGER IF EXISTS private_disposition_test_rollback ON immich_fork.icloud_resource`.execute(db);
+            await sql`DROP FUNCTION public.private_disposition_test_rollback()`.execute(db);
+          }
+          await fixture.staging.housekeeping();
+          expect(await fixture.state()).toMatchObject({ status: 'removed', reservedBytes: 0, promotedPath: null, pendingJobs: [] });
+          expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
+        });
+
+        it('keeps an actually promoted copy pending when final ownership persistence fails', async () => {
+          const fixture = await createDispositionFixture();
+          const store = fixture.repository.storePrivateCopy.bind(fixture.repository);
+          let calls = 0;
+          const refusal = vi.spyOn(fixture.repository, 'storePrivateCopy').mockImplementation((...args) =>
+            ++calls >= 3 ? Promise.resolve(false) : store(...args));
+          try { await expect(fixture.staging.copyRecovery(fixture.input, fixture.promotedPath)).rejects.toThrow('scheduled_private_copy_changed'); }
+          finally { refusal.mockRestore(); }
+          await fixture.retire(); await fixture.staging.housekeeping();
+          expect(await fixture.state()).toMatchObject({ status: 'failed', reservedBytes: 2 * fixture.f.bytes.length,
+            lastError: 'scheduled_private_copy_retained_pending-settlement' });
+          expect(await readFile(fixture.promotedPath)).toEqual(fixture.f.bytes);
+          expect(await readFile(fixture.f.originalPath)).toEqual(fixture.f.bytes);
+        });
 
         it.each([false, true])(
           'executes actual claimed scheduled stream and settles match exactly once without a session; protected=%s',

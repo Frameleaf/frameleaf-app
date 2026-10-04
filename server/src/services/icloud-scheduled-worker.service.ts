@@ -23,6 +23,8 @@ export class ICloudScheduledWorkerService {
     private transport: ICloudTransportRepository,
   ) {}
 
+  housekeeping() { return this.staging.housekeeping(); }
+
   async run(operation: MediaOperation, claimToken: string) {
     const requests = await this.repository.dispatch(operation, claimToken);
     if (!requests) {

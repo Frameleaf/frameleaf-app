@@ -35,6 +35,7 @@ export class ICloudAuditService {
   }
 
   async housekeeping() {
+    await this.scheduled?.housekeeping?.();
     await this.repository.housekeeping(async (resource, db) => {
       if (resource.assetId) {
         const asset = await db
