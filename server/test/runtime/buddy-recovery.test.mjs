@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { createHash, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { promisify } from 'node:util';
 import { BuddyRecoveryFiles, buddyRecoveryTarget } from '../../src/utils/buddy-backup-recovery.ts';
 import { buddyBackupCommand } from '../../src/utils/buddy-backup-offline.ts';
 import { buddyObjectId, encryptBuddyBlock } from '../../src/utils/buddy-backup-crypto.ts';
@@ -124,7 +126,23 @@ test('an encrypted export plus kit performs offline recovery with no database or
     await buddyBackupCommand(['export', '--vault', join(root, vaultId), '--output', exported]);
     await rm(join(root, vaultId), { recursive: true });
     const restored = join(root, 'restored');
-    await buddyBackupCommand(['recover', '--vault', join(exported, vaultId), '--kit', kit, '--output', restored]);
+    // A fresh Node process has no application alias loader or running server context.
+    await promisify(execFile)(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
+        `const { buddyBackupCommand } = await import(${JSON.stringify(new URL('../../src/utils/buddy-backup-offline.ts', import.meta.url).href)}); await buddyBackupCommand(process.argv.slice(1));`,
+        'recover',
+        '--vault',
+        join(exported, vaultId),
+        '--kit',
+        kit,
+        '--output',
+        restored,
+      ],
+      { env: { ...process.env, NODE_OPTIONS: '' }, timeout: 10_000 },
+    );
     assert.deepEqual(await readFile(join(restored, 'objects', sha256)), data);
     assert.equal(JSON.parse(await readFile(join(restored, 'recovery-complete.json'), 'utf8')).snapshotId, snapshotId);
   } finally {

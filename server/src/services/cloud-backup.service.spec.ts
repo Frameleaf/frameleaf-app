@@ -30,6 +30,8 @@ import { EMPTY_DETAILS } from 'src/utils/cloud-backup-details.js';
 import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { readConfig } from 'src/utils/config.js';
+import { executionSignal, operationExecution } from 'src/utils/execution-signal.js';
+import { OperationDeadlineError, withOperationExecution } from 'src/utils/operation-execution.js';
 import { keyEscrowBlobSchema, managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
 import { errorEnvelopeSchema, FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
@@ -332,6 +334,47 @@ describe(CloudBackupService.name, () => {
     sut = build();
     // an own-memory key is asked for without waiting; a spec that needs the wait sets it
     sut.keyAskMs = 0;
+  });
+
+  describe('task checkpoint progress', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('only advancing persisted item counts extend the idle deadline', async () => {
+      const operation = operationOf({ snapshot: { task: 'verify' } });
+      const checkpoint = (processed: number) =>
+        (
+          sut as unknown as {
+            checkpointTask: (
+              operation: MediaOperation,
+              token: string,
+              result: object,
+              units: { processed: number; total: number; progress: number },
+            ) => Promise<string>;
+          }
+        ).checkpointTask(operation, 'claim-1', { checked: processed }, { processed, total: 10, progress: 10 });
+      let advance!: (processed: number) => Promise<string>;
+      const task = withOperationExecution(
+        { renew: async () => true, pollMs: 10, deadlineMs: 100, idleMs: 100 },
+        async () => {
+          const signal = executionSignal()!;
+          const context = operationExecution.getStore()!;
+          await new Promise<never>((_resolve, reject) => {
+            advance = (processed) => operationExecution.run(context, () => checkpoint(processed));
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          });
+        },
+      );
+      const rejection = expect(task).rejects.toBeInstanceOf(OperationDeadlineError);
+      await vi.advanceTimersByTimeAsync(80);
+      await advance(1);
+      await vi.advanceTimersByTimeAsync(80);
+      await advance(1);
+      await vi.advanceTimersByTimeAsync(21);
+      await rejection;
+      expect(operations.setBulkResult).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
 
   describe('setup', () => {

@@ -2348,6 +2348,7 @@ export class CloudBackupService {
     result: object,
     units: { processed: number; total: number; progress: number },
   ): Promise<TaskCheckpoint> {
+    assertExecutionActive();
     const written = await this.operations.setBulkResult(operation.id, claimToken, {
       result: result as Record<string, unknown>,
       processedUnits: units.processed,
@@ -2359,6 +2360,7 @@ export class CloudBackupService {
       this.logger.warn(`Cloud backup operation ${operation.id}: claim lost, stopping`);
       return 'stopped';
     }
+    reportExecutionProgress(`task:${taskOf(operation)}`, units.processed);
     if (written.status === MediaOperationStatus.Cancelling || written.cancelRequestedAt) {
       await this.operations.acknowledgeCancel(operation.id, claimToken, { released: false });
       this.logger.log(`Cloud backup operation ${operation.id} cancelled`);

@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
-import { mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { PassThrough, Writable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { buddyObjectId, decryptBuddyBlock, encryptBuddyBlock } from '../../src/utils/buddy-backup-crypto.ts';
 import { BuddyVault, buddySnapshotBytes } from '../../src/utils/buddy-backup-vault.ts';
 import { BuddyBackupReader } from '../../src/utils/buddy-backup-reader.ts';
@@ -97,11 +99,73 @@ test('vault plus recovery kit restores verified files without the source index a
     };
     await rm(join(directory, vaultId, 'catalog.json'));
     const recoveredVault = new BuddyVault(directory, vaultId);
-    const reader = new BuddyBackupReader(ring, envelope, (id) => recoveredVault.read(id));
+    let progress = 0;
+    const reader = new BuddyBackupReader(ring, envelope, (id) => recoveredVault.read(id), {
+      progress: (bytes) => {
+        progress += bytes;
+      },
+    });
     const decoded = await reader.manifest();
     const target = join(directory, 'restored', 'original');
     await reader.download(decoded, sha256, target);
     assert.deepEqual(await readFile(target), plain);
+    assert.equal(progress, plain.length);
+
+    // Cancellation waits for a block transport to close before the reader removes its temporary file.
+    const controller = new AbortController();
+    let closeTransport;
+    let beginDestroy;
+    const destroyed = new Promise((resolve) => {
+      beginDestroy = resolve;
+    });
+    const closing = new Promise((resolve) => {
+      closeTransport = resolve;
+    });
+    const source = new PassThrough();
+    const sink = new Writable({
+      write(_chunk, _encoding, done) {
+        done();
+      },
+      destroy(error, done) {
+        beginDestroy();
+        void closing.then(() => done(error));
+      },
+    });
+    let readStarted;
+    const started = new Promise((resolve) => {
+      readStarted = resolve;
+    });
+    const cancelledReader = new BuddyBackupReader(
+      ring,
+      envelope,
+      async () => {
+        const transfer = pipeline(source, sink, { signal: controller.signal });
+        readStarted();
+        await transfer;
+        throw new Error('Stalled transport cannot produce a block');
+      },
+      {
+        signal: controller.signal,
+        progress: () => {
+          throw new Error('Cancelled read reported progress');
+        },
+      },
+    );
+    const cancelledTarget = join(directory, 'cancelled', 'original');
+    let returned = false;
+    const download = cancelledReader.download(decoded, sha256, cancelledTarget).finally(() => {
+      returned = true;
+    });
+    const rejected = assert.rejects(download, { name: 'AbortError' });
+    await started;
+    controller.abort(new Error('Claim lost'));
+    await destroyed;
+    assert.equal(returned, false);
+    assert.equal((await readdir(join(directory, 'cancelled'))).length, 1);
+    closeTransport();
+    await rejected;
+    assert.deepEqual(await readdir(join(directory, 'cancelled')), []);
+    await assert.rejects(readFile(cancelledTarget), { code: 'ENOENT' });
     await assert.rejects(
       new BuddyBackupReader(ring, { ...envelope, snapshot: { ...envelope.snapshot, id: randomUUID() } }, (id) =>
         recoveredVault.read(id),
