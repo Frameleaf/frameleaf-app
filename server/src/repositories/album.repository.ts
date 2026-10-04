@@ -354,14 +354,17 @@ export class AlbumRepository {
     const execute = async (tx: Kysely<DB>) => {
       const albums = await tx.selectFrom('album_asset').select('albumId').where('assetId', 'in', assetIds).execute();
       const repository = new AlbumRepository(tx);
-      await repository.withMembershipWrite(albums.map(({ albumId }) => albumId), async () => {
-        const removed = await tx
-          .deleteFrom('album_asset')
-          .where('assetId', 'in', assetIds)
-          .returning(['albumId', 'assetId'])
-          .execute();
-        await repository.invalidateSourceMemberships(removed);
-      });
+      await repository.withMembershipWrite(
+        albums.map(({ albumId }) => albumId),
+        async () => {
+          const removed = await tx
+            .deleteFrom('album_asset')
+            .where('assetId', 'in', assetIds)
+            .returning(['albumId', 'assetId'])
+            .execute();
+          await repository.invalidateSourceMemberships(removed);
+        },
+      );
     };
     await (this.db.isTransaction ? execute(this.db) : this.db.transaction().execute(execute));
   }
@@ -824,14 +827,17 @@ export class AlbumRepository {
     if (values.length === 0) {
       return;
     }
-    await this.withMembershipWrite(values.map(({ albumId }) => albumId), async (tx) => {
-      await tx
-        .insertInto('album_asset')
-        .values(values)
-        // Allow idempotent album sync without failing on existing album memberships.
-        .onConflict((oc) => oc.columns(['albumId', 'assetId']).doNothing())
-        .execute();
-    });
+    await this.withMembershipWrite(
+      values.map(({ albumId }) => albumId),
+      async (tx) => {
+        await tx
+          .insertInto('album_asset')
+          .values(values)
+          // Allow idempotent album sync without failing on existing album memberships.
+          .onConflict((oc) => oc.columns(['albumId', 'assetId']).doNothing())
+          .execute();
+      },
+    );
   }
 
   /**

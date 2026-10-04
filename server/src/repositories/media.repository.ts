@@ -578,10 +578,16 @@ export class MediaRepository {
       const [ptsStr, durationStr, flags] = line.split(',', 3);
       const pts = Number.parseInt(ptsStr);
       const duration = Number.parseInt(durationStr);
-      if (flags?.[1] !== 'D' &&
-        (!/^-?\d+$/.test(ptsStr) || !/^\d+$/.test(durationStr) || !flags ||
-          !Number.isSafeInteger(pts) || !Number.isSafeInteger(duration) || duration <= 0 ||
-          !Number.isSafeInteger(pts + duration))) {
+      if (
+        flags?.[1] !== 'D' &&
+        (!/^-?\d+$/.test(ptsStr) ||
+          !/^\d+$/.test(durationStr) ||
+          !flags ||
+          !Number.isSafeInteger(pts) ||
+          !Number.isSafeInteger(duration) ||
+          duration <= 0 ||
+          !Number.isSafeInteger(pts + duration))
+      ) {
         presentationValid = false;
       }
       if (Number.isNaN(pts) || Number.isNaN(duration) || !flags) {
@@ -635,13 +641,17 @@ export class MediaRepository {
           return resolve(null);
         }
 
+        let presentation: VideoPacketInfo['presentation'] = null;
+        if (presentationValid) {
+          presentation = { startPts: Infinity, endPts: -Infinity };
+          for (const packet of postDiscard) {
+            presentation.startPts = Math.min(presentation.startPts, packet.pts);
+            presentation.endPts = Math.max(presentation.endPts, packet.pts + packet.duration);
+          }
+        }
+
         resolve({
-          presentation: presentationValid
-            ? postDiscard.reduce((span, packet) => ({
-                startPts: Math.min(span.startPts, packet.pts),
-                endPts: Math.max(span.endPts, packet.pts + packet.duration),
-              }), { startPts: Number.POSITIVE_INFINITY, endPts: Number.NEGATIVE_INFINITY })
-            : null,
+          presentation,
           totalDuration,
           packetCount: postDiscard.length,
           outputFrames: this.cfrOutputFrames(postDiscard, postDiscard.length / totalDuration),
