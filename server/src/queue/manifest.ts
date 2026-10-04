@@ -1,8 +1,46 @@
 import { Kysely, SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
-import { QUEUE_BATCH, QUEUE_HIGH_WATER, QUEUE_LOW_WATER, QueueExecution, QueueIntent } from 'src/queue/types.js';
+import {
+  QUEUE_BATCH,
+  QUEUE_HIGH_WATER,
+  QUEUE_LOW_WATER,
+  QueueClaim,
+  QueueExecution,
+  QueueIntent,
+} from 'src/queue/types.js';
 
 type Executor = Kysely<any> | Transaction<any>;
+
+/** Caller holds the queue catalogue lock; this is the single producer-to-run attachment protocol. */
+export async function attachProducerRun(tx: Transaction<any>, claim: QueueClaim, submittedRunId?: string) {
+  const {
+    rows: [owner],
+  } = await sql<{ runId: string | null; itemKey: string | null; name: string; queue: string }>`
+        select "runId", "itemKey", name, queue from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
+        and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
+    tx,
+  );
+  if (!owner) throw new Error('Selection producer lost its claim');
+  let runId = owner.runId ?? submittedRunId;
+  let producerItemKey = owner.itemKey;
+  if (!runId) {
+    runId = randomUUID();
+    await sql`insert into job_run(id, kind, selection) values (${runId}::uuid, ${owner.name}, '{}'::jsonb)`.execute(tx);
+  }
+  if (!owner.runId) {
+    const itemKey = `producer/${claim.id}`;
+    producerItemKey = itemKey;
+    await sql`insert into job_run_item("runId", "itemKey", stage, queue, selection, "jobId", state)
+          values (${runId}::uuid, ${itemKey}, ${owner.name}, ${owner.queue}, '{}'::jsonb, ${claim.id}::uuid, 'active')
+          on conflict do nothing`.execute(tx);
+    await sql`update job set "runId" = ${runId}::uuid, "itemKey" = ${itemKey}
+          where id = ${claim.id}::uuid`.execute(tx);
+  }
+  const { rows } = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
+    and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null`.execute(tx);
+  if (rows.length === 0) throw new Error('Selection producer lost its claim');
+  return { runId, producerItemKey };
+}
 
 /** A snapshot is durable before admission; retry always resolves the same producer/stage identity. */
 export async function freezeSelection(
@@ -20,31 +58,7 @@ export async function freezeSelection(
     let producerItemKey = context?.claim.itemKey;
     const claim = context?.claim;
     if (claim) {
-      const {
-        rows: [owner],
-      } = await sql<{ runId: string | null; itemKey: string | null; name: string; queue: string }>`
-        select "runId", "itemKey", name, queue from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
-        and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null for update`.execute(
-        tx,
-      );
-      if (!owner) throw new Error('Selection producer lost its claim');
-      runId = owner.runId ?? runId;
-      producerItemKey = owner.itemKey;
-      if (!runId) {
-        runId = randomUUID();
-        await sql`insert into job_run(id, kind, selection) values (${runId}::uuid, ${owner.name}, '{}'::jsonb)`.execute(
-          tx,
-        );
-      }
-      if (!owner.runId) {
-        const itemKey = `producer/${claim.id}`;
-        producerItemKey = itemKey;
-        await sql`insert into job_run_item("runId", "itemKey", stage, queue, selection, "jobId", state)
-          values (${runId}::uuid, ${itemKey}, ${owner.name}, ${owner.queue}, '{}'::jsonb, ${claim.id}::uuid, 'active')
-          on conflict do nothing`.execute(tx);
-        await sql`update job set "runId" = ${runId}::uuid, "itemKey" = ${itemKey}
-          where id = ${claim.id}::uuid`.execute(tx);
-      }
+      ({ runId, producerItemKey } = await attachProducerRun(tx, claim, submittedRunId));
     }
     if (!runId) {
       runId = randomUUID();
