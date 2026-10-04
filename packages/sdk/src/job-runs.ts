@@ -1,101 +1,52 @@
-import * as Oazapfts from "@oazapfts/runtime";
+import type { RequestOpts } from "@oazapfts/runtime";
 import {
-  defaults,
+  getJobRunItems,
+  getJobRuns,
+  type JobRunItemResponseDto,
+  type JobRunPageDto,
+  type JobRunResponseDto,
   type QueueRunDto,
   type RunningJobsResponseDto,
 } from "./fetch-client.js";
 
-/** Temporary adapter for hosted OpenAPI generation; generated source is never edited here. */
-export type DurableJobOutcome =
-  | "completed"
-  | "failed"
-  | "needsAttention"
-  | "cancelled"
-  | "active"
-  | "retrying"
-  | "delayed"
-  | "paused"
-  | "waiting"
-  | "blocked";
-export type DurableJobState =
-  | "running"
-  | "retrying"
-  | "delayed"
-  | "paused"
-  | "waiting"
-  | "blocked"
-  | "unavailable"
-  | "needs_attention"
-  | "completed"
-  | "completed_with_errors"
-  | "cancelled";
-export type DurableJobReason =
-  | "worker_unavailable"
-  | "no_dispatch_backlog"
-  | "dependency_wait"
-  | "dependency_failed"
-  | "retry_backoff"
-  | "scheduled_delay"
-  | "queue_paused"
-  | "needs_attention"
-  | "stage_failed"
-  | "enumerating";
-export type DurableJobCounts = Record<DurableJobOutcome, number> & {
-  total: number;
-};
-export type DurableJobProgress = {
-  stageTotals: DurableJobCounts;
-  lastProgressAt: string | null;
-  lastStage: string | null;
+/** UI conveniences derive their fields and enum values from the generated API contract. */
+export type DurableJobOutcome = `${JobRunItemResponseDto["outcome"]}`;
+export type DurableJobState = `${JobRunResponseDto["state"]}`;
+export type DurableJobReason = `${JobRunResponseDto["reasons"][number]}`;
+export type DurableJobCounts = JobRunResponseDto["stageTotals"];
+export type DurableJobProgress = Pick<
+  JobRunResponseDto,
+  "stageTotals" | "lastProgressAt" | "lastStage"
+> & { reasons: DurableJobReason[] };
+export type DurableJobRun = Omit<JobRunResponseDto, "state" | "reasons"> & {
+  state: DurableJobState;
   reasons: DurableJobReason[];
 };
-export type DurableJobRun = DurableJobCounts &
-  DurableJobProgress & {
-    id: string;
-    kind: string;
-    createdAt: string;
-    finishedAt: string | null;
-    enumerationDone: boolean;
-    state: DurableJobState;
-    noDispatchBacklog: boolean;
-  };
-export type DurableJobItem = DurableJobProgress & {
-  id: string;
+export type DurableJobItem = Omit<
+  JobRunItemResponseDto,
+  "outcome" | "reasons"
+> & {
   outcome: DurableJobOutcome;
+  reasons: DurableJobReason[];
 };
-export type DurableJobPage<T> = { items: T[]; hasNextPage: boolean };
-export type DurableQueueRun = QueueRunDto & {
-  unavailable?: boolean;
+export type DurableJobPage<T> = Omit<JobRunPageDto, "items"> & { items: T[] };
+export type DurableQueueRun = Omit<QueueRunDto, "state"> & {
   state?: DurableJobState;
-  noDispatchBacklog?: boolean;
-  lastProgressAt?: string | null;
 };
-export type DurableRunningJobs = Omit<RunningJobsResponseDto, "queues"> & {
+export type DurableRunningJobs = Omit<
+  RunningJobsResponseDto,
+  "queues" | "durableRuns"
+> & {
   queues: DurableQueueRun[];
   durableRuns?: DurableJobRun[];
-  canReadJobRuns?: boolean;
-  durableRunsUnavailable?: boolean;
 };
-const client = Oazapfts.runtime(defaults);
-const pageQuery = ({ take = 25, skip = 0 }: { take?: number; skip?: number }) =>
-  `take=${take}&skip=${skip}`;
+
 export const listDurableJobRuns = (
-  page: { take?: number; skip?: number } = {},
-  opts?: Oazapfts.RequestOpts,
-) =>
-  client.ok(
-    client.fetchJson<{ status: 200; data: DurableJobPage<DurableJobRun> }>(
-      `/jobs/runs?${pageQuery(page)}`,
-      { ...opts },
-    ),
-  );
+  { take = 25, skip = 0 }: Parameters<typeof getJobRuns>[0] = {},
+  opts?: RequestOpts,
+) => getJobRuns({ take, skip }, opts);
+
 export const listDurableJobRunItems = (
-  { id, ...page }: { id: string; take?: number; skip?: number },
-  opts?: Oazapfts.RequestOpts,
-) =>
-  client.ok(
-    client.fetchJson<{ status: 200; data: DurableJobPage<DurableJobItem> }>(
-      `/jobs/runs/${encodeURIComponent(id)}/items?${pageQuery(page)}`,
-      { ...opts },
-    ),
-  );
+  { id, take = 25, skip = 0 }: Parameters<typeof getJobRunItems>[0],
+  opts?: RequestOpts,
+) => getJobRunItems({ id, take, skip }, opts);
