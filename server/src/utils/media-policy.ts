@@ -24,7 +24,7 @@
  */
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import type { AudioStreamInfo, VideoColorRange, VideoFormat, VideoStreamInfo } from 'src/types.js';
+import type { AudioStreamInfo, VideoColorRange, VideoFormat, VideoPacketInfo, VideoStreamInfo } from 'src/types.js';
 import type { DecodeQualification } from 'src/utils/media-decode.js';
 import { ConfigFFmpegDto } from 'src/dtos/config.dto.js';
 import { AssetEditAction, AssetEditActionItem, VideoTrimMode } from 'src/dtos/editing.dto.js';
@@ -786,6 +786,41 @@ export const buildEditedMasterLineage = ({
   ...(decode && { decode: { matrixEntry: decode.matrixEntry, support: decode.support, reason: decode.reason } }),
   createdAt: createdAt.toISOString(),
 });
+
+/** Full-clip timing admission. Counts and endpoint spans detect truncation, not internal cadence
+ * or decoded-frame integrity. Origins may normalize during muxing; compare relative spans.
+ * Cross multiplication keeps tolerance at one tick from each measured rational timebase.
+ */
+export const validateFullClipMasterTiming = (
+  source: Pick<VideoStreamInfo, 'timeBaseRational'>,
+  output: Pick<VideoStreamInfo, 'timeBaseRational'>,
+  sourcePackets: VideoPacketInfo | null,
+  outputPackets: VideoPacketInfo | null,
+) => {
+  const inputBase = source.timeBaseRational;
+  const outputBase = output.timeBaseRational;
+  const inputSpan = sourcePackets?.presentation;
+  const outputSpan = outputPackets?.presentation;
+  const values = [inputBase?.num, inputBase?.den, outputBase?.num, outputBase?.den];
+  if (!inputBase || !outputBase || !inputSpan || !outputSpan ||
+    values.some((value) => typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) ||
+    [inputSpan.startPts, inputSpan.endPts, outputSpan.startPts, outputSpan.endPts,
+      sourcePackets?.packetCount, outputPackets?.packetCount].some((value) => !Number.isSafeInteger(value)) ||
+    inputSpan.endPts <= inputSpan.startPts || outputSpan.endPts <= outputSpan.startPts ||
+    !sourcePackets || !outputPackets || sourcePackets.packetCount <= 0 ||
+    sourcePackets.packetCount !== outputPackets.packetCount) {
+    throw new MediaPolicyError(MediaPolicyViolation.MasterValidationFailed,
+      'Full-clip master packet count or presentation timing is unavailable or changed');
+  }
+  const inputTicks = BigInt(inputSpan.endPts) - BigInt(inputSpan.startPts);
+  const outputTicks = BigInt(outputSpan.endPts) - BigInt(outputSpan.startPts);
+  const inputScale = BigInt(inputBase.num) * BigInt(outputBase.den);
+  const outputScale = BigInt(outputBase.num) * BigInt(inputBase.den);
+  const difference = inputTicks * inputScale - outputTicks * outputScale;
+  if ((difference < 0n ? -difference : difference) > inputScale + outputScale) {
+    throw new MediaPolicyError(MediaPolicyViolation.MasterValidationFailed, 'Full-clip master presentation span changed');
+  }
+};
 
 /**
  * FL-39: probe-backed validation of a rendered edited master, before anything references it.

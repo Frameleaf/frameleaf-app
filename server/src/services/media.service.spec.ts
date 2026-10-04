@@ -3447,6 +3447,17 @@ describe(MediaService.name, () => {
   });
 
   describe('version-owned video publication', () => {
+    beforeEach(() => {
+      mocks.media.probePackets.mockResolvedValue({
+        presentation: { startPts: 0, endPts: 18_000 },
+        packetCount: 900,
+        totalDuration: 18_000,
+        outputFrames: 900,
+        keyframePts: [0],
+        keyframeAccDuration: [600],
+        keyframeOwnDuration: [600],
+      });
+    });
     const versionFor = (
       asset: { id: string; ownerId: string; originalPath: string; checksum: Buffer },
       purpose: 'save' | 'export' | 'revert',
@@ -3520,7 +3531,13 @@ describe(MediaService.name, () => {
     });
 
     it('publishes an export master and proxy without replacing the current thumbnails', async () => {
-      const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
+      const videoStream = {
+        ...probeStub.videoStreamH264.videoStream,
+        timeBaseRational: { num: 1, den: 600 },
+        width: 300,
+        height: 200,
+        rotation: 0,
+      };
       const asset = {
         ...AssetFactory.create({ type: AssetType.Video }),
         videoStream,
@@ -3562,6 +3579,37 @@ describe(MediaService.name, () => {
       expect(mocks.storage.unlink).not.toHaveBeenCalled();
     });
 
+    it.each([null, { startPts: 0, endPts: 9_000 }])(
+      'refuses unavailable or truncated full-clip timing before lineage, proxy or publication', async (presentation) => {
+        const videoStream = {
+          ...probeStub.videoStreamH264.videoStream,
+          timeBaseRational: { num: 1, den: 600 },
+          width: 300, height: 200, rotation: 0,
+        };
+        const asset = { ...AssetFactory.create({ type: AssetType.Video }), videoStream,
+          audioStream: null, format: probeStub.videoStreamH264.format, files: [] };
+        const version = versionFor(asset, 'export');
+        mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+        mocks.assetEdit.getVideoVersion.mockResolvedValue(version as any);
+        mocks.media.transcode.mockResolvedValue(undefined);
+        mocks.media.probe.mockResolvedValue({
+          videoStreams: [{ ...videoStream, width: 200, height: 100 }], audioStreams: [], format: asset.format,
+        });
+        mocks.media.probePackets.mockResolvedValueOnce({
+          presentation: { startPts: 0, endPts: 18_000 }, packetCount: 900, totalDuration: 18_000,
+          outputFrames: 900, keyframePts: [], keyframeAccDuration: [], keyframeOwnDuration: [],
+        }).mockResolvedValueOnce({ presentation, packetCount: 900, totalDuration: 18_000,
+          outputFrames: 900, keyframePts: [], keyframeAccDuration: [], keyframeOwnDuration: [] });
+        await expect(sut.handleAssetVideoEditGeneration({ id: asset.id, versionId: version.id }))
+          .resolves.toBe(JobStatus.Failed);
+        expect(mocks.media.transcode).toHaveBeenCalledOnce();
+        expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+        expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+        expect(mocks.assetEdit.failVideoVersion).toHaveBeenCalled();
+        expect(mocks.storage.unlink).toHaveBeenCalledWith(expect.stringMatching(/\.master\.mp4$/));
+      },
+    );
+
     describe('audio validation of the master (FL-102)', () => {
       const surround = {
         index: 1,
@@ -3573,7 +3621,13 @@ describe(MediaService.name, () => {
         sampleRate: 48_000,
       };
       const setup = (masterAudio: Record<string, unknown>[]) => {
-        const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
+        const videoStream = {
+        ...probeStub.videoStreamH264.videoStream,
+        timeBaseRational: { num: 1, den: 600 },
+        width: 300,
+        height: 200,
+        rotation: 0,
+      };
         const asset = {
           ...AssetFactory.create({ type: AssetType.Video }),
           videoStream,
@@ -3627,7 +3681,13 @@ describe(MediaService.name, () => {
 
     describe('as a job in Activity (FL-43)', () => {
       const exportSetup = () => {
-        const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
+        const videoStream = {
+        ...probeStub.videoStreamH264.videoStream,
+        timeBaseRational: { num: 1, den: 600 },
+        width: 300,
+        height: 200,
+        rotation: 0,
+      };
         const asset = {
           ...AssetFactory.create({ type: AssetType.Video }),
           videoStream,
@@ -3797,7 +3857,13 @@ describe(MediaService.name, () => {
           ffmpeg: { accel, accelDecode: true, targetVideoCodec: VideoCodec.H264, targetResolution: '480' },
         });
         sut.videoInterfaces = { dri: ['renderD128'], mali: true };
-        const videoStream = { ...probeStub.videoStreamH264.videoStream, width: 300, height: 200, rotation: 0 };
+        const videoStream = {
+        ...probeStub.videoStreamH264.videoStream,
+        timeBaseRational: { num: 1, den: 600 },
+        width: 300,
+        height: 200,
+        rotation: 0,
+      };
         const asset = {
           ...AssetFactory.create({ type: AssetType.Video }),
           videoStream,
