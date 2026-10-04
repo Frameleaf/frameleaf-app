@@ -43,6 +43,11 @@ only an actual `Error` with one of patch 0043's exact HDR-raster refusal message
 is recorded; unrelated exceptions fail. Partial emitted signals remain in its
 report. No authoritative current supported-float versus forced-Canvas capability
 discriminator was available, so neither outcome qualifies fallback reachability.
+Every emitted output is numerically validated even if a later policy refuses;
+only complete two-policy output is conditional on the preserved status. A focused
+hosted report-validator regression checks corrupt/nonfinite earlier output,
+valid partial output remaining unqualified, and complete preserved output. These
+report fixtures are validator unit coverage, not fabricated renderer evidence.
 In particular, a supported float path cannot use this diagnostic to excuse a
 refusal, and a forced Canvas path still needs an explicit refusal/no-output test
 bound to its actual capability contract. Non-GPU effect fallbacks remain open.
