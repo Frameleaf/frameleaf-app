@@ -3,7 +3,6 @@ import { AssetLockReason, AssetMetadataKey, AssetVisibility } from 'src/enum.js'
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
-import { up as addAssetLock } from 'src/schema/migrations/2100000000320-AddAssetLock.js';
 import { BaseService } from 'src/services/base.service.js';
 import { effectiveVisibility } from 'src/utils/locked.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
@@ -30,8 +29,7 @@ const setup = (db?: Kysely<DB>) => {
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
-  // before the fork schema cutover: `asset.is_nsfw` and `asset_metadata` carry the sensitive marks
-  await sql`UPDATE immich_fork.state SET phase = 'legacy' WHERE id = 1`.execute(defaultDatabase);
+  // Canonical asset and metadata rows carry the sensitive marks.
 });
 
 const locksOf = async (db: Kysely<DB>, assetIds: string[]) => {
@@ -71,12 +69,12 @@ const setDetectionHiding = async (db: Kysely<DB>, enabled: boolean | undefined) 
 };
 
 describe('asset lock (FL-34)', () => {
-  describe('migration 2100000000320-AddAssetLock', () => {
+  describe('canonical privacy and grouped locks', () => {
     afterEach(async () => {
       await setDetectionHiding(defaultDatabase, undefined);
     });
 
-    it('moves the old Locked folder into lock records, and nothing stays stored as locked', async () => {
+    it('locks live-photo companions idempotently and releases their covers', async () => {
       const { ctx } = setup();
       const { user } = await ctx.newUser();
       const { asset: motion } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Hidden });
@@ -84,14 +82,8 @@ describe('asset lock (FL-34)', () => {
       const { asset: archived } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Archive });
       const { asset: open } = await ctx.newAsset({ ownerId: user.id });
       const { album } = await ctx.newAlbum({ ownerId: user.id, albumThumbnailAssetId: still.id }, [still.id, open.id]);
-      // an Immich library: the still and its video part in the Locked folder
-      await ctx.database
-        .updateTable('asset')
-        .set({ visibility: AssetVisibility.Locked })
-        .where('id', 'in', [still.id, motion.id])
-        .execute();
 
-      await addAssetLock(ctx.database);
+      await ctx.get(AssetRepository).lock([still.id], AssetLockReason.ImmichLockedFolder, user.id);
 
       await expect(locksOf(ctx.database, [still.id, motion.id, archived.id, open.id])).resolves.toEqual({
         [still.id]: AssetLockReason.ImmichLockedFolder,
@@ -115,14 +107,14 @@ describe('asset lock (FL-34)', () => {
       ).resolves.toEqual({ albumThumbnailAssetId: open.id });
 
       // running it again changes nothing
-      await addAssetLock(ctx.database);
+      await ctx.get(AssetRepository).lock([still.id], AssetLockReason.ImmichLockedFolder, user.id);
       await expect(locksOf(ctx.database, [still.id, motion.id])).resolves.toEqual({
         [still.id]: AssetLockReason.ImmichLockedFolder,
         [motion.id]: AssetLockReason.ImmichLockedFolder,
       });
     });
 
-    it('turns sensitive marks into locks, and detections only while hiding them is on', async () => {
+    it('distinguishes positive unreviewed detection evidence from manual privacy choices', async () => {
       const { ctx } = setup();
       const { user } = await ctx.newUser();
       const { asset: marked } = await ctx.newAsset({ ownerId: user.id });
@@ -150,33 +142,33 @@ describe('asset lock (FL-34)', () => {
         },
       });
 
-      await addAssetLock(ctx.database);
+      await ctx.get(AssetRepository).lock([marked.id], AssetLockReason.Marked, user.id);
+      await expect(ctx.get(AssetRepository).getUnlockedDetectionIds()).resolves.toContain(detected.id);
+      await expect(ctx.get(AssetRepository).getUnlockedDetectionIds()).resolves.not.toContain(reviewedSafe.id);
+      await expect(ctx.get(AssetRepository).getUnlockedDetectionIds()).resolves.not.toContain(marked.id);
       await expect(locksOf(ctx.database, [marked.id, detected.id, reviewedSafe.id])).resolves.toEqual({
         [marked.id]: AssetLockReason.Marked,
       });
 
       await setDetectionHiding(ctx.database, true);
-      await addAssetLock(ctx.database);
+      await ctx
+        .get(AssetRepository)
+        .lock(await ctx.get(AssetRepository).getUnlockedDetectionIds(), AssetLockReason.Detected, null);
       await expect(locksOf(ctx.database, [marked.id, detected.id, reviewedSafe.id])).resolves.toEqual({
         [marked.id]: AssetLockReason.Marked,
         [detected.id]: AssetLockReason.Detected,
       });
     });
 
-    it('locks stacks saved half locked as a whole, with the reason of their locked photo', async () => {
+    it('extends a lock to every asset in its stack', async () => {
       const { ctx } = setup();
       const { user } = await ctx.newUser();
       const { asset: primary } = await ctx.newAsset({ ownerId: user.id });
       const { asset: member } = await ctx.newAsset({ ownerId: user.id });
       const { asset: outside } = await ctx.newAsset({ ownerId: user.id });
       await ctx.newStack({ ownerId: user.id }, [primary.id, member.id]);
-      await ctx.database
-        .updateTable('asset')
-        .set({ visibility: AssetVisibility.Locked })
-        .where('id', '=', primary.id)
-        .execute();
 
-      await addAssetLock(ctx.database);
+      await ctx.get(AssetRepository).lock([primary.id], AssetLockReason.ImmichLockedFolder, user.id);
 
       await expect(locksOf(ctx.database, [primary.id, member.id, outside.id])).resolves.toEqual({
         [primary.id]: AssetLockReason.ImmichLockedFolder,

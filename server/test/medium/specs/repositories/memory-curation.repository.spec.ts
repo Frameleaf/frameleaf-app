@@ -1,14 +1,11 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { MemoryShowLessKind, MemoryType } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as curationMigration from 'src/fork-schema/migrations/0000000000187-MemoryCuration.js';
-import * as showLessMigration from 'src/fork-schema/migrations/0000000000188-MemoryShowLess.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MemoryRepository } from 'src/repositories/memory.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -16,34 +13,13 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
-
-const isOurs = (entry: { identity: string }) =>
-  entry.identity.startsWith('immich_fork.memory_curation') || entry.identity.startsWith('immich_fork.memory_show_less');
 
 const setup = () =>
   newMediumService(BaseService, { database: db, real: [MemoryRepository], mock: [LoggingRepository] });
 
-it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    expect(before[kind].filter((entry) => isOurs(entry))).toEqual(
-      (manifest as unknown as Record<string, Array<{ identity: string }>>)[kind].filter((entry) => isOurs(entry)),
-    );
-  }
-  expect(before.tables.filter((entry) => isOurs(entry))).toHaveLength(2);
-
-  await showLessMigration.down(db);
-  await curationMigration.down(db);
-  await curationMigration.up(db);
-  await showLessMigration.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-  }
+it('installs feature tables in the real canonical baseline', async () => {
+  await expectCanonicalTables(db, ['memory_curation', 'memory_show_less']);
 });
 
 it('hides, titles and orders a memory for its owner only, and restores it', async () => {
@@ -91,7 +67,7 @@ it('leaves hidden memories and shown-less kinds and dates out of a search', asyn
   await expect(ids({ onlyIds: [] })).resolves.toEqual([]);
 });
 
-it('keeps each owner’s show-less rules, refuses unknown kinds and writes nothing while the fork schema is read-only', async () => {
+it('keeps each owner’s show-less rules, refuses unknown kinds', async () => {
   const { ctx } = setup();
   const sut = ctx.get(MemoryRepository);
   const ada = randomUUID();
@@ -109,15 +85,6 @@ it('keeps each owner’s show-less rules, refuses unknown kinds and writes nothi
   await expect(sut.getShowLess(ada)).resolves.toEqual([expect.objectContaining({ kind: 'type' })]);
 
   await expect(
-    sql`INSERT INTO immich_fork.memory_show_less ("userId", kind, value) VALUES (${ada}::uuid, 'album', 'x')`.execute(
-      db,
-    ),
+    sql`INSERT INTO public.memory_show_less ("userId", kind, value) VALUES (${ada}::uuid, 'album', 'x')`.execute(db),
   ).rejects.toThrow();
-
-  await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
-  try {
-    await expect(sut.addShowLess(ada, MemoryShowLessKind.Date, '01-01')).rejects.toThrow();
-  } finally {
-    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
-  }
 });

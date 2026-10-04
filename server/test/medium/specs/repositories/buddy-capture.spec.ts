@@ -35,7 +35,7 @@ import { backupKeyFile, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
-import { getActiveForkKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
 
 // CI's temporary volume may be below the production 10 GiB/10% reserve. Keep all file I/O real;
 // only supply enough reported free space for these small fixtures when that reserve would reject them.
@@ -65,7 +65,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     root = await realpath(await mkdtemp(join(tmpdir(), 'buddy-capture-medium-')));
     for (const directory of ['identity', 'vault', 'source']) await mkdir(join(root, directory));
     StorageCore.setMediaLocation(join(root, 'source'));
-    db = await getActiveForkKyselyDB();
+    db = await getKyselyDB();
     ({ ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] }));
     ownerId = (await ctx.newUser()).user.id;
     const config = {
@@ -141,7 +141,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
   const references = async (runId: string) =>
     (
       await sql<{ path: string; released: boolean; deleteRequested: boolean }>`
-        SELECT path, released, "deleteRequested" FROM immich_fork.buddy_backup_reference
+        SELECT path, released, "deleteRequested" FROM public.buddy_backup_reference
         WHERE "runId" = ${runId}::uuid ORDER BY path`.execute(db)
     ).rows;
   const restoreBytes = async (capture: BuddyCapture, runId: string, sha256: string) => {
@@ -255,7 +255,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       .returningAll()
       .executeTakeFirstOrThrow();
     const checksum = createHash('sha256').update(source.bytes).digest('hex');
-    await sql`INSERT INTO immich_fork.studio_project_import
+    await sql`INSERT INTO public.studio_project_import
       ("projectId",id,"ownerId","contentType",checksum,"sizeBytes",path,"fileName","externalReferences")
       VALUES (${project.id}::uuid,${importId}::uuid,${ownerId}::uuid,'application/x-subrip',${checksum},
         ${source.bytes.length},${source.path},'captions.srt',NULL)`.execute(db);
@@ -325,7 +325,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     await writeFile(join(root, 'identity', 'instance-key.pem'), 'must not be captured');
     const developed = await file('external-developed.jpg');
     const developedPreview = await file('external-developed-preview.jpg');
-    await sql`INSERT INTO immich_fork.asset_develop_revision
+    await sql`INSERT INTO public.asset_develop_revision
       ("assetId", "ownerId", revision, recipe, kind, status, "masterPath", "previewPath")
       VALUES (${first.asset.id}::uuid, ${ownerId}::uuid, 1, '{}'::jsonb, 'external', 'rendered',
         ${developed.path}, ${developedPreview.path})`.execute(db);
@@ -351,7 +351,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         resultPreviewPath: preview.path,
       })
       .execute();
-    await sql`INSERT INTO immich_fork.video_edit_version
+    await sql`INSERT INTO public.video_edit_version
       ("assetId", "ownerId", "sourcePath", "sourceChecksum", recipe, purpose, status, "masterPath", "proxyPath")
       VALUES (${video.asset.id}::uuid, ${ownerId}::uuid, ${video.path}, ${video.asset.checksum},
         '[]'::jsonb, 'save', 'ready', ${master.path}, ${proxy.path})`.execute(db);
@@ -413,7 +413,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       expect(await readFile(later.path)).toEqual(later.bytes);
       // This update commits after pg_export_snapshot(). Capture must retain the old version
       // metadata alongside the dump, even though it reads the per-asset records afterwards.
-      await sql`UPDATE immich_fork.asset_develop_revision SET label='After snapshot'
+      await sql`UPDATE public.asset_develop_revision SET label='After snapshot'
         WHERE "assetId"=${first.asset.id}::uuid`.execute(db);
     });
     const result = await capture.capture(run);
@@ -498,9 +498,9 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
   }, 20_000);
 
   it('round-trips settings and replacement identity metadata as JSON objects through PostgreSQL', async () => {
-    const system = { server: { welcomeMessage: 'Recovered library' } };
+    const recoveryConfig = { enabled: true, sequence: [1, 2] };
+    const system = { server: { welcomeMessage: 'Recovered library' }, frameleafCloud: recoveryConfig };
     const preferences = { folders: { enabled: true }, tags: ['one', 'two'] };
-    const fork = { enabled: true, sequence: [1, 2] };
     await sql`INSERT INTO system_metadata (key, value)
       VALUES (${SystemMetadataKey.SystemConfig}, ${JSON.stringify(system)}::text::jsonb)
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`.execute(db);
@@ -508,14 +508,13 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       VALUES (${ownerId}::uuid, ${UserMetadataKey.Preferences}, ${JSON.stringify(preferences)}::text::jsonb)`.execute(
       db,
     );
-    await sql`INSERT INTO immich_fork.config (key, value)
-      VALUES ('buddy-recovery-test', ${JSON.stringify(fork)}::text::jsonb)`.execute(db);
+
     const { capture, backups, keys } = fixture();
     const { manifest } = await capture.capture(options());
     await repository.update((state) => ({ ...state, settings }));
     const recovery = new BuddyBackupRecoveryService(
       repository,
-      { getEnv: () => ({ bull: { queues: [], config: {} } }) } as unknown as ConfigRepository,
+      { getEnv: () => ({}) } as unknown as ConfigRepository,
       backups,
       keys,
     );
@@ -528,7 +527,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     );
     await sql`UPDATE system_metadata SET value = '{}'::jsonb WHERE key = ${SystemMetadataKey.SystemConfig}`.execute(db);
     await sql`UPDATE user_metadata SET value = '{}'::jsonb WHERE "userId" = ${ownerId}::uuid`.execute(db);
-    await sql`UPDATE immich_fork.config SET value = '{}'::jsonb WHERE key = 'buddy-recovery-test'`.execute(db);
+
     await recovery.settings(id, async () => {});
     expect(
       (
@@ -549,13 +548,6 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
           .executeTakeFirstOrThrow()
       ).value,
     ).toEqual(preferences);
-    expect(
-      (
-        await sql<{ value: unknown }>`SELECT value FROM immich_fork.config WHERE key = 'buddy-recovery-test'`.execute(
-          db,
-        )
-      ).rows[0].value,
-    ).toEqual(fork);
 
     const serverId = randomUUID();
     const serverDirectory = join(repository.root(), 'recovery', serverId);
@@ -660,7 +652,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
       await writeFile(grants, 'replacement grant');
       const recovery = new BuddyBackupRecoveryService(
         repository,
-        { getEnv: () => ({ bull: { queues: [], config: {} } }) } as unknown as ConfigRepository,
+        { getEnv: () => ({}) } as unknown as ConfigRepository,
         backups,
         keys,
       );
@@ -819,7 +811,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     const missing = randomUUID();
     for (const runId of [...terminal, ...retained, missing]) {
       const source = await file(`${runId}.jpg`);
-      await sql`INSERT INTO immich_fork.buddy_backup_reference ("runId", path)
+      await sql`INSERT INTO public.buddy_backup_reference ("runId", path)
         VALUES (${runId}::uuid, ${source.path})`.execute(db);
       await mkdir(join(capture.runDirectory(runId), 'blocks'), { recursive: true });
       await writeFile(join(capture.runDirectory(runId), 'blocks', 'partial'), 'interrupted staging');
@@ -889,7 +881,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     expect(await readFile(output.path, 'utf8')).toBe('restored owned derivative');
 
     // Retained history permits inspection/no-op restore but still forbids replacing shared bytes.
-    await sql`INSERT INTO immich_fork.video_edit_version
+    await sql`INSERT INTO public.video_edit_version
       ("assetId", "ownerId", "sourcePath", "sourceChecksum", recipe, purpose, status, "masterPath", "proxyPath")
       VALUES (${own.asset.id}::uuid, ${ownerId}::uuid, ${own.path}, ${own.asset.checksum},
         '[]'::jsonb, 'save', 'ready', ${output.path}, ${output.path + '.proxy.mp4'})`.execute(db);
@@ -903,7 +895,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
         derivative,
       ),
     ).rejects.toThrow('Owner restore destination unavailable');
-    await sql`DELETE FROM immich_fork.video_edit_version WHERE "assetId" = ${own.asset.id}::uuid`.execute(db);
+    await sql`DELETE FROM public.video_edit_version WHERE "assetId" = ${own.asset.id}::uuid`.execute(db);
 
     const other = await original('same-owner-other-asset.jpg');
     await ctx.newAssetFile({
@@ -918,7 +910,7 @@ describe('Buddy capture preservation and interrupted-run cleanup', () => {
     ).rejects.toThrow('Owner restore destination unavailable');
     await ctx.get(AssetRepository).remove({ id: other.asset.id });
     await physical.withOwnerRestorePath(output.path, own.asset.id, ownerId, publish, derivative);
-    await sql`INSERT INTO immich_fork.buddy_backup_reference ("runId", path)
+    await sql`INSERT INTO public.buddy_backup_reference ("runId", path)
       VALUES (${randomUUID()}::uuid, ${output.path})`.execute(db);
     await expect(
       physical.withOwnerRestorePath(output.path, own.asset.id, ownerId, overwrite, derivative),

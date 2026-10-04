@@ -1,10 +1,10 @@
-import type { EmbeddingTransferEvidence } from './embeddings.js';
 import { createHash } from 'node:crypto';
-import frozen from './fixtures/frozen-sources.json' with { type: 'json' };
-import structure30 from './fixtures/structure/3.0.0.json' with { type: 'json' };
-import structure31 from './fixtures/structure/3.1.0.json' with { type: 'json' };
-import structure32 from './fixtures/structure/3.2.0.json' with { type: 'json' };
-import { FrozenSource, ImportRefused, ImportRow, TableShape } from './types.js';
+import type { EmbeddingTransferEvidence } from 'src/immich-import/embeddings.js';
+import frozen from 'src/immich-import/fixtures/frozen-sources.json' with { type: 'json' };
+import structure30 from 'src/immich-import/fixtures/structure/3.0.0.json' with { type: 'json' };
+import structure31 from 'src/immich-import/fixtures/structure/3.1.0.json' with { type: 'json' };
+import structure32 from 'src/immich-import/fixtures/structure/3.2.0.json' with { type: 'json' };
+import { FrozenSource, ImportRefused, ImportRow, TableShape } from 'src/immich-import/types.js';
 
 const fixtures = frozen as {
   versions: Record<string, { commit: string; schema: string; migrations: string; structure: string }>;

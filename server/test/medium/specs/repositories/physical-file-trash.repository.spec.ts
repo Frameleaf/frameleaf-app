@@ -9,7 +9,7 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MediumTestContext, newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB as getKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
 
@@ -30,9 +30,7 @@ const newAssetWithSize = async (ctx: MediumTestContext, ownerId: string, dto: ob
 
 const trashRows = (checksum: Buffer) =>
   sql<{ path: string; lastOwnerId: string | null }>`
-    SELECT path, "lastOwnerId" FROM immich_fork.physical_file_trash WHERE checksum = ${checksum}`.execute(
-    defaultDatabase,
-  );
+    SELECT path, "lastOwnerId" FROM public.physical_file_trash WHERE checksum = ${checksum}`.execute(defaultDatabase);
 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();

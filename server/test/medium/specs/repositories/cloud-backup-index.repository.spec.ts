@@ -2,14 +2,11 @@ import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AlbumUserRole, AssetFileType, AssetStatus, AssetVisibility } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
-import * as cloudBackupMigration from 'src/schema/migrations/2100000000670-AddCloudBackupTables.js';
-import * as safetyProofMigration from 'src/schema/migrations/2100000000720-SafetyProofFacts.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -29,42 +26,17 @@ const setup = () => {
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 
-const isBackupTable = (entry: { identity: string }) =>
-  ['cloud_backup_object', 'cloud_backup_manifest', 'cloud_backup_manifest_entry'].some(
-    (table) => entry.identity === `public.${table}` || entry.identity.startsWith(`public.${table}.`),
-  );
-
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
 
 describe(CloudBackupIndexRepository.name, () => {
-  it('matches the catalog, and the migration rolls back and applies again', async () => {
-    const evidence = async () => {
-      const catalog = await getCatalogEvidence(defaultDatabase);
-      return {
-        tables: catalog.tables.filter((entry) => isBackupTable(entry)),
-        columns: catalog.columns.filter((entry) => isBackupTable(entry)),
-        constraints: catalog.constraints.filter((entry) => isBackupTable(entry)),
-        indexes: catalog.indexes.filter((entry) => isBackupTable(entry)),
-      };
-    };
-    const expected = {
-      tables: manifest.tables.filter((entry) => isBackupTable(entry)),
-      columns: manifest.columns.filter((entry) => isBackupTable(entry)),
-      constraints: manifest.constraints.filter((entry) => isBackupTable(entry)),
-      indexes: manifest.indexes.filter((entry) => isBackupTable(entry)),
-    };
-    expect(expected.tables).toHaveLength(3);
-    expect(await evidence()).toEqual(expected);
-
-    // The later proof tables depend on the manifest table. Revert them before the earlier migration.
-    await safetyProofMigration.down(defaultDatabase);
-    await cloudBackupMigration.down(defaultDatabase);
-    expect((await evidence()).tables).toEqual([]);
-    await cloudBackupMigration.up(defaultDatabase);
-    await safetyProofMigration.up(defaultDatabase);
-    expect(await evidence()).toEqual(expected);
+  it('installs feature tables in the real canonical baseline', async () => {
+    await expectCanonicalTables(defaultDatabase, [
+      'cloud_backup_object',
+      'cloud_backup_manifest',
+      'cloud_backup_manifest_entry',
+    ]);
   });
 
   it('records each hash once per bucket, answers which are there and counts the usage', async () => {
@@ -213,12 +185,12 @@ describe(CloudBackupIndexRepository.name, () => {
       status: AssetStatus.Deleted,
       deletedAt: new Date(),
     });
-    await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount")
+    await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount")
       VALUES (${plain.id}::uuid, ${Buffer.alloc(20, 1)}, ${Buffer.from(sha('plain'), 'hex')}, 100, ${[plain.originalPath]}, 1)`.execute(
       defaultDatabase,
     );
     // verified at another path (the file moved since): the checksum is not vouched for at this one
-    await sql`INSERT INTO immich_fork.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount")
+    await sql`INSERT INTO public.asset_checksum ("assetId", sha1, sha256, "sizeInBytes", "verifiedPaths", "linkCount")
       VALUES (${trashed.id}::uuid, ${Buffer.alloc(20, 2)}, ${Buffer.from(sha('moved'), 'hex')}, 100, ${['/data/elsewhere.jpg']}, 1)`.execute(
       defaultDatabase,
     );

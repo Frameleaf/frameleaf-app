@@ -3,9 +3,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { DB } from 'src/schema/index.js';
-import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
-import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -26,8 +23,6 @@ import { BuddyBackupStudioRepository } from 'src/repositories/buddy-backup-studi
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -47,7 +42,10 @@ import {
 import { checkStudioEnvelope, studioEnvelopeDigest } from 'src/utils/studio-project.js';
 import { StudioResourceKind } from 'src/utils/studio-resources.js';
 import { type MediumTestContext, newMediumService } from 'test/medium.factory.js';
-import { getActiveForkKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
+import type { DB } from 'src/schema/index.js';
+import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
+import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 
 const hash = (value: Buffer | string) => createHash('sha256').update(value).digest('hex');
 const caption = '1\n00:00:00,000 --> 00:00:01,000\nOriginal words\n';
@@ -72,7 +70,7 @@ describe('Buddy Studio library fidelity', () => {
   let sessionId: string;
   let inventory: Map<string, CloudBackupManifestFile>;
   beforeEach(async () => {
-    db = await getActiveForkKyselyDB();
+    db = await getKyselyDB();
     ({ sut: resources, ctx } = newMediumService(StudioResourceService, {
       database: db,
       real: [AccessRepository, AssetRepository, CryptoRepository],
@@ -129,7 +127,7 @@ describe('Buddy Studio library fidelity', () => {
         ? { captionsImportId: importId }
         : { $resource: { kind: StudioResourceKind.Lut, id: importId, lutSource: 'import' } };
     const saved = await revision(project.id, 1, graph);
-    await sql`INSERT INTO immich_fork.studio_project_import
+    await sql`INSERT INTO public.studio_project_import
       ("projectId",id,"ownerId","contentType",checksum,"sizeBytes",path,"fileName","externalReferences")
       VALUES (${project.id}::uuid,${importId}::uuid,${ownerId}::uuid,${contentType},${imported.sha256},
         ${imported.size},${imported.path},'retained import',NULL)`.execute(db);
@@ -267,12 +265,7 @@ describe('Buddy Studio library fidelity', () => {
         })
       ).asset.id;
     }
-    const repository = new StudioExportRepository(
-      db,
-      new DerivativePrivacyRepository(db),
-      new ForkPrivacyRepository(db),
-      new ForkEnrichmentRepository(db),
-    );
+    const repository = new StudioExportRepository(db, new DerivativePrivacyRepository(db));
     const promoted = await repository.saveToLibrary({
       versionId: exported.id,
       ownerId,
@@ -438,7 +431,7 @@ describe('Buddy Studio library fidelity', () => {
     const { project, imported, importId, saved } = await seed();
     const generated = await file('waveform.json', '{"samples":[1,2]}');
     const generatedId = 'waveform-own';
-    await sql`INSERT INTO immich_fork.studio_generated_resource
+    await sql`INSERT INTO public.studio_generated_resource
       ("projectId",id,"ownerId","sourceRevision",producer,checksum,path,"derivedFrom")
       VALUES (${project.id}::uuid,${generatedId},${ownerId}::uuid,1,'waveform',${generated.sha256},${generated.path},
         ${JSON.stringify([`project-import:${importId}`])}::text::jsonb)`.execute(db);
@@ -631,7 +624,7 @@ describe('Buddy Studio library fidelity', () => {
     foreign.studio!.projects[project.id].imports[0].ownerId = other;
     expect(() => readBuddyStudioProject(foreign, project.id)).toThrow('ownership');
     await db.deleteFrom('studio_project').where('id', '=', project.id).execute();
-    await sql`DELETE FROM immich_fork.studio_project_import WHERE "projectId"=${project.id}::uuid`.execute(db);
+    await sql`DELETE FROM public.studio_project_import WHERE "projectId"=${project.id}::uuid`.execute(db);
     await db.updateTable('user').set({ quotaSizeInBytes: 1 }).where('id', '=', ownerId).execute();
     const quota = await worker(manifest);
     await quota.run();
@@ -733,7 +726,7 @@ describe('Buddy Studio library fidelity', () => {
     const planned = buddyStudioFiles(manifest, project.id)[0];
     await mkdir(dirname(planned.target), { recursive: true });
     await writeFile(planned.target, caption);
-    await sql`INSERT INTO immich_fork.buddy_backup_reference ("runId",path)
+    await sql`INSERT INTO public.buddy_backup_reference ("runId",path)
       VALUES (${randomUUID()}::uuid,${planned.target})`.execute(db);
     await expect(
       db
@@ -771,20 +764,20 @@ describe('Buddy Studio library fidelity', () => {
     await writeFile(unknownPath, caption);
     const unregisteredPath = join(folder, 'personal-note.txt');
     await writeFile(unregisteredPath, 'Unregistered files must survive');
-    await sql`UPDATE immich_fork.studio_project_import SET path=${ordinaryPath}
+    await sql`UPDATE public.studio_project_import SET path=${ordinaryPath}
       WHERE "projectId"=${project.id}::uuid AND id=${importId}::uuid`.execute(db);
     for (const [id, path] of [
       [restoredId, restoredPath],
       [randomUUID(), unknownPath],
     ])
-      await sql`INSERT INTO immich_fork.studio_project_import
+      await sql`INSERT INTO public.studio_project_import
         ("projectId",id,"ownerId","contentType",checksum,"sizeBytes",path,"fileName","externalReferences")
         VALUES (${project.id}::uuid,${id}::uuid,${ownerId}::uuid,'application/x-subrip',${imported.sha256},
           ${imported.size},${path},'retained.srt',NULL)`.execute(db);
     await db.deleteFrom('studio_project').where('id', '=', project.id).execute();
     const runId = randomUUID();
     for (const path of [ordinaryPath, restoredPath])
-      await sql`INSERT INTO immich_fork.buddy_backup_reference ("runId",path)
+      await sql`INSERT INTO public.buddy_backup_reference ("runId",path)
       VALUES (${runId}::uuid,${path})`.execute(db);
     const logger = ctx.getMock(LoggingRepository);
     const storage = new StorageRepository(logger);
@@ -799,7 +792,7 @@ describe('Buddy Studio library fidelity', () => {
     );
     const recorded = async () =>
       (
-        await sql<{ id: string; path: string }>`SELECT id,path FROM immich_fork.studio_project_import
+        await sql<{ id: string; path: string }>`SELECT id,path FROM public.studio_project_import
       WHERE "projectId"=${project.id}::uuid ORDER BY path`.execute(db)
       ).rows;
     await sweeper.sweep();
@@ -808,13 +801,13 @@ describe('Buddy Studio library fidelity', () => {
     expect(
       (
         await sql<{ requested: boolean }>`SELECT bool_and("deleteRequested") AS requested
-      FROM immich_fork.buddy_backup_reference WHERE "runId"=${runId}::uuid`.execute(db)
+      FROM public.buddy_backup_reference WHERE "runId"=${runId}::uuid`.execute(db)
       ).rows[0].requested,
     ).toBe(true);
 
     // Capture release's queued generic cleanup still sees the import row. The row survives a
     // lost/failed queue delivery and makes the next lifecycle sweep a durable retry.
-    await sql`UPDATE immich_fork.buddy_backup_reference SET released=true WHERE "runId"=${runId}::uuid`.execute(db);
+    await sql`UPDATE public.buddy_backup_reference SET released=true WHERE "runId"=${runId}::uuid`.execute(db);
     const genericUnlink = vi.fn().mockResolvedValue(undefined);
     expect((await new PhysicalFileRepository(db).deleteUnreferencedPath(restoredPath, genericUnlink)).deleted).toBe(
       false,
@@ -839,7 +832,7 @@ describe('Buddy Studio library fidelity', () => {
     expect(await readFile(unregisteredPath, 'utf8')).toBe('Unregistered files must survive');
 
     await writeFile(ordinaryPath, caption);
-    await sql`INSERT INTO immich_fork.studio_project_import
+    await sql`INSERT INTO public.studio_project_import
       ("projectId",id,"ownerId","contentType",checksum,"sizeBytes",path,"fileName","externalReferences")
       VALUES (${project.id}::uuid,${importId}::uuid,${ownerId}::uuid,'application/x-subrip',${imported.sha256},
         ${imported.size},${ordinaryPath},'retained.srt',NULL)`.execute(db);
@@ -862,18 +855,16 @@ describe('Buddy Studio library fidelity', () => {
     const oldPath = join(studioImportProjectFolder(ownerId, project.id), `${importId}.srt`);
     await mkdir(dirname(oldPath), { recursive: true });
     await writeFile(oldPath, caption);
-    await sql`UPDATE immich_fork.studio_project_import SET path=${oldPath}
+    await sql`UPDATE public.studio_project_import SET path=${oldPath}
       WHERE "projectId"=${project.id}::uuid AND id=${importId}::uuid`.execute(db);
     inventory.delete(imported.path);
     inventory.set(oldPath, { ...imported, path: oldPath });
     const manifest = await capture();
     const runId = randomUUID();
-    await sql`INSERT INTO immich_fork.buddy_backup_reference ("runId",path) VALUES (${runId}::uuid,${oldPath})`.execute(
-      db,
-    );
+    await sql`INSERT INTO public.buddy_backup_reference ("runId",path) VALUES (${runId}::uuid,${oldPath})`.execute(db);
     const currentPath = async () =>
       (
-        await sql<{ path: string }>`SELECT path FROM immich_fork.studio_project_import
+        await sql<{ path: string }>`SELECT path FROM public.studio_project_import
       WHERE "projectId"=${project.id}::uuid AND id=${importId}::uuid`.execute(db)
       ).rows[0].path;
     const interrupted = await worker(manifest);
@@ -895,7 +886,7 @@ describe('Buddy Studio library fidelity', () => {
     const physical = new PhysicalFileRepository(db);
     expect((await physical.deleteUnreferencedPath(oldPath, () => storage.unlink(oldPath))).deleted).toBe(false);
     expect(await readFile(oldPath, 'utf8')).toBe(caption);
-    await sql`UPDATE immich_fork.buddy_backup_reference SET released=true WHERE "runId"=${runId}::uuid`.execute(db);
+    await sql`UPDATE public.buddy_backup_reference SET released=true WHERE "runId"=${runId}::uuid`.execute(db);
     expect((await physical.deleteUnreferencedPath(oldPath, () => storage.unlink(oldPath))).deleted).toBe(true);
     await expect(readFile(oldPath)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await readFile(await currentPath(), 'utf8')).toBe(caption);
@@ -906,12 +897,7 @@ describe('Buddy Studio library fidelity', () => {
     const manifest = await capture();
     await db.deleteFrom('studio_project').where('id', '=', project.id).execute();
     const job = await worker(manifest);
-    const repository = new StudioExportRepository(
-      db,
-      new DerivativePrivacyRepository(db),
-      new ForkPrivacyRepository(db),
-      new ForkEnrichmentRepository(db),
-    );
+    const repository = new StudioExportRepository(db, new DerivativePrivacyRepository(db));
     const storage = new StorageRepository(ctx.getMock(LoggingRepository));
     const held = Promise.withResolvers<number>();
     const release = Promise.withResolvers<void>();
@@ -1047,15 +1033,8 @@ describe('Buddy Studio library fidelity', () => {
       .execute();
     await db.deleteFrom('studio_project').where('id', '=', project.id).execute();
     const runId = randomUUID();
-    await sql`INSERT INTO immich_fork.buddy_backup_reference ("runId",path) VALUES (${runId}::uuid,${path})`.execute(
-      db,
-    );
-    const repository = new StudioExportRepository(
-      db,
-      new DerivativePrivacyRepository(db),
-      new ForkPrivacyRepository(db),
-      new ForkEnrichmentRepository(db),
-    );
+    await sql`INSERT INTO public.buddy_backup_reference ("runId",path) VALUES (${runId}::uuid,${path})`.execute(db);
+    const repository = new StudioExportRepository(db, new DerivativePrivacyRepository(db));
     const storage = new StorageRepository(ctx.getMock(LoggingRepository));
     const service = Object.assign(Object.create(StudioExportService.prototype), {
       repository,
@@ -1075,7 +1054,7 @@ describe('Buddy Studio library fidelity', () => {
     await sweep();
     expect(await stored()).toEqual({ outputPath: path, outputRemovedAt: null });
     expect(await readFile(path, 'utf8')).toBe('Retained export bytes');
-    await sql`UPDATE immich_fork.buddy_backup_reference SET released=true WHERE "runId"=${runId}::uuid`.execute(db);
+    await sql`UPDATE public.buddy_backup_reference SET released=true WHERE "runId"=${runId}::uuid`.execute(db);
     const unlink = vi.spyOn(storage, 'unlink').mockRejectedValueOnce(new Error('EIO'));
     await sweep();
     expect(await stored()).toEqual({ outputPath: path, outputRemovedAt: null });

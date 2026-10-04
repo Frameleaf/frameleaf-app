@@ -1,7 +1,4 @@
 import { Kysely } from 'kysely';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as migration from 'src/fork-schema/migrations/0000000000220-PartnerOrigins.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   AssetOriginField,
@@ -10,6 +7,7 @@ import {
 } from 'src/repositories/partner-origin.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -27,28 +25,8 @@ const setup = () => {
   return { ctx, sut: ctx.get(PartnerOriginRepository) };
 };
 
-const isMine = (entry: { identity: string }) =>
-  ['asset_origin', 'album_origin', 'person_origin', 'partner_backfill'].some((table) =>
-    entry.identity.startsWith(`immich_fork.${table}`),
-  );
-
-it('matches the private catalog and rolls back without touching the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    const expected = manifest[kind].filter((entry) => isMine(entry));
-    expect(expected.length).toBeGreaterThan(0);
-    expect(before[kind].filter((entry) => isMine(entry))).toEqual(expected);
-  }
-  await migration.down(db);
-  const dropped = await getCatalogEvidence(db);
-  expect(dropped.tables.filter((entry) => isMine(entry))).toEqual([]);
-  await migration.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-  }
+it('installs feature tables in the real canonical baseline', async () => {
+  await expectCanonicalTables(db, ['album_origin', 'asset_origin', 'person_origin']);
 });
 
 describe(PartnerOriginRepository.name, () => {

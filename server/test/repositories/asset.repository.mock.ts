@@ -1,4 +1,3 @@
-import { Mocked, vitest } from 'vitest';
 import {
   AssetFileMove,
   AssetFileMoveOperations,
@@ -6,6 +5,7 @@ import {
   AssetRepository,
 } from 'src/repositories/asset.repository.js';
 import { RepositoryInterface } from 'src/types.js';
+import { Mocked, vitest } from 'vitest';
 
 export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetRepository>> => {
   return {
@@ -88,7 +88,6 @@ export const newAssetRepositoryMock = (): Mocked<RepositoryInterface<AssetReposi
     getStudioHdrIntermediateStates: vitest.fn().mockResolvedValue([]),
     getStudioHdrSourceFingerprint: vitest.fn().mockResolvedValue(Buffer.from('fingerprint')),
     touchStudioHdrIntermediates: vitest.fn().mockResolvedValue(void 0),
-    canRecordStudioHdrIntermediates: vitest.fn().mockResolvedValue(true),
     recordStudioHdrIntermediate: vitest.fn().mockResolvedValue({ recorded: true }),
     releaseStudioHdrIntermediates: vitest.fn().mockResolvedValue([]),
     getForEdit: vitest.fn(),

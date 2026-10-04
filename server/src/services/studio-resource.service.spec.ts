@@ -1,6 +1,4 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import type { AssetRestoration } from 'src/repositories/asset-restoration.repository.js';
-import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js';
 import { AuthSession } from 'src/database.js';
 import { AssetRestorationStatus } from 'src/dtos/asset-restoration.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
@@ -26,6 +24,8 @@ import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
+import type { AssetRestoration } from 'src/repositories/asset-restoration.repository.js';
+import type { StudioResourceRights } from 'src/utils/studio-rights.generated.js';
 
 /**
  * FL-86: the reviewed rights table the resolver consults. It starts empty, so every resource is
@@ -631,10 +631,8 @@ describe(StudioResourceService.name, () => {
       });
     });
 
-    it('queues nothing when nothing is HDR or the fork schema cannot record intermediates', async () => {
+    it('queues nothing when no HDR candidates were supplied', async () => {
       await expect(sut.studioHdrProxies([], personal)).resolves.toEqual([]);
-      mocks.asset.canRecordStudioHdrIntermediates.mockResolvedValue(false);
-      await expect(sut.studioHdrProxies([newUuid()], personal)).resolves.toEqual([]);
       expect(mocks.asset.getStudioHdrIntermediateStates).not.toHaveBeenCalled();
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });

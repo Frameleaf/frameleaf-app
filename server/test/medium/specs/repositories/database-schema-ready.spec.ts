@@ -15,14 +15,14 @@ class Rollback extends Error {}
 
 /** The edge worker waits on this before it reads anything (a fresh install is still migrating). */
 describe('DatabaseRepository.isSchemaReady', () => {
-  it('is ready once the public and Frameleaf migrations have run', async () => {
+  it('is ready once the canonical Frameleaf baseline has run', async () => {
     const sut = new DatabaseRepository(defaultDatabase, LoggingRepository.create(), new ConfigRepository());
     await expect(sut.isSchemaReady()).resolves.toBe(true);
   });
 
   for (const [what, table] of [
     ['public', 'public.system_metadata'],
-    ['Frameleaf', 'immich_fork.migrations'],
+    ['migration ledger', 'public.frameleaf_migrations'],
   ] as const) {
     it(`is not ready while the ${what} schema is missing`, async () => {
       const result = defaultDatabase.transaction().execute(async (trx) => {

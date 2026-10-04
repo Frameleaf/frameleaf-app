@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import { link, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { digest } from './adapters.js';
-import { ImmichImportService } from './importer.js';
-import { ImportConfig, ImportDatabase, ImportRow } from './types.js';
+import { digest } from 'src/immich-import/adapters.js';
+import { ImmichImportService } from 'src/immich-import/importer.js';
+import { ImportConfig, ImportDatabase, ImportRow } from 'src/immich-import/types.js';
 
 const config: ImportConfig = {
   version: '3.2.4',
@@ -15,14 +15,15 @@ const config: ImportConfig = {
 const createImporter = (run?: ImportRow, populated = false) => {
   const statements: string[] = [];
   const source: ImportDatabase = {
-    query: async () => [{ system_identifier: 'source', database_oid: '1' }],
+    query: () => Promise.resolve([{ system_identifier: 'source', database_oid: '1' }]),
     transaction: async (body) => body(source),
   };
   const destination: ImportDatabase = {
     query: async (statement) => {
+      await Promise.resolve();
       statements.push(statement);
       if (statement.includes('pg_control_system')) return [{ system_identifier: 'destination', database_oid: '1' }];
-      if (statement.includes('server_version_num')) return [{ version: 190000 }];
+      if (statement.includes('server_version_num')) return [{ version: 190_000 }];
       if (statement.includes('FROM pg_extension')) return [{ extname: 'vector' }];
       if (statement.includes('pg_get_indexdef'))
         return [
@@ -80,6 +81,7 @@ describe('import admission and activation gates', () => {
       config_fingerprint: digest(config),
     });
     vi.spyOn(importer.source, 'batches').mockImplementation(async function* (table) {
+      await Promise.resolve();
       if (table === 'album_user')
         yield [{ row: { albumId: 'album', userId: 'owner', role: 'owner' }, cursor: ['album', 'owner'] }];
     });
@@ -107,6 +109,7 @@ describe('mapped external originals', () => {
     const statements: { sql: string; values: unknown[] }[] = [];
     const db: ImportDatabase = {
       query: async (sql, values = []) => {
+        await Promise.resolve();
         statements.push({ sql, values });
         return sql.includes('pg_try_advisory_lock') ? [{ acquired: true }] : [];
       },
@@ -124,6 +127,7 @@ describe('mapped external originals', () => {
       embeddings: [],
     });
     vi.spyOn(importer.source, 'batches').mockImplementation(async function* (table) {
+      await Promise.resolve();
       if (table === 'asset')
         yield [
           {
@@ -133,7 +137,7 @@ describe('mapped external originals', () => {
               isExternal: true,
               libraryId: 'library',
               checksumAlgorithm: 'sha1-path',
-              checksum: `\\x${createHash('sha1').update(`path:${sourcePath}`).digest('hex')}`,
+              checksum: String.raw`\x${createHash('sha1').update(`path:${sourcePath}`).digest('hex')}`,
             },
             cursor: ['asset'],
           },
@@ -143,7 +147,7 @@ describe('mapped external originals', () => {
     const inserted = statements.find(({ sql }) => sql.startsWith('INSERT INTO public."asset"'))!;
     expect(JSON.parse(String(inserted.values[0]))).toMatchObject({
       originalPath: targetPath,
-      checksum: `\\x${createHash('sha1').update(`path:${targetPath}`).digest('hex')}`,
+      checksum: String.raw`\x${createHash('sha1').update(`path:${targetPath}`).digest('hex')}`,
       checksumAlgorithm: 'sha1-path',
     });
   });
@@ -163,6 +167,7 @@ describe('mapped external originals', () => {
       embeddings: [],
     });
     vi.spyOn(importer.source, 'batches').mockImplementation(async function* (table) {
+      await Promise.resolve();
       if (table === 'asset')
         yield [
           {

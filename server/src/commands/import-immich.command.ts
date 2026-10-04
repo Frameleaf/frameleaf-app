@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises';
 import { Command, CommandRunner, Option } from 'nest-commander';
+import { readFile } from 'node:fs/promises';
 import { connectImportDatabase } from 'src/immich-import/database.js';
 import { ImmichImportService } from 'src/immich-import/importer.js';
 import { getImmichImportState } from 'src/immich-import/state.js';
@@ -102,7 +102,8 @@ export const validateImportConfig = (config: ImportConfig): void => {
     typeof config.version !== 'string' ||
     typeof config.sourceId !== 'string' ||
     config.sourceId.length < 8 ||
-    config.writersStopped !== true ||
+    typeof config.writersStopped !== 'boolean' ||
+    !config.writersStopped ||
     !Array.isArray(config.mediaRoots) ||
     config.mediaRoots.length === 0 ||
     config.mediaRoots.some((root) => !root || typeof root.source !== 'string' || typeof root.target !== 'string')

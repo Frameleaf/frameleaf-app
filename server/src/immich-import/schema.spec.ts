@@ -1,5 +1,5 @@
-import { frozenSource } from './adapters.js';
-import { normalizeSchemaSql, verifySourceStructure } from './schema.js';
+import { frozenSource } from 'src/immich-import/adapters.js';
+import { normalizeSchemaSql, verifySourceStructure } from 'src/immich-import/schema.js';
 
 const versions = ['3.0.0', '3.0.1', '3.0.2', '3.0.3', '3.1.0', '3.2.0', '3.2.1', '3.2.2', '3.2.3', '3.2.4'];
 describe('frozen source structure', () => {
@@ -19,30 +19,38 @@ describe('frozen source structure', () => {
       const expected = frozenSource('3.2.4').structure;
       const actual = structuredClone(expected);
       switch (change) {
-        case 'nullable':
+        case 'nullable': {
           actual.tables.asset.ownerId.not_null = false;
           break;
-        case 'default':
+        }
+        case 'default': {
           actual.tables.user.password.default = "'unexpected'::character varying";
           break;
-        case 'identity':
+        }
+        case 'identity': {
           actual.tables.naturalearth_countries.id.identity = '';
           break;
-        case 'type':
+        }
+        case 'type': {
           actual.tables.face_search.embedding.type = 'vector(768)';
           break;
-        case 'foreign-key':
+        }
+        case 'foreign-key': {
           actual.constraints = actual.constraints.filter(({ definition }) => !definition.includes('FOREIGN KEY'));
           break;
-        case 'check':
+        }
+        case 'check': {
           actual.constraints = actual.constraints.filter(({ definition }) => !definition.includes('CHECK'));
           break;
-        case 'unique-index':
+        }
+        case 'unique-index': {
           actual.uniqueIndexes = [];
           break;
-        case 'enum':
+        }
+        case 'enum': {
           actual.enums[0].labels.reverse();
           break;
+        }
       }
       expect(() => verifySourceStructure(actual, expected)).toThrow('UNKNOWN_SOURCE_SCHEMA');
     },

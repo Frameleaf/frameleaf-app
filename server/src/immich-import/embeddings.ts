@@ -1,4 +1,4 @@
-import { ImportDatabase } from './types.js';
+import { ImportDatabase } from 'src/immich-import/types.js';
 
 export type EmbeddingTransferEvidence = {
   sourceDimensions: number | null;
@@ -28,7 +28,7 @@ export const inspectEmbeddingAdmission = async (
   const [from, to] = await Promise.all([inspect(source), inspect(destination)]);
   const dimension = (rows: typeof from.dimensions, table: string): number | null => {
     const value = Number(rows.find((row) => row.table_name === table)?.dimensions);
-    return Number.isInteger(value) && value > 0 ? value : null;
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
   };
   const model = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null);
   const evidence = (table: string, key: string): EmbeddingTransferEvidence => ({

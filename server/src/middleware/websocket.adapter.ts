@@ -70,7 +70,7 @@ export class PostgresSocketTransport {
         throw new Error('Websocket transport stopped during startup');
       }
       // Repeat initial heartbeat after LISTEN. Responses to the constructor's heartbeat can be lost.
-      server.sockets.adapter.init();
+      await server.sockets.adapter.init();
       if (registerWorker) {
         await this.refreshWorker();
         this.heartbeat = setInterval(() => {
@@ -129,7 +129,7 @@ export class PostgresSocketTransport {
     if (expected === 0) {
       throw new Error('No live websocket workers are available to acknowledge a restart');
     }
-    server.sockets.adapter.init();
+    await server.sockets.adapter.init();
     const deadline = Date.now() + DISCOVERY_MS;
     while ((await server.sockets.adapter.serverCount()) - 1 < expected) {
       if (Date.now() >= deadline) {
@@ -148,12 +148,12 @@ export class PostgresSocketTransport {
     });
     await this.heartbeatWork;
     try {
-      this.server?.sockets.adapter.close();
+      await this.server?.sockets.adapter.close();
       await this.pool.query('DELETE FROM public.frameleaf_websocket_worker WHERE id = $1', [this.workerId]);
     } finally {
       await closeSharedServicePool(this.pool, this.clients);
       // Clear a reconnect scheduled by an in-flight failed adapter initialization during teardown.
-      this.server?.sockets.adapter.close();
+      await this.server?.sockets.adapter.close();
     }
   }
 }

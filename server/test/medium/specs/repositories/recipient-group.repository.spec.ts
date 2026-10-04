@@ -1,12 +1,10 @@
 import { Kysely, sql } from 'kysely';
 import { AlbumKind, AlbumUserRole } from 'src/enum.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as migration from 'src/fork-schema/migrations/0000000000160-RecipientGroups.js';
 import { AlbumUserRepository, RECIPIENT_GROUP_LIMIT } from 'src/repositories/album-user.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -14,7 +12,6 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   await db?.destroy();
@@ -25,23 +22,8 @@ const setup = () => {
   return { ctx, sut: ctx.get(AlbumUserRepository) };
 };
 
-const isRecipientGroup = (entry: { identity: string }) => entry.identity.startsWith('immich_fork.recipient_group');
-
-it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    expect(before[kind].filter((entry) => isRecipientGroup(entry))).toEqual(
-      manifest[kind].filter((entry) => isRecipientGroup(entry)),
-    );
-  }
-  await migration.down(db);
-  await migration.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-  }
+it('installs feature tables in the real canonical baseline', async () => {
+  await expectCanonicalTables(db, ['recipient_group']);
 });
 
 it('keeps every group to its owner: others can neither read, change nor delete it', async () => {
@@ -91,19 +73,6 @@ it('never touches a space membership or invitation when a group changes', async 
   await expect(snapshot()).resolves.toEqual(before);
 });
 
-it('refuses to write while the fork schema is not writable', async () => {
-  const { ctx, sut } = setup();
-  const { user } = await ctx.newUser();
-  await sql`UPDATE immich_fork.state SET phase='failed' WHERE id=1`.execute(db);
-  try {
-    await expect(sut.createRecipientGroup(user.id, 'Family', [])).rejects.toThrow(
-      'Recipient groups are unavailable during database handoff',
-    );
-  } finally {
-    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
-  }
-});
-
 it('drops a deleted account’s own groups and takes it out of everyone else’s (FL-55)', async () => {
   const { ctx, sut } = setup();
   const { user: owner } = await ctx.newUser();
@@ -125,7 +94,7 @@ it('caps how many groups one person keeps, with a clear error (FL-55)', async ()
   const { user } = await ctx.newUser();
   const { user: other } = await ctx.newUser();
   await sql`
-    INSERT INTO immich_fork.recipient_group ("ownerId", name)
+    INSERT INTO public.recipient_group ("ownerId", name)
     SELECT ${user.id}::uuid, 'Group ' || n FROM generate_series(1, ${RECIPIENT_GROUP_LIMIT}) AS n
   `.execute(db);
 

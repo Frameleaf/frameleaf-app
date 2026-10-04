@@ -1,9 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { AssetDevelopRevisionStatus } from 'src/dtos/asset-develop.dto.js';
-import { getCatalogEvidence } from 'src/fork-schema/catalog.js';
-import manifest from 'src/fork-schema/manifests/fork-v2-catalog.json' with { type: 'json' };
-import * as artifacts from 'src/fork-schema/migrations/0000000000212-AssetDevelopArtifacts.js';
 import { AssetDevelopRepository, DEVELOP_ARTIFACT_PER_ASSET } from 'src/repositories/asset-develop.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
@@ -11,6 +8,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { defaultDevelopRecipe } from 'src/utils/develop-recipe.js';
+import { expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -18,7 +16,6 @@ import { getKyselyDB } from 'test/utils.js';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   await db?.destroy();
@@ -29,7 +26,6 @@ const setup = () => {
   return { ctx, sut: new AssetDevelopRepository(db) };
 };
 
-const isOurs = (entry: { identity: string }) => entry.identity.startsWith('immich_fork.asset_develop_artifact');
 const sha = (character: string) => character.repeat(64);
 /** The owner's storage usage as the quota checks read it. */
 const usage = async (userId: string) =>
@@ -44,7 +40,7 @@ const stored = async (assetId: string) =>
   Number(
     (
       await sql<{ count: string }>`
-        SELECT count(*) AS count FROM immich_fork.asset_develop_artifact WHERE "assetId" = ${assetId}::uuid
+        SELECT count(*) AS count FROM public.asset_develop_artifact WHERE "assetId" = ${assetId}::uuid
       `.execute(db)
     ).rows[0].count,
   );
@@ -53,22 +49,8 @@ const refusals = (results: PromiseSettledResult<boolean>[]) =>
     result.status === 'rejected' ? [(result.reason as BadRequestException).getResponse() as { code: string }] : [],
   );
 
-it('matches the private catalog and rolls back without modifying the official catalog', async () => {
-  const before = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes'] as const) {
-    const ours = before[kind].filter((entry) => isOurs(entry));
-    expect(ours.length).toBeGreaterThan(0);
-    expect(ours).toEqual(manifest[kind].filter((entry) => isOurs(entry)));
-  }
-  await artifacts.down(db);
-  await artifacts.up(db);
-  const after = await getCatalogEvidence(db);
-  for (const kind of ['tables', 'columns', 'constraints', 'indexes', 'functions', 'triggers'] as const) {
-    expect(after[kind].filter((entry) => entry.identity.startsWith('public.'))).toEqual(
-      before[kind].filter((entry) => entry.identity.startsWith('public.')),
-    );
-    expect(after[kind].filter((entry) => isOurs(entry))).toEqual(before[kind].filter((entry) => isOurs(entry)));
-  }
+it('installs feature tables in the real canonical baseline', async () => {
+  await expectCanonicalTables(db, ['asset_develop_artifact', 'asset_develop_revision']);
 });
 
 it('records an artifact once, counts it, and releases unreferenced and removed ones', async () => {
@@ -145,9 +127,9 @@ it('keeps a file recorded again before its queued deletion runs, and restarts th
     (
       await sql<{
         createdAt: Date;
-      }>`SELECT "createdAt" FROM immich_fork.asset_develop_artifact WHERE id = ${sha('e')}`.execute(db)
+      }>`SELECT "createdAt" FROM public.asset_develop_artifact WHERE id = ${sha('e')}`.execute(db)
     ).rows[0]?.createdAt;
-  await sql`UPDATE immich_fork.asset_develop_artifact SET "createdAt" = now() - interval '30 days' WHERE id = ${sha('e')}`.execute(
+  await sql`UPDATE public.asset_develop_artifact SET "createdAt" = now() - interval '30 days' WHERE id = ${sha('e')}`.execute(
     db,
   );
   // uploading it again restarts its grace period
@@ -155,7 +137,7 @@ it('keeps a file recorded again before its queued deletion runs, and restarts th
   expect((await age())!.getTime()).toBeGreaterThan(Date.now() - 60_000);
 
   // saving a version that uses it does too, and a render needs it
-  await sql`UPDATE immich_fork.asset_develop_artifact SET "createdAt" = now() - interval '30 days' WHERE id = ${sha('e')}`.execute(
+  await sql`UPDATE public.asset_develop_artifact SET "createdAt" = now() - interval '30 days' WHERE id = ${sha('e')}`.execute(
     db,
   );
   const recipe = {
@@ -202,7 +184,7 @@ it('keeps a file recorded again before its queued deletion runs, and restarts th
   ).resolves.toMatchObject({ assetId: asset.id });
 
   // released, then recorded again before the queued deletion runs: the file stays
-  await sql`DELETE FROM immich_fork.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid`.execute(db);
+  await sql`DELETE FROM public.asset_develop_revision WHERE "assetId" = ${asset.id}::uuid`.execute(db);
   const queue = vi.fn().mockResolvedValue(undefined);
   await sut.releaseArtifacts(queue, { unreferencedBefore: new Date(Date.now() + 60_000) });
   expect(queue).toHaveBeenCalledWith([artifact.path]);
@@ -211,32 +193,6 @@ it('keeps a file recorded again before its queued deletion runs, and restarts th
   const physical = new PhysicalFileRepository(db);
   await expect(physical.deleteUnreferencedPath(artifact.path, unlink)).resolves.toMatchObject({ deleted: false });
   expect(unlink).not.toHaveBeenCalled();
-});
-
-it('refuses writes while the server is being handed over', async () => {
-  const { ctx, sut } = setup();
-  const { user } = await ctx.newUser();
-  const { asset } = await ctx.newAsset({ ownerId: user.id });
-  await sql`UPDATE immich_fork.state SET phase='inactive' WHERE id=1`.execute(db);
-  try {
-    await expect(
-      sut.addArtifact({
-        assetId: asset.id,
-        id: sha('d'),
-        ownerId: user.id,
-        kind: 'fill',
-        path: '/thumbs/d.png',
-        bytes: 1,
-        width: 1,
-        height: 1,
-      }),
-    ).rejects.toThrow(/handed over/);
-    await expect(sut.releaseArtifacts(vi.fn(), { assetId: asset.id })).resolves.toEqual([]);
-    // FL-304: nor is usage recounted here; the caller recounts the photos alone
-    await expect(sut.syncUsage(user.id)).resolves.toBe(false);
-  } finally {
-    await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
-  }
 });
 
 // many uploads at once, each waiting its turn on the photo's lock: slow on a loaded runner

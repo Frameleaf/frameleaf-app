@@ -1,6 +1,6 @@
-import { frozenSource } from './adapters.js';
-import { ImmichSource } from './source.js';
-import { ImportConfig, ImportDatabase, ImportRow } from './types.js';
+import { frozenSource } from 'src/immich-import/adapters.js';
+import { ImmichSource } from 'src/immich-import/source.js';
+import { ImportConfig, ImportDatabase, ImportRow } from 'src/immich-import/types.js';
 
 const config: ImportConfig = {
   version: '3.2.4',
@@ -29,6 +29,7 @@ const makeSource = (
   const statements: string[] = [];
   const db: ImportDatabase = {
     query: async (statement): Promise<ImportRow[]> => {
+      await Promise.resolve();
       statements.push(statement);
       if (statement.includes('current_setting')) {
         return [{ rolsuper: false, rolbypassrls: false, readonly: 'on' }];
@@ -77,7 +78,7 @@ describe('source preflight', () => {
     [{ extraMigration: true }, 'UNKNOWN_SOURCE_MIGRATIONS'],
     [{ extraColumn: true }, 'UNKNOWN_SOURCE_SCHEMA'],
   ] as const)('fails closed for %j', async (overrides, code) => {
-    await expect(makeSource(overrides).source.preflight()).rejects.toThrow(String(code));
+    await expect(makeSource(overrides).source.preflight()).rejects.toThrow(code);
   });
 
   it('refuses writersStopped=false before database access', async () => {

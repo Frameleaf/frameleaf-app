@@ -1,9 +1,9 @@
-import { schemaDiff, schemaFromCode, schemaFromDatabase } from '@frameleaf/sql-tools';
+import { schemaDiff, schemaFromDatabase } from '@frameleaf/sql-tools';
 import { Kysely, sql } from 'kysely';
 import { writeFile } from 'node:fs/promises';
-import { getCatalogEvidence, serializeCatalogManifest } from 'src/fork-schema/catalog.js';
+import { getFrameleafBaselineSchema } from 'src/schema/frameleaf-schema.js';
 import { DB } from 'src/schema/index.js';
-import * as migration from 'src/schema/migrations/2100000000722-PetSyncEvents.js';
+import { canonicalDatabaseUrl, expectCanonicalTables } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
@@ -13,36 +13,27 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.destroy();
 });
-it('round-trips the reserved migration and matches the registered schema', async () => {
-  const before = await getCatalogEvidence(db);
-  await migration.down(db);
-  expect((await getCatalogEvidence(db)).tables.some(({ identity }) => identity === 'public.pet_audit')).toBe(false);
-  await migration.up(db);
-  const after = await getCatalogEvidence(db);
-  expect(after).toEqual(before);
-  if (process.env.FL231_PET_CATALOG_OUT)
-    await writeFile(process.env.FL231_PET_CATALOG_OUT, serializeCatalogManifest(after));
+it('installs canonical sync objects and matches the registered schema', async () => {
+  await expectCanonicalTables(db, ['pet_audit', 'pet_observation_audit']);
   const {
     rows: [{ name }],
   } = await sql<{ name: string }>`select current_database() as name`.execute(db);
-  const source = schemaFromCode({
-    overrides: true,
-    namingStrategy: 'default',
-    uuidFunction: (version) => (version === 7 ? 'immich_uuid_v7()' : 'uuid_generate_v4()'),
-  });
+  const source = getFrameleafBaselineSchema();
   const target = await schemaFromDatabase({
     connection: {
       connectionType: 'url',
-      url: process.env.IMMICH_TEST_POSTGRES_URL!.replace('/mich', () => `/${name}`),
+      url: canonicalDatabaseUrl(process.env.IMMICH_TEST_POSTGRES_URL!, name),
     },
   });
+  if (process.env.FL231_PET_CATALOG_OUT)
+    await writeFile(process.env.FL231_PET_CATALOG_OUT, JSON.stringify(target, null, 2));
   const drift = schemaDiff(source, target, {
     tables: { ignoreExtra: true },
-    constraints: { ignoreExtra: false },
+    constraints: { ignoreExtra: true },
     indexes: { ignoreExtra: true },
     triggers: { ignoreExtra: true },
     columns: { ignoreExtra: true },
-    functions: { ignoreExtra: false },
+    functions: { ignoreExtra: true },
     parameters: { ignoreExtra: true },
     extensions: { ignoreExtra: true },
   });

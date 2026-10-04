@@ -1,9 +1,9 @@
 import { Kysely, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { ICloudConfigSchema } from 'src/dtos/icloud-sync.dto.js';
-import * as migration from 'src/fork-schema/migrations/0000000000090-ICloudSync.js';
 import { ICloudConnection, ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
+import { seedCanonicalAsset, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
 describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
@@ -12,17 +12,7 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
   let connection: ICloudConnection;
   beforeAll(async () => {
     db = await getKyselyDB();
-    // getKyselyDB clones CI's migrated template; this suite uses its own focused schema.
-    await sql`DROP SCHEMA IF EXISTS immich_fork CASCADE`.execute(db);
-    await sql`DROP SCHEMA public CASCADE`.execute(db);
-    await sql`CREATE SCHEMA public`.execute(db);
-    await sql`CREATE SCHEMA immich_fork`.execute(db);
-    await sql`CREATE TABLE immich_fork.state(id integer PRIMARY KEY,phase text)`.execute(db);
-    await sql`INSERT INTO immich_fork.state VALUES(1,'active')`.execute(db);
-    await sql`CREATE TABLE immich_fork.migration_audit(name text,status text)`.execute(db);
-    await sql`CREATE TABLE asset(id uuid PRIMARY KEY,"ownerId" uuid,"deletedAt" timestamptz)`.execute(db);
-    await migration.up(db);
-    await sql`ALTER TABLE immich_fork.icloud_resource ADD COLUMN "auditRequestId" uuid`.execute(db);
+
     repository = new ICloudSyncRepository(db);
   });
   afterAll(async () => {
@@ -30,8 +20,12 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
   });
   beforeEach(async () => {
     vi.unstubAllEnvs();
-    await sql`TRUNCATE immich_fork.icloud_connection CASCADE`.execute(db);
-    connection = (await repository.create(randomUUID(), 'Photos', ICloudConfigSchema.parse({ concurrency: 4 })))!;
+    await sql`TRUNCATE public.icloud_connection CASCADE`.execute(db);
+    connection = (await repository.create(
+      (await seedCanonicalUser(db)).id,
+      'Photos',
+      ICloudConfigSchema.parse({ concurrency: 4 }),
+    ))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
   });
   afterEach(() => vi.unstubAllEnvs());
@@ -50,9 +44,9 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
     const id = randomUUID(),
       assetId = options.mapped ? randomUUID() : null;
     if (assetId) {
-      await sql`INSERT INTO asset(id,"ownerId") VALUES(${assetId}::uuid,${connection.ownerId}::uuid)`.execute(db);
+      await seedCanonicalAsset(db, { id: assetId, ownerId: connection.ownerId });
     }
-    await sql`INSERT INTO immich_fork.icloud_resource(id,"connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize",status,"assetId","reservedBytes","stagingPath")
+    await sql`INSERT INTO public.icloud_resource(id,"connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize",status,"assetId","reservedBytes","stagingPath")
       VALUES(${id}::uuid,${connection.id}::uuid,${connection.ownerId}::uuid,'private','{}',${options.logical ?? 'logical'},'record',${options.role ?? 'edited-image'},${options.role ?? 'edited-image'},${fingerprint},${{ current: options.current ?? true }}::jsonb,10,${options.status ?? 'pending'},${assetId}::uuid,${options.reserved ?? 0},${options.staged ? `/private/staging/${id}` : null})`.execute(
       db,
     );
@@ -113,7 +107,7 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
     await sql`UPDATE asset SET "deletedAt"=now() WHERE "ownerId"=${connection.ownerId}::uuid`.execute(db);
     await repository.retryFailures(connection.id);
     expect(await repository.claim(connection.id, 1000)).toBeUndefined();
-    await sql`DELETE FROM asset WHERE id=(SELECT "assetId" FROM immich_fork.icloud_resource WHERE "connectionId"=${connection.id}::uuid AND fingerprint='old-0')`.execute(
+    await sql`DELETE FROM asset WHERE id=(SELECT "assetId" FROM public.icloud_resource WHERE "connectionId"=${connection.id}::uuid AND fingerprint='old-0')`.execute(
       db,
     );
     await resource('tombstone', { current: false, status: 'removed' });
@@ -153,7 +147,11 @@ describe('iCloud retained edit and staging admission (PostgreSQL)', () => {
       reserved: 90,
       staged: true,
     });
-    connection = (await repository.create(randomUUID(), 'Other photos', ICloudConfigSchema.parse({})))!;
+    connection = (await repository.create(
+      (await seedCanonicalUser(db)).id,
+      'Other photos',
+      ICloudConfigSchema.parse({}),
+    ))!;
     await repository.update(connection.id, connection.ownerId, { state: 'connected' });
     await resource('new', { role: 'original' });
     vi.stubEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES', '95');

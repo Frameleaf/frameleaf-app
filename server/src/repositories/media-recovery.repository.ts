@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { isDeepStrictEqual } from 'node:util';
 import type { MediaIntegrityResult } from 'src/services/media-integrity.service.js';
 import {
@@ -17,8 +16,10 @@ import {
   UserMetadataKey,
 } from 'src/enum.js';
 import { AuditAuthority, guardAudit, publishAudit } from 'src/repositories/icloud-audit.repository.js';
+import { BUDDY_CAPTURE_LOCK, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import { hiddenContentAssetIdExists } from 'src/utils/database.js';
+
 export type VerifiedMedia = Extract<
   MediaIntegrityResult,
   {
