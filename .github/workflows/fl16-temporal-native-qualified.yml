@@ -1,0 +1,44 @@
+name: FL16 native presentation and temporal characterization
+on:
+  push:
+    branches: [aj/fl16-temporal-native-qualified]
+permissions:
+  contents: read
+jobs:
+  native-publication:
+    if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea
+        with:
+          github_token: ${{ github.token }}
+          install_args: --locked
+          version: 2026.7.12
+      - name: Install locked server dependencies
+        run: mise run //server:install
+      - name: Build actual plugin prerequisites
+        run: |
+          mise run //:plugins
+          mise run //packages/plugin-core:build
+      - name: Qualify pure presentation policy controls
+        working-directory: ./server
+        run: mise run test --run src/utils/media-policy.spec.ts
+      - name: Exercise all actual native publication controls
+        working-directory: ./server
+        run: |
+          set -o pipefail
+          mise run test-medium --run test/medium/specs/services/video-master-qualification.service.spec.ts \
+            2>&1 | tee "$RUNNER_TEMP/fl16-av-offset.log"
+      - name: Retain actual native test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fl16-av-offset-publication
+          path: ${{ runner.temp }}/fl16-av-offset.log
+          if-no-files-found: error
+          retention-days: 7
