@@ -352,6 +352,7 @@ export class ICloudScheduledStagingRepository {
       receipt.payload.binding.connectionId !== resource.connectionId || receipt.payload.binding.sourceAssetId !== resource.sourceAssetId ||
       receipt.payload.binding.auditRequestId !== input.authority.auditRequestId ||
       receipt.payload.binding.operationId !== input.authority.operationId || receipt.payload.sha256 !== resource.sha256?.toString('hex')) { return false; }
+    const stagingPath = resource.stagingPath;
     try {
       if (canonicalJson(await this.transport.decodeSession(scheduledFreshReceiptScope(receipt.payload), receipt.seal)) !== canonicalJson(receipt.payload) ||
         canonicalJson(await this.transport.decodeSession(privateWorkScope(work.payload), work.seal)) !== canonicalJson(work.payload)) { return false; }
@@ -367,7 +368,7 @@ export class ICloudScheduledStagingRepository {
           AND "auditRequestId"=${input.authority.auditRequestId}::uuid AND "assetId" IS NULL AND path IS NULL
           AND "promotedPath" IS NULL AND "pendingJobs"='[]'::jsonb AND "leaseToken" IS NULL AND "leaseExpiresAt" IS NULL
         FOR UPDATE`.execute(db)).rows[0];
-      if (!current || current.stagingPath !== resource.stagingPath || canonicalJson(current.verification) !== canonicalJson(resource.verification)) { return false; }
+      if (!current || current.stagingPath !== stagingPath || canonicalJson(current.verification) !== canonicalJson(resource.verification)) { return false; }
       const operation = (await sql<{ claimToken: string | null }>`SELECT "claimToken" FROM public.media_operation
         WHERE id=${input.authority.operationId}::uuid AND "ownerId"=${input.ownerId}::uuid FOR UPDATE`.execute(db)).rows[0];
       const request = (await sql<{ itemClaimId: string }>`SELECT "itemClaimId" FROM immich_fork.icloud_identity_audit
@@ -379,10 +380,10 @@ export class ICloudScheduledStagingRepository {
         FROM immich_fork.icloud_claim WHERE "ownerId"=${input.ownerId}::uuid
           AND "cplAssetRecordName"=upper(${current.sourceAssetId}) FOR UPDATE`.execute(db);
       if (claims.rows.some((claim) => claim.live && claim.id !== request.itemClaimId)) { return false; }
-      await lockFilePath(db, resource.stagingPath);
-      if (await scheduledPrivatePathReferences(db, resource.stagingPath, resource.id)) { return false; }
+      await lockFilePath(db, stagingPath);
+      if (await scheduledPrivatePathReferences(db, stagingPath, resource.id)) { return false; }
       if (!process.getuid) { return false; }
-      await unlinkOwnedPrivateCopy(resource.stagingPath, { dev: receipt.payload.identity.dev, ino: receipt.payload.identity.ino,
+      await unlinkOwnedPrivateCopy(stagingPath, { dev: receipt.payload.identity.dev, ino: receipt.payload.identity.ino,
         size: receipt.payload.identity.size, uid: process.getuid() });
       const changed = await sql`UPDATE immich_fork.icloud_resource SET status='removed',"reservedBytes"=0,"stagingPath"=NULL,
         "lastError"=NULL,"updatedAt"=clock_timestamp() WHERE id=${resource.id}::uuid

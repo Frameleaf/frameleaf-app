@@ -4,14 +4,13 @@ import { UserMetadataKey } from 'src/enum.js';
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudConnection } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
-import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
 /** Activation prerequisites only. Neither configuration nor consent certifies deployed qualification.
  * Root must qualify the worker/provider/schedule before enabling execution. No receipt carries this state.
  */
 export const weeklyIdentityAdoptionActive = () =>
-  readAliasedEnv('FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION') === 'true' && new ICloudTransportRepository().enabled();
+  process.env.FRAMELEAF_ICLOUD_WEEKLY_AUDIT_EXECUTION === 'true' && new ICloudTransportRepository().enabled();
 
 export type WeeklyIdentityAdoptionContext = {
   ownerId: string; connectionId: string; grantId: string; generation: number;

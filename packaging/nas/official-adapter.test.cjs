@@ -20,7 +20,7 @@ test('source admission binds supported image and reviewed stopped-source capture
   for (const mutate of [
     (x) => { x.family = 'priorFrameleaf'; },
     (x) => { x.sourceVersion = 'v3.1.1'; },
-    (x) => { x.adapter.sourceServer = 'ghcr.io/immich-app/immich-server:v3.1.0'; },
+    (x) => { x.adapter.sourceServer = supported.certification.officialImage; },
     (x) => { x.checkpoint.media.digest = digest(9); },
     (x) => { x.adapter.acceptance.checkpointId = 'other-point'; },
     (x) => { x.adapter.sourceEvidence.path = '../unreviewed.json'; },
