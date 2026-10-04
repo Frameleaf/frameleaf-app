@@ -4,6 +4,7 @@ import type { ArgOf } from 'src/repositories/event.repository.js';
 import { OnEvent } from 'src/decorators.js';
 import { ImmichWorker } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
+import { localAddressFor } from 'src/utils/frameleaf-lan-discovery.js';
 import { detectHostAddresses } from 'src/utils/frameleaf-remote-access.js';
 import { serverIdentity } from 'src/utils/frameleaf-server-identity.js';
 
@@ -95,7 +96,8 @@ export class LanDiscoveryService extends BaseService {
 
     const { server } = await this.getConfig({ withCache: true });
     const { port, frameleafCloud } = this.configRepository.getEnv();
-    if (detectHostAddresses(frameleafCloud.localUrl).lanAddresses.length === 0) {
+    const { lanAddresses } = detectHostAddresses(frameleafCloud.localUrl);
+    if (lanAddresses.length === 0) {
       // nothing to advertise on (e.g. inside a container with no LAN interface visible)
       return;
     }
@@ -110,7 +112,9 @@ export class LanDiscoveryService extends BaseService {
     }
 
     this.bonjour ??= new Bonjour();
-    this.service = this.bonjour.publish({ name, type: 'frameleaf', protocol: 'tcp', port, txt });
+    // FL-218: advertise the port the network can reach (FRAMELEAF_LOCAL_URL's, behind a port mapping)
+    const advertised = localAddressFor(lanAddresses[0], { port, localUrl: frameleafCloud.localUrl }).port;
+    this.service = this.bonjour.publish({ name, type: 'frameleaf', protocol: 'tcp', port: advertised, txt });
     this.published = JSON.stringify(txt);
     this.watch ??= setInterval(() => void this.refresh(), LanDiscoveryService.REFRESH_MS);
     this.watch.unref?.();

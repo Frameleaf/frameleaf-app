@@ -104,7 +104,7 @@ export class AssetUploadResourceController {
     name: 'Asset-Metadata',
     required: true,
     description:
-      'Canonical base64url UTF-8 JSON: filename, fileCreatedAt, fileModifiedAt; optional duration, isFavorite, visibility, metadata array and publication: live-photo to defer publication until atomic pair commit. No sidecar or pre-existing asset references.',
+      'Canonical base64url UTF-8 JSON: filename, fileCreatedAt, fileModifiedAt; optional duration (integer milliseconds), isFavorite (JSON boolean; the strings "true" and "false" are also accepted), visibility, metadata array and publication: live-photo to defer publication until atomic pair commit. No sidecar or pre-existing asset references.',
   })
   @ApiBody({ schema: { type: 'string', format: 'binary' } })
   @ApiResponse({

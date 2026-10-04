@@ -54,6 +54,7 @@ import {
   type FrameleafUserPreferences,
   LOCKED_RULES_REQUIRE_UNLOCK_MESSAGE,
   changesLockedRules,
+  changesSyncVisibility,
   getPreferences,
   getPreferencesPartial,
   mergePreferences,
@@ -185,7 +186,11 @@ export class UserService extends BaseService {
       );
       return { previous, updated: merged };
     });
-    await this.sessionRepository.requestSyncResetForUser(auth.user.id);
+    // FL-218: a full re-sync of every session is only needed when the Locked rules that filter the sync
+    // stream changed; other preferences reach devices as an ordinary user metadata upsert.
+    if (changesSyncVisibility(previous, updated)) {
+      await this.sessionRepository.requestSyncResetForUser(auth.user.id);
+    }
     await this.recordPreferenceHistory(auth, previous, updated);
 
     return mapPreferences(updated, preferencesAudience(auth));

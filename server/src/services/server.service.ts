@@ -278,7 +278,7 @@ export class ServerService extends BaseService {
     }
     const { port, frameleafCloud } = this.configRepository.getEnv();
     const { lanAddresses } = detectHostAddresses(frameleafCloud.localUrl);
-    const local = localConnectionCandidates({ port, addresses: lanAddresses });
+    const local = localConnectionCandidates({ port, addresses: lanAddresses, localUrl: frameleafCloud.localUrl });
     return { ...publication, connections: [...publication.connections, ...local] };
   }
 
