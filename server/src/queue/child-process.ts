@@ -1,5 +1,5 @@
-import type { ChildProcess } from 'node:child_process';
 import { parentPort } from 'node:worker_threads';
+import type { ChildProcess } from 'node:child_process';
 
 /** The parent can terminate native work even when its executor's event loop is unresponsive. */
 export function trackQueueChild(child: ChildProcess): void {

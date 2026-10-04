@@ -48,21 +48,28 @@ export const splitPostgresStatements = (input: string): string[] => {
       continue;
     }
     if (char === '\\') throw new Error('psql commands are not executable migration SQL');
-    if (char === "'" || char === '"') {
-      quote = char;
-      escapedString = char === "'" && /(?:^|\W)[eE]$/u.test(current);
-    } else if (char === '$') {
-      const tag = input.slice(i).match(/^\$(?:[A-Za-z_]\w*)?\$/u)?.[0];
-      if (tag) {
-        dollar = tag;
-        current += tag;
-        i += tag.length - 1;
+    switch (char) {
+      case "'":
+      case '"': {
+        quote = char;
+        escapedString = char === "'" && /(?:^|\W)[eE]$/u.test(current);
+        break;
+      }
+      case '$': {
+        const tag = input.slice(i).match(/^\$(?:[A-Za-z_]\w*)?\$/u)?.[0];
+        if (tag) {
+          dollar = tag;
+          current += tag;
+          i += tag.length - 1;
+          continue;
+        }
+        break;
+      }
+      case ';': {
+        if (current.trim()) statements.push(current.trim() + ';');
+        current = '';
         continue;
       }
-    } else if (char === ';') {
-      if (current.trim()) statements.push(current.trim() + ';');
-      current = '';
-      continue;
     }
     current += char;
   }

@@ -4,6 +4,12 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
+import type { CloudBackupEntry } from 'src/repositories/cloud-backup-index.repository.js';
+import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
+import type { FrameleafCloudBackup } from 'src/types.js';
+import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
+import type { ConfigHistory } from 'src/utils/config-history.js';
+import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import {
   DatabaseLock,
   JobStatus,
@@ -31,19 +37,13 @@ import { unwrapBucketKey } from 'src/utils/cloud-backup-escrow.js';
 import { backupKeyFile, bucketRef, keyFingerprint } from 'src/utils/cloud-backup.js';
 import { readConfig } from 'src/utils/config.js';
 import { executionSignal, operationExecution } from 'src/utils/execution-signal.js';
-import { OperationDeadlineError, withOperationExecution } from 'src/utils/operation-execution.js';
 import { keyEscrowBlobSchema, managedStorageRef } from 'src/utils/frameleaf-cloud-backup.js';
-import { errorEnvelopeSchema, FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { FrameleafCloudError, errorEnvelopeSchema } from 'src/utils/frameleaf-cloud.js';
+import { OperationDeadlineError, withOperationExecution } from 'src/utils/operation-execution.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
 import { mockEnvData } from 'test/repositories/config.repository.mock.js';
 import { getMocks } from 'test/utils.js';
-import type { CloudBackupEntry } from 'src/repositories/cloud-backup-index.repository.js';
-import type { CloudBackupRestoreSnapshot } from 'src/services/cloud-backup-restore.js';
-import type { FrameleafCloudBackup } from 'src/types.js';
-import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
-import type { ConfigHistory } from 'src/utils/config-history.js';
-import type { PushNotice } from 'src/utils/frameleaf-push.js';
 
 vi.mock('src/utils/backup-location-selection.js', () => ({ selectBackupLocation: vi.fn() }));
 

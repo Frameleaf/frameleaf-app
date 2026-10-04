@@ -104,7 +104,12 @@ const UNDOABLE_CORRECTIONS = new Set<FaceCorrectionAction>([
 ]);
 
 type CorrectionConflictReason =
-  'already-undone' | 'not-undoable' | 'source-changed' | 'face-gone' | 'face-changed' | 'person-gone';
+  | 'already-undone'
+  | 'not-undoable'
+  | 'source-changed'
+  | 'face-gone'
+  | 'face-changed'
+  | 'person-gone';
 
 /** A 409 whose body names why a correction could not be undone (FL-57). */
 const correctionConflict = (reason: CorrectionConflictReason, message: string) =>
@@ -1238,7 +1243,7 @@ export class PersonService extends BaseService {
         this.logger.debug(`Deferring non-core face ${id} for later processing`);
         await this.jobRepository.queue({
           name: JobName.FacialRecognition,
-          data: { id, deferred: true, ...(force === undefined ? {} : { force }) },
+          data: { id, deferred: true, ...(force !== undefined && { force }) },
         });
         return JobStatus.Skipped;
       }

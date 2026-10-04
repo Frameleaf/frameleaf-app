@@ -1,8 +1,8 @@
-import type { DatabaseSchema } from '@frameleaf/sql-tools';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type { DatabaseSchema } from '@frameleaf/sql-tools';
 import {
   CATALOG_FIXED_SOURCES,
   CatalogProvenance,

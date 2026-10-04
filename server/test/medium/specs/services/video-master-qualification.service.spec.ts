@@ -8,11 +8,11 @@ import { StorageCore } from 'src/cores/storage.core.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { AssetEditAction, AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { AssetType, JobStatus, TranscodeHardwareAcceleration } from 'src/enum.js';
+import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -44,7 +44,7 @@ type Probe = {
   frames: Array<{ best_effort_timestamp_time: string }>;
   packets: Array<{ data_hash: string }>;
 };
-const inspect = <T = Probe,>(file: string, ...args: string[]): T =>
+const inspect = <T = Probe>(file: string, ...args: string[]): T =>
   JSON.parse(native('ffprobe', ['-v', 'error', '-of', 'json', ...args, file]).toString());
 const digest = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
 const frequencies = [233, 349, 467, 73, 587, 719]; // FL, FR, FC, LFE, BL, BR; none are shared.

@@ -163,7 +163,7 @@ describe(PetRecognitionService.name, () => {
         attempt: 1,
         runId: null,
         itemKey: null,
-        deadlineMs: 600000,
+        deadlineMs: 600_000,
         startedAt: new Date(),
       },
       signal: new AbortController().signal,

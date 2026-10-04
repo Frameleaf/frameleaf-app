@@ -5,8 +5,8 @@ import { randomUUID } from 'node:crypto';
 import type { PhotographySite, PhotographyStudioPreset } from 'src/dtos/photography-workflow.dto.js';
 import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
 import { AlbumUserRole, AssetFileType, AssetStatus, AssetType, AssetVisibility, UserStatus } from 'src/enum.js';
-
 import { DB } from 'src/schema/index.js';
+
 export type WorkflowRow = {
   id: string;
   ownerId: string;
@@ -92,7 +92,8 @@ export class PhotographyWorkflowRepository {
       const result = await change(value, tx);
       const revision = randomUUID();
       const encoded = JSON.stringify(value);
-      if (Buffer.byteLength(encoded) > 20000000) throw new ConflictException('Workflow history storage limit reached');
+      if (Buffer.byteLength(encoded) > 20_000_000)
+        throw new ConflictException('Workflow history storage limit reached');
       await sql`INSERT INTO ${TABLE} (id,"ownerId","albumId",revision,value)
         VALUES (${id}::uuid,${ownerId}::uuid,${albumId}::uuid,${revision}::uuid,${encoded}::text::jsonb)
         ON CONFLICT (id) DO UPDATE SET revision=EXCLUDED.revision,value=EXCLUDED.value,"updatedAt"=clock_timestamp()`.execute(
@@ -136,7 +137,7 @@ export class PhotographyWorkflowRepository {
       .where('asset.deletedAt', 'is', null)
       .orderBy('asset.fileCreatedAt')
       .orderBy('asset.id')
-      .limit(10001);
+      .limit(10_001);
     if (ids) {
       if (ids.length === 0) return [];
       query = query.where('asset.id', 'in', ids);
@@ -158,7 +159,7 @@ export class PhotographyWorkflowRepository {
       .where('asset.visibility', '!=', AssetVisibility.Locked)
       .where('asset.status', '=', AssetStatus.Active)
       .where('asset.deletedAt', 'is', null)
-      .where('asset_exif.fileSizeInByte', '<=', 512000)
+      .where('asset_exif.fileSizeInByte', '<=', 512_000)
       .execute();
   }
   async eligibleRevisions(row: WorkflowRow, ids: string[]) {
@@ -277,7 +278,7 @@ export class PhotographyWorkflowRepository {
       const record = stored && 'site' in stored ? stored : { site: stored ?? null, presets: [] };
       const result = await change(record);
       const encoded = JSON.stringify(record);
-      if (Buffer.byteLength(encoded) > 20000000) throw new ConflictException('Studio settings storage limit reached');
+      if (Buffer.byteLength(encoded) > 20_000_000) throw new ConflictException('Studio settings storage limit reached');
       const revision = randomUUID();
       await sql`INSERT INTO public.photography_studio_site ("ownerId",revision,value) VALUES (${ownerId}::uuid,${revision}::uuid,${encoded}::text::jsonb) ON CONFLICT ("ownerId") DO UPDATE SET revision=EXCLUDED.revision,value=EXCLUDED.value`.execute(
         tx,

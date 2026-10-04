@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import type { DB } from 'src/schema/index.js';
 import { DatabaseLock } from 'src/enum.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -6,7 +7,6 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { getKyselyConfig } from 'src/utils/database.js';
 import { canonicalDatabaseUrl } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
-import type { DB } from 'src/schema/index.js';
 
 it('keeps a second recovery worker excluded through database connection termination', async () => {
   const db = await getKyselyDB('fl310_buddy_fence');

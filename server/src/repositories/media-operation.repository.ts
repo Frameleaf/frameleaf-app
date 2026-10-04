@@ -1,7 +1,8 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { ExpressionBuilder, Insertable, Kysely, Selectable, sql, Transaction } from 'kysely';
+import { ExpressionBuilder, Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import type { PostgresError } from 'postgres';
 import {
   DatabaseLock,
   MediaOperationCheckpointState,
@@ -24,7 +25,7 @@ import {
   TERMINAL_MEDIA_OPERATION_STATUSES,
 } from 'src/utils/media-operation.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
-import type { PostgresError } from 'postgres';
+
 /** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const MEDIA_OPERATION_HANDOFF_REFUSAL = 'Media operations are unavailable during database handoff';
 export type MediaOperation = Selectable<MediaOperationTable>;

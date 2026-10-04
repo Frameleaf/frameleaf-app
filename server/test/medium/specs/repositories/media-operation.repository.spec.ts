@@ -14,7 +14,7 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
-import { editOperationCreate, EditOperationEdit, JOB_QUEUE_CLAIMANT } from 'src/utils/edit-operation.js';
+import { EditOperationEdit, JOB_QUEUE_CLAIMANT, editOperationCreate } from 'src/utils/edit-operation.js';
 import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';

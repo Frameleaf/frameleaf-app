@@ -1,6 +1,6 @@
-import { AssetRepository } from 'src/repositories/asset.repository.js';
 import type { Kysely, Transaction } from 'kysely';
 import type { DB } from 'src/schema/index.js';
+import { AssetRepository } from 'src/repositories/asset.repository.js';
 
 describe('upload asset publication transaction', () => {
   afterEach(() => vi.restoreAllMocks());

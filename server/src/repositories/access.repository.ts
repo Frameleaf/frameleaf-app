@@ -20,6 +20,7 @@ import {
 } from 'src/utils/database.js';
 import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
 import { isNotLocked, isTimelineVisible } from 'src/utils/locked.js';
+
 type AccessPrivacy = boolean | HiddenContentFilter | undefined;
 const privacyOptions = (privacy: AccessPrivacy): HiddenContentQueryOptions => {
   return typeof privacy === 'object' ? { hiddenContent: privacy } : privacy ? { excludeNsfw: true } : {};

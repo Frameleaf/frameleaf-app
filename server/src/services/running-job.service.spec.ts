@@ -13,7 +13,7 @@ import { RUNNING_OPERATIONS_LIMIT, RunningJobService } from 'src/services/runnin
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newUuid } from 'test/small.factory.js';
-import { getMocks, ServiceMocks } from 'test/utils.js';
+import { ServiceMocks, getMocks } from 'test/utils.js';
 
 const operationStub = (overrides: Partial<MediaOperation> = {}): MediaOperation =>
   ({

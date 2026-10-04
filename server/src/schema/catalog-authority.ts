@@ -1,7 +1,7 @@
-import type { DatabaseSchema } from '@frameleaf/sql-tools';
 import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import type { DatabaseSchema } from '@frameleaf/sql-tools';
 
 export const CATALOG_HELPER_SOURCES = [
   'src/schema/frameleaf-feature-schema.ts',
@@ -65,7 +65,7 @@ export const validateFrameleafCatalog = (catalog: DatabaseSchema): DatabaseSchem
     'album_source_link',
     'album_source_asset',
   ]) {
-    if (!catalog.tables.some((table) => table.name === name)) throw new Error(`Canonical catalog is missing ${name}`);
+    if (catalog.tables.every((table) => table.name !== name)) throw new Error(`Canonical catalog is missing ${name}`);
   }
   for (const [tableName, columnName] of [
     ['job_run_item', 'selectionId'],
@@ -87,11 +87,10 @@ export const verifyCatalogSources = async (serverRoot: string, provenance: Catal
   if (Object.keys(actualSources).sort().join('\n') !== Object.keys(provenance.sourceHashes).sort().join('\n')) {
     throw new Error('Canonical catalog source inventory changed without reconciliation');
   }
-  for (const name of Object.keys(actualSources)) {
+  for (const [name, actual] of Object.entries(actualSources)) {
     const expected = provenance.sourceHashes[name];
     if (!expected || !/^[a-f\d]{64}$/u.test(expected))
       throw new Error(`Canonical catalog lacks source digest: ${name}`);
-    const actual = actualSources[name];
     if (actual !== expected) {
       throw new Error(`Canonical helper changed without catalog reconciliation: ${name}`);
     }

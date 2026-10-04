@@ -1,12 +1,12 @@
 import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuddyBackupClient, BuddyExecutionError, BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
 import { verifyBuddyProof } from 'src/utils/buddy-backup-protocol.js';
 import { BuddyVault } from 'src/utils/buddy-backup-vault.js';
 import { BuddyGrantClaims, BuddyGrantResponse } from 'src/utils/frameleaf-buddy.js';
 import { ed25519Thumbprint } from 'src/utils/frameleaf-cloud.js';
 import { FrameleafKeySigner, jwsSigningInput } from 'src/utils/frameleaf-dpop.js';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const newSigner = (): FrameleafKeySigner => {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');

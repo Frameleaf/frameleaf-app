@@ -4,11 +4,11 @@ import { InjectKysely } from 'nestjs-kysely';
 import { AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
-
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { getOwnerHiddenShareIds } from 'src/utils/item-share.js';
 import { isNotLocked } from 'src/utils/locked.js';
+
 export type ItemShareRow = {
   id: string;
   assetId: string;

@@ -165,7 +165,7 @@ export interface EnvData {
 // FL-295: the "Getting Ready…" worker is the supervisor's to start, never a configured one
 const WORKER_TYPES = new Set<ImmichWorker>(Object.values(ImmichWorker));
 
-const asSet = <T,>(value: string | undefined, defaults: T[]) => {
+const asSet = <T>(value: string | undefined, defaults: T[]) => {
   const values = (value || '').replaceAll(/\s/g, '').split(',').filter(Boolean);
   return new Set(values.length === 0 ? defaults : (values as T[]));
 };

@@ -111,11 +111,11 @@ export const isDuplicateDetectionEnabled = (machineLearning: SystemConfig['machi
   isSmartSearchEnabled(machineLearning) && machineLearning.duplicateDetection.enabled;
 export const isFaceImportEnabled = (metadata: SystemConfig['metadata']) => metadata.faces.import;
 
-export const handlePromiseError = <T,>(promise: Promise<T>, logger: LoggingRepository): void => {
+export const handlePromiseError = <T>(promise: Promise<T>, logger: LoggingRepository): void => {
   promise.catch((error: Error | any) => logger.error(`Promise error: ${error}`, error?.stack));
 };
 
-export const findOrFail = async <T,>(find: () => Promise<T>, entity: string): Promise<NonNullable<T>> => {
+export const findOrFail = async <T>(find: () => Promise<T>, entity: string): Promise<NonNullable<T>> => {
   const value = await find();
   if (!value) {
     throw new BadRequestException(`${entity} not found`);

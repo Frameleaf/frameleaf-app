@@ -1,18 +1,15 @@
 import { PassThrough, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executionSignal, operationExecution, reportExecutionProgress } from 'src/utils/execution-signal.js';
 import {
   OperationClaimLostError,
   OperationDeadlineError,
   withOperationExecution,
 } from 'src/utils/operation-execution.js';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const deferred = () => {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
+  const { promise, resolve } = Promise.withResolvers<void>();
   return { promise, resolve };
 };
 const untilAborted = () => {
@@ -61,7 +58,10 @@ describe('operation execution lifetime', () => {
   });
 
   it('claim loss aborts execution without waiting for the progress deadline', async () => {
-    const task = withOperationExecution({ renew: async () => false, pollMs: 10, deadlineMs: 1000 }, untilAborted);
+    const task = withOperationExecution(
+      { renew: () => Promise.resolve(false), pollMs: 10, deadlineMs: 1000 },
+      untilAborted,
+    );
     const rejection = expect(task).rejects.toBeInstanceOf(OperationClaimLostError);
     await vi.advanceTimersByTimeAsync(11);
     await rejection;
@@ -70,7 +70,7 @@ describe('operation execution lifetime', () => {
   it('actual byte progress extends the idle deadline; repeated counters do not', async () => {
     let progress!: () => void;
     const task = withOperationExecution(
-      { renew: async () => true, pollMs: 10, deadlineMs: 100, idleMs: 100 },
+      { renew: () => Promise.resolve(true), pollMs: 10, deadlineMs: 100, idleMs: 100 },
       async () => {
         const state = operationExecution.getStore()!;
         progress = () => operationExecution.run(state, () => reportExecutionProgress('files', 1));
@@ -88,7 +88,7 @@ describe('operation execution lifetime', () => {
 
   it('rejects late successful returns from a callback that ignored its abort signal', async () => {
     const release = deferred();
-    const task = withOperationExecution({ renew: async () => true, deadlineMs: 100 }, () => release.promise);
+    const task = withOperationExecution({ renew: () => Promise.resolve(true), deadlineMs: 100 }, () => release.promise);
     const rejection = expect(task).rejects.toBeInstanceOf(OperationDeadlineError);
     await vi.advanceTimersByTimeAsync(101);
     release.resolve();

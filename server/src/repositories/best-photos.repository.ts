@@ -1,16 +1,17 @@
-import { deferJobAdoption } from 'src/queue/context.js';
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
+import { deferJobAdoption } from 'src/queue/context.js';
 import { DB } from 'src/schema/index.js';
 import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked, revealedLockScope } from 'src/utils/locked.js';
 import { paginationHelper } from 'src/utils/pagination.js';
+
 export type BestPhotoScore = Selectable<AssetBestPhotoScoreTable>;
 export type BestPhotoScoreUpsert = Omit<Insertable<AssetBestPhotoScoreTable>, 'createdAt' | 'updatedAt'>;
 

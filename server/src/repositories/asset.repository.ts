@@ -2155,7 +2155,7 @@ export class AssetRepository {
     auth: AuthDto | undefined,
     { grouping, highlightCount, withPlaces }: TimelineHighlightOptions,
   ): Promise<TimelineHighlightItem[]> {
-    const scoreTable = sql.table(`${'public'}.asset_best_photo_score`);
+    const scoreTable = sql.table('public.asset_best_photo_score');
     const order = options.order === AssetOrder.Asc ? sql`asc` : sql`desc`;
     const hiddenOwnerIds = options.locationHiddenOwnerIds ?? [];
     const size = grouping === 'year' ? 'YEAR' : 'MONTH';

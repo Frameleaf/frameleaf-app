@@ -3,8 +3,8 @@ import { Injectable } from '@nestjs/common';
 import AsyncLock from 'async-lock';
 import { Kysely, type Transaction, sql } from 'kysely';
 import { Migrator } from 'kysely/migration';
-import { fileURLToPath } from 'node:url';
 import { InjectKysely } from 'nestjs-kysely';
+import { fileURLToPath } from 'node:url';
 import * as semver from 'semver';
 import z from 'zod';
 import type { DB } from 'src/schema/index.js';
@@ -122,7 +122,7 @@ export class DatabaseRepository {
       WHERE schemaname = 'public' AND indexname = ANY(${names}::text[])
     `.execute(this.db);
     for (const name of names) {
-      if (!rows.some((row) => row.indexname === name && row.indexdef.toLowerCase().includes('using hnsw'))) {
+      if (rows.every((row) => row.indexname !== name || !row.indexdef.toLowerCase().includes('using hnsw'))) {
         await this.reindexVectors(name);
       }
     }
@@ -157,7 +157,7 @@ export class DatabaseRepository {
       overrides: false,
       excludeMigrationTables: true,
     });
-    if (target.warnings.length) throw new Error(`Canonical schema reader warnings: ${target.warnings.join('; ')}`);
+    if (target.warnings.length > 0) throw new Error(`Canonical schema reader warnings: ${target.warnings.join('; ')}`);
 
     const drift = schemaDiff(source, target, {
       tables: { ignoreExtra: false },

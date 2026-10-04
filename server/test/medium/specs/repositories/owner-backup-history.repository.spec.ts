@@ -1,5 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { createHash } from 'node:crypto';
+import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 import { AssetLockReason, AssetStatus, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -10,7 +11,6 @@ import { ownerBackupHistoryPage } from 'src/utils/cloud-backup-owner.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
-import type { CloudBackupManifest } from 'src/utils/cloud-backup.js';
 
 let db: Kysely<DB>;
 const checksum = (text: string) => createHash('sha256').update(text).digest();

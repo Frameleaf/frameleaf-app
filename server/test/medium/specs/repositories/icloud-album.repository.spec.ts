@@ -44,8 +44,8 @@ describe('iCloud album owner and provenance reconciliation (PostgreSQL)', () => 
     }
     throw new Error('unbounded reconciliation');
   }
-  const rows = <T,>(query: RawBuilder<T>) => query.execute(db).then((result) => result.rows);
-  const first = <T,>(query: RawBuilder<T>) => rows(query).then((result) => result[0]);
+  const rows = <T>(query: RawBuilder<T>) => query.execute(db).then((result) => result.rows);
+  const first = <T>(query: RawBuilder<T>) => rows(query).then((result) => result[0]);
   const mapped = (connectionId: string, sourceId: string) =>
     first(
       sql<{

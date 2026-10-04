@@ -5,11 +5,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { sql, type Transaction } from 'kysely';
+import { type Transaction, sql } from 'kysely';
 import { createHash } from 'node:crypto';
-import { lstat, readdir, readFile, rm, statfs } from 'node:fs/promises';
+import { lstat, readFile, readdir, rm, statfs } from 'node:fs/promises';
 import { join } from 'node:path';
 import { coerce, gt } from 'semver';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { BuddyRestoreDto } from 'src/dtos/buddy-backup.dto.js';
+import type { DB } from 'src/schema/index.js';
+import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
+import type { BuddyAlbumPlan } from 'src/utils/buddy-backup-metadata.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
@@ -36,7 +41,7 @@ import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { type MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
-import { lockFilePath, PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
+import { PhysicalFileRepository, lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { BuddyBackupService } from 'src/services/buddy-backup.service.js';
@@ -46,8 +51,8 @@ import {
 } from 'src/services/cloud-backup-details.service.js';
 import {
   type CloudBackupRestoreFile,
-  CloudBackupRestorer,
   type CloudBackupRestoreSnapshot,
+  CloudBackupRestorer,
   emptyRestoreResult,
   restorePlan,
 } from 'src/services/cloud-backup-restore.js';
@@ -83,11 +88,6 @@ import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { OperationDeadlineError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import { isManagedStudioImportPath } from 'src/utils/studio-managed-paths.js';
 import { StudioDestination, StudioResourceKind } from 'src/utils/studio-resources.js';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { BuddyRestoreDto } from 'src/dtos/buddy-backup.dto.js';
-import type { DB } from 'src/schema/index.js';
-import type { BuddyManifest } from 'src/services/buddy-backup-capture.service.js';
-import type { BuddyAlbumPlan } from 'src/utils/buddy-backup-metadata.js';
 
 type RestoreJob = {
   version: 1;
@@ -1568,8 +1568,8 @@ export class BuddyBackupRestoreService {
       if (!(await this.operations.complete(operation.id, token, { resultAssetId: null }, undefined, true)))
         throw new RestoreStopped();
       await this.drainRestoreJobs().catch(() => this.logger.warn('Buddy restore metadata jobs are waiting for retry.'));
-    } catch (error) {
-      error = executionSignal()?.aborted ? executionSignal()!.reason : error;
+    } catch (caughtError) {
+      const error = executionSignal()?.aborted ? executionSignal()!.reason : caughtError;
       if (await settleOperationStop(this.operations, operation, token)) return;
       if (error instanceof RestoreStopped) {
         const current = await this.operations.getOfKind(operation.id, MediaOperationKind.BuddyRestore);

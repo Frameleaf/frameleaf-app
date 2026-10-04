@@ -2,11 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { DateTime } from 'luxon';
 import { InjectKysely } from 'nestjs-kysely';
-
 import { AssetLockReason, AssetVisibility } from 'src/enum.js';
-
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
+
 type Values = {
   isFavorite?: boolean;
   isHidden?: boolean;

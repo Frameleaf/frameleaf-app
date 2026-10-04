@@ -1,4 +1,3 @@
-import { DatabaseService } from 'src/services/database.service.js';
 import { Inject, Module, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
@@ -38,6 +37,7 @@ import { AuthService } from 'src/services/auth.service.js';
 import { BuddyBackupRecoveryService } from 'src/services/buddy-backup-recovery.service.js';
 import { CliService } from 'src/services/cli.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
+import { DatabaseService } from 'src/services/database.service.js';
 import { services } from 'src/services/index.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { StorageService } from 'src/services/storage.service.js';

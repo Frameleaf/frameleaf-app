@@ -1,6 +1,6 @@
 import type { Transaction } from 'kysely';
-import { readQueueDeadlineProfiles } from 'src/queue/configuration.js';
 import type { JobItem } from 'src/types.js';
+import { readQueueDeadlineProfiles } from 'src/queue/configuration.js';
 
 export const QUEUE_TIMING = {
   heartbeat: 15_000,
@@ -14,7 +14,14 @@ export const QUEUE_BATCH = 250;
 export const QUEUE_HIGH_WATER = 1000;
 export const QUEUE_LOW_WATER = 500;
 export type QueueState =
-  'pending' | 'waiting' | 'active' | 'completed' | 'failed' | 'needs_attention' | 'cancelled' | 'blocked';
+  | 'pending'
+  | 'waiting'
+  | 'active'
+  | 'completed'
+  | 'failed'
+  | 'needs_attention'
+  | 'cancelled'
+  | 'blocked';
 export const TERMINAL_QUEUE_STATES: QueueState[] = ['completed', 'failed', 'needs_attention', 'cancelled', 'blocked'];
 export type QueueOptions = {
   jobId?: string;
@@ -72,5 +79,7 @@ export type QueueExecution = {
 };
 export type QueueDispatch = { type: 'execute'; claim: QueueClaim } | { type: 'cancel'; id: string };
 export type QueueWorkerMessage =
-  { type: 'settled'; id: string } | { type: 'progress'; id: string; units: number } | { type: 'stop' };
+  | { type: 'settled'; id: string }
+  | { type: 'progress'; id: string; units: number }
+  | { type: 'stop' };
 export const toJobItem = (claim: QueueClaim) => ({ name: claim.name, data: claim.data }) as JobItem;

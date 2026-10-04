@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-
 import { DB } from 'src/schema/index.js';
+
 export type FrameleafUserLicenseRow = {
   userId: string;
   kind: 'individual';

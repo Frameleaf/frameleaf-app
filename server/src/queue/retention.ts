@@ -25,7 +25,7 @@ export async function pruneQueueHistory(db: Kysely<any>): Promise<number> {
               and m.value->>'workerId'=a."workerId"::text and m.value ? 'stoppedAt'))
       order by j."finishedAt", j.id limit ${QUEUE_BATCH} for update of j skip locked`.execute(tx);
     let pruned = 0;
-    if (rows.length) {
+    if (rows.length > 0) {
       const ids = await preserveAttemptEvidence(
         tx,
         rows.map(({ id }) => id),

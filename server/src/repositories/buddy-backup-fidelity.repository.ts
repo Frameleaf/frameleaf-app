@@ -3,7 +3,6 @@ import type { DB } from 'src/schema/index.js';
 import type { CloudBackupManifestFile } from 'src/utils/cloud-backup.js';
 import { AssetType } from 'src/enum.js';
 import { DEVELOP_ARTIFACT_PER_ASSET } from 'src/repositories/asset-develop.repository.js';
-
 import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import {
   type BuddyAssetFidelity,
@@ -17,6 +16,7 @@ import {
 } from 'src/utils/buddy-backup-fidelity.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
 import { canonicalJson } from 'src/utils/object.js';
+
 type Row = Record<string, unknown>;
 const tables = {
   video: 'public.video_edit_version',

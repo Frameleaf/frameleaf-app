@@ -3,14 +3,14 @@ import { Kysely, sql } from 'kysely';
 import { PostgresJSDialect } from 'kysely-postgres-js';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
-import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { DatabaseRepository } from 'src/repositories/database.repository.js';
-import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
-import { expectCanonicalTables, seedCanonicalUser, seedCanonicalAlbum } from 'test/fixtures/canonical-database.js';
-import { getMocks } from 'test/utils.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DB } from 'src/schema/index.js';
 import type { PhotographyWorkflow } from 'src/services/photography-workflow.service.js';
+import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
+import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
+import { expectCanonicalTables, seedCanonicalAlbum, seedCanonicalUser } from 'test/fixtures/canonical-database.js';
+import { getMocks } from 'test/utils.js';
 
 // Runnable isolated PostgreSQL check. Set PHOTOGRAPHY_TEST_PG_SOCKET to a disposable local test socket.
 describe.runIf(!!process.env.PHOTOGRAPHY_TEST_PG_SOCKET)('photography persisted canonical CAS', () => {

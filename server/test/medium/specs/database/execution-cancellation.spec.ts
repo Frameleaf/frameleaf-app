@@ -1,14 +1,15 @@
+import { createPostgres } from '@frameleaf/sql-tools';
 import { sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
+import type { QueueExecution } from 'src/queue/types.js';
 import { DatabaseLock } from 'src/enum.js';
 import { queueExecution } from 'src/queue/context.js';
-import type { QueueExecution } from 'src/queue/types.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
+import { DATABASE_MAX_WAITERS, boundExecutionReservations, withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { getKyselyDB } from 'test/utils.js';
-import { boundExecutionReservations, withDatabaseCleanup, DATABASE_MAX_WAITERS } from 'src/utils/execution-database.js';
 
 it('cancels underlying PostgreSQL work and rolls back before reusing its connection', async () => {
   const db = await getKyselyDB();
@@ -83,13 +84,13 @@ it('bounds real exhausted-pool waiters and releases late grants without executin
     const held = await client.reserve();
     const outcomes = queueExecution.run({ signal: controller.signal } as QueueExecution, () =>
       Array.from({ length: DATABASE_MAX_WAITERS }, () =>
-        client.reserve().then(
-          (grant) => {
+        client
+          .reserve()
+          .then((grant) => {
             grant.release();
             return 'unexpected grant';
-          },
-          (error: unknown) => (error instanceof Error ? error.message : 'unknown error'),
-        ),
+          })
+          .catch((error: unknown) => (error instanceof Error ? error.message : 'unknown error')),
       ),
     );
     await expect(client.reserve()).rejects.toThrow('Database acquisition capacity exhausted');
@@ -163,4 +164,3 @@ it('releases video frame locks after cancellation without permitting further ord
     await db.destroy();
   }
 }, 10_000);
-import { createPostgres } from '@frameleaf/sql-tools';

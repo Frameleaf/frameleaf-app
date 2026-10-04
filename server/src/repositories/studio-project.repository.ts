@@ -5,7 +5,6 @@ import { isAbsolute } from 'node:path';
 import type { Kysely, RawBuilder, Selectable, Transaction } from 'kysely';
 import type { StudioDeclaredGenerated, StudioDeclaredImport } from 'src/services/studio-resource.service.js';
 import { AlbumKind } from 'src/enum.js';
-
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -16,6 +15,7 @@ import {
 } from 'src/schema/tables/studio-project.table.js';
 import { STUDIO_IMPORT_MAX_PER_PROJECT } from 'src/utils/studio-imports.js';
 import { STUDIO_MAX_REFERENCES, isStudioIdentifier, isStudioUuid } from 'src/utils/studio-resources.js';
+
 export type StudioGeneratedResource = StudioDeclaredGenerated & {
   projectId: string;
   ownerId: string;

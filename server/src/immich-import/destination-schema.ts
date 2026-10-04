@@ -11,7 +11,7 @@ export const assertCanonicalDestination = async (destination: ImportDatabase): P
     }
     const desired = getFrameleafSchema();
     const actual = await destination.readSchema();
-    if (actual.schemaName !== 'public' || !Array.isArray(actual.sequences) || actual.warnings.length) {
+    if (actual.schemaName !== 'public' || !Array.isArray(actual.sequences) || actual.warnings.length > 0) {
       throw new Error('Destination schema reader is incomplete or has warnings');
     }
     const drift = schemaDiff(desired, actual, {
@@ -25,7 +25,7 @@ export const assertCanonicalDestination = async (destination: ImportDatabase): P
       parameters: { ignoreExtra: true },
       extensions: { ignoreExtra: true },
     });
-    if (drift.asSql().length) {
+    if (drift.asSql().length > 0) {
       throw new Error('Destination schema differs from canonical catalog');
     }
     const [raw] = await destination.query(`SELECT

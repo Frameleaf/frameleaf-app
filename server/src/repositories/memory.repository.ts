@@ -108,7 +108,7 @@ const withoutPrivateOnlyMemories = (eb: ExpressionBuilder<DB, 'memory'>, options
     ),
   ]);
 };
-const withMemoryAssetFilters = <O,>(
+const withMemoryAssetFilters = <O>(
   qb: SelectQueryBuilder<DB, 'asset' | 'memory_asset', O>,
   options: MemoryPrivacyOptions,
 ) =>

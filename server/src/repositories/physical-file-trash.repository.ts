@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-
 import {
   PhysicalFileTrashMove,
   countPathReferences,
@@ -9,6 +8,7 @@ import {
   trashUnreferencedOriginal,
 } from 'src/repositories/physical-file.repository.js';
 import { DB } from 'src/schema/index.js';
+
 export type PhysicalFileTrashEntry = {
   id: string;
   physicalFileId: string | null;

@@ -20,6 +20,7 @@ import {
   notLockedOrOwnedBy,
 } from 'src/utils/locked.js';
 import { mapPartnerAsset, mapSyncAssetV2 } from 'src/utils/sync.js';
+
 export type SyncBackfillOptions = HiddenContentQueryOptions & {
   nowId: string;
   afterUpdateId?: string;

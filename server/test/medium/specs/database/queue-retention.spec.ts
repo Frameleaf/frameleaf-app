@@ -62,8 +62,8 @@ describe('bounded PostgreSQL queue history', () => {
         data: {},
         safeToRetry: true,
         sensitive: false,
-        deadlineMs: 600000,
-        ...(name === 'unfinished' ? { runId, itemKey: name, rootItemKey: name } : {}),
+        deadlineMs: 600_000,
+        ...(name === 'unfinished' && { runId, itemKey: name, rootItemKey: name }),
       })),
     );
     await sql`update job set state = case when name = 'attention' then 'needs_attention' else 'completed' end,
@@ -75,7 +75,7 @@ describe('bounded PostgreSQL queue history', () => {
       rows: [parent],
     } = await sql<{ id: string }>`select id from job where queue = ${queue} and name = 'parent'`.execute(db);
     await store.enqueue([
-      { queue, name: 'child', data: {}, safeToRetry: true, sensitive: false, deadlineMs: 600000, parentId: parent.id },
+      { queue, name: 'child', data: {}, safeToRetry: true, sensitive: false, deadlineMs: 600_000, parentId: parent.id },
     ]);
 
     expect(await pruneQueueHistory(db)).toBe(0);

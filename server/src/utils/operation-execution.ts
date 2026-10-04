@@ -1,11 +1,11 @@
+import type { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { QUEUE_TIMING } from 'src/queue/types.js';
 import {
+  type OperationExecution,
   executionSignal,
   operationExecution,
-  type OperationExecution,
   settleOperationExecution,
 } from 'src/utils/execution-signal.js';
-import type { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 
 export class OperationDeadlineError extends Error {
   constructor() {

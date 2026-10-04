@@ -1,5 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { type Kysely } from 'kysely';
+import type { StoredShoot } from 'src/dtos/photography-workspace.dto.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -7,7 +8,6 @@ import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
-import type { StoredShoot } from 'src/dtos/photography-workspace.dto.js';
 
 let db: Kysely<DB>;
 beforeAll(async () => {

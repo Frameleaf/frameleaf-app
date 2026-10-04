@@ -60,7 +60,7 @@ export const changesSyncVisibility = (
  * people, pets and tags, for a reader whose session is not unlocked, such as the sync stream. The
  * scope and every other preference are kept.
  */
-export const withoutStoredLockedRuleIds = <T,>(value: T): T => {
+export const withoutStoredLockedRuleIds = <T>(value: T): T => {
   const suppression = (value as DeepPartial<UserPreferences> | null | undefined)?.privacy?.suppression;
   if (!suppression) {
     return value;

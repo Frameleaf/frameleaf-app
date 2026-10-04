@@ -8,7 +8,6 @@ import { Chunked, DummyValue, GenerateSql } from 'src/decorators.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { AssetType } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
-import { TableVerification } from 'src/repositories/fork-derived-results.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { AssetVideoDuplicateFrameTable } from 'src/schema/tables/asset-video-duplicate-frame.table.js';
@@ -39,9 +38,6 @@ type VideoDuplicateFrameMatchOptions = {
   candidateAssetIds: string[];
   maxDistance: number;
   minMatchingFrames: number;
-};
-type VideoFrameBackfillTables = {
-  assetVideoDuplicateFrame: TableVerification;
 };
 @Injectable()
 export class DuplicateRepository {
@@ -307,7 +303,7 @@ export class DuplicateRepository {
       if (frames.some((frame) => frame.assetId !== assetId)) {
         throw new Error(`Cannot replace video duplicate frames for multiple assets`);
       }
-      let stalePaths: string[] = await this.replaceFramesIn(trx.withSchema('public'), assetId, frames);
+      const stalePaths: string[] = await this.replaceFramesIn(trx.withSchema('public'), assetId, frames);
       return stalePaths;
     });
   }

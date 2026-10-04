@@ -267,12 +267,12 @@ export class SmartAlbumRepository {
     return row?.id;
   }
   async deleteAssets(assetIds: string[], kysely: Kysely<DB> = this.db): Promise<void> {
-    if (!assetIds.length) return;
+    if (assetIds.length === 0) return;
     await kysely.deleteFrom('smart_album_asset').where('assetId', 'in', assetIds).execute();
     await kysely.deleteFrom('smart_album_exclusion').where('assetId', 'in', assetIds).execute();
   }
   async deleteAlbums(albumIds: string[], kysely: Kysely<DB> = this.db): Promise<void> {
-    if (albumIds.length) await kysely.deleteFrom('smart_album').where('albumId', 'in', albumIds).execute();
+    if (albumIds.length > 0) await kysely.deleteFrom('smart_album').where('albumId', 'in', albumIds).execute();
   }
   async deleteOwner(ownerId: string, kysely: Kysely<DB> = this.db): Promise<void> {
     await kysely.deleteFrom('smart_album').where('ownerId', '=', ownerId).execute();

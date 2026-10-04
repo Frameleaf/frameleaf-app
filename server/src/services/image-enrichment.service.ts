@@ -1554,7 +1554,7 @@ export class ImageEnrichmentService extends BaseService {
    */
   private async cloudDescriptionDestination(options: EnrichmentRunOptions) {
     if (options.planRun && !options.enrichmentDestinationId) {
-      return Promise.resolve(undefined);
+      return;
     }
     let destinationId = options.enrichmentDestinationId;
     if (queueExecution.getStore()) {
@@ -2295,7 +2295,7 @@ const chooseGridLayout = (
   }
   return { cols: 3, rows: 3 };
 };
-const subsampleFrames = <T,>(frames: T[], target: number): T[] => {
+const subsampleFrames = <T>(frames: T[], target: number): T[] => {
   if (frames.length <= target) {
     return frames;
   }

@@ -9,6 +9,7 @@ import { lockAuditOwner } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudConnection } from 'src/repositories/icloud-sync.repository.js';
 import { DB } from 'src/schema/index.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
+
 type Grant = {
   id: string;
   generation: number;

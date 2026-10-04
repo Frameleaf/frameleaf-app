@@ -42,9 +42,9 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
-import { AccessRepository } from 'src/repositories/access.repository.js';
 import { attemptOutputPath, jobSignal, publishJobResult } from 'src/queue/context.js';
 import { assertPublicationSource } from 'src/queue/transaction.js';
+import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositories/asset-develop.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';

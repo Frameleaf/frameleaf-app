@@ -10,7 +10,6 @@ import type {
   DecodeToBufferOptions,
   GenerateThumbnailOptions,
   ImageDimensions,
-  JobItem,
   JobOf,
   TranscodeCommand,
   VideoFormat,
@@ -358,20 +357,17 @@ export class MediaService extends BaseService {
       });
     }
 
-    if (!asset.thumbhash || Buffer.compare(asset.thumbhash, thumbhash) !== 0) {
-      if (
-        !deferJobAdoption(async (tx) => {
-          await sql`update asset set thumbhash = ${thumbhash} where id = ${asset.id}::uuid`.execute(tx);
-        })
-      ) {
-        await this.assetRepository.update({ id: asset.id, thumbhash });
-      }
+    if (
+      (!asset.thumbhash || Buffer.compare(asset.thumbhash, thumbhash) !== 0) &&
+      !deferJobAdoption(async (tx) => {
+        await sql`update asset set thumbhash = ${thumbhash} where id = ${asset.id}::uuid`.execute(tx);
+      })
+    ) {
+      await this.assetRepository.update({ id: asset.id, thumbhash });
     }
 
     const fullsizeDimensions = generated?.fullsizeDimensions ?? getDimensions(asset.exifInfo!);
-    await publishJobResult(() =>
-      this.assetRepository.update({ id: asset.id, ...fullsizeDimensions }).then(() => undefined),
-    );
+    await publishJobResult(() => this.assetRepository.update({ id: asset.id, ...fullsizeDimensions }).then(() => {}));
 
     return JobStatus.Success;
   }
@@ -747,7 +743,7 @@ export class MediaService extends BaseService {
         }
         await tx
           .updateTable('person')
-          .set({ thumbnailPath, ...(sourceFaceId ? { faceAssetId: sourceFaceId } : {}) })
+          .set({ thumbnailPath, ...(sourceFaceId && { faceAssetId: sourceFaceId }) })
           .where('ownerId', '=', ownerId)
           .where('personGroupId', '=', personGroupId)
           .execute();
@@ -1337,7 +1333,7 @@ export class MediaService extends BaseService {
             duration: Math.round(format.duration * 1000),
             ...generated.fullsizeDimensions,
           })
-          .then(() => undefined),
+          .then(() => {}),
       );
       return JobStatus.Success;
     }
@@ -1428,7 +1424,7 @@ export class MediaService extends BaseService {
           duration,
           ...fullsizeDimensions,
         })
-        .then(() => undefined),
+        .then(() => {}),
     );
 
     return JobStatus.Success;

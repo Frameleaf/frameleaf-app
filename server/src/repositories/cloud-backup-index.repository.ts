@@ -19,6 +19,7 @@ import { CloudBackupVerificationMethod, CloudBackupVerificationResult } from 'sr
 import { bucketRef } from 'src/utils/cloud-backup.js';
 import { isMotionOfLockedStill, withHiddenContentFilter } from 'src/utils/database.js';
 import { effectiveVisibilityOf, isLocked, isNotLocked } from 'src/utils/locked.js';
+
 export type CloudBackupIndexedObject = {
   sha256: string;
   size: number;

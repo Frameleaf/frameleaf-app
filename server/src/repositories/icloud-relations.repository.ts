@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-
 import { AssetType, AssetVisibility } from 'src/enum.js';
-
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { DB } from 'src/schema/index.js';
 import { linkLivePhotoAssets } from 'src/utils/asset.util.js';
 import { onStacksJoined } from 'src/utils/locked-stacks.js';
+
 export type ICloudRelationEvent =
   | {
       name: 'AssetHide';

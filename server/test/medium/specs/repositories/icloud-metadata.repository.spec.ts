@@ -7,9 +7,9 @@ import { ICloudMetadataService } from 'src/services/icloud-metadata.service.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
   canonicalTestContext,
+  seedCanonicalAlbum,
   seedCanonicalAsset,
   seedCanonicalUser,
-  seedCanonicalAlbum,
 } from 'test/fixtures/canonical-database.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -28,7 +28,7 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
   afterAll(async () => {
     await db?.destroy();
   });
-  const first = <T,>(query: RawBuilder<T>) => query.execute(db).then(({ rows }) => rows[0]);
+  const first = <T>(query: RawBuilder<T>) => query.execute(db).then(({ rows }) => rows[0]);
   async function setup(source?: Record<string, unknown>) {
     source ??= { isFavorite: true, isHidden: true, fileCreatedAt: '2020-03-04T12:34:56.000Z' };
     const connectionId = randomUUID(),
@@ -41,7 +41,7 @@ describe('iCloud source metadata reconciliation (PostgreSQL)', () => {
     );
     await seedCanonicalAsset(db, {
       id: assetId,
-      ownerId: ownerId,
+      ownerId,
       originalPath: '/original/immutable',
       fileCreatedAt: new Date('2000-01-01T00:00:00Z'),
     });

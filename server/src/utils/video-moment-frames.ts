@@ -5,8 +5,7 @@ import { dirname, join } from 'node:path';
 import type { SystemConfig } from 'src/config.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { JobName } from 'src/enum.js';
-import { AssetStatus, AssetVisibility, StorageFolder, TranscodeTarget } from 'src/enum.js';
+import { AssetStatus, AssetVisibility, JobName, StorageFolder, TranscodeTarget } from 'src/enum.js';
 import { attemptOutputPath, deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -175,7 +174,7 @@ const cutAndPublish = async (
         extractorVersion: VIDEO_MOMENT_EXTRACTOR_VERSION,
       });
       if (published.status === 'source-changed') throw new Error('Video frame source changed before publication');
-      if (published.stalePaths.length)
+      if (published.stalePaths.length > 0)
         await deps.jobs!.queue({ name: JobName.FileDelete, data: { files: published.stalePaths } });
     });
     return { status: 'cut', frames: prepared };
@@ -217,7 +216,7 @@ export const ensureVideoFrames = (
  * Cut frames into a temporary folder for a preview, without touching the library: nothing is
  * written to the database and the folder is removed when `use` returns.
  */
-export const withTemporaryFrames = async <T,>(
+export const withTemporaryFrames = async <T>(
   deps: Pick<VideoFrameDeps, 'media' | 'storage' | 'logger' | 'moments'>,
   assetId: string,
   config: Pick<SystemConfig, 'ffmpeg' | 'image'>,

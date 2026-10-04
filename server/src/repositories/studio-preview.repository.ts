@@ -4,7 +4,6 @@ import { InjectKysely } from 'nestjs-kysely';
 import type { MediaOperation } from 'src/repositories/media-operation.repository.js';
 import { AlbumUserRole, MediaOperationKind, MediaOperationStatus, StudioPreviewStatus } from 'src/enum.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
-
 import { DB } from 'src/schema/index.js';
 import { StudioPreviewFrameTable } from 'src/schema/tables/studio-preview.table.js';
 import {
@@ -16,6 +15,7 @@ import {
   PREVIEW_CONSUMER_PREFIX,
   isConsumerPreview,
 } from 'src/utils/studio-preview.js';
+
 export type StudioPreviewFrame = Selectable<StudioPreviewFrameTable>;
 export type StudioPreviewRetirement = {
   frame: StudioPreviewFrame;

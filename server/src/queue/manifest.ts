@@ -72,7 +72,7 @@ export async function freezeSelection(
     if (claim) {
       const { rows } = await sql`select id from job where id = ${claim.id}::uuid and token = ${claim.token}::uuid
         and state = 'active' and "leaseExpiresAt" > clock_timestamp() and "cancelRequestedAt" is null`.execute(tx);
-      if (!rows.length) throw new Error('Selection producer lost its claim');
+      if (rows.length === 0) throw new Error('Selection producer lost its claim');
     }
     if (!claim && !submittedRunId) {
       await sql`update job_run set "enumerationDone" = true where id = ${runId}::uuid`.execute(tx);
