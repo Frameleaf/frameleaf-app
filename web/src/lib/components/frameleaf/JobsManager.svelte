@@ -1,4 +1,5 @@
 <script lang="ts">
+  import DurableRuns from '$lib/components/frameleaf/jobs/DurableRuns.svelte';
   import { readingKey } from '$lib/frameleaf/reading-direction';
   import { motionScrollBehavior } from '$lib/frameleaf/motion';
   /**
@@ -86,8 +87,6 @@
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
     createJob,
-    listDurableJobRuns,
-    type DurableJobRun,
     deferImageDescriptionRequeue,
     getImageDescriptionRequeueEstimate,
     getQueueJobs,
@@ -316,26 +315,7 @@
   // ---- the template's "Queue action history": the commands sent from this device -----------------
 
   let history = $state<JobHistoryEntry[]>(readJobHistory());
-  let durableRuns = $state<DurableJobRun[]>([]);
-  let runsOffset = $state(0);
-  let runsUnavailable = $state(false);
-  let runsLoading = $state(false);
-  const runStatus = (state: DurableJobRun['state']) => ({
-    running: 'Running', blocked: 'Waiting for work or a dependency', unavailable: 'Worker unavailable',
-    completed: 'Completed', failed: 'Failed', needs_attention: 'Needs attention',
-  })[state];
-  const loadRunHistory = async (offset = runsOffset) => {
-    runsLoading = true;
-    try {
-      durableRuns = await listDurableJobRuns({ take: 25, skip: offset });
-      runsOffset = offset;
-      runsUnavailable = false;
-    } catch {
-      runsUnavailable = true;
-    } finally { runsLoading = false; }
-  };
-  onMount(() => { void loadRunHistory(0); });
-
+  let submittedRunId = $state<string | null>(null);
   const shownHistory = $derived(historyFor(history, selected?.definition.name));
   const historyDetail = (entry: JobHistoryEntry) => {
     const definition = jobQueue(entry.queue);
@@ -607,7 +587,8 @@
       case 'refresh': {
         // Refresh faces starts face detection without `force`, as the old queue card did.
         const force = command === 'run' ? false : command === 'force' ? true : undefined;
-        await runQueueCommandLegacy({ name, queueCommandDto: { command: QueueCommand.Start, force } });
+        const started = await runQueueCommandLegacy({ name, queueCommandDto: { command: QueueCommand.Start, force } });
+        submittedRunId = (started as (typeof started & { runId?: string }) | undefined)?.runId ?? null;
         return;
       }
     }
@@ -1292,24 +1273,7 @@
     </details>
   {/if}
 
-  <details class="jm-history">
-    <summary>Run history <span>{durableRuns.length}</span></summary>
-    <p>Saved on the server. Progress counts selected stages across the whole run.</p>
-    {#if runsUnavailable}<p role="status">Run history is unavailable. Try refreshing.</p>{/if}
-    <ol>
-      {#each durableRuns as run (run.id)}
-        <li>
-          <div><strong>{run.kind}</strong><span>{runStatus(run.state)} · {run.completed + run.failed} / {run.total} settled · {run.failed} failed</span>
-            {#if !run.enumerationDone}<span>Selection in progress</span>{/if}
-          </div>
-          <time datetime={run.createdAt}>{new Date(run.createdAt).toLocaleString()}</time>
-        </li>
-      {/each}
-    </ol>
-    <button type="button" disabled={runsLoading || runsOffset === 0} onclick={() => void loadRunHistory(Math.max(0, runsOffset - 25))}>Previous</button>
-    <button type="button" disabled={runsLoading} onclick={() => void loadRunHistory()}>Refresh</button>
-    <button type="button" disabled={runsLoading || durableRuns.length < 25} onclick={() => void loadRunHistory(runsOffset + 25)}>Next</button>
-  </details>
+  <DurableRuns refreshToken={jobsReload} focusRunId={submittedRunId} />
 
   <details class="jm-history">
     <summary>
