@@ -2708,7 +2708,19 @@ describe('iCloud exact identity adoption', () => {
         // A private-copy/disposition fixture, NOT evidence of a genuine source-descriptor mismatch.
         // The byte producer, owner admission, crypto, PostgreSQL and filesystem operations are real.
         async function createDispositionFixture() {
-          const fixture = await createStageFixture();
+          const prerequisite = await createStageFixture();
+          // Replace the admission-only resource with an actual source-byte budget reservation.
+          await sql`DELETE FROM immich_fork.icloud_resource WHERE id=${prerequisite.resource.id}::uuid`.execute(db);
+          const allocated = await new ICloudScheduledWorkerRepository(db, prerequisite.repository).allocate(
+            prerequisite.authority,
+            prerequisite.f.user.id,
+          );
+          expect(allocated?.leaseToken).toBeTruthy();
+          if (!allocated?.leaseToken) {
+            throw new Error('actual_scheduled_allocation_required');
+          }
+          const resource = { id: allocated.id, leaseToken: allocated.leaseToken };
+          const fixture = { ...prerequisite, resource, input: { ...prerequisite.input, resource } };
           const fresh = await fixture.staging.download(fixture.input);
           const validation = await fixture.staging.validate(fixture.input);
           expect((await validation.result).status).toBe('validated');
@@ -3533,20 +3545,25 @@ describe('iCloud exact identity adoption', () => {
             const entered = Promise.withResolvers<void>();
             const release = Promise.withResolvers<void>();
             const actualStat = prototype.stat;
-            const actualClose = prototype.close;
             const closed = new Set<number>();
-            vi.spyOn(prototype, 'close').mockImplementation(function (
-              this: FileHandle,
-              ...args: Parameters<FileHandle['close']>
-            ) {
-              closed.add(this.fd);
-              return actualClose.apply(this, args);
-            });
+            const observed = new Set<FileHandle>();
             let guardedFd!: number;
             vi.spyOn(prototype, 'stat').mockImplementation(async function (
               this: FileHandle,
               ...args: Parameters<FileHandle['stat']>
             ) {
+              // FileHandle.close belongs to each real instance, rather than its prototype.
+              if (!observed.has(this)) {
+                observed.add(this);
+                const actualClose = this.close;
+                vi.spyOn(this, 'close').mockImplementation(function (
+                  this: FileHandle,
+                  ...closeArgs: Parameters<FileHandle['close']>
+                ) {
+                  closed.add(this.fd);
+                  return actualClose.apply(this, closeArgs);
+                });
+              }
               const result = await actualStat.apply(this, args);
               guardedFd = this.fd;
               entered.resolve();
