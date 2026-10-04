@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inspect } from 'node:util';
@@ -9,13 +9,14 @@ import {
   CloudBackupFileChangedError,
   CloudBackupStoreError,
   CloudBackupStoreRepository,
-  SSE_C_REFUSED_MESSAGE,
   describeProviderError,
   sanitizeProviderResponse,
   signS3Request,
+  SSE_C_REFUSED_MESSAGE,
 } from 'src/repositories/cloud-backup-store.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { CLOUD_BACKUP_MARKER, CLOUD_BACKUP_PART_BYTES, CLOUD_BACKUP_PROBE_PREFIX } from 'src/utils/cloud-backup.js';
+import { withOperationExecution } from 'src/utils/operation-execution.js';
 
 const SSE_HEADERS = [
   'x-amz-server-side-encryption-customer-algorithm',
@@ -846,6 +847,29 @@ describe(CloudBackupStoreRepository.name, () => {
   });
 
   describe('FL-164', () => {
+    it('aborts a stalled response body and removes its partial file before returning', async () => {
+      let bodyCancelled = false;
+      const response = new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(Buffer.from('partial'));
+          },
+          cancel() {
+            bodyCancelled = true;
+          },
+        }),
+      );
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+      const target = join(directory, 'stalled.bin');
+      await expect(
+        withOperationExecution({ renew: async () => true, deadlineMs: 40, idleMs: 40 }, () =>
+          sut.download(connection, 'o/stalled', bucketKey, target, null),
+        ),
+      ).rejects.toThrow();
+      expect(bodyCancelled).toBe(true);
+      expect(await readdir(directory)).toEqual([]);
+    });
+
     it('downloads an object with the bucket key and moves it into place only when it matches its name', async () => {
       const body = randomBytes(1000);
       const name = sha256(body);

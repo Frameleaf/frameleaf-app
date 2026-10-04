@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -45,6 +44,7 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import {
+  isLibrarySource,
   PENDING_STUDIO_EXPORT_STATES,
   StudioExportPublished,
   StudioExportRefusal,
@@ -55,7 +55,6 @@ import {
   StudioExportVersionSource,
   StudioExportVisibility,
   StudioSourceMediaFacts,
-  isLibrarySource,
 } from 'src/repositories/studio-export.repository.js';
 import { StudioProjectRepository } from 'src/repositories/studio-project.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -70,46 +69,49 @@ import {
   captureOwnerRestoreFile,
 } from 'src/utils/cloud-backup-owner-path.js';
 import { getConfig } from 'src/utils/config.js';
+import { assertExecutionActive, settleOperationExecution } from 'src/utils/execution-signal.js';
 import { ImmichFileResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId } from 'src/utils/locked.js';
 import { isNsfwHidingEnabled } from 'src/utils/misc.js';
+import { settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
 import { evaluateRenderOutput, isQualifiedRenderSession } from 'src/utils/render-admission.js';
 import {
-  StudioExportContract,
   buildStudioExportContract,
   declareStudioTiming,
   findStudioExportOutputMismatch,
   parseStudioExportContract,
   resolveStudioExportTiming,
+  StudioExportContract,
   studioMediaSources,
 } from 'src/utils/studio-export-contract.js';
 import {
+  isInsideFolder,
+  isStudioExportContentType,
+  parseStudioExportPublishSnapshot,
+  parseStudioExportSmoothMotion,
   STUDIO_EXPORT_CONTENT_TYPES,
   STUDIO_EXPORT_LEASE_MS,
   STUDIO_EXPORT_PUBLISH_MAX_ATTEMPTS,
   STUDIO_EXPORT_SWEEP_MS,
   STUDIO_EXPORT_TICK_MS,
-  StudioExportPublishSnapshot,
-  StudioExportSmoothMotion,
-  isInsideFolder,
-  isStudioExportContentType,
-  parseStudioExportPublishSnapshot,
-  parseStudioExportSmoothMotion,
   studioExportFileName,
   studioExportLibraryPath,
   studioExportProjectPath,
+  StudioExportPublishSnapshot,
+  StudioExportSmoothMotion,
   studioExportStagingFolder,
 } from 'src/utils/studio-export.js';
 import { isManagedStudioExportPath } from 'src/utils/studio-managed-paths.js';
-import { StudioDestination, StudioRefusalReason, isStudioUuid } from 'src/utils/studio-resources.js';
+import { isStudioUuid, StudioDestination, StudioRefusalReason } from 'src/utils/studio-resources.js';
 import {
+  checkStudioRights,
   STUDIO_DOLBY_TOOLS_ID,
   STUDIO_DOLBY_TOOLS_QUALIFIED,
-  checkStudioRights,
   studioRightsUseFor,
 } from 'src/utils/studio-rights.js';
 import { StudioTimingError } from 'src/utils/studio-timing.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
 
 type RunningJob = { operation: MediaOperation; claimToken: string };
 
@@ -837,7 +839,20 @@ export class StudioExportService {
    * the one automatic retry every job gets; only when that is spent does the version fail. Either
    * way no earlier version is touched.
    */
-  async run({ operation, claimToken }: RunningJob): Promise<void> {
+  async run(job: RunningJob): Promise<void> {
+    return withOperationExecution(
+      {
+        renew: () =>
+          this.operations.heartbeat(job.operation.id, job.claimToken, STUDIO_EXPORT_LEASE_MS, {
+            requireActiveClaim: true,
+          }),
+        stopped: () => this.stopping,
+      },
+      () => this.runClaim(job),
+    );
+  }
+
+  private async runClaim({ operation, claimToken }: RunningJob): Promise<void> {
     const snapshot = parseStudioExportPublishSnapshot(operation.snapshot);
     const version = snapshot ? await this.repository.getById(snapshot.versionId) : undefined;
     if (!snapshot || !version || version.publishOperationId !== operation.id) {
@@ -859,14 +874,18 @@ export class StudioExportService {
       return;
     }
 
-    if (!(await this.operations.beginValidation(operation.id, claimToken))) {
+    if (!(await this.operations.beginValidation(operation.id, claimToken, true))) {
       return;
     }
 
     let prepared: PreparedPublication | undefined;
+    let published: StudioExportPublished | undefined;
     try {
       prepared = await this.prepare(version, snapshot.retain === 'project', snapshot.contract ?? null);
-      const published = await this.publishAcknowledged(version, operation, claimToken, prepared);
+      assertExecutionActive();
+      published = await this.publishAcknowledged(version, operation, claimToken, prepared);
+      // Publication committed under the claim lock. Later cleanup cannot revoke or move that output.
+      await settleOperationExecution();
       await this.afterPublished(published, prepared);
       await this.finishJob(operation, claimToken, published.version.resultAssetId);
       await this.notifyRenderFinished(version, 'published', published.version.resultAssetId, operation.label);
@@ -877,6 +896,12 @@ export class StudioExportService {
         })`,
       );
     } catch (error) {
+      if (await settleOperationStop(this.operations, operation, claimToken)) return;
+      if (published) {
+        this.logger.warn(`Studio export ${version.id} published; follow-up cleanup remains pending`);
+        await this.finishJob(operation, claimToken, published.version.resultAssetId);
+        return;
+      }
       if (error instanceof StudioExportRefusal && error.code === 'claim-lost') {
         // A replacement claim may already be using the prepared file. Leave it in place.
         return;
@@ -972,6 +997,7 @@ export class StudioExportService {
 
     if (current !== finalPath) {
       this.storage.mkdirSync(dirname(finalPath));
+      assertExecutionActive();
       await this.storage.rename(stagedPath, finalPath);
     }
 
@@ -1161,8 +1187,8 @@ export class StudioExportService {
    * job meanwhile has nothing left to stop, so it is acknowledged rather than left for the lease.
    */
   private async finishJob(operation: MediaOperation, claimToken: string, resultAssetId: string | null): Promise<void> {
-    await this.operations.beginValidation(operation.id, claimToken);
-    if (!(await this.operations.complete(operation.id, claimToken, { resultAssetId }))) {
+    await this.operations.beginValidation(operation.id, claimToken, true);
+    if (!(await this.operations.complete(operation.id, claimToken, { resultAssetId }, undefined, true))) {
       await this.operations.acknowledgeCancel(operation.id, claimToken, { released: true });
     }
   }

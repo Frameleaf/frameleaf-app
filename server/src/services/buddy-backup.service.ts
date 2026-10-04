@@ -3,18 +3,8 @@ import { CronTime } from 'cron';
 import { sql } from 'kysely';
 import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
-import { access, readFile, readdir, realpath, rm, stat, statfs } from 'node:fs/promises';
+import { access, readdir, readFile, realpath, rm, stat, statfs } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
-import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type {
-  BuddyControlDto,
-  BuddyKitDto,
-  BuddyPreflightRequestDto,
-  BuddySettingsDto,
-  BuddyStatusDto,
-} from 'src/dtos/buddy-backup.dto.js';
-import type z from 'zod';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
@@ -33,7 +23,7 @@ import { type MediaOperation, MediaOperationRepository } from 'src/repositories/
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { BuddyBackupCaptureService } from 'src/services/buddy-backup-capture.service.js';
 import { BuddyBackupPeerService } from 'src/services/buddy-backup-peer.service.js';
-import { BuddyBackupClient, BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
+import { BuddyBackupClient, BuddyExecutionError, BuddyPeerUnavailable } from 'src/utils/buddy-backup-client.js';
 import {
   type BuddyKeyring,
   buddyObjectId,
@@ -48,11 +38,12 @@ import { buddyInside } from 'src/utils/buddy-backup-recovery.js';
 import {
   type BuddyReceipt,
   type BuddySignedSnapshot,
-  BuddyVault,
   buddySnapshotBytes,
+  BuddyVault,
   createBuddyDirectory,
   writeBuddyFile,
 } from 'src/utils/buddy-backup-vault.js';
+import { assertExecutionActive, executionDelay, executionSignal } from 'src/utils/execution-signal.js';
 import {
   type BuddyAcceptRequest,
   BuddyAction,
@@ -63,6 +54,16 @@ import {
   BuddyStatusResponse,
 } from 'src/utils/frameleaf-buddy.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
+import { OperationDeadlineError, settleOperationStop, withOperationExecution } from 'src/utils/operation-execution.js';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type {
+  BuddyControlDto,
+  BuddyKitDto,
+  BuddyPreflightRequestDto,
+  BuddySettingsDto,
+  BuddyStatusDto,
+} from 'src/dtos/buddy-backup.dto.js';
+import type z from 'zod';
 
 const KINDS = [MediaOperationKind.BuddyBackup, MediaOperationKind.BuddyRestore];
 const LEASE_MS = 300_000;
@@ -388,7 +389,7 @@ export class BuddyBackupService {
           for (let unit = 0; unit < units; unit++) {
             const hit = await this.rates.hit(`buddy:bandwidth:${direction}`, 1);
             if (hit.count > Math.max(1, Math.floor((mbps * 1_000_000) / (8 * 64 * 1024))))
-              await sleep(hit.resetSeconds * 1000);
+              await executionDelay(hit.resetSeconds * 1000);
           }
         },
       ),
@@ -589,10 +590,17 @@ export class BuddyBackupService {
   }
 
   private async run(operation: MediaOperation, token: string) {
+    return withOperationExecution(
+      {
+        renew: () => this.operations.heartbeat(operation.id, token, LEASE_MS, { requireActiveClaim: true }),
+        stopped: () => this.stopped,
+      },
+      () => this.runClaim(operation, token),
+    );
+  }
+
+  private async runClaim(operation: MediaOperation, token: string) {
     const id = operation.id;
-    const alive = setInterval(() => {
-      void this.operations.heartbeat(id, token, LEASE_MS).catch(() => false);
-    }, LEASE_MS / 4);
     let cancelled = false;
     try {
       if (
@@ -605,6 +613,7 @@ export class BuddyBackupService {
       )
         throw new BuddyStopped();
       const checkpoint = async () => {
+        assertExecutionActive();
         const state = await this.repository.state();
         const row = await this.operations.getOfKind(id, MediaOperationKind.BuddyBackup);
         cancelled = !!row?.cancelRequestedAt;
@@ -786,14 +795,17 @@ export class BuddyBackupService {
         ...current,
         transfer: { connection: client.connection, mbps: 0, at: new Date().toISOString() },
       }));
-      await this.operations.beginValidation(id, token);
-      if (!(await this.operations.complete(id, token, { resultAssetId: null }))) throw new BuddyStopped();
+      await this.operations.beginValidation(id, token, true);
+      if (!(await this.operations.complete(id, token, { resultAssetId: null }, undefined, true)))
+        throw new BuddyStopped();
       await this.repository.update((current) => ({
         ...current,
         run: current.run && { ...current.run, state: 'complete', error: null, finishedAt: new Date().toISOString() },
       }));
       await this.capture.release(id);
     } catch (error) {
+      error = executionSignal()?.aborted ? executionSignal()!.reason : error;
+      if (await settleOperationStop(this.operations, operation, token)) return;
       if (error instanceof BuddyStopped) {
         if (cancelled) {
           await this.capture.release(id);
@@ -806,18 +818,26 @@ export class BuddyBackupService {
           run: current.run && { ...current.run, state: 'paused' },
         }));
       } else {
-        const waiting = error instanceof BuddyPeerUnavailable || error instanceof FrameleafCloudError;
+        const waiting =
+          error instanceof BuddyPeerUnavailable ||
+          (error instanceof FrameleafCloudError && [401, 403, 429, 507].includes(error.status ?? 0))
+            ? (error as BuddyPeerUnavailable | FrameleafCloudError)
+            : null;
+        const retry =
+          error instanceof BuddyExecutionError ||
+          error instanceof OperationDeadlineError ||
+          (error instanceof FrameleafCloudError && (error.status === null || error.status >= 500));
         const message = waiting
-          ? error.message
+          ? waiting.message
           : 'Backup is incomplete. Check required mounts, source integrity, recovery keys, and local staging space.';
         await this.repository.update((current) => ({
           ...current,
           run: current.run && {
             ...current.run,
             state: waiting
-              ? error.status === 507
+              ? waiting.status === 507
                 ? 'waiting-quota'
-                : error.status === 401 || error.status === 403
+                : waiting.status === 401 || waiting.status === 403
                   ? 'waiting-authorization'
                   : 'waiting-peer'
               : 'incomplete',
@@ -830,7 +850,7 @@ export class BuddyBackupService {
             returnAttempt: true,
           });
         else {
-          await this.operations.fail(id, token, { error: message, errorCode: 'buddy_incomplete' }, { retry: false });
+          await this.operations.fail(id, token, { error: message, errorCode: 'buddy_incomplete' }, { retry });
           await this.capture.reconcile();
         }
         await this.events.emit('AdminNotify', {
@@ -842,8 +862,6 @@ export class BuddyBackupService {
           dedupeDays: 1,
         });
       }
-    } finally {
-      clearInterval(alive);
     }
   }
 

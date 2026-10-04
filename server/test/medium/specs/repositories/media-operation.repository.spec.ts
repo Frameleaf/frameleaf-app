@@ -14,7 +14,7 @@ import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MediaOperationService } from 'src/services/media-operation.service.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
-import { EditOperationEdit, JOB_QUEUE_CLAIMANT, editOperationCreate } from 'src/utils/edit-operation.js';
+import { editOperationCreate, EditOperationEdit, JOB_QUEUE_CLAIMANT } from 'src/utils/edit-operation.js';
 import { resetMediaOperationsAfterRestore } from 'src/utils/media-operation-restore.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -66,6 +66,51 @@ describe(MediaOperationRepository.name, () => {
       settings: { resolution: '3840×2160' },
       ...overrides,
     });
+
+  it('strict heartbeat refuses cancellation while the live worker retains its token to acknowledge stop', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const operation = await newOperation(sut, user.id);
+    const claim = await sut.claimNext({
+      kinds: [MediaOperationKind.StudioExport],
+      workerId: 'worker-a',
+      leaseMs: LEASE_MS,
+    });
+    await sut.requestCancel(operation.id, user.id);
+    await expect(sut.heartbeat(operation.id, claim!.claimToken, LEASE_MS, { requireActiveClaim: true })).resolves.toBe(
+      false,
+    );
+    await expect(sut.acknowledgeCancel(operation.id, claim!.claimToken, { released: true })).resolves.toBe(true);
+  });
+
+  it('never revives an expired lease through heartbeat or a bulk checkpoint', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const operation = await newOperation(sut, user.id);
+    const claim = await sut.claimNext({
+      kinds: [MediaOperationKind.StudioExport],
+      workerId: 'worker-a',
+      leaseMs: LEASE_MS,
+    });
+    await defaultDatabase
+      .updateTable('media_operation')
+      .set({ claimExpiresAt: sql<Date>`clock_timestamp() - interval '1 second'` })
+      .where('id', '=', operation.id)
+      .execute();
+    await expect(sut.heartbeat(operation.id, claim!.claimToken, LEASE_MS)).resolves.toBe(false);
+    await expect(sut.heartbeat(operation.id, claim!.claimToken, LEASE_MS, { requireActiveClaim: true })).resolves.toBe(
+      false,
+    );
+    await expect(
+      sut.setBulkResult(operation.id, claim!.claimToken, {
+        result: {},
+        processedUnits: 1,
+        totalUnits: 2,
+        progress: 50,
+        leaseMs: LEASE_MS,
+      }),
+    ).resolves.toBeUndefined();
+  });
 
   describe('mergeStreamSignal (FL-96)', () => {
     it('merges the patch into the result as an object, and only on the expected negotiation round', async () => {

@@ -1,10 +1,12 @@
 import { Readable } from 'node:stream';
-import type z from 'zod';
+import { finished } from 'node:stream/promises';
 import { BUDDY_BLOCK_BYTES, BUDDY_SEALED_OVERHEAD } from 'src/utils/buddy-backup-crypto.js';
 import { verifyBuddyResponse } from 'src/utils/buddy-backup-protocol.js';
 import { BuddyVault } from 'src/utils/buddy-backup-vault.js';
+import { advanceExecutionProgress, assertExecutionActive, executionTimeout } from 'src/utils/execution-signal.js';
 import { BuddyGrantResponse } from 'src/utils/frameleaf-buddy.js';
-import { type FrameleafKeySigner, createDpopProof } from 'src/utils/frameleaf-dpop.js';
+import { createDpopProof, type FrameleafKeySigner } from 'src/utils/frameleaf-dpop.js';
+import type z from 'zod';
 
 export class BuddyPeerUnavailable extends Error {
   constructor(
@@ -14,6 +16,8 @@ export class BuddyPeerUnavailable extends Error {
     super(message);
   }
 }
+
+export class BuddyExecutionError extends Error {}
 
 /** The same immutable object may resume on a different verified candidate after a route fails. */
 export class BuddyBackupClient {
@@ -27,7 +31,9 @@ export class BuddyBackupClient {
   ) {}
 
   async request<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, block?: Buffer): Promise<T> {
+    assertExecutionActive();
     const grant = await this.grant();
+    assertExecutionActive();
     let failure: unknown = new BuddyPeerUnavailable(503, 'Buddy is offline');
     for (const candidate of grant.connections) {
       const origin = new URL(candidate.uri);
@@ -53,8 +59,11 @@ export class BuddyBackupClient {
               (async function* () {
                 for (let offset = 0; offset < block.length; offset += 64 * 1024) {
                   const piece = block.subarray(offset, offset + 64 * 1024);
+                  assertExecutionActive();
                   await throttle(piece.length, 'upload');
+                  assertExecutionActive();
                   yield piece;
+                  advanceExecutionProgress(piece.length);
                 }
               })(),
             );
@@ -69,10 +78,18 @@ export class BuddyBackupClient {
             headers,
             body: payload as BodyInit | undefined,
             redirect: 'error' as const,
-            signal: AbortSignal.timeout(Math.min(remaining, block ? 240_000 : 60_000)),
+            signal: executionTimeout(Math.min(remaining, block ? 240_000 : 60_000)),
             ...(block && { duplex: 'half' }),
           };
-          const response = await fetch(url, options);
+          let response: Response;
+          try {
+            response = await fetch(url, options);
+          } finally {
+            if (payload instanceof Readable) {
+              payload.destroy();
+              await finished(payload).catch(() => {});
+            }
+          }
           const nonce = response.headers.get('dpop-nonce');
           if (nonce && /^[\w-]{43}$/.test(nonce)) this.nonces.set(origin.origin, nonce);
           if (response.status === 401 && nonce && attempt === 0) {
@@ -81,6 +98,7 @@ export class BuddyBackupClient {
           }
           if (!response.ok) {
             await response.body?.cancel();
+            if (![401, 403, 429, 507].includes(response.status)) throw new BuddyExecutionError('Buddy transfer failed');
             throw new BuddyPeerUnavailable(
               response.status,
               response.status === 507
@@ -99,6 +117,8 @@ export class BuddyBackupClient {
             length += chunk.length;
             if (length > maximum) throw new Error('Buddy response exceeds the protocol limit');
             if (binary) await this.throttle(chunk.length, 'download');
+            assertExecutionActive();
+            advanceExecutionProgress(chunk.length);
             chunks.push(Buffer.from(chunk));
           }
           const bytes = Buffer.concat(chunks);
@@ -119,10 +139,13 @@ export class BuddyBackupClient {
           return envelope.data;
         }
       } catch (error) {
+        assertExecutionActive();
         failure =
           error instanceof Error &&
           (error.message === 'fetch failed' || ['AbortError', 'TimeoutError'].includes(error.name))
-            ? new BuddyPeerUnavailable(503, 'Buddy connection is unavailable; the verified checkpoint is preserved')
+            ? new BuddyExecutionError(
+                'Buddy transfer timed out or lost its connection; the verified checkpoint is preserved',
+              )
             : error;
         if (error instanceof BuddyPeerUnavailable && [403, 429, 507].includes(error.status)) throw error;
       }

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ExifDateTime, WriteTags, exiftool } from 'exiftool-vendored';
+import { ExifDateTime, exiftool, WriteTags } from 'exiftool-vendored';
 import ffmpeg, { FfprobeData, FfprobeStream } from 'fluent-ffmpeg';
 import { camelCase, upperFirst } from 'lodash-es';
 import { Duration } from 'luxon';
@@ -8,6 +8,34 @@ import fs from 'node:fs/promises';
 import { Writable } from 'node:stream';
 import { parentPort } from 'node:worker_threads';
 import sharp, { Sharp } from 'sharp';
+import { ORIENTATION_TO_SHARP_ROTATION } from 'src/constants.js';
+import { Exif } from 'src/database.js';
+import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
+import {
+  AacProfile,
+  Av1Profile,
+  ColorMatrix,
+  ColorPrimaries,
+  Colorspace,
+  ColorTransfer,
+  DvProfile,
+  DvSignalCompatibility,
+  H264Profile,
+  HevcProfile,
+  ImageFormat,
+  LogLevel,
+  RawExtractedFormat,
+} from 'src/enum.js';
+import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
+import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { executionSignal } from 'src/utils/execution-signal.js';
+import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
+import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
+import { tryParseRational } from 'src/utils/rational-time.js';
+import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
+import { createAffineMatrix } from 'src/utils/transform.js';
 import type {
   DecodeToBufferOptions,
   GenerateThumbhashOptions,
@@ -20,40 +48,13 @@ import type {
   VideoPacketInfo,
 } from 'src/types.js';
 import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
-import { ORIENTATION_TO_SHARP_ROTATION } from 'src/constants.js';
-import { Exif } from 'src/database.js';
-import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
-import {
-  AacProfile,
-  Av1Profile,
-  ColorMatrix,
-  ColorPrimaries,
-  ColorTransfer,
-  Colorspace,
-  DvProfile,
-  DvSignalCompatibility,
-  H264Profile,
-  HevcProfile,
-  ImageFormat,
-  LogLevel,
-  RawExtractedFormat,
-} from 'src/enum.js';
-import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
-import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
-import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
-import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
-import { mimeTypes } from 'src/utils/mime-types.js';
-import { tryParseRational } from 'src/utils/rational-time.js';
-import { renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
-import { createAffineMatrix } from 'src/utils/transform.js';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> => {
-  jobSignal()?.throwIfAborted();
+  executionSignal()?.throwIfAborted();
   const child = spawn('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', ...options, input], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const lifetime = superviseMediaProcess(child);
+  const lifetime = superviseMediaProcess(child, { signal: executionSignal() });
   const chunks: Buffer[] = [];
   let bytes = 0;
   let stderr = '';

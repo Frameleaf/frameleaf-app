@@ -2,12 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'kysely';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { open, readFile, readdir, realpath, rm, statfs } from 'node:fs/promises';
+import { open, readdir, readFile, realpath, rm, statfs } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import type { FrameleafCloudBackup } from 'src/types.js';
-import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
-import type { BuddyStudioSnapshot } from 'src/utils/buddy-backup-studio.js';
-import { withDatabaseCleanup } from 'src/utils/execution-database.js';
 import { serverVersion } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import {
@@ -44,8 +40,13 @@ import {
   keyFingerprint,
   parseBackupKey,
 } from 'src/utils/cloud-backup.js';
+import { withDatabaseCleanup } from 'src/utils/execution-database.js';
+import { advanceExecutionProgress, assertExecutionActive, executionSignal } from 'src/utils/execution-signal.js';
 import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
+import type { FrameleafCloudBackup } from 'src/types.js';
+import type { BuddyMetadata } from 'src/utils/buddy-backup-metadata.js';
+import type { BuddyStudioSnapshot } from 'src/utils/buddy-backup-studio.js';
 
 export type BuddyContent = { blocks: string[]; keyVersion: number; bytes: number };
 export type BuddyManifest = {
@@ -247,7 +248,10 @@ export class BuddyBackupCaptureService {
         let bytes = 0;
         const buffer = Buffer.alloc(BUDDY_BLOCK_BYTES);
         while (true) {
+          assertExecutionActive();
           const { bytesRead } = await file.read(buffer, 0, buffer.length, bytes);
+          assertExecutionActive();
+          advanceExecutionProgress(bytesRead);
           if (!bytesRead) break;
           const piece = buffer.subarray(0, bytesRead);
           hash.update(piece);
@@ -381,6 +385,8 @@ export class BuddyBackupCaptureService {
             // pg_dump imports precisely this view. Internet transfer starts only after this transaction ends.
             const dump = await this.backups.createDatabaseBackup(`buddy-${options.runId}-`, {
               snapshot: rows[0].snapshot,
+              signal: executionSignal(),
+              progress: advanceExecutionProgress,
               verify: true,
             });
             try {
