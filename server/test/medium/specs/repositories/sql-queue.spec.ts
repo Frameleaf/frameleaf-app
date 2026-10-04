@@ -11,7 +11,13 @@ import { MessageChannel } from 'node:worker_threads';
 import { Worker } from 'node:worker_threads';
 import postgres from 'postgres';
 import type { JobItem } from 'src/types.js';
-import { MlAdmissionRefusal, MlWorkload } from 'src/enum.js';
+import {
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
+  MlAdmissionRefusal,
+  MlWorkload,
+} from 'src/enum.js';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
 import { publishJobDiagnostic, publishJobResult, queueExecution } from 'src/queue/context.js';
 import { queueNotifications } from 'src/queue/notifications.js';
@@ -22,8 +28,10 @@ import { QUEUE_HIGH_WATER, QUEUE_TIMING, QueueClaim, QueueIntent } from 'src/que
 import { QueueWatchdog, monitorQueueProgress } from 'src/queue/watchdog.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { MlDestinationRefusedError } from 'src/utils/ml-destination.js';
+import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -137,105 +145,106 @@ describe('PostgreSQL queue', () => {
     }
   });
 
-  it.skipIf(spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0)(
-    'detects a real FFmpeg progress stall, terminates its executor, then accepts exactly one replacement',
-    async () => {
-      await store.enqueue([intent()]);
-      const [claim] = await store.claim(queue, workerA);
-      const ffmpeg = spawn(
-        'ffmpeg',
-        [
-          '-v',
-          'error',
-          '-re',
-          '-f',
-          'lavfi',
-          '-i',
-          'color=size=16x16:rate=10',
-          '-progress',
-          'pipe:1',
-          '-stats_period',
-          '0.05',
-          '-f',
-          'null',
-          '-',
-        ],
-        { stdio: ['ignore', 'pipe', 'ignore'] },
-      );
-      const childExit = once(ffmpeg, 'exit');
-      await once(ffmpeg, 'spawn');
-      const worker = new Worker(
-        `const {parentPort,workerData}=require('node:worker_threads');
+  it('detects a real FFmpeg progress stall, terminates its executor, then accepts exactly one replacement', async () => {
+    expect(spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status).toBe(0);
+    await store.enqueue([intent()]);
+    const [claim] = await store.claim(queue, workerA);
+    const ffmpeg = spawn(
+      'ffmpeg',
+      [
+        '-v',
+        'error',
+        '-re',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=size=16x16:rate=10',
+        '-progress',
+        'pipe:1',
+        '-stats_period',
+        '0.05',
+        '-f',
+        'null',
+        '-',
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    const childExit = once(ffmpeg, 'exit');
+    await once(ffmpeg, 'spawn');
+    const worker = new Worker(
+      `const {parentPort,workerData}=require('node:worker_threads');
         parentPort.postMessage({type:'queue-child',pid:workerData,active:true});
-        parentPort.on('message', ({port})=>{parentPort.postMessage({type:'queue-watchdog-port',port},[port]);
+        parentPort.on('message', ({port,workerId})=>{parentPort.postMessage({type:'queue-watchdog-port',workerId,port},[port]);
         parentPort.postMessage({type:'ready'}); while(true) {} });`,
-        { eval: true, workerData: ffmpeg.pid },
-      );
-      superviseQueueWorker(worker);
-      const workerExit = once(worker, 'exit');
-      const { port1, port2 } = new MessageChannel();
-      const ready = new Promise<void>((resolve) =>
-        worker.on('message', (m) => {
-          if (m.type === 'ready') resolve();
-        }),
-      );
-      worker.postMessage({ port: port1 }, [port1]);
-      await ready;
-      const watchdog = new QueueWatchdog({ noProgressDeadline: 150, cancelGrace: 100, lease: 5000 });
-      watchdog.add(claim.id, performance.now(), 3000);
-      let units = 0;
-      let cancelled = false;
-      const progress = new Promise<void>((resolve) =>
-        ffmpeg.stdout!.on('data', (chunk) => {
-          const match = /out_time_us=(\d+)/.exec(String(chunk));
-          if (match && Number(match[1]) > units) {
-            units = Number(match[1]);
-            watchdog.progress(claim.id, units, performance.now());
-            resolve();
-          }
-        }),
-      );
-      const stop = monitorQueueProgress(
-        watchdog,
-        {
-          alive: () => port2.postMessage({ type: 'alive' }),
-          cancel: (id) => {
-            expect(id).toBe(claim.id);
-            cancelled = true;
-            worker.postMessage({ type: 'cancel', id });
-          },
-          terminate: () => port2.postMessage({ type: 'terminate' }),
-          lastHeartbeat: () => performance.now(),
+      { eval: true, workerData: ffmpeg.pid },
+    );
+    const supervised = superviseQueueWorker(worker, undefined, undefined, {
+      recordStopped: async (proof) => {
+        await sql`insert into system_metadata(key,value)
+            values (${'frameleaf-worker-stopped:' + proof.workerId}, ${JSON.stringify(proof)}::jsonb)`.execute(db);
+      },
+    });
+    const workerExit = once(worker, 'exit');
+    const { port1, port2 } = new MessageChannel();
+    const ready = new Promise<void>((resolve) =>
+      worker.on('message', (m) => {
+        if (m.type === 'ready') resolve();
+      }),
+    );
+    worker.postMessage({ workerId: workerA, port: port1 }, [port1]);
+    await ready;
+    const watchdog = new QueueWatchdog({ noProgressDeadline: 150, cancelGrace: 100, lease: 5000 });
+    watchdog.add(claim.id, performance.now(), 3000);
+    let units = 0;
+    let cancelled = false;
+    const progress = new Promise<void>((resolve) =>
+      ffmpeg.stdout!.on('data', (chunk) => {
+        const match = /out_time_us=(\d+)/.exec(String(chunk));
+        if (match && Number(match[1]) > units) {
+          units = Number(match[1]);
+          watchdog.progress(claim.id, units, performance.now());
+          resolve();
+        }
+      }),
+    );
+    const stop = monitorQueueProgress(
+      watchdog,
+      {
+        alive: () => port2.postMessage({ type: 'alive' }),
+        cancel: (id) => {
+          expect(id).toBe(claim.id);
+          cancelled = true;
+          worker.postMessage({ type: 'cancel', id });
         },
-        20,
-      );
-      try {
-        await progress;
-        process.kill(ffmpeg.pid!, 'SIGSTOP');
-        expect((await workerExit)[0]).toBe(1);
-        expect((await childExit)[1]).toBe('SIGKILL');
-        expect(cancelled).toBe(true);
-        // Advance only database lease/retry time after real process death. No terminal states are injected.
-        await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(
-          db,
-        );
-        await store.recoverExpired();
-        expect(await store.complete(claim, [])).toBe(false);
-        await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
-        const replacements = await store.claim(queue, workerB);
-        expect(replacements).toHaveLength(1);
-        expect(replacements[0].attempt).toBe(2);
-        expect(await store.complete(replacements[0], [])).toBe(true);
-        expect(await store.claim(queue, workerA)).toEqual([]);
-      } finally {
-        stop();
-        port2.close();
-        ffmpeg.kill('SIGKILL');
-        await worker.terminate();
-      }
-    },
-    15000,
-  );
+        terminate: () => port2.postMessage({ type: 'terminate' }),
+        lastHeartbeat: () => performance.now(),
+      },
+      20,
+    );
+    try {
+      await progress;
+      process.kill(ffmpeg.pid!, 'SIGSTOP');
+      expect((await workerExit)[0]).toBe(1);
+      expect((await childExit)[1]).toBe('SIGKILL');
+      await supervised.stopped;
+      expect(cancelled).toBe(true);
+      // Advance only database lease/retry time after real process death. No terminal states are injected.
+      await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${claim.id}::uuid`.execute(db);
+      await store.recoverExpired();
+      expect(await store.complete(claim, [])).toBe(false);
+      await sql`update job set "availableAt" = now() where id = ${claim.id}::uuid`.execute(db);
+      const replacements = await store.claim(queue, workerB);
+      expect(replacements).toHaveLength(1);
+      expect(replacements[0].attempt).toBe(2);
+      expect(await store.complete(replacements[0], [])).toBe(true);
+      expect(await store.claim(queue, workerA)).toEqual([]);
+    } finally {
+      stop();
+      port2.close();
+      ffmpeg.kill('SIGKILL');
+      await worker.terminate();
+    }
+  }, 15000);
 
   it('rejects prepared media when its original path changes before acceptance', async () => {
     const { ctx } = newMediumService(BaseService, { database: db, real: [], mock: [LoggingRepository] });
@@ -459,9 +468,10 @@ describe('PostgreSQL queue', () => {
     expect(await store.claim(queue, workerA)).toHaveLength(1);
   });
 
-  it('retries a killed safe worker once and fences its late output and follow-up intents', async () => {
+  it('retries a confirmed stopped safe attempt once and fences its late output and follow-up intents', async () => {
     await store.enqueue([intent()]);
     const [first] = await store.claim(queue, workerA);
+    await recordStoppedAttempt(db, first.id, first.token);
     await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${first.id}::uuid`.execute(db);
     await store.recoverExpired();
     const adopted = vi.fn();
@@ -488,6 +498,98 @@ describe('PostgreSQL queue', () => {
       error: string;
     }>`select state, data, error from job where id = ${claim.id}::uuid`.execute(db);
     expect(row).toEqual({ state: 'needs_attention', data: {}, error: 'Job failed; sensitive details omitted' });
+    expect(await store.retryFailed(queue)).toBe(0);
+    expect(await store.claim(queue, workerB)).toEqual([]);
+  });
+
+  it('settles unconfirmed termination for attention without replaying the latest request or stopping independent items', async () => {
+    const runId = await store.createRun('stop-unconfirmed', {});
+    const latestRun = await store.createRun('latest-unconfirmed', {});
+    const options = { deduplication: { id: randomUUID(), keepLastIfActive: true } };
+    await store.enqueue([intent({ runId, itemKey: 'old', rootItemKey: 'old', options })]);
+    const [old] = await store.claim(queue, workerA);
+    await store.enqueue([
+      intent({ runId: latestRun, itemKey: 'latest', rootItemKey: 'latest', options }),
+      intent({ runId, itemKey: 'independent', rootItemKey: 'independent' }),
+    ]);
+    await store.finishEnumeration(runId);
+    await store.finishEnumeration(latestRun);
+    // An unrelated worker/attempt proof must not authorize this attempt's replay.
+    await recordStoppedAttempt(db, old.id, randomUUID());
+    await sql`insert into system_metadata(key,value) values (${'frameleaf-worker-stopped:' + workerB},
+      ${JSON.stringify({ workerId: workerB, stoppedAt: Date.now() })}::jsonb)`.execute(db);
+    await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '1 second' where id=${old.id}::uuid`.execute(
+      db,
+    );
+    await store.recoverExpired();
+    expect(await store.claim(queue, workerB)).toEqual([]);
+    expect(
+      (await sql`select state, "cancelRequestedAt" is not null cancelled from job where id=${old.id}::uuid`.execute(db))
+        .rows,
+    ).toEqual([{ state: 'active', cancelled: true }]);
+    await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${old.id}::uuid`.execute(
+      db,
+    );
+    await store.recoverExpired();
+    expect(
+      (await sql`select state, token, "latestPending" from job where id=${old.id}::uuid`.execute(db)).rows,
+    ).toEqual([{ state: 'needs_attention', token: null, latestPending: null }]);
+    expect(await store.retryFailed(queue)).toBe(0);
+    const [independent] = await store.claim(queue, workerB);
+    expect(independent.itemKey).toBe('independent');
+    await store.complete(independent, []);
+    expect(await store.claim(queue, workerB)).toEqual([]);
+    const { rows: items } = await sql`select "rootItemKey", state from job_run_item
+      where "runId" in (${runId}::uuid, ${latestRun}::uuid) order by "rootItemKey"`.execute(db);
+    expect(items).toEqual([
+      { rootItemKey: 'independent', state: 'completed' },
+      { rootItemKey: 'latest', state: 'needs_attention' },
+      { rootItemKey: 'old', state: 'needs_attention' },
+    ]);
+    expect(
+      (
+        await sql`select id from job_run where id in (${runId}::uuid, ${latestRun}::uuid)
+      and "finishedAt" is not null`.execute(db)
+      ).rows,
+    ).toHaveLength(2);
+  });
+
+  it('fences the linked operation without giving its dispatcher an independent retry after an unconfirmed stop', async () => {
+    const { ctx } = newMediumService(BaseService, { database: db, mock: [LoggingRepository] });
+    const operations = ctx.get(MediaOperationRepository as never) as MediaOperationRepository;
+    const { user } = await ctx.newUser();
+    const operation = await operations.create({
+      ownerId: user.id,
+      kind: MediaOperationKind.StudioExport,
+      destination: MediaOperationDestination.Local,
+      label: 'Unconfirmed executor',
+      snapshot: {},
+      settings: {},
+    });
+    const operationToken = randomUUID();
+    await sql`update media_operation set status='rendering', "claimToken"=${operationToken}::uuid,
+      "claimedBy"='job-queue', "claimExpiresAt"=clock_timestamp()-interval '1 second',
+      result='{"retainedCheckpoint":7}'::jsonb where id=${operation.id}::uuid`.execute(db);
+    await store.enqueue([intent({ safeToRetry: false, data: { operationId: operation.id } })]);
+    const [claim] = await store.claim(queue, workerA);
+    await sql`update job set "leaseExpiresAt"=clock_timestamp()-interval '31 seconds' where id=${claim.id}::uuid`.execute(
+      db,
+    );
+    await store.recoverExpired();
+    await operations.recoverExpiredClaims({ errorCode: 'lease_expired', error: 'expired' });
+    expect(
+      await db
+        .selectFrom('media_operation')
+        .select(['status', 'claimToken', 'autoRetries', 'errorCode', 'result'])
+        .where('id', '=', operation.id)
+        .executeTakeFirst(),
+    ).toEqual({
+      status: MediaOperationStatus.Failed,
+      claimToken: null,
+      autoRetries: 0,
+      errorCode: 'executor_stop_unconfirmed',
+      result: { retainedCheckpoint: 7, status: 'needs_attention' },
+    });
     expect(await store.retryFailed(queue)).toBe(0);
     expect(await store.claim(queue, workerB)).toEqual([]);
   });
@@ -551,6 +653,7 @@ describe('PostgreSQL queue', () => {
       const started = performance.now();
       const [lost] = await coordinator.claim(queue, workerA);
       expect(lost).toBeDefined();
+      await recordStoppedAttempt(coordinatorDb, lost.id, lost.token);
       // Inject an expired clock, not a terminal outcome. The production recovery path revokes the token.
       await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${lost.id}::uuid`.execute(
         coordinatorDb,
@@ -803,7 +906,7 @@ describe('PostgreSQL queue', () => {
     }
   }, 900_000);
 
-  it('rejects a late publication from a real still-running partitioned executor', async () => {
+  it('fences a partitioned executor and defers retry until its actual stop is confirmed', async () => {
     const folder = await mkdtemp(join(tmpdir(), 'queue-partition-'));
     const oldPath = join(folder, 'old-attempt');
     const worker = new Worker(
@@ -820,8 +923,7 @@ describe('PostgreSQL queue', () => {
       await sql`update job set "leaseExpiresAt" = now() - interval '1 second' where id = ${old.id}::uuid`.execute(db);
       await store.recoverExpired();
       await sql`update job set "availableAt" = now() where id = ${old.id}::uuid`.execute(db);
-      const [replacement] = await store.claim(queue, workerB);
-      expect(await store.complete(replacement, [])).toBe(true);
+      expect(await store.claim(queue, workerB)).toEqual([]);
       const prepared = once(worker, 'message');
       worker.postMessage('resume');
       await prepared;
@@ -830,7 +932,15 @@ describe('PostgreSQL queue', () => {
       expect(await store.complete(old, [intent()], adopt)).toBe(false);
       expect(adopt).not.toHaveBeenCalled();
       expect((await store.counts(queue)).waiting).toBe(0);
-      expect(worker.threadId).not.toBe(-1); // safety does not assume the remote executor stopped
+      expect(worker.threadId).not.toBe(-1);
+      await worker.terminate();
+      await recordStoppedAttempt(db, old.id, old.token);
+      await store.recoverExpired();
+      expect((await store.counts(queue)).delayed).toBe(1);
+      await sql`update job set "availableAt" = now() where id = ${old.id}::uuid`.execute(db);
+      const [replacement] = await store.claim(queue, workerB);
+      expect(replacement).toMatchObject({ id: old.id, attempt: 2 });
+      expect(await store.complete(replacement, [])).toBe(true);
     } finally {
       await worker.terminate();
       await rm(folder, { recursive: true, force: true });
