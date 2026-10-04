@@ -2919,12 +2919,14 @@ describe(MediaService.name, () => {
           outputOptions: expect.arrayContaining(['-c:v', 'h264']),
         }),
       );
-      expect(mocks.asset.upsertFile).toHaveBeenCalledWith(
-        expect.objectContaining({
-          assetId: asset.id,
-          type: AssetFileType.EncodedVideo,
-          isEdited: true,
-        }),
+      expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            assetId: asset.id,
+            type: AssetFileType.EncodedVideo,
+            isEdited: true,
+          }),
+        ]),
       );
     });
 
@@ -3313,6 +3315,46 @@ describe(MediaService.name, () => {
         name: JobName.FileDelete,
         data: { files: ['/legacy_edited.mp4', '/legacy_edited.mp4.lineage.json'] },
       });
+    });
+
+    it('defers version references and released-file intents until queue publication', async () => {
+      const asset = {
+        ...AssetFactory.create({ type: AssetType.Video }),
+        videoStream: probeStub.videoStreamH264.videoStream,
+        audioStream: null,
+        format: probeStub.videoStreamH264.format,
+        files: [],
+      };
+      const version = { ...versionFor(asset, 'revert'), recipe: [] };
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(asset);
+      mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(version as any);
+      mocks.assetEdit.publishVideoVersion.mockResolvedValue({ published: true, releasedPaths: ['/retired.mp4'] });
+      mocks.media.probe.mockResolvedValue({
+        videoStreams: [asset.videoStream],
+        audioStreams: [],
+        format: asset.format,
+      });
+      const context = {
+        claim: { id: 'job', token: 'attempt', name: JobName.AssetVideoEditGeneration },
+        signal: new AbortController().signal,
+        progress: vi.fn(),
+        progressUnits: 0,
+        adoptions: [],
+        followups: [],
+        buffering: false,
+      } as unknown as QueueExecution;
+
+      await expect(
+        queueExecution.run(context, () => sut.handleAssetVideoEditGeneration({ id: asset.id })),
+      ).resolves.toBe(JobStatus.Success);
+      expect(mocks.assetEdit.publishVideoVersion).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(context.adoptions).toHaveLength(1);
+      await queueExecution.run(context, async () => {
+        for (const adopt of context.adoptions) await adopt({} as never);
+      });
+      expect(mocks.assetEdit.publishVideoVersion).toHaveBeenCalledOnce();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FileDelete, data: { files: ['/retired.mp4'] } });
     });
 
     it('publishes an export master and proxy without replacing the current thumbnails', async () => {

@@ -7,6 +7,7 @@ import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetEditActionItem, AssetEditActionItemResponseDto } from 'src/dtos/editing.dto.js';
 import { AssetFileType, AssetType } from 'src/enum.js';
+import { publicationDatabase } from 'src/queue/transaction.js';
 
 import { DB } from 'src/schema/index.js';
 import { getEditedMasterLineagePath } from 'src/utils/media-policy.js';
@@ -52,7 +53,9 @@ export class AssetEditRepository {
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
-  ) {}
+  ) {
+    this.db = publicationDatabase(db);
+  }
   @GenerateSql({ params: [DummyValue.UUID] })
   replaceAll(
     assetId: string,
