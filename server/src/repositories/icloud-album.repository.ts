@@ -227,10 +227,7 @@ export class ICloudAlbumRepository {
   }
   /** An album that holds albums is a collection; mirrored iCloud folders become collections the first time they get a child. */
   private async promoteToCollection(db: Kysely<DB>, id: string) {
-    const { numAffectedRows } =
-      await sql`UPDATE album SET kind='collection' WHERE id=${id}::uuid AND kind='album'`.execute(db);
-    if (Number(numAffectedRows ?? 0) > 0) {
-    }
+    await sql`UPDATE album SET kind='collection' WHERE id=${id}::uuid AND kind='album'`.execute(db);
   }
   private async reparent(db: Kysely<DB>, id: string, parentId: string | null) {
     // The existing album_parent_cycle_check trigger guards self/descendant cycles atomically.

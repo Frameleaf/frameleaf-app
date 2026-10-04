@@ -51,6 +51,8 @@ export const boundExecutionReservations = (client: Client, onUnusable: () => voi
       const timer = setTimeout(fail, DATABASE_ACQUIRE_TIMEOUT_MS);
       timer.unref();
       signal?.addEventListener('abort', fail, { once: true });
+      // Only a driver rejection decrements the pending count here; callback errors must not decrement twice.
+      // eslint-disable-next-line unicorn/prefer-then-catch
       void reserve().then(
         (connection) => {
           pending--;

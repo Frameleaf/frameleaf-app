@@ -25,6 +25,8 @@ server.adapter(
   }),
 );
 server.on('connection', async (socket) => {
+  // Socket.IO room admission is a side effect, not Array.join.
+  // eslint-disable-next-line unicorn/no-unused-array-method-return
   await socket.join('frameleaf-test-room');
   socket.emit('joined');
 });

@@ -27,8 +27,6 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy.repository.js';
-import { ForkEnrichmentRepository } from 'src/repositories/fork-enrichment.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -1086,12 +1084,7 @@ describe(MemoryService.name, () => {
       const logger = ctx.getMock(LoggingRepository);
       const projects = new StudioProjectRepository(defaultDatabase);
       const operations = new MediaOperationRepository(defaultDatabase);
-      const versions = new StudioExportRepository(
-        defaultDatabase,
-        new DerivativePrivacyRepository(defaultDatabase),
-        new ForkPrivacyRepository(defaultDatabase),
-        new ForkEnrichmentRepository(defaultDatabase),
-      );
+      const versions = new StudioExportRepository(defaultDatabase, new DerivativePrivacyRepository(defaultDatabase));
       const studioExports = new StudioExportService(
         logger as never,
         versions,

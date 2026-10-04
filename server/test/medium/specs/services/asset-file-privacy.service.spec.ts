@@ -1,16 +1,15 @@
 import { Kysely } from 'kysely';
-import { AlbumUserRole, AssetFileType, AssetVisibility } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, AssetMetadataKey, AssetVisibility } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetFileRepository } from 'src/repositories/asset-file.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
-import { ForkPrivacyRepository } from 'src/repositories/fork-privacy.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFileService } from 'src/services/asset-file.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
-import { getActiveForkKyselyDB, getKyselyDB } from 'test/utils.js';
+import { getKyselyDB } from 'test/utils.js';
 
 /**
  * FL-34 (ported from PR131 02db47e12c): derivative files carry their source asset's hidden-content
@@ -18,7 +17,7 @@ import { getActiveForkKyselyDB, getKyselyDB } from 'test/utils.js';
  */
 let database: Kysely<DB>;
 beforeAll(async () => {
-  database = await getActiveForkKyselyDB();
+  database = await getKyselyDB();
 });
 afterAll(async () => database?.destroy());
 const methods = ['get', 'download', 'delete'] as const;
@@ -41,7 +40,13 @@ const setup = async (db = database, visibility = AssetVisibility.Timeline, isEdi
   const file = await db.selectFrom('asset_file').selectAll().where('assetId', '=', asset.id).executeTakeFirstOrThrow();
   const elevated = factory.auth({ user, session: { hasElevatedPermission: true } });
   const locked = { ...factory.auth({ user, session: { hasElevatedPermission: false } }), hideNsfwAssets: true };
-  const mark = () => new ForkPrivacyRepository(db).saveClassification(asset.id, true, { action: 'marked-nsfw' }, db);
+  const mark = () =>
+    new AssetRepository(db).upsertMetadata(asset.id, [
+      {
+        key: AssetMetadataKey.MlEnrichment,
+        value: { nsfwDetection: { status: 'success', result: { isNsfw: true }, review: { isNsfw: true } } },
+      },
+    ]);
   return { sut, ctx, asset, file, user, elevated, locked, mark };
 };
 
@@ -96,9 +101,9 @@ it('does not grant asset-file access through admin status, partnership, shared a
     for (const method of methods) await expect(sut[method](auth, file.id)).rejects.toThrow();
 });
 
-it('fails closed for missing active privacy rows while allowing the elevated owner', async () => {
+it('uses canonical classification even when no enrichment document exists', async () => {
   const { sut, asset, file, elevated, locked } = await setup();
-  await new ForkPrivacyRepository(database).delete([asset.id]);
+  await database.updateTable('asset').set({ is_nsfw: true }).where('id', '=', asset.id).execute();
   for (const method of methods) await expect(sut[method](locked, file.id)).rejects.toThrow();
   await expect(sut.download(elevated, file.id)).resolves.toMatchObject({ path: file.path });
 });
@@ -121,13 +126,8 @@ it('applies tag/person suppression to derivative access independently of sensiti
   }
 });
 
-it('uses legacy source classification before the active-sidecar cutover', async () => {
-  const legacyDatabase = await getKyselyDB();
-  try {
-    const { sut, asset, file, locked } = await setup(legacyDatabase);
-    await legacyDatabase.updateTable('asset').set({ is_nsfw: true }).where('id', '=', asset.id).execute();
-    for (const method of methods) await expect(sut[method](locked, file.id)).rejects.toThrow();
-  } finally {
-    await legacyDatabase.destroy();
-  }
+it('allows unclassified owner files without requiring a second privacy row', async () => {
+  const { sut, file, locked } = await setup();
+  await expect(sut.get(locked, file.id)).resolves.toMatchObject({ id: file.id });
+  await expect(sut.download(locked, file.id)).resolves.toMatchObject({ path: file.path });
 });
