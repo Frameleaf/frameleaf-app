@@ -1,4 +1,5 @@
 import { JobName, JobStatus, MediaOperationStatus } from 'src/enum.js';
+import { queueExecution } from 'src/queue/context.js';
 import { EDIT_NOTHING_PUBLISHED, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EDIT_OPERATION_REDISPATCH_MS, EditOperationEdit } from 'src/utils/edit-operation.js';
 
@@ -44,6 +45,19 @@ describe(EditOperationTracker.name, () => {
   });
 
   describe('queue', () => {
+    it('never dispatches an untracked edit when its durable owner cannot be recorded', async () => {
+      operations.create.mockRejectedValue(new Error('database unavailable'));
+      await expect(
+        sut.queue({
+          ownerId: 'owner-1',
+          edit: EditOperationEdit.PhotoEdit,
+          assetId: 'asset-1',
+          label: 'IMG_0001.jpg',
+          job: { name: JobName.AssetEditThumbnailGeneration, data: { id: 'asset-1' } },
+        }),
+      ).rejects.toThrow('database unavailable');
+      expect(jobs.queue).not.toHaveBeenCalled();
+    });
     it('writes the row, then queues the job carrying its id', async () => {
       await expect(
         sut.queue({
@@ -150,6 +164,28 @@ describe(EditOperationTracker.name, () => {
   });
 
   describe('a run', () => {
+    it('reports advancing units without turning repeated stage reports or heartbeats into progress', async () => {
+      vi.useFakeTimers();
+      const progress = vi.fn();
+      await queueExecution.run(
+        { signal: new AbortController().signal, progress, progressUnits: 0 } as never,
+        async () => {
+          const run = await sut.begin('op-1');
+          if (typeof run === 'string') throw new Error('expected a claim');
+          try {
+            await run.progress(10);
+            await run.progress(10);
+            await vi.advanceTimersByTimeAsync(LEASE_MS / 3);
+            expect(operations.heartbeat).toHaveBeenCalledTimes(1);
+            expect(progress.mock.calls).toEqual([[10]]);
+            await run.progress(25);
+            expect(progress.mock.calls).toEqual([[10], [25]]);
+          } finally {
+            run.stop();
+          }
+        },
+      );
+    });
     it('refuses to publish once its claim was lost, and writes nothing more', async () => {
       operations.beginValidation.mockResolvedValue(false);
       operations.getForWorker.mockResolvedValue({ cancelRequestedAt: null, claimToken: 'recovered-token' });

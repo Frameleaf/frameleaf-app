@@ -43,6 +43,8 @@ import {
   StorageFolder,
 } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
+import { attemptOutputPath, jobSignal, publishJobResult } from 'src/queue/context.js';
+import { assertPublicationSource } from 'src/queue/transaction.js';
 import { AssetDevelopRepository, type AssetDevelopRevision } from 'src/repositories/asset-develop.repository.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -426,10 +428,16 @@ export class AssetDevelopService {
         return JobStatus.Skipped;
       }
       // Rendering a version makes it the working version; Revert walks back through history.
-      await this.assetDevelopRepository.setCurrent(revision.assetId, id);
+      await publishJobResult(async () => {
+        await assertPublicationSource(source.id, source.checksum);
+        if (await this.assetDevelopRepository.isCancelRequested(id)) throw new DevelopRenderCancelled();
+        await this.assetDevelopRepository.setCurrent(revision.assetId, id);
+      });
       return JobStatus.Success;
     } catch (error) {
       await this.discard(external ? [tmp.preview] : [tmp.master, tmp.preview]);
+      jobSignal()?.throwIfAborted();
+      if (run?.done) return JobStatus.Skipped;
       if (error instanceof DevelopRenderCancelled) {
         await this.assetDevelopRepository.update(id, { status: AssetDevelopRevisionStatus.Cancelled, progress: 0 });
         await run?.cancelled();
@@ -994,8 +1002,10 @@ export class AssetDevelopService {
   ) {
     const base = StorageCore.getNestedFolder(StorageFolder.Thumbnails, source.ownerId, source.id);
     return {
-      master: path.join(base, `${source.id}_develop_${revision.id}_master.${image.fullsize.format}`),
-      preview: path.join(base, `${source.id}_develop_${revision.id}_preview.${image.preview.format}`),
+      master: attemptOutputPath(path.join(base, `${source.id}_develop_${revision.id}_master.${image.fullsize.format}`)),
+      preview: attemptOutputPath(
+        path.join(base, `${source.id}_develop_${revision.id}_preview.${image.preview.format}`),
+      ),
     };
   }
 
@@ -1003,7 +1013,7 @@ export class AssetDevelopService {
     const isRaw = mimeTypes.isRaw(source.originalFileName) && !source.originalFileName.toLowerCase().endsWith('.psd');
     const colorspace = this.isSRGB(source.exifInfo) ? Colorspace.Srgb : image.colorspace;
     // Camera JPEGs are preview evidence, never develop source. LibRaw applies orientation once.
-    const input = isRaw ? await renderRawWithLibRaw(source.originalPath) : source.originalPath;
+    const input = isRaw ? await renderRawWithLibRaw(source.originalPath, jobSignal()) : source.originalPath;
     const { data, info } = await this.mediaRepository.decodeImage(input, {
       colorspace,
       processInvalidImages: false,
@@ -1047,7 +1057,8 @@ export class AssetDevelopService {
       await this.progress(revisionId, 10);
     }
     const controller = new AbortController();
-    const abort = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const signals = [controller.signal, ...(signal ? [signal] : []), ...(jobSignal() ? [jobSignal()!] : [])];
+    const abort = AbortSignal.any(signals);
     // Cancellation may arrive through another API worker; the shared row is authoritative.
     const watching = (async () => {
       if (!revisionId) {
@@ -1160,20 +1171,22 @@ export class AssetDevelopService {
     await this.progress(revision.id, 95);
     const renditionChecksum = await this.cryptoRepository.hashFile(tmp.master, 'sha256');
 
-    // Atomic publish: both files exist before either path is recorded.
+    // Both outputs stay attempt-private until the accepted claim adopts their references.
     await this.storageRepository.rename(tmp.master, outputs.master);
     await this.storageRepository.rename(tmp.preview, outputs.preview);
-    await this.assetDevelopRepository.update(revision.id, {
-      status: AssetDevelopRevisionStatus.Rendered,
-      progress: 100,
-      error: null,
-      masterPath: outputs.master,
-      previewPath: outputs.preview,
-      width: rendered.info.width,
-      height: rendered.info.height,
-      renderedAt: new Date(),
-      sourceChecksum,
-      renditionChecksum,
+    await publishJobResult(async () => {
+      await this.assetDevelopRepository.update(revision.id, {
+        status: AssetDevelopRevisionStatus.Rendered,
+        progress: 100,
+        error: null,
+        masterPath: outputs.master,
+        previewPath: outputs.preview,
+        width: rendered.info.width,
+        height: rendered.info.height,
+        renderedAt: new Date(),
+        sourceChecksum,
+        renditionChecksum,
+      });
     });
   }
 
@@ -1232,14 +1245,16 @@ export class AssetDevelopService {
     );
     await this.progress(revision.id, 95);
     await this.storageRepository.rename(tmpPreview, previewPath);
-    await this.assetDevelopRepository.update(revision.id, {
-      status: AssetDevelopRevisionStatus.Rendered,
-      progress: 100,
-      error: null,
-      previewPath,
-      width: full.width,
-      height: full.height,
-      renderedAt: new Date(),
+    await publishJobResult(async () => {
+      await this.assetDevelopRepository.update(revision.id, {
+        status: AssetDevelopRevisionStatus.Rendered,
+        progress: 100,
+        error: null,
+        previewPath,
+        width: full.width,
+        height: full.height,
+        renderedAt: new Date(),
+      });
     });
   }
 
@@ -1255,11 +1270,13 @@ export class AssetDevelopService {
   }
 
   private async progress(id: string, progress: number) {
+    jobSignal()?.throwIfAborted();
     // FL-43: the stage reaches the version's Activity job too, and a cancel asked for there stops
     // the render at this stage exactly as one asked for from the editor does.
     const run = this.runs.get(id);
-    if (run && !(await run.progress(progress)) && (await run.cancelRequested())) {
-      throw new DevelopRenderCancelled();
+    if (run && !(await run.progress(progress))) {
+      if (await run.cancelRequested()) throw new DevelopRenderCancelled();
+      throw new Error('Develop render lost its operation claim');
     }
     if (await this.assetDevelopRepository.isCancelRequested(id)) {
       throw new DevelopRenderCancelled();

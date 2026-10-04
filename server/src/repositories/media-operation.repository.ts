@@ -2,6 +2,8 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { ExpressionBuilder, Insertable, Kysely, Selectable, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
+import { queueExecution } from 'src/queue/context.js';
+import { publicationTransaction } from 'src/queue/transaction.js';
 import type { PostgresError } from 'postgres';
 import {
   DatabaseLock,
@@ -214,6 +216,11 @@ export class MediaOperationRepository {
       (row): row is T & MediaOperationChange => !!row?.id && !!row?.ownerId,
     );
     if (changes.length === 0) {
+      return;
+    }
+    const context = queueExecution.getStore();
+    if (context && publicationTransaction.getStore()) {
+      (context.afterCommit ??= []).push(() => Promise.resolve(this.changed(changes)));
       return;
     }
     for (const listener of this.listeners) {

@@ -2,6 +2,7 @@ import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { MediaOperation, MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
 import { JobStatus, MediaOperationStatus } from 'src/enum.js';
+import { advanceJobProgress, deferJobAdoption, jobSignal } from 'src/queue/context.js';
 import {
   EDIT_OPERATION_LEASE_MS,
   EDIT_OPERATION_REDISPATCH_MS,
@@ -53,6 +54,7 @@ export class EditOperationRun {
   private state: RunState = 'working';
   private timer?: ReturnType<typeof setInterval>;
   private errorNote?: { error: string; errorCode: string };
+  private progressUnits = 0;
 
   constructor(
     private operations: Operations,
@@ -89,6 +91,7 @@ export class EditOperationRun {
    * allows it: the owner asked to cancel, or the claim was lost.
    */
   async progress(percent: number): Promise<boolean> {
+    jobSignal()?.throwIfAborted();
     if (this.state !== 'working') {
       return false;
     }
@@ -101,6 +104,10 @@ export class EditOperationRun {
     });
     if (!ok && !(await this.cancelRequested())) {
       this.state = 'lost';
+    }
+    if (ok && value > this.progressUnits) {
+      advanceJobProgress(value - this.progressUnits);
+      this.progressUnits = value;
     }
     return ok;
   }
@@ -117,6 +124,7 @@ export class EditOperationRun {
    * stops without publishing and the previous output stays.
    */
   async validate(): Promise<boolean> {
+    jobSignal()?.throwIfAborted();
     if (this.state === 'validating') {
       return true;
     }
@@ -143,6 +151,21 @@ export class EditOperationRun {
   async complete(resultAssetId: string | null): Promise<boolean> {
     if (!(await this.validate())) {
       return false;
+    }
+    if (
+      deferJobAdoption(async (transaction) => {
+        const completed = await this.operations.complete(
+          this.id,
+          this.claimToken,
+          { resultAssetId, ...(resultAssetId === null && { result: EDIT_NOTHING_PUBLISHED }) },
+          transaction,
+          true,
+        );
+        if (!completed) throw new Error('Edit operation lost its claim before publication');
+        this.settle();
+      })
+    ) {
+      return true;
     }
     const completed = await this.operations.complete(this.id, this.claimToken, {
       resultAssetId,
@@ -264,19 +287,14 @@ export class EditOperationTracker {
   ) {}
 
   /**
-   * Record an edit and queue its job with the row's id. The edit itself was already saved, so a row
-   * that cannot be written never stops the render: the job is queued without one, as before.
+   * Record the durable execution owner before dispatch. If dispatch fails, the operation sweep
+   * redispatches this same row; a recording failure must never start an untracked render.
    */
   async queue(input: EditOperationInput): Promise<string | undefined> {
-    let operationId: string | undefined;
-    try {
-      operationId = (await this.operations.create(editOperationCreate(input))).id;
-    } catch (error) {
-      this.logger.warn(`Could not record the ${input.edit} of asset ${input.assetId} as a job: ${messageOf(error)}`);
-    }
+    const operationId = (await this.operations.create(editOperationCreate(input))).id;
     await this.jobs.queue({
       ...input.job,
-      data: { ...input.job.data, ...(operationId && { operationId }) },
+      data: { ...input.job.data, operationId },
     } as never);
     return operationId;
   }
