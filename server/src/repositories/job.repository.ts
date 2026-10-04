@@ -12,7 +12,7 @@ import { JobConfig } from 'src/decorators.js';
 import { QueueJobResponseDto, QueueJobSearchDto } from 'src/dtos/queue.dto.js';
 import { JobName, JobStatus, MetadataKey, QueueCleanType, QueueJobStatus, QueueName } from 'src/enum.js';
 import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
-import { attachProducerRun, freezeSelection } from 'src/queue/manifest.js';
+import { attachProducerRun, freezeSelection, getManifestJobOptions } from 'src/queue/manifest.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
@@ -79,6 +79,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.AssetEncodeVideoQueueAll,
   JobName.SmartSearchQueueAll,
   JobName.AssetExtractMetadataQueueAll,
+  JobName.SmartAlbumReevaluateAll,
+  JobName.SmartAlbumReevaluate,
 ]);
 
 @Injectable()
@@ -707,6 +709,10 @@ export class JobRepository {
         const kind = (item.data as { kind?: string } | undefined)?.kind;
         const dedupId = kind ? `${JobName.SmartAlbumReevaluateAll}:${kind}` : JobName.SmartAlbumReevaluateAll;
         return { deduplication: { id: dedupId } };
+      }
+      case JobName.SmartAlbumReevaluate: {
+        // An asset's food evaluation must never coalesce with another asset or its travel evaluation.
+        return getManifestJobOptions(item.name, { id: item.data.id, kind: item.data.kind }) ?? null;
       }
       case JobName.AnalyticsCollect: {
         // FL-79: the nightly run is one per night; its one automatic retry waits a few minutes.

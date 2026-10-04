@@ -2350,6 +2350,7 @@ export enum JobName {
 
   // Smart albums
   SmartAlbumReevaluateAll = 'SmartAlbumReevaluateAll',
+  SmartAlbumReevaluate = 'SmartAlbumReevaluate',
 
   // Workflow
   WorkflowAssetTrigger = 'WorkflowAssetTrigger',

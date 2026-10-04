@@ -209,7 +209,7 @@ export class SqlQueueStore {
   }
 
   async feedManifest(queue: string) {
-    return feedManifest(this.db, queue);
+    return feedManifest(this.db, queue, (intents, tx) => this.enqueue(intents, tx));
   }
 
   async claim(queue: string, workerId: string): Promise<QueueClaim[]> {
