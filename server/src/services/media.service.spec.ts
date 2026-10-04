@@ -61,6 +61,7 @@ describe(MediaService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(MediaService));
+    mocks.asset.update.mockResolvedValue(undefined);
     // FL-39: without retained video history the handler keeps its single-master path.
     mocks.assetEdit.getRequestedVideoVersion.mockResolvedValue(undefined);
   });
@@ -3406,8 +3407,13 @@ describe(MediaService.name, () => {
 
         await expect(sut.handleAssetVideoEditGeneration({ id: 'video-id' })).resolves.toBe(JobStatus.Success);
 
+        expect(mocks.asset.upsertFiles).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            expect.objectContaining({ assetId: 'video-id', type: AssetFileType.EncodedVideo, isEdited: true }),
+          ]),
+        );
         expect(mocks.storage.createOrOverwriteFile.mock.invocationCallOrder[0]).toBeLessThan(
-          mocks.asset.upsertFile.mock.invocationCallOrder[0],
+          mocks.asset.upsertFiles.mock.invocationCallOrder[0],
         );
       });
     });

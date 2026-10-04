@@ -100,6 +100,7 @@ describe(AssetDevelopService.name, () => {
 
   beforeEach(() => {
     mocks = getMocks();
+    mocks.mediaOperation.create.mockResolvedValue({ id: 'op-1' } as never);
     developRepository = {
       listByAsset: vi.fn().mockResolvedValue([]),
       get: vi.fn(),
@@ -463,7 +464,10 @@ describe(AssetDevelopService.name, () => {
       await expect(sut.save(authStub.user1, asset.id, { recipe, render: true })).resolves.toMatchObject({
         status: AssetDevelopRevisionStatus.Queued,
       });
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetDevelopRender, data: { id: created.id } });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetDevelopRender,
+        data: { id: created.id, operationId: 'op-1' },
+      });
 
       developRepository.get.mockResolvedValue(created);
       await expect(sut.render(authStub.user1, asset.id, created.id)).resolves.toBeDefined();
@@ -495,7 +499,10 @@ describe(AssetDevelopService.name, () => {
         cancelRequested: false,
         attempts: 0,
       });
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetDevelopRender, data: { id: created.id } });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetDevelopRender,
+        data: { id: created.id, operationId: 'op-1' },
+      });
       expect(response.status).toBe(AssetDevelopRevisionStatus.Queued);
       expect(response.hasMaster).toBe(false);
     });
@@ -1277,7 +1284,10 @@ describe(AssetDevelopService.name, () => {
       );
       // A render of the preview only; no library, thumbnail or machine-learning job is started.
       expect(mocks.job.queue).toHaveBeenCalledTimes(1);
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetDevelopRender, data: { id: 'imported' } });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.AssetDevelopRender,
+        data: { id: 'imported', operationId: 'op-1' },
+      });
       expect(developRepository.setCurrent).not.toHaveBeenCalled();
       expect(result.status).toBe(AssetDevelopRevisionStatus.Queued);
     });
