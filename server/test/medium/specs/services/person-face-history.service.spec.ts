@@ -176,7 +176,7 @@ describe('face decisions through reprocessing (FL-57)', () => {
     const { corrections } = await sut.getCorrectionHistory(auth, bea.personGroupId, { page: 1, size: 25 });
     expect(corrections.map(({ action }) => action).toSorted()).toEqual(['reassign', 'remove']);
     const rows = await sql<{ faceId: string }>`
-      SELECT "faceId" FROM immich_fork.face_correction WHERE "assetId" = ${face.assetId}::uuid
+      SELECT "faceId" FROM public.face_correction WHERE "assetId" = ${face.assetId}::uuid
     `.execute(ctx.database);
     expect(rows.rows.every(({ faceId }) => faceId === added.id)).toBe(true);
   });

@@ -2,7 +2,6 @@ import { sql } from 'kysely';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Stats } from 'node:fs';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { defaults } from 'src/dtos/config.dto.js';
 import { AssetFileType, JobName, JobStatus, SystemMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -42,24 +41,14 @@ const dryRunSummary = (masterUserId: string) => ({
 });
 
 /**
- * Boots the service against a fresh fork-active database with:
- * - real PhysicalFileRepository + ForkSchemaRepository (the data-loss-critical paths)
+ * Boots the service against a fresh canonical database with:
+ * - real PhysicalFileRepository + AssetChecksumRepository (the data-loss-critical paths)
  * - a mocked StorageRepository whose existsSync/stat answers come from `existing`
  * - a mocked JobRepository so FileDelete queueing is observable without side effects
  */
 const bootstrap = async () => {
   const database = await getKyselyDB();
   const existing = new Set<string>();
-
-  // The active fork phase makes the immich_fork.config sidecar authoritative;
-  // seed the two required keys so `getConfig` can overlay them.
-  await sql`
-    INSERT INTO immich_fork.config (key, value)
-    VALUES
-      ('frameleafCloud', ${JSON.stringify(defaults.frameleafCloud)}::jsonb),
-      ('smartAlbums', ${JSON.stringify(defaults.smartAlbums)}::jsonb)
-    ON CONFLICT (key) DO NOTHING
-  `.execute(database);
 
   const { ctx: fixtures } = newMediumService(PhysicalDeduplicationService, {
     database,
@@ -336,7 +325,7 @@ describe(PhysicalDeduplicationService.name, () => {
     expect(ctx.getMock(StorageRepository).rename).toHaveBeenCalledWith(dupPath, expect.stringContaining('file-trash'));
     await expect(
       database
-        .selectFrom('immich_fork.physical_file_trash' as never)
+        .selectFrom('public.physical_file_trash' as never)
         .selectAll()
         .where('lastAssetId' as never, '=', duplicate.id as never)
         .executeTakeFirst(),

@@ -1,4 +1,4 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import type { FrameleafRemoteConnection } from 'src/types.js';
 import { defaults } from 'src/dtos/config.dto.js';
 import { SystemMetadataKey } from 'src/enum.js';
@@ -33,7 +33,6 @@ const CUSTOM = 'photos.family.example';
 let db: Kysely<DB>;
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
 });
 afterAll(async () => {
   clearConfigCache();

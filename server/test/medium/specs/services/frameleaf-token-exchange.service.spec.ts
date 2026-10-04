@@ -1,5 +1,5 @@
 import { SignJWT, exportJWK, generateKeyPair } from 'jose';
-import { Kysely, sql } from 'kysely';
+import { Kysely } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import { FrameleafTokenExchangeErrorCode } from 'src/dtos/frameleaf-auth.dto.js';
 import { SystemMetadataKey } from 'src/enum.js';
@@ -46,7 +46,7 @@ const issuer = () => `${cloud.url}/id`;
 
 beforeAll(async () => {
   db = await getKyselyDB();
-  await sql`UPDATE immich_fork.state SET phase='dual-write' WHERE id=1`.execute(db);
+
   const pair = await generateKeyPair('RS256', { extractable: true });
   issuerKey = pair.privateKey;
   const issuerJwk = await exportJWK(pair.publicKey);
