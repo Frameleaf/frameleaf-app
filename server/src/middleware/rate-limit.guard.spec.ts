@@ -72,7 +72,7 @@ const contextFor = (
   } as unknown as ExecutionContext;
 };
 
-/** Redis's fixed-window counters, in memory: `INCR` and `DECR` are atomic, as they are in Redis. */
+/** In-memory fixed-window counter double for guard tests; PostgreSQL owns production counter updates. */
 const memoryCounters = () => {
   const counters = new Map<string, number>();
   return {

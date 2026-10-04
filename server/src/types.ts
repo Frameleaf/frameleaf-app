@@ -1528,7 +1528,7 @@ export interface UserMetadata extends Record<UserMetadataKey, Record<string, any
   };
   [UserMetadataKey.PinnedCollections]: { pins: import('src/dtos/pinned-collection.dto.js').StoredPinnedCollection[] };
   [UserMetadataKey.Preferences]: DeepPartial<UserPreferences>;
-  /** FL-156: a mirror of the person's supporter key summary (`immich_fork.frameleaf_user_license`). */
+  /** FL-156: a mirror of the person's supporter key summary (`public.frameleaf_user_license`). */
   [UserMetadataKey.License]: { kind: 'individual'; keyHint: string; activatedAt: string };
   [UserMetadataKey.Onboarding]: { isOnboarded: boolean };
   /** FL-196: the first time this administrator ended the linked-server tour. */

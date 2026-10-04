@@ -26,7 +26,6 @@ import {
 } from 'src/utils/media-operation.js';
 import { canonicalJson } from 'src/utils/studio-project.js';
 
-/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const MEDIA_OPERATION_HANDOFF_REFUSAL = 'Media operations are unavailable during database handoff';
 export type MediaOperation = Selectable<MediaOperationTable>;
 /** One unfinished retry per job (migration 2100000000590, FL-43). */
@@ -199,7 +198,7 @@ export class MediaOperationRepository {
     @InjectKysely()
     private db: Kysely<DB>,
   ) {}
-  /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
+  /** Execute the write in a database transaction. */
   private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(query);
   }
@@ -1038,8 +1037,7 @@ export class MediaOperationRepository {
     executor?: Kysely<DB>,
     requireActiveClaim = false,
   ): Promise<boolean> {
-    // FL-44: a caller's transaction took the handoff guard already (publishValidated); alone, this
-    // write takes it itself.
+    // Use the caller's publication transaction when supplied; otherwise open a transaction here.
     const run = (db: Kysely<DB>) =>
       db
         .updateTable('media_operation')
@@ -1378,7 +1376,7 @@ export class MediaOperationRepository {
     this.notifyCancellation(row);
     return row;
   }
-  /** Caller holds the fork write guard; notification follows its OUTER commit. */
+  /** Caller owns the transaction; cancellation notification follows its commit. */
   async requestCancelWithin(
     tx: Transaction<DB>,
     id: string,

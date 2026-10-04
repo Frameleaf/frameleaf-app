@@ -236,9 +236,9 @@ describe('resumable asset byte commit boundaries', () => {
     expect(harness.rateLimits.releaseUploadStream).toHaveBeenCalledTimes(2);
   });
 
-  it('fails closed without creating scratch when Redis admission is unavailable', async () => {
+  it('fails closed without creating scratch when PostgreSQL admission is unavailable', async () => {
     const harness = setup();
-    harness.rateLimits.claimUploadStream.mockRejectedValue(new Error('Redis unavailable'));
+    harness.rateLimits.claimUploadStream.mockRejectedValue(new Error('database unavailable'));
     await expect(
       harness.service['receive'](auth, harness.row().id, Readable.from([Buffer.from('ab')]), 0, false),
     ).rejects.toThrow('admission unavailable');
@@ -612,7 +612,7 @@ describe('iCloud source identity on resumable uploads (FL-296)', () => {
     expect(identities.claims).not.toHaveBeenCalled();
 
     // a claim check that cannot be made
-    identities.claims.mockRejectedValueOnce(new Error('relation "immich_fork.icloud_claim" does not exist'));
+    identities.claims.mockRejectedValueOnce(new Error('relation "public.icloud_claim" does not exist'));
     await expect(internals.refuseClaimedItem('owner', source())).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalledTimes(1);
 

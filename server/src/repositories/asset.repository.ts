@@ -114,7 +114,7 @@ export type StudioHdrIntermediateState = {
  * modification time (which a rescan re-reads).
  */
 const studioHdrSourceFingerprint = sql<Buffer>`sha256(a.checksum || convert_to(extract(epoch FROM a."fileModifiedAt")::text, 'UTF8'))`;
-/** FL-97: the sidecar exists once the fork schema has been migrated (never on an unmigrated library). */
+/** Check whether the public Studio HDR intermediate table exists. */
 const hasStudioHdrTable = async (db: Kysely<DB>): Promise<boolean> => {
   const { rows } = await sql<{
     table: string | null;
@@ -176,10 +176,8 @@ export type AssetFileMove = {
  * - `failed`: the file could not be moved; nothing changed and the move stays recorded.
  * - `removed`: the asset no longer exists; nothing was moved.
  * - `changed`: the asset's row names another path now; nothing was moved.
- * - `deferred`: rows that cannot change now name the file (a handoff runs, or a normalization has it
- *   reserved); nothing was moved and the move stays recorded.
- * - `mismatched`: the asset's Frameleaf mapping names another path than its row; nothing was moved and
- *   the move stays recorded until the two agree again (a relink or verification repairs them).
+ * - `deferred`: an unreleased Buddy Backup reference names one of the move's paths;
+ *   nothing was moved and the move stays recorded.
  */
 export type AssetFileMoveResult = 'moved' | 'failed' | 'removed' | 'changed' | 'deferred' | 'mismatched';
 /** The filesystem side of a move, run by `moveFile` while it holds the move's locks. */
@@ -1145,11 +1143,9 @@ export class AssetRepository {
   }
   /**
    * Assets that sensitive-content detection flagged, that no owner has reviewed and that are not locked
-   * (FL-34): what "hide sensitive detections" locks when it is switched on. The source follows the
-   * fork schema phase like `nsfwAssetIdExists` (`asset.is_nsfw` until the cutover, the privacy sidecar
-   * once it is `active`), but only positive evidence counts: an asset with no privacy row, which the
-   * fail-closed read predicate treats as sensitive, is never locked by this. A manual review, either
-   * way, is the owner's and is left alone.
+   * (FL-34): what "hide sensitive detections" locks when it is switched on. Only positive
+   * `public.asset.is_nsfw` evidence counts. A manual review in `asset_metadata`, either way,
+   * is the owner's and is left alone.
    */
   async getUnlockedDetectionIds(): Promise<string[]> {
     const rows = await this.db
@@ -1342,14 +1338,10 @@ export class AssetRepository {
       await this.deleteForkDerivedResults(ids, tx);
       // FL-97: the files live in the owner's encoded-video folder, which the user deletion removes
       await this.deleteStudioHdrIntermediates(ids, tx);
-      // `stack.primaryAssetId` has no ON DELETE action, so stacks have to go before
-      // the assets they point at. Upstream never hits this because it deletes the
-      // user row and lets a single cascading statement remove `stack` and `asset`
-      // together (NO ACTION is only enforced at the end of the statement). The fork
-      // deletes the assets in their own statement — to collect fork-managed original
-      // paths and clean up the `immich_fork` sidecar rows — so the stacks have to be
-      // removed first, including any owned by someone else that points at one of
-      // these assets.
+      // `stack.primaryAssetId` has no ON DELETE action. This transaction collects
+      // original paths and removes derived results before deleting assets in their
+      // own statement, so referencing stacks must be removed first. Include stacks
+      // owned by someone else that point at one of these assets.
       await tx
         .deleteFrom('stack')
         .where((eb) => eb.or([eb('ownerId', '=', asUuid(ownerId)), eb('primaryAssetId', '=', anyUuid(ids))]))
@@ -1883,9 +1875,7 @@ export class AssetRepository {
   }
   /**
    * The outputs of the asset's develop revisions, when the revisions can be deleted with it now. The
-   * revisions have no foreign key to the asset, so the removal deletes them itself (FL-169). Like the
-   * video versions, they are left alone while fork writes are disabled or a handoff or return
-   * reconciliation runs (FL-179), and the AssetDelete listener cleans them up later.
+   * revisions have no foreign key to the asset, so the removal deletes them itself (FL-169).
    */
   private async getReleasableDevelopPaths(id: string, db: Kysely<DB>): Promise<string[] | undefined> {
     const { rows } = await sql<{
@@ -1907,9 +1897,7 @@ export class AssetRepository {
     return rows.flatMap((row) => [row.masterPath, row.previewPath]).filter((path): path is string => !!path);
   }
   /**
-   * The files of the assets' saved video versions, when the versions can be deleted with them now.
-   * While fork writes are disabled or a handoff runs, the rows are left behind as orphans: the asset
-   * delete must not fail, and the nightly orphan release reclaims their files later.
+   * The files referenced by the assets' saved video versions, read for release during asset deletion.
    */
   private async getReleasableVideoEditPaths(ids: string[], db: Kysely<DB>): Promise<string[] | undefined> {
     return (await this.getReleasableVideoEditVersions(ids, db))?.paths;
@@ -2728,7 +2716,7 @@ export class AssetRepository {
     return rows[0];
   }
   /**
-   * FL-97: what is known about the Studio HDR intermediates (fork sidecar) of these videos.
+   * FL-97: what is known about the Studio HDR intermediates in `public.studio_hdr_intermediate` for these videos.
    * `current` means the row was made from the original as it is now (`sourceFingerprint`) for its
    * current owner. `edited` means an edit is published over the original: playback gives everyone
    * but the owner's quick editor the edited master, so the original's intermediate is never used.
@@ -2828,10 +2816,9 @@ export class AssetRepository {
     `.execute(this.db);
   }
   /**
-   * FL-97: the nightly sweep. Rows whose asset is gone (left while fork writes were disabled, or
-   * archived by a handoff return), whose original changed or was replaced, that a published edit
-   * now covers, or that no project used for 30 days are released; their files are returned for
-   * deletion.
+   * FL-97: the nightly sweep. Rows whose asset is gone, whose original changed or was replaced,
+   * that a published edit now covers, or that no project used for 30 days are released;
+   * their files are returned for deletion.
    */
   async releaseStudioHdrIntermediates(): Promise<string[]> {
     return this.db.transaction().execute(async (tx) => {
@@ -2854,7 +2841,7 @@ export class AssetRepository {
       return [...new Set([...released.rows].map(({ path }) => path).filter((path): path is string => !!path))];
     });
   }
-  /** FL-97: the intermediates of these assets, including rows a return archived as orphans. */
+  /** FL-97: the persisted intermediate paths of these assets. */
   private async getStudioHdrIntermediatePaths(ids: string[], db: Kysely<DB>): Promise<string[]> {
     if (!(await hasStudioHdrTable(db))) {
       return [];

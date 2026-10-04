@@ -554,10 +554,10 @@ describe(MlDestinationService.name, () => {
       expect(mocks.frameleafCloudMl.revokeConsent).not.toHaveBeenCalled();
     });
 
-    it('refuses to withdraw consent during a handoff with 409, before contacting Frameleaf Cloud (FL-159)', async () => {
+    it('propagates a local consent conflict before contacting Frameleaf Cloud (FL-159)', async () => {
       linkCloud();
       mocks.frameleafConsent.revoke.mockRejectedValue(
-        new ConflictException('Consent cannot be withdrawn while the server is being handed over'),
+        new ConflictException('Local consent update conflict'),
       );
       mocks.mlDestination.getById.mockResolvedValue(mlDestinationStub.frameleafCloudConsented);
       await expect(sut.revokeConsent(mlDestinationStub.frameleafCloudConsented.id)).rejects.toBeInstanceOf(

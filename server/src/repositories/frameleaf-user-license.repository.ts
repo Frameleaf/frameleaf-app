@@ -40,7 +40,7 @@ export class FrameleafUserLicenseRepository {
     `.execute(this.db);
     return result.rows[0];
   }
-  /** Record (or replace) an account's key. Refused while the server is being handed over. */
+  /** Record (or replace) an account's key in `public.frameleaf_user_license`. */
   async upsert(row: Omit<FrameleafUserLicenseRow, 'kind' | 'activatedAt'>): Promise<FrameleafUserLicenseRow> {
     return this.db.transaction().execute(async (trx) => {
       const result = await sql<FrameleafUserLicenseRow>`

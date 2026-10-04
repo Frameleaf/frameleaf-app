@@ -15,7 +15,6 @@ import {
 } from 'src/schema/tables/render-worker.table.js';
 import { notJobQueueExecuted } from 'src/utils/edit-operation.js';
 import { CLAIMED_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
-/** FL-44 (FN-304): what every write here answers while a database handoff holds the schema. */
 export const RENDER_WORKER_HANDOFF_REFUSAL = 'Render workers are unavailable during database handoff';
 export type RenderWorker = Selectable<RenderWorkerTable>;
 export type RenderWorkerSession = Selectable<RenderWorkerSessionTable>;
@@ -70,7 +69,7 @@ export class RenderWorkerRepository {
     @InjectKysely()
     private db: Kysely<DB>,
   ) {}
-  /** FL-44 (FN-304): a write, refused while a database handoff holds the schema. */
+  /** Execute the write in a database transaction. */
   private write<T>(query: (db: Kysely<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(query);
   }
@@ -168,7 +167,7 @@ export class RenderWorkerRepository {
   }
   /**
    * FL-95: bind what the session's conformance check verified (codecs, containers) to the session.
-   * Stored beside the official schema in `immich_fork`, one row per session.
+   * Stored in `public.render_worker_session_capability`, one row per session.
    */
   async recordSessionCapabilities(
     sessionId: string,

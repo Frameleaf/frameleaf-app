@@ -29,11 +29,9 @@ export type FrameleafSessionRow = {
 };
 /**
  * Sign in with Frameleaf (FL-158): the Frameleaf account linked to each local account
- * (`public.frameleaf_account_link`, fork migration 0000000000202) and the sessions a Frameleaf
- * sign-in created (`public.frameleaf_session`, 0000000000203), (FL-230, 0000000000210) the
- * exchange tokens already used and the sign-ins Frameleaf Cloud ended, and the access the cloud gives
- * each account on this server (FL-235, 0000000000211). Writes are refused while the
- * server is being handed over, like every fork table.
+ * (`public.frameleaf_account_link`) and the sessions a Frameleaf sign-in created
+ * (`public.frameleaf_session`), the exchange tokens already used and the sign-ins Frameleaf
+ * Cloud ended (FL-230), and the access the cloud gives each account on this server (FL-235).
  */
 /**
  * FL-230: whether Frameleaf Cloud ended this account's (`sub`) or Frameleaf session's (`sid`)
@@ -66,7 +64,7 @@ export class FrameleafAccountRepository {
     @InjectKysely()
     private db: Kysely<DB>,
   ) {}
-  /** Every writer takes the fork write guard first (see `lockForkWrites`). */
+  /** Run each account write in a database transaction. */
   private write<T>(message: string, work: (trx: Kysely<DB>) => Promise<T>): Promise<T> {
     return this.db.transaction().execute(async (trx) => {
       return work(trx);

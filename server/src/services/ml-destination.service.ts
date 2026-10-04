@@ -339,7 +339,7 @@ export class MlDestinationService extends BaseService {
   /**
    * FL-159: Frameleaf Cloud consent is versioned. The administrator accepts exactly the version the
    * cloud requires now, with every feature choice explicit (all off by default). It is recorded with
-   * Frameleaf Cloud (`POST /v2/consent`) and in `immich_fork.frameleaf_consent`; only then does the
+   * Frameleaf Cloud (`POST /v2/consent`) and in `public.frameleaf_consent`; only then does the
    * destination carry it. If the cloud cannot be reached, nothing is recorded.
    */
   private async grantCloudConsent(auth: AuthDto, current: MlDestinationRow, dto: MlDestinationConsentRequestDto) {
@@ -406,7 +406,7 @@ export class MlDestinationService extends BaseService {
 
   /**
    * Withdraw consent. For Frameleaf Cloud the consent records and the destination are cleared here
-   * first, in one transaction (refused with 409 during a handoff, like recording it), then with
+   * first, in one transaction, then with
    * Frameleaf Cloud; whatever happens there, the withdrawal stands on this server, which refuses
    * every cloud job without consent, and a miss is logged.
    */

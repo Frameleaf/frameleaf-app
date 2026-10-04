@@ -152,7 +152,7 @@ const exchangeRefusal = (code: FrameleafTokenExchangeErrorCode) => {
  *   remote people: an account it authorizes is created here on first sign-in, with
  *   `frameleaf_role` as its role. A verified email is required before an existing account is
  *   linked by email or a new one is created.
- * - Every session it creates is tagged in `immich_fork.frameleaf_session`, so a back-channel logout
+ * - Every session it creates is tagged in `public.frameleaf_session`, so a back-channel logout
  *   from the cloud ends it, and remote-access enforcement can recognise it.
  * - A Frameleaf app can exchange a server-audience token from the identity provider for a session
  *   without a browser (FL-230, `exchangeToken`), under the same account rules and session tagging.

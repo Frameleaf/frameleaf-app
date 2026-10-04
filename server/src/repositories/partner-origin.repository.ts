@@ -146,8 +146,8 @@ const selectOrigin = (kind: OriginKind) => {
     origin."rootOwnerId", origin."partnerSharedById", origin."overriddenFields", origin.following`;
 };
 /**
- * Where a partner's copy came from (FL-326, spec §4.2), in the `immich_fork` origin tables of fork
- * migration 0000000000220, and the resumable backfill of each partnership. The copy engine
+ * Where a partner's copy came from (FL-326, spec §4.2), in the public origin tables,
+ * and the resumable backfill of each partnership. The copy engine
  * (`PartnerCopyService`) decides what to copy; this only stores and reads the lineage.
  *
  * A copy whose row is gone is never returned: every read joins the live copy row.
@@ -376,8 +376,8 @@ export class PartnerOriginRepository {
   }
   /**
    * Whether `ownerId`'s library ever received a copy of `sourceAssetId`, even one its owner has since
-   * permanently deleted: the origin row outlives the copy (fork tables never foreign-key into the
-   * official schema), and a copy a library once had is never made again (a re-read of the source's
+   * permanently deleted: the origin row has no foreign key to the copy and outlives it.
+   * A copy a library once had is never made again (a re-read of the source's
    * metadata, a retried job or a re-run backfill must not undo the recipient's delete).
    */
   async hasEverCopied(sourceAssetId: string, ownerId: string, kysely: Kysely<DB> = this.db): Promise<boolean> {
@@ -546,7 +546,7 @@ export class PartnerOriginRepository {
         .values({ ...jobStatus, assetId: copy.id })
         .onConflict((oc) => oc.column('assetId').doNothing())
         .execute();
-      // the fork's checksum evidence names the same file, so the copy carries it too
+      // the stored checksum evidence names the same file, so the copy carries it too
       await sql`
         INSERT INTO public.asset_checksum
         SELECT (jsonb_populate_record(NULL::public.asset_checksum,

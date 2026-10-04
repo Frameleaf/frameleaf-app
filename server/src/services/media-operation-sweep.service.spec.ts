@@ -111,9 +111,9 @@ describe(MediaOperationSweepService.name, () => {
           snapshot: { executor: 'job_queue', job: { name: JobName.AssetEditThumbnailGeneration, data: { id: 'a' } } },
         },
       ]);
-      jobs.queueAll.mockRejectedValue(new Error('redis went away'));
+      jobs.queueAll.mockRejectedValue(new Error('queue database unavailable'));
 
-      await expect(sut.sweep()).rejects.toThrow('redis went away');
+      await expect(sut.sweep()).rejects.toThrow('queue database unavailable');
       expect(operations.releaseJobQueueDispatch).toHaveBeenCalledWith(['op-4']);
     });
 
