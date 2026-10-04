@@ -96,7 +96,9 @@ describe('Immich import into the canonical Frameleaf baseline', () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
-  afterAll(async () => admin?.end());
+  afterAll(async () => {
+    await admin?.end();
+  });
 
   const configure = (version = '3.0.0') => {
     const source: ImportDatabase = {

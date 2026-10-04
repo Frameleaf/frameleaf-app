@@ -226,7 +226,7 @@ export const durableRunRow = (run: DurableJobRun): RunningJobRow => ({
  * Every row, the viewer's own work first — it is what they came to look at — then the server's
  * queues. Newest first within each.
  */
-export const buildRunningJobRows = (summary: RunningJobsResponseDto | null | undefined): RunningJobRow[] => {
+export const buildRunningJobRows = (summary: DurableRunningJobs | null | undefined): RunningJobRow[] => {
   if (!summary) {
     return [];
   }
@@ -237,9 +237,8 @@ export const buildRunningJobRows = (summary: RunningJobsResponseDto | null | und
     ...summary.memoryExports.map((run) => memoryExportRow(run)),
   ].sort(byNewest);
   // The server lists queues in their declared order, which is also the admin page's order.
-  const durable = summary as DurableRunningJobs;
-  const runs = durable.canReadJobRuns
-    ? (durable.durableRuns ?? []).filter((run) => !isRunSettled(run)).map(durableRunRow)
+  const runs = summary.canReadJobRuns
+    ? (summary.durableRuns ?? []).filter((run) => !isRunSettled(run)).map((run) => durableRunRow(run))
     : [];
   const queues = summary.canManageQueues ? summary.queues.map((queue) => queueRow(queue)) : [];
 

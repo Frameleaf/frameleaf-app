@@ -8,7 +8,7 @@ import DurableRuns from '$lib/components/frameleaf/jobs/DurableRuns.svelte';
 
 beforeAll(async () => {
   register('en', () => Promise.resolve(en));
-  init({ fallbackLocale: 'en', initialLocale: 'en' });
+  await init({ fallbackLocale: 'en', initialLocale: 'en' });
   await waitLocale();
 });
 beforeEach(() => {
