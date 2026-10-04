@@ -9,7 +9,9 @@ import { fileURLToPath } from "node:url";
 /**
  * FL-190 (owner decision 2026-09-26): other than the attribution on the About screen, no user-visible
  * surface names Immich, shows its logo or original interface, or sends people to its sites, apps or
- * packages. This scan fails on:
+ * packages. FL-333 additionally permits exact one-way offline source-import wording below.
+ * Frozen import fixture data and license files remain provenance, not product surfaces.
+ * This scan fails on:
  *
  * - the name ("Immich", "IMMICH") in shipped code, outside comments and specs: web/src, server/src
  *   (including its log and error strings and the email templates), packages/cli/src and the machine
@@ -78,16 +80,166 @@ export const ALLOWLIST = [
   },
   {
     reason:
-      "Developer documentation: frozen source and license attribution for imported code",
-    files: /^docs\/docs\/developer\//,
-    allow: /(?:https:\/\/)?github\.com\/immich-app\/immich(?:\.git)?\b/g,
+      "Developer source provenance: the explicit frozen-source remote command",
+    files: /^docs\/docs\/developer\/setup\.md$/,
+    allow:
+      /^git remote add upstream https:\/\/github\.com\/immich-app\/immich\.git$/g,
   },
   {
     reason:
-      "A released migration is never edited; its irreversible down() names the upstream release to restore",
-    files:
-      /^server\/src\/schema\/migrations\/1779400000000-UpdateWorkflowTables\.ts$/,
-    allow: /downgrade to upstream Immich\./g,
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    allow: "# One-time offline Immich import",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    allow:
+      "The importer copies content from a stopped Immich installation into a fresh canonical Frameleaf PostgreSQL 19 database.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    allow:
+      "Supported sources are stable Immich 3.x through 3.2.4; prereleases and later versions are rejected.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/import-immich\.md$/,
+    allow:
+      "- `FRAMELEAF_IMPORT_SOURCE_URL`: stopped Immich source using the read-only role.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/server-commands\.md$/,
+    allow: "## Offline Immich import",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/backup-and-restore\.md$/,
+    allow: "## Immich sources",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/backup-and-restore\.md$/,
+    allow:
+      "An Immich dump or PostgreSQL volume is not a canonical Frameleaf backup.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/postgres-standalone\.md$/,
+    allow:
+      "Do not attach an Immich database or an older PostgreSQL data directory to this installation; use the [offline import](./import-immich.md) to copy supported source content into a fresh destination.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/administration\/server-migration\.md$/,
+    allow:
+      "A full one-time offline Immich database/content import into a fresh canonical Frameleaf database has a separate [import runbook](./import-immich.md).",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/install\/upgrading\.md$/,
+    allow:
+      "Do not replace an Immich server image with Frameleaf while pointing it at the original Immich database.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/install\/upgrading\.md$/,
+    allow:
+      "The importer reads supported stable Immich 3.x through 3.2.4, preserves content and access controls, and requires verification before activation.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/features\/fork-privacy-suite\.md$/,
+    allow:
+      "Supported Immich installations are a frozen, read-only source for a one-time offline content import into a fresh Frameleaf database.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/features\/fork-privacy-suite\.md$/,
+    allow:
+      "If you have an existing Immich library, follow the [offline import](../administration/import-immich.md), then open `Administration > Settings > Machine Learning Settings`.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/features\/fork-privacy-suite\.md$/,
+    allow:
+      "[One-time offline Immich import](../administration/import-immich.md)",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/guides\/icloud-photos-server-setup\.md$/,
+    allow:
+      "A one-time offline Immich import uses a separate read-only source and never shares this database with another server implementation.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/developer\/database-migrations\.md$/,
+    allow:
+      "Source import copies selected data; it does not copy an Immich migration history or indexes.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/developer\/architecture\.mdx$/,
+    allow:
+      "A source Immich database is only read by the separate offline importer and never becomes the destination schema.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^docs\/docs\/developer\/fork-integration\.md$/,
+    allow:
+      "Immich stable 3.x through 3.2.4 is a frozen, read-only source for the one-time [offline importer](../administration/import-immich.md).",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^server\/src\/immich-import\/types\.ts$/,
+    allow: "Immich import refused: ${code}",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^server\/src\/commands\/import-immich\.command\.ts$/,
+    allow:
+      "Immich import failed; destination remains inactive. Check configuration and database access.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^server\/src\/commands\/import-immich\.command\.ts$/,
+    allow: "Immich import connection cleanup failed.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^server\/src\/services\/database-backup\.service\.ts$/,
+    allow:
+      "This is not a canonical Frameleaf backup. Use import-immich for a supported Immich library.",
+  },
+  {
+    reason:
+      "FL-333: one-way offline source import; exact approved wording only",
+    files: /^server\/src\/repositories\/database\.repository\.ts$/,
+    allow:
+      "Frameleaf requires an empty PostgreSQL 19 database. Use import-immich with a separate read-only source; existing Immich or legacy Frameleaf databases cannot be adopted.",
   },
 ];
 
