@@ -427,19 +427,25 @@ export class AlbumRepository {
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
   async addAssetIds(albumId: string, assetIds: string[]): Promise<void> {
+    await this.addAssetIdsReturning(albumId, assetIds);
+  }
+
+  /** Return only memberships this insertion actually created, including their exact generations. */
+  async addAssetIdsReturning(albumId: string, assetIds: string[]): Promise<{ assetId: string; updateId: string }[]> {
     if (assetIds.length === 0) {
-      return;
+      return [];
     }
 
-    await this.withMembershipWrite([albumId], async (tx) => {
-      await tx
+    return this.withMembershipWrite([albumId], async (tx) =>
+      tx
         .insertInto('album_asset')
         .expression((eb) =>
           eb.selectFrom(dummy).select([asUuid(albumId).as('albumId'), sql`unnest(${assetIds}::uuid[])`.as('assetId')]),
         )
         .onConflict((oc) => oc.doNothing())
-        .execute();
-    });
+        .returning(['assetId', 'updateId'])
+        .execute(),
+    );
   }
 
   @GenerateSql({
