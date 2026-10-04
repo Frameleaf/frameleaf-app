@@ -1,6 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { ExtraModel } from 'src/decorators.js';
+import { AlbumSourceLinkResponseSchema } from 'src/dtos/album-source.dto.js';
 import { PetObservationResponseSchema, PetResponseSchema } from 'src/dtos/pet.dto.js';
 import { PIN_LIMIT, PinnedCollectionSchema, PinnedCollectionsResponseSchema } from 'src/dtos/pinned-collection.dto.js';
 import {
@@ -568,6 +569,14 @@ class SyncSharedSpacePersonDeleteV1 extends createZodDto(
   z.object({ spaceId: z.uuid(), id: z.uuid() }).meta({ id: 'SyncSharedSpacePersonDeleteV1' }),
 ) {}
 @ExtraModel()
+class SyncAlbumSourceLinkV1 extends createZodDto(
+  AlbumSourceLinkResponseSchema.omit({ albumName: true }).meta({ id: 'SyncAlbumSourceLinkV1' }),
+) {}
+@ExtraModel()
+class SyncAlbumSourceLinkDeleteV1 extends createZodDto(
+  z.object({ linkId: z.uuid() }).meta({ id: 'SyncAlbumSourceLinkDeleteV1' }),
+) {}
+@ExtraModel()
 class SyncPetDeleteV1 extends createZodDto(z.object({ petId: z.uuid() }).meta({ id: 'SyncPetDeleteV1' })) {}
 @ExtraModel()
 class SyncPetObservationV1 extends createZodDto(PetObservationResponseSchema.meta({ id: 'SyncPetObservationV1' })) {}
@@ -689,6 +698,8 @@ export type SyncItem = {
   [SyncEntityType.SharedSpaceMemberDeleteV1]: SyncSharedSpaceMemberDeleteV1;
   [SyncEntityType.PetV1]: SyncPetV1;
   [SyncEntityType.PetDeleteV1]: SyncPetDeleteV1;
+  [SyncEntityType.AlbumSourceLinkV1]: SyncAlbumSourceLinkV1;
+  [SyncEntityType.AlbumSourceLinkDeleteV1]: SyncAlbumSourceLinkDeleteV1;
   [SyncEntityType.PetObservationV1]: SyncPetObservationV1;
   [SyncEntityType.PetObservationDeleteV1]: SyncPetObservationDeleteV1;
   [SyncEntityType.TagV1]: SyncTagV1;
