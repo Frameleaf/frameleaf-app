@@ -14,6 +14,7 @@ import {
   AssetLockReason,
   AssetStatus,
   AssetVisibility,
+  ImmichWorker,
   JobName,
   JobStatus,
   QueueName,

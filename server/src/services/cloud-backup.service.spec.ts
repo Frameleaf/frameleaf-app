@@ -190,7 +190,11 @@ describe(CloudBackupService.name, () => {
       .filter(([key]) => key === SystemMetadataKey.SystemConfig)
       .map(([, value]) => value);
   const savedConfig = () =>
-    readConfig({ configRepo: mocks.config, metadataRepo: mocks.systemMetadata, logger: mocks.logger });
+    readConfig({
+      configRepo: mocks.config,
+      metadataRepo: mocks.systemMetadata as never,
+      logger: mocks.logger as never,
+    });
 
   const uploadedKeys = () => store.uploadFile.mock.calls.map(([, objectKey]) => objectKey as string);
   const manifestOf = (at = 0) => JSON.parse(gunzipSync(streamed[at]).toString());
