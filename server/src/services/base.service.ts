@@ -14,6 +14,7 @@ import { DatabaseLock } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AdminAuditRepository } from 'src/repositories/admin-audit.repository.js';
+import { AlbumSourceRepository } from 'src/repositories/album-source.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
@@ -157,6 +158,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   SharedLinkRepository,
   SharedLinkAssetRepository,
   ItemShareRepository,
+  AlbumSourceRepository,
   StackRepository,
   StorageRepository,
   SyncRepository,
@@ -238,6 +240,7 @@ export class BaseService {
     protected sharedLinkRepository: SharedLinkRepository,
     protected sharedLinkAssetRepository: SharedLinkAssetRepository,
     protected itemShareRepository: ItemShareRepository,
+    protected albumSourceRepository: AlbumSourceRepository,
     protected stackRepository: StackRepository,
     protected storageRepository: StorageRepository,
     protected syncRepository: SyncRepository,
@@ -328,6 +331,7 @@ export class BaseService {
       ctx.sharedLinkRepository,
       ctx.sharedLinkAssetRepository,
       ctx.itemShareRepository,
+      ctx.albumSourceRepository,
       ctx.stackRepository,
       ctx.storageRepository,
       ctx.syncRepository,

@@ -581,6 +581,17 @@ export type JobItem =
   | { name: JobName.SmartSearchQueueAll; data: IBaseJob }
   | { name: JobName.SmartSearch; data: IEntityJob }
   | { name: JobName.SmartSearchPostprocess; data: IEntityJob }
+  | { name: JobName.AssetMetadataPostprocess; data: IEntityJob }
+  | {
+      name: JobName.ImageEnrichmentPostprocess;
+      data: IEntityJob & {
+        lockedIds?: string[];
+        description?: boolean;
+        videoMomentCaptions?: boolean;
+        searchDestinationId?: string;
+        planRun?: boolean;
+      };
+    }
   | { name: JobName.AssetEmptyTrash; data?: IBaseJob }
 
   // Duplicate Detection

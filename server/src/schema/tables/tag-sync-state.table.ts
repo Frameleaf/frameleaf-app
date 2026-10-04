@@ -22,7 +22,8 @@ export class TagSyncStateTable {
     | 'spaceAlbum'
     | 'spacePerson'
     | 'albumAsset'
-    | 'partnerAsset';
+    | 'partnerAsset'
+    | 'albumSourceLink';
   @PrimaryColumn({ type: 'character varying' })
   key!: string;
   @Column({ type: 'uuid' })
